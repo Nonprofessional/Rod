@@ -1,0 +1,62 @@
+# Rod -- Glossary
+
+A quick reference for the terms used across docs/architecture.md and the
+codebase. Definitions here are summaries; authoritative detail is in the linked
+sections.
+
+## Engagement and identity
+
+| Term | Meaning |
+|------|---------|
+| **Engagement** | The unit of tenancy, isolation, authorization, and evidence -- one authorized operation. All domain state is engagement-scoped and disposable with the operation. |
+| **Operator** | A global human identity; an authorized user of the platform. Access derives entirely from engagement memberships. |
+| **Role** | `Owner` / `Lead` / `Operator` / `Observer` within an engagement. |
+| **Stager token** | An engagement-scoped, short-lived, bounded-use secret used only during initial enrollment/deployment. |
+
+## Implants and sessions
+
+| Term | Meaning |
+|------|---------|
+| **Implant** | A short-lived, disposable payload on a target host. Untrusted by default; carries a unique per-implant key. Speaks the wire protocol. |
+| **Session** | A live, authenticated implant connection in an engagement; the handle operators task against. |
+| **Beacon** | The implant's periodic check-in to fetch tasking and push results, with configurable interval and jitter. |
+| **Beacon profile** | The per-implant sleep, jitter, and kill-date parameters, baked into the artifact at generation. |
+| **Kill date** | A hard self-termination timestamp baked in per implant; limits exposure if lost. |
+| **Malleable profile** | A configurable transport shape (URIs, headers, timing, payload) that mimics legitimate traffic, per implant. |
+
+## Implant classes
+
+| Term | Meaning |
+|------|---------|
+| **Stage-2 implant** | The primary long-haul implant; full capability set and module support. |
+| **Stager** | A tiny stage-1 loader that fetches a stage-2 implant. Separate generation output. |
+| **Web-shell class** | A script in a web root, bound to the web transport; code execution over HTTP, no interactive PTY. |
+| **Ephemeral** | A short-lived, TTL'd implant from a one-liner bootstrap; one-off execution and temporary access. |
+| **Pivot** | An implant representing hosts that cannot run their own implant, enrolling each as its own session and forwarding tasking. |
+
+## Infrastructure
+
+| Term | Meaning |
+|------|---------|
+| **Teamserver** | The monolithic .NET control-plane kernel: core state, transport, build pipeline, operator layer, storage/audit, tradecraft. |
+| **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), mTLS, DNS, SMB, TCP). Decoupled from the public endpoint. |
+| **Redirector** | A near-stateless Go forwarder that fronts a listener for OPSEC and infra flexibility. Burned redirectors are swappable. No engagement state, no business logic. |
+| **Build unit** | A per-language compilation service (C#/.NET, Go, C/C++, Nim) driven by the teamserver through the build contract. |
+| **Build contract** | The uniform message schema coupling the teamserver to build units; the language-neutrality boundary for generation. |
+
+## Tasking and capabilities
+
+| Term | Meaning |
+|------|---------|
+| **Capability** | A verb an implant advertises and the teamserver may dispatch; namespaced (`namespace.action`). |
+| **Capability module** | A distributable, signed bundle adding capability verbs (core or offensive). Evasion/exploit behavior is delivered as out-of-tree modules. |
+| **Task / Tasking** | An operator-issued request targeting a session; has a state machine, result, and attribution. |
+
+## Evidence and OPSEC
+
+| Term | Meaning |
+|------|---------|
+| **Audit event** | An immutable, hash-chained, attributed record of a privileged action; the engagement timeline and report source by construction. |
+| **Artifact** | A first-class object (file, screenshot, command output) linked to a task; part of the evidence store. |
+| **Burn handling** | Rotating keys/endpoints, retiring an implant, or severing a redirector when an implant or endpoint is compromised. |
+| **ROE guardrails** | Rules-of-engagement controls that warn or block high-risk actions against out-of-scope targets, reading from the audit store. |
