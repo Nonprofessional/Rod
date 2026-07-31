@@ -17,6 +17,23 @@ public readonly record struct EngagementId(Guid Value)
 {
     public static EngagementId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses an engagement id from its string form. Accepts both the compact
+    /// "N" format produced by <see cref="ToString"/> and the hyphenated Guid
+    /// form; returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out EngagementId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new EngagementId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
 }
 
 /// <summary>Identifies a stager token minted for an engagement.</summary>
@@ -35,4 +52,22 @@ public readonly record struct ImplantId(Guid Value)
 {
     public static ImplantId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses an implant id from its string form. Accepts both the compact "N"
+    /// format produced by <see cref="ToString"/> and the hyphenated Guid form;
+    /// returns false on anything else. Used to read the binding back out of a
+    /// certificate subject (architecture.md Sec 9).
+    /// </summary>
+    public static bool TryParse(string? text, out ImplantId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new ImplantId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
 }

@@ -59,8 +59,42 @@ message EnrollResponse {
   repeated bytes ca_chain = 5;
 }
 
-// Implant-initiated beacon channel (architecture.md Sec.5/8). Skeleton only:
-// richer request/response messages arrive with the engagement and tasking model.
+// Handshake on the CheckIn stream (roadmap M1.3). The implant's first Frame's
+// payload carries a HandshakeRequest; the server's first Frame back carries a
+// HandshakeResponse. Both are opaque Frame payloads -- the stream contract is
+// unchanged, only the inner shape is defined here.
+
+// The implant's advertisement: its protocol version, identity, and the
+// capability verbs it can dispatch (architecture.md Sec 10). implant_id is
+// echoed for routing/audit; the binding is authoritative via mTLS, not the wire
+// (architecture.md Sec 9).
+message HandshakeRequest {
+  ProtocolVersion version = 1;
+  string implant_id = 2;
+  repeated string capabilities = 3;
+}
+
+// Outcome of the handshake. OK means presence is recorded and the stream is
+// live; anything else closes the stream.
+enum HandshakeStatus {
+  HANDSHAKE_STATUS_UNSPECIFIED = 0;
+  HANDSHAKE_STATUS_OK = 1;
+  HANDSHAKE_STATUS_VERSION_MISMATCH = 2;
+  HANDSHAKE_STATUS_UNKNOWN_IMPLANT = 3;
+  HANDSHAKE_STATUS_IDENTITY_MISMATCH = 4;
+}
+
+// The server's handshake reply. version is the negotiated protocol version;
+// engagement_id is echoed so the implant can confirm its bound engagement.
+message HandshakeResponse {
+  HandshakeStatus status = 1;
+  ProtocolVersion version = 2;
+  string engagement_id = 3;
+}
+
+// Implant-initiated beacon channel (architecture.md Sec.5/8). The implant opens
+// a long-lived reverse connection; the first exchange is the handshake, then
+// the stream carries tasking and results in later milestones.
 service Beacon {
   rpc CheckIn(stream Frame) returns (stream Frame);
 }

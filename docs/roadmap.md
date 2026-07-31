@@ -40,7 +40,7 @@ ports; no Postgres yet.
       semantics (bounded use, expiry).
       _AC:_ enroll a fake implant and receive a certificate bound to
       `(implant_id, engagement_id)` plus the CA chain.
-- [ ] **M1.3 Handshake and presence.** Bidirectional stream; mTLS certificate vs
+- [x] **M1.3 Handshake and presence.** Bidirectional stream; mTLS certificate vs
       identity check; version/capability advertisement; presence/online state.
       _AC:_ a connecting implant appears online in its engagement.
 - [ ] **M1.4 First task round-trip.** `Task` lifecycle; a core verb

@@ -16,6 +16,13 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- gRPC server: terminates the implant-initiated beacon stream (M1.3). The
+       wire contract (services/messages) is generated in Rod.Protocol; this
+       package binds those server stubs to ASP.NET Core endpoint routing. -->
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -34,12 +34,33 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         ImplantCertificateSubject subject,
         CancellationToken cancellationToken = default)
     {
-        var implantId = subject.ImplantId.ToString();
-        var engagementId = subject.EngagementId.ToString();
-
         // The leaf key is the implant's own; it is not retained server-side after
         // the certificate is returned (the implant owns its private key).
         using var leafKey = RSA.Create(LeafKeySize);
+        return Task.FromResult(IssueLeaf(subject, leafKey));
+    }
+
+    public Task<IssuedCertificate> IssueWithKeyAsync(
+        ImplantCertificateSubject subject,
+        RSA leafPrivateKey,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(IssueLeaf(subject, leafPrivateKey));
+
+    /// <summary>
+    /// The CA root, for the transport layer to trust when terminating mTLS
+    /// (architecture.md Sec 9). The caller must not dispose the returned copy
+    /// independently of this authority's lifetime.
+    /// </summary>
+    public X509Certificate2 GetCaCertificate() => _caCertificate;
+
+    // Builds and signs an implant leaf over the supplied key, binding
+    // (implant_id, engagement_id). Shared by IssueAsync (ephemeral key) and
+    // IssueWithKeyAsync (caller-owned key, for mTLS-capable leaves).
+    private IssuedCertificate IssueLeaf(ImplantCertificateSubject subject, RSA leafKey)
+    {
+        var implantId = subject.ImplantId.ToString();
+        var engagementId = subject.EngagementId.ToString();
+
         var notBefore = DateTimeOffset.UtcNow;
         var notAfter = notBefore + LeafLifetime;
 
@@ -63,9 +84,9 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         var serial = subject.ImplantId.Value.ToByteArray();
         var leaf = request.Create(_caCertificate, notBefore, notAfter, serial);
 
-        return Task.FromResult<IssuedCertificate>(new IssuedCertificate(
+        return new IssuedCertificate(
             leaf.Export(X509ContentType.Cert),
-            new[] { _caCertificate.Export(X509ContentType.Cert) }));
+            new[] { _caCertificate.Export(X509ContentType.Cert) });
     }
 
     // Builds a self-signed CA root: CA:TRUE, key-cert-sign, self-issued.

@@ -55,4 +55,43 @@ public class FrameRoundTrip
 
         Assert.Equal(bytes, restored.Payload.Span.ToArray());
     }
+
+    // Handshake messages (roadmap M1.3): the first payload exchanged on a
+    // CheckIn stream must round-trip with version, identity, and capabilities
+    // intact -- these are what the server gates presence on.
+
+    [Fact]
+    public void HandshakeRequest_RoundTrips()
+    {
+        var original = new HandshakeRequest
+        {
+            Version = new ProtocolVersion { Major = 1, Minor = 0 },
+            ImplantId = "imp-42",
+            Capabilities = { "shell.exec", "file.push", "probe.read" },
+        };
+
+        var restored = HandshakeRequest.Parser.ParseFrom(original.ToByteArray());
+
+        Assert.Equal(1, restored.Version.Major);
+        Assert.Equal(0, restored.Version.Minor);
+        Assert.Equal("imp-42", restored.ImplantId);
+        Assert.Equal(original.Capabilities, restored.Capabilities);
+    }
+
+    [Fact]
+    public void HandshakeResponse_RoundTrips()
+    {
+        var original = new HandshakeResponse
+        {
+            Status = HandshakeStatus.Ok,
+            Version = new ProtocolVersion { Major = 1, Minor = 0 },
+            EngagementId = "eng-7",
+        };
+
+        var restored = HandshakeResponse.Parser.ParseFrom(original.ToByteArray());
+
+        Assert.Equal(HandshakeStatus.Ok, restored.Status);
+        Assert.Equal(1, restored.Version.Major);
+        Assert.Equal("eng-7", restored.EngagementId);
+    }
 }

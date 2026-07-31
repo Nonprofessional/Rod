@@ -69,3 +69,41 @@ public sealed class StagerTokenRedeemException : StagerTokenException
         Reason = reason;
     }
 }
+
+/// <summary>
+/// Why a handshake was refused. Carried on <see cref="HandshakeException"/> so
+/// the transport endpoint can map each reason to a distinct wire status
+/// (architecture.md Sec 9) without the core depending on the wire protocol --
+/// mirroring <see cref="StagerTokenRedeemReason"/>.
+/// </summary>
+public enum HandshakeReason
+{
+    /// <summary>The implant id matched no enrolled implant.</summary>
+    UnknownImplant,
+
+    /// <summary>The presented protocol version is not one the server speaks.</summary>
+    VersionMismatch,
+
+    /// <summary>
+    /// The certificate binding did not match the implant's enrolled engagement
+    /// (architecture.md Sec 9 mTLS identity check).
+    /// </summary>
+    IdentityMismatch,
+}
+
+/// <summary>
+/// A handshake was refused -- the implant is unknown, the protocol version is
+/// unsupported, or the certificate-vs-identity check failed.
+/// <see cref="Reason"/> is the actionable cause; the caller maps it to a wire
+/// status.
+/// </summary>
+public sealed class HandshakeException : DomainException
+{
+    public HandshakeReason Reason { get; }
+
+    public HandshakeException(HandshakeReason reason, string message)
+        : base(message)
+    {
+        Reason = reason;
+    }
+}
