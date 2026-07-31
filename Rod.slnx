@@ -1,8 +1,15 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Rod.Audit/Rod.Audit.csproj" />
+    <Project Path="src/Rod.BuildPipeline/Rod.BuildPipeline.csproj" />
+    <Project Path="src/Rod.CoreState/Rod.CoreState.csproj" />
+    <Project Path="src/Rod.Operators/Rod.Operators.csproj" />
     <Project Path="src/Rod.Protocol/Rod.Protocol.csproj" />
+    <Project Path="src/Rod.Tradecraft/Rod.Tradecraft.csproj" />
+    <Project Path="src/Rod.Transport/Rod.Transport.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Rod.Architecture.Tests/Rod.Architecture.Tests.csproj" />
     <Project Path="tests/Rod.Build.Tests/Rod.Build.Tests.csproj" />
     <Project Path="tests/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
   </Folder>
