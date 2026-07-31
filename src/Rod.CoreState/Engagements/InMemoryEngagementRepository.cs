@@ -1,0 +1,26 @@
+using System.Collections.Concurrent;
+
+namespace Rod.CoreState.Engagements;
+
+/// <summary>
+/// In-memory <see cref="IEngagementRepository"/> for the walking skeleton
+/// (roadmap M1 -- no Postgres yet). State lives in process and is lost on
+/// restart; the port keeps callers agnostic to that.
+/// </summary>
+public sealed class InMemoryEngagementRepository : IEngagementRepository
+{
+    private readonly ConcurrentDictionary<EngagementId, Engagement> _engagements = new();
+
+    public Task<Engagement?> FindAsync(EngagementId id, CancellationToken cancellationToken = default)
+        => Task.FromResult(_engagements.TryGetValue(id, out var engagement) ? engagement : null);
+
+    public async Task<Engagement> GetOrThrowAsync(EngagementId id, CancellationToken cancellationToken = default)
+        => await FindAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Engagement {id} does not exist.");
+
+    public Task SaveAsync(Engagement engagement, CancellationToken cancellationToken = default)
+    {
+        _engagements[engagement.Id] = engagement;
+        return Task.CompletedTask;
+    }
+}

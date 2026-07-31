@@ -31,7 +31,7 @@ operational lifecycle (see [architecture.md](architecture.md)).
 Vertical slice proving the end-to-end shape. In-memory implementations behind
 ports; no Postgres yet.
 
-- [ ] **M1.1 Engagement core + first use cases.** Entities `Engagement`,
+- [x] **M1.1 Engagement core + first use cases.** Entities `Engagement`,
       `Operator`, `EngagementMembership`, `Role`; value objects; create an
       engagement and mint a stager token over HTTP.
       _AC:_ create an engagement and mint a token in an integration test.

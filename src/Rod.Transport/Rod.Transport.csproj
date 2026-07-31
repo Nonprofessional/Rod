@@ -4,6 +4,13 @@
     <ProjectReference Include="..\Rod.CoreState\Rod.CoreState.csproj" />
   </ItemGroup>
 
+  <!-- The transport layer terminates C2 endpoints and the operator API: it needs
+       ASP.NET Core (Kestrel, routing, JSON). A FrameworkReference avoids a long
+       list of PackageReferences and tracks the runtime version centrally. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
