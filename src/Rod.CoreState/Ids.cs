@@ -25,3 +25,14 @@ public readonly record struct StagerTokenId(Guid Value)
     public static StagerTokenId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString("N");
 }
+
+/// <summary>
+/// Identifies an implant -- a short-lived, disposable payload enrolled into one
+/// engagement (architecture.md Sec 5). Ephemeral per engagement; disposable with
+/// the operation.
+/// </summary>
+public readonly record struct ImplantId(Guid Value)
+{
+    public static ImplantId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+}

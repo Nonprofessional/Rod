@@ -1,9 +1,11 @@
 namespace Rod.CoreState.Staging;
 
 /// <summary>
-/// Mints and (later, M1.2) redeems stager tokens. The mint result carries the
-/// plaintext secret exactly once; only a salted hash is retained server-side so
-/// a stolen store cannot replay tokens.
+/// Mints and redeems stager tokens. The mint result carries the plaintext secret
+/// exactly once; only a hash is retained server-side so a stolen store cannot
+/// replay tokens. Redeem (M1.2) is the entry point of enrollment: a presenting
+/// stager is verified against the stored hash, checked for expiry and remaining
+/// uses, and consumed on success.
 /// </summary>
 public interface IStagerTokenService
 {
@@ -15,5 +17,18 @@ public interface IStagerTokenService
         EngagementId engagementId,
         OperatorId issuedBy,
         DateTimeOffset issuedAt,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Redeems a stager token by its plaintext <paramref name="secret"/> at
+    /// <paramref name="now"/>. Verifies the hash without ever storing the clear
+    /// secret, refuses expired or spent tokens, and consumes one use on success.
+    /// Throws <see cref="StagerTokenRedeemException"/> with a
+    /// <see cref="StagerTokenRedeemReason"/> the caller (the enroll endpoint) maps
+    /// to a wire status code.
+    /// </summary>
+    Task<RedeemedStagerToken> RedeemAsync(
+        string secret,
+        DateTimeOffset now,
         CancellationToken cancellationToken = default);
 }

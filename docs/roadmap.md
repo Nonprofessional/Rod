@@ -35,7 +35,7 @@ ports; no Postgres yet.
       `Operator`, `EngagementMembership`, `Role`; value objects; create an
       engagement and mint a stager token over HTTP.
       _AC:_ create an engagement and mint a token in an integration test.
-- [ ] **M1.2 Enrollment slice.** `Implant` entity; CA port + self-signed dev CA
+- [x] **M1.2 Enrollment slice.** `Implant` entity; CA port + self-signed dev CA
       adapter; enrollment service mapping to protocol status codes; token
       semantics (bounded use, expiry).
       _AC:_ enroll a fake implant and receive a certificate bound to

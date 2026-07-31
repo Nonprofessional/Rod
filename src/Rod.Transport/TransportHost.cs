@@ -6,7 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Pki;
 using Rod.CoreState.Staging;
 using Rod.Transport.Endpoints;
 
@@ -15,7 +17,8 @@ namespace Rod.Transport;
 /// <summary>
 /// Assembles the teamserver HTTP host for the walking skeleton (roadmap M1):
 /// wires the core-state ports to their in-memory adapters, registers the
-/// engagement use cases, and maps the operator-facing endpoints.
+/// engagement and enrollment use cases, and maps the operator- and implant-facing
+/// endpoints.
 /// </summary>
 public static class TransportHost
 {
@@ -29,26 +32,31 @@ public static class TransportHost
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
+        services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
+        services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
+        services.AddSingleton<EnrollmentService>();
 
         return services;
     }
 
-    /// <summary>Maps the operator-facing endpoints onto a built application.</summary>
+    /// <summary>Maps the operator- and implant-facing endpoints onto a built application.</summary>
     public static WebApplication MapRodEndpoints(this WebApplication app)
     {
         app.MapEngagementEndpoints();
+        app.MapEnrollmentEndpoints();
         // A trivial health probe so the listener is observably up.
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
         return app;
     }
 
-    /// <summary>Maps the operator-facing endpoints onto a raw pipeline.</summary>
+    /// <summary>Maps the operator- and implant-facing endpoints onto a raw pipeline.</summary>
     public static void MapRodEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapEngagementEndpoints();
+        endpoints.MapEnrollmentEndpoints();
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
     }
 

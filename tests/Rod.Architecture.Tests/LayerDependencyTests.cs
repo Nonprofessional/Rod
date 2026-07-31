@@ -13,8 +13,12 @@ namespace Rod.Architecture.Tests;
 /// Encodes the teamserver layer dependency rules (architecture.md Sec 4.1,
 /// AGENTS.md Sec 5). Dependencies point inward only: core state and audit depend
 /// on nothing in-house; transport and build pipeline depend on core state;
-/// operators and tradecraft depend on core state and audit. Protocol types never
-/// leak into core. Adding a forbidden reference must fail one of these tests.
+/// operators and tradecraft depend on core state and audit. The transport layer
+/// additionally depends on Rod.Protocol: Protocol is the language-neutral wire
+/// contract (architecture.md Sec 8/9) that the transport speaks, so mapping
+/// outcomes to wire status codes belongs in transport. Protocol itself depends on
+/// nothing in-house, and still never leaks into core state. Adding a forbidden
+/// reference must fail one of these tests.
 /// </summary>
 public class LayerDependencyTests
 {
@@ -61,10 +65,12 @@ public class LayerDependencyTests
     public void Audit_Dependencies_PointInwardOnly()
         => AssertNoDependencies(Audit, nameof(Audit), "Rod.Audit");
 
-    // Transport and build pipeline may depend on core state only.
+    // Transport may depend on core state and the wire protocol contract. Protocol
+    // is the language-neutral contract transport speaks (architecture.md Sec 8/9);
+    // it depends on nothing in-house and never leaks into core state.
     [Fact]
     public void Transport_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Transport, nameof(Transport), "Rod.Transport", "Rod.CoreState");
+        => AssertOnlyDependsOn(Transport, nameof(Transport), "Rod.Transport", "Rod.CoreState", "Rod.Protocol");
 
     [Fact]
     public void BuildPipeline_Dependencies_PointInwardOnly()

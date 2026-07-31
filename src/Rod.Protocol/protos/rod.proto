@@ -36,6 +36,29 @@ message Frame {
   bytes payload = 2;
 }
 
+// Enrollment outcome, mapped from the stager-token redeem result
+// (architecture.md Sec.9). The transport endpoint maps each redeem failure to a
+// distinct status so an implant gets an actionable reason, not just "no".
+enum EnrollStatus {
+  ENROLL_STATUS_UNSPECIFIED = 0;
+  ENROLL_STATUS_OK = 1;
+  ENROLL_STATUS_BAD_TOKEN = 2;
+  ENROLL_STATUS_EXPIRED = 3;
+  ENROLL_STATUS_SPENT = 4;
+}
+
+// The enrollment response (roadmap M1.2). On OK, carries the newly issued
+// implant id, its engagement, and the bound leaf certificate plus the CA chain
+// the implant needs. On failure, the ids/cert fields are empty and only status
+// is meaningful.
+message EnrollResponse {
+  EnrollStatus status = 1;
+  string implant_id = 2;
+  string engagement_id = 3;
+  bytes leaf_certificate = 4;
+  repeated bytes ca_chain = 5;
+}
+
 // Implant-initiated beacon channel (architecture.md Sec.5/8). Skeleton only:
 // richer request/response messages arrive with the engagement and tasking model.
 service Beacon {

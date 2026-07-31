@@ -2,6 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Rod.CoreState\Rod.CoreState.csproj" />
+    <!-- Rod.Protocol is the language-neutral wire contract (architecture.md
+         Sec.8/9); the transport layer speaks it, mapping enrollment and other
+         outcomes to wire status codes. Protocol itself depends on nothing
+         in-house, and still never leaks into core state. -->
+    <ProjectReference Include="..\Rod.Protocol\Rod.Protocol.csproj" />
   </ItemGroup>
 
   <!-- The transport layer terminates C2 endpoints and the operator API: it needs

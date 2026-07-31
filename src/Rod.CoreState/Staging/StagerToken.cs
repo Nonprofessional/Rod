@@ -31,3 +31,18 @@ public sealed record StagerToken
     /// <summary>How many times the token may be redeemed before it is spent.</summary>
     public required int MaxUses { get; init; }
 }
+
+/// <summary>
+/// The result of a successful <see cref="IStagerTokenService.RedeemAsync"/>: the
+/// engagement the redeemed token grants access to. Carries no secret -- the
+/// plaintext was matched and discarded; enrollment proceeds against this
+/// engagement.
+/// </summary>
+public sealed record RedeemedStagerToken
+{
+    /// <summary>The token that was redeemed.</summary>
+    public required StagerTokenId Id { get; init; }
+
+    /// <summary>The engagement this token grants initial access to.</summary>
+    public required EngagementId EngagementId { get; init; }
+}
