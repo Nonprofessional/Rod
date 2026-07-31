@@ -7,6 +7,11 @@
          outcomes to wire status codes. Protocol itself depends on nothing
          in-house, and still never leaks into core state. -->
     <ProjectReference Include="..\Rod.Protocol\Rod.Protocol.csproj" />
+    <!-- Rod.Audit is the innermost ring alongside core state (architecture.md
+         Sec 4.1/11). Transport composes the audit write when a task result
+         arrives: it depends inward on the audit port, never the reverse. Audit
+         still depends on nothing in-house. -->
+    <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
   </ItemGroup>
 
   <!-- The transport layer terminates C2 endpoints and the operator API: it needs

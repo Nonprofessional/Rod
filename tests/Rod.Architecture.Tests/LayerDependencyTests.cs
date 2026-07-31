@@ -65,12 +65,18 @@ public class LayerDependencyTests
     public void Audit_Dependencies_PointInwardOnly()
         => AssertNoDependencies(Audit, nameof(Audit), "Rod.Audit");
 
-    // Transport may depend on core state and the wire protocol contract. Protocol
-    // is the language-neutral contract transport speaks (architecture.md Sec 8/9);
-    // it depends on nothing in-house and never leaks into core state.
+    // Transport may depend on core state, the wire protocol contract, and audit.
+    // Protocol is the language-neutral contract transport speaks
+    // (architecture.md Sec 8/9); it depends on nothing in-house and never leaks
+    // into core state. Audit is the innermost ring alongside core state
+    // (architecture.md Sec 4.1/11): when a task result arrives, transport composes
+    // the audit write itself, so it depends inward on the audit port. Both
+    // dependencies still point inward; the transport layer never reverses them.
     [Fact]
     public void Transport_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Transport, nameof(Transport), "Rod.Transport", "Rod.CoreState", "Rod.Protocol");
+        => AssertOnlyDependsOn(
+            Transport, nameof(Transport), "Rod.Transport",
+            "Rod.CoreState", "Rod.Protocol", "Rod.Audit");
 
     [Fact]
     public void BuildPipeline_Dependencies_PointInwardOnly()

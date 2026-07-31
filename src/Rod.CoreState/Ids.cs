@@ -54,7 +54,7 @@ public readonly record struct ImplantId(Guid Value)
     public override string ToString() => Value.ToString("N");
 
     /// <summary>
-    /// Parses an implant id from its string form. Accepts both the compact "N"
+    /// Parses an implant id from its string form. Accepts the compact "N"
     /// format produced by <see cref="ToString"/> and the hyphenated Guid form;
     /// returns false on anything else. Used to read the binding back out of a
     /// certificate subject (architecture.md Sec 9).
@@ -64,6 +64,34 @@ public readonly record struct ImplantId(Guid Value)
         if (Guid.TryParse(text, out var guid))
         {
             id = new ImplantId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// Identifies a task -- a single dispatched verb to an implant, owned by an
+/// operator and scoped to an engagement (architecture.md Sec 10.3). The task is
+/// the unit operators task, implants execute, and the audit trail attributes.
+/// </summary>
+public readonly record struct TaskId(Guid Value)
+{
+    public static TaskId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a task id from its string form. Accepts both the compact "N"
+    /// format produced by <see cref="ToString"/> and the hyphenated Guid form;
+    /// returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out TaskId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new TaskId(guid);
             return true;
         }
 

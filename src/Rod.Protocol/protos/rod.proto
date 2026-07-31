@@ -92,6 +92,37 @@ message HandshakeResponse {
   string engagement_id = 3;
 }
 
+// Tasking over the CheckIn stream (roadmap M1.4). After the handshake the stream
+// carries tasking downstream and results upstream, each as an opaque Frame
+// payload. The one-shot shape here -- a single verb with a single argument
+// string and a single result -- is the minimum that proves the round-trip;
+// streaming/interactive verbs and structured arguments arrive in later
+// milestones.
+
+// A task handed to the implant: its id (echoed back on the result so the server
+// can correlate), the capability verb, and its argument string.
+message TaskRequest {
+  string task_id = 1;
+  string verb = 2;
+  string arguments = 3;
+}
+
+// How a task turned out, as reported by the implant.
+enum TaskOutcome {
+  TASK_OUTCOME_UNSPECIFIED = 0;
+  TASK_OUTCOME_SUCCEEDED = 1;
+  TASK_OUTCOME_FAILED = 2;
+}
+
+// The implant's result for a task: the echoed task_id, the outcome, and the
+// captured output (stdout/stderr or equivalent). Carried even on failure so the
+// server captures the cause.
+message TaskResult {
+  string task_id = 1;
+  TaskOutcome outcome = 2;
+  string output = 3;
+}
+
 // Implant-initiated beacon channel (architecture.md Sec.5/8). The implant opens
 // a long-lived reverse connection; the first exchange is the handshake, then
 // the stream carries tasking and results in later milestones.

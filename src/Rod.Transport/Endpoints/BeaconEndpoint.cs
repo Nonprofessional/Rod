@@ -1,20 +1,29 @@
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
+using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Presence;
+using Rod.CoreState.Tasks;
 using Rod.V1;
+// The domain entity shares its name with System.Threading.Tasks.Task. This file
+// uses Rod.CoreState.Tasks for the TaskId/TaskOutcome/TaskService types but never
+// the Task entity by name, so pin Task to the BCL type the method signatures need.
+using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-initiated beacon stream (roadmap M1.3). An implant opens a
-/// long-lived reverse connection; the first frame it sends is the handshake
-/// (payload = <see cref="HandshakeRequest"/>), and the first frame the server
-/// writes back is the <see cref="HandshakeResponse"/>. On a successful handshake
-/// the implant is recorded online in its engagement; when the stream closes the
-/// implant is marked offline.
+/// The implant-initiated beacon stream (roadmap M1.3, tasking added M1.4). An
+/// implant opens a long-lived reverse connection; the first frame it sends is the
+/// handshake (payload = <see cref="HandshakeRequest"/>), and the first frame the
+/// server writes back is the <see cref="HandshakeResponse"/>. On a successful
+/// handshake the implant is recorded online in its engagement and the stream
+/// becomes the tasking channel: the server pushes queued tasks
+/// (<see cref="TaskRequest"/>) downstream and captures the implant's results
+/// (<see cref="TaskResult"/>) upstream, writing each completed task to the audit
+/// trail. When the stream closes the implant is marked offline.
 ///
 /// mTLS is terminated at Kestrel before this handler runs: the presenting client
 /// certificate has already chained to the CA. The application-layer identity
@@ -27,11 +36,19 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 {
     private readonly HandshakeService _handshake;
     private readonly IPresenceRegistry _presence;
+    private readonly TaskService _tasks;
+    private readonly IAuditStore _audit;
 
-    public BeaconEndpoint(HandshakeService handshake, IPresenceRegistry presence)
+    public BeaconEndpoint(
+        HandshakeService handshake,
+        IPresenceRegistry presence,
+        TaskService tasks,
+        IAuditStore audit)
     {
         _handshake = handshake;
         _presence = presence;
+        _tasks = tasks;
+        _audit = audit;
     }
 
     public override async Task CheckIn(
@@ -54,7 +71,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         catch (InvalidProtocolBufferException)
         {
             // The first payload was not a recognizable handshake request.
-            await WriteAsync(responseStream, Response(HandshakeStatus.Unspecified, engagementId: null));
+            await WriteHandshakeAsync(responseStream, Response(HandshakeStatus.Unspecified, engagementId: null));
             return;
         }
 
@@ -62,33 +79,159 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         //    implant lookup, and the mTLS identity check (certificate engagement
         //    == enrolled engagement); refusals come back as HandshakeException.
         var response = await TryHandshakeAsync(httpContext, handshakeRequest);
-        await WriteAsync(responseStream, response);
+        await WriteHandshakeAsync(responseStream, response);
         if (response.Status != HandshakeStatus.Ok)
             return;
 
-        // 3. Presence is now live. Hold the stream open for the implant's
-        //    session and mark it offline when the connection ends -- whether the
-        //    implant closed cleanly or the stream was aborted.
+        var implant = ResolveImplantId(handshakeRequest, httpContext);
+
+        // 3. Presence is now live and the stream is the tasking channel. Hold it
+        //    open for the implant's session, draining results and pushing queued
+        //    tasks; mark the implant offline when the connection ends -- whether
+        //    the implant closed cleanly or the stream was aborted.
         try
         {
-            // Drain remaining frames; tasking flows over these in later
-            // milestones. For M1.3 the implant holds the stream open and the
-            // server keeps presence recorded while it does. MoveAsync returns
-            // false on a clean client close and throws on an abort; both reach
-            // the finally below.
-            while (await requestStream.MoveNext(context.CancellationToken))
-            {
-                // No tasking yet (M1.4); presence stays online for the life of
-                // the connection. Advancing the reader is enough to keep the
-                // stream alive and observe client-side close.
-            }
+            await RunSessionAsync(implant, requestStream, responseStream, context.CancellationToken);
         }
         finally
         {
-            await _presence.SetOfflineAsync(
-                ResolveImplantId(handshakeRequest, httpContext),
-                CancellationToken.None);
+            await _presence.SetOfflineAsync(implant, CancellationToken.None);
         }
+    }
+
+    // The tasking session (roadmap M1.4): a reader draining result frames and a
+    // writer pushing queued tasks downstream, run concurrently. Concurrency is
+    // required because tasks enter the queue out-of-band -- an operator POSTs
+    // them over HTTP, not over this stream -- so the writer must keep polling the
+    // queue even while the reader is blocked awaiting the next result. A strictly
+    // sequential read-then-dispatch would deadlock: the reader blocks on a result
+    // the implant never sends because the task that prompts it is still queued.
+    //
+    // gRPC allows only one outstanding write per stream; the writer is the sole
+    // caller of WriteAsync here, so there is no contention. Either loop ending
+    // (clean client close in the reader, cancellation) ends the session; the
+    // offline finally above runs regardless.
+    private async Task RunSessionAsync(
+        ImplantId implant,
+        IAsyncStreamReader<Frame> requestStream,
+        IServerStreamWriter<Frame> responseStream,
+        CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var reader = ReadResultsAsync(requestStream, linked.Token);
+        var writer = DispatchTasksAsync(implant, responseStream, linked.Token);
+
+        // Whichever finishes first cancels the other. The writer only ever ends
+        // via cancellation (its loop runs for the session), so swallow the
+        // cancellation that follows; other exceptions surface and are rethrown.
+        await await Task.WhenAny(reader, writer);
+        linked.Cancel();
+        try
+        {
+            await Task.WhenAll(reader, writer);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected: the loop we cancelled unwinds through Task.Delay.
+        }
+    }
+
+    // Reader: await each result frame, capture it into the task and append the
+    // audit event. Ends on a clean client close (MoveNext returns false); throws
+    // on an abort. Non-result frames are ignored for now (keepalives, etc.).
+    private async Task ReadResultsAsync(
+        IAsyncStreamReader<Frame> requestStream,
+        CancellationToken cancellationToken)
+    {
+        while (await requestStream.MoveNext(cancellationToken))
+            await HandleFrameAsync(requestStream.Current, cancellationToken);
+    }
+
+    // Writer: poll the queue and push each queued task downstream. Operators task
+    // implants over HTTP at any moment, so this loops for the life of the session
+    // rather than draining once. The short delay keeps it from busy-waiting when
+    // the queue is empty; a real scheduler drives this off a channel later.
+    private async Task DispatchTasksAsync(
+        ImplantId implant,
+        IServerStreamWriter<Frame> responseStream,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await DispatchNextAsync(implant, responseStream, cancellationToken);
+            await Task.Delay(DispatchPollInterval, cancellationToken);
+        }
+    }
+
+    private static readonly TimeSpan DispatchPollInterval = TimeSpan.FromMilliseconds(25);
+
+
+    // Pulls the next queued task for the implant and writes it as a TaskRequest
+    // downstream. A no-op write when nothing is queued.
+    private async Task DispatchNextAsync(
+        ImplantId implant,
+        IServerStreamWriter<Frame> responseStream,
+        CancellationToken cancellationToken)
+    {
+        var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken);
+        if (dispatched is null)
+            return;
+
+        var request = new TaskRequest
+        {
+            TaskId = dispatched.TaskId.ToString(),
+            Verb = dispatched.Verb,
+            Arguments = dispatched.Arguments,
+        };
+        var frame = new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
+        await responseStream.WriteAsync(frame);
+    }
+
+    // A result frame: capture the outcome into the task and append the audit
+    // event. This is the transport-layer composition the M1.4 AC calls for --
+    // task state lives in core, the audit event in the audit layer, and the
+    // beacon stream is where both meet on a completed task (architecture.md
+    // Sec 10.3/11).
+    private async Task HandleFrameAsync(Frame frame, CancellationToken cancellationToken)
+    {
+        TaskResult result;
+        try
+        {
+            result = TaskResult.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return; // Not a result frame; ignore for now (keepalives, etc.).
+        }
+
+        if (!TaskId.TryParse(result.TaskId, out var taskId))
+            return;
+
+        // Map the wire outcome onto the core-state enum (RecordResultAsync takes
+        // the core type). Both namespaces define TaskOutcome; qualify both sides.
+        var outcome = result.Outcome switch
+        {
+            Rod.V1.TaskOutcome.Succeeded => Rod.CoreState.Tasks.TaskOutcome.Succeeded,
+            Rod.V1.TaskOutcome.Failed => Rod.CoreState.Tasks.TaskOutcome.Failed,
+            _ => Rod.CoreState.Tasks.TaskOutcome.Failed,
+        };
+
+        var completed = await _tasks.RecordResultAsync(taskId, result.Output, outcome, cancellationToken);
+
+        await _audit.AppendAsync(
+            new AuditEvent(
+                EventId: Guid.NewGuid(),
+                EngagementId: completed.EngagementId.Value,
+                OperatorId: completed.IssuedBy.Value,
+                ImplantId: completed.ImplantId.Value,
+                TaskId: completed.TaskId.Value,
+                Verb: completed.Verb,
+                Kind: AuditEventKind.TaskCompleted,
+                Payload: completed.Arguments,
+                Output: completed.Output,
+                Outcome: completed.Outcome.ToString(),
+                At: completed.CompletedAt),
+            cancellationToken);
     }
 
     private async Task<HandshakeResponse> TryHandshakeAsync(
@@ -128,7 +271,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // The implant id used to mark presence offline on disconnect. Prefer the
+    // The implant id resolved off the handshake/certificate. Prefer the
     // certificate binding (authoritative); fall back to the handshake field only
     // when no certificate was presented.
     private static ImplantId ResolveImplantId(HandshakeRequest request, HttpContext httpContext)
@@ -147,7 +290,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             EngagementId = engagementId ?? string.Empty,
         };
 
-    private static Task WriteAsync(IServerStreamWriter<Frame> stream, HandshakeResponse response)
+    private static Task WriteHandshakeAsync(IServerStreamWriter<Frame> stream, HandshakeResponse response)
     {
         var frame = new Frame { Payload = ByteString.CopyFrom(response.ToByteArray()) };
         return stream.WriteAsync(frame);

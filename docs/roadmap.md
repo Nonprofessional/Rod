@@ -43,7 +43,7 @@ ports; no Postgres yet.
 - [x] **M1.3 Handshake and presence.** Bidirectional stream; mTLS certificate vs
       identity check; version/capability advertisement; presence/online state.
       _AC:_ a connecting implant appears online in its engagement.
-- [ ] **M1.4 First task round-trip.** `Task` lifecycle; a core verb
+- [x] **M1.4 First task round-trip.** `Task` lifecycle; a core verb
       (`shell.exec` one-shot) dispatched and its result captured; an audit event
       written. _AC:_ task an implant, see output and an audit event.
 - [ ] **M1.5 Minimal operator UI.** List engagements/sessions; issue a task; view

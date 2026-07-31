@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Rod.Audit;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
@@ -11,6 +12,7 @@ using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Presence;
 using Rod.CoreState.Staging;
+using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Transport;
@@ -38,11 +40,18 @@ public static class TransportHost
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
         services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
         services.AddSingleton<IPresenceRegistry, InMemoryPresenceRegistry>();
+        services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
+
+        // Audit port -> walking-skeleton in-memory adapter (roadmap M1.4). The
+        // hash-chained store replaces this in place at M2.3; the port shape is
+        // stable for it.
+        services.AddSingleton<IAuditStore, InMemoryAuditStore>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
         services.AddSingleton<EnrollmentService>();
         services.AddSingleton<HandshakeService>();
+        services.AddSingleton<TaskService>();
 
         return services;
     }
@@ -123,6 +132,7 @@ public static class TransportHost
         app.MapEngagementEndpoints();
         app.MapEnrollmentEndpoints();
         app.MapPresenceEndpoints();
+        app.MapTaskEndpoints();
         // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
@@ -137,6 +147,7 @@ public static class TransportHost
         endpoints.MapEngagementEndpoints();
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapPresenceEndpoints();
+        endpoints.MapTaskEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
