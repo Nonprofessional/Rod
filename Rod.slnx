@@ -1,5 +1,9 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Rod.Protocol/Rod.Protocol.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Rod.Build.Tests/Rod.Build.Tests.csproj" />
+    <Project Path="tests/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
   </Folder>
 </Solution>

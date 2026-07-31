@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package rod.v1;
+
+// Rod wire protocol, frame layer only.
+//
+// Transport-agnostic (architecture.md Sec.8): HTTP(S), mTLS, DNS, SMB, TCP all
+// carry these frames; the implant is always the connection initiator. Frames are
+// opaque envelopes -- a redirector forwards the inner payload without parsing it.
+//
+// Sizing and flow control live at the transport layer, not here: a single frame
+// stays well under 1 MiB and never exceeds the negotiated maximum; bulk data is
+// chunked. Proto cannot express numeric limits, so this is a transport concern.
+
+// Protocol version exchanged at handshake.
+message ProtocolVersion {
+  int32 major = 1;
+  int32 minor = 2;
+}
+
+// Per-frame identity. Application-layer binding that complements mTLS -- an
+// implant certificate binds (implant_id, engagement_id) (architecture.md Sec.9);
+// the envelope carries the same identifiers so the server can route and audit
+// without trusting the wire alone.
+message Envelope {
+  string engagement_id = 1;
+  string implant_id = 2;
+  uint64 sequence = 3;
+}
+
+// The unit that crosses every transport. Payload is opaque: its inner shape is
+// defined by later protocol messages (tasking, enrollment, results) introduced
+// alongside the M1.x entities.
+message Frame {
+  Envelope envelope = 1;
+  bytes payload = 2;
+}
+
+// Implant-initiated beacon channel (architecture.md Sec.5/8). Skeleton only:
+// richer request/response messages arrive with the engagement and tasking model.
+service Beacon {
+  rpc CheckIn(stream Frame) returns (stream Frame);
+}
