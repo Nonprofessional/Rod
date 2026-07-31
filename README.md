@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/rod-logo.png" alt="Rod" width="200"></p>
+
 # Rod
 
 Rod is an **authorized-use red-team command-and-control (C2) platform** for
