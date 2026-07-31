@@ -25,12 +25,26 @@ public class LayerDependencyTests
     private static readonly Assembly Operators = typeof(OperatorsLayer).Assembly;
     private static readonly Assembly Tradecraft = typeof(TradecraftLayer).Assembly;
 
-    private static void AssertNoDependencies(Assembly layer, string layerName)
+    // Every in-house layer base namespace. A type that references any of these
+    // namespaces has a dependency on that layer.
+    private static readonly string[] AllLayers =
     {
+        "Rod.Audit", "Rod.BuildPipeline", "Rod.CoreState",
+        "Rod.Operators", "Rod.Protocol", "Rod.Tradecraft", "Rod.Transport"
+    };
+
+    // Inner ring: the layer may use only itself. Any reference to another
+    // in-house layer is forbidden. The layer's own namespace is always allowed so
+    // types within the layer can reference each other; without that, a layer's
+    // own sub-namespaces would trip NetArchTest's namespace-based dependency
+    // check the moment real code is added.
+    private static void AssertNoDependencies(Assembly layer, string layerName, string ownNamespace)
+    {
+        var forbidden = AllLayers.Except(new[] { ownNamespace }).ToArray();
+
         var result = Types.InAssembly(layer)
             .Should()
-            .NotHaveDependencyOnAny("Rod.Audit", "Rod.BuildPipeline", "Rod.CoreState",
-                "Rod.Operators", "Rod.Protocol", "Rod.Tradecraft", "Rod.Transport")
+            .NotHaveDependencyOnAny(forbidden)
             .GetResult();
 
         Assert.True(result.IsSuccessful,
@@ -41,29 +55,29 @@ public class LayerDependencyTests
     // Core state and audit are the inner ring: no in-house dependencies at all.
     [Fact]
     public void CoreState_Dependencies_PointInwardOnly()
-        => AssertNoDependencies(CoreState, nameof(CoreState));
+        => AssertNoDependencies(CoreState, nameof(CoreState), "Rod.CoreState");
 
     [Fact]
     public void Audit_Dependencies_PointInwardOnly()
-        => AssertNoDependencies(Audit, nameof(Audit));
+        => AssertNoDependencies(Audit, nameof(Audit), "Rod.Audit");
 
     // Transport and build pipeline may depend on core state only.
     [Fact]
     public void Transport_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Transport, nameof(Transport), "Rod.CoreState");
+        => AssertOnlyDependsOn(Transport, nameof(Transport), "Rod.Transport", "Rod.CoreState");
 
     [Fact]
     public void BuildPipeline_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(BuildPipeline, nameof(BuildPipeline), "Rod.CoreState");
+        => AssertOnlyDependsOn(BuildPipeline, nameof(BuildPipeline), "Rod.BuildPipeline", "Rod.CoreState");
 
     // Operators and tradecraft may depend on core state and audit only.
     [Fact]
     public void Operators_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Operators, nameof(Operators), "Rod.CoreState", "Rod.Audit");
+        => AssertOnlyDependsOn(Operators, nameof(Operators), "Rod.Operators", "Rod.CoreState", "Rod.Audit");
 
     [Fact]
     public void Tradecraft_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Tradecraft, nameof(Tradecraft), "Rod.CoreState", "Rod.Audit");
+        => AssertOnlyDependsOn(Tradecraft, nameof(Tradecraft), "Rod.Tradecraft", "Rod.CoreState", "Rod.Audit");
 
     // Protocol types must never leak into core (AGENTS.md Sec 5).
     [Fact]
@@ -80,14 +94,12 @@ public class LayerDependencyTests
     }
 
     private static void AssertOnlyDependsOn(Assembly layer, string layerName,
-        params string[] allowed)
+        string ownNamespace, params string[] allowed)
     {
-        // Forbid every in-house layer except those explicitly allowed.
-        var forbidden = new[]
-        {
-            "Rod.Audit", "Rod.BuildPipeline", "Rod.CoreState",
-            "Rod.Operators", "Rod.Protocol", "Rod.Tradecraft", "Rod.Transport"
-        }.Except(allowed);
+        // Forbid every in-house layer except the layer's own namespace and those
+        // explicitly allowed (own namespace is always allowed so the layer's
+        // types can reference each other).
+        var forbidden = AllLayers.Except(allowed.Append(ownNamespace));
 
         var result = Types.InAssembly(layer)
             .Should()
