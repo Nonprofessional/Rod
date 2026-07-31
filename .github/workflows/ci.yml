@@ -1,0 +1,58 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        # Version comes from global.json (pinned to 10.0.110).
+      - name: Restore
+        run: dotnet restore Rod.slnx
+      - name: Build
+        run: dotnet build Rod.slnx --configuration Release --no-restore
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Restore
+        run: dotnet restore Rod.slnx
+      - name: Build
+        run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: Test
+        run: dotnet test Rod.slnx --configuration Release --no-build
+
+  format:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Verify formatting
+        run: dotnet format Rod.slnx --verify-no-changes
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
