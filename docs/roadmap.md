@@ -54,7 +54,7 @@ ports; no Postgres yet.
 - [x] **M2.1 Core state layer.** Implant/session registry, task queue and
       history, engagement/operator state, behind ports. _AC:_ round-trips in
       unit tests; layer has no in-house dependencies.
-- [ ] **M2.2 Transport layer.** Listener abstraction; at least HTTP(S) and mTLS
+- [x] **M2.2 Transport layer.** Listener abstraction; at least HTTP(S) and mTLS
       listeners; listener decoupled from the public endpoint.
       _AC:_ a listener accepts an implant connection end-to-end.
 - [ ] **M2.3 Storage and audit layer.** Append-only, hash-chained `AuditEvent`
