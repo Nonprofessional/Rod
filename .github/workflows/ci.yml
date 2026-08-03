@@ -18,6 +18,19 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         # Version comes from global.json (pinned to 10.0.110).
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: src/Rod.TeamServer/Client/package-lock.json
+      - name: Build operator UI
+        # Emits the React bundle into src/Rod.TeamServer/wwwroot so the .NET
+        # build packages it. The output is gitignored.
+        working-directory: src/Rod.TeamServer/Client
+        run: |
+          npm ci
+          npm run build
       - name: Restore
         run: dotnet restore Rod.slnx
       - name: Build
@@ -31,6 +44,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: src/Rod.TeamServer/Client/package-lock.json
+      - name: Build operator UI
+        working-directory: src/Rod.TeamServer/Client
+        run: |
+          npm ci
+          npm run build
       - name: Restore
         run: dotnet restore Rod.slnx
       - name: Build
