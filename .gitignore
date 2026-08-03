@@ -486,3 +486,13 @@ $RECYCLE.BIN/
 # are tracked, not the emitted wwwroot bundle.
 src/Rod.TeamServer/wwwroot/
 
+# Go implant: build output and test binaries are produced locally and in CI, not
+# tracked. The module files (go.mod, go.sum) and generated wire bindings
+# (implant/rodpb/*.pb.go) ARE tracked -- the bindings are committed, not
+# regenerated in CI (see implant/Makefile), and go.sum pins the offline cache.
+implant/rod-implant
+implant/rod-implant.exe
+implant/*.test
+implant/coverage.out
+
+
