@@ -14,23 +14,14 @@ operators drives a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver, reaching hosts behind NAT and firewalls over
 implant-initiated connections.
 
-Rod is designed **from red-team operational needs, not from a device-management
-mental model.** The two have deceptively similar shapes (a central server
-talking to remote processes) but opposite priorities. The table below is the
-design load-bearing distinction and drives most of this document.
-
-| Concern | Device management (not Rod) | Red-team C2 (Rod) |
-|---------|-----------------------------|-------------------|
-| Entity lifetime | Long-lived enrolled devices, persistent identity | Short-lived, disposable implants; per-engagement ephemeral identity |
-| Trust model | Server owns devices; mutual long-term trust | Implant untrusted by default; a unique key per implant, no global shared secret |
-| Top priority | Availability, uptime, reachability | OPSEC / stealth |
-| Evasion | Not a concern | A first-class design axis |
-| Audit purpose | Operations diagnostics, compliance | Rules-of-engagement (ROE) compliance, legal evidence, and report-generation source |
-| Failure mode | Retry and reconnect forever | Fail-safe self-destruct (kill date, burn handling) |
-| Isolation unit | Org / device tenant | The Engagement (one operation) |
-| Collaboration | Usually a single admin | Multiplayer: concurrent operators on one operation |
-
-Everything that follows serves the right-hand column.
+The design follows from a few load-bearing priorities, and the rest of this
+document is their consequence. Implants are short-lived and untrusted by default,
+each carrying a unique key -- never a global shared secret. OPSEC and evasion are
+first-class design axes, not feature flags. Every action is attributed to an
+operator and recorded in an immutable, hash-chained audit trail that doubles as
+the report source. A lost implant fails safe: a baked-in kill date
+self-terminates it. And the **Engagement** -- one authorized operation -- is the
+unit of tenancy, isolation, authorization, and evidence.
 
 ## 2. Operational lifecycle (the organizing axis)
 
@@ -64,8 +55,7 @@ around "managed components". Each phase states what the platform must support.
     immutable audit trail** -- it outlives the operation.
 
 Every object (implant, task, artifact, infrastructure node) carries
-`engagement_id` and `operator_id` from creation. This is the single biggest
-contrast with a management model.
+`engagement_id` and `operator_id` from creation.
 
 ## 3. The Engagement model
 
@@ -130,6 +120,30 @@ architecture tests.
 - **Redirectors.** Near-stateless forwarders (Go, single static binary) for OPSEC
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
 - **Operator UI.** The web front end; lives in the teamserver project.
+
+### 4.3 Source-tree map (`src/`)
+
+The teamserver is a single .NET solution (`Rod.slnx`) split into the projects
+below. Six of them are the **internal layers** of §4.1; two are not layers and
+sit alongside them -- `Rod.Protocol` (the language-neutral wire contract every
+transport speaks) and `Rod.TeamServer` (the single runnable process and
+composition root). Each project's role, the layer rule it lives under, and a
+note on its current state are listed.
+
+| Project | Role | Layer rule (what it may depend on) | State |
+|---------|------|------------------------------------|-------|
+| `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant presence registry, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`) orchestrate these ports and define the operational behavior everything else consumes. | Inner ring -- depends on nothing in-house. | Implemented (M1.x walking skeleton). |
+| `Rod.Audit` | The append-only, per-engagement audit trail: `AuditEvent` records and the `IAuditStore` port. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented (in-memory; hash-chaining is M2.3). |
+| `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented (frame + M1.x messages). |
+| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`. | Implemented (M1.x endpoints + mTLS host). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Placeholder (`Layers/` marker only); M4.x. |
+| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Placeholder; M2.4. |
+| `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract and dispatch only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Placeholder; later milestones. |
+| `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- depends inward on `Rod.Transport` only. | Implemented (M1.5 host + UI shell). |
+
+The dependency column is not aspirational: it is the rule the architecture tests
+in `tests/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
+forbidden project reference fails the build.
 
 ## 5. Implants and profiles
 

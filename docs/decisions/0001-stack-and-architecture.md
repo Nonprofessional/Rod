@@ -10,22 +10,18 @@ operators commands a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver.
 
 We must choose the technology stack and component architecture before any code
-is written. Two facts drive the decision.
+is written. The design priorities that drive it (per-implant OPSEC, a
+hash-chained audit trail as the report source, engagement-scoped isolation,
+disposable infrastructure) are established in
+[architecture.md Sec. 1](../architecture.md); this ADR records the *stack*
+consequences.
 
-1. **Red-team C2 is not device management.** They look similar (a central server
-   talking to remote processes) but have opposite priorities. Devices are
-   long-lived, owned by the server, and optimized for uptime; implants are
-   short-lived, untrusted by default, and optimized for OPSEC. An implant is
-   failed-safe (self-destructs at a kill date); a managed device reconnects
-   forever. An operation's audit trail is legal evidence and a report source, not
-   operational diagnostics. Designing Rod on a management mental model would bake
-   in the wrong priorities everywhere.
-
-2. **The control plane and the implants have different requirements.** The
-   control plane is a long-lived, stateful, security-critical service
-   (orchestration, crypto, listeners, registry, RBAC, audit, UI). Implants are
-   target-resident payloads whose language is dictated by the target and the
-   objective, not by the control plane. No single language is best at both.
+One constraint rises above the rest here: **the control plane and the implants
+have different requirements.** The control plane is a long-lived, stateful,
+security-critical service (orchestration, crypto, listeners, registry, RBAC,
+audit, UI). Implants are target-resident payloads whose language is dictated by
+the target and the objective, not by the control plane. No single language is
+best at both.
 
 ## Decision
 
@@ -59,10 +55,6 @@ cleanup) and the engagement is the isolation unit. See
 
 ## Rationale
 
-- **Red-team-first, not management-first.** OPSEC as a design axis, per-implant
-  keys, disposable infrastructure, kill dates, and an audit trail that doubles as
-  the report source are all consequences of designing for operations, not for
-  fleet management.
 - **Monolithic kernel.** A single process is simpler to deploy, has low
   inter-component latency, and a single state model. It suits a small team and a
   security-critical core that should have one blast radius. The downside --
