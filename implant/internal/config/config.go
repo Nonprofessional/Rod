@@ -37,11 +37,11 @@ type Config struct {
 	// Past it the implant exits and refuses to run. Enforcement is recorded-only
 	// in this milestone; full enforcement arrives with M4.2.
 	KillDate time.Time
-	// CACertPEM, optionally, pins the teamserver CA the implant trusts as the mTLS
-	// server identity. When empty the implant trusts the CA chain returned at
-	// enroll (the dev CA shape). Letting enroll supply it keeps the reference
-	// binary CA-agnostic; a real deployment pins it at build time.
-	CACertPEM string
+	// CACertPath, optionally, is a PEM file pinning the teamserver CA the implant
+	// trusts as the mTLS server identity. When empty the implant trusts the CA
+	// chain returned at enroll (the dev CA shape). Letting enroll supply it keeps
+	// the reference binary CA-agnostic; a real deployment pins it at build time.
+	CACertPath string
 }
 
 // Parse builds a Config from command-line flags, falling back to the matching
@@ -56,7 +56,7 @@ func Parse(args []string) (Config, error) {
 	fs.DurationVar(&c.Sleep, "sleep", envDuration("ROD_SLEEP", 30*time.Second), "beacon sleep interval")
 	fs.DurationVar(&c.Jitter, "jitter", envDuration("ROD_JITTER", 10*time.Second), "beacon jitter interval")
 	kill := fs.String("kill-date", env("ROD_KILL_DATE", ""), "RFC3339 kill date past which the implant exits")
-	fs.StringVar(&c.CACertPEM, "ca-cert", env("ROD_CA_CERT", ""), "optional PEM-encoded teamserver CA to trust")
+	fs.StringVar(&c.CACertPath, "ca-cert", env("ROD_CA_CERT", ""), "optional PEM file pinning the teamserver CA to trust")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
