@@ -11,5 +11,8 @@ public interface IEngagementRepository
 
     Task<Engagement> GetOrThrowAsync(EngagementId id, CancellationToken cancellationToken = default);
 
+    /// <summary>All engagements, oldest first (roadmap M1.5).</summary>
+    Task<IReadOnlyList<Engagement>> ListAsync(CancellationToken cancellationToken = default);
+
     Task SaveAsync(Engagement engagement, CancellationToken cancellationToken = default);
 }

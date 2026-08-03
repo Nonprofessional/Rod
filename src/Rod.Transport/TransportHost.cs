@@ -131,6 +131,7 @@ public static class TransportHost
     {
         app.MapEngagementEndpoints();
         app.MapEnrollmentEndpoints();
+        app.MapImplantEndpoints();
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
@@ -146,6 +147,7 @@ public static class TransportHost
     {
         endpoints.MapEngagementEndpoints();
         endpoints.MapEnrollmentEndpoints();
+        endpoints.MapImplantEndpoints();
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the

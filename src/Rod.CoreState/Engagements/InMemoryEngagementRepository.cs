@@ -18,6 +18,12 @@ public sealed class InMemoryEngagementRepository : IEngagementRepository
         => await FindAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Engagement {id} does not exist.");
 
+    public Task<IReadOnlyList<Engagement>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        var all = _engagements.Values.OrderBy(e => e.CreatedAt).ToArray();
+        return Task.FromResult<IReadOnlyList<Engagement>>(all);
+    }
+
     public Task SaveAsync(Engagement engagement, CancellationToken cancellationToken = default)
     {
         _engagements[engagement.Id] = engagement;

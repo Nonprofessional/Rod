@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Rod.CoreState.Engagements;
 
 namespace Rod.CoreState.Implants;
 
@@ -17,6 +18,17 @@ public sealed class InMemoryImplantRepository : IImplantRepository
     public async Task<Implant> GetOrThrowAsync(ImplantId id, CancellationToken cancellationToken = default)
         => await FindAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Implant {id} does not exist.");
+
+    public Task<IReadOnlyList<Implant>> ListByEngagementAsync(
+        EngagementId engagementId,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = _implants.Values
+            .Where(i => i.EngagementId == engagementId)
+            .OrderBy(i => i.CreatedAt)
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<Implant>>(matches);
+    }
 
     public Task SaveAsync(Implant implant, CancellationToken cancellationToken = default)
     {

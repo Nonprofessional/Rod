@@ -3,13 +3,16 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Engagements;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The first operator-facing HTTP endpoints (roadmap M1.1): create an
-/// engagement and mint a stager token for it. DTOs live here, in transport, so
-/// the core stays serialization- and protocol-free (AGENTS.md Sec 5).
+/// The operator-facing engagement endpoints: create an engagement and mint a
+/// stager token for it (roadmap M1.1), and list engagements (roadmap M1.5, the
+/// operator UI). DTOs live here, in transport, so the core stays serialization-
+/// and protocol-free (AGENTS.md Sec 5).
 /// </summary>
 public static class EngagementEndpoints
 {
@@ -17,6 +20,7 @@ public static class EngagementEndpoints
     {
         var group = endpoints.MapGroup("/engagements");
 
+        group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
         group.MapPost("/", CreateEngagementAsync)
             .WithName(nameof(CreateEngagementAsync));
 
@@ -24,6 +28,31 @@ public static class EngagementEndpoints
             .WithName(nameof(MintStagerTokenAsync));
 
         return endpoints;
+    }
+
+    private static async Task<IResult> ListEngagementsAsync(
+        IEngagementRepository engagements,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        var all = await engagements.ListAsync(cancellationToken);
+
+        // The owner handle lives on the Operator, not the engagement. Resolve it
+        // per engagement; an unknown owner (engagement predates the operator) is
+        // surfaced as empty rather than failing the whole list.
+        var body = new List<EngagementResponse>(all.Count);
+        foreach (var e in all)
+        {
+            var owner = await operators.FindAsync(e.OwnerId, cancellationToken);
+            body.Add(new EngagementResponse(
+                e.Id.ToString(),
+                e.Name,
+                e.OwnerId.ToString(),
+                owner?.Handle ?? string.Empty,
+                e.CreatedAt));
+        }
+
+        return Results.Ok(body);
     }
 
     private static async Task<IResult> CreateEngagementAsync(
