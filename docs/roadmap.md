@@ -57,7 +57,7 @@ ports; no Postgres yet.
 - [x] **M2.2 Transport layer.** Listener abstraction; at least HTTP(S) and mTLS
       listeners; listener decoupled from the public endpoint.
       _AC:_ a listener accepts an implant connection end-to-end.
-- [ ] **M2.3 Storage and audit layer.** Append-only, hash-chained `AuditEvent`
+- [x] **M2.3 Storage and audit layer.** Append-only, hash-chained `AuditEvent`
       store; artifact store. _AC:_ tampering breaks the chain; artifacts attach
       to tasks.
 - [ ] **M2.4 Operator layer.** Multiplayer sessions; shared live state; task

@@ -218,19 +218,21 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
         var completed = await _tasks.RecordResultAsync(taskId, result.Output, outcome, cancellationToken);
 
+        // The store stamps the chain hashes on append; the call site supplies only
+        // the audited facts (AuditEvent.Fact leaves PreviousHash/Hash empty).
         await _audit.AppendAsync(
-            new AuditEvent(
-                EventId: Guid.NewGuid(),
-                EngagementId: completed.EngagementId.Value,
-                OperatorId: completed.IssuedBy.Value,
-                ImplantId: completed.ImplantId.Value,
-                TaskId: completed.TaskId.Value,
-                Verb: completed.Verb,
-                Kind: AuditEventKind.TaskCompleted,
-                Payload: completed.Arguments,
-                Output: completed.Output,
-                Outcome: completed.Outcome.ToString(),
-                At: completed.CompletedAt),
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: completed.EngagementId.Value,
+                operatorId: completed.IssuedBy.Value,
+                implantId: completed.ImplantId.Value,
+                taskId: completed.TaskId.Value,
+                verb: completed.Verb,
+                kind: AuditEventKind.TaskCompleted,
+                payload: completed.Arguments,
+                output: completed.Output,
+                outcome: completed.Outcome.ToString(),
+                at: completed.CompletedAt),
             cancellationToken);
     }
 

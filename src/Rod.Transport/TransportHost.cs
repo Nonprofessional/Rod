@@ -51,10 +51,15 @@ public static class TransportHost
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
 
-        // Audit port -> walking-skeleton in-memory adapter (roadmap M1.4). The
-        // hash-chained store replaces this in place at M2.3; the port shape is
-        // stable for it.
+        // Audit port -> walking-skeleton in-memory adapter. The store is
+        // hash-chained per engagement (roadmap M2.3): tampering with a stored
+        // event breaks the chain at the next link.
         services.AddSingleton<IAuditStore, InMemoryAuditStore>();
+
+        // Artifact store port -> walking-skeleton in-memory adapter (roadmap
+        // M2.3). First-class evidence objects attached to tasks; consumed by the
+        // operator layer (M2.4) and beacon ingest later.
+        services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
