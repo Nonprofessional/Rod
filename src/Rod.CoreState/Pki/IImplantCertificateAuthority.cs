@@ -36,6 +36,27 @@ public interface IImplantCertificateAuthority
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Issues a leaf certificate over a caller-supplied <b>public</b> key, so the
+    /// caller keeps the matching private key and never transmits it (architecture.md
+    /// Sec 9). This is the enrollment path a real implant uses: it generates its own
+    /// key pair, sends only the public half with its enroll request, and the CA binds
+    /// <c>(implant_id, engagement_id)</c> to a leaf carrying that public key. The CA
+    /// signs with its own key; the leaf's public key comes from
+    /// <paramref name="leafPublicKey"/>. The returned leaf is DER-encoded; the caller
+    /// pairs it with the private key it retained.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="leafPublicKey"/> carries only public parameters -- the
+    /// implementation reads its modulus/exponent and never requires, nor sees, the
+    /// private key. Both an implant enrolling over the wire and a test harness
+    /// driving enrollment through the same port end here.
+    /// </remarks>
+    Task<IssuedCertificate> IssueWithPublicKeyAsync(
+        ImplantCertificateSubject subject,
+        RSA leafPublicKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The CA root certificate, DER-encoded. Held out so the transport layer can
     /// trust it when terminating mTLS (architecture.md Sec 9): a presenting
     /// client certificate is accepted only when it chains to this root.

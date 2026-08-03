@@ -46,6 +46,21 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         CancellationToken cancellationToken = default)
         => Task.FromResult(IssueLeaf(subject, leafPrivateKey));
 
+    public Task<IssuedCertificate> IssueWithPublicKeyAsync(
+        ImplantCertificateSubject subject,
+        RSA leafPublicKey,
+        CancellationToken cancellationToken = default)
+    {
+        // Re-import only the public parameters so the signing path can never see,
+        // or accidentally retain, the caller's private key. The CA key signs the
+        // leaf; the leaf's public key is the implant's, bound to its engagement
+        // (architecture.md Sec 9). CertificateRequest accepts a public-only RSA.
+        var publicParams = leafPublicKey.ExportParameters(includePrivateParameters: false);
+        using var publicKeyOnly = RSA.Create();
+        publicKeyOnly.ImportParameters(publicParams);
+        return Task.FromResult(IssueLeaf(subject, publicKeyOnly));
+    }
+
     /// <summary>
     /// The CA root, for the transport layer to trust when terminating mTLS
     /// (architecture.md Sec 9). The caller must not dispose the returned copy
@@ -53,9 +68,12 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     /// </summary>
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
-    // Builds and signs an implant leaf over the supplied key, binding
-    // (implant_id, engagement_id). Shared by IssueAsync (ephemeral key) and
-    // IssueWithKeyAsync (caller-owned key, for mTLS-capable leaves).
+    // Builds and signs an implant leaf over the supplied key material, binding
+    // (implant_id, engagement_id). The CA key signs; the leaf's public key is
+    // whatever the supplied RSA carries -- a full key pair (IssueAsync/
+    // IssueWithKeyAsync) or a public-only RSA (IssueWithPublicKeyAsync, the wire
+    // enroll path). CertificateRequest needs only the public half to populate the
+    // leaf; the private half never has to be present here.
     private IssuedCertificate IssueLeaf(ImplantCertificateSubject subject, RSA leafKey)
     {
         var implantId = subject.ImplantId.ToString();

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -43,10 +44,28 @@ public static class EnrollmentEndpoints
         if (!Enum.TryParse<ImplantClass>(body.Class, ignoreCase: true, out var @class))
             @class = ImplantClass.Stage2;
 
+        // The implant's own public key (DER SubjectPublicKeyInfo, base64 over JSON).
+        // When present the leaf is signed over it so the implant keeps its private
+        // key for mTLS (architecture.md Sec 9). Optional: a request without it gets
+        // a server-generated ephemeral leaf (the M1.2 shape).
+        byte[]? clientPublicKey = null;
+        if (!string.IsNullOrWhiteSpace(body.PublicKey))
+        {
+            try
+            {
+                clientPublicKey = Convert.FromBase64String(body.PublicKey);
+            }
+            catch (FormatException)
+            {
+                // Malformed base64 is a bad request, not a token failure.
+                return Results.BadRequest(new Problem("Public key is not valid base64."));
+            }
+        }
+
         try
         {
             var enrolled = await service.EnrollAsync(
-                new EnrollCommand(body.StagerTokenSecret, @class),
+                new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey),
                 cancellationToken);
 
             var response = new EnrollmentResponse(
@@ -71,6 +90,12 @@ public static class EnrollmentEndpoints
                 new EnrollmentResponse(status, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
+        catch (CryptographicException)
+        {
+            // The supplied public key did not decode as a recognizable SPKI. Treat
+            // it as a malformed enroll: the token is intact, but the request is bad.
+            return Results.BadRequest(new Problem("Public key is not a recognizable SubjectPublicKeyInfo."));
+        }
         catch (InvalidOperationException)
         {
             // The token redeemed but its engagement was since torn down.
@@ -84,7 +109,10 @@ public static class EnrollmentEndpoints
 
     public sealed record EnrollRequest(
         string StagerTokenSecret,
-        string? Class);
+        string? Class = null,
+        string? PublicKey = null);
+
+    public sealed record Problem(string Error);
 
     /// <summary>
     /// Mirrors the wire <see cref="Rod.V1.EnrollResponse"/>. <see cref="Status"/>

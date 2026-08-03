@@ -47,6 +47,14 @@ public sealed class EnrollmentService
     /// engagement, and issues its bound certificate. Throws
     /// <see cref="StagerTokenRedeemException"/> when the token is unknown, expired,
     /// or spent -- the caller maps that to a wire status.
+    ///
+    /// When <see cref="EnrollCommand.ClientPublicKey"/> is present the leaf is
+    /// issued over the implant's own public key, so the implant keeps its private
+    /// key and can present the certificate in mTLS (architecture.md Sec 9). This is
+    /// the path a real implant takes: it generates its key pair and sends only the
+    /// public half. When absent, the CA generates an ephemeral leaf key (the
+    /// original M1.2 shape, kept for back-compat with tests that do not need an
+    /// mTLS-capable identity).
     /// </summary>
     public async Task<EnrollmentResult> EnrollAsync(
         EnrollCommand command,
@@ -68,9 +76,13 @@ public sealed class EnrollmentService
         var implant = Implant.Enroll(implantId, redeemed.EngagementId, key, killDate, command.Class, now);
         await _implants.SaveAsync(implant, cancellationToken);
 
-        // 4. Issue the certificate bound to (implant_id, engagement_id).
-        var issued = await _certificateAuthority.IssueAsync(
-            new ImplantCertificateSubject(implant.Id, redeemed.EngagementId), cancellationToken);
+        // 4. Issue the certificate bound to (implant_id, engagement_id). Over the
+        //    implant's own public key when it supplied one (the mTLS-capable path);
+        //    over a server-generated ephemeral key otherwise.
+        var subject = new ImplantCertificateSubject(implant.Id, redeemed.EngagementId);
+        var issued = command.ClientPublicKey is { } publicKeyDer
+            ? await IssueOverClientPublicKeyAsync(subject, publicKeyDer, cancellationToken)
+            : await _certificateAuthority.IssueAsync(subject, cancellationToken);
 
         return new EnrollmentResult(
             implant.Id,
@@ -80,6 +92,20 @@ public sealed class EnrollmentService
             command.Class,
             issued.Leaf,
             issued.CaChain);
+    }
+
+    // Decodes the implant-supplied public key (DER SubjectPublicKeyInfo) and asks the
+    // CA to sign a leaf over it. RSA is the only key type the dev CA and the current
+    // implant set speak; anything else is a malformed request, mapped to BadToken by
+    // the transport endpoint.
+    private Task<IssuedCertificate> IssueOverClientPublicKeyAsync(
+        ImplantCertificateSubject subject,
+        byte[] publicKeyDer,
+        CancellationToken cancellationToken)
+    {
+        using var publicKey = RSA.Create();
+        publicKey.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
+        return _certificateAuthority.IssueWithPublicKeyAsync(subject, publicKey, cancellationToken);
     }
 
     // RFC 4648 base64url without padding -- URL-safe, matches the stager-token encoding.
@@ -92,9 +118,15 @@ public sealed class EnrollmentService
 
 /// <summary>
 /// Request to enroll an implant. The stager token secret resolves the
-/// engagement; <see cref="Class"/> defaults to a stage-2 implant.
+/// engagement; <see cref="Class"/> defaults to a stage-2 implant. When
+/// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo the CA
+/// signs a leaf over, so the implant keeps its private key for mTLS
+/// (architecture.md Sec 9); null leaves the CA to generate an ephemeral leaf key.
 /// </summary>
-public sealed record EnrollCommand(string StagerTokenSecret, ImplantClass Class = ImplantClass.Stage2);
+public sealed record EnrollCommand(
+    string StagerTokenSecret,
+    ImplantClass Class = ImplantClass.Stage2,
+    byte[]? ClientPublicKey = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,

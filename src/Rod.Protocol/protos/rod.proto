@@ -2,6 +2,12 @@ syntax = "proto3";
 
 package rod.v1;
 
+// Go import path for the generated bindings (architecture.md Sec 12). The wire
+// protocol is the language-neutral contract implants build against; this option
+// lets the per-language bindings (Go here) be generated without per-invocation
+// -M flags while leaving the C# generation unaffected.
+option go_package = "github.com/cw/rod/implant/rodpb;rodpb";
+
 // Rod wire protocol, frame layer only.
 //
 // Transport-agnostic (architecture.md Sec.8): HTTP(S), mTLS, DNS, SMB, TCP all

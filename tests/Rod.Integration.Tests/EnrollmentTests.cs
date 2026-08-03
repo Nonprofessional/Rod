@@ -151,4 +151,69 @@ public class EnrollmentTests
             Assert.Equal(EnrollStatus.BadToken, body!.Status);
         }
     }
+
+    [Fact]
+    public async Task Enroll_WithClientPublicKey_SignsLeafOverImplantKey()
+    {
+        // The mTLS-capable enroll path (architecture.md Sec 9): the implant sends
+        // only its public key and the CA signs a leaf over it, so the implant keeps
+        // its private key and can present the leaf in a handshake. The issued leaf's
+        // public key must equal the key the implant retained -- proof the server
+        // never had to see the private half.
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            var secret = await MintTokenForNewEngagementAsync(client);
+
+            using var implantKey = RSA.Create(2048);
+            var publicKeyDer = implantKey.ExportSubjectPublicKeyInfo();
+            var publicKeyB64 = Convert.ToBase64String(publicKeyDer);
+
+            var response = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(
+                    StagerTokenSecret: secret,
+                    Class: null,
+                    PublicKey: publicKeyB64));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
+            Assert.NotNull(enrolled);
+            Assert.Equal(EnrollStatus.Ok, enrolled!.Status);
+
+            using var leaf = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.LeafCertificate!));
+
+            // The leaf's public key is the implant's -- the server signed over the
+            // public half the implant supplied and never saw the private key.
+            using var leafRsa = leaf.GetRSAPublicKey()!;
+            var leafPublicKey = leafRsa.ExportSubjectPublicKeyInfo();
+            Assert.Equal(publicKeyDer, leafPublicKey);
+
+            // The binding is intact regardless of which key path was taken.
+            Assert.Equal($"CN={enrolled.ImplantId}", leaf.Subject);
+            Assert.True(RodImplantEngagementExtension.TryRead(leaf, out var engagementFromCert));
+            Assert.Equal(enrolled.EngagementId, engagementFromCert);
+        }
+    }
+
+    [Fact]
+    public async Task Enroll_WithMalformedPublicKey_ReturnsBadRequest()
+    {
+        // A public key that is not a recognizable SubjectPublicKeyInfo is a bad
+        // request, not a token failure: the token stays intact.
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            var secret = await MintTokenForNewEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(
+                    StagerTokenSecret: secret,
+                    Class: null,
+                    PublicKey: Convert.ToBase64String("not-a-real-public-key"u8.ToArray())));
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
 }
