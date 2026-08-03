@@ -313,7 +313,7 @@ scrape.
 | Build units | C#/.NET, Go, C/C++, Nim toolchains, one per language | Polyglot implants with no teamserver-language coupling. |
 | Redirectors | Go (latest stable), static single binary | Tiny VPS footprint; stdlib mTLS/HTTP/DNS. |
 | Implants | C#/.NET, Go, C/C++, Nim -- per target | .NET for Windows in-memory tradecraft; Go for cross-platform; C/C++/Nim for footprint. |
-| Operator UI | Web (Blazor or React) | Lives in the teamserver project. |
+| Operator UI | Web (React), served by the teamserver | Lives in the teamserver project; see ADR 0002. |
 
 The wire protocol and capability registry are the long-lived, language-neutral
 contract implants build against; the build contract is the language-neutrality

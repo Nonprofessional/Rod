@@ -41,7 +41,7 @@ build boundary, not by splitting the whole system into microservices.
 | Build units | One per implant language (C#/.NET, Go, C/C++, Nim) |
 | Redirectors | Go (latest stable), static single binary |
 | Implants | C#/.NET, Go, C/C++, Nim -- per target |
-| Operator UI | Web (Blazor or React), in the teamserver project |
+| Operator UI | Web (React), in the teamserver project (see ADR 0002) |
 
 The six internal layers of the teamserver are: core state, transport, payload
 build pipeline, operator layer, storage and audit, and pluggable tradecraft. See

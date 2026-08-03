@@ -86,7 +86,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 | Build units | C#/.NET, Go, C/C++, Nim toolchains | One per implant language; driven by the build contract. |
 | Redirectors | Go (latest stable) | Single static binary; easy VPS deploy. |
 | Implants | C#/.NET, Go, C/C++, Nim -- per target | Short-lived, disposable, per-implant keys. |
-| Operator UI | Web (Blazor or React) | Lives in the teamserver project. |
+| Operator UI | Web (React) | Lives in the teamserver project; served same-origin. |
 
 See [docs/decisions/0001-stack-and-architecture.md](docs/decisions/0001-stack-and-architecture.md)
 for the rationale behind these choices.

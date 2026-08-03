@@ -46,7 +46,7 @@ ports; no Postgres yet.
 - [x] **M1.4 First task round-trip.** `Task` lifecycle; a core verb
       (`shell.exec` one-shot) dispatched and its result captured; an audit event
       written. _AC:_ task an implant, see output and an audit event.
-- [ ] **M1.5 Minimal operator UI.** List engagements/sessions; issue a task; view
+- [x] **M1.5 Minimal operator UI.** List engagements/sessions; issue a task; view
       results. _AC:_ the whole M1 slice is demoable in a browser.
 
 ## Milestone 2 -- Monolithic kernel, six layers
