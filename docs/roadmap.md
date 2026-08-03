@@ -68,7 +68,7 @@ ports; no Postgres yet.
 
 ## Milestone 3 -- Payload build pipeline and polyglot implants
 
-- [ ] **M3.1 Build contract.** The payload-build message schema and the
+- [x] **M3.1 Build contract.** The payload-build message schema and the
       teamserver-side orchestrator that drives build units.
       _AC:_ requesting a payload invokes a (stub) build unit and returns an
       artifact, fingerprinted and recorded.

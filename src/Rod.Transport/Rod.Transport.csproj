@@ -12,6 +12,12 @@
          arrives: it depends inward on the audit port, never the reverse. Audit
          still depends on nothing in-house. -->
     <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
+    <!-- Rod.BuildPipeline drives the external build units (architecture.md Sec 6).
+         The operator-facing payload-build endpoint (roadmap M3.1) drives the
+         build orchestrator and composes the PayloadBuilt audit write, so transport
+         depends inward on the build contract. BuildPipeline still depends on core
+         state only. -->
+    <ProjectReference Include="..\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />
   </ItemGroup>
 
   <!-- The transport layer terminates C2 endpoints and the operator API: it needs

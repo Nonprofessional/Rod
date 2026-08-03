@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
+using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
@@ -75,6 +76,17 @@ public static class TransportHost
         services.AddSingleton<EnrollmentService>();
         services.AddSingleton<HandshakeService>();
         services.AddSingleton<TaskService>();
+
+        // Build pipeline (roadmap M3.1): the build-unit registry and the
+        // orchestrator that drives it. The registry is seeded with the stub Go
+        // build unit until the real per-language units land (M3.2/M3.3); the
+        // service is audit-agnostic by design -- the payload-build endpoint in
+        // transport composes the PayloadBuilt audit write, the same way the
+        // beacon stream composes the task-completion write.
+        var buildUnits = new InMemoryBuildUnitRegistry();
+        buildUnits.Register(new StubBuildUnit());
+        services.AddSingleton<IBuildUnitRegistry>(buildUnits);
+        services.AddSingleton<PayloadBuildService>();
 
         return services;
     }
@@ -262,6 +274,7 @@ public static class TransportHost
         app.MapListenerEndpoints();
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
+        app.MapPayloadEndpoints();
         // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
@@ -279,6 +292,7 @@ public static class TransportHost
         endpoints.MapListenerEndpoints();
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
+        endpoints.MapPayloadEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();

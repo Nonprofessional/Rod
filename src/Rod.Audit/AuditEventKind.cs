@@ -15,4 +15,13 @@ public enum AuditEventKind
     /// captured output, and the outcome. Emitted on every completed task.
     /// </summary>
     TaskCompleted,
+
+    /// <summary>
+    /// A payload was built; the event carries the build's class and config and,
+    /// as its outcome, the artifact's SHA-256 fingerprint (architecture.md Sec 6
+    /// -- every generated artifact is fingerprinted and recorded). Emitted on
+    /// every successful build. No implant is enrolled yet at build time, so the
+    /// event's implant/task ids are unused.
+    /// </summary>
+    PayloadBuilt,
 }
