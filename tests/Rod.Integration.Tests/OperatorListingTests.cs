@@ -133,4 +133,43 @@ public class OperatorListingTests
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task GetImplantTasks_ListsIssuedTasks_ForImplant()
+    {
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            var (engagementId, _) = await CreateEngagementAsync(client, "Operation Beacon", "mholloway");
+            var secret = await MintTokenAsync(client, engagementId);
+
+            var enrollResponse = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+            enrollResponse.EnsureSuccessStatusCode();
+            var enrolled = await enrollResponse.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
+            Assert.NotNull(enrolled);
+            Assert.False(string.IsNullOrWhiteSpace(enrolled!.ImplantId));
+            var implantId = enrolled.ImplantId!;
+
+            var ownerId = Guid.NewGuid();
+            await client.PostAsJsonAsync($"/engagements/{engagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(
+                    ImplantId: implantId,
+                    IssuedBy: ownerId,
+                    Verb: "shell.exec",
+                    Arguments: "whoami"));
+
+            var response = await client.GetAsync(
+                $"/engagements/{engagementId}/implants/{implantId}/tasks");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<ImplantEndpoints.ImplantTaskResponse[]>();
+            Assert.NotNull(body);
+            var match = Assert.Single(body!);
+            Assert.Equal("shell.exec", match.Verb);
+            Assert.Equal("whoami", match.Arguments);
+            Assert.Equal("Queued", match.Status);
+        }
+    }
 }

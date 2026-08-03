@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Rod.TeamServer is the runnable teamserver process (architecture.md Sec 4) and
+    the composition root: it wires Rod.Transport's services and endpoints and
+    serves the operator UI (roadmap M1.5). It is not one of the six internal
+    layers; it depends inward on the transport layer only, and the layer
+    dependency rules (tests/Rod.Architecture.Tests) do not constrain it.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Rod.Transport\Rod.Transport.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

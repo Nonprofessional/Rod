@@ -480,3 +480,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Operator UI: the Vite build output is produced by `npm run build` (CI does it
+# before `dotnet build`); only the React sources under src/Rod.TeamServer/Client
+# are tracked, not the emitted wwwroot bundle.
+src/Rod.TeamServer/wwwroot/
+
