@@ -12,18 +12,18 @@ operational lifecycle (see [architecture.md](architecture.md)).
 
 ## Milestone 0 -- Tooling and guardrails
 
-- [ ] **M0.1 Central package management.** `Directory.Packages.props` at the repo
+- [x] **M0.1 Central package management.** `Directory.Packages.props` at the repo
       root with `ManagePackageVersionsCentrally=true`; all teamserver package
       versions tracked centrally, versionless `PackageReference` in projects.
       _AC:_ `dotnet build`/`test` green; no `Version=` on any `PackageReference`.
-- [ ] **M0.2 Wire protocol bindings.** The `rod` wire protocol `.proto`
+- [x] **M0.2 Wire protocol bindings.** The `rod` wire protocol `.proto`
       definitions and generated bindings, plus a frame round-trip smoke test.
       _AC:_ regeneration is part of the build; build/test green.
-- [ ] **M0.3 Architecture tests.** Encode the layered dependency rules: core
+- [x] **M0.3 Architecture tests.** Encode the layered dependency rules: core
       state and audit depend on nothing in-house; transport, build pipeline, and
       tradecraft depend inward only; protocol types never leak into core.
       _AC:_ adding a forbidden reference fails a test.
-- [ ] **M0.4 CI.** Build, test, format check, and secret scanning on every
+- [x] **M0.4 CI.** Build, test, format check, and secret scanning on every
       change. _AC:_ pipeline is green on a clean tree.
 
 ## Milestone 1 -- Walking skeleton
