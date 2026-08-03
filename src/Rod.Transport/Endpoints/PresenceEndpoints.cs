@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 
 namespace Rod.Transport.Endpoints;
 
@@ -12,6 +12,11 @@ namespace Rod.Transport.Endpoints;
 /// that a connecting implant appeared in its engagement -- the M1.3 acceptance
 /// point -- and is scoped by engagement so presence never leaks across
 /// engagements (architecture.md Sec 3).
+///
+/// Presence is the active-sessions projection (roadmap M2.1): an implant is
+/// online exactly when it has an Active session. Backed by
+/// <see cref="ISessionRegistry"/>; the response carries the session id alongside
+/// the implant id.
 /// </summary>
 public static class PresenceEndpoints
 {
@@ -27,19 +32,14 @@ public static class PresenceEndpoints
 
     private static async Task<IResult> ListOnlineAsync(
         string engagementId,
-        IPresenceRegistry presence,
+        ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var idValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
-        var online = await presence.ListOnlineAsync(new EngagementId(idValue), cancellationToken);
-        var body = online.Select(r => new PresenceRecordResponse(
-            ImplantId: r.ImplantId.ToString(),
-            EngagementId: r.EngagementId.ToString(),
-            Capabilities: r.Capabilities.ToArray(),
-            OnlineAt: r.OnlineAt,
-            LastSeenAt: r.LastSeenAt)).ToArray();
+        var online = await sessions.ListActiveAsync(new EngagementId(idValue), cancellationToken);
+        var body = online.Select(SessionResponse.Of).ToArray();
 
         return Results.Ok(body);
     }
@@ -47,7 +47,7 @@ public static class PresenceEndpoints
     private static async Task<IResult> GetAsync(
         string engagementId,
         string implantId,
-        IPresenceRegistry presence,
+        ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -55,26 +55,34 @@ public static class PresenceEndpoints
         if (!Guid.TryParse(implantId, out var implantValue))
             return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
 
-        var record = await presence.FindAsync(new ImplantId(implantValue), cancellationToken);
-        if (record is null || record.EngagementId != new EngagementId(engagementValue))
+        var session = await sessions.GetActiveAsync(new ImplantId(implantValue), cancellationToken);
+        if (session is null || session.EngagementId != new EngagementId(engagementValue))
             return Results.NotFound(new Problem("Implant is not online in this engagement."));
 
-        return Results.Ok(new PresenceRecordResponse(
-            ImplantId: record.ImplantId.ToString(),
-            EngagementId: record.EngagementId.ToString(),
-            Capabilities: record.Capabilities.ToArray(),
-            OnlineAt: record.OnlineAt,
-            LastSeenAt: record.LastSeenAt));
+        return Results.Ok(SessionResponse.Of(session));
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     public sealed record PresenceRecordResponse(
+        string SessionId,
         string ImplantId,
         string EngagementId,
         string[] Capabilities,
         DateTimeOffset OnlineAt,
         DateTimeOffset LastSeenAt);
+
+    private static class SessionResponse
+    {
+        public static PresenceRecordResponse Of(Session s)
+            => new(
+                s.Id.ToString(),
+                s.ImplantId.ToString(),
+                s.EngagementId.ToString(),
+                s.Capabilities.ToArray(),
+                OnlineAt: s.StartedAt,
+                LastSeenAt: s.LastSeenAt);
+    }
 
     public sealed record Problem(string Error);
 }

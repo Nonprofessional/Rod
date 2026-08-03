@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 
 namespace Rod.Transport.Endpoints;
@@ -13,9 +13,12 @@ namespace Rod.Transport.Endpoints;
 /// The operator-facing implant/session listing (roadmap M1.5, the operator UI):
 /// which implants have enrolled into an engagement, with a live online indicator,
 /// plus the tasks directed at a given implant. Joins the implant registry with
-/// the presence registry so the operator UI can show sessions at a glance, and
+/// the session registry so the operator UI can show sessions at a glance, and
 /// reads the task registry for an implant's task history. Scoped by engagement so
 /// implant identity never leaks across engagements (architecture.md Sec 3).
+///
+/// An implant is online exactly when it has an active session (roadmap M2.1); the
+/// listing projects that onto the enrolled implants.
 /// </summary>
 public static class ImplantEndpoints
 {
@@ -31,7 +34,7 @@ public static class ImplantEndpoints
     private static async Task<IResult> ListImplantsAsync(
         string engagementId,
         IImplantRepository implants,
-        IPresenceRegistry presence,
+        ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -39,8 +42,8 @@ public static class ImplantEndpoints
 
         var engagementKey = new EngagementId(engagementValue);
         var enrolled = await implants.ListByEngagementAsync(engagementKey, cancellationToken);
-        var online = await presence.ListOnlineAsync(engagementKey, cancellationToken);
-        var onlineById = online.ToDictionary(r => r.ImplantId);
+        var online = await sessions.ListActiveAsync(engagementKey, cancellationToken);
+        var onlineById = online.Select(s => s.ImplantId).ToHashSet();
 
         var body = enrolled
             .Select(i => new ImplantResponse(
@@ -49,7 +52,7 @@ public static class ImplantEndpoints
                 i.Class.ToString(),
                 i.KillDate,
                 i.CreatedAt,
-                IsOnline: onlineById.ContainsKey(i.Id)))
+                IsOnline: onlineById.Contains(i.Id)))
             .ToArray();
 
         return Results.Ok(body);

@@ -99,3 +99,33 @@ public readonly record struct TaskId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies a session -- one connected implant execution context in its
+/// engagement (architecture.md Sec 4.1, Sec 10.3). An implant opens a session on
+/// a successful handshake and closes it when the stream ends; an implant may have
+/// many sessions over its life (reconnects, flaps). Disposable with the
+/// engagement.
+/// </summary>
+public readonly record struct SessionId(Guid Value)
+{
+    public static SessionId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a session id from its string form. Accepts both the compact "N"
+    /// format produced by <see cref="ToString"/> and the hyphenated Guid form;
+    /// returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out SessionId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new SessionId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}

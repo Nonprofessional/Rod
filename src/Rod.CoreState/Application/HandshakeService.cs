@@ -1,6 +1,6 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 
 namespace Rod.CoreState.Application;
 
@@ -32,24 +32,24 @@ public static class ProtocolVersions
 /// stream advertises its protocol version, identity, and capabilities. The
 /// service confirms the implant is enrolled, verifies the certificate binding
 /// matches the enrolled engagement (the mTLS identity check, architecture.md
-/// Sec 9), checks the protocol version, and records presence in the implant's
-/// engagement. Refusals throw <see cref="HandshakeException"/> with a reason the
-/// transport maps to a wire status; like <see cref="EnrollmentService"/> it
+/// Sec 9), checks the protocol version, and opens a session for the implant in
+/// its engagement. Refusals throw <see cref="HandshakeException"/> with a reason
+/// the transport maps to a wire status; like <see cref="EnrollmentService"/> it
 /// holds no state of its own.
 /// </summary>
 public sealed class HandshakeService
 {
     private readonly IImplantRepository _implants;
-    private readonly IPresenceRegistry _presence;
+    private readonly ISessionRegistry _sessions;
     private readonly TimeProvider _clock;
 
     public HandshakeService(
         IImplantRepository implants,
-        IPresenceRegistry presence,
+        ISessionRegistry sessions,
         TimeProvider clock)
     {
         _implants = implants;
-        _presence = presence;
+        _sessions = sessions;
         _clock = clock;
     }
 
@@ -75,7 +75,7 @@ public sealed class HandshakeService
                 $"this server speaks {ProtocolVersions.Major}.{ProtocolVersions.Minor}.");
         }
 
-        // 2. Implant must be enrolled. An unknown id never gets presence.
+        // 2. Implant must be enrolled. An unknown id never gets a session.
         var implant = await _implants.FindAsync(command.ImplantId, cancellationToken);
         if (implant is null)
         {
@@ -96,11 +96,13 @@ public sealed class HandshakeService
                 $"Client certificate engagement does not match implant {implant.Id}'s engagement.");
         }
 
-        // 4. Record presence. The capabilities advertised here gate tasking
-        //    dispatch in later milestones (architecture.md Sec 10).
-        await _presence.SetOnlineAsync(implant, command.Capabilities, now, cancellationToken);
+        // 4. Open a session. The capabilities advertised here gate tasking
+        //    dispatch in later milestones (architecture.md Sec 10). Opening a new
+        //    session closes any prior active session for the implant first, so a
+        //    reconnect does not leave a phantom live connection.
+        var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);
 
-        return new HandshakeResult(implant.Id, implant.EngagementId, now);
+        return new HandshakeResult(session.Id, implant.Id, implant.EngagementId, now);
     }
 }
 
@@ -122,11 +124,13 @@ public sealed record HandshakeCommand(
     EngagementId? CertificateEngagementId);
 
 /// <summary>
-/// Result of a successful handshake: the implant's identity, its (confirmed)
-/// engagement, and the time presence was recorded. The transport echoes the
-/// engagement id back so the implant can confirm its binding.
+/// Result of a successful handshake: the session the implant just opened, its
+/// identity, its (confirmed) engagement, and the time the session started. The
+/// transport echoes the engagement id back so the implant can confirm its
+/// binding, and holds the session id to close when the stream ends.
 /// </summary>
 public sealed record HandshakeResult(
+    SessionId SessionId,
     ImplantId ImplantId,
     EngagementId EngagementId,
     DateTimeOffset At);

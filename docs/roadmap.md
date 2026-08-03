@@ -51,7 +51,7 @@ ports; no Postgres yet.
 
 ## Milestone 2 -- Monolithic kernel, six layers
 
-- [ ] **M2.1 Core state layer.** Implant/session registry, task queue and
+- [x] **M2.1 Core state layer.** Implant/session registry, task queue and
       history, engagement/operator state, behind ports. _AC:_ round-trips in
       unit tests; layer has no in-house dependencies.
 - [ ] **M2.2 Transport layer.** Listener abstraction; at least HTTP(S) and mTLS

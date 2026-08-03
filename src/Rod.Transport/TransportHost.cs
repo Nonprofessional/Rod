@@ -10,7 +10,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 using Rod.CoreState.Staging;
 using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
@@ -39,7 +39,7 @@ public static class TransportHost
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
         services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
-        services.AddSingleton<IPresenceRegistry, InMemoryPresenceRegistry>();
+        services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
 
         // Audit port -> walking-skeleton in-memory adapter (roadmap M1.4). The

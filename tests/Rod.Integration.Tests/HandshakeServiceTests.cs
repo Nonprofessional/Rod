@@ -1,16 +1,16 @@
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Direct checks of <see cref="HandshakeService"/> -- the use case that gates an
-/// implant's presence (roadmap M1.3). Without spinning up TLS: the service
-/// refuses an unknown implant, an unsupported protocol version, and a
-/// certificate-vs-engagement mismatch, and on success it records the implant
-/// online in its engagement with the advertised capabilities.
+/// Direct checks of <see cref="HandshakeService"/> -- the use case that opens an
+/// implant's session (roadmap M1.3, lifted to sessions in M2.1). Without spinning
+/// up TLS: the service refuses an unknown implant, an unsupported protocol
+/// version, and a certificate-vs-engagement mismatch, and on success it opens a
+/// session for the implant in its engagement with the advertised capabilities.
 ///
 /// The mTLS identity check is parameterized on the certificate engagement id, so
 /// these cases exercise it deterministically; the end-to-end mTLS handshake is
@@ -23,9 +23,9 @@ public class HandshakeServiceTests
     private static HandshakeService NewService(IImplantRepository? implants = null)
     {
         implants ??= new InMemoryImplantRepository();
-        var presence = new InMemoryPresenceRegistry();
+        var sessions = new InMemorySessionRegistry();
         var clock = new FakeClock(Now);
-        return new HandshakeService(implants, presence, clock);
+        return new HandshakeService(implants, sessions, clock);
     }
 
     private static async Task<Implant> EnrollAsync(
@@ -43,11 +43,11 @@ public class HandshakeServiceTests
     }
 
     [Fact]
-    public async Task Handshake_RecordsOnline_WhenIdentityMatches()
+    public async Task Handshake_OpensSession_WhenIdentityMatches()
     {
         var implants = new InMemoryImplantRepository();
-        var presence = new InMemoryPresenceRegistry();
-        var service = new HandshakeService(implants, presence, new FakeClock(Now));
+        var sessions = new InMemorySessionRegistry();
+        var service = new HandshakeService(implants, sessions, new FakeClock(Now));
 
         var implant = await EnrollAsync(implants);
 
@@ -58,15 +58,17 @@ public class HandshakeServiceTests
         Assert.Equal(implant.Id, result.ImplantId);
         Assert.Equal(implant.EngagementId, result.EngagementId);
 
-        // Presence recorded, scoped to the engagement, with advertised caps.
-        var record = await presence.FindAsync(implant.Id);
-        Assert.NotNull(record);
-        Assert.Equal(implant.EngagementId, record!.EngagementId);
-        Assert.Equal(new[] { "shell.exec" }, record.Capabilities);
-        Assert.Equal(Now, record.LastSeenAt);
+        // Session opened, active for the implant, scoped to the engagement, with
+        // advertised caps.
+        var session = await sessions.GetActiveAsync(implant.Id);
+        Assert.NotNull(session);
+        Assert.Equal(result.SessionId, session!.Id);
+        Assert.Equal(implant.EngagementId, session.EngagementId);
+        Assert.Equal(new[] { "shell.exec" }, session.Capabilities);
+        Assert.Equal(Now, session.LastSeenAt);
 
-        var online = await presence.ListOnlineAsync(implant.EngagementId);
-        Assert.Single(online, r => r.ImplantId == implant.Id);
+        var active = await sessions.ListActiveAsync(implant.EngagementId);
+        Assert.Single(active, s => s.ImplantId == implant.Id);
     }
 
     [Fact]

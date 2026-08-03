@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 using Rod.V1;
 // The domain entity shares its name with System.Threading.Tasks.Task. This file
@@ -19,11 +19,11 @@ namespace Rod.Transport.Endpoints;
 /// implant opens a long-lived reverse connection; the first frame it sends is the
 /// handshake (payload = <see cref="HandshakeRequest"/>), and the first frame the
 /// server writes back is the <see cref="HandshakeResponse"/>. On a successful
-/// handshake the implant is recorded online in its engagement and the stream
+/// handshake the implant opens a session in its engagement and the stream
 /// becomes the tasking channel: the server pushes queued tasks
 /// (<see cref="TaskRequest"/>) downstream and captures the implant's results
 /// (<see cref="TaskResult"/>) upstream, writing each completed task to the audit
-/// trail. When the stream closes the implant is marked offline.
+/// trail. When the stream closes the session is closed.
 ///
 /// mTLS is terminated at Kestrel before this handler runs: the presenting client
 /// certificate has already chained to the CA. The application-layer identity
@@ -35,18 +35,18 @@ namespace Rod.Transport.Endpoints;
 internal sealed class BeaconEndpoint : Beacon.BeaconBase
 {
     private readonly HandshakeService _handshake;
-    private readonly IPresenceRegistry _presence;
+    private readonly ISessionRegistry _sessions;
     private readonly TaskService _tasks;
     private readonly IAuditStore _audit;
 
     public BeaconEndpoint(
         HandshakeService handshake,
-        IPresenceRegistry presence,
+        ISessionRegistry sessions,
         TaskService tasks,
         IAuditStore audit)
     {
         _handshake = handshake;
-        _presence = presence;
+        _sessions = sessions;
         _tasks = tasks;
         _audit = audit;
     }
@@ -78,24 +78,24 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // 2. Run the handshake. HandshakeService performs the version check, the
         //    implant lookup, and the mTLS identity check (certificate engagement
         //    == enrolled engagement); refusals come back as HandshakeException.
-        var response = await TryHandshakeAsync(httpContext, handshakeRequest);
+        var (response, session) = await TryHandshakeAsync(httpContext, handshakeRequest);
         await WriteHandshakeAsync(responseStream, response);
-        if (response.Status != HandshakeStatus.Ok)
+        if (response.Status != HandshakeStatus.Ok || session is null)
             return;
 
         var implant = ResolveImplantId(handshakeRequest, httpContext);
 
-        // 3. Presence is now live and the stream is the tasking channel. Hold it
-        //    open for the implant's session, draining results and pushing queued
-        //    tasks; mark the implant offline when the connection ends -- whether
-        //    the implant closed cleanly or the stream was aborted.
+        // 3. The session is now open and the stream is the tasking channel. Hold
+        //    it open, draining results and pushing queued tasks; close the session
+        //    when the connection ends -- whether the implant closed cleanly or the
+        //    stream was aborted.
         try
         {
             await RunSessionAsync(implant, requestStream, responseStream, context.CancellationToken);
         }
         finally
         {
-            await _presence.SetOfflineAsync(implant, CancellationToken.None);
+            await _sessions.CloseAsync(session.Value, DateTimeOffset.UtcNow, CancellationToken.None);
         }
     }
 
@@ -234,7 +234,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             cancellationToken);
     }
 
-    private async Task<HandshakeResponse> TryHandshakeAsync(
+    private async Task<(HandshakeResponse Response, SessionId? Session)> TryHandshakeAsync(
         HttpContext httpContext,
         HandshakeRequest request)
     {
@@ -256,7 +256,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     CertificateEngagementId: certIdentity?.EngagementId),
                 CancellationToken.None);
 
-            return Response(HandshakeStatus.Ok, result.EngagementId.ToString());
+            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result.SessionId);
         }
         catch (HandshakeException ex)
         {
@@ -267,7 +267,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 HandshakeReason.IdentityMismatch => HandshakeStatus.IdentityMismatch,
                 _ => HandshakeStatus.Unspecified,
             };
-            return Response(status, engagementId: null);
+            return (Response(status, engagementId: null), Session: null);
         }
     }
 

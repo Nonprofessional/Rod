@@ -12,6 +12,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Rod.Architecture.Tests/Rod.Architecture.Tests.csproj" />
     <Project Path="tests/Rod.Build.Tests/Rod.Build.Tests.csproj" />
+    <Project Path="tests/Rod.CoreState.Tests/Rod.CoreState.Tests.csproj" />
     <Project Path="tests/Rod.Integration.Tests/Rod.Integration.Tests.csproj" />
     <Project Path="tests/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
   </Folder>

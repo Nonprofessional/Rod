@@ -8,34 +8,48 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.CoreState.Tasks;
 
 /// <summary>
-/// Persistence port for <see cref="Task"/> aggregates (roadmap M1.4). The
-/// walking skeleton ships an in-memory implementation; the port keeps callers
-/// agnostic to that. Tasks are engagement- and implant-scoped: every query is
-/// rooted in an implant (which itself belongs to one engagement), so
-/// cross-engagement access stays impossible by construction (architecture.md
-/// Sec 3).
+/// Persistence port for <see cref="Task"/> aggregates. The core-state layer
+/// (roadmap M2.1) shapes this as a first-class task queue and history: per-implant
+/// FIFO dequeue for dispatch, plus implant- and engagement-scoped history. Every
+/// query is rooted in an implant or engagement (which themselves belong to one
+/// engagement), so cross-engagement access stays impossible by construction
+/// (architecture.md Sec 3).
 ///
-/// The port exposes only what the tasking slice needs: store a task, look it up,
-/// list an implant's tasks, and pull the next queued task to dispatch. A
-/// first-class task queue / history store arrives with the core-state layer
-/// (roadmap M2.1).
+/// The walking skeleton ships an in-memory implementation; the port keeps callers
+/// agnostic to that.
 /// </summary>
 public interface ITaskRepository
 {
-    /// <summary>Stores <paramref name="task"/>, inserting or replacing by id.</summary>
+    /// <summary>
+    /// Stores <paramref name="task"/>, inserting or replacing by id. Re-saving a
+    /// dispatched/completed task keeps it in history with its updated status.
+    /// </summary>
     System.Threading.Tasks.Task SaveAsync(Task task, CancellationToken cancellationToken = default);
 
     /// <summary>The task, or null when unknown.</summary>
     System.Threading.Tasks.Task<Task?> FindAsync(TaskId id, CancellationToken cancellationToken = default);
 
-    /// <summary>All tasks directed at an implant, oldest first.</summary>
+    /// <summary>
+    /// All tasks directed at an implant, oldest first -- the implant's task
+    /// history across queued, dispatched, and completed states.
+    /// </summary>
     System.Threading.Tasks.Task<IReadOnlyList<Task>> ListByImplantAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The next not-yet-dispatched task for an implant, oldest first, or null
-    /// when none is queued. What the beacon stream drains on each check-in.
+    /// All tasks in an engagement, oldest first -- the engagement's task history.
+    /// Scoped by engagement so cross-engagement access never reaches this with
+    /// another engagement's id (roadmap M2.1).
+    /// </summary>
+    System.Threading.Tasks.Task<IReadOnlyList<Task>> ListByEngagementAsync(
+        EngagementId engagement,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The next not-yet-dispatched task for an implant, oldest first (FIFO by
+    /// enqueue time), or null when none is queued. What the beacon stream drains
+    /// on each check-in.
     /// </summary>
     System.Threading.Tasks.Task<Task?> NextPendingAsync(ImplantId implant, CancellationToken cancellationToken = default);
 }

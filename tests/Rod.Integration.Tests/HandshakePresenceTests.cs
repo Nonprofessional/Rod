@@ -14,7 +14,7 @@ using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Pki;
-using Rod.CoreState.Presence;
+using Rod.CoreState.Sessions;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.V1;
@@ -26,8 +26,8 @@ namespace Rod.Integration.Tests;
 /// engagement. Drives the full slice end to end through a real Kestrel mTLS
 /// endpoint -- the implant opens the gRPC beacon stream presenting its bound
 /// client certificate, completes the handshake, and the operator sees it online
-/// via the presence query. Failure paths assert each refusal maps to the right
-/// wire status.
+/// via the presence query (now backed by the session registry, M2.1). Failure
+/// paths assert each refusal maps to the right wire status.
 ///
 /// This is the real mTLS handshake the rest of M1 only inspected certificates
 /// for: the client cert chains to the dev CA, and the server's identity check
@@ -40,7 +40,7 @@ public class HandshakePresenceTests
     {
         await using var env = await TestEnv.StartAsync();
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
-        var presence = env.Host.Services.GetRequiredService<IPresenceRegistry>();
+        var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
@@ -62,11 +62,12 @@ public class HandshakePresenceTests
         Assert.Equal(ProtocolVersions.Major, response.Version.Major);
         Assert.Equal(implant.EngagementId.ToString(), response.EngagementId);
 
-        // The acceptance point: the implant is now online in its engagement.
-        var online = await presence.ListOnlineAsync(implant.EngagementId);
-        var record = Assert.Single(online);
-        Assert.Equal(implant.Id, record.ImplantId);
-        Assert.Equal(new[] { "shell.exec", "file.push" }, record.Capabilities);
+        // The acceptance point: the implant now has an active session in its
+        // engagement (it is online).
+        var online = await sessions.ListActiveAsync(implant.EngagementId);
+        var session = Assert.Single(online);
+        Assert.Equal(implant.Id, session.ImplantId);
+        Assert.Equal(new[] { "shell.exec", "file.push" }, session.Capabilities);
 
         // And visible through the operator query, scoped to its engagement.
         var operatorView = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
@@ -74,11 +75,11 @@ public class HandshakePresenceTests
         Assert.NotNull(operatorView);
         Assert.Single(operatorView!, r => r.ImplantId == implant.Id.ToString());
 
-        // Disconnecting closes the stream and the implant goes offline.
+        // Disconnecting closes the stream and the session is closed (offline).
         await call.RequestStream.CompleteAsync();
         await call.ResponseStream.MoveNext(CancellationToken.None); // server ends the stream
-        await Task.Delay(50); // presence-off is set in the finally on stream close
-        Assert.Null(await presence.FindAsync(implant.Id));
+        await Task.Delay(50); // the session is closed in the finally on stream close
+        Assert.Null(await sessions.GetActiveAsync(implant.Id));
     }
 
     [Fact]
