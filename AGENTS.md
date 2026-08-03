@@ -81,8 +81,20 @@ tests encode the layer rules; adding a forbidden reference must fail a test.
 
 ## 6. Commits
 
-- Small, focused commits. English subject lines in the imperative mood. No
-  attribution trailers (see Sec. 2 for the full ban).
+- Small, focused commits.
+- **Subject:** English, imperative mood, self-describing without milestone
+  tags -- `Add listener abstraction with HTTP(S) and mTLS transports`, not
+  `... (M2.2)`. The subject must read well on its own; the rest of the message
+  adds context, not identity.
+- **Body:** explain the *why* first, then what changed as bullets. Reference
+  `docs/architecture.md` for design authority (it is stable), not the roadmap
+  (it is a plan and gets reworked). Prefer `architecture.md Sec 8` over a
+  roadmap id -- the commit outlives the roadmap.
+- **Roadmap milestone ids** (`M2.2` etc.) are development-time breadcrumbs only.
+  Never put them in the subject. If mentioned, put them once in the body as a
+  trailing `Roadmap: Mx.x` line, and never as the sole reference -- the commit
+  must still make sense after the roadmap is reworked or removed.
+- No attribution trailers (see Sec. 2 for the full ban).
 
 ## 7. Sensitive-capability discipline
 
