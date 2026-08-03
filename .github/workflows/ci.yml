@@ -72,6 +72,40 @@ jobs:
       - name: Verify formatting
         run: dotnet format Rod.slnx --verify-no-changes
 
+  go:
+    name: Go implant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        # The implant module declares go 1.26; stable satisfies it.
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: implant/go.sum
+      - name: Build implant
+        working-directory: implant
+        # -mod=readonly keeps the build hermetic; the module graph is pinned in
+        # go.sum and committed, so CI does not mutate it.
+        run: go build -mod=readonly ./...
+      - name: Vet implant
+        working-directory: implant
+        run: go vet -mod=readonly ./...
+      - name: Test implant
+        working-directory: implant
+        run: go test -mod=readonly ./...
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Restore
+        run: dotnet restore Rod.slnx
+      - name: Build
+        run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: Go implant end-to-end (roadmap M3.2)
+        # GoImplantTests shells out to go to build and run the reference implant
+        # against a real teamserver; it is otherwise skipped (no go on PATH), so
+        # this is the job that proves the implant checks in and tasks end-to-end.
+        run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~GoImplantTests"
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

@@ -115,9 +115,17 @@ in-house. The dependency rule is enforced by architecture tests.
 
 - **Build units.** One per implant language (C#/.NET, Go, C/C++, Nim). Each
   owns its toolchain and compiles artifacts on demand. Coupled to the teamserver
-  only by the build contract. (Sec. 6.)
+  only by the build contract. The Go build unit (`Rod.BuildPipeline`'s
+  `GoBuildUnit`) is live; the others arrive with their implants (M3.3+).
+  (Sec. 6.)
 - **Implants.** Target-resident, polyglot, disposable. Speak the wire protocol.
-  Independent of the teamserver language. (Sec. 5.)
+  Independent of the teamserver language. (Sec. 5.) The **reference Go implant**
+  lives in the top-level `implant/` tree: a benign, readable stage-2 implant
+  that enrolls over HTTP (submitting its own public key), beacons over mTLS,
+  and runs the `shell.exec` core verb. Its wire bindings are generated from the
+  teamserver proto (`implant/rodpb/`) and committed; the build unit bakes the
+  per-implant profile in at compile time. It performs no evasion, no
+  obfuscation, no persistence (RESPONSIBLE-USE.md, Sec. 7).
 - **Redirectors.** Near-stateless forwarders (Go, single static binary) for OPSEC
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
 - **Operator UI.** The web front end; lives in the teamserver project.
@@ -137,7 +145,7 @@ note on its current state are listed.
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented (in-memory; M2.3: per-engagement hash chain -- tampering breaks the chain -- and the artifact store). |
 | `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented (frame + M1.x messages). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented (M1.x endpoints + M2.2 listener abstraction: HTTP(S) and mTLS listeners, bind address decoupled from the public endpoint; M3.1 payload-build endpoint that drives the build orchestrator and composes the PayloadBuilt audit write). |
-| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented contract (M3.1: the build-contract schema, the build-unit registry and dispatch, and a stub build unit; transport composes the audit write. Real per-language build units arrive with M3.2/M3.3). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented (M3.1: the build-contract schema, the build-unit registry and dispatch, and the PayloadBuilt audit write composed by transport. M3.2: the real Go build unit -- `GoBuildUnit` compiles the reference Go implant per request, baking the per-implant profile via ldflags without leaking the implant key -- replaces the stub in the live registry; the stub stays as the contract-reference unit with its own unit tests). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.4: Server-Sent Events stream per engagement, a channel-backed live-event bus fanning task-issued / task-completed / presence events to every connected session, an operator-presence roster, and query-param session identity; real operator auth arrives later). |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract and dispatch only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented skeleton (M2.5: `ICapabilityModule` contract, capability registry + dispatcher, the five core verbs loaded through it; the dispatchable `shell.exec` stub proves the round-trip. Not yet wired onto the live task path -- that arrives with the offensive-capability milestones). |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport` and `Rod.Operators` (the latter wired in M2.4, since transport itself cannot reference the operator layer). | Implemented (M1.5 host + UI shell; M2.4 wires the operator layer). |

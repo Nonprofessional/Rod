@@ -72,7 +72,7 @@ ports; no Postgres yet.
       teamserver-side orchestrator that drives build units.
       _AC:_ requesting a payload invokes a (stub) build unit and returns an
       artifact, fingerprinted and recorded.
-- [ ] **M3.2 Reference Go implant + build unit.** A Go implant that enrolls,
+- [x] **M3.2 Reference Go implant + build unit.** A Go implant that enrolls,
       beacons, and runs core verbs, built via its own build unit.
       _AC:_ Go implant checks in and tasks end-to-end.
 - [ ] **M3.3 Reference .NET implant + build unit.** A C#/.NET implant for
