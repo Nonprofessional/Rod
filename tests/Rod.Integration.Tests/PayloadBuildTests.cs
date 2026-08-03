@@ -12,14 +12,15 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M3.1 acceptance: requesting a payload invokes a (stub) build unit and
-/// returns an artifact, fingerprinted and recorded. Drives the full slice
-/// end-to-end through the in-memory TestServer -- the operator POSTs a build
-/// request, the build pipeline invokes the stub unit, and the operator gets back
-/// a fingerprinted artifact while a PayloadBuilt audit event is appended to the
-/// engagement's hash-chained trail. The build service is audit-agnostic by
-/// design; the transport endpoint composes the recording (architecture.md Sec 6,
-/// Sec 11), the same way the beacon stream records task completion.
+/// Roadmap M3.1 acceptance: requesting a payload invokes a build unit and returns
+/// an artifact, fingerprinted and recorded. Drives the full slice end-to-end
+/// through the in-memory TestServer -- the operator POSTs a build request, the
+/// build pipeline invokes the language's build unit (the real Go unit from M3.2
+/// for the Go slot), and the operator gets back a fingerprinted artifact while a
+/// PayloadBuilt audit event is appended to the engagement's hash-chained trail.
+/// The build service is audit-agnostic by design; the transport endpoint composes
+/// the recording (architecture.md Sec 6, Sec 11), the same way the beacon stream
+/// records task completion.
 /// </summary>
 public class PayloadBuildTests
 {
@@ -49,8 +50,8 @@ public class PayloadBuildTests
         return created!.EngagementId;
     }
 
-    [Fact]
-    public async Task BuildPayload_InvokesStubUnit_ReturnsFingerprintedArtifact()
+    [GoFact]
+    public async Task BuildPayload_InvokesBuildUnit_ReturnsFingerprintedArtifact()
     {
         var (client, host) = CreateClient();
         using (client)
@@ -88,7 +89,7 @@ public class PayloadBuildTests
         }
     }
 
-    [Fact]
+    [GoFact]
     public async Task TwoBuilds_WithIdenticalRequest_ProduceDifferentArtifacts()
     {
         // Per-implant material is generated at request time, so two builds of the
@@ -129,7 +130,7 @@ public class PayloadBuildTests
         return await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
     }
 
-    [Fact]
+    [GoFact]
     public async Task BuildPayload_RecordsPayloadBuiltAuditEvent_OnTheChain()
     {
         var (client, host) = CreateClient();

