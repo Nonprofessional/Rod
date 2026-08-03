@@ -16,5 +16,6 @@
     <Project Path="tests/Rod.CoreState.Tests/Rod.CoreState.Tests.csproj" />
     <Project Path="tests/Rod.Integration.Tests/Rod.Integration.Tests.csproj" />
     <Project Path="tests/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
+    <Project Path="tests/Rod.Tradecraft.Tests/Rod.Tradecraft.Tests.csproj" />
   </Folder>
 </Solution>

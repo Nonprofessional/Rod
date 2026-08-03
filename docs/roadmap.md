@@ -62,7 +62,7 @@ ports; no Postgres yet.
       to tasks.
 - [x] **M2.4 Operator layer.** Multiplayer sessions; shared live state; task
       ownership/attribution. _AC:_ two operators see each other's actions live.
-- [ ] **M2.5 Tradecraft layer skeleton.** Capability-module registration and
+- [x] **M2.5 Tradecraft layer skeleton.** Capability-module registration and
       dispatch; core verbs load through it. _AC:_ a stub module registers and is
       dispatched.
 
