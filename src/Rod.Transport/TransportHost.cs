@@ -11,6 +11,7 @@ using Rod.Audit;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Live;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
@@ -60,6 +61,14 @@ public static class TransportHost
         // M2.3). First-class evidence objects attached to tasks; consumed by the
         // operator layer (M2.4) and beacon ingest later.
         services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
+
+        // Live-event bus port -> a no-op default. Transport must not reference
+        // the operator layer (architecture test LayerDependencyTests), so the
+        // real, channel-backed implementation lives in Rod.Operators and the
+        // composition root replaces this registration via AddRodOperators. The
+        // no-op keeps the core transport host self-sufficient and its unit tests
+        // operator-free.
+        services.AddSingleton<ILiveEventBus, NullLiveEventBus>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
@@ -294,12 +303,30 @@ public static class TransportHost
     /// <c>Build()</c> the host, and <c>GetTestClient()</c> for an in-memory
     /// <see cref="HttpClient"/>. Services and endpoints are wired the same way as
     /// <see cref="BuildApplication"/>.
+    ///
+    /// The optional <paramref name="configureServices"/> and
+    /// <paramref name="mapEndpoints"/> hooks let a caller layer in additional
+    /// services and endpoints after the transport core -- the operator layer
+    /// (Rod.Operators) registers itself through them, since transport cannot
+    /// reference that assembly (architecture test LayerDependencyTests). They
+    /// default to no-op so existing callers are unaffected.
     /// </summary>
-    public static IHostBuilder CreateHostBuilder(string[]? args = null)
+    public static IHostBuilder CreateHostBuilder(
+        string[]? args = null,
+        Action<IServiceCollection>? configureServices = null,
+        Action<IEndpointRouteBuilder>? mapEndpoints = null)
         => Host.CreateDefaultBuilder(args ?? Array.Empty<string>())
             .ConfigureWebHostDefaults(web => web
-                .ConfigureServices(services => services.AddRodTransport())
+                .ConfigureServices(services =>
+                {
+                    services.AddRodTransport();
+                    configureServices?.Invoke(services);
+                })
                 .Configure(app => app
                     .UseRouting()
-                    .UseEndpoints(MapRodEndpoints)));
+                    .UseEndpoints(endpoints =>
+                    {
+                        MapRodEndpoints(endpoints);
+                        mapEndpoints?.Invoke(endpoints);
+                    })));
 }

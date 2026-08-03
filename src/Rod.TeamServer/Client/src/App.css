@@ -27,6 +27,12 @@
   text-decoration: underline;
 }
 
+.who {
+  margin-left: auto;
+  color: #6b6b76;
+  font-size: 13px;
+}
+
 .app-main {
   padding-top: 16px;
 }

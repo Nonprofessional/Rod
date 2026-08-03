@@ -1,0 +1,33 @@
+namespace Rod.CoreState.Live;
+
+/// <summary>
+/// The kinds of operational change the operator layer pushes live to connected
+/// operator sessions (architecture.md Sec 4.1, layer 4). These are the
+/// realtime fan-out events -- the durable, attributed record of every action
+/// still lives in the audit trail (Sec 11); the bus is best-effort and rebuilds
+/// its projection from current state on reconnect.
+/// </summary>
+public enum LiveEventKind
+{
+    /// <summary>
+    /// An operator session opened on the engagement. Carries the operator id and
+    /// handle so peers can render "who is online" without an extra round-trip.
+    /// </summary>
+    OperatorJoined,
+
+    /// <summary>An operator session closed on the engagement.</summary>
+    OperatorLeft,
+
+    /// <summary>
+    /// A task was issued against an implant in the engagement. Lets every
+    /// connected operator see tasking the moment it is queued, attributed to the
+    /// issuing operator.
+    /// </summary>
+    TaskIssued,
+
+    /// <summary>
+    /// A task completed -- the implant returned a result. The captured outcome
+    /// reaches every operator session in real time.
+    /// </summary>
+    TaskCompleted,
+}

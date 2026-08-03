@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 using Rod.V1;
@@ -25,6 +26,11 @@ namespace Rod.Transport.Endpoints;
 /// (<see cref="TaskResult"/>) upstream, writing each completed task to the audit
 /// trail. When the stream closes the session is closed.
 ///
+/// When a result is captured the stream also publishes a
+/// <see cref="LiveEventKind.TaskCompleted"/> event on the live bus (roadmap
+/// M2.4), so every connected operator session sees the outcome in real time;
+/// the audit write is the durable record, the live event the transient fan-out.
+///
 /// mTLS is terminated at Kestrel before this handler runs: the presenting client
 /// certificate has already chained to the CA. The application-layer identity
 /// check (architecture.md Sec 9) -- that the certificate's
@@ -38,17 +44,20 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly ISessionRegistry _sessions;
     private readonly TaskService _tasks;
     private readonly IAuditStore _audit;
+    private readonly ILiveEventBus _bus;
 
     public BeaconEndpoint(
         HandshakeService handshake,
         ISessionRegistry sessions,
         TaskService tasks,
-        IAuditStore audit)
+        IAuditStore audit,
+        ILiveEventBus bus)
     {
         _handshake = handshake;
         _sessions = sessions;
         _tasks = tasks;
         _audit = audit;
+        _bus = bus;
     }
 
     public override async Task CheckIn(
@@ -233,6 +242,20 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 output: completed.Output,
                 outcome: completed.Outcome.ToString(),
                 at: completed.CompletedAt),
+            cancellationToken);
+
+        // Fan the completion out to connected operator sessions (roadmap M2.4).
+        // The audit write above is the durable record; this live event is the
+        // transient projection operators read while connected, so they see the
+        // outcome without re-polling the task endpoint.
+        await _bus.PublishAsync(
+            LiveEvent.TaskCompleted(
+                completed.EngagementId,
+                completed.IssuedBy,
+                completed.ImplantId,
+                completed.TaskId,
+                payload: $"{completed.Outcome}: {completed.Output}",
+                completed.CompletedAt),
             cancellationToken);
     }
 

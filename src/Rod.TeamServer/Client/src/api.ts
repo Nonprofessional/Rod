@@ -126,3 +126,93 @@ export async function issueTask(
 export async function getTask(engagementId: string, taskId: string): Promise<Task> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks/${taskId}`))
 }
+
+// --- Live event stream (roadmap M2.4) ---------------------------------------
+//
+// Server-Sent Events keep each connected operator session live on an engagement.
+// The bus fans task-issued / task-completed / operator-joined / operator-left
+// events out to every subscriber, so two operators see each other's actions in
+// real time without polling. Identity is supplied by query parameters in this
+// milestone; real operator auth arrives later and replaces only how the identity
+// is established, not this stream.
+
+export type LiveEventName =
+  | 'hello'
+  | 'OperatorJoined'
+  | 'OperatorLeft'
+  | 'TaskIssued'
+  | 'TaskCompleted'
+
+export interface LiveOperator {
+  id: string
+  handle: string
+  displayName: string
+}
+
+export interface LiveEventPayload {
+  kind?: string
+  engagementId?: string
+  operatorId?: string
+  implantId?: string | null
+  taskId?: string | null
+  payload?: string
+  at?: string
+  operators?: LiveOperator[]
+}
+
+export interface EngagementStreamHandlers {
+  onHello?: (operators: LiveOperator[]) => void
+  onOperatorJoined?: (operatorId: string, handle: string) => void
+  onOperatorLeft?: (operatorId: string, handle: string) => void
+  onTaskIssued?: (taskId: string, payload: string) => void
+  onTaskCompleted?: (taskId: string, payload: string) => void
+  onError?: (event: Event) => void
+}
+
+// Opens an SSE stream for an engagement with the operator's session identity.
+// Returns a close() that tears the stream down; the caller invokes it on
+// unmount. The EventSource reconnects automatically on a dropped connection.
+export function subscribeToEngagement(
+  engagementId: string,
+  identity: { operatorId: string; handle: string; displayName: string },
+  handlers: EngagementStreamHandlers,
+): () => void {
+  const params = new URLSearchParams({
+    operatorId: identity.operatorId,
+    handle: identity.handle,
+    displayName: identity.displayName,
+  })
+  const source = new EventSource(`engagements/${engagementId}/events?${params.toString()}`)
+
+  const parse = (data: string): LiveEventPayload | null => {
+    try {
+      return JSON.parse(data) as LiveEventPayload
+    } catch {
+      return null
+    }
+  }
+
+  source.addEventListener('hello', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onHello?.(payload?.operators ?? [])
+  })
+  source.addEventListener('OperatorJoined', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onOperatorJoined?.(payload?.operatorId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('OperatorLeft', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onOperatorLeft?.(payload?.operatorId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('TaskIssued', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onTaskIssued?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('TaskCompleted', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onTaskCompleted?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.onerror = (e) => handlers.onError?.(e)
+
+  return () => source.close()
+}

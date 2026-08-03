@@ -3,6 +3,7 @@ import './App.css'
 import {
   type Engagement,
   type Implant,
+  type LiveOperator,
   type StagerToken,
   type Task,
   createEngagement,
@@ -11,13 +12,17 @@ import {
   listImplants,
   listTasks,
   mintStagerToken,
+  subscribeToEngagement,
 } from './api'
 
-// Minimal operator UI (roadmap M1.5): list engagements, drill into one to see
-// its enrolled sessions (with a live online dot), mint a stager token, and issue
-// a shell.exec task against an implant and watch its result. Navigation is
-// hash-based so the host's static-file fallback keeps deep links working
-// without a server-side router.
+// Operator UI (roadmap M1.5, live multiplayer M2.4): list engagements, drill
+// into one to see its enrolled sessions (with a live online dot), mint a stager
+// token, and issue a shell.exec task against an implant and watch its result.
+// Each open engagement holds a Server-Sent Events stream open so every
+// connected operator sees tasking, results, and presence in real time. Identity
+// is self-assigned for the session (real operator auth arrives later);
+// navigation is hash-based so the host's static-file fallback keeps deep links
+// working without a server-side router.
 
 type Route =
   | { kind: 'engagements' }
@@ -40,8 +45,44 @@ function useRoute(): Route {
   return route
 }
 
+// One operator identity for the browser session. The walking skeleton resolves
+// it client-side (a self-typed handle plus a stable id); real operator
+// authentication arrives later and replaces only how this identity is
+// established, not the components that consume it. Persists across route
+// changes so engagement ownership and live presence stay consistent.
+interface SessionOperator {
+  operatorId: string
+  handle: string
+  displayName: string
+}
+
+function useSessionOperator(): [SessionOperator, (next: Partial<SessionOperator>) => void] {
+  const [operator, setOperator] = useState<SessionOperator>(() => {
+    const stored = window.localStorage.getItem('rod.operator')
+    if (stored) {
+      try {
+        return JSON.parse(stored) as SessionOperator
+      } catch {
+        // Corrupt store; fall through to a fresh identity.
+      }
+    }
+    return { operatorId: crypto.randomUUID(), handle: 'operator', displayName: 'Operator' }
+  })
+
+  const update = useCallback((next: Partial<SessionOperator>) => {
+    setOperator((current) => {
+      const merged = { ...current, ...next }
+      window.localStorage.setItem('rod.operator', JSON.stringify(merged))
+      return merged
+    })
+  }, [])
+
+  return [operator, update]
+}
+
 function App() {
   const route = useRoute()
+  const [operator, setOperator] = useSessionOperator()
   return (
     <div className="app">
       <header className="app-header">
@@ -49,27 +90,31 @@ function App() {
         <a className="crumb" href="#/engagements">
           Engagements
         </a>
+        <span className="who" title="Your session identity (real operator auth arrives later)">
+          <code>{operator.handle}</code>
+        </span>
       </header>
       <main className="app-main">
         {route.kind === 'engagements' ? (
-          <EngagementsView />
+          <EngagementsView operator={operator} setOperator={setOperator} />
         ) : (
-          <EngagementView engagementId={route.engagementId} />
+          <EngagementView engagementId={route.engagementId} operator={operator} />
         )}
       </main>
     </div>
   )
 }
 
-function EngagementsView() {
+function EngagementsView({
+  operator,
+  setOperator,
+}: {
+  operator: SessionOperator
+  setOperator: (next: Partial<SessionOperator>) => void
+}) {
   const [items, setItems] = useState<Engagement[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  // Owner identity is resolved from the request in the walking skeleton (M2.4
-  // adds real auth). Let the operator self-assign a handle for the session.
-  const [ownerHandle, setOwnerHandle] = useState('operator')
-  const [ownerDisplay, setOwnerDisplay] = useState('Operator')
   const [name, setName] = useState('')
 
   const refresh = useCallback(async () => {
@@ -92,9 +137,9 @@ function EngagementsView() {
     event.preventDefault()
     try {
       await createEngagement({
-        ownerId: crypto.randomUUID(),
-        ownerHandle,
-        ownerDisplayName: ownerDisplay,
+        ownerId: operator.operatorId,
+        ownerHandle: operator.handle,
+        ownerDisplayName: operator.displayName,
         name,
       })
       setName('')
@@ -117,14 +162,14 @@ function EngagementsView() {
         />
         <input
           placeholder="Owner handle"
-          value={ownerHandle}
-          onChange={(e) => setOwnerHandle(e.target.value)}
+          value={operator.handle}
+          onChange={(e) => setOperator({ handle: e.target.value })}
           required
         />
         <input
           placeholder="Owner display name"
-          value={ownerDisplay}
-          onChange={(e) => setOwnerDisplay(e.target.value)}
+          value={operator.displayName}
+          onChange={(e) => setOperator({ displayName: e.target.value })}
           required
         />
         <button type="submit" disabled={busy}>
@@ -160,8 +205,15 @@ function EngagementsView() {
   )
 }
 
-function EngagementView({ engagementId }: { engagementId: string }) {
+function EngagementView({
+  engagementId,
+  operator,
+}: {
+  engagementId: string
+  operator: SessionOperator
+}) {
   const [implants, setImplants] = useState<Implant[]>([])
+  const [online, setOnline] = useState<LiveOperator[]>([])
   const [error, setError] = useState<string | null>(null)
   const [minted, setMinted] = useState<StagerToken | null>(null)
   const [busy, setBusy] = useState(false)
@@ -180,11 +232,29 @@ function EngagementView({ engagementId }: { engagementId: string }) {
 
   useEffect(() => {
     void refresh()
-    // Light polling so a freshly enrolled implant shows up without a manual
-    // reload; real-time push arrives with the operator layer (M2.4).
-    const timer = window.setInterval(() => void refresh(), 3000)
-    return () => window.clearInterval(timer)
   }, [refresh])
+
+  // The live event stream (roadmap M2.4): one SSE connection per open
+  // engagement. TaskIssued / TaskCompleted events refresh the affected list
+  // instead of a blind poll; presence events keep the "operators online" view
+  // current. The stream carries the session identity in its query parameters.
+  useEffect(() => {
+    if (!operator.handle.trim()) return
+    const close = subscribeToEngagement(engagementId, operator, {
+      onHello: (operators) => setOnline(operators),
+      onOperatorJoined: (id, handle) =>
+        setOnline((current) =>
+          current.some((o) => o.id === id) ? current : [...current, { id, handle, displayName: handle }],
+        ),
+      onOperatorLeft: (id) => setOnline((current) => current.filter((o) => o.id !== id)),
+      // Any tasking activity on the engagement is reason to re-read the current
+      // implant/task state, since implants other tabs task won't match the view's
+      // own subscriptions. Keeps the lists fresh without per-view polling.
+      onTaskIssued: () => void refresh(),
+      onTaskCompleted: () => void refresh(),
+    })
+    return close
+  }, [engagementId, operator, refresh])
 
   const onMint = async () => {
     try {
@@ -201,6 +271,23 @@ function EngagementView({ engagementId }: { engagementId: string }) {
         <code>{engagementId}</code>
       </p>
       {error && <p className="error">{error}</p>}
+
+      <div className="card">
+        <h3>Operators online</h3>
+        {online.length === 0 ? (
+          <p className="muted">No other operators connected.</p>
+        ) : (
+          <ul className="sessions">
+            {online.map((o) => (
+              <li key={o.id}>
+                <span className="dot online" title="online" />
+                <code>{o.handle || o.id.slice(0, 8)}</code>
+                {o.id === operator.operatorId && <span className="muted"> (you)</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="card">
         <h3>Stager token</h3>
@@ -243,17 +330,28 @@ function EngagementView({ engagementId }: { engagementId: string }) {
       </div>
 
       {implants.length > 0 && (
-        <ImplantTasks engagementId={engagementId} implant={implants[0]} />
+        <ImplantTasks
+          engagementId={engagementId}
+          implant={implants[0]}
+          operator={operator}
+        />
       )}
     </section>
   )
 }
 
-function ImplantTasks({ engagementId, implant }: { engagementId: string; implant: Implant }) {
+function ImplantTasks({
+  engagementId,
+  implant,
+  operator,
+}: {
+  engagementId: string
+  implant: Implant
+  operator: SessionOperator
+}) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [verb, setVerb] = useState('shell.exec')
   const [args, setArgs] = useState('whoami')
-  const [issuedBy] = useState(() => crypto.randomUUID())
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -268,15 +366,18 @@ function ImplantTasks({ engagementId, implant }: { engagementId: string; implant
 
   useEffect(() => {
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 2000)
-    return () => window.clearInterval(timer)
   }, [refresh])
 
   const onIssue = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true)
     try {
-      await issueTask(engagementId, { implantId: implant.implantId, issuedBy, verb, arguments: args })
+      await issueTask(engagementId, {
+        implantId: implant.implantId,
+        issuedBy: operator.operatorId,
+        verb,
+        arguments: args,
+      })
       await refresh()
     } catch (e) {
       setError(String(e))
@@ -313,6 +414,7 @@ function ImplantTasks({ engagementId, implant }: { engagementId: string; implant
           <thead>
             <tr>
               <th>Verb</th>
+              <th>By</th>
               <th>Status</th>
               <th>Output</th>
               <th>At</th>
@@ -323,6 +425,9 @@ function ImplantTasks({ engagementId, implant }: { engagementId: string; implant
               <tr key={t.taskId}>
                 <td>
                   <code>{t.verb}</code> {t.arguments}
+                </td>
+                <td>
+                  <code>{t.issuedBy === operator.operatorId ? 'you' : t.issuedBy.slice(0, 8)}</code>
                 </td>
                 <td>
                   <span className={`status ${t.status.toLowerCase()}`}>{t.status}</span>

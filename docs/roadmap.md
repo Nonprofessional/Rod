@@ -60,7 +60,7 @@ ports; no Postgres yet.
 - [x] **M2.3 Storage and audit layer.** Append-only, hash-chained `AuditEvent`
       store; artifact store. _AC:_ tampering breaks the chain; artifacts attach
       to tasks.
-- [ ] **M2.4 Operator layer.** Multiplayer sessions; shared live state; task
+- [x] **M2.4 Operator layer.** Multiplayer sessions; shared live state; task
       ownership/attribution. _AC:_ two operators see each other's actions live.
 - [ ] **M2.5 Tradecraft layer skeleton.** Capability-module registration and
       dispatch; core verbs load through it. _AC:_ a stub module registers and is

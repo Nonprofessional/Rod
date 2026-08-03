@@ -26,6 +26,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Rod.Transport\Rod.Transport.csproj" />
+    <!-- Referenced so the operator layer (M2.4: live bus + SSE endpoint) can be
+         layered into the test host alongside the transport core. -->
+    <ProjectReference Include="..\..\src\Rod.Operators\Rod.Operators.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using Rod.Operators;
 using Rod.Transport;
 using Rod.Transport.Listeners;
 
@@ -10,6 +11,11 @@ using Rod.Transport.Listeners;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRodTransport();
+// Layer in the operator layer (roadmap M2.4): the live-event bus that fans task
+// and presence events out to connected operator sessions, plus the presence
+// roster. Transport cannot reference Rod.Operators (architecture test
+// LayerDependencyTests), so the composition root assembles it here.
+builder.Services.AddRodOperators();
 
 // Bind the configured listeners (roadmap M2.2, architecture.md Sec 8). Each entry
 // is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and
@@ -31,6 +37,10 @@ var app = builder.Build();
 
 app.UseStaticFiles();
 app.MapRodEndpoints();
+// The operator layer's SSE event stream (roadmap M2.4): mapped alongside the
+// transport endpoints from the composition root for the same layer-separation
+// reason as AddRodOperators above.
+app.MapOperatorEndpoints();
 
 // SPA fallback: anything not handled by a static file or an API route returns
 // the React shell, so client-side routing owns deep links (e.g. /engagements/..).

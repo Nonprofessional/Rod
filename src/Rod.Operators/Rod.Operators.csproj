@@ -5,6 +5,15 @@
     <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
   </ItemGroup>
 
+  <!-- The operator layer terminates the SSE event stream and maps the operator-
+       facing live endpoint: it needs ASP.NET Core (routing, HttpResponse
+       streaming). A FrameworkReference avoids a long list of PackageReferences
+       and tracks the runtime version centrally, the same way Rod.Transport
+       does. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

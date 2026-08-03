@@ -1,5 +1,6 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Live;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
 // The domain entity shares its name with System.Threading.Tasks.Task. Pin it
@@ -18,6 +19,13 @@ namespace Rod.CoreState.Application;
 /// capture (architecture.md Sec 11); audit wiring arrives properly with the
 /// storage &amp; audit layer (roadmap M2.3).
 ///
+/// As of the operator layer (roadmap M2.4), issuing a task also publishes a
+/// <see cref="LiveEventKind.TaskIssued"/> event on the live bus so every
+/// connected operator session sees new tasking the moment it is queued. The bus
+/// is optional at the constructor: the core-state unit tests construct this
+/// service without one, and the absence simply skips the publish (the task
+/// itself is the source of truth; the bus is the transient fan-out).
+///
 /// As with <see cref="EnrollmentService"/> and <see cref="HandshakeService"/>,
 /// refusals propagate as exceptions the transport maps to wire status.
 /// </summary>
@@ -25,18 +33,31 @@ public sealed class TaskService
 {
     private readonly ITaskRepository _tasks;
     private readonly TimeProvider _clock;
+    private readonly ILiveEventBus? _bus;
 
     public TaskService(ITaskRepository tasks, TimeProvider clock)
+        : this(tasks, clock, bus: null)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the service with a live-event bus. The composition root wires
+    /// the bus (roadmap M2.4); the single-argument constructor above keeps the
+    /// core-state unit tests bus-free.
+    /// </summary>
+    public TaskService(ITaskRepository tasks, TimeProvider clock, ILiveEventBus? bus)
     {
         _tasks = tasks;
         _clock = clock;
+        _bus = bus;
     }
 
     /// <summary>
     /// Issues a task: creates it in <see cref="TaskStatus.Queued"/> for the
-    /// implant and persists it. Returns the created task. The operator and
-    /// implant are resolved and scoped by the caller; this method trusts the
-    /// engagement binding it is handed (real operator auth is M2.4).
+    /// implant and persists it, then publishes a live event so connected
+    /// operators see the new tasking in real time. Returns the created task.
+    /// The operator and implant are resolved and scoped by the caller; this
+    /// method trusts the engagement binding it is handed.
     /// </summary>
     public async System.Threading.Tasks.Task<TaskIssued> IssueAsync(
         IssueTaskCommand command,
@@ -52,6 +73,19 @@ public sealed class TaskService
             command.Arguments,
             now);
         await _tasks.SaveAsync(task, cancellationToken);
+
+        if (_bus is not null)
+        {
+            await _bus.PublishAsync(
+                LiveEvent.TaskIssued(
+                    task.EngagementId,
+                    task.IssuedBy,
+                    task.ImplantId,
+                    task.Id,
+                    payload: $"{task.Verb} {task.Arguments}".TrimEnd(),
+                    now),
+                cancellationToken);
+        }
 
         return new TaskIssued(
             task.Id,
