@@ -106,6 +106,30 @@ jobs:
         # this is the job that proves the implant checks in and tasks end-to-end.
         run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~GoImplantTests"
 
+  dotnet-implant:
+    name: .NET implant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        # The reference .NET implant targets net10.0; the latest SDK satisfies it.
+        uses: actions/setup-dotnet@v4
+      - name: Restore
+        run: dotnet restore Rod.slnx
+      - name: Build
+        # Building the solution also compiles the implant's gRPC client bindings
+        # from the canonical rod.proto via Grpc.Tools (no committed generated
+        # code), so a clean build here proves the proto compile path.
+        run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: .NET implant end-to-end (roadmap M3.3)
+        # DotNetImplantTests publishes the reference .NET implant to a temp dir
+        # via `dotnet publish`, then runs `dotnet Rod.Implant.dll` as a real
+        # subprocess against a real teamserver -- enrolls over HTTP, beacons over
+        # mTLS, runs a dispatched shell.exec task. This is the job that proves the
+        # .NET implant checks in and tasks end-to-end; it is otherwise skipped
+        # when dotnet is not on PATH.
+        run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~DotNetImplantTests"
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest
