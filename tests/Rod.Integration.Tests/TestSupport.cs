@@ -3,10 +3,11 @@ using System.Diagnostics;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Shared test support. The M3.2 Go build unit and the end-to-end Go implant
-/// test drive a real <c>go</c> toolchain; both are skipped (not failed) when go
-/// is not on PATH, so the suite stays green in environments without the Go
-/// toolchain while exercising the real slice where it is present.
+/// Shared test support. The M3.2 Go build unit / end-to-end test and the M3.3
+/// .NET build unit / end-to-end test drive real toolchains (go, dotnet); both
+/// skip (not fail) when the toolchain is not on PATH, so the suite stays green in
+/// environments without them while exercising the real slice where they are
+/// present.
 /// </summary>
 internal static class TestSupport
 {
@@ -28,6 +29,33 @@ internal static class TestSupport
             if (process is null)
                 return false;
             process.WaitForExit(5000);
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when the dotnet SDK is reachable on PATH. The M3.3 build/test path
+    /// requires it to publish and run the reference .NET implant; tests that do
+    /// skip via this check.
+    /// </summary>
+    public static bool DotNetAvailable()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("dotnet", "--version")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var process = Process.Start(psi);
+            if (process is null)
+                return false;
+            process.WaitForExit(15000);
             return process.ExitCode == 0;
         }
         catch
