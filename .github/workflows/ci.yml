@@ -113,4 +113,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - name: Scan full history with gitleaks
+        # Run the MIT-licensed gitleaks CLI directly rather than the
+        # gitleaks-action wrapper, which requires a paid license key since v2.
+        # Same scan the action ran: every commit in history, fail on any finding.
+        # Pin the version explicitly so a upstream release cannot silently change
+        # results.
+        env:
+          GITLEAKS_VERSION: "8.27.1"
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --verbose
