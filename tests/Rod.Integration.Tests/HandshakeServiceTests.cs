@@ -122,6 +122,54 @@ public class HandshakeServiceTests
         Assert.Equal(HandshakeReason.IdentityMismatch, ex.Reason);
     }
 
+    [Fact]
+    public async Task Handshake_RefusesExpiredKillDate()
+    {
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+
+        // An implant whose baked-in kill date is in the past (architecture.md
+        // Sec 7). Enroll it with a short window, then advance the wall clock past
+        // it so the handshake's kill-date gate fires. The identity check passes
+        // (matching engagement) so the refusal is specifically the kill date.
+        var killDate = Now.AddSeconds(30);
+        var implant = Implant.Enroll(
+            ImplantId.New(), engagement, "key-abc", killDate, ImplantClass.Stage2, Now);
+        await implants.SaveAsync(implant);
+
+        var sessions = new InMemorySessionRegistry();
+        var service = new HandshakeService(implants, sessions, new FakeClock(killDate.AddSeconds(1)));
+
+        var ex = await Assert.ThrowsAsync<HandshakeException>(() => service.HandshakeAsync(
+            new HandshakeCommand(implant.Id, 1, 0, Array.Empty<string>(), engagement)));
+        Assert.Equal(HandshakeReason.KillDateExpired, ex.Reason);
+
+        // No session was opened for the expired implant.
+        Assert.Null(await sessions.GetActiveAsync(implant.Id));
+    }
+
+    [Fact]
+    public async Task Handshake_OpensSession_WhenKillDateIsInFuture()
+    {
+        var implants = new InMemoryImplantRepository();
+        var sessions = new InMemorySessionRegistry();
+        var engagement = EngagementId.New();
+
+        // The kill date is in the future at handshake time, so the gate passes
+        // and a session opens normally -- the negative case for the check above.
+        var implant = Implant.Enroll(
+            ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+        await implants.SaveAsync(implant);
+
+        var service = new HandshakeService(implants, sessions, new FakeClock(Now));
+
+        var result = await service.HandshakeAsync(
+            new HandshakeCommand(implant.Id, 1, 0, new[] { "shell.exec" }, engagement));
+
+        Assert.Equal(implant.Id, result.ImplantId);
+        Assert.NotNull(await sessions.GetActiveAsync(implant.Id));
+    }
+
     private sealed class FakeClock : TimeProvider
     {
         private readonly DateTimeOffset _now;
