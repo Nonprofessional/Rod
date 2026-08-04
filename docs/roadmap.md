@@ -86,7 +86,7 @@ ports; no Postgres yet.
 
 - [x] **M4.1 Beacon profiles.** Per-implant sleep + jitter baked in at generation.
       _AC:_ generated artifacts carry the configured profile.
-- [ ] **M4.2 Kill dates and per-implant keys.** Self-termination timestamp and a
+- [x] **M4.2 Kill dates and per-implant keys.** Self-termination timestamp and a
       unique key per implant, server-generated. _AC:_ an implant refuses to run
       past its kill date; keys differ per implant.
 - [ ] **M4.3 Malleable transport profiles.** Configurable URIs, headers, timing,

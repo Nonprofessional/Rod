@@ -146,9 +146,9 @@ note on its current state are listed.
 
 | Project | Role | Layer rule (what it may depend on) | State |
 |---------|------|------------------------------------|-------|
-| `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented (M2.1 core-state layer; sessions lift the M1.x presence record, ports carry an in-memory adapter. M3.4: per-class reduced verb sets, enforced at task issuance -- an unsupported verb is refused before it is queued, and the implant's engagement binding is checked there too). |
+| `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented (M2.1 core-state layer; sessions lift the M1.x presence record, ports carry an in-memory adapter. M3.4: per-class reduced verb sets, enforced at task issuance -- an unsupported verb is refused before it is queued, and the implant's engagement binding is checked there too. M4.2: the kill date is enforced at handshake -- an implant past its kill date is refused before a session opens, mapping to `HANDSHAKE_STATUS_KILL_DATE_EXPIRED`). |
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented (in-memory; M2.3: per-engagement hash chain -- tampering breaks the chain -- and the artifact store). |
-| `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented (frame + M1.x messages). |
+| `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented (frame + M1.x messages; M4.2: `HANDSHAKE_STATUS_KILL_DATE_EXPIRED` for an implant refused past its kill date). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented (M1.x endpoints + M2.2 listener abstraction: HTTP(S) and mTLS listeners, bind address decoupled from the public endpoint; M3.1 payload-build endpoint that drives the build orchestrator and composes the PayloadBuilt audit write). |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented (M3.1: the build-contract schema, the build-unit registry and dispatch, and the PayloadBuilt audit write composed by transport. M3.2: the real Go build unit -- `GoBuildUnit` compiles the reference Go implant per request, baking the per-implant profile via ldflags without leaking the implant key -- replaces the stub in the live registry; the stub stays as the contract-reference unit with its own unit tests. M3.3: the real .NET build unit -- `DotNetBuildUnit` compiles the reference .NET implant per request via `dotnet publish`, baking the per-implant profile into a generated `BakedProfile.cs` in a per-build staging copy with the same encoding and no key leak as the Go unit -- registers alongside the Go unit in the live registry. M3.4: each unit bakes the class's reduced verb set (read from core state, Sec 5.2) into the profile, so an artifact is self-describing and two classes of the same language produce visibly different output; the key is still absent). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.4: Server-Sent Events stream per engagement, a channel-backed live-event bus fanning task-issued / task-completed / presence events to every connected session, an operator-presence roster, and query-param session identity; real operator auth arrives later). |
@@ -175,6 +175,17 @@ lost implant self-terminates at its kill date.
 The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
 land in the decoded artifact across the Go, .NET, and stub build units, so a
 profile that is silently dropped or defaulted fails the build-pipeline tests.
+
+The kill date is enforced on both sides of the wire (Sec 7). The teamserver
+refuses to open a session for an implant whose kill date has passed, returning
+`HANDSHAKE_STATUS_KILL_DATE_EXPIRED` at handshake before any session or tasking
+is recorded; the implant itself refuses to start past its kill date and
+re-checks it at the top of each beacon cycle, so a long-running implant
+self-terminates the moment the date passes rather than waiting for a reconnect
+or restart. The per-implant key is generated server-side (a 32-byte
+cryptographically random value) at both enrollment and build time, so two
+implants -- or two builds of the same request -- never share a key; this is
+pinned by tests against both producers.
 
 ### 5.2 Implant classes (by operational purpose)
 
@@ -237,9 +248,14 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - **Per-implant beacon profile.** Configurable sleep with **jitter** (randomized
   delta) to avoid periodic-check-in detection.
 - **Kill date.** A hard self-termination timestamp baked in per implant to limit
-  exposure if lost.
+  exposure if lost. Enforced on both sides: the teamserver refuses a handshake
+  past it (`HANDSHAKE_STATUS_KILL_DATE_EXPIRED`, no session opens), and the
+  implant refuses to start past it and re-checks it each beacon cycle so a
+  long-running implant self-terminates the moment the date passes.
 - **Per-implant cryptographic key.** Unique per implant, so compromising one does
-  not compromise all. Keys are generated and rotated server-side.
+  not compromise all. Keys are generated server-side (32-byte
+  cryptographically random) at enrollment and at build time, so two implants
+  never share a key; rotation arrives with burn handling (Sec 8, M4.4).
 - **Malleable transport profiles.** URIs, headers, timing, and payload shape that
   match legitimate traffic, configurable per implant.
 - **Disposable infrastructure.** Keys, identities, and endpoints are ephemeral
@@ -283,8 +299,14 @@ fleet-wide code execution. Security is a first-class concern.
   teamserver-authorized tasking.
 - **Sealing** _(future)_. End-to-end protection of task payloads so untrusted
   redirectors cannot read or alter them. Designed for, not implemented initially.
-- **Per-implant keys and rotation.** Unique keys per implant, generated and
-  rotated server-side (Sec. 7).
+- **Per-implant keys and rotation.** Unique keys per implant, generated
+  server-side at enrollment and build time (Sec. 7); rotation arrives with burn
+  handling (Sec 8, M4.4).
+- **Kill-date enforcement.** The teamserver refuses to open a session for an
+  implant past its baked-in kill date (the handshake returns
+  `HANDSHAKE_STATUS_KILL_DATE_EXPIRED`), and the implant self-terminates past it
+  on startup and each beacon cycle -- a lost implant cannot stay live past its
+  date even if it ignores its own check.
 - **Audit trail.** Every privileged action produces an immutable, hash-chained
   `AuditEvent`. Tampering breaks the chain (Sec. 11).
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
