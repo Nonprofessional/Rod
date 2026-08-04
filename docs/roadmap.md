@@ -75,7 +75,7 @@ ports; no Postgres yet.
 - [x] **M3.2 Reference Go implant + build unit.** A Go implant that enrolls,
       beacons, and runs core verbs, built via its own build unit.
       _AC:_ Go implant checks in and tasks end-to-end.
-- [ ] **M3.3 Reference .NET implant + build unit.** A C#/.NET implant for
+- [x] **M3.3 Reference .NET implant + build unit.** A C#/.NET implant for
       Windows; in-memory execution path. _AC:_ .NET implant checks in and tasks
       end-to-end.
 - [ ] **M3.4 Stager / web-shell / ephemeral / pivot classes.** The other implant
