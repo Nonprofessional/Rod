@@ -290,6 +290,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 HandshakeReason.UnknownImplant => HandshakeStatus.UnknownImplant,
                 HandshakeReason.VersionMismatch => HandshakeStatus.VersionMismatch,
                 HandshakeReason.IdentityMismatch => HandshakeStatus.IdentityMismatch,
+                HandshakeReason.KillDateExpired => HandshakeStatus.KillDateExpired,
                 _ => HandshakeStatus.Unspecified,
             };
             return (Response(status, engagementId: null), Session: null);

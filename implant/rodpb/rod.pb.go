@@ -89,6 +89,10 @@ const (
 	HandshakeStatus_HANDSHAKE_STATUS_VERSION_MISMATCH  HandshakeStatus = 2
 	HandshakeStatus_HANDSHAKE_STATUS_UNKNOWN_IMPLANT   HandshakeStatus = 3
 	HandshakeStatus_HANDSHAKE_STATUS_IDENTITY_MISMATCH HandshakeStatus = 4
+	// The implant's baked-in kill date has passed (architecture.md Sec 7). The
+	// teamserver refuses to open a session for an implant past its kill date;
+	// the stream closes and the implant is expected to self-terminate.
+	HandshakeStatus_HANDSHAKE_STATUS_KILL_DATE_EXPIRED HandshakeStatus = 5
 )
 
 // Enum value maps for HandshakeStatus.
@@ -99,6 +103,7 @@ var (
 		2: "HANDSHAKE_STATUS_VERSION_MISMATCH",
 		3: "HANDSHAKE_STATUS_UNKNOWN_IMPLANT",
 		4: "HANDSHAKE_STATUS_IDENTITY_MISMATCH",
+		5: "HANDSHAKE_STATUS_KILL_DATE_EXPIRED",
 	}
 	HandshakeStatus_value = map[string]int32{
 		"HANDSHAKE_STATUS_UNSPECIFIED":       0,
@@ -106,6 +111,7 @@ var (
 		"HANDSHAKE_STATUS_VERSION_MISMATCH":  2,
 		"HANDSHAKE_STATUS_UNKNOWN_IMPLANT":   3,
 		"HANDSHAKE_STATUS_IDENTITY_MISMATCH": 4,
+		"HANDSHAKE_STATUS_KILL_DATE_EXPIRED": 5,
 	}
 )
 
@@ -735,13 +741,14 @@ const file_rod_proto_rawDesc = "" +
 	"\x10ENROLL_STATUS_OK\x10\x01\x12\x1b\n" +
 	"\x17ENROLL_STATUS_BAD_TOKEN\x10\x02\x12\x19\n" +
 	"\x15ENROLL_STATUS_EXPIRED\x10\x03\x12\x17\n" +
-	"\x13ENROLL_STATUS_SPENT\x10\x04*\xc1\x01\n" +
+	"\x13ENROLL_STATUS_SPENT\x10\x04*\xe9\x01\n" +
 	"\x0fHandshakeStatus\x12 \n" +
 	"\x1cHANDSHAKE_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13HANDSHAKE_STATUS_OK\x10\x01\x12%\n" +
 	"!HANDSHAKE_STATUS_VERSION_MISMATCH\x10\x02\x12$\n" +
 	" HANDSHAKE_STATUS_UNKNOWN_IMPLANT\x10\x03\x12&\n" +
-	"\"HANDSHAKE_STATUS_IDENTITY_MISMATCH\x10\x04*`\n" +
+	"\"HANDSHAKE_STATUS_IDENTITY_MISMATCH\x10\x04\x12&\n" +
+	"\"HANDSHAKE_STATUS_KILL_DATE_EXPIRED\x10\x05*`\n" +
 	"\vTaskOutcome\x12\x1c\n" +
 	"\x18TASK_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TASK_OUTCOME_SUCCEEDED\x10\x01\x12\x17\n" +

@@ -88,6 +88,10 @@ enum HandshakeStatus {
   HANDSHAKE_STATUS_VERSION_MISMATCH = 2;
   HANDSHAKE_STATUS_UNKNOWN_IMPLANT = 3;
   HANDSHAKE_STATUS_IDENTITY_MISMATCH = 4;
+  // The implant's baked-in kill date has passed (architecture.md Sec 7). The
+  // teamserver refuses to open a session for an implant past its kill date;
+  // the stream closes and the implant is expected to self-terminate.
+  HANDSHAKE_STATUS_KILL_DATE_EXPIRED = 5;
 }
 
 // The server's handshake reply. version is the negotiated protocol version;

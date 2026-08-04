@@ -89,6 +89,13 @@ public enum HandshakeReason
     /// (architecture.md Sec 9 mTLS identity check).
     /// </summary>
     IdentityMismatch,
+
+    /// <summary>
+    /// The implant's baked-in kill date has passed (architecture.md Sec 7). A
+    /// lost implant self-terminates at its kill date; the teamserver mirrors that
+    /// here by refusing to open a session for an implant past its kill date.
+    /// </summary>
+    KillDateExpired,
 }
 
 /// <summary>

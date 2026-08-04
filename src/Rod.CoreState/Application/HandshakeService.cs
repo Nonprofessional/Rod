@@ -32,7 +32,8 @@ public static class ProtocolVersions
 /// stream advertises its protocol version, identity, and capabilities. The
 /// service confirms the implant is enrolled, verifies the certificate binding
 /// matches the enrolled engagement (the mTLS identity check, architecture.md
-/// Sec 9), checks the protocol version, and opens a session for the implant in
+/// Sec 9), checks the protocol version, refuses an implant past its baked-in
+/// kill date (architecture.md Sec 7), and opens a session for the implant in
 /// its engagement. Refusals throw <see cref="HandshakeException"/> with a reason
 /// the transport maps to a wire status; like <see cref="EnrollmentService"/> it
 /// holds no state of its own.
@@ -96,7 +97,19 @@ public sealed class HandshakeService
                 $"Client certificate engagement does not match implant {implant.Id}'s engagement.");
         }
 
-        // 4. Open a session. The capabilities advertised here gate tasking
+        // 4. Kill date (architecture.md Sec 7). A lost implant self-terminates at
+        //    its baked-in kill date; the teamserver mirrors that here by refusing
+        //    to open a session for an implant whose kill date has passed. The
+        //    implant entity carries the kill date set at enrollment; the wall
+        //    clock here is authoritative.
+        if (now > implant.KillDate)
+        {
+            throw new HandshakeException(
+                HandshakeReason.KillDateExpired,
+                $"Implant {implant.Id} kill date {implant.KillDate:O} has passed.");
+        }
+
+        // 5. Open a session. The capabilities advertised here gate tasking
         //    dispatch in later milestones (architecture.md Sec 10). Opening a new
         //    session closes any prior active session for the implant first, so a
         //    reconnect does not leave a phantom live connection.
