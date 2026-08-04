@@ -127,12 +127,15 @@ public class GoImplantTests
         throw new InvalidOperationException("Could not locate the implant source tree from the test assembly.");
     }
 
-    // Builds the reference implant into a temp binary once for the test. Building
-    // offline (GOPROXY=off, -mod=readonly) keeps it hermetic: the module graph is
-    // already in go.sum and the cache, so no network resolution is attempted --
-    // `go run` would otherwise hang on GOPROXY in a networkless environment. The
-    // binary is removed by the test's finally/cleanup; a failed build throws so
-    // the failure is attributable rather than a silent subprocess exit.
+    // Builds the reference implant into a temp binary once for the test.
+    // -mod=readonly keeps the build honest about the pinned go.sum: no implicit
+    // module-graph mutation. The test does not force GOPROXY so the build follows
+    // the runner's normal Go configuration -- CI (online, empty cache) downloads
+    // the declared modules from the default proxy; an offline developer with a
+    // populated cache sets GOPROXY=off in their go env once and the build resolves
+    // from cache with no network. A failed build throws so the failure is
+    // attributable rather than a silent subprocess exit. The binary is removed by
+    // the test's finally/cleanup.
     private static string BuildImplantBinary(string implantSource)
     {
         var binary = Path.Combine(Path.GetTempPath(), "rod-implant-" + Guid.NewGuid().ToString("N"));
@@ -150,7 +153,6 @@ public class GoImplantTests
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add(binary);
         psi.ArgumentList.Add("./cmd/rod-implant");
-        psi.EnvironmentVariables["GOPROXY"] = "off";
         using var build = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start go build.");
         var buildErr = build.StandardError.ReadToEnd();
         build.WaitForExit();
