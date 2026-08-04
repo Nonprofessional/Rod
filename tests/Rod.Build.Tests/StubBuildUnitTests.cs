@@ -45,6 +45,35 @@ public class StubBuildUnitTests
     }
 
     [Fact]
+    public async Task Build_BakesTheConfiguredBeaconProfile_IntoTheManifest()
+    {
+        // The configured beacon profile (architecture.md Sec 5.1, Sec 7) -- sleep,
+        // jitter, kill date -- is what makes per-implant OPSEC possible, so it must
+        // land in the artifact manifest, not be silently dropped. Use values that
+        // differ from the build-contract defaults (30s/10s) so a regression to the
+        // default is caught, and a pinned kill date so it survives the round trip.
+        var sleep = TimeSpan.FromSeconds(45);
+        var jitter = TimeSpan.FromSeconds(15);
+        var killDate = new DateTimeOffset(2027, 1, 31, 12, 0, 0, TimeSpan.Zero);
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            new TransportProfile("http://c2.example.test", "/beacon"),
+            new BeaconProfile(sleep, jitter, killDate),
+            "key-one");
+
+        var unit = new StubBuildUnit();
+        var artifact = await unit.BuildAsync(@params);
+
+        var manifest = Encoding.UTF8.GetString(artifact.Content);
+        Assert.Contains("sleep=45s", manifest);
+        Assert.Contains("jitter=15s", manifest);
+        Assert.Contains($"kill_date={killDate:O}", manifest);
+    }
+
+    [Fact]
     public async Task Build_ReturnsNonEmptyArtifact_WithGoLanguage()
     {
         var unit = new StubBuildUnit();

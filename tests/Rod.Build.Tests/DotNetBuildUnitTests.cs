@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
@@ -83,6 +84,36 @@ public class DotNetBuildUnitTests
         var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
 
         Assert.Contains($"\"verbs\":\"{expectedVerbs}\"", json);
+    }
+
+    [Fact]
+    public void RenderBakedProfile_BakesTheConfiguredBeaconProfile()
+    {
+        // The configured beacon profile (architecture.md Sec 5.1, Sec 7) -- sleep,
+        // jitter, kill date -- is what makes per-implant OPSEC possible, so it must
+        // land in the decoded artifact, not be silently dropped. Use values that
+        // differ from the build-contract defaults (30s/10s) so a regression to the
+        // default is caught, and a pinned kill date so it survives the round trip.
+        var sleep = TimeSpan.FromSeconds(45);
+        var jitter = TimeSpan.FromSeconds(15);
+        var killDate = new DateTimeOffset(2027, 1, 31, 12, 0, 0, TimeSpan.Zero);
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
+            new BeaconProfile(sleep, jitter, killDate),
+            "key-one");
+
+        var baked = DotNetBuildUnit.RenderBakedProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        var root = doc.RootElement;
+
+        Assert.Equal("45s", root.GetProperty("sleep").GetString());
+        Assert.Equal("15s", root.GetProperty("jitter").GetString());
+        Assert.Equal(killDate.ToString("O"), root.GetProperty("killDate").GetString());
     }
 
     // RFC 4648 base64url without padding, matching DotNetBuildUnit.Base64Url.
