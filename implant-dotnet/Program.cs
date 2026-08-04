@@ -1,0 +1,189 @@
+// Rod.Implant is the reference .NET stage-2 implant (roadmap M3.3). It enrolls
+// into an engagement, opens the mTLS beacon stream, and runs the core capability
+// verbs the teamserver dispatches (architecture.md Sec 5).
+//
+// This is a benign reference implant: it enrolls over the teamserver's HTTP
+// enroll endpoint, beacons over mTLS, and shells out for the single core verb
+// shell.exec. It performs no evasion, no obfuscation, no persistence, and no
+// destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7). It exists to
+// prove the end-to-end slice -- enroll, beacon, task -- against the real
+// teamserver and to give the .NET build unit something real to compile.
+
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Rod.Implant;
+using Rod.Implant.Internal;
+
+return await ImplantApp.RunAsync(args);
+
+internal static class ImplantApp
+{
+    public static async Task<int> RunAsync(string[] args)
+    {
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        // A profile baked in at build time (the generated BakedProfile class) seeds
+        // the defaults; explicit flags and env still win over it, so an operator
+        // can override at run time.
+        BakedProfileSupport.SeedFromBaked();
+
+        Config config;
+        try
+        {
+            config = Config.Parse(args);
+        }
+        catch (ExitProgramException ex)
+        {
+            // ExitProgramException carries an explicit message only when there is
+            // something to print beyond what Config already wrote (e.g. -h already
+            // printed usage). A null message means "already reported, stay quiet".
+            if (ex.Message is { Length: > 0 } msg)
+                Console.Error.WriteLine("rod-implant: " + msg);
+            return ex.ExitCode;
+        }
+
+        if (config.HasKillDate && DateTimeOffset.Now > config.KillDate)
+        {
+            Console.Error.WriteLine($"rod-implant: kill date {config.KillDate:O} has passed; refusing to run");
+            return 1;
+        }
+
+        // The implant owns its private key; only the public half crosses enroll
+        // (architecture.md Sec 9). 2048-bit RSA matches the dev CA's leaf key size.
+        Console.Error.WriteLine("rod-implant: generating implant keypair");
+        using var privateKey = RSA.Create(2048);
+
+        var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
+
+        Console.Error.WriteLine($"rod-implant: enrolling at {config.EnrollURL}");
+        Enrollment enrollment;
+        try
+        {
+            enrollment = await C2.EnrollAsync(config.EnrollURL, config.StagerToken, privateKey, serverCAs, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"rod-implant: enroll: {ex.Message}");
+            return 1;
+        }
+        Console.Error.WriteLine($"rod-implant: enrolled: implant={enrollment.ImplantId} engagement={enrollment.EngagementId}");
+
+        var beaconUrl = config.BeaconURL;
+        if (beaconUrl.Length == 0)
+            beaconUrl = Endpoints.BeaconUrlFromEnroll(config.EnrollURL);
+
+        var beacon = new Beacon(
+            beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
+            config.Sleep, config.Jitter, Console.Error);
+        try
+        {
+            await beacon.RunAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Clean shutdown via Ctrl-C.
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"rod-implant: beacon: {ex.Message}");
+            return 1;
+        }
+
+        return 0;
+    }
+}
+
+// Helpers split into small static classes so the top-level Program stays
+// readable and each helper is independently testable. These are benign support
+// code with no implant-only tradecraft.
+
+internal static class CACertLoader
+{
+    // Loads an optional PEM-encoded CA bundle from a file path; the implant pins
+    // it as the teamserver identity for the enroll TLS connection. An empty path
+    // returns null (system roots / trust the chain returned at enroll).
+    public static X509Certificate2Collection? LoadOptional(string path)
+    {
+        if (path.Length == 0)
+            return null;
+        var collection = new X509Certificate2Collection();
+        collection.ImportFromPemFile(path);
+        if (collection.Count == 0)
+            throw new InvalidOperationException($"no PEM certificates found in '{path}'");
+        return collection;
+    }
+}
+
+internal static class Endpoints
+{
+    // Derives the beacon URL (host:port) from the enroll URL by stripping the
+    // /implants/enroll path. Lets the operator pass a single endpoint.
+    public static string BeaconUrlFromEnroll(string enrollUrl)
+    {
+        const string suffix = "/implants/enroll";
+        var u = enrollUrl;
+        if (u.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            u = u[..^suffix.Length];
+        // The integration test passes "-beacon-url 127.0.0.1:port" explicitly, so
+        // this derivation only matters when the two hosts coincide.
+        return u;
+    }
+}
+
+internal static class BakedProfileSupport
+{
+    // Applies the build-time baked profile as the defaults for any config field
+    // the operator did not supply via flag or env. The baked value is base64-URL
+    // JSON (the build unit writes it into the generated BakedProfile class).
+    // Malformed baked data is ignored -- a bad bake must not crash the implant, it
+    // just falls back to flag/env.
+    public static void SeedFromBaked()
+    {
+        var bakedJson = BakedProfile.Json;
+        if (bakedJson.Length == 0)
+            return;
+        string raw;
+        try
+        {
+            raw = DecodeBase64Url(bakedJson);
+        }
+        catch
+        {
+            return;
+        }
+        using var doc = System.Text.Json.JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        // Map baked keys to the same ROD_* env names config.Parse reads; only set
+        // env when it is not already present, so an explicit env always wins over
+        // the bake.
+        SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
+        SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
+        SetEnvIfPresent(root, "token", "ROD_STAGER_TOKEN");
+        SetEnvIfPresent(root, "sleep", "ROD_SLEEP");
+        SetEnvIfPresent(root, "jitter", "ROD_JITTER");
+        SetEnvIfPresent(root, "killDate", "ROD_KILL_DATE");
+    }
+
+    private static void SetEnvIfPresent(System.Text.Json.JsonElement root, string jsonKey, string envKey)
+    {
+        if (root.TryGetProperty(jsonKey, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var s = value.GetString();
+            if (!string.IsNullOrEmpty(s) && Environment.GetEnvironmentVariable(envKey) is null)
+                Environment.SetEnvironmentVariable(envKey, s);
+        }
+    }
+
+    private static string DecodeBase64Url(string value)
+    {
+        var padded = value.Replace('-', '+').Replace('_', '/');
+        padded = padded.PadRight((padded.Length + 3) & ~3, '=');
+        var bytes = Convert.FromBase64String(padded);
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
+}

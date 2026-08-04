@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The reference .NET stage-2 implant (roadmap M3.3). A benign, readable
+    implant that enrolls over HTTP (submitting its own public key), beacons over
+    mTLS, and runs the shell.exec core verb (architecture.md Sec 5). It performs
+    no evasion, no obfuscation, no persistence (RESPONSIBLE-USE.md, Sec 7).
+
+    This project is an EXTERNAL component, coupled to the teamserver only by the
+    wire protocol: it is intentionally NOT part of Rod.slnx, mirroring how the
+    Go implant/ module is its own tree. The teamserver's .NET build unit
+    (Rod.DotNetBuildUnit) compiles it per build request.
+
+    The protobuf/gRPC wire bindings are generated at build time from the
+    canonical teamserver proto (src/Rod.Protocol/protos/rod.proto) via Grpc.Tools.
+    No generated code is committed; rod.proto is the single source of truth, the
+    same contract every Rod implant of every language builds against.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Directory.Build.props at the repo root already sets Nullable,
+      TreatWarningsAsErrors, and the latest LangVersion repo-wide, and applies
+      to this tree (it walks up from the project dir). The implant adopts the
+      same discipline as the teamserver. CPM is on repo-wide and the implant's
+      package versions are governed centrally by Directory.Packages.props.
+    -->
+    <AssemblyName>Rod.Implant</AssemblyName>
+    <RootNamespace>Rod.Implant</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The wire protocol contract, generated as a gRPC client. The proto is the
+      teamserver's (src/Rod.Protocol/protos/rod.proto); the Link keeps it visible
+      under protos/ in the implant project without copying it. Client-only: the
+      implant dials the Beacon.CheckIn stream; it does not host any service.
+      rod.proto has no imports, so no ProtoRoot is needed; Grpc.Tools compiles
+      the single file directly.
+    -->
+    <Protobuf
+      Include="..\src\Rod.Protocol\protos\rod.proto"
+      Link="protos\rod.proto"
+      GrpcServices="Client" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions are governed centrally by Directory.Packages.props at the repo
+         root (CPM), so no Version is set here. -->
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
