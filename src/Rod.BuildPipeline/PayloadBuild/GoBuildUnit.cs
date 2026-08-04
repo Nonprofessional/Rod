@@ -117,6 +117,10 @@ public sealed class GoBuildUnit : IBuildUnit
     public static string RenderBakedProfile(BuildParams @params)
     {
         var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
+        // The class's reduced verb set (architecture.md Sec 5.2), comma-joined so
+        // the artifact is self-describing: the generated implant carries the verbs
+        // it is permitted to run, baked in alongside its profile.
+        var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
         var map = new Dictionary<string, string>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
@@ -125,6 +129,7 @@ public sealed class GoBuildUnit : IBuildUnit
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",
             ["jitter"] = ((long)@params.Beacon.Jitter.TotalSeconds).ToString() + "s",
             ["uriPath"] = @params.Transport.UriPath,
+            ["verbs"] = verbs,
             ["keyFingerprint"] = keyFingerprint,
         };
         var json = JsonSerializer.Serialize(map);

@@ -18,10 +18,10 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class DotNetBuildUnitTests
 {
-    private static BuildParams Params(string key) => new(
+    private static BuildParams Params(string key, ImplantClass @class = ImplantClass.Stage2) => new(
         EngagementId.New(),
         OperatorId.New(),
-        ImplantClass.Stage2,
+        @class,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
@@ -60,14 +60,29 @@ public class DotNetBuildUnitTests
         // The two build units must produce byte-identical baked profiles for the
         // same params -- the baked shape is the language-neutral contract the
         // implants decode, so a Go-built and a .NET-built implant read the same
-        // profile format.
+        // profile format. A non-default class exercises the verbs field too.
         var key = "shared-key";
-        var @params = Params(key);
+        var @params = Params(key, ImplantClass.Pivot);
 
         var dotnet = DotNetBuildUnit.RenderBakedProfile(@params);
         var go = GoBuildUnit.RenderBakedProfile(@params);
 
         Assert.Equal(go, dotnet);
+    }
+
+    [Theory]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read")]
+    [InlineData(ImplantClass.Stager, "file.pull")]
+    [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
+    public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
+    {
+        // The class's reduced verb set (architecture.md Sec 5.2) is baked into
+        // the profile, so the generated implant carries the verbs it may run.
+        var baked = DotNetBuildUnit.RenderBakedProfile(Params("key-one", @class));
+
+        var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
+
+        Assert.Contains($"\"verbs\":\"{expectedVerbs}\"", json);
     }
 
     // RFC 4648 base64url without padding, matching DotNetBuildUnit.Base64Url.

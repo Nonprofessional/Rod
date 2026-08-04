@@ -17,14 +17,32 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class StubBuildUnitTests
 {
-    private static BuildParams Params(string key) => new(
+    private static BuildParams Params(string key, ImplantClass @class = ImplantClass.Stage2) => new(
         EngagementId.New(),
         OperatorId.New(),
-        ImplantClass.Stage2,
+        @class,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test", "/beacon"),
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
         key);
+
+    [Theory]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read")]
+    [InlineData(ImplantClass.Stager, "file.pull")]
+    [InlineData(ImplantClass.WebShell, "shell.exec,probe.read")]
+    [InlineData(ImplantClass.Ephemeral, "shell.exec,probe.read")]
+    [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
+    public async Task Build_BakesTheClassReducedVerbSet_IntoTheManifest(ImplantClass @class, string expectedVerbs)
+    {
+        // The class's reduced verb set is baked into the artifact
+        // (architecture.md Sec 5.2), so a captured payload is self-describing.
+        var unit = new StubBuildUnit();
+
+        var artifact = await unit.BuildAsync(Params("key-one", @class));
+
+        var manifest = Encoding.UTF8.GetString(artifact.Content);
+        Assert.Contains($"verbs={expectedVerbs}", manifest);
+    }
 
     [Fact]
     public async Task Build_ReturnsNonEmptyArtifact_WithGoLanguage()

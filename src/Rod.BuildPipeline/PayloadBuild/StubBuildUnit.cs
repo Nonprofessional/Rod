@@ -51,11 +51,13 @@ public sealed class StubBuildUnit : IBuildUnit
     private static string RenderManifest(BuildParams @params, DateTimeOffset builtAt)
     {
         var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
+        var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
         var beacon = @params.Beacon;
         return new StringBuilder()
             .AppendLine("# Rod implant build manifest (STUB -- not executable)")
             .AppendLine($"engagement={@params.EngagementId}")
             .AppendLine($"class={@params.Class}")
+            .AppendLine($"verbs={verbs}")
             .AppendLine($"target={@params.Target.OperatingSystem}/{@params.Target.Architecture}")
             .AppendLine($"endpoint={@params.Transport.Endpoint}")
             .AppendLine($"uri={@params.Transport.UriPath}")

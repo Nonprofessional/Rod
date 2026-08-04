@@ -18,10 +18,10 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class GoBuildUnitTests
 {
-    private static BuildParams Params(string key) => new(
+    private static BuildParams Params(string key, ImplantClass @class = ImplantClass.Stage2) => new(
         EngagementId.New(),
         OperatorId.New(),
-        ImplantClass.Stage2,
+        @class,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
@@ -52,6 +52,21 @@ public class GoBuildUnitTests
 
         var keyFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
         Assert.Contains(keyFingerprint, json);
+    }
+
+    [Theory]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read")]
+    [InlineData(ImplantClass.Stager, "file.pull")]
+    [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
+    public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
+    {
+        // The class's reduced verb set (architecture.md Sec 5.2) is baked into
+        // the profile, so the generated implant carries the verbs it may run.
+        var baked = GoBuildUnit.RenderBakedProfile(Params("key-one", @class));
+
+        var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
+
+        Assert.Contains($"\"verbs\":\"{expectedVerbs}\"", json);
     }
 
     // RFC 4648 base64url without padding, matching GoBuildUnit.Base64Url.
