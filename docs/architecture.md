@@ -172,6 +172,10 @@ artifact at build time, so each implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
 lost implant self-terminates at its kill date.
 
+The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
+land in the decoded artifact across the Go, .NET, and stub build units, so a
+profile that is silently dropped or defaulted fails the build-pipeline tests.
+
 ### 5.2 Implant classes (by operational purpose)
 
 Implants differ by purpose, not by a "managed device flavor":
