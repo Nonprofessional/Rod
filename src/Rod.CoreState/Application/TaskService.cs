@@ -26,44 +26,86 @@ namespace Rod.CoreState.Application;
 /// service without one, and the absence simply skips the publish (the task
 /// itself is the source of truth; the bus is the transient fan-out).
 ///
+/// Issuance is gated on the implant's class reduced verb set
+/// (architecture.md Sec 5.2): a verb outside the class's set is refused before
+/// the task is queued, throwing <see cref="TaskRejectedException"/> for the
+/// transport to map. The implant is resolved here so the gate reads the class
+/// the implant actually enrolled with, and the engagement binding is checked
+/// against it (architecture.md Sec 3).
+///
 /// As with <see cref="EnrollmentService"/> and <see cref="HandshakeService"/>,
 /// refusals propagate as exceptions the transport maps to wire status.
 /// </summary>
 public sealed class TaskService
 {
     private readonly ITaskRepository _tasks;
+    private readonly IImplantRepository _implants;
     private readonly TimeProvider _clock;
     private readonly ILiveEventBus? _bus;
 
-    public TaskService(ITaskRepository tasks, TimeProvider clock)
-        : this(tasks, clock, bus: null)
+    public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock)
+        : this(tasks, implants, clock, bus: null)
     {
     }
 
     /// <summary>
     /// Constructs the service with a live-event bus. The composition root wires
-    /// the bus (roadmap M2.4); the single-argument constructor above keeps the
+    /// the bus (roadmap M2.4); the three-argument constructor above keeps the
     /// core-state unit tests bus-free.
     /// </summary>
-    public TaskService(ITaskRepository tasks, TimeProvider clock, ILiveEventBus? bus)
+    public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock, ILiveEventBus? bus)
     {
         _tasks = tasks;
+        _implants = implants;
         _clock = clock;
         _bus = bus;
     }
 
     /// <summary>
-    /// Issues a task: creates it in <see cref="TaskStatus.Queued"/> for the
-    /// implant and persists it, then publishes a live event so connected
+    /// Issues a task: resolves and validates the implant against the engagement,
+    /// gates the verb on the implant's class reduced verb set
+    /// (architecture.md Sec 5.2), creates it in <see cref="TaskStatus.Queued"/>
+    /// for the implant and persists it, then publishes a live event so connected
     /// operators see the new tasking in real time. Returns the created task.
-    /// The operator and implant are resolved and scoped by the caller; this
-    /// method trusts the engagement binding it is handed.
+    /// Throws <see cref="TaskRejectedException"/> (unknown implant, engagement
+    /// mismatch, or an unsupported verb) for the transport to map to a wire
+    /// status -- the class's reduced set is the authority for what the implant
+    /// may run.
     /// </summary>
     public async System.Threading.Tasks.Task<TaskIssued> IssueAsync(
         IssueTaskCommand command,
         CancellationToken cancellationToken = default)
     {
         var now = _clock.GetUtcNow();
+
+        // Resolve the implant and check its engagement binding (architecture.md
+        // Sec 3) before anything is queued. The class the implant enrolled with
+        // is what the verb gate below reads.
+        var implant = await _implants.FindAsync(command.ImplantId, cancellationToken);
+        if (implant is null)
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.UnknownImplant,
+                $"Implant {command.ImplantId} is not enrolled.");
+        }
+        if (implant.EngagementId != command.EngagementId)
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.ImplantEngagementMismatch,
+                $"Implant {implant.Id} belongs to engagement {implant.EngagementId}, " +
+                $"not {command.EngagementId}.");
+        }
+
+        // The per-class reduced verb set is the authority for what this implant
+        // may run (architecture.md Sec 5.2). A verb outside it never reaches the
+        // queue, so a reduced-class implant cannot be tasked past its purpose.
+        if (!ImplantClassCapabilities.Allows(implant.Class, command.Verb))
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.UnsupportedVerbForClass,
+                $"Verb '{command.Verb}' is not in the {implant.Class} reduced verb set.");
+        }
+
         var task = Task.Create(
             TaskId.New(),
             command.EngagementId,

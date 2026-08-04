@@ -46,14 +46,31 @@ public static class TaskEndpoints
         if (string.IsNullOrWhiteSpace(body.Verb))
             return Results.BadRequest(new Problem("Task verb is required."));
 
-        var issued = await service.IssueAsync(
-            new IssueTaskCommand(
-                new EngagementId(engagementValue),
-                new ImplantId(implantValue),
-                new OperatorId(body.IssuedBy.Value),
-                body.Verb,
-                body.Arguments ?? string.Empty),
-            cancellationToken);
+        TaskIssued issued;
+        try
+        {
+            issued = await service.IssueAsync(
+                new IssueTaskCommand(
+                    new EngagementId(engagementValue),
+                    new ImplantId(implantValue),
+                    new OperatorId(body.IssuedBy.Value),
+                    body.Verb,
+                    body.Arguments ?? string.Empty),
+                cancellationToken);
+        }
+        catch (TaskRejectedException ex)
+        {
+            // The implant's class reduced verb set is the authority for what it
+            // may run (architecture.md Sec 5.2). An unsupported verb is a
+            // well-formed request the server refuses to act on -> 422; an
+            // unknown or foreign implant is a routing failure -> 404.
+            return ex.Reason switch
+            {
+                TaskRejectionReason.UnsupportedVerbForClass
+                    => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
+                _ => Results.NotFound(new Problem(ex.Message)),
+            };
+        }
 
         var response = new TaskIssuedResponse(
             issued.TaskId.ToString(),

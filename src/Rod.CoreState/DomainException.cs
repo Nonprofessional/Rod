@@ -107,3 +107,46 @@ public sealed class HandshakeException : DomainException
         Reason = reason;
     }
 }
+
+/// <summary>
+/// Why a task issuance was refused. Carried on <see cref="TaskRejectedException"/>
+/// so the task endpoint can map each reason to a distinct HTTP status
+/// (architecture.md Sec 10.3) without the core depending on the transport --
+/// mirroring <see cref="HandshakeReason"/> and <see cref="StagerTokenRedeemReason"/>.
+/// </summary>
+public enum TaskRejectionReason
+{
+    /// <summary>
+    /// The verb is not in the implant's class reduced verb set
+    /// (architecture.md Sec 5.2). The implant's class is fixed at enrollment;
+    /// this is the per-class capability gate.
+    /// </summary>
+    UnsupportedVerbForClass,
+
+    /// <summary>The implant id matched no enrolled implant.</summary>
+    UnknownImplant,
+
+    /// <summary>
+    /// The implant belongs to a different engagement than the task
+    /// (architecture.md Sec 3 -- cross-engagement access is impossible by
+    /// construction).
+    /// </summary>
+    ImplantEngagementMismatch,
+}
+
+/// <summary>
+/// A task issuance was refused -- the verb is outside the implant's class
+/// reduced verb set, the implant is unknown, or it belongs to another
+/// engagement. <see cref="Reason"/> is the actionable cause; the caller maps it
+/// to a wire status.
+/// </summary>
+public sealed class TaskRejectedException : DomainException
+{
+    public TaskRejectionReason Reason { get; }
+
+    public TaskRejectedException(TaskRejectionReason reason, string message)
+        : base(message)
+    {
+        Reason = reason;
+    }
+}

@@ -1,0 +1,97 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Rod.CoreState;
+using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
+using Rod.CoreState.Operators;
+using Rod.Transport;
+using Rod.Transport.Endpoints;
+
+namespace Rod.Integration.Tests;
+
+/// <summary>
+/// Roadmap M3.4 acceptance: each implant class enrolls and is gated to its
+/// reduced verb set. Drives the operator-facing task endpoint against an implant
+/// of each class through the in-memory TestServer -- a verb inside the class's
+/// set is accepted (201), a verb outside it is refused (422) before the task is
+/// queued. The class's reduced set (architecture.md Sec 5.2) is enforced at task
+/// issuance in core state and mapped to a wire status by the transport endpoint.
+/// </summary>
+public class ImplantClassGatingTests
+{
+    private static (HttpClient Client, IHost Host) CreateClient()
+    {
+        IHost host = TransportHost.CreateHostBuilder()
+            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
+            .Build();
+        host.Start();
+        var server = host.Services.GetRequiredService<IServer>() as TestServer
+            ?? throw new InvalidOperationException("TestServer was not registered.");
+        var client = server.CreateClient();
+        client.BaseAddress = new Uri("http://localhost");
+        return (client, host);
+    }
+
+    private static async Task<string> CreateEngagementAsync(HttpClient client)
+    {
+        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+            OwnerId: Guid.NewGuid(),
+            OwnerHandle: "cneale",
+            OwnerDisplayName: "Casey Neale",
+            Name: "Operation Smokeshow"));
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        return created!.EngagementId;
+    }
+
+    // Enrolls an implant of the given class directly through the registry so the
+    // task-issuance gate has a class to read. The endpoint path does not require
+    // the implant to be connected -- issuance is gated, not dispatch.
+    private static async Task<Implant> EnrollAsync(IHost host, EngagementId engagement, ImplantClass @class)
+    {
+        var implants = host.Services.GetRequiredService<IImplantRepository>();
+        var clock = host.Services.GetRequiredService<TimeProvider>();
+        var now = clock.GetUtcNow();
+        var implant = Implant.Enroll(ImplantId.New(), engagement, "key-" + @class, now.AddDays(30), @class, now);
+        await implants.SaveAsync(implant);
+        return implant;
+    }
+
+    [Theory]
+    [InlineData(ImplantClass.Stager, "file.pull", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stager, "shell.exec", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.WebShell, "shell.exec", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.WebShell, "tunnel.open", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Ephemeral, "shell.exec", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Ephemeral, "file.push", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Pivot, "tunnel.open", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Pivot, "shell.exec", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Stage2, "shell.exec", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "file.pull", HttpStatusCode.Created)]
+    public async Task TaskEndpoint_GatesOnTheImplantClassVerbSet(
+        ImplantClass @class, string verb, HttpStatusCode expected)
+    {
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            var engagementId = await CreateEngagementAsync(client);
+            var implant = await EnrollAsync(host, new EngagementId(Guid.Parse(engagementId)), @class);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(
+                    ImplantId: implant.Id.ToString(),
+                    IssuedBy: OperatorId.New().Value,
+                    Verb: verb,
+                    Arguments: "arg"));
+
+            Assert.Equal(expected, response.StatusCode);
+        }
+    }
+}
