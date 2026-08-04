@@ -77,15 +77,17 @@ public static class TransportHost
         services.AddSingleton<HandshakeService>();
         services.AddSingleton<TaskService>();
 
-        // Build pipeline (roadmap M3.1/M3.2): the build-unit registry and the
+        // Build pipeline (roadmap M3.1/M3.2/M3.3): the build-unit registry and the
         // orchestrator that drives it. The Go slot holds the real Go build unit
-        // (compiles the reference implant via go build); the stub unit is the
-        // contract reference and is exercised by its own unit tests, not the live
-        // host. The service is audit-agnostic by design -- the payload-build
-        // endpoint in transport composes the PayloadBuilt audit write, the same
-        // way the beacon stream composes the task-completion write.
+        // (compiles the reference implant via go build); the .NET slot holds the
+        // real .NET build unit (compiles the reference implant via dotnet publish);
+        // the stub unit is the contract reference and is exercised by its own unit
+        // tests, not the live host. The service is audit-agnostic by design -- the
+        // payload-build endpoint in transport composes the PayloadBuilt audit write,
+        // the same way the beacon stream composes the task-completion write.
         var buildUnits = new InMemoryBuildUnitRegistry();
         buildUnits.Register(new GoBuildUnit());
+        buildUnits.Register(new DotNetBuildUnit());
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         services.AddSingleton<PayloadBuildService>();
 
