@@ -79,7 +79,7 @@ internal static class ImplantApp
 
         var beacon = new Beacon(
             beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
-            config.Sleep, config.Jitter, Console.Error);
+            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, Console.Error);
         try
         {
             await beacon.RunAsync(cts.Token);

