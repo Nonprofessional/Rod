@@ -28,9 +28,15 @@ namespace Rod.Implant.Internal;
 internal sealed class Beacon
 {
     // The capability verbs the reference implant advertises at handshake
-    // (architecture.md Sec 10). The teamserver gates dispatch on these; only the
-    // core shell verb is wired in this milestone.
-    private static readonly string[] Caps = { "shell.exec" };
+    // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
+    // shell verb plus the three recon verbs the runner implements.
+    private static readonly string[] Caps =
+    {
+        "shell.exec",
+        "recon.portscan",
+        "recon.hostenum",
+        "recon.service",
+    };
 
     private readonly string _beaconUrl;
     private readonly string _implantId;
