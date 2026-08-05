@@ -6,7 +6,8 @@ namespace Rod.CoreState.Tests;
 /// Checks of <see cref="ImplantClassCapabilities"/> -- the per-class reduced
 /// verb set the teamserver gates tasking on (architecture.md Sec 5.2). Each
 /// class advertises the verbs its operational purpose justifies; a stage-2
-/// implant carries the full core set, every other class a subset.
+/// implant carries the full core set plus the recon set, every other class a
+/// subset (and no recon verbs).
 /// </summary>
 public class ImplantClassCapabilitiesTests
 {
@@ -16,6 +17,9 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "file.pull")]
     [InlineData(ImplantClass.Stage2, "tunnel.open")]
     [InlineData(ImplantClass.Stage2, "probe.read")]
+    [InlineData(ImplantClass.Stage2, "recon.portscan")]
+    [InlineData(ImplantClass.Stage2, "recon.hostenum")]
+    [InlineData(ImplantClass.Stage2, "recon.service")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.WebShell, "probe.read")]
@@ -29,10 +33,14 @@ public class ImplantClassCapabilitiesTests
     [Theory]
     [InlineData(ImplantClass.Stager, "shell.exec", "a stager only pulls")]
     [InlineData(ImplantClass.Stager, "tunnel.open", "a stager holds no tunnel")]
+    [InlineData(ImplantClass.Stager, "recon.portscan", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.WebShell, "tunnel.open", "a web-shell holds no tunnel")]
     [InlineData(ImplantClass.WebShell, "file.push", "a web-shell does not push")]
+    [InlineData(ImplantClass.WebShell, "recon.hostenum", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
+    [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Pivot, "shell.exec", "a pivot forwards, it does not shell")]
+    [InlineData(ImplantClass.Pivot, "recon.portscan", "recon is a stage-2 long-haul activity")]
     public void Allows_DeniesAVerbOutsideTheClassSet(ImplantClass @class, string verb, string rationale)
     {
         _ = rationale; // documents the case; not asserted.
