@@ -24,9 +24,14 @@ import (
 )
 
 // Caps are the capability verbs the reference implant advertises at handshake
-// (architecture.md Sec 10). The teamserver gates dispatch on these; only the
-// core shell verb is wired in this milestone.
-var Caps = []string{"shell.exec"}
+// (architecture.md Sec 10). The teamserver gates dispatch on these: the core
+// shell verb plus the three recon verbs the runner implements.
+var Caps = []string{
+	"shell.exec",
+	"recon.portscan",
+	"recon.hostenum",
+	"recon.service",
+}
 
 // Beacon runs the implant's check-in lifecycle against the teamserver: dial the
 // mTLS endpoint, complete the handshake, then loop dispatching downstream tasks

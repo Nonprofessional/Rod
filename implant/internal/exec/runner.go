@@ -1,7 +1,7 @@
-// Package exec dispatches the core capability verbs the reference implant
-// advertises (architecture.md Sec 10). Only shell.exec is wired in this
-// milestone; the runner is the dispatch point future verbs (file.push,
-// probe.read, ...) extend.
+// Package exec dispatches the capability verbs the reference implant
+// advertises (architecture.md Sec 10): the shell.exec core verb and the
+// recon.portscan / recon.hostenum / recon.service recon verbs. The runner is
+// the dispatch point future verbs (file.push, probe.read, ...) extend.
 //
 // This is a benign reference runner: it shells out to the platform shell for the
 // one core verb and reports output. It performs no evasion, no obfuscation, and
@@ -40,6 +40,12 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 	switch verb {
 	case "shell.exec":
 		return r.shellExec(ctx, arguments)
+	case "recon.portscan":
+		return r.portScan(ctx, arguments)
+	case "recon.hostenum":
+		return r.hostEnum(ctx, arguments)
+	case "recon.service":
+		return r.serviceProbe(ctx, arguments)
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb
