@@ -1,6 +1,7 @@
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
 using Rod.Tradecraft.Modules;
+using Rod.Tradecraft.Recon;
 using Rod.Tradecraft.Registry;
 
 namespace Rod.Tradecraft;
@@ -13,43 +14,45 @@ namespace Rod.Tradecraft;
 /// Sec 7).
 /// </summary>
 /// <remarks>
-/// The core verbs load through this layer: <see cref="LoadCoreCapabilitiesAsync"/>
+/// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers the dispatchable <c>shell.exec</c> stub plus a placeholder per
-/// remaining core verb, so the registry lists the full core set. A real module
-/// registered later for the same verb replaces the placeholder (the last
-/// registration wins -- see <see cref="ICapabilityRegistry"/>).
+/// remaining core verb and per recon verb, so the registry lists the full core
+/// and recon sets. A real module registered later for the same verb replaces the
+/// placeholder (the last registration wins -- see
+/// <see cref="ICapabilityRegistry"/>).
 ///
 /// This milestone does not wire the dispatcher onto the live task path; that
 /// arrives with the offensive-capability milestones. These hooks are stable for
 /// it: a future ASP.NET Core composition root will resolve the
 /// <see cref="InMemoryCapabilityRegistry"/> singleton, call
-/// <see cref="LoadCoreCapabilitiesAsync"/> once at startup, and let out-of-tree
+/// <see cref="LoadCapabilitiesAsync"/> once at startup, and let out-of-tree
 /// modules register against <see cref="ICapabilityRegistry"/> afterwards.
 /// </remarks>
 public static class RodTradecraftHost
 {
     /// <summary>
-    /// A fresh in-memory registry preloaded with the core capability verbs. The
-    /// walking-skeleton convenience for tests and for a process that does not
-    /// run the full ASP.NET Core host: it owns one registry, loads the core
-    /// verbs into it, and hands it back ready to dispatch <c>shell.exec</c>.
+    /// A fresh in-memory registry preloaded with the built-in capability verbs
+    /// (core plus recon). The walking-skeleton convenience for tests and for a
+    /// process that does not run the full ASP.NET Core host: it owns one
+    /// registry, loads the verbs into it, and hands it back ready to dispatch
+    /// <c>shell.exec</c>.
     /// </summary>
     public static async Task<InMemoryCapabilityRegistry> BuildDefaultRegistryAsync(
         CancellationToken cancellationToken = default)
     {
         var registry = new InMemoryCapabilityRegistry();
-        await LoadCoreCapabilitiesAsync(registry, cancellationToken);
+        await LoadCapabilitiesAsync(registry, cancellationToken);
         return registry;
     }
 
     /// <summary>
-    /// Registers the built-in core capability modules into
-    /// <paramref name="registry"/>: the dispatchable <c>shell.exec</c> stub,
-    /// then a placeholder per remaining core verb so the registry lists all of
-    /// them. Idempotent: each verb is registered at most once by deduplicating
-    /// against what <paramref name="registry"/> already holds.
+    /// Registers every built-in capability module into <paramref name="registry"/>:
+    /// the dispatchable <c>shell.exec</c> stub, then a placeholder per remaining
+    /// core verb and per recon verb so the registry lists both full sets.
+    /// Idempotent: each verb is registered at most once by deduplicating against
+    /// what <paramref name="registry"/> already holds.
     /// </summary>
-    public static async Task LoadCoreCapabilitiesAsync(
+    public static async Task LoadCapabilitiesAsync(
         ICapabilityRegistry registry,
         CancellationToken cancellationToken = default)
     {
@@ -71,10 +74,40 @@ public static class RodTradecraftHost
         {
             if (string.Equals(descriptor.Verb, CoreCapabilities.ShellExec, StringComparison.OrdinalIgnoreCase))
                 continue; // registered by the stub above
-            if (already.Contains(descriptor.Verb))
-                continue; // caller-supplied override; leave it in place
-
-            await registry.RegisterAsync(new PlaceholderCapabilityModule(descriptor), cancellationToken);
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }
+
+        // Recon verbs load the same way: a placeholder per verb so the registry
+        // lists the full recon set, leaving any caller-supplied override in
+        // place. Concrete recon behavior is out-of-tree (architecture.md Sec 13).
+        foreach (var descriptor in ReconCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Backward-compatible alias for <see cref="LoadCapabilitiesAsync"/>. Loads
+    /// both the core and the recon sets; kept under the original name so callers
+    /// and tests from the M2.5 skeleton keep compiling.
+    /// </summary>
+    public static Task LoadCoreCapabilitiesAsync(
+        ICapabilityRegistry registry,
+        CancellationToken cancellationToken = default)
+        => LoadCapabilitiesAsync(registry, cancellationToken);
+
+    // Registers a placeholder for descriptor's verb unless the registry already
+    // has a module for it (an out-of-tree override). Centralized so the core and
+    // recon loops share one dedup rule and one placeholder path.
+    private static async Task RegisterPlaceholderAsync(
+        ICapabilityRegistry registry,
+        CapabilityDescriptor descriptor,
+        HashSet<string> already,
+        CancellationToken cancellationToken)
+    {
+        if (already.Contains(descriptor.Verb))
+            return; // caller-supplied override; leave it in place
+
+        await registry.RegisterAsync(new PlaceholderCapabilityModule(descriptor), cancellationToken);
     }
 }
