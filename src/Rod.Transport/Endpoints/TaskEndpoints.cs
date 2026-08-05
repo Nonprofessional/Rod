@@ -60,13 +60,13 @@ public static class TaskEndpoints
         }
         catch (TaskRejectedException ex)
         {
-            // The implant's class reduced verb set is the authority for what it
-            // may run (architecture.md Sec 5.2). An unsupported verb is a
-            // well-formed request the server refuses to act on -> 422; an
-            // unknown or foreign implant is a routing failure -> 404.
+            // An unsupported verb and a retired implant are both well-formed
+            // requests the server refuses to act on -> 422; an unknown or
+            // foreign implant is a routing failure -> 404.
             return ex.Reason switch
             {
                 TaskRejectionReason.UnsupportedVerbForClass
+                or TaskRejectionReason.ImplantRetired
                     => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
                 _ => Results.NotFound(new Problem(ex.Message)),
             };

@@ -92,6 +92,12 @@ enum HandshakeStatus {
   // teamserver refuses to open a session for an implant past its kill date;
   // the stream closes and the implant is expected to self-terminate.
   HANDSHAKE_STATUS_KILL_DATE_EXPIRED = 5;
+  // The implant has been retired (architecture.md Sec 7, M4.4). A retired
+  // implant is taken out of operation and never gets a session again; the
+  // teamserver refuses to open one and the stream closes. Like kill date, the
+  // refusal is authoritative server-side -- the implant need not be told in
+  // advance.
+  HANDSHAKE_STATUS_IMPLANT_RETIRED = 6;
 }
 
 // The server's handshake reply. version is the negotiated protocol version;

@@ -170,6 +170,31 @@ public class HandshakeServiceTests
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id));
     }
 
+    [Fact]
+    public async Task Handshake_RefusesRetiredImplant()
+    {
+        var implants = new InMemoryImplantRepository();
+        var sessions = new InMemorySessionRegistry();
+        var engagement = EngagementId.New();
+
+        // A retired implant (architecture.md Sec 7, M4.4). The kill date is in
+        // the future and the engagement matches, so the refusal is specifically
+        // the retirement -- a retired implant never gets a session again.
+        var implant = Implant.Enroll(
+            ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+        implant.Retire(Now);
+        await implants.SaveAsync(implant);
+
+        var service = new HandshakeService(implants, sessions, new FakeClock(Now));
+
+        var ex = await Assert.ThrowsAsync<HandshakeException>(() => service.HandshakeAsync(
+            new HandshakeCommand(implant.Id, 1, 0, Array.Empty<string>(), engagement)));
+        Assert.Equal(HandshakeReason.ImplantRetired, ex.Reason);
+
+        // No session was opened for the retired implant.
+        Assert.Null(await sessions.GetActiveAsync(implant.Id));
+    }
+
     private sealed class FakeClock : TimeProvider
     {
         private readonly DateTimeOffset _now;

@@ -96,11 +96,19 @@ public enum HandshakeReason
     /// here by refusing to open a session for an implant past its kill date.
     /// </summary>
     KillDateExpired,
+
+    /// <summary>
+    /// The implant has been retired (architecture.md Sec 7, M4.4). A retired
+    /// implant is taken out of operation and never gets a session again; the
+    /// teamserver refuses to open one and the stream closes.
+    /// </summary>
+    ImplantRetired,
 }
 
 /// <summary>
 /// A handshake was refused -- the implant is unknown, the protocol version is
-/// unsupported, or the certificate-vs-identity check failed.
+/// unsupported, the certificate-vs-identity check failed, the implant is past
+/// its kill date, or the implant has been retired.
 /// <see cref="Reason"/> is the actionable cause; the caller maps it to a wire
 /// status.
 /// </summary>
@@ -139,13 +147,20 @@ public enum TaskRejectionReason
     /// construction).
     /// </summary>
     ImplantEngagementMismatch,
+
+    /// <summary>
+    /// The implant has been retired (architecture.md Sec 7, M4.4). A retired
+    /// implant is taken out of operation and is untaskable; the issuance is
+    /// refused before the task is queued.
+    /// </summary>
+    ImplantRetired,
 }
 
 /// <summary>
 /// A task issuance was refused -- the verb is outside the implant's class
-/// reduced verb set, the implant is unknown, or it belongs to another
-/// engagement. <see cref="Reason"/> is the actionable cause; the caller maps it
-/// to a wire status.
+/// reduced verb set, the implant is unknown, it belongs to another engagement,
+/// or it has been retired. <see cref="Reason"/> is the actionable cause; the
+/// caller maps it to a wire status.
 /// </summary>
 public sealed class TaskRejectedException : DomainException
 {

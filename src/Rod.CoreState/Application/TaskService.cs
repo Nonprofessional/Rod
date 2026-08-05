@@ -96,6 +96,16 @@ public sealed class TaskService
                 $"not {command.EngagementId}.");
         }
 
+        // A retired implant is out of operation and untaskable (architecture.md
+        // Sec 7, M4.4). Checked after the binding resolves and before the verb
+        // gate, so a retirement is refused regardless of the verb.
+        if (implant.IsRetired)
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.ImplantRetired,
+                $"Implant {implant.Id} was retired at {implant.RetiredAt:O}.");
+        }
+
         // The per-class reduced verb set is the authority for what this implant
         // may run (architecture.md Sec 5.2). A verb outside it never reaches the
         // queue, so a reduced-class implant cannot be tasked past its purpose.

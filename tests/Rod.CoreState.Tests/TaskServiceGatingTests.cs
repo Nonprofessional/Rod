@@ -98,4 +98,23 @@ public class TaskServiceGatingTests
 
         Assert.Equal(TaskRejectionReason.ImplantEngagementMismatch, ex.Reason);
     }
+
+    [Fact]
+    public async Task IssueAsync_RejectsRetiredImplant()
+    {
+        // A retired implant is out of operation and untaskable (architecture.md
+        // Sec 7, M4.4). The refusal happens before the verb gate, so even a verb
+        // in the implant's class set is refused once the implant is retired.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        implant.Retire(Now);
+        var service = NewService(implants);
+
+        var ex = await Assert.ThrowsAsync<TaskRejectedException>(
+            () => service.IssueAsync(
+                new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.exec", "arg")));
+
+        Assert.Equal(TaskRejectionReason.ImplantRetired, ex.Reason);
+    }
 }

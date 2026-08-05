@@ -9,10 +9,10 @@ namespace Rod.CoreState.Implants;
 /// disposable with it; an implant certificate binds
 /// <c>(implant_id, engagement_id)</c> (architecture.md Sec 9).
 ///
-/// Entity shape only at this milestone: <see cref="Key"/> and
-/// <see cref="KillDate"/> are recorded here and surfaced on the issued
-/// certificate, but their enforcement (refusing to run past the kill date, key
-/// rotation) is M4.2.
+/// The kill date is enforced on both sides of the wire (M4.2); per-implant keys
+/// are server-generated at enrollment and build time. Retirement (M4.4) marks an
+/// implant taken out of operation: a retired implant is refused at handshake and
+/// untaskable, and its active session is closed when it is retired.
 /// </summary>
 public sealed class Implant
 {
@@ -22,6 +22,10 @@ public sealed class Implant
     public DateTimeOffset KillDate { get; }
     public ImplantClass Class { get; }
     public DateTimeOffset CreatedAt { get; }
+    public DateTimeOffset? RetiredAt { get; private set; }
+
+    /// <summary>True once the implant has been taken out of operation.</summary>
+    public bool IsRetired => RetiredAt is not null;
 
     private Implant(
         ImplantId id,
@@ -59,6 +63,24 @@ public sealed class Implant
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
 
         return new Implant(id, engagementId, key, killDate, @class, createdAt);
+    }
+
+    /// <summary>
+    /// Takes the implant out of operation (architecture.md Sec 7, M4.4). Sets
+    /// <see cref="RetiredAt"/>; a retired implant is refused at handshake and
+    /// untaskable thereafter. Idempotent: a second call on an already-retired
+    /// implant returns false and changes nothing, so the retire use case can
+    /// distinguish "just retired" from "was already retired". The session is
+    /// closed by the use case, not the entity, so this type stays free of the
+    /// session registry.
+    /// </summary>
+    public bool Retire(DateTimeOffset at)
+    {
+        if (RetiredAt is not null)
+            return false;
+
+        RetiredAt = at;
+        return true;
     }
 }
 

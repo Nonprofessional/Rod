@@ -109,7 +109,19 @@ public sealed class HandshakeService
                 $"Implant {implant.Id} kill date {implant.KillDate:O} has passed.");
         }
 
-        // 5. Open a session. The capabilities advertised here gate tasking
+        // 5. Retirement (architecture.md Sec 7, M4.4). An implant taken out of
+        //    operation never gets a session again. Retirement is an explicit
+        //    operator action (distinct from the time-based kill date above), so it
+        //    sits between the kill-date check and session open: a retired implant
+        //    is refused even when it is otherwise still within its kill window.
+        if (implant.IsRetired)
+        {
+            throw new HandshakeException(
+                HandshakeReason.ImplantRetired,
+                $"Implant {implant.Id} was retired at {implant.RetiredAt:O}.");
+        }
+
+        // 6. Open a session. The capabilities advertised here gate tasking
         //    dispatch in later milestones (architecture.md Sec 10). Opening a new
         //    session closes any prior active session for the implant first, so a
         //    reconnect does not leave a phantom live connection.

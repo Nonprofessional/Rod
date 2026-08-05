@@ -93,6 +93,12 @@ const (
 	// teamserver refuses to open a session for an implant past its kill date;
 	// the stream closes and the implant is expected to self-terminate.
 	HandshakeStatus_HANDSHAKE_STATUS_KILL_DATE_EXPIRED HandshakeStatus = 5
+	// The implant has been retired (architecture.md Sec 7, M4.4). A retired
+	// implant is taken out of operation and never gets a session again; the
+	// teamserver refuses to open one and the stream closes. Like kill date, the
+	// refusal is authoritative server-side -- the implant need not be told in
+	// advance.
+	HandshakeStatus_HANDSHAKE_STATUS_IMPLANT_RETIRED HandshakeStatus = 6
 )
 
 // Enum value maps for HandshakeStatus.
@@ -104,6 +110,7 @@ var (
 		3: "HANDSHAKE_STATUS_UNKNOWN_IMPLANT",
 		4: "HANDSHAKE_STATUS_IDENTITY_MISMATCH",
 		5: "HANDSHAKE_STATUS_KILL_DATE_EXPIRED",
+		6: "HANDSHAKE_STATUS_IMPLANT_RETIRED",
 	}
 	HandshakeStatus_value = map[string]int32{
 		"HANDSHAKE_STATUS_UNSPECIFIED":       0,
@@ -112,6 +119,7 @@ var (
 		"HANDSHAKE_STATUS_UNKNOWN_IMPLANT":   3,
 		"HANDSHAKE_STATUS_IDENTITY_MISMATCH": 4,
 		"HANDSHAKE_STATUS_KILL_DATE_EXPIRED": 5,
+		"HANDSHAKE_STATUS_IMPLANT_RETIRED":   6,
 	}
 )
 
@@ -741,14 +749,15 @@ const file_rod_proto_rawDesc = "" +
 	"\x10ENROLL_STATUS_OK\x10\x01\x12\x1b\n" +
 	"\x17ENROLL_STATUS_BAD_TOKEN\x10\x02\x12\x19\n" +
 	"\x15ENROLL_STATUS_EXPIRED\x10\x03\x12\x17\n" +
-	"\x13ENROLL_STATUS_SPENT\x10\x04*\xe9\x01\n" +
+	"\x13ENROLL_STATUS_SPENT\x10\x04*\x8f\x02\n" +
 	"\x0fHandshakeStatus\x12 \n" +
 	"\x1cHANDSHAKE_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13HANDSHAKE_STATUS_OK\x10\x01\x12%\n" +
 	"!HANDSHAKE_STATUS_VERSION_MISMATCH\x10\x02\x12$\n" +
 	" HANDSHAKE_STATUS_UNKNOWN_IMPLANT\x10\x03\x12&\n" +
 	"\"HANDSHAKE_STATUS_IDENTITY_MISMATCH\x10\x04\x12&\n" +
-	"\"HANDSHAKE_STATUS_KILL_DATE_EXPIRED\x10\x05*`\n" +
+	"\"HANDSHAKE_STATUS_KILL_DATE_EXPIRED\x10\x05\x12$\n" +
+	" HANDSHAKE_STATUS_IMPLANT_RETIRED\x10\x06*`\n" +
 	"\vTaskOutcome\x12\x1c\n" +
 	"\x18TASK_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16TASK_OUTCOME_SUCCEEDED\x10\x01\x12\x17\n" +
