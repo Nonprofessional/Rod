@@ -40,7 +40,8 @@ sections.
 |------|---------|
 | **Teamserver** | The monolithic .NET control-plane kernel: core state, transport, build pipeline, operator layer, storage/audit, tradecraft. |
 | **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), mTLS, DNS, SMB, TCP). Decoupled from the public endpoint. |
-| **Redirector** | A near-stateless Go forwarder that fronts a listener for OPSEC and infra flexibility. Burned redirectors are swappable. No engagement state, no business logic. |
+| **Redirector** | A near-stateless Go forwarder that fronts a listener for OPSEC and infra flexibility. Burned redirectors are swappable at runtime by repointing the listener. No engagement state, no business logic. |
+| **Repoint** | Repointing a listener swaps its public endpoint at runtime (`POST /listeners/{id}:repoint`) without touching the Kestrel bind; the old endpoint stops resolving, which severs it. |
 | **Build unit** | A per-language compilation service (C#/.NET, Go, C/C++, Nim) driven by the teamserver through the build contract. |
 | **Build contract** | The uniform message schema coupling the teamserver to build units; the language-neutrality boundary for generation. |
 
@@ -58,5 +59,6 @@ sections.
 |------|---------|
 | **Audit event** | An immutable, hash-chained, attributed record of a privileged action; the engagement timeline and report source by construction. |
 | **Artifact** | A first-class object (file, screenshot, command output) linked to a task; part of the evidence store. |
-| **Burn handling** | Rotating keys/endpoints, retiring an implant, or severing a redirector when an implant or endpoint is compromised. |
+| **Retire** | Marking an implant retired from the operator API; a retired implant is refused at handshake (`HANDSHAKE_STATUS_IMPLANT_RETIRED`), untaskable, and its active session is closed. Idempotent; recorded as an `ImplantRetired` audit event.
+| **Burn handling** | The recovery flow when an implant or endpoint is compromised: retire the implant, repoint (swap) the burned endpoint, and rebuild a fresh artifact with a fresh key. |
 | **ROE guardrails** | Rules-of-engagement controls that warn or block high-risk actions against out-of-scope targets, reading from the audit store. |

@@ -91,7 +91,7 @@ ports; no Postgres yet.
       past its kill date; keys differ per implant.
 - [x] **M4.3 Malleable transport profiles.** Configurable URIs, headers, timing,
       payload shape per implant. _AC:_ a profile changes the wire shape.
-- [ ] **M4.4 Redirectors and burn handling.** Decoupled public endpoints; key/
+- [x] **M4.4 Redirectors and burn handling.** Decoupled public endpoints; key/
       endpoint rotation; implant retirement; redirector severing.
       _AC:_ swap a redirector without backend change; retire an implant cleanly.
 
