@@ -76,6 +76,7 @@ public static class TransportHost
         services.AddSingleton<EnrollmentService>();
         services.AddSingleton<HandshakeService>();
         services.AddSingleton<TaskService>();
+        services.AddSingleton<ImplantService>();
 
         // Build pipeline (roadmap M3.1/M3.2/M3.3): the build-unit registry and the
         // orchestrator that drives it. The Go slot holds the real Go build unit

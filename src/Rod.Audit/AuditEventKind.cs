@@ -24,4 +24,13 @@ public enum AuditEventKind
     /// event's implant/task ids are unused.
     /// </summary>
     PayloadBuilt,
+
+    /// <summary>
+    /// An implant was retired (architecture.md Sec 7, M4.4). The event carries
+    /// the implant id and the retiring operator; the outcome is the recorded
+    /// retirement timestamp. A retired implant is refused at handshake and
+    /// untaskable thereafter. The event has no task -- retirement is an
+    /// operator action on the implant, not a task it ran.
+    /// </summary>
+    ImplantRetired,
 }

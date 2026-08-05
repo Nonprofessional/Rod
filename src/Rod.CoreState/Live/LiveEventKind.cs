@@ -30,4 +30,12 @@ public enum LiveEventKind
     /// reaches every operator session in real time.
     /// </summary>
     TaskCompleted,
+
+    /// <summary>
+    /// An implant was retired (architecture.md Sec 7, M4.4). Lets connected
+    /// operators see an implant leave the live fleet the moment it is taken out
+    /// of operation, rather than waiting for it to drop off presence on its
+    /// next (refused) handshake.
+    /// </summary>
+    ImplantRetired,
 }

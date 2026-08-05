@@ -1,24 +1,30 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.Audit;
 using Rod.CoreState;
+using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing implant/session listing (roadmap M1.5, the operator UI):
-/// which implants have enrolled into an engagement, with a live online indicator,
-/// plus the tasks directed at a given implant. Joins the implant registry with
-/// the session registry so the operator UI can show sessions at a glance, and
-/// reads the task registry for an implant's task history. Scoped by engagement so
-/// implant identity never leaks across engagements (architecture.md Sec 3).
+/// The operator-facing implant endpoints (roadmap M1.5, the operator UI):
+/// which implants have enrolled into an engagement, with a live online indicator
+/// and their retirement state, plus the tasks directed at a given implant and
+/// the retire action. Joins the implant registry with the session registry so
+/// the operator UI can show sessions at a glance, and reads the task registry
+/// for an implant's task history. Scoped by engagement so implant identity never
+/// leaks across engagements (architecture.md Sec 3).
 ///
 /// An implant is online exactly when it has an active session (roadmap M2.1); the
-/// listing projects that onto the enrolled implants.
+/// listing projects that onto the enrolled implants. Retiring an implant
+/// (roadmap M4.4) takes it out of operation: it is marked retired, its active
+/// session is closed, and the retire is recorded in the engagement audit trail.
 /// </summary>
 public static class ImplantEndpoints
 {
@@ -28,6 +34,7 @@ public static class ImplantEndpoints
         group.MapGet("/", ListImplantsAsync).WithName(nameof(ListImplantsAsync));
         group.MapGet("/{implantId}/tasks", ListImplantTasksAsync)
             .WithName(nameof(ListImplantTasksAsync));
+        group.MapPost("/{implantId}:retire", RetireAsync).WithName(nameof(RetireAsync));
         return endpoints;
     }
 
@@ -52,7 +59,8 @@ public static class ImplantEndpoints
                 i.Class.ToString(),
                 i.KillDate,
                 i.CreatedAt,
-                IsOnline: onlineById.Contains(i.Id)))
+                IsOnline: onlineById.Contains(i.Id),
+                i.RetiredAt))
             .ToArray();
 
         return Results.Ok(body);
@@ -94,6 +102,69 @@ public static class ImplantEndpoints
         return Results.Ok(body);
     }
 
+    private static async Task<IResult> RetireAsync(
+        string engagementId,
+        string implantId,
+        RetireImplantRequest body,
+        ImplantService service,
+        IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+        if (body.RetiredBy is null)
+            return Results.BadRequest(new Problem("Retiring operator id is required."));
+
+        Rod.CoreState.Application.ImplantRetired retired;
+        try
+        {
+            retired = await service.RetireAsync(
+                new RetireImplantCommand(
+                    new EngagementId(engagementValue),
+                    new ImplantId(implantValue),
+                    new OperatorId(body.RetiredBy.Value)),
+                cancellationToken);
+        }
+        catch (ImplantNotFoundException ex)
+        {
+            // Unknown or foreign implant -- same shape the listing and task
+            // endpoints return for a foreign implant (architecture.md Sec 3).
+            return Results.NotFound(new Problem(ex.Message));
+        }
+
+        // The retire is recorded (architecture.md Sec 11): an ImplantRetired
+        // audit event in the engagement trail, attributed to the retiring
+        // operator. The outcome is the recorded retirement timestamp. No task is
+        // involved -- retirement is an operator action on the implant. The store
+        // stamps the chain hashes on append; the call site supplies only the
+        // facts. Idempotent: a duplicate retire is still recorded, so the trail
+        // reflects every operator action; JustRetired distinguishes the first.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: retired.EngagementId.Value,
+                operatorId: retired.RetiredBy.Value,
+                implantId: retired.ImplantId.Value,
+                taskId: Guid.Empty,
+                verb: "retire",
+                kind: AuditEventKind.ImplantRetired,
+                payload: retired.JustRetired ? "retired" : "already retired",
+                output: null,
+                outcome: retired.RetiredAt.ToString("O"),
+                at: retired.RetiredAt),
+            cancellationToken);
+
+        return Results.Ok(new RetireImplantResponse(
+            retired.ImplantId.ToString(),
+            retired.EngagementId.ToString(),
+            retired.RetiredBy.ToString(),
+            retired.RetiredAt,
+            retired.JustRetired,
+            retired.ClosedSession?.ToString()));
+    }
+
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     public sealed record ImplantResponse(
@@ -102,7 +173,8 @@ public static class ImplantEndpoints
         string Class,
         DateTimeOffset KillDate,
         DateTimeOffset CreatedAt,
-        bool IsOnline);
+        bool IsOnline,
+        DateTimeOffset? RetiredAt);
 
     public sealed record ImplantTaskResponse(
         string TaskId,
@@ -115,6 +187,21 @@ public static class ImplantEndpoints
         string? Outcome,
         DateTimeOffset CreatedAt,
         DateTimeOffset? CompletedAt);
+
+    /// <summary>
+    /// Request to retire an implant. <see cref="RetiredBy"/> is the operator
+    /// taking the implant out of operation; the engagement and implant are read
+    /// from the route.
+    /// </summary>
+    public sealed record RetireImplantRequest(Guid? RetiredBy);
+
+    public sealed record RetireImplantResponse(
+        string ImplantId,
+        string EngagementId,
+        string RetiredBy,
+        DateTimeOffset RetiredAt,
+        bool JustRetired,
+        string? ClosedSession);
 
     public sealed record Problem(string Error);
 }

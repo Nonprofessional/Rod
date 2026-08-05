@@ -64,4 +64,18 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.TaskCompleted, operatorId, implantId, taskId, payload, at);
+
+    /// <summary>
+    /// Builds an implant-retired event (architecture.md Sec 7, M4.4). Carries
+    /// the implant id and the retiring operator; no task is involved, so the
+    /// task id is null. <paramref name="payload"/> is a short description peers
+    /// can render directly.
+    /// </summary>
+    public static LiveEvent ImplantRetired(
+        EngagementId engagement,
+        OperatorId operatorId,
+        ImplantId implantId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.ImplantRetired, operatorId, implantId, TaskId: null, payload, at);
 }
