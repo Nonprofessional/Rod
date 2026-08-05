@@ -5,7 +5,10 @@ namespace Rod.Transport.Listeners;
 /// ingress the teamserver is terminating and exposes the read view operators see
 /// (<c>GET /listeners</c>). Population happens at startup: <c>UseRodListeners</c>
 /// binds each configured listener's socket and registers it here, so the registry
-/// reflects what is actually listening rather than what was merely configured.
+/// reflects what is actually listening rather than what was merely configured. At
+/// runtime an operator can repoint a listener's public endpoint
+/// (<c>POST /listeners/{id}:repoint</c>) to swap a burned redirector without
+/// touching the backend (M4.4); the bind address never changes.
 ///
 /// Listeners are global infrastructure, so this registry is not engagement-scoped.
 /// </summary>
@@ -31,4 +34,16 @@ public interface IListenerRegistry
     /// its bind address) that terminates the connection.
     /// </summary>
     Task<Listener?> GetByPublicEndpointAsync(string publicEndpoint, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Repoints the listener's public endpoint -- the redirector or host-header
+    /// implants dial -- without touching its bound socket (architecture.md
+    /// Sec 7/8, M4.4). After this returns, <see cref="GetByPublicEndpointAsync"/>
+    /// resolves the new endpoint to this listener and the old one no longer does
+    /// (severing a burned redirector). Returns null when the listener is unknown.
+    /// </summary>
+    Task<Listener?> RepointAsync(
+        ListenerId listener,
+        string publicEndpoint,
+        CancellationToken cancellationToken = default);
 }

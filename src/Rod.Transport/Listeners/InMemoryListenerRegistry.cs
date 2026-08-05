@@ -11,6 +11,21 @@ namespace Rod.Transport.Listeners;
 public sealed class InMemoryListenerRegistry : IListenerRegistry
 {
     private readonly ConcurrentDictionary<ListenerId, Listener> _listeners = new();
+    private readonly TimeProvider _clock;
+
+    public InMemoryListenerRegistry()
+        : this(TimeProvider.System)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the registry with a specific clock. Tests inject a fake so
+    /// repoint timestamps are deterministic; the host uses the system clock.
+    /// </summary>
+    public InMemoryListenerRegistry(TimeProvider clock)
+    {
+        _clock = clock;
+    }
 
     public Task RegisterAsync(Listener listener, CancellationToken cancellationToken = default)
     {
@@ -35,5 +50,19 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
         var match = _listeners.Values.FirstOrDefault(l =>
             string.Equals(l.PublicEndpoint, publicEndpoint, StringComparison.OrdinalIgnoreCase));
         return Task.FromResult(match);
+    }
+
+    public Task<Listener?> RepointAsync(
+        ListenerId listener,
+        string publicEndpoint,
+        CancellationToken cancellationToken = default)
+    {
+        if (_listeners.TryGetValue(listener, out var found))
+        {
+            found.Repoint(publicEndpoint, _clock.GetUtcNow());
+            return Task.FromResult<Listener?>(found);
+        }
+
+        return Task.FromResult<Listener?>(null);
     }
 }
