@@ -87,6 +87,28 @@ public class DotNetImplantTests
                 Assert.Equal("TaskCompleted", evt.Kind);
                 Assert.Equal("shell.exec", evt.Verb);
                 Assert.Equal("Succeeded", evt.Outcome);
+
+                // M5.1 acceptance: a recon task's scan results are captured as task
+                // output against an authorized target (architecture.md Sec 10.3).
+                // The mTLS beacon port the implant is connected to is a known-open
+                // loopback port, so a portscan over a tight range around it reports
+                // that port open in the captured output.
+                var scanRange = GoImplantTests.PortScanRangeAround(env.MtlsPort);
+                var reconIssued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, IssuedBy = operatorId, Verb = "recon.portscan", Arguments = $"127.0.0.1 {scanRange}" });
+                reconIssued.EnsureSuccessStatusCode();
+                var reconBody = await reconIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(reconBody);
+                Assert.Equal("recon.portscan", reconBody!.Verb);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{reconBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains($"127.0.0.1:{env.MtlsPort} open");
+                }, deadline: TimeSpan.FromSeconds(60));
             }
             finally
             {

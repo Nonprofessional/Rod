@@ -91,6 +91,28 @@ public class GoImplantTests
                 Assert.Equal("TaskCompleted", evt.Kind);
                 Assert.Equal("shell.exec", evt.Verb);
                 Assert.Equal("Succeeded", evt.Outcome);
+
+                // M5.1 acceptance: a recon task's scan results are captured as task
+                // output against an authorized target (architecture.md Sec 10.3).
+                // The mTLS beacon port the implant is connected to is a known-open
+                // loopback port, so a portscan over a tight range around it reports
+                // that port open in the captured output.
+                var scanRange = PortScanRangeAround(env.MtlsPort);
+                var reconIssued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, IssuedBy = operatorId, Verb = "recon.portscan", Arguments = $"127.0.0.1 {scanRange}" });
+                reconIssued.EnsureSuccessStatusCode();
+                var reconBody = await reconIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(reconBody);
+                Assert.Equal("recon.portscan", reconBody!.Verb);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{reconBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains($"127.0.0.1:{env.MtlsPort} open");
+                }, deadline: TimeSpan.FromSeconds(60));
             }
             finally
             {
@@ -197,6 +219,16 @@ public class GoImplantTests
     // whole-second intervals, so seconds precision is exact here.
     private static string ToGoDuration(TimeSpan value)
         => $"{(long)value.TotalSeconds}s";
+
+    // Builds a "<start>-<end>" port range for a recon.portscan argument that
+    // covers a tight window around the given open port, so the scan finishes
+    // promptly while still reporting the port as open. Clamped to [1, 65535].
+    internal static string PortScanRangeAround(int port)
+    {
+        var start = Math.Max(1, port - 2);
+        var end = Math.Min(65535, port + 2);
+        return $"{start}-{end}";
+    }
 
     // Polls the presence query until exactly one implant is online in some
     // engagement, then returns (engagementId, implantId). The engagement id is not
