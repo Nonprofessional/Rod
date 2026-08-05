@@ -51,6 +51,7 @@ sections.
 |------|---------|
 | **Capability** | A verb an implant advertises and the teamserver may dispatch; namespaced (`namespace.action`). |
 | **Capability module** | A distributable, signed bundle adding capability verbs (core or offensive). Evasion/exploit behavior is delivered as out-of-tree modules. |
+| **Recon** | The `recon.portscan`, `recon.hostenum`, and `recon.service` verbs (category `Recon`); target and network reconnaissance, gated to Stage-2 at task issuance (Sec 5.2). Like the non-shell core verbs their concrete behavior runs on the implants and is captured as task output -- the descriptors and dispatch live in the tradecraft layer. |
 | **Task / Tasking** | An operator-issued request targeting a session; has a state machine, result, and attribution. |
 
 ## Evidence and OPSEC
