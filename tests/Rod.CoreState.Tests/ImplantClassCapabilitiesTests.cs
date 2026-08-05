@@ -51,11 +51,19 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Stage2, verb));
 
     [Fact]
-    public void For_Stage2_ReturnsTheFullCoreSet()
+    public void For_Stage2_ReturnsTheFullCoreAndReconSet()
     {
+        // Stage-2 is the primary long-haul implant: it carries the full core set
+        // plus the recon set, since recon is a long-haul activity
+        // (architecture.md Sec 5.2, Sec 10.1). Every other class carries a
+        // subset for its purpose and no recon verbs.
         var verbs = ImplantClassCapabilities.For(ImplantClass.Stage2);
         Assert.Equal(
-            new[] { "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read" },
+            new[]
+            {
+                "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
+                "recon.portscan", "recon.hostenum", "recon.service",
+            },
             verbs);
     }
 

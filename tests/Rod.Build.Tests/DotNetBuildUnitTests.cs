@@ -72,7 +72,7 @@ public class DotNetBuildUnitTests
     }
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
     public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
