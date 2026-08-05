@@ -68,4 +68,43 @@ public class PayloadBuildServiceTests
         var manifest = System.Text.Encoding.UTF8.GetString(artifact.Content);
         Assert.DoesNotContain(artifact.Params.Key, manifest);
     }
+
+    [Fact]
+    public async Task Build_FlowsTheMalleableTransportProfile_ToTheArtifact()
+    {
+        // The malleable transport knobs set on the request (architecture.md Sec 7,
+        // M4.3) flow BuildRequest -> BuildParams -> baked artifact unchanged, so an
+        // operator profile is reflected in the generated payload. The stub manifest
+        // is UTF-8 text, so a substring check is enough; the per-knob round trip is
+        // covered in the build-unit tests, this proves the orchestrator carries it.
+        var service = NewService();
+        var transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+        {
+            EnrollPath = "/api/v1/health",
+            UserAgent = "Mozilla/5.0 (RodTest)",
+            Headers = new Dictionary<string, string> { ["Accept"] = "application/json" },
+            RequestTimeout = TimeSpan.FromSeconds(12),
+            Envelope = TransportEnvelope.Base64,
+        };
+        var request = new BuildRequest(
+            EngagementId.New(),
+            OperatorId.New(),
+            Language.Go,
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            transport,
+            Sleep: TimeSpan.FromSeconds(30),
+            Jitter: TimeSpan.FromSeconds(10),
+            KillDate: null);
+
+        var artifact = await service.BuildAsync(request);
+
+        Assert.Same(transport, artifact.Params.Transport);
+        var manifest = System.Text.Encoding.UTF8.GetString(artifact.Content);
+        Assert.Contains("enroll_path=/api/v1/health", manifest);
+        Assert.Contains("user_agent=Mozilla/5.0 (RodTest)", manifest);
+        Assert.Contains("headers=Accept=application/json", manifest);
+        Assert.Contains("request_timeout=12s", manifest);
+        Assert.Contains("envelope=base64", manifest);
+    }
 }

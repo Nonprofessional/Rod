@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using Rod.CoreState.Implants;
 
@@ -53,14 +54,32 @@ public sealed class StubBuildUnit : IBuildUnit
         var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
         var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
         var beacon = @params.Beacon;
+        // The malleable transport profile (architecture.md Sec 7): enroll path,
+        // User-Agent, headers, request timeout, and body envelope are surfaced in
+        // the manifest the same way the baked JSON surfaces them, so the stub
+        // artifact is self-describing about its wire shape too.
+        var transport = @params.Transport;
+        // Headers render sorted by name so the stub manifest is deterministic
+        // regardless of the runtime's dictionary iteration order, matching the
+        // ordered render the Go and .NET units use for the baked JSON.
+        var headers = transport.Headers.Count == 0
+            ? "-"
+            : string.Join(";", transport.Headers
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => $"{kv.Key}={kv.Value}"));
         return new StringBuilder()
             .AppendLine("# Rod implant build manifest (STUB -- not executable)")
             .AppendLine($"engagement={@params.EngagementId}")
             .AppendLine($"class={@params.Class}")
             .AppendLine($"verbs={verbs}")
             .AppendLine($"target={@params.Target.OperatingSystem}/{@params.Target.Architecture}")
-            .AppendLine($"endpoint={@params.Transport.Endpoint}")
-            .AppendLine($"uri={@params.Transport.UriPath}")
+            .AppendLine($"endpoint={transport.Endpoint}")
+            .AppendLine($"uri={transport.UriPath}")
+            .AppendLine($"enroll_path={transport.EnrollPath}")
+            .AppendLine($"user_agent={transport.UserAgent}")
+            .AppendLine($"headers={headers}")
+            .AppendLine($"request_timeout={(long)transport.RequestTimeout.TotalSeconds}s")
+            .AppendLine($"envelope={transport.Envelope.ToString().ToLowerInvariant()}")
             .AppendLine($"sleep={(long)beacon.Sleep.TotalSeconds}s")
             .AppendLine($"jitter={(long)beacon.Jitter.TotalSeconds}s")
             .AppendLine($"kill_date={beacon.KillDate:O}")

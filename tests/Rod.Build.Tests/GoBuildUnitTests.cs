@@ -100,6 +100,79 @@ public class GoBuildUnitTests
         Assert.Equal(killDate.ToString("O"), root.GetProperty("killDate").GetString());
     }
 
+    [Fact]
+    public void RenderBakedProfile_BakesTheConfiguredTransportProfile()
+    {
+        // The malleable transport profile (architecture.md Sec 7, M4.3) -- enroll
+        // path, User-Agent, custom headers, request timeout, body envelope -- is
+        // what makes the per-implant wire shape differ. Each knob must land in the
+        // decoded artifact, not be silently dropped or defaulted. The values are
+        // chosen to differ from the defaults (/implants/enroll, no UA, no headers,
+        // 30s, none) so a regression to a default is caught.
+        var transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+        {
+            EnrollPath = "/api/v1/health",
+            UserAgent = "Mozilla/5.0 (RodTest)",
+            Headers = new Dictionary<string, string>
+            {
+                ["X-Forwarded-For"] = "10.0.0.1",
+                ["Accept"] = "application/json",
+            },
+            RequestTimeout = TimeSpan.FromSeconds(12),
+            Envelope = TransportEnvelope.Base64,
+        };
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            transport,
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
+            "key-one");
+
+        var baked = GoBuildUnit.RenderBakedProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        var root = doc.RootElement;
+
+        Assert.Equal("/api/v1/health", root.GetProperty("enrollPath").GetString());
+        Assert.Equal("Mozilla/5.0 (RodTest)", root.GetProperty("userAgent").GetString());
+        Assert.Equal("12s", root.GetProperty("requestTimeout").GetString());
+        Assert.Equal("base64", root.GetProperty("envelope").GetString());
+
+        // Headers render as a nested JSON object, in insertion order.
+        var headers = root.GetProperty("headers");
+        Assert.Equal("10.0.0.1", headers.GetProperty("X-Forwarded-For").GetString());
+        Assert.Equal("application/json", headers.GetProperty("Accept").GetString());
+    }
+
+    [Fact]
+    public void RenderBakedProfile_DefaultTransportProfile_BakesTheDefaults()
+    {
+        // A minimal transport profile (only the required endpoint + uri path)
+        // fills the malleable knobs with the documented defaults, so a build that
+        // does not opt into malleability keeps the unchanged wire shape.
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
+            "key-one");
+
+        var baked = GoBuildUnit.RenderBakedProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        var root = doc.RootElement;
+
+        Assert.Equal(TransportProfile.Defaults.EnrollPath, root.GetProperty("enrollPath").GetString());
+        Assert.Equal(TransportProfile.Defaults.UserAgent, root.GetProperty("userAgent").GetString());
+        Assert.Equal("none", root.GetProperty("envelope").GetString());
+        Assert.Equal("30s", root.GetProperty("requestTimeout").GetString());
+        Assert.Empty(root.GetProperty("headers").EnumerateObject());
+    }
+
     // RFC 4648 base64url without padding, matching GoBuildUnit.Base64Url.
     private static byte[] Base64UrlDecode(string value)
     {

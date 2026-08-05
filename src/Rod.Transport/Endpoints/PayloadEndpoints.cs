@@ -62,7 +62,7 @@ public static class PayloadEndpoints
                 language,
                 @class,
                 new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
-                new TransportProfile(body.Endpoint ?? "http://localhost:5080", body.UriPath ?? "/beacon"),
+                BuildTransport(body),
                 ParseDuration(body.SleepSeconds, DefaultSleep),
                 ParseDuration(body.JitterSeconds, DefaultJitter),
                 body.KillDate),
@@ -108,6 +108,34 @@ public static class PayloadEndpoints
     private static TimeSpan ParseDuration(double? seconds, TimeSpan fallback)
         => seconds is { } value && value >= 0 ? TimeSpan.FromSeconds(value) : fallback;
 
+    // Builds the malleable transport profile off the request body
+    // (architecture.md Sec 7, M4.3). Endpoint and uri path are the always-set
+    // positional fields; the malleable knobs default when the operator omits
+    // them, so a minimal build request stays valid. Headers arrive as a flat
+    // name/value map and are applied verbatim; an empty or null map adds none.
+    private static TransportProfile BuildTransport(BuildPayloadRequest body)
+    {
+        var profile = new TransportProfile(
+            body.Endpoint ?? "http://localhost:5080",
+            body.UriPath ?? "/beacon");
+
+        if (!string.IsNullOrWhiteSpace(body.EnrollPath))
+            profile = profile with { EnrollPath = body.EnrollPath };
+        if (!string.IsNullOrWhiteSpace(body.UserAgent))
+            profile = profile with { UserAgent = body.UserAgent };
+        if (body.Headers is { Count: > 0 } headers)
+            profile = profile with { Headers = headers };
+        if (body.RequestTimeoutSeconds is { } timeoutSeconds and >= 0)
+            profile = profile with { RequestTimeout = TimeSpan.FromSeconds(timeoutSeconds) };
+        if (body.Envelope is { } envelope
+            && Enum.TryParse<TransportEnvelope>(envelope, ignoreCase: true, out var parsed))
+        {
+            profile = profile with { Envelope = parsed };
+        }
+
+        return profile;
+    }
+
     // Case-insensitive enum parse off the request string, with a fallback when
     // the field is absent so a minimal request stays valid.
     private static bool TryParseLanguage(string? text, out Language language)
@@ -132,6 +160,10 @@ public static class PayloadEndpoints
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
+    // The malleable transport knobs (M4.3) are all optional: EnrollPath,
+    // UserAgent, Headers, RequestTimeoutSeconds, Envelope. An operator who omits
+    // them gets a profile with the unchanged wire shape. Defaulted so a minimal
+    // positional construction (as in the integration tests) stays valid.
     public sealed record BuildPayloadRequest(
         Guid? RequestedBy,
         string? Language,
@@ -142,7 +174,12 @@ public static class PayloadEndpoints
         string? UriPath,
         double? SleepSeconds,
         double? JitterSeconds,
-        DateTimeOffset? KillDate);
+        DateTimeOffset? KillDate,
+        string? EnrollPath = null,
+        string? UserAgent = null,
+        Dictionary<string, string>? Headers = null,
+        double? RequestTimeoutSeconds = null,
+        string? Envelope = null);
 
     public sealed record BuildPayloadResponse(
         string ArtifactId,

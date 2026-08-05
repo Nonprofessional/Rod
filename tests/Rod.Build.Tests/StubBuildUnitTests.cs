@@ -74,6 +74,62 @@ public class StubBuildUnitTests
     }
 
     [Fact]
+    public async Task Build_BakesTheConfiguredTransportProfile_IntoTheManifest()
+    {
+        // The malleable transport profile (architecture.md Sec 7, M4.3) is surfaced
+        // in the stub manifest the same way the baked JSON surfaces it, so the stub
+        // artifact is self-describing about its wire shape. Values differ from the
+        // defaults so a regression to a default is caught.
+        var transport = new TransportProfile("http://c2.example.test", "/beacon")
+        {
+            EnrollPath = "/api/v1/health",
+            UserAgent = "Mozilla/5.0 (RodTest)",
+            Headers = new Dictionary<string, string>
+            {
+                ["X-Forwarded-For"] = "10.0.0.1",
+                ["Accept"] = "application/json",
+            },
+            RequestTimeout = TimeSpan.FromSeconds(12),
+            Envelope = TransportEnvelope.Base64,
+        };
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            transport,
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
+            "key-one");
+
+        var unit = new StubBuildUnit();
+        var artifact = await unit.BuildAsync(@params);
+
+        var manifest = Encoding.UTF8.GetString(artifact.Content);
+        Assert.Contains("enroll_path=/api/v1/health", manifest);
+        Assert.Contains("user_agent=Mozilla/5.0 (RodTest)", manifest);
+        Assert.Contains("request_timeout=12s", manifest);
+        Assert.Contains("envelope=base64", manifest);
+        // Headers render as sorted Name=Value pairs joined by ';'.
+        Assert.Contains("headers=Accept=application/json;X-Forwarded-For=10.0.0.1", manifest);
+    }
+
+    [Fact]
+    public async Task Build_BakesTheDefaultTransportProfile_IntoTheManifest()
+    {
+        // A minimal transport profile fills the malleable knobs with the documented
+        // defaults, so the stub manifest records the unchanged wire shape.
+        var unit = new StubBuildUnit();
+        var artifact = await unit.BuildAsync(Params("key-one"));
+
+        var manifest = Encoding.UTF8.GetString(artifact.Content);
+        Assert.Contains($"enroll_path={TransportProfile.Defaults.EnrollPath}", manifest);
+        Assert.Contains("user_agent=", manifest);
+        Assert.Contains("headers=-", manifest);
+        Assert.Contains("request_timeout=30s", manifest);
+        Assert.Contains("envelope=none", manifest);
+    }
+
+    [Fact]
     public async Task Build_ReturnsNonEmptyArtifact_WithGoLanguage()
     {
         var unit = new StubBuildUnit();

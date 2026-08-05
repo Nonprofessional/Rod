@@ -116,6 +116,47 @@ public class DotNetBuildUnitTests
         Assert.Equal(killDate.ToString("O"), root.GetProperty("killDate").GetString());
     }
 
+    [Fact]
+    public void RenderBakedProfile_BakesTheConfiguredTransportProfile()
+    {
+        // The malleable transport profile (architecture.md Sec 7, M4.3) must land
+        // in the .NET unit's baked profile the same way it lands in the Go unit's
+        // -- the cross-unit encoding test already proves byte-identity, this
+        // asserts the decoded values directly so a .NET-only regression is caught.
+        var transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+        {
+            EnrollPath = "/api/v1/health",
+            UserAgent = "Mozilla/5.0 (RodTest)",
+            Headers = new Dictionary<string, string>
+            {
+                ["X-Forwarded-For"] = "10.0.0.1",
+                ["Accept"] = "application/json",
+            },
+            RequestTimeout = TimeSpan.FromSeconds(12),
+            Envelope = TransportEnvelope.Base64,
+        };
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            transport,
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
+            "key-one");
+
+        var baked = DotNetBuildUnit.RenderBakedProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        var root = doc.RootElement;
+
+        Assert.Equal("/api/v1/health", root.GetProperty("enrollPath").GetString());
+        Assert.Equal("Mozilla/5.0 (RodTest)", root.GetProperty("userAgent").GetString());
+        Assert.Equal("12s", root.GetProperty("requestTimeout").GetString());
+        Assert.Equal("base64", root.GetProperty("envelope").GetString());
+        Assert.Equal("10.0.0.1", root.GetProperty("headers").GetProperty("X-Forwarded-For").GetString());
+        Assert.Equal("application/json", root.GetProperty("headers").GetProperty("Accept").GetString());
+    }
+
     // RFC 4648 base64url without padding, matching DotNetBuildUnit.Base64Url.
     private static byte[] Base64UrlDecode(string value)
     {
