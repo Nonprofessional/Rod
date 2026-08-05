@@ -89,7 +89,7 @@ ports; no Postgres yet.
 - [x] **M4.2 Kill dates and per-implant keys.** Self-termination timestamp and a
       unique key per implant, server-generated. _AC:_ an implant refuses to run
       past its kill date; keys differ per implant.
-- [ ] **M4.3 Malleable transport profiles.** Configurable URIs, headers, timing,
+- [x] **M4.3 Malleable transport profiles.** Configurable URIs, headers, timing,
       payload shape per implant. _AC:_ a profile changes the wire shape.
 - [ ] **M4.4 Redirectors and burn handling.** Decoupled public endpoints; key/
       endpoint rotation; implant retirement; redirector severing.
