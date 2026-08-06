@@ -6,9 +6,9 @@ namespace Rod.CoreState.Tests;
 /// Checks of <see cref="ImplantClassCapabilities"/> -- the per-class reduced
 /// verb set the teamserver gates tasking on (architecture.md Sec 5.2). Each
 /// class advertises the verbs its operational purpose justifies; a stage-2
-/// implant carries the full core set plus the recon set, the lateral set, and
-/// the persist set, every other class a subset (and no recon, lateral, or
-/// persist verbs).
+/// implant carries the full core set plus the recon set, the lateral set, the
+/// persist set, the collect set, and the exfil set, every other class a subset
+/// (and no recon, lateral, persist, collect, or exfil verbs).
 /// </summary>
 public class ImplantClassCapabilitiesTests
 {
@@ -27,6 +27,11 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "persist.install")]
     [InlineData(ImplantClass.Stage2, "persist.remove")]
     [InlineData(ImplantClass.Stage2, "persist.list")]
+    [InlineData(ImplantClass.Stage2, "collect.file")]
+    [InlineData(ImplantClass.Stage2, "collect.cred")]
+    [InlineData(ImplantClass.Stage2, "collect.keylog")]
+    [InlineData(ImplantClass.Stage2, "exfil.push")]
+    [InlineData(ImplantClass.Stage2, "exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.WebShell, "probe.read")]
@@ -43,19 +48,23 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stager, "recon.portscan", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Stager, "lateral.move", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Stager, "persist.install", "persistence is a stage-2 activity")]
+    [InlineData(ImplantClass.Stager, "collect.file", "collection and exfiltration are stage-2 long-haul activities")]
     [InlineData(ImplantClass.WebShell, "tunnel.open", "a web-shell holds no tunnel")]
     [InlineData(ImplantClass.WebShell, "file.push", "a web-shell does not push")]
     [InlineData(ImplantClass.WebShell, "recon.hostenum", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.WebShell, "lateral.token", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.WebShell, "persist.list", "persistence is a stage-2 activity")]
+    [InlineData(ImplantClass.WebShell, "exfil.push", "collection and exfiltration are stage-2 long-haul activities")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
     [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Ephemeral, "lateral.exec_remote", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Ephemeral, "persist.remove", "persistence is a stage-2 activity")]
+    [InlineData(ImplantClass.Ephemeral, "collect.cred", "collection and exfiltration are stage-2 long-haul activities")]
     [InlineData(ImplantClass.Pivot, "shell.exec", "a pivot forwards, it does not shell")]
     [InlineData(ImplantClass.Pivot, "recon.portscan", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Pivot, "lateral.move", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Pivot, "persist.install", "persistence is a stage-2 activity")]
+    [InlineData(ImplantClass.Pivot, "exfil.stage", "collection and exfiltration are stage-2 long-haul activities")]
     public void Allows_DeniesAVerbOutsideTheClassSet(ImplantClass @class, string verb, string rationale)
     {
         _ = rationale; // documents the case; not asserted.
@@ -74,13 +83,14 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Stage2, verb));
 
     [Fact]
-    public void For_Stage2_ReturnsTheFullCoreReconLateralAndPersistSet()
+    public void For_Stage2_ReturnsTheFullCoreReconLateralPersistCollectAndExfilSet()
     {
         // Stage-2 is the primary long-haul implant: it carries the full core set
-        // plus the recon set, the lateral set, and the persist set, since recon,
-        // lateral movement, and persistence are long-haul activities
+        // plus the recon set, the lateral set, the persist set, the collect set,
+        // and the exfil set, since recon, lateral movement, persistence,
+        // collection, and exfiltration are long-haul activities
         // (architecture.md Sec 5.2, Sec 10.1). Every other class carries a subset
-        // for its purpose and no recon, lateral, or persist verbs.
+        // for its purpose and no recon, lateral, persist, collect, or exfil verbs.
         var verbs = ImplantClassCapabilities.For(ImplantClass.Stage2);
         Assert.Equal(
             new[]
@@ -89,6 +99,8 @@ public class ImplantClassCapabilitiesTests
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
+                "collect.file", "collect.cred", "collect.keylog",
+                "exfil.push", "exfil.stage",
             },
             verbs);
     }

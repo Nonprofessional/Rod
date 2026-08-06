@@ -8,8 +8,9 @@ namespace Rod.CoreState.Implants;
 /// "device flavor": a stager only fetches, a web-shell executes over HTTP but
 /// holds no tunnel, an ephemeral is one-shot, and a pivot forwards tasking for
 /// hosts that cannot run their own implant. A stage-2 implant carries the full
-/// core set plus the recon set, the lateral set, and the persist set; recon,
-/// lateral movement, and persistence are long-haul activities. These sets are
+/// core set plus the recon set, the lateral set, the persist set, the collect
+/// set, and the exfil set; recon, lateral movement, persistence, collection,
+/// and exfiltration are long-haul activities. These sets are
 /// the server's authority for what a class is allowed
 /// to do: task issuance gates on them (architecture.md Sec 10.3), and the build
 /// pipeline bakes them into each artifact so the generated payload is
@@ -26,25 +27,28 @@ public static class ImplantClassCapabilities
 {
     /// <summary>
     /// The verbs a class of implant is permitted to run. Stage-2 carries the
-    /// full core set plus the recon set, the lateral set, and the persist set;
-    /// every other class carries the subset its operational purpose justifies
-    /// (architecture.md Sec 5.2). Stored read-only and case-normalized so
-    /// <see cref="Allows"/> can match case-insensitively without re-allocating.
+    /// full core set plus the recon set, the lateral set, the persist set, the
+    /// collect set, and the exfil set; every other class carries the subset its
+    /// operational purpose justifies (architecture.md Sec 5.2). Stored read-only
+    /// and case-normalized so <see cref="Allows"/> can match case-insensitively
+    /// without re-allocating.
     /// </summary>
     private static readonly IReadOnlyDictionary<ImplantClass, IReadOnlyList<string>> ByClass =
         new Dictionary<ImplantClass, IReadOnlyList<string>>
         {
             // The primary long-haul implant: the whole core baseline plus the
-            // recon set, the lateral set, and the persist set (architecture.md
-            // Sec 10.1). Recon, lateral movement, and persistence are all
-            // long-haul activities that justify a stage-2 footprint and no
-            // other class.
+            // recon set, the lateral set, the persist set, the collect set, and
+            // the exfil set (architecture.md Sec 10.1). Recon, lateral movement,
+            // persistence, collection, and exfiltration are all long-haul
+            // activities that justify a stage-2 footprint and no other class.
             [ImplantClass.Stage2] = new[]
             {
                 "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
+                "collect.file", "collect.cred", "collect.keylog",
+                "exfil.push", "exfil.stage",
             },
 
             // A tiny stage-1 loader: it only pulls the stage-2 payload it then
