@@ -6,8 +6,8 @@ namespace Rod.CoreState.Tests;
 /// Checks of <see cref="ImplantClassCapabilities"/> -- the per-class reduced
 /// verb set the teamserver gates tasking on (architecture.md Sec 5.2). Each
 /// class advertises the verbs its operational purpose justifies; a stage-2
-/// implant carries the full core set plus the recon set, every other class a
-/// subset (and no recon verbs).
+/// implant carries the full core set plus the recon set and the lateral set,
+/// every other class a subset (and no recon or lateral verbs).
 /// </summary>
 public class ImplantClassCapabilitiesTests
 {
@@ -20,6 +20,9 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "recon.portscan")]
     [InlineData(ImplantClass.Stage2, "recon.hostenum")]
     [InlineData(ImplantClass.Stage2, "recon.service")]
+    [InlineData(ImplantClass.Stage2, "lateral.move")]
+    [InlineData(ImplantClass.Stage2, "lateral.token")]
+    [InlineData(ImplantClass.Stage2, "lateral.exec_remote")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.WebShell, "probe.read")]
@@ -34,13 +37,17 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stager, "shell.exec", "a stager only pulls")]
     [InlineData(ImplantClass.Stager, "tunnel.open", "a stager holds no tunnel")]
     [InlineData(ImplantClass.Stager, "recon.portscan", "recon is a stage-2 long-haul activity")]
+    [InlineData(ImplantClass.Stager, "lateral.move", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.WebShell, "tunnel.open", "a web-shell holds no tunnel")]
     [InlineData(ImplantClass.WebShell, "file.push", "a web-shell does not push")]
     [InlineData(ImplantClass.WebShell, "recon.hostenum", "recon is a stage-2 long-haul activity")]
+    [InlineData(ImplantClass.WebShell, "lateral.token", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
     [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a stage-2 long-haul activity")]
+    [InlineData(ImplantClass.Ephemeral, "lateral.exec_remote", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Pivot, "shell.exec", "a pivot forwards, it does not shell")]
     [InlineData(ImplantClass.Pivot, "recon.portscan", "recon is a stage-2 long-haul activity")]
+    [InlineData(ImplantClass.Pivot, "lateral.move", "lateral movement is a stage-2 activity")]
     public void Allows_DeniesAVerbOutsideTheClassSet(ImplantClass @class, string verb, string rationale)
     {
         _ = rationale; // documents the case; not asserted.
@@ -59,18 +66,20 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Stage2, verb));
 
     [Fact]
-    public void For_Stage2_ReturnsTheFullCoreAndReconSet()
+    public void For_Stage2_ReturnsTheFullCoreReconAndLateralSet()
     {
         // Stage-2 is the primary long-haul implant: it carries the full core set
-        // plus the recon set, since recon is a long-haul activity
-        // (architecture.md Sec 5.2, Sec 10.1). Every other class carries a
-        // subset for its purpose and no recon verbs.
+        // plus the recon set and the lateral set, since recon and lateral
+        // movement are long-haul activities (architecture.md Sec 5.2, Sec 10.1).
+        // Every other class carries a subset for its purpose and no recon or
+        // lateral verbs.
         var verbs = ImplantClassCapabilities.For(ImplantClass.Stage2);
         Assert.Equal(
             new[]
             {
                 "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
                 "recon.portscan", "recon.hostenum", "recon.service",
+                "lateral.move", "lateral.token", "lateral.exec_remote",
             },
             verbs);
     }
