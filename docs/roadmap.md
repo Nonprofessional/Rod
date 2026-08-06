@@ -102,7 +102,7 @@ ports; no Postgres yet.
 - [x] **M5.2 Lateral movement.** `lateral.move`, `lateral.token`,
       `lateral.exec_remote`, recorded with parent linkage.
       _AC:_ a child implant enrols from a parent within scope.
-- [ ] **M5.3 Persistence.** `persist.install/remove/list`.
+- [x] **M5.3 Persistence.** `persist.install/remove/list`.
       _AC:_ install, list, and remove within the engagement.
 - [ ] **M5.4 Collect and exfil.** `collect.file/cred/keylog`, `exfil.push/stage`.
       _AC:_ collected data exfils over the C2 channel and is stored scoped.
