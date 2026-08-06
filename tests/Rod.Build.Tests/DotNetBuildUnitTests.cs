@@ -72,7 +72,7 @@ public class DotNetBuildUnitTests
     }
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.file,collect.cred,collect.keylog,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
     public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)

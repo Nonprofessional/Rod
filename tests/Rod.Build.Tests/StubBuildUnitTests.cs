@@ -27,7 +27,7 @@ public class StubBuildUnitTests
         key);
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.file,collect.cred,collect.keylog,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec,probe.read")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec,probe.read")]
