@@ -55,6 +55,13 @@ public sealed class EnrollmentService
     /// public half. When absent, the CA generates an ephemeral leaf key (the
     /// original M1.2 shape, kept for back-compat with tests that do not need an
     /// mTLS-capable identity).
+    ///
+    /// When <see cref="EnrollCommand.ParentImplantId"/> is set the implant is a
+    /// child derived from that parent (architecture.md Sec 5.2, roadmap M5.2): the
+    /// parent must exist, belong to the same engagement the token redeemed, and not
+    /// be retired, or a <see cref="InvalidParentImplantException"/> is thrown for
+    /// the caller to map to a wire status. The child enrols into the redeemed
+    /// engagement and records its parent; a null parent enrolls a top-level implant.
     /// </summary>
     public async Task<EnrollmentResult> EnrollAsync(
         EnrollCommand command,
@@ -69,14 +76,25 @@ public sealed class EnrollmentService
         // 2. Confirm the engagement still exists (it may have been torn down).
         await _engagements.GetOrThrowAsync(redeemed.EngagementId, cancellationToken);
 
-        // 3. Build the implant: server-generated per-implant key + default kill date.
+        // 3. Resolve and scope-check the parent when this is a child enrollment
+        //    (architecture.md Sec 5.2). The child enrols into the parent's
+        //    engagement -- which must equal the redeemed engagement, so a child
+        //    cannot be grafted across engagements -- and the parent must be live.
+        //    Throws InvalidParentImplantException on failure; let it propagate.
+        var parent = command.ParentImplantId is { } parentId
+            ? await ResolveParentAsync(parentId, redeemed.EngagementId, cancellationToken)
+            : null;
+
+        // 4. Build the implant: server-generated per-implant key + default kill date.
+        //    EnrollChild records the parent when present; a null parent yields the
+        //    top-level shape, so the two paths share one factory.
         var implantId = ImplantId.New();
         var key = Base64Url(RandomNumberGenerator.GetBytes(32));
         var killDate = now + DefaultKillDateOffset;
-        var implant = Implant.Enroll(implantId, redeemed.EngagementId, key, killDate, command.Class, now);
+        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, key, killDate, command.Class, now, parent?.Id);
         await _implants.SaveAsync(implant, cancellationToken);
 
-        // 4. Issue the certificate bound to (implant_id, engagement_id). Over the
+        // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
         //    implant's own public key when it supplied one (the mTLS-capable path);
         //    over a server-generated ephemeral key otherwise.
         var subject = new ImplantCertificateSubject(implant.Id, redeemed.EngagementId);
@@ -91,7 +109,44 @@ public sealed class EnrollmentService
             killDate,
             command.Class,
             issued.Leaf,
-            issued.CaChain);
+            issued.CaChain,
+            implant.ParentImplantId);
+    }
+
+    // Resolves the parent implant and enforces the engagement-scope and liveness
+    // rules a child derivation requires (architecture.md Sec 5.2/3). The parent
+    // must exist, belong to the same engagement the child's token redeemed, and not
+    // be retired; each failure throws InvalidParentImplantException with a distinct
+    // reason the transport maps to a wire status. Centralized so the enroll path
+    // has one place that defines "a valid parent".
+    private async Task<Implant> ResolveParentAsync(
+        ImplantId parentId,
+        EngagementId engagementId,
+        CancellationToken cancellationToken)
+    {
+        var parent = await _implants.FindAsync(parentId, cancellationToken);
+        if (parent is null)
+        {
+            throw new InvalidParentImplantException(
+                InvalidParentImplantReason.Unknown,
+                $"Parent implant {parentId} is not enrolled.");
+        }
+        if (parent.EngagementId != engagementId)
+        {
+            // A child enrols into the same engagement as its parent
+            // (architecture.md Sec 3); a parent in another engagement is refused
+            // without revealing that the implant exists elsewhere.
+            throw new InvalidParentImplantException(
+                InvalidParentImplantReason.EngagementMismatch,
+                $"Parent implant {parentId} is not in engagement {engagementId}.");
+        }
+        if (parent.IsRetired)
+        {
+            throw new InvalidParentImplantException(
+                InvalidParentImplantReason.Retired,
+                $"Parent implant {parentId} was retired and cannot derive children.");
+        }
+        return parent;
     }
 
     // Decodes the implant-supplied public key (DER SubjectPublicKeyInfo) and asks the
@@ -122,16 +177,22 @@ public sealed class EnrollmentService
 /// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo the CA
 /// signs a leaf over, so the implant keeps its private key for mTLS
 /// (architecture.md Sec 9); null leaves the CA to generate an ephemeral leaf key.
+///
+/// <see cref="ParentImplantId"/> (roadmap M5.2) derives a child implant: when set,
+/// the service resolves and scope-checks the parent before recording the child.
+/// Null (the default) enrolls a top-level implant from the stager token.
 /// </summary>
 public sealed record EnrollCommand(
     string StagerTokenSecret,
     ImplantClass Class = ImplantClass.Stage2,
-    byte[]? ClientPublicKey = null);
+    byte[]? ClientPublicKey = null,
+    ImplantId? ParentImplantId = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
 /// its per-implant key (shown once, as with the stager secret), the recorded kill
-/// date, and the bound certificate plus CA chain.
+/// date, the bound certificate plus CA chain, and -- for a child -- the parent it
+/// was derived from (null for a top-level implant).
 /// </summary>
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
@@ -140,4 +201,5 @@ public sealed record EnrollmentResult(
     DateTimeOffset KillDate,
     ImplantClass Class,
     byte[] LeafCertificate,
-    IReadOnlyList<byte[]> CaChain);
+    IReadOnlyList<byte[]> CaChain,
+    ImplantId? ParentImplantId = null);

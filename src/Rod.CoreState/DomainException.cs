@@ -172,3 +172,50 @@ public sealed class TaskRejectedException : DomainException
         Reason = reason;
     }
 }
+
+/// <summary>
+/// Why a child enrollment was refused. Carried on
+/// <see cref="InvalidParentImplantException"/> so the enroll endpoint can map
+/// each reason to a distinct wire status code (architecture.md Sec 5.2/9)
+/// without the core depending on the wire protocol -- mirroring
+/// <see cref="StagerTokenRedeemReason"/>.
+/// </summary>
+public enum InvalidParentImplantReason
+{
+    /// <summary>
+    /// The parent implant id matched no enrolled implant. A child must derive
+    /// from a real parent, so an unknown parent id refuses the enroll.
+    /// </summary>
+    Unknown,
+
+    /// <summary>
+    /// The parent belongs to a different engagement than the token redeemed
+    /// (architecture.md Sec 3 -- a child enrols into the same engagement as its
+    /// parent, and cross-engagement access is impossible by construction).
+    /// </summary>
+    EngagementMismatch,
+
+    /// <summary>
+    /// The parent has been retired (architecture.md Sec 7, M4.4). A retired
+    /// implant is out of operation and cannot derive children; the enroll is
+    /// refused before the child is recorded.
+    /// </summary>
+    Retired,
+}
+
+/// <summary>
+/// A child enrollment was refused -- the parent implant is unknown, belongs to
+/// another engagement, or has been retired (architecture.md Sec 5.2).
+/// <see cref="Reason"/> is the actionable cause; the caller maps it to a wire
+/// status.
+/// </summary>
+public sealed class InvalidParentImplantException : DomainException
+{
+    public InvalidParentImplantReason Reason { get; }
+
+    public InvalidParentImplantException(InvalidParentImplantReason reason, string message)
+        : base(message)
+    {
+        Reason = reason;
+    }
+}
