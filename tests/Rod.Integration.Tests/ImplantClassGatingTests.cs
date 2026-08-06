@@ -88,6 +88,13 @@ public class ImplantClassGatingTests
     [InlineData(ImplantClass.Stage2, "persist.list", HttpStatusCode.Created)]
     [InlineData(ImplantClass.Stager, "persist.install", HttpStatusCode.UnprocessableEntity)]
     [InlineData(ImplantClass.WebShell, "persist.list", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Stage2, "collect.file", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "collect.cred", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "collect.keylog", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "exfil.push", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "exfil.stage", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stager, "collect.file", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.WebShell, "exfil.push", HttpStatusCode.UnprocessableEntity)]
     public async Task TaskEndpoint_GatesOnTheImplantClassVerbSet(
         ImplantClass @class, string verb, HttpStatusCode expected)
     {
