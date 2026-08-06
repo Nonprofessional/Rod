@@ -83,6 +83,11 @@ public class ImplantClassGatingTests
     [InlineData(ImplantClass.Stage2, "lateral.exec_remote", HttpStatusCode.Created)]
     [InlineData(ImplantClass.Stager, "lateral.move", HttpStatusCode.UnprocessableEntity)]
     [InlineData(ImplantClass.WebShell, "lateral.token", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Stage2, "persist.install", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "persist.remove", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stage2, "persist.list", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Stager, "persist.install", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.WebShell, "persist.list", HttpStatusCode.UnprocessableEntity)]
     public async Task TaskEndpoint_GatesOnTheImplantClassVerbSet(
         ImplantClass @class, string verb, HttpStatusCode expected)
     {
