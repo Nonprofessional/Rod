@@ -2,6 +2,7 @@ using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
 using Rod.Tradecraft.Lateral;
 using Rod.Tradecraft.Modules;
+using Rod.Tradecraft.Persist;
 using Rod.Tradecraft.Recon;
 using Rod.Tradecraft.Registry;
 
@@ -17,10 +18,10 @@ namespace Rod.Tradecraft;
 /// <remarks>
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers the dispatchable <c>shell.exec</c> stub plus a placeholder per
-/// remaining core verb, per recon verb, and per lateral verb, so the registry
-/// lists the full core, recon, and lateral sets. A real module registered later
-/// for the same verb replaces the placeholder (the last registration wins -- see
-/// <see cref="ICapabilityRegistry"/>).
+/// remaining core verb, per recon verb, per lateral verb, and per persist verb,
+/// so the registry lists the full core, recon, lateral, and persist sets. A real
+/// module registered later for the same verb replaces the placeholder (the last
+/// registration wins -- see <see cref="ICapabilityRegistry"/>).
 ///
 /// This milestone does not wire the dispatcher onto the live task path; that
 /// arrives with the offensive-capability milestones. These hooks are stable for
@@ -33,10 +34,10 @@ public static class RodTradecraftHost
 {
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
-    /// (core plus recon plus lateral). The walking-skeleton convenience for tests
-    /// and for a process that does not run the full ASP.NET Core host: it owns one
-    /// registry, loads the verbs into it, and hands it back ready to dispatch
-    /// <c>shell.exec</c>.
+    /// (core plus recon plus lateral plus persist). The walking-skeleton
+    /// convenience for tests and for a process that does not run the full
+    /// ASP.NET Core host: it owns one registry, loads the verbs into it, and
+    /// hands it back ready to dispatch <c>shell.exec</c>.
     /// </summary>
     public static async Task<InMemoryCapabilityRegistry> BuildDefaultRegistryAsync(
         CancellationToken cancellationToken = default)
@@ -49,9 +50,10 @@ public static class RodTradecraftHost
     /// <summary>
     /// Registers every built-in capability module into <paramref name="registry"/>:
     /// the dispatchable <c>shell.exec</c> stub, then a placeholder per remaining
-    /// core verb, per recon verb, and per lateral verb so the registry lists all
-    /// three full sets. Idempotent: each verb is registered at most once by
-    /// deduplicating against what <paramref name="registry"/> already holds.
+    /// core verb, per recon verb, per lateral verb, and per persist verb so the
+    /// registry lists all four full sets. Idempotent: each verb is registered at
+    /// most once by deduplicating against what <paramref name="registry"/>
+    /// already holds.
     /// </summary>
     public static async Task LoadCapabilitiesAsync(
         ICapabilityRegistry registry,
@@ -94,12 +96,21 @@ public static class RodTradecraftHost
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }
+
+        // Persist verbs load the same way: a placeholder per verb so the registry
+        // lists the full persist set, leaving any caller-supplied override in
+        // place. Concrete persistence behavior is out-of-tree (architecture.md
+        // Sec 13); the reference implants ship none.
+        foreach (var descriptor in PersistCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
     }
 
     /// <summary>
     /// Backward-compatible alias for <see cref="LoadCapabilitiesAsync"/>. Loads
-    /// the core, recon, and lateral sets; kept under the original name so callers
-    /// and tests from the M2.5 skeleton keep compiling.
+    /// the core, recon, lateral, and persist sets; kept under the original name so
+    /// callers and tests from the M2.5 skeleton keep compiling.
     /// </summary>
     public static Task LoadCoreCapabilitiesAsync(
         ICapabilityRegistry registry,
@@ -108,7 +119,8 @@ public static class RodTradecraftHost
 
     // Registers a placeholder for descriptor's verb unless the registry already
     // has a module for it (an out-of-tree override). Centralized so the core,
-    // recon, and lateral loops share one dedup rule and one placeholder path.
+    // recon, lateral, and persist loops share one dedup rule and one placeholder
+    // path.
     private static async Task RegisterPlaceholderAsync(
         ICapabilityRegistry registry,
         CapabilityDescriptor descriptor,
