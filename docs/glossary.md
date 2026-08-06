@@ -52,6 +52,7 @@ sections.
 | **Capability** | A verb an implant advertises and the teamserver may dispatch; namespaced (`namespace.action`). |
 | **Capability module** | A distributable, signed bundle adding capability verbs (core or offensive). Evasion/exploit behavior is delivered as out-of-tree modules. |
 | **Recon** | The `recon.portscan`, `recon.hostenum`, and `recon.service` verbs (category `Recon`); target and network reconnaissance, gated to Stage-2 at task issuance (Sec 5.2). Like the non-shell core verbs their concrete behavior runs on the implants and is captured as task output -- the descriptors and dispatch live in the tradecraft layer. |
+| **Lateral** | The `lateral.move`, `lateral.token`, and `lateral.exec_remote` verbs (category `Lateral`); lateral movement within an authorized engagement, gated to Stage-2 at task issuance (Sec 5.2). `lateral.move` is the deployment verb that derives a child implant: the child enrols through the standard enrollment route naming its parent, and the recorded `ParentImplantId` is the parentage linkage. The descriptors and dispatch live in the tradecraft layer; the concrete behavior is out-of-tree (Sec 13). |
 | **Task / Tasking** | An operator-issued request targeting a session; has a state machine, result, and attribution. |
 
 ## Evidence and OPSEC

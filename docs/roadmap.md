@@ -99,7 +99,7 @@ ports; no Postgres yet.
 
 - [x] **M5.1 Recon.** `recon.portscan`, `recon.hostenum`, `recon.service`.
       _AC:_ scan results captured as task output against authorized targets.
-- [ ] **M5.2 Lateral movement.** `lateral.move`, `lateral.token`,
+- [x] **M5.2 Lateral movement.** `lateral.move`, `lateral.token`,
       `lateral.exec_remote`, recorded with parent linkage.
       _AC:_ a child implant enrols from a parent within scope.
 - [ ] **M5.3 Persistence.** `persist.install/remove/list`.
