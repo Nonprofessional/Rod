@@ -18,6 +18,11 @@ namespace Rod.Transport.Endpoints;
 /// Outcomes are mapped to the wire <see cref="EnrollStatus"/>: the language-
 /// neutral contract lives in Rod.Protocol (architecture.md Sec 8/9), so this is
 /// the layer that translates the core's redeem exceptions into status codes.
+///
+/// A child implant derives from a parent through the same endpoint (roadmap
+/// M5.2, architecture.md Sec 5.2): the request carries the parent implant id,
+/// the service resolves and validates it against the redeemed token's
+/// engagement, and the recorded linkage is echoed on the response.
 /// </summary>
 public static class EnrollmentEndpoints
 {
@@ -38,7 +43,7 @@ public static class EnrollmentEndpoints
     {
         if (string.IsNullOrWhiteSpace(body.StagerTokenSecret))
             return Results.Json(
-                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null),
+                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
 
         if (!Enum.TryParse<ImplantClass>(body.Class, ignoreCase: true, out var @class))
@@ -62,10 +67,23 @@ public static class EnrollmentEndpoints
             }
         }
 
+        // The parent a child is derived from (architecture.md Sec 5.2, roadmap
+        // M5.2). Optional: a top-level enroll leaves it null. When present the
+        // service resolves the parent and binds the child into the same
+        // engagement -- the parent id alone does not grant cross-engagement
+        // derivation.
+        ImplantId? parentImplantId = null;
+        if (!string.IsNullOrWhiteSpace(body.ParentImplantId))
+        {
+            if (!Guid.TryParse(body.ParentImplantId, out var parentValue))
+                return Results.BadRequest(new Problem("Parent implant id is not a valid identifier."));
+            parentImplantId = new ImplantId(parentValue);
+        }
+
         try
         {
             var enrolled = await service.EnrollAsync(
-                new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey),
+                new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey, parentImplantId),
                 cancellationToken);
 
             var response = new EnrollmentResponse(
@@ -73,7 +91,8 @@ public static class EnrollmentEndpoints
                 enrolled.ImplantId.ToString(),
                 enrolled.EngagementId.ToString(),
                 Convert.ToBase64String(enrolled.LeafCertificate),
-                enrolled.CaChain.Select(Convert.ToBase64String).ToArray());
+                enrolled.CaChain.Select(Convert.ToBase64String).ToArray(),
+                enrolled.ParentImplantId?.ToString());
 
             return Results.Ok(response);
         }
@@ -87,7 +106,19 @@ public static class EnrollmentEndpoints
                 _ => EnrollStatus.BadToken,
             };
             return Results.Json(
-                new EnrollmentResponse(status, null, null, null, null),
+                new EnrollmentResponse(status, null, null, null, null, null),
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+        catch (InvalidParentImplantException)
+        {
+            // The parent was unknown, foreign to the redeemed engagement, or
+            // retired (architecture.md Sec 5.2). The refusal is not separately
+            // enumerated on the wire: it collapses to the same 401/BadToken
+            // shape an invalid token or a torn-down engagement produces, so an
+            // implant gets no signal beyond "no". The distinct reason stays
+            // server-side for the operator trail.
+            return Results.Json(
+                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
         catch (CryptographicException)
@@ -100,7 +131,7 @@ public static class EnrollmentEndpoints
         {
             // The token redeemed but its engagement was since torn down.
             return Results.Json(
-                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null),
+                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
     }
@@ -110,7 +141,8 @@ public static class EnrollmentEndpoints
     public sealed record EnrollRequest(
         string StagerTokenSecret,
         string? Class = null,
-        string? PublicKey = null);
+        string? PublicKey = null,
+        string? ParentImplantId = null);
 
     public sealed record Problem(string Error);
 
@@ -118,11 +150,15 @@ public static class EnrollmentEndpoints
     /// Mirrors the wire <see cref="Rod.V1.EnrollResponse"/>. <see cref="Status"/>
     /// is the wire enum so the JSON contract and the proto contract cannot drift.
     /// Certificate material is base64 over JSON; the proto carries raw bytes.
+    /// <see cref="ParentImplantId"/> is an HTTP-only addition (roadmap M5.2): the
+    /// binary wire surface gains it when the end-to-end child-enroll round-trip
+    /// lands; until then the operator API is the only consumer of parentage.
     /// </summary>
     public sealed record EnrollmentResponse(
         EnrollStatus Status,
         string? ImplantId,
         string? EngagementId,
         string? LeafCertificate,
-        string[]? CaChain);
+        string[]? CaChain,
+        string? ParentImplantId = null);
 }

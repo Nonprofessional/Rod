@@ -60,7 +60,8 @@ public static class ImplantEndpoints
                 i.KillDate,
                 i.CreatedAt,
                 IsOnline: onlineById.Contains(i.Id),
-                i.RetiredAt))
+                i.RetiredAt,
+                ParentImplantId: i.ParentImplantId?.ToString()))
             .ToArray();
 
         return Results.Ok(body);
@@ -174,7 +175,8 @@ public static class ImplantEndpoints
         DateTimeOffset KillDate,
         DateTimeOffset CreatedAt,
         bool IsOnline,
-        DateTimeOffset? RetiredAt);
+        DateTimeOffset? RetiredAt,
+        string? ParentImplantId = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,
