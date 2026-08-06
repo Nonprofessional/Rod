@@ -104,7 +104,7 @@ ports; no Postgres yet.
       _AC:_ a child implant enrols from a parent within scope.
 - [x] **M5.3 Persistence.** `persist.install/remove/list`.
       _AC:_ install, list, and remove within the engagement.
-- [ ] **M5.4 Collect and exfil.** `collect.file/cred/keylog`, `exfil.push/stage`.
+- [x] **M5.4 Collect and exfil.** `collect.file/cred/keylog`, `exfil.push/stage`.
       _AC:_ collected data exfils over the C2 channel and is stored scoped.
 
 ## Milestone 6 -- Evidence and reporting
