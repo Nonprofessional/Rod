@@ -24,6 +24,90 @@ namespace Rod.Integration.Tests;
 /// </summary>
 public class DotNetImplantTests
 {
+    /// <summary>
+    /// Roadmap M9.1 acceptance: a parent implant derives a child on lateral.move
+    /// that enrolls back, and the child's parentage is recorded server-side. The
+    /// parent runs as a real subprocess; the operator tasks it lateral.move with a
+    /// second (child) stager token in the arguments; the handler generates a fresh
+    /// child keypair and enrolls a child naming the parent. The operator implant
+    /// listing must then show the child with its ParentImplantId set to the parent.
+    /// This is the implant-driven round-trip the AC names -- the in-process
+    /// ChildEnrollmentHttpTests already prove the server-side parentage model.
+    /// Mirrors GoImplant_DerivesChildOnLateralMove_EndToEnd.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_DerivesChildOnLateralMove_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        // One engagement, two single-use tokens: the parent redeems one at its own
+        // enroll; the child redeems the second when the parent derives it. Mint both
+        // against the same engagement up front.
+        var (engagementId, parentToken, childToken) = await env.MintEngagementWithTwoTokensAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, parentToken,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (_, parentId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                // Operator tasks the parent with lateral.move, passing the child's
+                // stager token as the argument. The handler derives a child that
+                // enrolls back naming the parent (architecture.md Sec 10.1).
+                var operatorId = Guid.NewGuid();
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = parentId, IssuedBy = operatorId, Verb = "lateral.move", Arguments = childToken });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+                Assert.Equal("lateral.move", issuedBody!.Verb);
+
+                // The handler enrolls the child and reports its id on the first line
+                // of the task output. Poll until the task completes with a child id.
+                string childId = "";
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    if (fetched is not { Status: "Completed", Outcome: "Succeeded" })
+                        return false;
+                    var line = (fetched.Output ?? string.Empty).Trim();
+                    childId = line.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                    return childId.Length > 0;
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                // The acceptance point: the child is recorded server-side with its
+                // ParentImplantId set to the parent. Read it back through the operator
+                // implant listing the way an operator would.
+                await WaitUntilAsync(async () =>
+                {
+                    var listed = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
+                        $"/engagements/{engagementId}/implants");
+                    var childRow = listed?.FirstOrDefault(i => i.ImplantId == childId);
+                    return childRow is not null && childRow.ParentImplantId == parentId;
+                }, deadline: TimeSpan.FromSeconds(30));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
     [DotNetFact]
     public async Task DotNetImplant_EnrollsBeaconsAndTasks_EndToEnd()
     {
@@ -338,10 +422,36 @@ public class DotNetImplantTests
             createResponse.EnsureSuccessStatusCode();
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
 
-            var mintResponse = await Http.PostAsync($"/engagements/{created!.EngagementId}/stager-tokens", content: null);
+            return await MintStagerTokenAsync(created!.EngagementId);
+        }
+
+        // Mints a stager token for an existing engagement. Used by the lateral-move
+        // round-trip test: the child derives from the parent, so both enroll into the
+        // same engagement and each needs its own single-use token.
+        public async Task<string> MintStagerTokenAsync(string engagementId)
+        {
+            var mintResponse = await Http.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
             mintResponse.EnsureSuccessStatusCode();
             var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
             return token!.Secret;
+        }
+
+        // Creates an engagement and mints two single-use stager tokens for it -- the
+        // shape the lateral-move round-trip needs (parent token + child token). Used
+        // by DotNetImplant_DerivesChildOnLateralMove_EndToEnd.
+        public async Task<(string EngagementId, string ParentToken, string ChildToken)> MintEngagementWithTwoTokensAsync()
+        {
+            var createResponse = await Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+                OwnerId: Guid.NewGuid(),
+                OwnerHandle: "cneale",
+                OwnerDisplayName: "Cecil Neale",
+                Name: "Operation .NET Slice"));
+            createResponse.EnsureSuccessStatusCode();
+            var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+            var engagementId = created!.EngagementId;
+            var parentToken = await MintStagerTokenAsync(engagementId);
+            var childToken = await MintStagerTokenAsync(engagementId);
+            return (engagementId, parentToken, childToken);
         }
 
         public async ValueTask DisposeAsync()
