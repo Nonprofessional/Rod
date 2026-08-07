@@ -109,7 +109,7 @@ ports; no Postgres yet.
 
 ## Milestone 6 -- Evidence and reporting
 
-- [ ] **M6.1 Operational event log.** Per-engagement, append-only, attributed
+- [x] **M6.1 Operational event log.** Per-engagement, append-only, attributed
       event stream. _AC:_ every action produces an attributed, immutable event.
 - [ ] **M6.2 Artifact management.** Artifacts linked to tasks as first-class
       objects. _AC:_ attach, list, and retrieve artifacts per task.

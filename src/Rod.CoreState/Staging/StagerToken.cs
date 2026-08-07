@@ -36,7 +36,10 @@ public sealed record StagerToken
 /// The result of a successful <see cref="IStagerTokenService.RedeemAsync"/>: the
 /// engagement the redeemed token grants access to. Carries no secret -- the
 /// plaintext was matched and discarded; enrollment proceeds against this
-/// engagement.
+/// engagement. <see cref="IssuedBy"/> is the operator who minted the token --
+/// the one who authorized the deployment -- surfaced here so enrollment can
+/// attribute the resulting implant (and its later implant-initiated events) to
+/// an accountable operator (architecture.md Sec 11).
 /// </summary>
 public sealed record RedeemedStagerToken
 {
@@ -45,4 +48,11 @@ public sealed record RedeemedStagerToken
 
     /// <summary>The engagement this token grants initial access to.</summary>
     public required EngagementId EngagementId { get; init; }
+
+    /// <summary>
+    /// The operator who minted the redeemed token -- the authorizing deployer.
+    /// Read off the stored token at redeem time so the implant-initiated
+    /// enrollment that follows can attribute itself to an operator.
+    /// </summary>
+    public required OperatorId IssuedBy { get; init; }
 }

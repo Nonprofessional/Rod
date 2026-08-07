@@ -127,7 +127,7 @@ public sealed class HandshakeService
         //    reconnect does not leave a phantom live connection.
         var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);
 
-        return new HandshakeResult(session.Id, implant.Id, implant.EngagementId, now);
+        return new HandshakeResult(session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now);
     }
 }
 
@@ -150,12 +150,15 @@ public sealed record HandshakeCommand(
 
 /// <summary>
 /// Result of a successful handshake: the session the implant just opened, its
-/// identity, its (confirmed) engagement, and the time the session started. The
-/// transport echoes the engagement id back so the implant can confirm its
-/// binding, and holds the session id to close when the stream ends.
+/// identity, its (confirmed) engagement, the operator who deployed it (used to
+/// attribute the session-opening event, since a handshake is implant-initiated),
+/// and the time the session started. The transport echoes the engagement id back
+/// so the implant can confirm its binding, and holds the session id to close when
+/// the stream ends.
 /// </summary>
 public sealed record HandshakeResult(
     SessionId SessionId,
     ImplantId ImplantId,
     EngagementId EngagementId,
+    OperatorId DeployedBy,
     DateTimeOffset At);

@@ -87,11 +87,15 @@ public sealed class EnrollmentService
 
         // 4. Build the implant: server-generated per-implant key + default kill date.
         //    EnrollChild records the parent when present; a null parent yields the
-        //    top-level shape, so the two paths share one factory.
+        //    top-level shape, so the two paths share one factory. The implant's
+        //    DeployedBy is the operator who minted the redeemed token -- the one
+        //    who authorized this deployment -- so the implant-initiated events that
+        //    follow (a session opening, tasking) attribute to an accountable
+        //    operator (architecture.md Sec 11).
         var implantId = ImplantId.New();
         var key = Base64Url(RandomNumberGenerator.GetBytes(32));
         var killDate = now + DefaultKillDateOffset;
-        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, key, killDate, command.Class, now, parent?.Id);
+        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, key, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
@@ -110,7 +114,9 @@ public sealed class EnrollmentService
             command.Class,
             issued.Leaf,
             issued.CaChain,
-            implant.ParentImplantId);
+            implant.DeployedBy,
+            implant.ParentImplantId,
+            now);
     }
 
     // Resolves the parent implant and enforces the engagement-scope and liveness
@@ -191,8 +197,9 @@ public sealed record EnrollCommand(
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
 /// its per-implant key (shown once, as with the stager secret), the recorded kill
-/// date, the bound certificate plus CA chain, and -- for a child -- the parent it
-/// was derived from (null for a top-level implant).
+/// date, the bound certificate plus CA chain, the operator who deployed it (the
+/// token issuer, used to attribute the enrollment), the parent it was derived
+/// from (null for a top-level implant), and the enrollment timestamp.
 /// </summary>
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
@@ -202,4 +209,6 @@ public sealed record EnrollmentResult(
     ImplantClass Class,
     byte[] LeafCertificate,
     IReadOnlyList<byte[]> CaChain,
-    ImplantId? ParentImplantId = null);
+    OperatorId DeployedBy,
+    ImplantId? ParentImplantId,
+    DateTimeOffset EnrolledAt);

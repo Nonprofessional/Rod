@@ -32,7 +32,7 @@ public class ImplantParentageTests
         // A child derived from a parent records the parent's id verbatim.
         var parent = ImplantId.New();
         var child = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), "key-child", KillDate, ImplantClass.Stage2, Created, parent);
+            ImplantId.New(), EngagementId.New(), "key-child", KillDate, ImplantClass.Stage2, Created, parentImplantId: parent);
 
         Assert.Equal(parent, child.ParentImplantId);
     }
@@ -59,7 +59,7 @@ public class ImplantParentageTests
         // The shared validation applies on the child path too.
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "  ", KillDate, ImplantClass.Stage2, Created, ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), "  ", KillDate, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
     }
 
     [Fact]
@@ -67,10 +67,10 @@ public class ImplantParentageTests
     {
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", Created, ImplantClass.Stage2, Created, ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), "k", Created, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", Created.AddSeconds(-1), ImplantClass.Stage2, Created, ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), "k", Created.AddSeconds(-1), ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
     }
 
     [Fact]
@@ -81,6 +81,6 @@ public class ImplantParentageTests
         // parent stays valid (the top-level shape).
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", KillDate, ImplantClass.Stage2, Created, default(ImplantId)));
+                ImplantId.New(), EngagementId.New(), "k", KillDate, ImplantClass.Stage2, Created, parentImplantId: default(ImplantId)));
     }
 }

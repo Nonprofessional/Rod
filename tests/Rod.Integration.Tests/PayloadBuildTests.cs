@@ -156,12 +156,12 @@ public class PayloadBuildTests
                     KillDate: null));
             var body = await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
 
-            // The build is recorded: the engagement's trail holds one PayloadBuilt
+            // The build is recorded: the engagement's trail holds a PayloadBuilt
             // event carrying the class and the artifact's fingerprint, and the
-            // chain is intact.
+            // chain is intact. The trail also carries the engagement's own
+            // creation event (M6.1 genesis), so it is no longer a single entry.
             var trail = await audit.ListAsync(Guid.Parse(engagementId));
-            var evt = Assert.Single(trail);
-            Assert.Equal(AuditEventKind.PayloadBuilt, evt.Kind);
+            var evt = Assert.Single(trail, e => e.Kind == AuditEventKind.PayloadBuilt);
             Assert.Equal("Stage2", evt.Verb);
             Assert.Equal(body!.Fingerprint, evt.Outcome);
             Assert.Null(AuditChain.VerifyTrail(trail));

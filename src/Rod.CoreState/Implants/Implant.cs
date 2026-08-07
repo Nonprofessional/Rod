@@ -33,6 +33,18 @@ public sealed class Implant
     public DateTimeOffset? RetiredAt { get; private set; }
 
     /// <summary>
+    /// The operator who deployed this implant -- the one who minted the stager
+    /// token a top-level implant redeemed, or the parent's deployer for a child.
+    /// Enrollment is implant-initiated, so later implant-initiated events (a
+    /// session opening, a task completing) attribute themselves through this
+    /// field rather than through a request body (architecture.md Sec 11). The
+    /// default <see cref="OperatorId"/> means "unattributed" -- the production
+    /// enrollment path always sets it; tests that do not care about attribution
+    /// may omit it.
+    /// </summary>
+    public OperatorId DeployedBy { get; }
+
+    /// <summary>
     /// The implant this one was derived from, or null for a top-level implant
     /// enrolled from a stager token (architecture.md Sec 5.2). A child enrols
     /// into the same engagement as its parent; that binding is checked by the
@@ -50,6 +62,7 @@ public sealed class Implant
         DateTimeOffset killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
+        OperatorId deployedBy,
         ImplantId? parentImplantId)
     {
         Id = id;
@@ -58,6 +71,7 @@ public sealed class Implant
         KillDate = killDate;
         Class = @class;
         CreatedAt = createdAt;
+        DeployedBy = deployedBy;
         ParentImplantId = parentImplantId;
     }
 
@@ -67,6 +81,10 @@ public sealed class Implant
     /// the server-generated per-implant key (base64url); <paramref name="killDate"/>
     /// is the hard self-termination timestamp. Both are produced by the enrollment
     /// service, not the entity, so this type stays free of crypto.
+    /// <paramref name="deployedBy"/> is the operator who authorized the deployment
+    /// (the token issuer); it defaults to unattributed so tests that do not care
+    /// about attribution stay unchanged, while the production enrollment path
+    /// always sets it.
     /// </summary>
     public static Implant Enroll(
         ImplantId id,
@@ -74,8 +92,9 @@ public sealed class Implant
         string key,
         DateTimeOffset killDate,
         ImplantClass @class,
-        DateTimeOffset createdAt)
-        => EnrollChild(id, engagementId, key, killDate, @class, createdAt, parentImplantId: null);
+        DateTimeOffset createdAt,
+        OperatorId deployedBy = default)
+        => EnrollChild(id, engagementId, key, killDate, @class, createdAt, deployedBy, parentImplantId: null);
 
     /// <summary>
     /// Factory for a child implant derived from <paramref name="parentImplantId"/>
@@ -84,7 +103,9 @@ public sealed class Implant
     /// top-level implant applies. A null <paramref name="parentImplantId"/> yields
     /// a top-level implant, so <see cref="Enroll"/> delegates here. The caller (the
     /// enrollment use case) is responsible for resolving and scope-checking the
-    /// parent; this factory only records the linkage.
+    /// parent; this factory only records the linkage. <paramref name="deployedBy"/>
+    /// is the operator who authorized the deployment; it defaults to unattributed
+    /// so tests that do not care about attribution stay unchanged.
     /// </summary>
     public static Implant EnrollChild(
         ImplantId id,
@@ -93,7 +114,8 @@ public sealed class Implant
         DateTimeOffset killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
-        ImplantId? parentImplantId)
+        OperatorId deployedBy = default,
+        ImplantId? parentImplantId = null)
     {
         if (string.IsNullOrWhiteSpace(key))
             throw new ArgumentException("Implant key is required.", nameof(key));
@@ -104,7 +126,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, key, killDate, @class, createdAt, parentImplantId);
+        return new Implant(id, engagementId, key, killDate, @class, createdAt, deployedBy, parentImplantId);
     }
 
     /// <summary>

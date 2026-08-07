@@ -2,14 +2,70 @@ namespace Rod.Audit;
 
 /// <summary>
 /// What kind of operational fact an <see cref="AuditEvent"/> records
-/// (architecture.md Sec 11). The walking skeleton (roadmap M1.4) emits only
-/// <see cref="TaskCompleted"/>: capturing a task's result is the first audited
-/// action. More kinds arrive with the storage &amp; audit layer (roadmap M2.3)
-/// -- enrollment, handshake, dispatch, and sensitive-verb guardrails each become
-/// their own event.
+/// (architecture.md Sec 11). Every per-engagement action that changes state or
+/// binds an identity produces exactly one kind: the engagement's own creation, a
+/// stager token mint, an implant enrollment, a session opening, a task's
+/// issuance/dispatch/completion, a payload build, and an implant's retirement.
+/// Together they form the engagement timeline -- the attributed, append-only,
+/// hash-chained event stream the M6.1 acceptance point calls for.
 /// </summary>
 public enum AuditEventKind
 {
+    /// <summary>
+    /// An operator created an engagement (architecture.md Sec 3, roadmap M6.1).
+    /// The first event in any engagement's trail. The event carries the
+    /// engagement name in its payload and the new engagement id as its outcome;
+    /// it is attributed to the creating owner. The chain's genesis link.
+    /// </summary>
+    EngagementCreated,
+
+    /// <summary>
+    /// An operator minted a stager token for an engagement (roadmap M1.1/M6.1).
+    /// The payload carries the token's bounded-use/expiry shape; the outcome is
+    /// the new token id. The secret itself is never recorded -- only the fact
+    /// that a token was minted, by whom, and against which engagement.
+    /// </summary>
+    StagerTokenMinted,
+
+    /// <summary>
+    /// A stager token was redeemed and an implant enrolled into its engagement
+    /// (roadmap M1.2/M6.1). The payload carries the implant's class (and the
+    /// parent when it is a child derivation, architecture.md Sec 5.2); the
+    /// outcome is the new implant id. Enrollment is implant-initiated, so the
+    /// event is attributed to the operator who minted the redeemed token -- the
+    /// one who authorized the deployment -- carried on the implant as
+    /// <c>DeployedBy</c>.
+    /// </summary>
+    ImplantEnrolled,
+
+    /// <summary>
+    /// An implant opened a session on a successful handshake (roadmap M1.3/M6.1).
+    /// The payload carries the negotiated protocol version; the outcome is the
+    /// session id. As with enrollment the actor is the implant, but the event is
+    /// attributed to the operator who deployed it (the token issuer), so the
+    /// "an implant came online" fact is bound to an accountable operator.
+    /// </summary>
+    SessionOpened,
+
+    /// <summary>
+    /// An operator issued a task against an implant (roadmap M1.4/M6.1). The
+    /// event carries the verb and arguments in its payload and the new task id
+    /// as its outcome. Issuance is the operator's intent; <see cref="TaskDispatched"/>
+    /// records the server handing the task to the implant, and
+    /// <see cref="TaskCompleted"/> records the result. A task's full attributed
+    /// arc is these three events.
+    /// </summary>
+    TaskIssued,
+
+    /// <summary>
+    /// A queued task was handed to an implant on its beacon stream (roadmap
+    /// M1.4/M6.1). The payload carries the verb and arguments; the outcome is
+    /// the dispatched task id. Dispatch is server-driven (the implant pulls the
+    /// queue), so the event is attributed to the operator who issued the task --
+    /// the one whose tasking the dispatch carries out.
+    /// </summary>
+    TaskDispatched,
+
     /// <summary>
     /// An implant returned a task result; the event carries the verb, the
     /// captured output, and the outcome. Emitted on every completed task.

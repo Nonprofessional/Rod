@@ -78,26 +78,33 @@ public class TaskRoundTripTests
         await call.RequestStream.WriteAsync(ResultFrame(result));
 
         // Give the server a beat to capture the result and append the audit event
-        // (both happen on the stream thread before the next dispatch round).
-        await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 1);
+        // (both happen on the stream thread before the next dispatch round). A
+        // task now produces a three-event arc (M6.1): TaskIssued, TaskDispatched,
+        // TaskCompleted, so wait for all three before readback.
+        await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
-        // The operator reads the task back: captured output plus the audit event.
+        // The operator reads the task back: captured output plus the task's audit
+        // arc -- issued, dispatched, then completed (architecture.md Sec 11, M6.1).
         var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
             $"/engagements/{implant.EngagementId}/tasks/{request.TaskId}");
         Assert.NotNull(fetched);
         Assert.Equal("Completed", fetched!.Status);
         Assert.Equal("red-team\\operator", fetched.Output);
         Assert.Equal("Succeeded", fetched.Outcome);
-        var evt = Assert.Single(fetched.Audit);
-        Assert.Equal("TaskCompleted", evt.Kind);
-        Assert.Equal("shell.exec", evt.Verb);
-        Assert.Equal("whoami", evt.Payload);
-        Assert.Equal("red-team\\operator", evt.Output);
-        Assert.Equal("Succeeded", evt.Outcome);
+        Assert.Equal(3, fetched.Audit.Length);
+        Assert.Equal("TaskIssued", fetched.Audit[0].Kind);
+        Assert.Equal("TaskDispatched", fetched.Audit[1].Kind);
+        Assert.Equal("TaskCompleted", fetched.Audit[2].Kind);
+        Assert.Equal("shell.exec", fetched.Audit[2].Verb);
+        Assert.Equal("whoami", fetched.Audit[2].Payload);
+        Assert.Equal("red-team\\operator", fetched.Audit[2].Output);
+        Assert.Equal("Succeeded", fetched.Audit[2].Outcome);
 
-        // And the same event is the engagement's sole trail entry.
+        // The engagement trail now carries the handshake, the three task events,
+        // and (in other scenarios) more -- it is no longer a single entry. The
+        // full-lifecycle trail is asserted in OperationalEventLogTests.
         var trail = await audit.ListAsync(implant.EngagementId.Value);
-        Assert.Single(trail);
+        Assert.Contains(trail, e => e.Kind == AuditEventKind.TaskCompleted);
 
         await call.RequestStream.CompleteAsync();
     }

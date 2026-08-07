@@ -87,12 +87,31 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // 2. Run the handshake. HandshakeService performs the version check, the
         //    implant lookup, and the mTLS identity check (certificate engagement
         //    == enrolled engagement); refusals come back as HandshakeException.
-        var (response, session) = await TryHandshakeAsync(httpContext, handshakeRequest);
+        var (response, handshake) = await TryHandshakeAsync(httpContext, handshakeRequest);
         await WriteHandshakeAsync(responseStream, response);
-        if (response.Status != HandshakeStatus.Ok || session is null)
+        if (response.Status != HandshakeStatus.Ok || handshake is null)
             return;
 
         var implant = ResolveImplantId(handshakeRequest, httpContext);
+
+        // The session opening is recorded (architecture.md Sec 11, roadmap M6.1).
+        // A handshake is implant-initiated, so the event is attributed to the
+        // operator who deployed the implant (handshake.DeployedBy); the payload
+        // carries the negotiated protocol version and the outcome the session id.
+        await _audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: handshake.EngagementId.Value,
+                operatorId: handshake.DeployedBy.Value,
+                implantId: handshake.ImplantId.Value,
+                taskId: Guid.Empty,
+                verb: "handshake",
+                kind: AuditEventKind.SessionOpened,
+                payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
+                output: null,
+                outcome: handshake.SessionId.ToString(),
+                at: handshake.At),
+            CancellationToken.None);
 
         // 3. The session is now open and the stream is the tasking channel. Hold
         //    it open, draining results and pushing queued tasks; close the session
@@ -104,7 +123,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
         finally
         {
-            await _sessions.CloseAsync(session.Value, DateTimeOffset.UtcNow, CancellationToken.None);
+            await _sessions.CloseAsync(handshake.SessionId, DateTimeOffset.UtcNow, CancellationToken.None);
         }
     }
 
@@ -186,6 +205,26 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         if (dispatched is null)
             return;
 
+        // The dispatch is recorded (architecture.md Sec 11, roadmap M6.1). Dispatch
+        // is server-driven (the implant pulls the queue), so the event is
+        // attributed to the operator whose tasking it carries out. The payload is
+        // the verb/arguments and the outcome the dispatched task id -- a task's
+        // full attributed arc is TaskIssued -> TaskDispatched -> TaskCompleted.
+        await _audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: dispatched.EngagementId.Value,
+                operatorId: dispatched.IssuedBy.Value,
+                implantId: dispatched.ImplantId.Value,
+                taskId: dispatched.TaskId.Value,
+                verb: dispatched.Verb,
+                kind: AuditEventKind.TaskDispatched,
+                payload: dispatched.Arguments,
+                output: null,
+                outcome: dispatched.TaskId.ToString(),
+                at: dispatched.DispatchedAt),
+            cancellationToken);
+
         var request = new TaskRequest
         {
             TaskId = dispatched.TaskId.ToString(),
@@ -259,7 +298,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             cancellationToken);
     }
 
-    private async Task<(HandshakeResponse Response, SessionId? Session)> TryHandshakeAsync(
+    private async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
         HttpContext httpContext,
         HandshakeRequest request)
     {
@@ -281,7 +320,12 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     CertificateEngagementId: certIdentity?.EngagementId),
                 CancellationToken.None);
 
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result.SessionId);
+            // The full result is returned (not just the session id) so CheckIn can
+            // compose the SessionOpened audit write from it -- a handshake is
+            // implant-initiated, so the event is attributed to the implant's
+            // DeployedBy and needs the engagement/implant/session ids the result
+            // carries (architecture.md Sec 11, roadmap M6.1).
+            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result);
         }
         catch (HandshakeException ex)
         {
@@ -294,7 +338,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
                 _ => HandshakeStatus.Unspecified,
             };
-            return (Response(status, engagementId: null), Session: null);
+            return (Response(status, engagementId: null), Handshake: null);
         }
     }
 

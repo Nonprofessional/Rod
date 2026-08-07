@@ -170,6 +170,7 @@ public sealed class TaskService
             task.Id,
             task.EngagementId,
             task.ImplantId,
+            task.IssuedBy,
             task.Verb,
             task.Arguments,
             task.DispatchedAt!.Value);
@@ -229,11 +230,17 @@ public sealed record TaskIssued(
     string Arguments,
     DateTimeOffset CreatedAt);
 
-/// <summary>Result of dispatching a task to the implant stream.</summary>
+/// <summary>
+/// Result of dispatching a task to the implant stream. <see cref="IssuedBy"/> is
+/// the operator whose tasking the dispatch carries out -- dispatch is
+/// server-driven (the implant pulls the queue), so the event the beacon composes
+/// attributes through this rather than through a request body.
+/// </summary>
 public sealed record TaskDispatched(
     TaskId TaskId,
     EngagementId EngagementId,
     ImplantId ImplantId,
+    OperatorId IssuedBy,
     string Verb,
     string Arguments,
     DateTimeOffset DispatchedAt);

@@ -83,14 +83,17 @@ public class GoImplantTests
                 }, deadline: TimeSpan.FromSeconds(60));
 
                 // The audit trail carries the TaskCompleted event for this task
-                // (architecture.md Sec 11).
+                // (architecture.md Sec 11). A task now produces a three-event arc
+                // (M6.1): issued, dispatched, then completed.
                 var fetchedFull = await env.Http.GetFromJsonAsync<TaskBody>(
                     $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
                 Assert.NotNull(fetchedFull);
-                var evt = Assert.Single(fetchedFull!.Audit);
-                Assert.Equal("TaskCompleted", evt.Kind);
-                Assert.Equal("shell.exec", evt.Verb);
-                Assert.Equal("Succeeded", evt.Outcome);
+                Assert.Equal(3, fetchedFull!.Audit.Length);
+                Assert.Equal("TaskIssued", fetchedFull.Audit[0].Kind);
+                Assert.Equal("TaskDispatched", fetchedFull.Audit[1].Kind);
+                Assert.Equal("TaskCompleted", fetchedFull.Audit[2].Kind);
+                Assert.Equal("shell.exec", fetchedFull.Audit[2].Verb);
+                Assert.Equal("Succeeded", fetchedFull.Audit[2].Outcome);
 
                 // M5.1 acceptance: a recon task's scan results are captured as task
                 // output against an authorized target (architecture.md Sec 10.3).

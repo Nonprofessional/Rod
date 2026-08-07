@@ -35,6 +35,7 @@ public static class TaskEndpoints
         string engagementId,
         IssueTaskRequest body,
         TaskService service,
+        IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -80,6 +81,26 @@ public static class TaskEndpoints
             issued.Verb,
             issued.Arguments,
             issued.CreatedAt);
+
+        // The task's issuance is recorded (architecture.md Sec 11, roadmap M6.1):
+        // attributed to the issuing operator, the payload the verb and arguments,
+        // the outcome the new task id. This is the operator's intent; the
+        // TaskDispatched event records the server handing it to the implant and
+        // TaskCompleted the result.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: issued.EngagementId.Value,
+                operatorId: issued.IssuedBy.Value,
+                implantId: issued.ImplantId.Value,
+                taskId: issued.TaskId.Value,
+                verb: issued.Verb,
+                kind: AuditEventKind.TaskIssued,
+                payload: issued.Arguments,
+                output: null,
+                outcome: issued.TaskId.ToString(),
+                at: issued.CreatedAt),
+            cancellationToken);
 
         return Results.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
     }

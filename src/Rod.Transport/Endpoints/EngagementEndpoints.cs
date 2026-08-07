@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
@@ -58,6 +59,7 @@ public static class EngagementEndpoints
     private static async Task<IResult> CreateEngagementAsync(
         CreateEngagementRequest body,
         EngagementService service,
+        IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body.Name))
@@ -84,12 +86,32 @@ public static class EngagementEndpoints
             created.OwnerHandle,
             created.CreatedAt);
 
+        // The engagement's own creation is the trail's genesis link (architecture.md
+        // Sec 11, roadmap M6.1): attributed to the creating owner, carrying the
+        // name in its payload and the new engagement id as its outcome. It is the
+        // first event in this engagement's chain, so it follows the genesis hash.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: created.EngagementId.Value,
+                operatorId: created.OwnerId.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "create-engagement",
+                kind: AuditEventKind.EngagementCreated,
+                payload: created.Name,
+                output: null,
+                outcome: created.EngagementId.ToString(),
+                at: created.CreatedAt),
+            cancellationToken);
+
         return Results.Created($"/engagements/{response.EngagementId}", response);
     }
 
     private static async Task<IResult> MintStagerTokenAsync(
         string engagementId,
         EngagementService service,
+        IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var idValue))
@@ -109,6 +131,25 @@ public static class EngagementEndpoints
                 minted.IssuedAt,
                 minted.ExpiresAt,
                 minted.MaxUses);
+
+            // A stager-token mint is recorded (architecture.md Sec 11, roadmap
+            // M6.1): attributed to the minting operator, the payload the token's
+            // bounded-use/expiry shape, the outcome the new token id. The secret
+            // itself is never recorded -- only the fact that a token was minted.
+            await audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: minted.EngagementId.Value,
+                    operatorId: minted.IssuedBy.Value,
+                    implantId: Guid.Empty,
+                    taskId: Guid.Empty,
+                    verb: "mint-stager-token",
+                    kind: AuditEventKind.StagerTokenMinted,
+                    payload: $"maxUses={minted.MaxUses} expiresAt={minted.ExpiresAt:O}",
+                    output: null,
+                    outcome: minted.StagerTokenId.ToString(),
+                    at: minted.IssuedAt),
+            cancellationToken);
 
             return Results.Ok(response);
         }

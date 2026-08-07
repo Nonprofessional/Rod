@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
@@ -39,6 +40,7 @@ public static class EnrollmentEndpoints
     private static async Task<IResult> EnrollAsync(
         EnrollRequest body,
         EnrollmentService service,
+        IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body.StagerTokenSecret))
@@ -84,6 +86,29 @@ public static class EnrollmentEndpoints
         {
             var enrolled = await service.EnrollAsync(
                 new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey, parentImplantId),
+                cancellationToken);
+
+            // The enrollment is recorded (architecture.md Sec 11, roadmap M6.1).
+            // Enrollment is implant-initiated, so it is attributed to the operator
+            // who deployed the implant -- the one who minted the redeemed token,
+            // carried on the implant as DeployedBy. The payload carries the class
+            // (and the parent when it is a child derivation, architecture.md Sec
+            // 5.2); the outcome is the new implant id.
+            await audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: enrolled.EngagementId.Value,
+                    operatorId: enrolled.DeployedBy.Value,
+                    implantId: enrolled.ImplantId.Value,
+                    taskId: Guid.Empty,
+                    verb: "enroll",
+                    kind: AuditEventKind.ImplantEnrolled,
+                    payload: enrolled.ParentImplantId is { } parent
+                        ? $"{enrolled.Class} parent={parent}"
+                        : enrolled.Class.ToString(),
+                    output: null,
+                    outcome: enrolled.ImplantId.ToString(),
+                    at: enrolled.EnrolledAt),
                 cancellationToken);
 
             var response = new EnrollmentResponse(

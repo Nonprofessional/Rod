@@ -42,7 +42,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         var expiresAt = issuedAt + DefaultLifetime;
         var id = StagerTokenId.New();
 
-        _stored[id] = new StoredToken(SHA256.HashData(secretBytes), engagementId, expiresAt, DefaultMaxUses);
+        _stored[id] = new StoredToken(SHA256.HashData(secretBytes), engagementId, issuedBy, expiresAt, DefaultMaxUses);
 
         return new StagerToken
         {
@@ -100,6 +100,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             {
                 Id = entryId,
                 EngagementId = entry.EngagementId,
+                IssuedBy = entry.IssuedBy,
             });
         }
     }
@@ -125,6 +126,10 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         return Convert.FromBase64String(padded);
     }
 
+    // IssuedBy is retained so redeem can attribute the deployment that follows:
+    // a stager token is redeemed by an implant, but the operator who minted it
+    // authorized the deployment, and enrollment records that operator on the
+    // implant (architecture.md Sec 11).
     private sealed record StoredToken(
-        byte[] Hash, EngagementId EngagementId, DateTimeOffset ExpiresAt, int RemainingUses);
+        byte[] Hash, EngagementId EngagementId, OperatorId IssuedBy, DateTimeOffset ExpiresAt, int RemainingUses);
 }
