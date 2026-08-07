@@ -3,6 +3,7 @@ using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
 using Rod.Tradecraft.Evasion;
 using Rod.Tradecraft.Exfil;
+using Rod.Tradecraft.Exploit;
 using Rod.Tradecraft.Lateral;
 using Rod.Tradecraft.Modules;
 using Rod.Tradecraft.Persist;
@@ -22,10 +23,11 @@ namespace Rod.Tradecraft;
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers the dispatchable <c>shell.exec</c> stub plus a placeholder per
 /// remaining core verb, per recon verb, per lateral verb, per persist verb, per
-/// collect verb, per exfil verb, and per evasion verb, so the registry lists the
-/// full core, recon, lateral, persist, collect, exfil, and evasion sets. A real
-/// module registered later for the same verb replaces the placeholder (the last
-/// registration wins -- see <see cref="ICapabilityRegistry"/>).
+/// collect verb, per exfil verb, per evasion verb, and per exploit verb, so the
+/// registry lists the full core, recon, lateral, persist, collect, exfil,
+/// evasion, and exploit sets. A real module registered later for the same verb
+/// replaces the placeholder (the last registration wins -- see
+/// <see cref="ICapabilityRegistry"/>).
 ///
 /// This milestone does not wire the dispatcher onto the live task path; that
 /// arrives with the offensive-capability milestones. These hooks are stable for
@@ -39,9 +41,10 @@ public static class RodTradecraftHost
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
     /// (core plus recon plus lateral plus persist plus collect plus exfil plus
-    /// evasion). The walking-skeleton convenience for tests and for a process that
-    /// does not run the full ASP.NET Core host: it owns one registry, loads the
-    /// verbs into it, and hands it back ready to dispatch <c>shell.exec</c>.
+    /// evasion plus exploit). The walking-skeleton convenience for tests and for a
+    /// process that does not run the full ASP.NET Core host: it owns one registry,
+    /// loads the verbs into it, and hands it back ready to dispatch
+    /// <c>shell.exec</c>.
     /// </summary>
     public static async Task<InMemoryCapabilityRegistry> BuildDefaultRegistryAsync(
         CancellationToken cancellationToken = default)
@@ -55,9 +58,9 @@ public static class RodTradecraftHost
     /// Registers every built-in capability module into <paramref name="registry"/>:
     /// the dispatchable <c>shell.exec</c> stub, then a placeholder per remaining
     /// core verb, per recon verb, per lateral verb, per persist verb, per collect
-    /// verb, per exfil verb, and per evasion verb so the registry lists all seven
-    /// full sets. Idempotent: each verb is registered at most once by deduplicating
-    /// against what <paramref name="registry"/> already holds.
+    /// verb, per exfil verb, per evasion verb, and per exploit verb so the registry
+    /// lists all eight full sets. Idempotent: each verb is registered at most once
+    /// by deduplicating against what <paramref name="registry"/> already holds.
     /// </summary>
     public static async Task LoadCapabilitiesAsync(
         ICapabilityRegistry registry,
@@ -140,13 +143,25 @@ public static class RodTradecraftHost
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }
+
+        // Exploit verbs load the same way: a placeholder per verb so the registry
+        // lists the full exploit set, leaving any caller-supplied override in
+        // place. Exploit is a sensitive category (architecture.md Sec 10.2,
+        // Sec 13, RESPONSIBLE-USE.md): concrete behavior is out-of-tree, supplied
+        // as opt-in modules, and the reference implants ship none. Like the
+        // evasion verbs these are not gated to a class -- that decision belongs to
+        // the live task path, not to this contract milestone.
+        foreach (var descriptor in ExploitCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
     }
 
     /// <summary>
     /// Backward-compatible alias for <see cref="LoadCapabilitiesAsync"/>. Loads
-    /// the core, recon, lateral, persist, collect, exfil, and evasion sets; kept
-    /// under the original name so callers and tests from the M2.5 skeleton keep
-    /// compiling.
+    /// the core, recon, lateral, persist, collect, exfil, evasion, and exploit
+    /// sets; kept under the original name so callers and tests from the M2.5
+    /// skeleton keep compiling.
     /// </summary>
     public static Task LoadCoreCapabilitiesAsync(
         ICapabilityRegistry registry,
@@ -155,8 +170,8 @@ public static class RodTradecraftHost
 
     // Registers a placeholder for descriptor's verb unless the registry already
     // has a module for it (an out-of-tree override). Centralized so the core,
-    // recon, lateral, persist, collect, exfil, and evasion loops share one dedup
-    // rule and one placeholder path.
+    // recon, lateral, persist, collect, exfil, evasion, and exploit loops share
+    // one dedup rule and one placeholder path.
     private static async Task RegisterPlaceholderAsync(
         ICapabilityRegistry registry,
         CapabilityDescriptor descriptor,

@@ -129,7 +129,7 @@ as out-of-tree, opt-in `CapabilityModule`s.
       registration, dispatch points, and data shapes in the core.
       _AC:_ an out-of-tree module can register and be dispatched through the
       contract.
-- [ ] **M7.2 Exploit contract.** `exploit.invoke`/`exploit.module` as an external
+- [x] **M7.2 Exploit contract.** `exploit.invoke`/`exploit.module` as an external
       module integration point; load and dispatch flow.
       _AC:_ an out-of-tree module integrates and runs through the contract.
 
