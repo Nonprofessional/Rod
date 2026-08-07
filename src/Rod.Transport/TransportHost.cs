@@ -283,6 +283,9 @@ public static class TransportHost
         // hash-chained audit trail read view. Distinct from the operators-layer
         // live SSE route (the transient fan-out).
         app.MapAuditEndpoints();
+        // First-class evidence objects linked to tasks (roadmap M6.2): attach,
+        // list, and retrieve artifacts per task, scoped by engagement.
+        app.MapArtifactEndpoints();
         // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
@@ -304,6 +307,9 @@ public static class TransportHost
         // The per-engagement operational event log (roadmap M6.1): the durable,
         // hash-chained audit trail read view.
         endpoints.MapAuditEndpoints();
+        // First-class evidence objects linked to tasks (roadmap M6.2): attach,
+        // list, and retrieve artifacts per task, scoped by engagement.
+        endpoints.MapArtifactEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();

@@ -5,9 +5,10 @@ namespace Rod.Audit;
 /// (architecture.md Sec 11). Every per-engagement action that changes state or
 /// binds an identity produces exactly one kind: the engagement's own creation, a
 /// stager token mint, an implant enrollment, a session opening, a task's
-/// issuance/dispatch/completion, a payload build, and an implant's retirement.
-/// Together they form the engagement timeline -- the attributed, append-only,
-/// hash-chained event stream the M6.1 acceptance point calls for.
+/// issuance/dispatch/completion, a payload build, an implant's retirement, and
+/// an evidence artifact attached to a task. Together they form the engagement
+/// timeline -- the attributed, append-only, hash-chained event stream the M6.1
+/// acceptance point calls for.
 /// </summary>
 public enum AuditEventKind
 {
@@ -89,4 +90,15 @@ public enum AuditEventKind
     /// operator action on the implant, not a task it ran.
     /// </summary>
     ImplantRetired,
+
+    /// <summary>
+    /// An operator attached an evidence artifact to a task (architecture.md
+    /// Sec 11, roadmap M6.2). Artifacts -- files, screenshots, captured command
+    /// output -- are first-class objects linked to the task that gathered them,
+    /// not loose files; this event records the binding. The payload carries the
+    /// artifact's name and content type, and the outcome is the new artifact id.
+    /// The event is attributed to the attaching operator and carries the task it
+    /// was bound to.
+    /// </summary>
+    ArtifactAttached,
 }
