@@ -175,9 +175,10 @@ public static class EnrollmentEndpoints
     /// Mirrors the wire <see cref="Rod.V1.EnrollResponse"/>. <see cref="Status"/>
     /// is the wire enum so the JSON contract and the proto contract cannot drift.
     /// Certificate material is base64 over JSON; the proto carries raw bytes.
-    /// <see cref="ParentImplantId"/> is an HTTP-only addition (roadmap M5.2): the
-    /// binary wire surface gains it when the end-to-end child-enroll round-trip
-    /// lands; until then the operator API is the only consumer of parentage.
+    /// <see cref="ParentImplantId"/> records the child's lineage (roadmap M5.2
+    /// server-side, M9.1 implant-side): the binary wire surface carries it as
+    /// <c>parent_implant_id</c>, and this JSON contract is the live producer on the
+    /// HTTP enroll path.
     /// </summary>
     public sealed record EnrollmentResponse(
         EnrollStatus Status,

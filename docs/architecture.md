@@ -397,8 +397,12 @@ behavior is out-of-tree tradecraft (Sec 13); what the core provides in M5.2 is
 the parentage data model and the child-enrollment path -- the server records a
 child's `ParentImplantId` and validates it against the redeemed token's
 engagement, so a child derives only from a live parent in the same engagement.
-The implant-side handlers and the end-to-end child-enroll round-trip land in a
-follow-up milestone.
+The reference implants carry the matching implant-side path (M9.1): a
+`lateral.move` handler on each implant parses the child's stager token from the
+task arguments, generates a fresh child keypair, and enrolls a child naming
+itself as parent; the enroll clients thread parentage onto the request, and the
+binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
+the HTTP path.
 
 The persistence verbs are registered the same way
 (`Rod.Tradecraft.Persist.PersistCapabilities`, category `Persist`):

@@ -153,7 +153,7 @@ M5.2 delivered the server-side parentage model and enrollment path; the
 implant-side handlers and the round-trip were deferred (architecture.md Sec
 10.1). This milestone closes that follow-up.
 
-- [ ] **M9.1 Lateral child-implant round-trip.** Implant enroll clients carry
+- [x] **M9.1 Lateral child-implant round-trip.** Implant enroll clients carry
       parentage; a `lateral.move` handler derives a child that enrolls back; the
       binary wire surface gains parentage.
       _AC:_ a parent implant derives a child whose `ParentImplantId` is recorded
