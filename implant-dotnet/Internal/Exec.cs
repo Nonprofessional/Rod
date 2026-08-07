@@ -3,21 +3,44 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
 // Dispatches the capability verbs the reference implant advertises
-// (architecture.md Sec 10): the shell.exec core verb and the recon.portscan /
-// recon.hostenum / recon.service recon verbs. The runner is the dispatch point
-// future verbs (file.push, probe.read, ...) extend.
+// (architecture.md Sec 10): the shell.exec core verb, the recon.portscan /
+// recon.hostenum / recon.service recon verbs, and the lateral.move child-
+// derivation verb. The runner is the dispatch point future verbs (file.push,
+// probe.read, ...) extend.
 //
 // This is a benign reference runner: it shells out to the platform shell for the
 // one core verb and reports output. It performs no evasion, no obfuscation, and
 // no destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); the
 // operator is responsible for targeting only systems they are authorized to test
 // (RESPONSIBLE-USE.md).
+
+/// <summary>
+/// Carries the inputs the lateral.move handler needs to derive a child implant
+/// that enrolls back against the same teamserver (architecture.md Sec 10.1). The
+/// parent's own stager token is already spent at this implant's enroll, so the
+/// child token arrives in the lateral.move arguments; the bundle here is the
+/// enroll endpoint, CA pin, transport profile, and the parent's own implant id
+/// (named as the child's parent). A null bundle leaves derivation disabled.
+/// </summary>
+internal sealed class EnrollBundle
+{
+    public required string Url { get; init; }
+    public required string ParentId { get; init; }
+    public required TransportProfile Profile { get; init; }
+
+    /// <summary>
+    /// The teamserver CA(s) to pin at enroll, or null to trust the system roots.
+    /// </summary>
+    public X509Certificate2Collection? CAs { get; init; }
+}
 
 /// <summary>
 /// Dispatches capability verbs. Safe for concurrent use: each Dispatch call runs
@@ -33,6 +56,18 @@ internal sealed class Runner
     // How long a service-probe waits for a banner after connecting.
     private static readonly TimeSpan BannerTimeout = TimeSpan.FromMilliseconds(500);
 
+    private readonly EnrollBundle? _enroll;
+
+    public Runner()
+        => _enroll = null;
+
+    /// <summary>
+    /// Builds a runner whose lateral.move handler derives a child against the
+    /// given enroll bundle (architecture.md Sec 10.1).
+    /// </summary>
+    public Runner(EnrollBundle enroll)
+        => _enroll = enroll;
+
     /// <summary>
     /// Runs <paramref name="verb"/> against <paramref name="arguments"/> and
     /// returns the wire outcome plus the captured output (combined
@@ -47,6 +82,7 @@ internal sealed class Runner
             "recon.portscan" => PortScan(arguments),
             "recon.hostenum" => HostEnum(arguments),
             "recon.service" => ServiceProbe(arguments),
+            "lateral.move" => Lateral.Move(arguments, _enroll),
             _ => (TaskOutcome.Failed, "unknown verb: " + verb),
         };
     }
