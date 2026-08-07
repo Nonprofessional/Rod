@@ -29,6 +29,10 @@
     <!-- Referenced so the operator layer (M2.4: live bus + SSE endpoint) can be
          layered into the test host alongside the transport core. -->
     <ProjectReference Include="..\..\src\Rod.Operators\Rod.Operators.csproj" />
+    <!-- Referenced so the tradecraft layer (M8.1: capability registry wired onto
+         the live task path) can be layered into the test host alongside the
+         transport core. -->
+    <ProjectReference Include="..\..\src\Rod.Tradecraft\Rod.Tradecraft.csproj" />
   </ItemGroup>
 
 </Project>

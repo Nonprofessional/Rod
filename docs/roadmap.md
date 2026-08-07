@@ -140,7 +140,7 @@ The tradecraft layer (M2.5 skeleton) and every offensive-capability contract
 on the static per-class table and ships the verb string straight to the implant.
 This milestone connects them.
 
-- [ ] **M8.1 Tradecraft dispatch on the live task path.** Resolve task verbs
+- [x] **M8.1 Tradecraft dispatch on the live task path.** Resolve task verbs
       through the capability registry and dispatcher instead of the static
       per-class table alone; give the no-class-gate categories (evasion,
       exploit) a dispatch path a registered module satisfies.

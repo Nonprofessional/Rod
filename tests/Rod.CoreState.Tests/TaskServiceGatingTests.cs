@@ -117,4 +117,62 @@ public class TaskServiceGatingTests
 
         Assert.Equal(TaskRejectionReason.ImplantRetired, ex.Reason);
     }
+
+    [Fact]
+    public async Task IssueAsync_DefaultResolverIsTheStrictClassTable()
+    {
+        // The default capability resolver (architecture.md Sec 5.2/10.3) is the
+        // per-class reduced verb set alone -- it admits no contract-and-dispatch-
+        // only verb (evasion, exploit) on its own. That path opens when the
+        // tradecraft layer wires a registry-backed resolver in (architecture.md
+        // Sec 10.2); core state alone stays strict, so this test host and the
+        // core-state unit tests keep the behavior they had before M8.1.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        var service = NewService(implants);
+
+        var ex = await Assert.ThrowsAsync<TaskRejectedException>(
+            () => service.IssueAsync(
+                new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "evasion.avoid", "arg")));
+
+        Assert.Equal(TaskRejectionReason.UnsupportedVerbForClass, ex.Reason);
+    }
+
+    [Fact]
+    public async Task IssueAsync_AdmitsAVerbTheCapabilityResolverAllows()
+    {
+        // The task gate consults the capability resolver (architecture.md Sec
+        // 10.3): a resolver that admits a verb the class set does not -- standing
+        // in for the tradecraft-backed resolver a registered module satisfies --
+        // lets the verb through. This is the M8.1 mechanic in isolation: the
+        // resolver, not the class table alone, is the gate authority.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        var service = new TaskService(
+            new InMemoryTaskRepository(),
+            implants,
+            TimeProvider.System,
+            bus: null,
+            capabilities: new AllowingResolver("evasion.avoid"));
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "evasion.avoid", "arg"));
+
+        Assert.Equal("evasion.avoid", issued.Verb);
+    }
+
+    // A resolver that admits exactly one verb regardless of class -- the
+    // stand-in for the registry-backed resolver the tradecraft layer supplies
+    // when a module is registered for a no-class-gate verb.
+    private sealed class AllowingResolver : ITaskCapabilityResolver
+    {
+        private readonly string _verb;
+
+        public AllowingResolver(string verb) => _verb = verb;
+
+        public bool IsDispatchable(ImplantClass @class, string verb)
+            => string.Equals(verb, _verb, StringComparison.OrdinalIgnoreCase);
+    }
 }

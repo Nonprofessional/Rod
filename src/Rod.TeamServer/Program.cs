@@ -1,4 +1,5 @@
 using Rod.Operators;
+using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
 
@@ -20,6 +21,12 @@ builder.Services.AddRodTransport(builder.Configuration);
 // roster. Transport cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here.
 builder.Services.AddRodOperators();
+// Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3,
+// M8.1): the capability registry and dispatcher, and the registry-backed task
+// resolver that replaces core state's strict class-table default. Transport
+// cannot reference Rod.Tradecraft (architecture test LayerDependencyTests), so
+// the composition root assembles it here -- the same reason as AddRodOperators.
+builder.Services.AddRodTradecraft();
 
 // Bind the configured listeners (roadmap M2.2, architecture.md Sec 8). Each entry
 // is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and

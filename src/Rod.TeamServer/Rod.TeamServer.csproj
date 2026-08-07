@@ -8,11 +8,14 @@
     constrain it. As the composition root it references the layers it assembles:
     transport, and from roadmap M2.4 the operator layer, whose SSE event stream
     and live bus are wired here (transport itself cannot reference
-    Rod.Operators).
+    Rod.Operators). From M8.1 it also references Rod.Tradecraft, whose capability
+    registry is wired here so the live task path resolves verbs through it
+    (transport itself cannot reference Rod.Tradecraft either).
   -->
   <ItemGroup>
     <ProjectReference Include="..\Rod.Transport\Rod.Transport.csproj" />
     <ProjectReference Include="..\Rod.Operators\Rod.Operators.csproj" />
+    <ProjectReference Include="..\Rod.Tradecraft\Rod.Tradecraft.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

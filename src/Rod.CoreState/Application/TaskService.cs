@@ -26,12 +26,16 @@ namespace Rod.CoreState.Application;
 /// service without one, and the absence simply skips the publish (the task
 /// itself is the source of truth; the bus is the transient fan-out).
 ///
-/// Issuance is gated on the implant's class reduced verb set
-/// (architecture.md Sec 5.2): a verb outside the class's set is refused before
-/// the task is queued, throwing <see cref="TaskRejectedException"/> for the
-/// transport to map. The implant is resolved here so the gate reads the class
-/// the implant actually enrolled with, and the engagement binding is checked
-/// against it (architecture.md Sec 3).
+/// Issuance is gated through the capability resolver
+/// (<see cref="ITaskCapabilityResolver"/>, architecture.md Sec 5.2/10.3): the
+/// per-class reduced verb set is the primary authority, and a verb a registered
+/// capability module handles is admitted too -- so the evasion and exploit
+/// categories (contract and dispatch only, not class-gated, Sec 10.2) are no
+/// longer refused before dispatch. A verb outside both is refused before the task
+/// is queued, throwing <see cref="TaskRejectedException"/> for the transport to
+/// map. The implant is resolved here so the gate reads the class the implant
+/// actually enrolled with, and the engagement binding is checked against it
+/// (architecture.md Sec 3).
 ///
 /// As with <see cref="EnrollmentService"/> and <see cref="HandshakeService"/>,
 /// refusals propagate as exceptions the transport maps to wire status.
@@ -42,9 +46,10 @@ public sealed class TaskService
     private readonly IImplantRepository _implants;
     private readonly TimeProvider _clock;
     private readonly ILiveEventBus? _bus;
+    private readonly ITaskCapabilityResolver _capabilities;
 
     public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock)
-        : this(tasks, implants, clock, bus: null)
+        : this(tasks, implants, clock, bus: null, capabilities: new ClassTableCapabilityResolver())
     {
     }
 
@@ -54,11 +59,33 @@ public sealed class TaskService
     /// core-state unit tests bus-free.
     /// </summary>
     public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock, ILiveEventBus? bus)
+        : this(tasks, implants, clock, bus, capabilities: new ClassTableCapabilityResolver())
+    {
+    }
+
+    /// <summary>
+    /// Constructs the service with a live-event bus and a capability resolver.
+    /// The resolver is the verb-gate authority (architecture.md Sec 5.2/10.3):
+    /// the composition root passes the tradecraft-backed resolver once the
+    /// capability registry is wired onto the live path, so the evasion and
+    /// exploit categories -- contract and dispatch only, not class-gated
+    /// (architecture.md Sec 10.2) -- are no longer refused before dispatch. The
+    /// simpler constructors above keep the class-table-only default so the
+    /// core-state unit tests and any host that does not opt into the tradecraft
+    /// layer keep exactly the behavior they had.
+    /// </summary>
+    public TaskService(
+        ITaskRepository tasks,
+        IImplantRepository implants,
+        TimeProvider clock,
+        ILiveEventBus? bus,
+        ITaskCapabilityResolver capabilities)
     {
         _tasks = tasks;
         _implants = implants;
         _clock = clock;
         _bus = bus;
+        _capabilities = capabilities;
     }
 
     /// <summary>
@@ -106,14 +133,19 @@ public sealed class TaskService
                 $"Implant {implant.Id} was retired at {implant.RetiredAt:O}.");
         }
 
-        // The per-class reduced verb set is the authority for what this implant
-        // may run (architecture.md Sec 5.2). A verb outside it never reaches the
-        // queue, so a reduced-class implant cannot be tasked past its purpose.
-        if (!ImplantClassCapabilities.Allows(implant.Class, command.Verb))
+        // The capability resolver is the authority for what this implant may run
+        // (architecture.md Sec 5.2, Sec 10.3). Its default is the per-class
+        // reduced verb set; the composition root swaps in the tradecraft-backed
+        // resolver so a verb a registered capability module handles -- including
+        // the no-class-gate evasion and exploit categories (architecture.md Sec
+        // 10.2) -- is admitted too. A verb outside both never reaches the queue,
+        // so a reduced-class implant cannot be tasked past its purpose.
+        if (!_capabilities.IsDispatchable(implant.Class, command.Verb))
         {
             throw new TaskRejectedException(
                 TaskRejectionReason.UnsupportedVerbForClass,
-                $"Verb '{command.Verb}' is not in the {implant.Class} reduced verb set.");
+                $"Verb '{command.Verb}' is not in the {implant.Class} reduced verb set " +
+                "and no capability module is registered for it.");
         }
 
         var task = Task.Create(

@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Rod.CoreState.Implants;
 using Rod.Tradecraft.Collect;
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
@@ -29,15 +32,61 @@ namespace Rod.Tradecraft;
 /// replaces the placeholder (the last registration wins -- see
 /// <see cref="ICapabilityRegistry"/>).
 ///
-/// This milestone does not wire the dispatcher onto the live task path; that
-/// arrives with the offensive-capability milestones. These hooks are stable for
-/// it: a future ASP.NET Core composition root will resolve the
-/// <see cref="InMemoryCapabilityRegistry"/> singleton, call
-/// <see cref="LoadCapabilitiesAsync"/> once at startup, and let out-of-tree
-/// modules register against <see cref="ICapabilityRegistry"/> afterwards.
+/// The layer wires onto the live task path through <see cref="AddRodTradecraft"/>:
+/// it registers the in-memory capability registry (loaded with every built-in
+/// verb) and the dispatcher as singletons, and swaps core state's strict
+/// class-table resolver for <see cref="CapabilityRegistryTaskResolver"/>. From
+/// then on task issuance resolves a verb through the registry in addition to the
+/// per-class reduced set, so the contract-and-dispatch-only categories -- evasion
+/// and exploit (architecture.md Sec 10.2) -- are no longer refused before
+/// dispatch. Call after <c>AddRodTransport</c>; the composition root
+/// (<c>Rod.TeamServer.Program</c>) and the transport test host do this alongside
+/// <c>AddRodOperators</c>.
 /// </remarks>
 public static class RodTradecraftHost
 {
+    /// <summary>
+    /// Wires the tradecraft layer onto the live task path (architecture.md Sec
+    /// 10.3): registers an in-memory <see cref="ICapabilityRegistry"/> preloaded
+    /// with every built-in capability verb and the <see cref="CapabilityDispatcher"/>
+    /// as singletons, and swaps core state's strict class-table
+    /// <see cref="ITaskCapabilityResolver"/> for
+    /// <see cref="CapabilityRegistryTaskResolver"/>. From then on task issuance
+    /// admits a verb the class set does not when a capability module is registered
+    /// for it -- the path that opens dispatch for the contract-and-dispatch-only
+    /// categories (architecture.md Sec 10.2). Call after <c>AddRodTransport</c>;
+    /// an out-of-tree module registered afterwards against
+    /// <see cref="ICapabilityRegistry"/> replaces the placeholder for its verb and
+    /// stays the authority.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <c>RodOperatorsHost.AddRodOperators</c>: the layer exposes its own
+    /// DI hook because transport -- which owns the host the live task path runs
+    /// in -- cannot reference this assembly (architecture test
+    /// <c>LayerDependencyTests</c>). The composition root calls this alongside
+    /// <c>AddRodOperators</c>; the transport test host calls it through its
+    /// <c>configureServices</c> hook.
+    /// </remarks>
+    public static IServiceCollection AddRodTradecraft(this IServiceCollection services)
+    {
+        // One registry for the process; load the built-in verbs before the
+        // container resolves anything. Out-of-tree modules register afterwards
+        // and replace the placeholder for their verb (last registration wins).
+        var registry = new InMemoryCapabilityRegistry();
+        LoadCapabilitiesAsync(registry, CancellationToken.None).GetAwaiter().GetResult();
+
+        services.AddSingleton<ICapabilityRegistry>(registry);
+        services.AddSingleton<CapabilityDispatcher>();
+
+        // Replace core state's strict class-table default with the registry-backed
+        // resolver, the same way AddRodOperators replaces the no-op live bus. A
+        // factory resolver resolves the registry from the container at build time.
+        services.Replace(ServiceDescriptor.Singleton<ITaskCapabilityResolver>(sp =>
+            new CapabilityRegistryTaskResolver(sp.GetRequiredService<ICapabilityRegistry>())));
+
+        return services;
+    }
+
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
     /// (core plus recon plus lateral plus persist plus collect plus exfil plus
