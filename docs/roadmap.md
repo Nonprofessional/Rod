@@ -133,6 +133,55 @@ as out-of-tree, opt-in `CapabilityModule`s.
       module integration point; load and dispatch flow.
       _AC:_ an out-of-tree module integrates and runs through the contract.
 
+## Milestone 8 -- Wiring the tradecraft layer onto the task path
+
+The tradecraft layer (M2.5 skeleton) and every offensive-capability contract
+(M5.x, M7.x) are exercised only in tests; the live task path still gates verbs
+on the static per-class table and ships the verb string straight to the implant.
+This milestone connects them.
+
+- [ ] **M8.1 Tradecraft dispatch on the live task path.** Resolve task verbs
+      through the capability registry and dispatcher instead of the static
+      per-class table alone; give the no-class-gate categories (evasion,
+      exploit) a dispatch path a registered module satisfies.
+      _AC:_ a registered capability module is reached from the live task path,
+      and an evasion/exploit verb is no longer refused before dispatch.
+
+## Milestone 9 -- End-to-end child-implant enrollment
+
+M5.2 delivered the server-side parentage model and enrollment path; the
+implant-side handlers and the round-trip were deferred (architecture.md Sec
+10.1). This milestone closes that follow-up.
+
+- [ ] **M9.1 Lateral child-implant round-trip.** Implant enroll clients carry
+      parentage; a `lateral.move` handler derives a child that enrolls back; the
+      binary wire surface gains parentage.
+      _AC:_ a parent implant derives a child whose `ParentImplantId` is recorded
+      server-side, verified by an implant-driven integration test.
+
+## Milestone 10 -- Durable teamserver state
+
+Core state is in-memory today; the audit trail is file-based only when
+configured. Architecture Sec 12 names PostgreSQL as the authoritative store.
+
+- [ ] **M10.1 PostgreSQL core state.** Replace the in-memory adapters with a
+      durable PostgreSQL store for core state (engagements, operators, implants,
+      sessions, tasks, stager tokens); move audit/artifact stores off JSON Lines.
+      Preceded by an ADR on data access.
+      _AC:_ a teamserver restart leaves every engagement, operator, implant,
+      session, task, and token in place; the audit chain still verifies.
+
+## Milestone 11 -- Operator surface for the full capability set
+
+The UI implements only M1.5 plus live presence; M5/M6/M7 features are not
+reflected.
+
+- [ ] **M11.1 Operator UI coverage.** Surface every capability category as
+      tasking; add audit-trail, artifact, timeline, and report views; let an
+      operator task any implant; expose M4 OPSEC controls.
+      _AC:_ recon through exploit are issuable from the UI, and the M6 evidence
+      views (audit, artifacts, timeline, report) are reachable.
+
 ## Notes
 
 - Each milestone leaves the system demoable or testable.
