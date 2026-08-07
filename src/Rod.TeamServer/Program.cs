@@ -10,7 +10,11 @@ using Rod.Transport.Listeners;
 // <-> data goes over the HTTP API; the host itself adds no domain logic.
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddRodTransport();
+// Pass configuration through so the composition root can select the durable
+// audit/artifact stores when the Audit:DataDirectory section is present (roadmap
+// M6.4 -- the engagement trail outlives a restart and infrastructure teardown).
+// Absent, the in-memory adapters stay in place.
+builder.Services.AddRodTransport(builder.Configuration);
 // Layer in the operator layer (roadmap M2.4): the live-event bus that fans task
 // and presence events out to connected operator sessions, plus the presence
 // roster. Transport cannot reference Rod.Operators (architecture test

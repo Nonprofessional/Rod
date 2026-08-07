@@ -116,7 +116,7 @@ ports; no Postgres yet.
 - [x] **M6.3 Timeline and report export.** Built-in consumers of the event +
       task + artifact store. _AC:_ export a reproducible engagement timeline and
       report.
-- [ ] **M6.4 Post-operation retention.** Audit trail survives infrastructure
+- [x] **M6.4 Post-operation retention.** Audit trail survives infrastructure
       teardown. _AC:_ tear down an engagement's infra; its audit trail remains.
 
 ## Milestone 7 -- Evasion and exploit module frameworks

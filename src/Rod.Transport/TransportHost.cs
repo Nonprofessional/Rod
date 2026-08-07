@@ -33,6 +33,25 @@ public static class TransportHost
 {
     /// <summary>Registers core-state ports, adapters, and use cases.</summary>
     public static IServiceCollection AddRodTransport(this IServiceCollection services)
+        => services.AddRodTransport(configuration: null);
+
+    /// <summary>
+    /// Registers core-state ports, adapters, and use cases, and selects the audit
+    /// and artifact store by configuration (roadmap M6.4). When the
+    /// <c>Audit:DataDirectory</c> section is present, the file-backed
+    /// <see cref="FileAuditStore"/>/<see cref="FileArtifactStore"/> replace the
+    /// in-memory adapters so the engagement trail and its artifacts survive a
+    /// teamserver restart and infrastructure teardown; absent, the in-memory pair
+    /// stays in place (the test host and any host that does not opt in are
+    /// unchanged). The ports are stable either way -- callers stay agnostic.
+    /// </summary>
+    /// <param name="configuration">
+    /// The application configuration. May be null, in which case the in-memory
+    /// adapters are registered (identical to the parameterless overload).
+    /// </param>
+    public static IServiceCollection AddRodTransport(
+        this IServiceCollection services,
+        Microsoft.Extensions.Configuration.IConfiguration? configuration)
     {
         services.AddRouting();
         services.AddProblemDetails();
@@ -53,15 +72,33 @@ public static class TransportHost
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
 
-        // Audit port -> walking-skeleton in-memory adapter. The store is
-        // hash-chained per engagement (roadmap M2.3): tampering with a stored
-        // event breaks the chain at the next link.
-        services.AddSingleton<IAuditStore, InMemoryAuditStore>();
+        // Audit + artifact stores: in-memory by default (roadmap M2.3 -- the
+        // hash-chained trail and first-class evidence objects), or file-backed
+        // when the Audit:DataDirectory section is configured (roadmap M6.4 -- the
+        // trail and artifacts survive a teamserver restart and infrastructure
+        // teardown, the M6.4 acceptance point). The ports are stable either way;
+        // only the adapter is swapped. The durable pair is the Postgres stand-in
+        // for the walking skeleton, behind the same ports.
+        var dataDirectory = configuration?["Audit:DataDirectory"];
+        if (!string.IsNullOrWhiteSpace(dataDirectory))
+        {
+            var persistence = new AuditPersistenceOptions { DataDirectory = dataDirectory };
+            services.AddSingleton(persistence);
+            services.AddSingleton<IAuditStore, FileAuditStore>();
+            services.AddSingleton<IArtifactStore, FileArtifactStore>();
+        }
+        else
+        {
+            // Audit port -> walking-skeleton in-memory adapter. The store is
+            // hash-chained per engagement (roadmap M2.3): tampering with a stored
+            // event breaks the chain at the next link.
+            services.AddSingleton<IAuditStore, InMemoryAuditStore>();
 
-        // Artifact store port -> walking-skeleton in-memory adapter (roadmap
-        // M2.3). First-class evidence objects attached to tasks; consumed by the
-        // operator layer (M2.4) and beacon ingest later.
-        services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
+            // Artifact store port -> walking-skeleton in-memory adapter (roadmap
+            // M2.3). First-class evidence objects attached to tasks; consumed by
+            // the operator layer (M2.4) and beacon ingest later.
+            services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
+        }
 
         // Live-event bus port -> a no-op default. Transport must not reference
         // the operator layer (architecture test LayerDependencyTests), so the
@@ -350,15 +387,22 @@ public static class TransportHost
     /// reference that assembly (architecture test LayerDependencyTests). They
     /// default to no-op so existing callers are unaffected.
     /// </summary>
+    /// <param name="configuration">
+    /// Optional configuration forwarded to <see cref="AddRodTransport(IServiceCollection, IConfiguration?)"/>
+    /// so a test host can select the durable audit/artifact stores via the
+    /// <c>Audit:DataDirectory</c> section (roadmap M6.4). Null keeps the in-memory
+    /// adapters, matching every existing caller.
+    /// </param>
     public static IHostBuilder CreateHostBuilder(
         string[]? args = null,
         Action<IServiceCollection>? configureServices = null,
-        Action<IEndpointRouteBuilder>? mapEndpoints = null)
+        Action<IEndpointRouteBuilder>? mapEndpoints = null,
+        Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
         => Host.CreateDefaultBuilder(args ?? Array.Empty<string>())
             .ConfigureWebHostDefaults(web => web
                 .ConfigureServices(services =>
                 {
-                    services.AddRodTransport();
+                    services.AddRodTransport(configuration);
                     configureServices?.Invoke(services);
                 })
                 .Configure(app => app
