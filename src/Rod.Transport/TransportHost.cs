@@ -286,6 +286,10 @@ public static class TransportHost
         // First-class evidence objects linked to tasks (roadmap M6.2): attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         app.MapArtifactEndpoints();
+        // The built-in consumers of the event + task + artifact store (roadmap
+        // M6.3): export the engagement timeline and report (JSON + Markdown),
+        // reproducibility-stamped. Read-only projections of the evidence trail.
+        app.MapReportEndpoints();
         // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
@@ -310,6 +314,10 @@ public static class TransportHost
         // First-class evidence objects linked to tasks (roadmap M6.2): attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         endpoints.MapArtifactEndpoints();
+        // The built-in consumers of the event + task + artifact store (roadmap
+        // M6.3): export the engagement timeline and report (JSON + Markdown),
+        // reproducibility-stamped. Read-only projections of the evidence trail.
+        endpoints.MapReportEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();

@@ -113,7 +113,7 @@ ports; no Postgres yet.
       event stream. _AC:_ every action produces an attributed, immutable event.
 - [x] **M6.2 Artifact management.** Artifacts linked to tasks as first-class
       objects. _AC:_ attach, list, and retrieve artifacts per task.
-- [ ] **M6.3 Timeline and report export.** Built-in consumers of the event +
+- [x] **M6.3 Timeline and report export.** Built-in consumers of the event +
       task + artifact store. _AC:_ export a reproducible engagement timeline and
       report.
 - [ ] **M6.4 Post-operation retention.** Audit trail survives infrastructure
