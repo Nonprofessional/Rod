@@ -1,6 +1,7 @@
 using Rod.Tradecraft;
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
+using Rod.Tradecraft.Evasion;
 using Rod.Tradecraft.Modules;
 using Rod.Tradecraft.Recon;
 using Rod.Tradecraft.Registry;
@@ -80,6 +81,8 @@ public class ReconCapabilitiesTests
         foreach (var verb in CoreCapabilities.Verbs)
             Assert.Contains(verb, verbs);
         foreach (var verb in ReconCapabilities.Verbs)
+            Assert.Contains(verb, verbs);
+        foreach (var verb in EvasionCapabilities.Verbs)
             Assert.Contains(verb, verbs);
     }
 

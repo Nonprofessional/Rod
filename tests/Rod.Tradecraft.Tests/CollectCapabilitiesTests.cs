@@ -2,6 +2,7 @@ using Rod.Tradecraft;
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Collect;
 using Rod.Tradecraft.Core;
+using Rod.Tradecraft.Evasion;
 using Rod.Tradecraft.Exfil;
 using Rod.Tradecraft.Lateral;
 using Rod.Tradecraft.Modules;
@@ -101,6 +102,8 @@ public class CollectCapabilitiesTests
         foreach (var verb in CollectCapabilities.Verbs)
             Assert.Contains(verb, verbs);
         foreach (var verb in ExfilCapabilities.Verbs)
+            Assert.Contains(verb, verbs);
+        foreach (var verb in EvasionCapabilities.Verbs)
             Assert.Contains(verb, verbs);
     }
 

@@ -125,7 +125,7 @@ These milestones deliver the **contract and dispatch** for sensitive categories,
 not tradecraft. Concrete avoidance techniques and PoC integration are supplied
 as out-of-tree, opt-in `CapabilityModule`s.
 
-- [ ] **M7.1 Evasion contract.** `evasion.avoid`/`evasion.unload` interfaces,
+- [x] **M7.1 Evasion contract.** `evasion.avoid`/`evasion.unload` interfaces,
       registration, dispatch points, and data shapes in the core.
       _AC:_ an out-of-tree module can register and be dispatched through the
       contract.
