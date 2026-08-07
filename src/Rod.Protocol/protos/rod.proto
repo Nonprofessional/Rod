@@ -56,13 +56,17 @@ enum EnrollStatus {
 // The enrollment response (roadmap M1.2). On OK, carries the newly issued
 // implant id, its engagement, and the bound leaf certificate plus the CA chain
 // the implant needs. On failure, the ids/cert fields are empty and only status
-// is meaningful.
+// is meaningful. parent_implant_id is set only for a child enroll that named a
+// parent (architecture.md Sec 10.1): it echoes the parent recorded server-side
+// so a derived implant can confirm its lineage. A top-level enroll leaves it
+// unset.
 message EnrollResponse {
   EnrollStatus status = 1;
   string implant_id = 2;
   string engagement_id = 3;
   bytes leaf_certificate = 4;
   repeated bytes ca_chain = 5;
+  optional string parent_implant_id = 6;
 }
 
 // Handshake on the CheckIn stream (roadmap M1.3). The implant's first Frame's

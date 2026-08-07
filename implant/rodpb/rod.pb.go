@@ -375,7 +375,10 @@ func (x *Frame) GetPayload() []byte {
 // The enrollment response (roadmap M1.2). On OK, carries the newly issued
 // implant id, its engagement, and the bound leaf certificate plus the CA chain
 // the implant needs. On failure, the ids/cert fields are empty and only status
-// is meaningful.
+// is meaningful. parent_implant_id is set only for a child enroll that named a
+// parent (architecture.md Sec 10.1): it echoes the parent recorded server-side
+// so a derived implant can confirm its lineage. A top-level enroll leaves it
+// unset.
 type EnrollResponse struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Status          EnrollStatus           `protobuf:"varint,1,opt,name=status,proto3,enum=rod.v1.EnrollStatus" json:"status,omitempty"`
@@ -383,6 +386,7 @@ type EnrollResponse struct {
 	EngagementId    string                 `protobuf:"bytes,3,opt,name=engagement_id,json=engagementId,proto3" json:"engagement_id,omitempty"`
 	LeafCertificate []byte                 `protobuf:"bytes,4,opt,name=leaf_certificate,json=leafCertificate,proto3" json:"leaf_certificate,omitempty"`
 	CaChain         [][]byte               `protobuf:"bytes,5,rep,name=ca_chain,json=caChain,proto3" json:"ca_chain,omitempty"`
+	ParentImplantId *string                `protobuf:"bytes,6,opt,name=parent_implant_id,json=parentImplantId,proto3,oneof" json:"parent_implant_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -450,6 +454,13 @@ func (x *EnrollResponse) GetCaChain() [][]byte {
 		return x.CaChain
 	}
 	return nil
+}
+
+func (x *EnrollResponse) GetParentImplantId() string {
+	if x != nil && x.ParentImplantId != nil {
+		return *x.ParentImplantId
+	}
+	return ""
 }
 
 // The implant's advertisement: its protocol version, identity, and the
@@ -718,14 +729,16 @@ const file_rod_proto_rawDesc = "" +
 	"\bsequence\x18\x03 \x01(\x04R\bsequence\"O\n" +
 	"\x05Frame\x12,\n" +
 	"\benvelope\x18\x01 \x01(\v2\x10.rod.v1.EnvelopeR\benvelope\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"\xc8\x01\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\"\x8f\x02\n" +
 	"\x0eEnrollResponse\x12,\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x14.rod.v1.EnrollStatusR\x06status\x12\x1d\n" +
 	"\n" +
 	"implant_id\x18\x02 \x01(\tR\timplantId\x12#\n" +
 	"\rengagement_id\x18\x03 \x01(\tR\fengagementId\x12)\n" +
 	"\x10leaf_certificate\x18\x04 \x01(\fR\x0fleafCertificate\x12\x19\n" +
-	"\bca_chain\x18\x05 \x03(\fR\acaChain\"\x88\x01\n" +
+	"\bca_chain\x18\x05 \x03(\fR\acaChain\x12/\n" +
+	"\x11parent_implant_id\x18\x06 \x01(\tH\x00R\x0fparentImplantId\x88\x01\x01B\x14\n" +
+	"\x12_parent_implant_id\"\x88\x01\n" +
 	"\x10HandshakeRequest\x121\n" +
 	"\aversion\x18\x01 \x01(\v2\x17.rod.v1.ProtocolVersionR\aversion\x12\x1d\n" +
 	"\n" +
@@ -813,6 +826,7 @@ func file_rod_proto_init() {
 	if File_rod_proto != nil {
 		return
 	}
+	file_rod_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
