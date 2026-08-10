@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rod.Persistence is the durable store for teamserver state and the audit
+    trail (architecture.md Sec 4.1, Sec 11, Sec 12; ADR 0003). It holds the EF
+    Core DbContext, the entity configurations, the migrations, and the
+    Postgres-backed adapters that implement the Rod.CoreState and Rod.Audit
+    persistence ports. It is one of the layers outside the inner ring, so it may
+    reference core state and audit inward only; the layer dependency rules
+    (tests/Rod.Architecture.Tests) constrain it just like Rod.Operators and
+    Rod.Tradecraft.
+
+    The inner ring (Rod.CoreState, Rod.Audit) is deliberately zero-package and
+    persistence-ignorant: no EF attribute, no concurrency field, no DbContext
+    reference. That is why the EF Core / Npgsql dependency lives here, not in the
+    domain. The composition root in Rod.TeamServer swaps the in-memory port
+    implementations for these adapters when ConnectionStrings:Postgres is set
+    (the same opt-in pattern as the M6.4 Audit:DataDirectory swap); absent, the
+    in-memory adapters stay registered and nothing here runs.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Rod.CoreState\Rod.CoreState.csproj" />
+    <!-- Rod.Audit is the innermost ring alongside core state (architecture.md
+         Sec 4.1/11). Persistence implements IAuditStore and IArtifactStore, so
+         it depends inward on the audit ports. Audit still depends on nothing
+         in-house. -->
+    <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

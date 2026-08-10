@@ -10,12 +10,26 @@
     and live bus are wired here (transport itself cannot reference
     Rod.Operators). From M8.1 it also references Rod.Tradecraft, whose capability
     registry is wired here so the live task path resolves verbs through it
-    (transport itself cannot reference Rod.Tradecraft either).
+    (transport itself cannot reference Rod.Tradecraft either). From M10.1 it also
+    references Rod.Persistence, whose Postgres-backed adapters swap in for the
+    in-memory ports when ConnectionStrings:Postgres is set (ADR 0003).
   -->
   <ItemGroup>
     <ProjectReference Include="..\Rod.Transport\Rod.Transport.csproj" />
     <ProjectReference Include="..\Rod.Operators\Rod.Operators.csproj" />
     <ProjectReference Include="..\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\Rod.Persistence\Rod.Persistence.csproj" />
+  </ItemGroup>
+
+  <!-- EF Core design-time tools resolve against the startup project (AGENTS.md
+       Sec 4: `dotnet ef migrations add ... -s <Web>`), so the host carries the
+       Design package as a private asset. It is never deployed and never reaches
+       the runtime dependency graph. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <PropertyGroup>

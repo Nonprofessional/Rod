@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />
     <ProjectReference Include="..\..\src\Rod.Operators\Rod.Operators.csproj" />
     <ProjectReference Include="..\..\src\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\..\src\Rod.Persistence\Rod.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

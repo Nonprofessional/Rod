@@ -1,4 +1,5 @@
 using Rod.Operators;
+using Rod.Persistence;
 using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
@@ -27,6 +28,15 @@ builder.Services.AddRodOperators();
 // cannot reference Rod.Tradecraft (architecture test LayerDependencyTests), so
 // the composition root assembles it here -- the same reason as AddRodOperators.
 builder.Services.AddRodTradecraft();
+// Wire the durable PostgreSQL store (architecture.md Sec 12, ADR 0003, roadmap
+// M10.1): when ConnectionStrings:Postgres is set, this registers the EF Core
+// DbContext and replaces the in-memory core-state ports whose durable adapters
+// are implemented with the Postgres-backed pair, so state survives a restart.
+// Rod.Persistence cannot be referenced by Rod.Transport (architecture test
+// LayerDependencyTests), so the composition root assembles it here -- the same
+// reason as AddRodOperators/AddRodTradecraft above. Absent the connection
+// string, it registers nothing and the in-memory adapters stay in place.
+builder.Services.AddRodPersistence(builder.Configuration);
 
 // Bind the configured listeners (roadmap M2.2, architecture.md Sec 8). Each entry
 // is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and

@@ -4,6 +4,7 @@ using Rod.Audit.Layers;
 using Rod.BuildPipeline.Layers;
 using Rod.CoreState.Layers;
 using Rod.Operators.Layers;
+using Rod.Persistence.Layers;
 using Rod.Tradecraft.Layers;
 using Rod.Transport.Layers;
 
@@ -13,12 +14,12 @@ namespace Rod.Architecture.Tests;
 /// Encodes the teamserver layer dependency rules (architecture.md Sec 4.1,
 /// AGENTS.md Sec 5). Dependencies point inward only: core state and audit depend
 /// on nothing in-house; transport and build pipeline depend on core state;
-/// operators and tradecraft depend on core state and audit. The transport layer
-/// additionally depends on Rod.Protocol: Protocol is the language-neutral wire
-/// contract (architecture.md Sec 8/9) that the transport speaks, so mapping
-/// outcomes to wire status codes belongs in transport. Protocol itself depends on
-/// nothing in-house, and still never leaks into core state. Adding a forbidden
-/// reference must fail one of these tests.
+/// operators, tradecraft, and persistence depend on core state and audit. The
+/// transport layer additionally depends on Rod.Protocol: Protocol is the
+/// language-neutral wire contract (architecture.md Sec 8/9) that the transport
+/// speaks, so mapping outcomes to wire status codes belongs in transport.
+/// Protocol itself depends on nothing in-house, and still never leaks into core
+/// state. Adding a forbidden reference must fail one of these tests.
 /// </summary>
 public class LayerDependencyTests
 {
@@ -28,13 +29,15 @@ public class LayerDependencyTests
     private static readonly Assembly BuildPipeline = typeof(BuildPipelineLayer).Assembly;
     private static readonly Assembly Operators = typeof(OperatorsLayer).Assembly;
     private static readonly Assembly Tradecraft = typeof(TradecraftLayer).Assembly;
+    private static readonly Assembly Persistence = typeof(PersistenceLayer).Assembly;
 
     // Every in-house layer base namespace. A type that references any of these
     // namespaces has a dependency on that layer.
     private static readonly string[] AllLayers =
     {
         "Rod.Audit", "Rod.BuildPipeline", "Rod.CoreState",
-        "Rod.Operators", "Rod.Protocol", "Rod.Tradecraft", "Rod.Transport"
+        "Rod.Operators", "Rod.Persistence", "Rod.Protocol",
+        "Rod.Tradecraft", "Rod.Transport"
     };
 
     // Inner ring: the layer may use only itself. Any reference to another
@@ -94,6 +97,15 @@ public class LayerDependencyTests
     [Fact]
     public void Tradecraft_Dependencies_PointInwardOnly()
         => AssertOnlyDependsOn(Tradecraft, nameof(Tradecraft), "Rod.Tradecraft", "Rod.CoreState", "Rod.Audit");
+
+    // Persistence (ADR 0003, roadmap M10.1) implements the Rod.CoreState and
+    // Rod.Audit persistence ports against Postgres, so it may depend inward on
+    // those two layers only. It is wired at the composition root, never by
+    // transport, so -- like operators and tradecraft -- it never touches the
+    // build pipeline, the protocol, or another outer layer.
+    [Fact]
+    public void Persistence_Dependencies_PointInwardOnly()
+        => AssertOnlyDependsOn(Persistence, nameof(Persistence), "Rod.Persistence", "Rod.CoreState", "Rod.Audit");
 
     // Protocol types must never leak into core (AGENTS.md Sec 5).
     [Fact]

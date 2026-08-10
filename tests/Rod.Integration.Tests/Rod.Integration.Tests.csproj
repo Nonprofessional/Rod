@@ -14,6 +14,10 @@
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- Live Postgres for the durability acceptance test (ADR 0003, roadmap
+         M10.1). An ephemeral container per test class; tests skip (not fail)
+         when Docker is unavailable, so CI without Docker stays green. -->
+    <PackageReference Include="Testcontainers.PostgreSql" />
   </ItemGroup>
 
   <ItemGroup>
@@ -33,6 +37,10 @@
          the live task path) can be layered into the test host alongside the
          transport core. -->
     <ProjectReference Include="..\..\src\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <!-- Referenced so the durable PostgreSQL store (M10.1: Postgres-backed
+         operators and engagements) can be layered into the test host and the
+         durability acceptance test can resolve its DbContext directly. -->
+    <ProjectReference Include="..\..\src\Rod.Persistence\Rod.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

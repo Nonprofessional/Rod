@@ -6,4 +6,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!--
+    The persistence layer (ADR 0003) implements this project's repository and
+    registry ports against Postgres. The domain model is persistence-ignorant:
+    no EF attributes, no concurrency fields, so its entities carry get-only
+    properties and internal setters that EF Core writes through backing fields.
+    Granting Rod.Persistence internal access lets the durable adapters and the EF
+    entity configurations reach those members without widening the public surface
+    of the domain. The inner ring stays a zero-package classlib: this only widens
+    assembly-level visibility, it does not add a package reference here.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Rod.Persistence" />
+  </ItemGroup>
+
 </Project>

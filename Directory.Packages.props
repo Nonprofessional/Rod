@@ -13,7 +13,19 @@
     <PackageVersion Include="Grpc.AspNetCore" Version="2.80.0" />
     <PackageVersion Include="Grpc.Net.Client" Version="2.80.0" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
+    <!-- Durable store (ADR 0003): EF Core 10 over the Npgsql provider is the
+         authoritative teamserver state. Versions are pinned centrally here so
+         every project that touches the DbContext shares one EF Core build. The
+         EF Core patch level tracks the version the Npgsql provider was built
+         against (its transitive Relational reference), so the restore unifies
+         cleanly with no assembly-version conflict. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Live Postgres for the durability acceptance test; ephemeral container
+         per test, gated to skip when Docker is absent. -->
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
   </ItemGroup>
 </Project>
