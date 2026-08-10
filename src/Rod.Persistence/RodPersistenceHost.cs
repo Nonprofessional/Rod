@@ -3,7 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Sessions;
 using Rod.Persistence.Stores;
 
 namespace Rod.Persistence;
@@ -59,12 +61,14 @@ public static class RodPersistenceHost
         // Replace the in-memory core-state ports whose durable adapters are
         // implemented. Each adapter is a singleton that resolves the factory and
         // creates a fresh context per call, matching the singleton lifetime of the
-        // application services that consume the ports. Implemented so far (Phase
-        // 1): operators and engagements. The remaining ports (implants, sessions,
-        // tasks, stager tokens, audit, artifacts) keep their in-memory
+        // application services that consume the ports. Implemented so far:
+        // operators, engagements, implants, and sessions. The remaining ports
+        // (tasks, stager tokens, audit, artifacts) keep their in-memory
         // registration until their adapters land.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
+        services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
+        services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());
 
         return services;
     }
