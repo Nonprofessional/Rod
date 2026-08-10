@@ -164,7 +164,7 @@ implant-side handlers and the round-trip were deferred (architecture.md Sec
 Core state is in-memory today; the audit trail is file-based only when
 configured. Architecture Sec 12 names PostgreSQL as the authoritative store.
 
-- [ ] **M10.1 PostgreSQL core state.** Replace the in-memory adapters with a
+- [x] **M10.1 PostgreSQL core state.** Replace the in-memory adapters with a
       durable PostgreSQL store for core state (engagements, operators, implants,
       sessions, tasks, stager tokens); move audit/artifact stores off JSON Lines.
       Preceded by an ADR on data access.

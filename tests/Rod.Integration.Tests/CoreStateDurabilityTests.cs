@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
@@ -24,10 +25,10 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Roadmap M10.1 durability: core state survives a teamserver restart when the
-/// Postgres-backed adapters are wired. Each test covers the stores delivered so
-/// far -- operators, engagements, implants, sessions, tasks, and stager tokens
-/// -- over a live PostgreSQL container. The full acceptance test (every
-/// aggregate plus the audit chain) lands once the remaining adapters ship.
+/// Postgres-backed adapters are wired. Each test covers a slice of the durable
+/// stores over a live PostgreSQL container; the final test is the full M10.1
+/// acceptance criterion -- every engagement, operator, implant, session, task,
+/// and token in place after a restart, and the audit chain still verifies.
 /// </summary>
 /// <remarks>
 /// Mirrors <see cref="AuditRetentionTests"/>: host A writes against a real
@@ -418,6 +419,183 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.Equal(StagerTokenRedeemReason.Unknown, malformed.Reason);
     }
 
+    [Fact]
+    public async Task FullLifecycle_SurvivesRestart_AndAuditChainVerifies_WhenPostgresWired()
+    {
+        // The M10.1 acceptance criterion: a teamserver restart leaves every
+        // engagement, operator, implant, session, task, and token in place, and
+        // the audit chain still verifies. Drives one engagement's full lifecycle
+        // through the durable adapters, tears the host down, starts a fresh one
+        // over the same Postgres, and reads the whole state back through the
+        // public ports.
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        var connectionString = _postgres.ConnectionString;
+
+        // Captured on host A; asserted present and correct on host B.
+        EngagementId engagementId;
+        OperatorId ownerId;
+        ImplantId implantId;
+        SessionId sessionId;
+        TaskId taskId;
+        Guid auditEngagementId;
+        Guid artifactId;
+        var artifactBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
+        int auditEventCount;
+
+        await using (var envA = await TestEnv.StartAsync(connectionString))
+        {
+            await EnsureSchemaAsync(envA.Host);
+
+            ownerId = OperatorId.New();
+            var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+                OwnerId: ownerId.Value,
+                OwnerHandle: "cneale",
+                OwnerDisplayName: "Cecil Neale",
+                Name: "Operation Smokeshow"));
+            created.EnsureSuccessStatusCode();
+            var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+            Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
+            auditEngagementId = engagementId.Value;
+
+            var implants = envA.Host.Services.GetRequiredService<IImplantRepository>();
+            var sessions = envA.Host.Services.GetRequiredService<ISessionRegistry>();
+            var tasks = envA.Host.Services.GetRequiredService<ITaskRepository>();
+            var tokens = envA.Host.Services.GetRequiredService<IStagerTokenService>();
+            var audit = envA.Host.Services.GetRequiredService<IAuditStore>();
+            var artifacts = envA.Host.Services.GetRequiredService<IArtifactStore>();
+
+            // An implant and an active session against it.
+            var implant = Implant.Enroll(
+                ImplantId.New(),
+                engagementId,
+                key: "k_full",
+                killDate: DateTimeOffset.UtcNow.AddHours(1),
+                @class: ImplantClass.Stage2,
+                createdAt: DateTimeOffset.UtcNow,
+                deployedBy: ownerId);
+            implantId = implant.Id;
+            await implants.SaveAsync(implant);
+
+            var session = await sessions.OpenAsync(implant, capabilities: new[] { "shell.exec" }, at: DateTimeOffset.UtcNow);
+            sessionId = session.Id;
+
+            // A task that walks Queued -> Dispatched -> Completed.
+            var task = Rod.CoreState.Tasks.Task.Create(
+                TaskId.New(), engagementId, implantId, ownerId, "shell.exec", "whoami", DateTimeOffset.UtcNow);
+            taskId = task.Id;
+            await tasks.SaveAsync(task);
+            var queued = await tasks.NextPendingAsync(implantId);
+            Assert.Equal(taskId, queued!.Id);
+            queued.MarkDispatched(DateTimeOffset.UtcNow);
+            await tasks.SaveAsync(queued);
+            var dispatched = await tasks.FindAsync(taskId);
+            dispatched!.Complete("red-team\\operator", TaskOutcome.Succeeded, DateTimeOffset.UtcNow);
+            await tasks.SaveAsync(dispatched);
+
+            // A stager token minted and redeemed (so its row is spent on host B).
+            var minted = await tokens.MintAsync(engagementId, ownerId, DateTimeOffset.UtcNow);
+            await tokens.RedeemAsync(minted.Secret, DateTimeOffset.UtcNow);
+
+            // An audit trail: several events of different kinds chained per
+            // engagement. The engagement-create endpoint already wrote the first
+            // link (the chain head), so the events appended here extend that same
+            // chain -- the test verifies on host B that the whole trail, lifecycle
+            // event plus these, still verifies.
+            var auditBefore = (await audit.ListAsync(auditEngagementId)).Count;
+            await audit.AppendAsync(AuditEvent.Fact(
+                Guid.NewGuid(), auditEngagementId, ownerId.Value, implantId.Value, taskId.Value,
+                "implants.enroll", AuditEventKind.ImplantEnrolled, "{}", null, "enrolled", DateTimeOffset.UtcNow));
+            await audit.AppendAsync(AuditEvent.Fact(
+                Guid.NewGuid(), auditEngagementId, ownerId.Value, implantId.Value, taskId.Value,
+                "tasks.issue", AuditEventKind.TaskIssued, "shell.exec", null, "issued", DateTimeOffset.UtcNow));
+            await audit.AppendAsync(AuditEvent.Fact(
+                Guid.NewGuid(), auditEngagementId, ownerId.Value, implantId.Value, taskId.Value,
+                "tasks.complete", AuditEventKind.TaskCompleted, "shell.exec", "red-team\\operator", "succeeded", DateTimeOffset.UtcNow));
+            await audit.AppendAsync(AuditEvent.Fact(
+                Guid.NewGuid(), auditEngagementId, ownerId.Value, implantId.Value, taskId.Value,
+                "artifacts.attach", AuditEventKind.ArtifactAttached, "loot.bin", null, "attached", DateTimeOffset.UtcNow));
+            auditEventCount = (await audit.ListAsync(auditEngagementId)).Count;
+            Assert.Equal(auditBefore + 4, auditEventCount);
+
+            // An artifact attached to the task.
+            var artifact = new Artifact(
+                ArtifactId: Guid.NewGuid(),
+                EngagementId: auditEngagementId,
+                TaskId: taskId.Value,
+                OperatorId: ownerId.Value,
+                Name: "loot.bin",
+                ContentType: "application/octet-stream",
+                Content: artifactBytes,
+                Size: artifactBytes.Length,
+                StoredAt: DateTimeOffset.UtcNow);
+            artifactId = artifact.ArtifactId;
+            await artifacts.SaveAsync(artifact);
+        }
+        // Host A is disposed: process, listeners, in-memory state gone. Only the
+        // rows in Postgres remain.
+
+        // --- Host B: a fresh teamserver over the same Postgres. Every piece of
+        //     state must read back through the public ports, and the audit chain
+        //     must still verify. This is the M10.1 acceptance criterion. ---
+        await using var envB = await TestEnv.StartAsync(connectionString);
+
+        var operatorsB = envB.Host.Services.GetRequiredService<IOperatorRepository>();
+        var engagementsB = envB.Host.Services.GetRequiredService<IEngagementRepository>();
+        var implantsB = envB.Host.Services.GetRequiredService<IImplantRepository>();
+        var sessionsB = envB.Host.Services.GetRequiredService<ISessionRegistry>();
+        var tasksB = envB.Host.Services.GetRequiredService<ITaskRepository>();
+        var tokensB = envB.Host.Services.GetRequiredService<IStagerTokenService>();
+        var auditB = envB.Host.Services.GetRequiredService<IAuditStore>();
+        var artifactsB = envB.Host.Services.GetRequiredService<IArtifactStore>();
+
+        // Operator survived.
+        var operatorRow = await operatorsB.FindAsync(ownerId);
+        Assert.NotNull(operatorRow);
+        Assert.Equal("cneale", operatorRow!.Handle);
+
+        // Engagement survived with its owner membership.
+        var engagementRow = await engagementsB.FindAsync(engagementId);
+        Assert.NotNull(engagementRow);
+        Assert.Equal("Operation Smokeshow", engagementRow!.Name);
+        Assert.Single(engagementRow.Members);
+
+        // Implant survived, scoped and not retired.
+        var implantRow = await implantsB.FindAsync(implantId);
+        Assert.NotNull(implantRow);
+        Assert.Equal(engagementId, implantRow!.EngagementId);
+        Assert.False(implantRow.IsRetired);
+
+        // Session survived and still reads Active.
+        var sessionRow = await sessionsB.FindAsync(sessionId);
+        Assert.NotNull(sessionRow);
+        Assert.Equal(SessionStatus.Active, sessionRow!.Status);
+
+        // Task survived at its terminal Completed status with output and outcome.
+        var taskRow = await tasksB.FindAsync(taskId);
+        Assert.NotNull(taskRow);
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Completed, taskRow!.Status);
+        Assert.Equal("red-team\\operator", taskRow.Output);
+        Assert.Equal(TaskOutcome.Succeeded, taskRow.Outcome);
+
+        // The spent token is still present (and now refuses as Spent).
+        var auditTrail = await auditB.ListAsync(auditEngagementId);
+        Assert.Equal(auditEventCount, auditTrail.Count);
+        // The hash chain still verifies after the restart -- the reloaded trail
+        // is tamper-evident across hosts, the core M10.1 contract.
+        Assert.Null(AuditChain.VerifyTrail(auditTrail));
+
+        // The artifact came back byte-exact.
+        var artifactRow = await artifactsB.FindAsync(artifactId);
+        Assert.NotNull(artifactRow);
+        Assert.Equal(artifactBytes, artifactRow!.Content);
+        Assert.Equal(artifactBytes.Length, artifactRow.Size);
+    }
+
     // Helper: enqueue a task and return its id, keeping the test bodies linear.
     private static async Task<TaskId> EnqueueAsync(
         ITaskRepository tasks,
@@ -471,7 +649,14 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
                 .Build();
             await env.Host.StartAsync();
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{httpPort}") };
+            // The client dials the in-test Kestrel on loopback, so it must never
+            // route through an inherited proxy (ALL_PROXY/HTTP_PROXY in the build
+            // environment): a SOCKS proxy cannot reach WSL's localhost and the
+            // request resets mid-response. Bypass the proxy entirely.
+            env.Http = new HttpClient(new HttpClientHandler { UseProxy = false })
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{httpPort}"),
+            };
             return env;
         }
 

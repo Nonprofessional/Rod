@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Rod.Audit;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
@@ -63,16 +64,18 @@ public static class RodPersistenceHost
         // Replace the in-memory core-state ports whose durable adapters are
         // implemented. Each adapter is a singleton that resolves the factory and
         // creates a fresh context per call, matching the singleton lifetime of the
-        // application services that consume the ports. Implemented so far:
-        // operators, engagements, implants, sessions, tasks, and stager tokens.
-        // The remaining ports (audit, artifacts) keep their in-memory
-        // registration until their adapters land.
+        // application services that consume the ports. All eight core-state and
+        // audit/artifact ports are now Postgres-backed when this extension runs:
+        // operators, engagements, implants, sessions, tasks, stager tokens, audit,
+        // and artifacts.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
         services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
         services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());
         services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
         services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
+        services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
+        services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 
         return services;
     }
