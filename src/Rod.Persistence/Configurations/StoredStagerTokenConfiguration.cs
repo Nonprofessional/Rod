@@ -54,5 +54,10 @@ internal sealed class StoredStagerTokenConfiguration : IEntityTypeConfiguration<
         builder.Property(t => t.ExpiresAt).HasColumnName("expires_at");
         builder.Property(t => t.MaxUses).HasColumnName("max_uses");
         builder.Property(t => t.RemainingUses).HasColumnName("remaining_uses");
+
+        // Redeem looks the token up by hash digest (the plaintext is never
+        // stored), so a unique index on the digest makes that read an equality
+        // probe and also enforces that no two tokens ever share a hash.
+        builder.HasIndex(t => t.Hash).IsUnique().HasDatabaseName("ux_stager_tokens_secret_hash");
     }
 }

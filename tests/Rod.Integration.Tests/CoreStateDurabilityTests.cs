@@ -10,18 +10,24 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.Staging;
+using Rod.CoreState.Tasks;
 using Rod.Persistence;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
+// The domain entity shares its name with System.Threading.Tasks.Task; the tests
+// use the BCL type for async method signatures, so pin it here. The domain Task
+// is reached by its full name where the helper builds one.
+using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Roadmap M10.1 durability: core state survives a teamserver restart when the
 /// Postgres-backed adapters are wired. Each test covers the stores delivered so
-/// far -- operators, engagements, implants, and sessions -- over a live
-/// PostgreSQL container. The full acceptance test (every aggregate plus the
-/// audit chain) lands once the remaining adapters ship.
+/// far -- operators, engagements, implants, sessions, tasks, and stager tokens
+/// -- over a live PostgreSQL container. The full acceptance test (every
+/// aggregate plus the audit chain) lands once the remaining adapters ship.
 /// </summary>
 /// <remarks>
 /// Mirrors <see cref="AuditRetentionTests"/>: host A writes against a real
@@ -237,6 +243,194 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var parentHistory = await sessionsB.ListByImplantAsync(parentId);
         Assert.Equal(2, parentHistory.Count);
         Assert.Equal(closedSessionId, parentHistory[0].Id);
+    }
+
+    [Fact]
+    public async Task Tasks_SurviveRestart_AndDispatchInFifoOrder_WhenPostgresWired()
+    {
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        var connectionString = _postgres.ConnectionString;
+
+        // --- Host A: apply the schema, create an engagement + implant, then
+        //     enqueue three tasks on the implant and dispatch the first. The FIFO
+        //     order is what the enqueue_seq column must preserve across restart. ---
+        EngagementId engagementId;
+        ImplantId implantId;
+        TaskId firstId;
+        TaskId secondId;
+        TaskId thirdId;
+
+        await using (var envA = await TestEnv.StartAsync(connectionString))
+        {
+            await EnsureSchemaAsync(envA.Host);
+
+            var ownerId = OperatorId.New();
+            var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+                OwnerId: ownerId.Value,
+                OwnerHandle: "cneale",
+                OwnerDisplayName: "Cecil Neale",
+                Name: "Operation Smokeshow"));
+            created.EnsureSuccessStatusCode();
+            var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+            Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
+
+            var implants = envA.Host.Services.GetRequiredService<IImplantRepository>();
+            var tasks = envA.Host.Services.GetRequiredService<ITaskRepository>();
+
+            var implant = Implant.Enroll(
+                ImplantId.New(),
+                engagementId,
+                key: "k_fifo",
+                killDate: DateTimeOffset.UtcNow.AddHours(1),
+                @class: ImplantClass.Stage2,
+                createdAt: DateTimeOffset.UtcNow,
+                deployedBy: ownerId);
+            implantId = implant.Id;
+            await implants.SaveAsync(implant);
+
+            firstId = await EnqueueAsync(tasks, engagementId, implantId, ownerId, "shell.exec", "echo one");
+            secondId = await EnqueueAsync(tasks, engagementId, implantId, ownerId, "shell.exec", "echo two");
+            thirdId = await EnqueueAsync(tasks, engagementId, implantId, ownerId, "shell.exec", "echo three");
+
+            // Dispatch the first so the restart also carries a non-Queued status.
+            var first = await tasks.NextPendingAsync(implantId);
+            Assert.NotNull(first);
+            Assert.Equal(firstId, first!.Id);
+            first.MarkDispatched(DateTimeOffset.UtcNow);
+            await tasks.SaveAsync(first);
+        }
+
+        // --- Host B: fresh teamserver, same Postgres. The durable task store
+        //     reads all three back; the dispatched one kept its status, and the
+        //     remaining two dequeue in enqueue order (FIFO via enqueue_seq). ---
+        await using var envB = await TestEnv.StartAsync(connectionString);
+
+        var tasksB = envB.Host.Services.GetRequiredService<ITaskRepository>();
+
+        // The dispatched first task survived with its Dispatched status (a re-save
+        // updated the lifecycle columns without touching enqueue_seq).
+        var firstRow = await tasksB.FindAsync(firstId);
+        Assert.NotNull(firstRow);
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Dispatched, firstRow!.Status);
+        Assert.NotNull(firstRow.DispatchedAt);
+
+        // NextPending skips the dispatched one and returns the second (the oldest
+        // still-Queued), proving FIFO order survived the restart.
+        var next = await tasksB.NextPendingAsync(implantId);
+        Assert.NotNull(next);
+        Assert.Equal(secondId, next!.Id);
+
+        // The implant and engagement histories read in enqueue order, with the
+        // dispatched first task in its enqueue position (not moved to the back).
+        var byImplant = await tasksB.ListByImplantAsync(implantId);
+        Assert.Equal(3, byImplant.Count);
+        Assert.Equal(firstId, byImplant[0].Id);
+        Assert.Equal(secondId, byImplant[1].Id);
+        Assert.Equal(thirdId, byImplant[2].Id);
+
+        var byEngagement = await tasksB.ListByEngagementAsync(engagementId);
+        Assert.Equal(3, byEngagement.Count);
+        Assert.Equal(firstId, byEngagement[0].Id);
+
+        // Complete the second task and confirm the result columns round-trip.
+        var second = await tasksB.FindAsync(secondId);
+        Assert.NotNull(second);
+        // The second was still Queued on host B (NextPending does not consume);
+        // dispatch then complete it so the lifecycle advances across a save.
+        second!.MarkDispatched(DateTimeOffset.UtcNow);
+        second.Complete(output: "two", outcome: TaskOutcome.Succeeded, at: DateTimeOffset.UtcNow);
+        await tasksB.SaveAsync(second);
+
+        var secondCompleted = await tasksB.FindAsync(secondId);
+        Assert.NotNull(secondCompleted);
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Completed, secondCompleted!.Status);
+        Assert.Equal("two", secondCompleted.Output);
+        Assert.Equal(TaskOutcome.Succeeded, secondCompleted.Outcome);
+    }
+
+    [Fact]
+    public async Task StagerTokens_SurviveRestart_AndRedeemAtomically_WhenPostgresWired()
+    {
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        var connectionString = _postgres.ConnectionString;
+
+        // --- Host A: apply the schema, create an engagement, mint a single-use
+        //     token. The plaintext secret is captured now; only its hash is in
+        //     Postgres. ---
+        string secret;
+        EngagementId engagementId;
+        OperatorId ownerId;
+
+        await using (var envA = await TestEnv.StartAsync(connectionString))
+        {
+            await EnsureSchemaAsync(envA.Host);
+
+            ownerId = OperatorId.New();
+            var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+                OwnerId: ownerId.Value,
+                OwnerHandle: "cneale",
+                OwnerDisplayName: "Cecil Neale",
+                Name: "Operation Smokeshow"));
+            created.EnsureSuccessStatusCode();
+            var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+            Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
+
+            var tokens = envA.Host.Services.GetRequiredService<IStagerTokenService>();
+            var minted = await tokens.MintAsync(engagementId, ownerId, DateTimeOffset.UtcNow);
+            secret = minted.Secret;
+        }
+
+        // --- Host B: fresh teamserver, same Postgres. The hash round-trips, so a
+        //     redeem with the captured plaintext succeeds and attributes back to
+        //     the minting operator and engagement. A second redeem of the now-spent
+        //     single-use token refuses as Spent (the durable store keeps the row at
+        //     zero rather than deleting it). ---
+        await using var envB = await TestEnv.StartAsync(connectionString);
+
+        var tokensB = envB.Host.Services.GetRequiredService<IStagerTokenService>();
+
+        var redeemed = await tokensB.RedeemAsync(secret, DateTimeOffset.UtcNow);
+        Assert.Equal(engagementId, redeemed.EngagementId);
+        Assert.Equal(ownerId, redeemed.IssuedBy);
+
+        var second = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => tokensB.RedeemAsync(secret, DateTimeOffset.UtcNow));
+        Assert.Equal(StagerTokenRedeemReason.Spent, second.Reason);
+
+        // An unknown secret refuses as Unknown, and a malformed one never reaches
+        // the lookup (also Unknown).
+        var unknown = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => tokensB.RedeemAsync("not-a-real-secret", DateTimeOffset.UtcNow));
+        Assert.Equal(StagerTokenRedeemReason.Unknown, unknown.Reason);
+
+        var malformed = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => tokensB.RedeemAsync("???!", DateTimeOffset.UtcNow));
+        Assert.Equal(StagerTokenRedeemReason.Unknown, malformed.Reason);
+    }
+
+    // Helper: enqueue a task and return its id, keeping the test bodies linear.
+    private static async Task<TaskId> EnqueueAsync(
+        ITaskRepository tasks,
+        EngagementId engagementId,
+        ImplantId implantId,
+        OperatorId issuedBy,
+        string verb,
+        string arguments)
+    {
+        var task = Rod.CoreState.Tasks.Task.Create(
+            TaskId.New(), engagementId, implantId, issuedBy, verb, arguments, DateTimeOffset.UtcNow);
+        await tasks.SaveAsync(task);
+        return task.Id;
     }
 
     // Applies the InitialCreate migration to the container's database. The host

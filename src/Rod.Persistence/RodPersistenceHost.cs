@@ -6,6 +6,8 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.Staging;
+using Rod.CoreState.Tasks;
 using Rod.Persistence.Stores;
 
 namespace Rod.Persistence;
@@ -62,13 +64,15 @@ public static class RodPersistenceHost
         // implemented. Each adapter is a singleton that resolves the factory and
         // creates a fresh context per call, matching the singleton lifetime of the
         // application services that consume the ports. Implemented so far:
-        // operators, engagements, implants, and sessions. The remaining ports
-        // (tasks, stager tokens, audit, artifacts) keep their in-memory
+        // operators, engagements, implants, sessions, tasks, and stager tokens.
+        // The remaining ports (audit, artifacts) keep their in-memory
         // registration until their adapters land.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
         services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
         services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());
+        services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
+        services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
 
         return services;
     }
