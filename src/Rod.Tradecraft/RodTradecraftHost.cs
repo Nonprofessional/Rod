@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Rod.CoreState.Implants;
@@ -85,6 +86,25 @@ public static class RodTradecraftHost
             new CapabilityRegistryTaskResolver(sp.GetRequiredService<ICapabilityRegistry>())));
 
         return services;
+    }
+
+    /// <summary>
+    /// Maps the tradecraft layer's endpoints: the capability catalog
+    /// (<c>GET /capabilities</c>) that lets the operator UI surface every
+    /// capability category as tasking from the registry rather than a hardcoded
+    /// verb table (roadmap M11.1). Call alongside <c>MapRodEndpoints</c>; the
+    /// composition root calls it after <c>MapOperatorEndpoints</c>.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <c>RodOperatorsHost.MapOperatorEndpoints</c>: the layer exposes
+    /// its own endpoint mapping because transport -- which owns the host the
+    /// operator API runs in -- cannot reference this assembly (architecture test
+    /// <c>LayerDependencyTests</c>).
+    /// </remarks>
+    public static IEndpointRouteBuilder MapCapabilityEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        Endpoints.CapabilityEndpoints.MapCapabilityEndpoints(endpoints);
+        return endpoints;
     }
 
     /// <summary>

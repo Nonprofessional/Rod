@@ -62,6 +62,13 @@ app.MapRodEndpoints();
 // transport endpoints from the composition root for the same layer-separation
 // reason as AddRodOperators above.
 app.MapOperatorEndpoints();
+// The tradecraft layer's capability catalog (roadmap M11.1): mapped from the
+// composition root for the same layer-separation reason as AddRodTradecraft --
+// transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
+// from the layer that owns the registry. Lets the operator UI surface every
+// capability category as tasking from the registry rather than a hardcoded verb
+// table.
+app.MapCapabilityEndpoints();
 
 // SPA fallback: anything not handled by a static file or an API route returns
 // the React shell, so client-side routing owns deep links (e.g. /engagements/..).

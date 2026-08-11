@@ -176,7 +176,7 @@ configured. Architecture Sec 12 names PostgreSQL as the authoritative store.
 The UI implements only M1.5 plus live presence; M5/M6/M7 features are not
 reflected.
 
-- [ ] **M11.1 Operator UI coverage.** Surface every capability category as
+- [x] **M11.1 Operator UI coverage.** Surface every capability category as
       tasking; add audit-trail, artifact, timeline, and report views; let an
       operator task any implant; expose M4 OPSEC controls.
       _AC:_ recon through exploit are issuable from the UI, and the M6 evidence

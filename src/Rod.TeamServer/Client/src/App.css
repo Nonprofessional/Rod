@@ -213,3 +213,171 @@ code {
     monospace;
   font-size: 12px;
 }
+
+.output.long {
+  max-width: none;
+  max-height: 480px;
+  overflow: auto;
+}
+
+/* --- M11.1 additions: tabs, OPSEC badges, build form, report columns ------- */
+
+.app-header .crumb-sep {
+  color: #6b6b76;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 16px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.tab {
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+  color: #6b6b76;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tab:hover {
+  color: inherit;
+}
+
+.tab.active {
+  color: inherit;
+  border-color: rgba(128, 128, 128, 0.25);
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.task-form select {
+  padding: 6px 8px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: inherit;
+  color: inherit;
+  font: inherit;
+}
+
+.task-meta {
+  margin: 8px 0 0;
+  min-height: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.opsec {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.opsec-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  color: #6b6b76;
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.opsec-badge.risk-medium {
+  color: #8a5a00;
+  border-color: rgba(192, 130, 0, 0.5);
+  background: rgba(241, 196, 15, 0.15);
+}
+
+.opsec-badge.risk-high {
+  color: #c0392b;
+  border-color: rgba(192, 57, 43, 0.5);
+  background: rgba(192, 57, 43, 0.12);
+}
+
+button.danger {
+  border-color: rgba(192, 57, 43, 0.6);
+  color: #c0392b;
+}
+
+button.active {
+  border-color: #3a6df0;
+  color: #3a6df0;
+}
+
+.repoint-form {
+  display: flex;
+  gap: 4px;
+}
+
+.repoint-form input {
+  padding: 4px 6px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: inherit;
+  color: inherit;
+  font: inherit;
+  width: 180px;
+}
+
+.build-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.build-form fieldset {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.build-form legend {
+  color: #6b6b76;
+  font-size: 13px;
+  padding: 0 6px;
+}
+
+.build-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b6b76;
+}
+
+.build-form input,
+.build-form select {
+  padding: 4px 6px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: inherit;
+  color: inherit;
+  font: inherit;
+}
+
+.report-cols {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.report-cols h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #6b6b76;
+}
+
+h4 {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+

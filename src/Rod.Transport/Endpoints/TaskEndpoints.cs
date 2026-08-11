@@ -14,10 +14,13 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The operator-facing tasking endpoints (roadmap M1.4): issue a task against an
-/// implant in an engagement, and read a task back with its captured result and
-/// audit trail. Lets an operator task an implant and see output plus an audit
-/// event -- the M1.4 acceptance point. Scoped by engagement so tasking never
-/// crosses engagement boundaries (architecture.md Sec 3).
+/// implant in an engagement, read a task back with its captured result and audit
+/// trail, and list every task in an engagement (roadmap M11.1 -- the operator UI
+/// shows the engagement's whole task history, not one implant's). Lets an
+/// operator task an implant and see output plus an audit event -- the M1.4
+/// acceptance point -- and survey all tasking across the engagement. Scoped by
+/// engagement so tasking never crosses engagement boundaries (architecture.md
+/// Sec 3).
 /// </summary>
 public static class TaskEndpoints
 {
@@ -26,6 +29,12 @@ public static class TaskEndpoints
         var group = endpoints.MapGroup("/engagements/{engagementId}/tasks");
 
         group.MapPost("/", IssueAsync).WithName("IssueTask");
+        // The collection route is listed before {taskId} so the literal "/" does
+        // not get captured as a task id; ASP.NET Core route matching prefers the
+        // more specific template, and the {taskId} segment requires a non-empty
+        // value, so "GET /tasks" (no segment) resolves here and "GET /tasks/{id}"
+        // resolves to GetAsync. Ordered this way for readability.
+        group.MapGet("/", ListAsync).WithName("ListEngagementTasks");
         group.MapGet("/{taskId}", GetAsync).WithName("GetTask");
 
         return endpoints;
@@ -103,6 +112,40 @@ public static class TaskEndpoints
             cancellationToken);
 
         return Results.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
+    }
+
+    private static async Task<IResult> ListAsync(
+        string engagementId,
+        ITaskRepository tasks,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        // The engagement's whole task history across every implant, oldest first.
+        // Scoped by engagement by construction (architecture.md Sec 3); the
+        // operator UI surveys all tasking across the engagement from this view
+        // (roadmap M11.1) instead of polling each implant in turn. Reuses
+        // ImplantTaskResponse (same field set the per-implant listing returns)
+        // so the two task-list shapes read identically to a client.
+        var list = await tasks.ListByEngagementAsync(
+            new EngagementId(engagementValue),
+            cancellationToken);
+        var body = list
+            .Select(t => new ImplantEndpoints.ImplantTaskResponse(
+                t.Id.ToString(),
+                t.ImplantId.ToString(),
+                t.IssuedBy.ToString(),
+                t.Verb,
+                t.Arguments,
+                t.Status.ToString(),
+                t.Output,
+                t.Outcome?.ToString(),
+                t.CreatedAt,
+                t.CompletedAt))
+            .ToArray();
+
+        return Results.Ok(body);
     }
 
     private static async Task<IResult> GetAsync(

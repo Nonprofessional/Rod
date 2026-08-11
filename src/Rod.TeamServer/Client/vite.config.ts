@@ -21,8 +21,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Engagement-scoped routes cover tasking, audit, artifacts, timeline,
+      // report, payloads, stager tokens, and implants. Listeners and the
+      // capability catalog are global routes added in M4.4/M11.1.
       '/engagements': apiTarget,
       '/implants': apiTarget,
+      '/listeners': apiTarget,
+      '/capabilities': apiTarget,
       '/health': apiTarget,
     },
   },

@@ -5,13 +5,18 @@
     <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
   </ItemGroup>
 
-  <!-- The composition-root hook (AddRodTradecraft) registers the capability
-       registry and the registry-backed task resolver into the DI container, so
-       the layer needs the DI abstractions. Kept to the abstractions (not the
-       full ASP.NET Core framework reference the operator layer carries) since
-       the tradecraft layer owns no HTTP surface. -->
+  <!-- The tradecraft layer exposes the operator-facing capability catalog
+       endpoint (roadmap M11.1: the UI surfaces every capability category as
+       tasking, driven by the registry rather than a hardcoded verb table). It
+       maps that endpoint itself for the same layer-separation reason the
+       operator layer maps its SSE stream: transport cannot reference
+       Rod.Tradecraft (architecture test LayerDependencyTests), so the catalog
+       endpoint is mapped from the composition root alongside MapOperatorEndpoints.
+       The ASP.NET Core App framework reference also provides the DI abstractions
+       the composition-root hook (AddRodTradecraft) registers the registry and
+       resolver against, so no separate abstractions package is needed. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <PropertyGroup>
