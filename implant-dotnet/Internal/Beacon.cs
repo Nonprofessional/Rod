@@ -31,9 +31,11 @@ internal sealed class Beacon
     // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
     // shell verb, the three recon verbs the runner implements, the lateral
     // verbs (move for child derivation; token and exec_remote for the standard
-    // access-token and remote-execution surfaces per ADR 0004), and the persist
+    // access-token and remote-execution surfaces per ADR 0004), the persist
     // verbs (install/remove/list for the documented Run/schtasks/service/cron/
-    // systemd mechanisms per ADR 0004).
+    // systemd mechanisms per ADR 0004), and the collect verbs (file for
+    // filesystem reads with chunked-streaming for large files; cred for
+    // standard credential-store enumeration without dumping secret material).
     private static readonly string[] Caps =
     {
         "shell.exec",
@@ -46,6 +48,8 @@ internal sealed class Beacon
         "persist.install",
         "persist.remove",
         "persist.list",
+        "collect.file",
+        "collect.cred",
     };
 
     private readonly string _beaconUrl;

