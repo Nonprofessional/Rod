@@ -1,10 +1,12 @@
 # Rod -- Architecture & Design
 
-> **Status:** Design (pre-implementation). This document is the agreed blueprint
-> for Rod as an authorized-use red-team command-and-control (C2) platform. The
-> repository currently holds only documentation and conventions; no code is
-> implemented yet. Sections marked _(future)_ are deliberately out of the initial
-> scope.
+> **Status:** Living document. This is the agreed architecture for Rod as an
+> authorized-use red-team command-and-control (C2) platform. The repository
+> holds the teamserver, two reference implants (Go, .NET), and a Postgres
+> persistence layer; [roadmap.md](roadmap.md) tracks delivery. Sections marked
+> _(future)_ are designed for but not yet implemented; a point-in-time
+> comparison of this document against the code lives in
+> [audits/](audits/).
 
 ## 1. Overview
 
@@ -134,6 +136,9 @@ in-house. The dependency rule is enforced by architecture tests.
   contract and the same baked-profile encoding as the Go unit.
 - **Redirectors.** Near-stateless forwarders (Go, single static binary) for OPSEC
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
+  The forwarder binary itself is planned; the server-side rotation path a
+  redirector depends on -- listener repoint (`POST /listeners/{id}:repoint`),
+  retire, and the audit writes -- is implemented (M4.4, [todo.md](todo.md)).
 - **Operator UI.** The web front end; lives in the teamserver project.
 
 ### 4.3 Source-tree map (`src/`)
@@ -219,6 +224,13 @@ core state (a verb outside the set is refused before it is queued, Sec 10.3),
 and the build pipeline bakes it into each artifact so a generated payload is
 self-describing.
 
+Admission is not execution: a verb may be class-admissible (the class gate
+does not refuse it) yet ship no built-in handler, running only when an
+operator supplies an out-of-tree module. The contract-only verbs
+(`collect.keylog`, and the `evasion` and `exploit` categories in their
+entirety) follow this shape (ADR 0007, Sec 10.2); they are listed in the
+class set and in the capability catalog but carry no in-repo handler.
+
 A capable implant can deploy another class on the same host (e.g. a web-shell
 deriving a stage-2 implant) via a deployment verb; the child enrols into the same
 engagement and records its parent. This is the lateral-movement path (roadmap
@@ -297,7 +309,9 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 8. Transports, listeners, and redirectors
 
-- Supported listener transports: **HTTP(S)**, **mTLS**, **DNS**, **SMB**, **TCP**.
+- Supported listener transports: **HTTP(S)** and **mTLS** are implemented;
+  **DNS**, **SMB**, and **TCP** are planned (the listener abstraction is in
+  place, so adding them is a milestone concern, not an architectural one).
   Transport choice is a profile/deployment concern; the protocol semantics are
   transport-independent.
 - An implant is always the **connection initiator** (reverse connection). The
@@ -331,8 +345,11 @@ fleet-wide code execution. Security is a first-class concern.
   identities bound to their engagement via client certificates.
 - **mTLS.** The mTLS transport is mutually authenticated; an implant's certificate
   binds `(implant_id, engagement_id)`.
-- **Command signing.** Dispatched tasks are signed so an implant only acts on
-  teamserver-authorized tasking.
+- **Command signing** _(future)_. Dispatched tasks are intended to be signed so
+  an implant only acts on teamserver-authorized tasking. Designed for, not
+  implemented initially; until it lands, task integrity rests on the mTLS
+  channel binding (`implant_id`, `engagement_id`), which authenticates the
+  implant but not individual tasks.
 - **Sealing** _(future)_. End-to-end protection of task payloads so untrusted
   redirectors cannot read or alter them. Designed for, not implemented initially.
 - **Per-implant keys and rotation.** Unique keys per implant, generated
@@ -356,8 +373,10 @@ fleet-wide code execution. Security is a first-class concern.
   `AuditEvent`. Tampering breaks the chain (Sec. 11).
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
   in certificates; redirectors never enforce tenancy.
-- **ROE guardrails.** The audit store feeds guardrails that warn or block
-  high-risk actions against out-of-scope targets.
+- **ROE guardrails** _(planned)_. The audit store is intended to feed
+  guardrails that warn or block high-risk actions against out-of-scope targets.
+  Not yet implemented; the audit store is in place and is the data source such
+  guardrails will read from.
 - **No self-protection.** Rod ships no protection against its own detection by
   defenders. Stealth is a deployment and capability concern (Sec. 7), not a
   security boundary of the platform.
@@ -508,8 +527,11 @@ scrape.
 
 - **Every action is an immutable, attributed event**: `operator_id`,
   `engagement_id`, `implant_id`, `task_id`, `command`, `timestamp`, input
-  parameters, output/result, and linked artifacts. This is the engagement
-  timeline by construction.
+  parameters, and output/result. Linked artifacts are recorded as separate
+  `ArtifactAttached` (operator attach) or `ExfilCaptured` (implant-side exfil)
+  events whose outcome carries the artifact id -- artifacts live in the artifact
+  store, joined by `task_id`, not as a field on every event. This is the
+  engagement timeline by construction.
 - **The event log is append-only and per-engagement**; it is never deletable
   mid-operation (chain-of-custody).
 - **Artifacts** (files, screenshots, command output) are first-class objects
@@ -534,10 +556,10 @@ scrape.
 | Concern | Choice | Why |
 |---------|--------|-----|
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core, gRPC | Strong async networking, first-class gRPC, strong typing, mature web UI. LTS to ~2028. |
-| Data store | PostgreSQL | Authoritative teamserver state; per-engagement audit. |
-| Build units | C#/.NET, Go, C/C++, Nim toolchains, one per language | Polyglot implants with no teamserver-language coupling. |
-| Redirectors | Go (latest stable), static single binary | Tiny VPS footprint; stdlib mTLS/HTTP/DNS. |
-| Implants | C#/.NET, Go, C/C++, Nim -- per target | .NET for Windows in-memory tradecraft; Go for cross-platform; C/C++/Nim for footprint. |
+| Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and skeleton deployments (ADR 0003). |
+| Build units | C#/.NET, Go (implemented); C/C++, Nim (planned) -- one per language | Polyglot implants with no teamserver-language coupling. |
+| Redirectors | Go (planned), static single binary | Tiny VPS footprint; stdlib mTLS/HTTP/DNS. The teamserver-side rotation path (listener repoint) ships (M4.4); the forwarder binary is planned (todo.md). |
+| Implants | C#/.NET, Go (reference implants shipped); C/C++, Nim (planned) -- per target | .NET for Windows in-memory tradecraft; Go for cross-platform; C/C++/Nim for footprint. |
 | Operator UI | Web (React), served by the teamserver | Lives in the teamserver project; see ADR 0002. |
 
 The wire protocol and capability registry are the long-lived, language-neutral
