@@ -124,8 +124,9 @@ in-house. The dependency rule is enforced by architecture tests.
   that enrolls over HTTP (submitting its own public key), beacons over mTLS,
   and runs the `shell.exec` core verb. Its wire bindings are generated from the
   teamserver proto (`implant/rodpb/`) and committed; the build unit bakes the
-  per-implant profile in at compile time. It performs no evasion, no
-  obfuscation, no persistence (RESPONSIBLE-USE.md, Sec. 7). The **reference
+  per-implant profile in at compile time. It performs no evasion and no
+  obfuscation (RESPONSIBLE-USE.md, Sec. 7); the in-repo tradecraft it does
+  carry is bounded by ADR 0004. The **reference
   .NET implant** lives in the parallel top-level `implant-dotnet/` tree: the
   same benign stage-2 shape in C#/.NET 10, compiling its wire bindings from the
   canonical `src/Rod.Protocol/protos/rod.proto` at build time (no committed
@@ -392,8 +393,7 @@ The lateral verbs are registered the same way
 `lateral.move` carries a `derives-child` attribute and is the deployment verb
 that means "derive a child implant"; `lateral.token` and `lateral.exec_remote`
 carry `touches-credential` and `touches-network` attributes respectively. Like
-recon they are gated to Stage-2 at task issuance (Sec 5.2). Their concrete
-behavior is out-of-tree tradecraft (Sec 13); what the core provides in M5.2 is
+recon they are gated to Stage-2 at task issuance (Sec 5.2). The core provides
 the parentage data model and the child-enrollment path -- the server records a
 child's `ParentImplantId` and validates it against the redeemed token's
 engagement, so a child derives only from a live parent in the same engagement.
@@ -402,18 +402,25 @@ The reference implants carry the matching implant-side path (M9.1): a
 task arguments, generates a fresh child keypair, and enrolls a child naming
 itself as parent; the enroll clients thread parentage onto the request, and the
 binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
-the HTTP path.
+the HTTP path. The `lateral.token` and `lateral.exec_remote` verbs also ship
+in-repo reference handlers under the ADR 0004 boundary (Sec 13, AGENTS.md
+Sec 7): standard Windows access-token duplication and remote execution over
+documented administration channels (SCM, scheduled tasks, SSH), the same
+surface every mainstream C2 exposes for these activities.
 
 The persistence verbs are registered the same way
 (`Rod.Tradecraft.Persist.PersistCapabilities`, category `Persist`):
 `persist.install` and `persist.remove` carry `writes-to-disk` attributes
 (install additionally carries `persists`), and `persist.list` is a read that
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
-lateral they are gated to Stage-2 at task issuance (Sec 5.2). Their concrete
-behavior is out-of-tree tradecraft (Sec 13, AGENTS.md Sec 7): persistence is a
-long-haul activity, but the reference implants ship none -- they perform no
-persistence (Sec 5) -- so install, list, and remove run only when an operator
-supplies an out-of-tree module for the verb.
+lateral they are gated to Stage-2 at task issuance (Sec 5.2). Persistence is a
+long-haul activity, and the reference implants ship standard, documented
+mechanisms under the ADR 0004 boundary (Sec 13, AGENTS.md Sec 7): the Windows
+`Run` registry key, scheduled tasks, and services, plus Linux cron and
+systemd user units -- the documented persistence surfaces every system
+administrator and offensive-security curriculum covers. Install, list, and
+remove round-trip against these surfaces. Novel or stealth persistence
+techniques remain out-of-tree.
 
 The collection and exfiltration verbs are registered the same way
 (`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
@@ -425,10 +432,18 @@ carries a `reads-filesystem` attribute, `collect.cred` carries a
 is a read that carries no such flag, like `persist.list` and the host-local
 `recon.hostenum` (it stages already-collected data on the teamserver). Like
 recon, lateral, and persist they are gated to Stage-2 at task issuance
-(Sec 5.2). Their concrete behavior is out-of-tree tradecraft (Sec 13, AGENTS.md
-Sec 7): collection and exfiltration are long-haul activities, but the reference
-implants ship none -- they perform no collection or exfiltration (Sec 5) -- so
-each verb runs only when an operator supplies an out-of-tree module for it.
+(Sec 5.2). Collection and exfiltration are long-haul activities. Under the
+ADR 0004 boundary (Sec 13, AGENTS.md Sec 7) the reference implants ship
+in-repo handlers for `collect.file` (filesystem reads, with large files
+chunked into the exfil channel), `collect.cred` (standard credential-store
+*listings* -- SSH key presence with fingerprints, AWS profile names, Windows
+saved-credential names via `cmdkey /list` -- without dumping secret material),
+and `exfil.push` / `exfil.stage` (data transferred over the C2 channel into
+engagement-scoped artifact storage, Sec 11). Two collection surfaces stay
+out-of-tree as pluggable contracts: LSASS memory dumping (no
+benign-system-tool side, tightly coupled to active credential theft) and
+`collect.keylog` input capture. Each of those runs only when an operator
+supplies an out-of-tree module for the verb.
 
 The evasion verbs are registered the same way
 (`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both
@@ -528,12 +543,30 @@ boundary for generation.
 
 ## 13. Sensitive-capability statement
 
-Evasion, exploit, and related offensive behavior are part of Rod's capability
-model as **pluggable contracts**. The core repository defines their interfaces,
-registration, dispatch, and data models, and provides no concrete bypass
-techniques, weaponized code, or in-the-wild proof-of-concepts. Operators supply
-tradecraft as separate, opt-in modules. All use assumes an authorized context;
-see [RESPONSIBLE-USE.md](../RESPONSIBLE-USE.md).
+The boundary between in-repo and out-of-tree tradecraft is decided by **what
+kind of technique it is**, not by capability category. The authoritative rule
+and its rationale live in [ADR 0004](decisions/0004-offensive-tradecraft-boundary.md);
+this section summarizes it.
+
+- **In-repo: standard, mainstream, documented techniques.** Mechanisms
+  documented in OS vendor references and covered by offensive-security
+  curricula and peer frameworks (Metasploit, Sliver, Havoc) ship in the
+  reference implants so Rod is useful for learning, research, and authorized
+  red-team work out of the box. This currently covers shell execution, host and
+  port reconnaissance, child-implant derivation, Windows access tokens, remote
+  execution over documented admin channels, standard persistence surfaces (Run
+  key, scheduled tasks, services, cron, systemd), filesystem and standard-store
+  credential collection, and C2 exfiltration into engagement-scoped artifact
+  storage.
+- **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days,
+  weaponized proof-of-concepts, novel or unpublished detection-evasion and
+  bypass techniques, LSASS memory dumping for credential theft, and input
+  capture (keyloggers) are part of Rod's capability model as **pluggable
+  contracts**: the core defines their interfaces, registration, dispatch, and
+  data models; the concrete tradecraft is supplied as separate, opt-in,
+  out-of-tree modules the operator deploys. The core ships none of it.
+- All use assumes an authorized context; see
+  [RESPONSIBLE-USE.md](../RESPONSIBLE-USE.md).
 
 ## 14. Capability bar (design aspiration)
 

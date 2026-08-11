@@ -103,8 +103,10 @@ cleanup) and the engagement is the isolation unit. See
 
 ## Sensitive-capability boundary
 
-Evasion and exploit capabilities are part of the capability model as pluggable
-contracts only. The core defines their interfaces, registration, and dispatch;
-concrete bypass techniques and in-the-wild PoCs are intentionally out of scope
-and live in separate, opt-in, out-of-tree modules. See
-[architecture.md Sec. 10.2, Sec. 13](../architecture.md).
+The original framing here -- all concrete offensive tradecraft out-of-tree --
+was superseded by [ADR 0004](0004-offensive-tradecraft-boundary.md), which
+draws the boundary by *technique kind* rather than capability category:
+standard, mainstream, documented techniques ship in-repo; in-the-wild
+zero-days, weaponized proof-of-concepts, novel evasion, LSASS dumping, and
+input capture stay out-of-tree as pluggable contracts. See
+[architecture.md Sec. 13](../architecture.md).
