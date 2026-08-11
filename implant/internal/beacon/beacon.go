@@ -33,6 +33,8 @@ var Caps = []string{
 	"recon.hostenum",
 	"recon.service",
 	"lateral.move",
+	"lateral.token",
+	"lateral.exec_remote",
 }
 
 // EnrollBundle carries the inputs the lateral.move handler needs to derive a

