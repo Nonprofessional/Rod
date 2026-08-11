@@ -33,9 +33,11 @@ internal sealed class Beacon
     // verbs (move for child derivation; token and exec_remote for the standard
     // access-token and remote-execution surfaces per ADR 0004), the persist
     // verbs (install/remove/list for the documented Run/schtasks/service/cron/
-    // systemd mechanisms per ADR 0004), and the collect verbs (file for
-    // filesystem reads with chunked-streaming for large files; cred for
-    // standard credential-store enumeration without dumping secret material).
+    // systemd mechanisms per ADR 0004), the collect verbs (file for filesystem
+    // reads with chunked-streaming for large files; cred for standard
+    // credential-store enumeration without dumping secret material), and the
+    // exfil verbs (push to stream a file as ExfilChunk frames terminating at the
+    // artifact store; stage to report the local staging manifest).
     private static readonly string[] Caps =
     {
         "shell.exec",
@@ -50,6 +52,8 @@ internal sealed class Beacon
         "persist.list",
         "collect.file",
         "collect.cred",
+        "exfil.push",
+        "exfil.stage",
     };
 
     private readonly string _beaconUrl;

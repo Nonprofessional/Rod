@@ -26,8 +26,8 @@ import (
 // Caps are the capability verbs the reference implant advertises at handshake
 // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
 // shell verb, the three recon verbs the runner implements, the lateral.* set,
-// the persist.* set, and the collect.* set so a dispatched collect task reaches
-// its handler.
+// the persist.* set, the collect.* set, and the exfil.* set so a dispatched
+// task reaches its handler.
 var Caps = []string{
 	"shell.exec",
 	"recon.portscan",
@@ -41,6 +41,8 @@ var Caps = []string{
 	"persist.list",
 	"collect.file",
 	"collect.cred",
+	"exfil.push",
+	"exfil.stage",
 }
 
 // EnrollBundle carries the inputs the lateral.move handler needs to derive a

