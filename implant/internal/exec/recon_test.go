@@ -49,7 +49,7 @@ func TestDispatch_PortScan_ReportsOpenLoopbackPort(t *testing.T) {
 	port := portOf(t, ln.Addr().String())
 
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.portscan",
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.portscan",
 		formatScanArgs(port))
 
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED {
@@ -63,7 +63,7 @@ func TestDispatch_PortScan_ReportsOpenLoopbackPort(t *testing.T) {
 
 func TestDispatch_PortScan_MalformedArgs_FailsWithCause(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.portscan", "not-a-range")
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.portscan", "not-a-range")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED for malformed args", outcome)
 	}
@@ -77,7 +77,7 @@ func TestDispatch_PortScan_EmptyRange_SucceedsWithNoLines(t *testing.T) {
 	// empty output rather than a failure, so a quiet host is not confused with
 	// an error.
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.portscan", "127.0.0.1 1-1")
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.portscan", "127.0.0.1 1-1")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED {
 		t.Fatalf("outcome = %v, want SUCCEEDED for a closed range", outcome)
 	}
@@ -88,7 +88,7 @@ func TestDispatch_PortScan_EmptyRange_SucceedsWithNoLines(t *testing.T) {
 
 func TestDispatch_HostEnum_ReportsLocalFacts(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.hostenum", "")
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.hostenum", "")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED {
 		t.Fatalf("outcome = %v, want SUCCEEDED", outcome)
 	}
@@ -108,7 +108,7 @@ func TestDispatch_ServiceProbe_ReportsOpenLoopbackPort(t *testing.T) {
 	port := portOf(t, ln.Addr().String())
 
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.service",
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.service",
 		formatServiceArgs(port))
 
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED {
@@ -126,7 +126,7 @@ func TestDispatch_ServiceProbe_NoOpenPort_Fails(t *testing.T) {
 	// test environment; the assertion is on the contract, not on port 9 being
 	// definitively closed.
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.service", "127.0.0.1 9")
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.service", "127.0.0.1 9")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED when no port is open", outcome)
 	}
@@ -137,7 +137,7 @@ func TestDispatch_ServiceProbe_NoOpenPort_Fails(t *testing.T) {
 
 func TestDispatch_ServiceProbe_MalformedArgs_FailsWithCause(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "recon.service", "127.0.0.1")
+	outcome, output, _ := r.Dispatch(context.Background(), "recon.service", "127.0.0.1")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED for malformed args", outcome)
 	}

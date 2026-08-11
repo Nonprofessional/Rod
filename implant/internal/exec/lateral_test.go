@@ -20,7 +20,7 @@ func TestLateralMove_DisabledBundle_FailsWithCause(t *testing.T) {
 	// A runner built without an enroll bundle cannot derive children; the handler
 	// reports the cause rather than enrolling against an empty endpoint.
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "lateral.move", "child-token")
+	outcome, output, _ := r.Dispatch(context.Background(), "lateral.move", "child-token")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED when derivation is disabled", outcome)
 	}
@@ -34,7 +34,7 @@ func TestLateralMove_MalformedArgs_FailsWithCause(t *testing.T) {
 	// token. Empty or over-long arguments are refused before any key is generated.
 	r := NewRunnerWithEnroll(EnrollBundle{URL: "http://127.0.0.1:9/enroll", ParentID: "parent-1"}, nil)
 	for _, args := range []string{"", "   ", "a b c"} {
-		outcome, output := r.Dispatch(context.Background(), "lateral.move", args)
+		outcome, output, _ := r.Dispatch(context.Background(), "lateral.move", args)
 		if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 			t.Fatalf("args=%q: outcome = %v, want FAILED", args, outcome)
 		}

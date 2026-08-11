@@ -21,6 +21,67 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// The unit that crosses every transport. Payload is opaque: its inner shape is
+// defined by later protocol messages (tasking, enrollment, results) introduced
+// alongside the M1.x entities.
+//
+// kind disambiguates the payload shape on the upstream (implant-to-server)
+// half of the CheckIn stream. It defaults to UNSPECIFIED for backward
+// compatibility: existing TaskResult writers leave it unset and the server
+// treats UNSPECIFIED as "try-parse as TaskResult". New upstream payload types
+// (exfil chunks, later streaming shapes) set their kind so the server branches
+// without nested try-parse. Downstream (server-to-implant) frames do not set
+// kind today; the implant discriminates them positionally (handshake first,
+// then TaskRequest).
+type FrameKind int32
+
+const (
+	FrameKind_FRAME_KIND_UNSPECIFIED FrameKind = 0
+	FrameKind_FRAME_KIND_TASK_RESULT FrameKind = 1
+	FrameKind_FRAME_KIND_EXFIL_CHUNK FrameKind = 2
+)
+
+// Enum value maps for FrameKind.
+var (
+	FrameKind_name = map[int32]string{
+		0: "FRAME_KIND_UNSPECIFIED",
+		1: "FRAME_KIND_TASK_RESULT",
+		2: "FRAME_KIND_EXFIL_CHUNK",
+	}
+	FrameKind_value = map[string]int32{
+		"FRAME_KIND_UNSPECIFIED": 0,
+		"FRAME_KIND_TASK_RESULT": 1,
+		"FRAME_KIND_EXFIL_CHUNK": 2,
+	}
+)
+
+func (x FrameKind) Enum() *FrameKind {
+	p := new(FrameKind)
+	*p = x
+	return p
+}
+
+func (x FrameKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FrameKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_rod_proto_enumTypes[0].Descriptor()
+}
+
+func (FrameKind) Type() protoreflect.EnumType {
+	return &file_rod_proto_enumTypes[0]
+}
+
+func (x FrameKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FrameKind.Descriptor instead.
+func (FrameKind) EnumDescriptor() ([]byte, []int) {
+	return file_rod_proto_rawDescGZIP(), []int{0}
+}
+
 // Enrollment outcome, mapped from the stager-token redeem result
 // (architecture.md Sec.9). The transport endpoint maps each redeem failure to a
 // distinct status so an implant gets an actionable reason, not just "no".
@@ -63,11 +124,11 @@ func (x EnrollStatus) String() string {
 }
 
 func (EnrollStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_rod_proto_enumTypes[0].Descriptor()
+	return file_rod_proto_enumTypes[1].Descriptor()
 }
 
 func (EnrollStatus) Type() protoreflect.EnumType {
-	return &file_rod_proto_enumTypes[0]
+	return &file_rod_proto_enumTypes[1]
 }
 
 func (x EnrollStatus) Number() protoreflect.EnumNumber {
@@ -76,7 +137,7 @@ func (x EnrollStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EnrollStatus.Descriptor instead.
 func (EnrollStatus) EnumDescriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{0}
+	return file_rod_proto_rawDescGZIP(), []int{1}
 }
 
 // Outcome of the handshake. OK means presence is recorded and the stream is
@@ -134,11 +195,11 @@ func (x HandshakeStatus) String() string {
 }
 
 func (HandshakeStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_rod_proto_enumTypes[1].Descriptor()
+	return file_rod_proto_enumTypes[2].Descriptor()
 }
 
 func (HandshakeStatus) Type() protoreflect.EnumType {
-	return &file_rod_proto_enumTypes[1]
+	return &file_rod_proto_enumTypes[2]
 }
 
 func (x HandshakeStatus) Number() protoreflect.EnumNumber {
@@ -147,7 +208,7 @@ func (x HandshakeStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HandshakeStatus.Descriptor instead.
 func (HandshakeStatus) EnumDescriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{1}
+	return file_rod_proto_rawDescGZIP(), []int{2}
 }
 
 // How a task turned out, as reported by the implant.
@@ -184,11 +245,11 @@ func (x TaskOutcome) String() string {
 }
 
 func (TaskOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_rod_proto_enumTypes[2].Descriptor()
+	return file_rod_proto_enumTypes[3].Descriptor()
 }
 
 func (TaskOutcome) Type() protoreflect.EnumType {
-	return &file_rod_proto_enumTypes[2]
+	return &file_rod_proto_enumTypes[3]
 }
 
 func (x TaskOutcome) Number() protoreflect.EnumNumber {
@@ -197,7 +258,7 @@ func (x TaskOutcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskOutcome.Descriptor instead.
 func (TaskOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{2}
+	return file_rod_proto_rawDescGZIP(), []int{3}
 }
 
 // Protocol version exchanged at handshake.
@@ -317,13 +378,11 @@ func (x *Envelope) GetSequence() uint64 {
 	return 0
 }
 
-// The unit that crosses every transport. Payload is opaque: its inner shape is
-// defined by later protocol messages (tasking, enrollment, results) introduced
-// alongside the M1.x entities.
 type Frame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Envelope      *Envelope              `protobuf:"bytes,1,opt,name=envelope,proto3" json:"envelope,omitempty"`
 	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
+	Kind          FrameKind              `protobuf:"varint,3,opt,name=kind,proto3,enum=rod.v1.FrameKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -372,6 +431,107 @@ func (x *Frame) GetPayload() []byte {
 	return nil
 }
 
+func (x *Frame) GetKind() FrameKind {
+	if x != nil {
+		return x.Kind
+	}
+	return FrameKind_FRAME_KIND_UNSPECIFIED
+}
+
+// A chunk of exfiltrated bytes the implant streams to the teamserver outside
+// the single TaskResult.output string (architecture.md Sec 10.1 exfil, Sec 11
+// artifacts). Bulk data is chunked per the frame-layer sizing contract above;
+// the teamserver reassembles chunks sharing a (task_id, name) stream in
+// sequence order and, on the terminal chunk, materializes them as an
+// engagement-scoped Artifact attributed to the implant. task_id ties the chunk
+// stream to the exfil.push task that produced it; name is the logical artifact
+// name; content_type is a MIME hint (defaults to application/octet-stream);
+// sequence is the 0-origin chunk index within the stream; terminal marks the
+// last chunk. The engagement is bound via mTLS, not the wire.
+type ExfilChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ContentType   string                 `protobuf:"bytes,3,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Sequence      uint64                 `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Terminal      bool                   `protobuf:"varint,5,opt,name=terminal,proto3" json:"terminal,omitempty"`
+	Data          []byte                 `protobuf:"bytes,6,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExfilChunk) Reset() {
+	*x = ExfilChunk{}
+	mi := &file_rod_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExfilChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExfilChunk) ProtoMessage() {}
+
+func (x *ExfilChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_rod_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExfilChunk.ProtoReflect.Descriptor instead.
+func (*ExfilChunk) Descriptor() ([]byte, []int) {
+	return file_rod_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExfilChunk) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ExfilChunk) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ExfilChunk) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *ExfilChunk) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *ExfilChunk) GetTerminal() bool {
+	if x != nil {
+		return x.Terminal
+	}
+	return false
+}
+
+func (x *ExfilChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 // The enrollment response (roadmap M1.2). On OK, carries the newly issued
 // implant id, its engagement, and the bound leaf certificate plus the CA chain
 // the implant needs. On failure, the ids/cert fields are empty and only status
@@ -393,7 +553,7 @@ type EnrollResponse struct {
 
 func (x *EnrollResponse) Reset() {
 	*x = EnrollResponse{}
-	mi := &file_rod_proto_msgTypes[3]
+	mi := &file_rod_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -405,7 +565,7 @@ func (x *EnrollResponse) String() string {
 func (*EnrollResponse) ProtoMessage() {}
 
 func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rod_proto_msgTypes[3]
+	mi := &file_rod_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -418,7 +578,7 @@ func (x *EnrollResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollResponse.ProtoReflect.Descriptor instead.
 func (*EnrollResponse) Descriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{3}
+	return file_rod_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EnrollResponse) GetStatus() EnrollStatus {
@@ -478,7 +638,7 @@ type HandshakeRequest struct {
 
 func (x *HandshakeRequest) Reset() {
 	*x = HandshakeRequest{}
-	mi := &file_rod_proto_msgTypes[4]
+	mi := &file_rod_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -490,7 +650,7 @@ func (x *HandshakeRequest) String() string {
 func (*HandshakeRequest) ProtoMessage() {}
 
 func (x *HandshakeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rod_proto_msgTypes[4]
+	mi := &file_rod_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -503,7 +663,7 @@ func (x *HandshakeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HandshakeRequest.ProtoReflect.Descriptor instead.
 func (*HandshakeRequest) Descriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{4}
+	return file_rod_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *HandshakeRequest) GetVersion() *ProtocolVersion {
@@ -540,7 +700,7 @@ type HandshakeResponse struct {
 
 func (x *HandshakeResponse) Reset() {
 	*x = HandshakeResponse{}
-	mi := &file_rod_proto_msgTypes[5]
+	mi := &file_rod_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +712,7 @@ func (x *HandshakeResponse) String() string {
 func (*HandshakeResponse) ProtoMessage() {}
 
 func (x *HandshakeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rod_proto_msgTypes[5]
+	mi := &file_rod_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +725,7 @@ func (x *HandshakeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HandshakeResponse.ProtoReflect.Descriptor instead.
 func (*HandshakeResponse) Descriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{5}
+	return file_rod_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *HandshakeResponse) GetStatus() HandshakeStatus {
@@ -602,7 +762,7 @@ type TaskRequest struct {
 
 func (x *TaskRequest) Reset() {
 	*x = TaskRequest{}
-	mi := &file_rod_proto_msgTypes[6]
+	mi := &file_rod_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +774,7 @@ func (x *TaskRequest) String() string {
 func (*TaskRequest) ProtoMessage() {}
 
 func (x *TaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rod_proto_msgTypes[6]
+	mi := &file_rod_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +787,7 @@ func (x *TaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskRequest.ProtoReflect.Descriptor instead.
 func (*TaskRequest) Descriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{6}
+	return file_rod_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TaskRequest) GetTaskId() string {
@@ -665,7 +825,7 @@ type TaskResult struct {
 
 func (x *TaskResult) Reset() {
 	*x = TaskResult{}
-	mi := &file_rod_proto_msgTypes[7]
+	mi := &file_rod_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -677,7 +837,7 @@ func (x *TaskResult) String() string {
 func (*TaskResult) ProtoMessage() {}
 
 func (x *TaskResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rod_proto_msgTypes[7]
+	mi := &file_rod_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -690,7 +850,7 @@ func (x *TaskResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskResult.ProtoReflect.Descriptor instead.
 func (*TaskResult) Descriptor() ([]byte, []int) {
-	return file_rod_proto_rawDescGZIP(), []int{7}
+	return file_rod_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TaskResult) GetTaskId() string {
@@ -726,10 +886,19 @@ const file_rod_proto_rawDesc = "" +
 	"\rengagement_id\x18\x01 \x01(\tR\fengagementId\x12\x1d\n" +
 	"\n" +
 	"implant_id\x18\x02 \x01(\tR\timplantId\x12\x1a\n" +
-	"\bsequence\x18\x03 \x01(\x04R\bsequence\"O\n" +
+	"\bsequence\x18\x03 \x01(\x04R\bsequence\"v\n" +
 	"\x05Frame\x12,\n" +
 	"\benvelope\x18\x01 \x01(\v2\x10.rod.v1.EnvelopeR\benvelope\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"\x8f\x02\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\x12%\n" +
+	"\x04kind\x18\x03 \x01(\x0e2\x11.rod.v1.FrameKindR\x04kind\"\xa8\x01\n" +
+	"\n" +
+	"ExfilChunk\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
+	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12\x1a\n" +
+	"\bsequence\x18\x04 \x01(\x04R\bsequence\x12\x1a\n" +
+	"\bterminal\x18\x05 \x01(\bR\bterminal\x12\x12\n" +
+	"\x04data\x18\x06 \x01(\fR\x04data\"\x8f\x02\n" +
 	"\x0eEnrollResponse\x12,\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x14.rod.v1.EnrollStatusR\x06status\x12\x1d\n" +
 	"\n" +
@@ -756,7 +925,11 @@ const file_rod_proto_rawDesc = "" +
 	"TaskResult\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12-\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x13.rod.v1.TaskOutcomeR\aoutcome\x12\x16\n" +
-	"\x06output\x18\x03 \x01(\tR\x06output*\x94\x01\n" +
+	"\x06output\x18\x03 \x01(\tR\x06output*_\n" +
+	"\tFrameKind\x12\x1a\n" +
+	"\x16FRAME_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16FRAME_KIND_TASK_RESULT\x10\x01\x12\x1a\n" +
+	"\x16FRAME_KIND_EXFIL_CHUNK\x10\x02*\x94\x01\n" +
 	"\fEnrollStatus\x12\x1d\n" +
 	"\x19ENROLL_STATUS_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10ENROLL_STATUS_OK\x10\x01\x12\x1b\n" +
@@ -790,35 +963,38 @@ func file_rod_proto_rawDescGZIP() []byte {
 	return file_rod_proto_rawDescData
 }
 
-var file_rod_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_rod_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_rod_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_rod_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_rod_proto_goTypes = []any{
-	(EnrollStatus)(0),         // 0: rod.v1.EnrollStatus
-	(HandshakeStatus)(0),      // 1: rod.v1.HandshakeStatus
-	(TaskOutcome)(0),          // 2: rod.v1.TaskOutcome
-	(*ProtocolVersion)(nil),   // 3: rod.v1.ProtocolVersion
-	(*Envelope)(nil),          // 4: rod.v1.Envelope
-	(*Frame)(nil),             // 5: rod.v1.Frame
-	(*EnrollResponse)(nil),    // 6: rod.v1.EnrollResponse
-	(*HandshakeRequest)(nil),  // 7: rod.v1.HandshakeRequest
-	(*HandshakeResponse)(nil), // 8: rod.v1.HandshakeResponse
-	(*TaskRequest)(nil),       // 9: rod.v1.TaskRequest
-	(*TaskResult)(nil),        // 10: rod.v1.TaskResult
+	(FrameKind)(0),            // 0: rod.v1.FrameKind
+	(EnrollStatus)(0),         // 1: rod.v1.EnrollStatus
+	(HandshakeStatus)(0),      // 2: rod.v1.HandshakeStatus
+	(TaskOutcome)(0),          // 3: rod.v1.TaskOutcome
+	(*ProtocolVersion)(nil),   // 4: rod.v1.ProtocolVersion
+	(*Envelope)(nil),          // 5: rod.v1.Envelope
+	(*Frame)(nil),             // 6: rod.v1.Frame
+	(*ExfilChunk)(nil),        // 7: rod.v1.ExfilChunk
+	(*EnrollResponse)(nil),    // 8: rod.v1.EnrollResponse
+	(*HandshakeRequest)(nil),  // 9: rod.v1.HandshakeRequest
+	(*HandshakeResponse)(nil), // 10: rod.v1.HandshakeResponse
+	(*TaskRequest)(nil),       // 11: rod.v1.TaskRequest
+	(*TaskResult)(nil),        // 12: rod.v1.TaskResult
 }
 var file_rod_proto_depIdxs = []int32{
-	4, // 0: rod.v1.Frame.envelope:type_name -> rod.v1.Envelope
-	0, // 1: rod.v1.EnrollResponse.status:type_name -> rod.v1.EnrollStatus
-	3, // 2: rod.v1.HandshakeRequest.version:type_name -> rod.v1.ProtocolVersion
-	1, // 3: rod.v1.HandshakeResponse.status:type_name -> rod.v1.HandshakeStatus
-	3, // 4: rod.v1.HandshakeResponse.version:type_name -> rod.v1.ProtocolVersion
-	2, // 5: rod.v1.TaskResult.outcome:type_name -> rod.v1.TaskOutcome
-	5, // 6: rod.v1.Beacon.CheckIn:input_type -> rod.v1.Frame
-	5, // 7: rod.v1.Beacon.CheckIn:output_type -> rod.v1.Frame
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	5, // 0: rod.v1.Frame.envelope:type_name -> rod.v1.Envelope
+	0, // 1: rod.v1.Frame.kind:type_name -> rod.v1.FrameKind
+	1, // 2: rod.v1.EnrollResponse.status:type_name -> rod.v1.EnrollStatus
+	4, // 3: rod.v1.HandshakeRequest.version:type_name -> rod.v1.ProtocolVersion
+	2, // 4: rod.v1.HandshakeResponse.status:type_name -> rod.v1.HandshakeStatus
+	4, // 5: rod.v1.HandshakeResponse.version:type_name -> rod.v1.ProtocolVersion
+	3, // 6: rod.v1.TaskResult.outcome:type_name -> rod.v1.TaskOutcome
+	6, // 7: rod.v1.Beacon.CheckIn:input_type -> rod.v1.Frame
+	6, // 8: rod.v1.Beacon.CheckIn:output_type -> rod.v1.Frame
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_rod_proto_init() }
@@ -826,14 +1002,14 @@ func file_rod_proto_init() {
 	if File_rod_proto != nil {
 		return
 	}
-	file_rod_proto_msgTypes[3].OneofWrappers = []any{}
+	file_rod_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rod_proto_rawDesc), len(file_rod_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   8,
+			NumEnums:      4,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

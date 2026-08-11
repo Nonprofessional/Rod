@@ -11,7 +11,7 @@ import (
 
 func TestDispatch_ShellExec_Succeeds(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "shell.exec", "echo hello-rod")
+	outcome, output, _ := r.Dispatch(context.Background(), "shell.exec", "echo hello-rod")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_SUCCEEDED {
 		t.Fatalf("outcome = %v, want SUCCEEDED", outcome)
 	}
@@ -22,7 +22,7 @@ func TestDispatch_ShellExec_Succeeds(t *testing.T) {
 
 func TestDispatch_ShellExec_FailedOutcome_OnBadCommand(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, _ := r.Dispatch(context.Background(), "shell.exec", nonexistentCommand())
+	outcome, _, _ := r.Dispatch(context.Background(), "shell.exec", nonexistentCommand())
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED for a non-zero exit", outcome)
 	}
@@ -30,7 +30,7 @@ func TestDispatch_ShellExec_FailedOutcome_OnBadCommand(t *testing.T) {
 
 func TestDispatch_UnknownVerb_FailedWithCause(t *testing.T) {
 	r := NewRunner(nil)
-	outcome, output := r.Dispatch(context.Background(), "file.push", "/tmp/x")
+	outcome, output, _ := r.Dispatch(context.Background(), "file.push", "/tmp/x")
 	if outcome != rodpb.TaskOutcome_TASK_OUTCOME_FAILED {
 		t.Fatalf("outcome = %v, want FAILED for unknown verb", outcome)
 	}

