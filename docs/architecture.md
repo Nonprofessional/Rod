@@ -404,9 +404,12 @@ itself as parent; the enroll clients thread parentage onto the request, and the
 binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
 the HTTP path. The `lateral.token` and `lateral.exec_remote` verbs also ship
 in-repo reference handlers under the ADR 0004 boundary (Sec 13, AGENTS.md
-Sec 7): standard Windows access-token duplication and remote execution over
-documented administration channels (SCM, scheduled tasks, SSH), the same
-surface every mainstream C2 exposes for these activities.
+Sec 7): `lateral.token` enumerates the current process's Windows access-token
+context (user, groups, privileges) via `whoami`, the documented administration
+command for inspecting the calling token; `lateral.exec_remote` runs a command
+on a remote host over documented administration channels (scheduled tasks on
+Windows, SSH on Linux). The same surface every mainstream C2 exposes for
+these activities.
 
 The persistence verbs are registered the same way
 (`Rod.Tradecraft.Persist.PersistCapabilities`, category `Persist`):

@@ -184,18 +184,30 @@ public class ExfilRoundTripTests
 
         await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
         {
-            TaskId = request.TaskId, Name = "blob.bin", ContentType = "application/octet-stream",
-            Sequence = 1, Terminal = false, Data = ByteString.CopyFrom(partA),
+            TaskId = request.TaskId,
+            Name = "blob.bin",
+            ContentType = "application/octet-stream",
+            Sequence = 1,
+            Terminal = false,
+            Data = ByteString.CopyFrom(partA),
         }));
         await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
         {
-            TaskId = request.TaskId, Name = "blob.bin", ContentType = "application/octet-stream",
-            Sequence = 2, Terminal = false, Data = ByteString.CopyFrom(partB),
+            TaskId = request.TaskId,
+            Name = "blob.bin",
+            ContentType = "application/octet-stream",
+            Sequence = 2,
+            Terminal = false,
+            Data = ByteString.CopyFrom(partB),
         }));
         await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
         {
-            TaskId = request.TaskId, Name = "blob.bin", ContentType = "application/octet-stream",
-            Sequence = 3, Terminal = true, Data = ByteString.CopyFrom(partC),
+            TaskId = request.TaskId,
+            Name = "blob.bin",
+            ContentType = "application/octet-stream",
+            Sequence = 3,
+            Terminal = true,
+            Data = ByteString.CopyFrom(partC),
         }));
 
         await WaitUntilAsync(async () => (await artifacts.ForTaskAsync(taskId)).Count >= 1);
