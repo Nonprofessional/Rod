@@ -4,6 +4,12 @@ The ordered implementation plan for Rod. Work proceeds in small, verifiable
 increments. This file sequences work; it is not design truth. Design lives in
 [architecture.md](architecture.md); if a task contradicts it, the design wins.
 
+> **Status: complete and archived (M0.1 through M11.1).** Every milestone below
+> is delivered. This file is kept as the historical record of what each
+> milestone's acceptance criteria were: source comments and past commits still
+> reference these ids (e.g. `roadmap M1.4`), and they resolve here. New work is
+> tracked in [todo.md](todo.md); do not add to this file.
+
 Legend: _AC_ = acceptance criteria (in addition to the repository Definition of
 Done).
 

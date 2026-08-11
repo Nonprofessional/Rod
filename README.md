@@ -8,10 +8,13 @@ operators drives a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver, reaching hosts behind NAT and firewalls over
 implant-initiated connections.
 
-> **Status: design phase.** This repository holds the architecture, roadmap, and
-> conventions. No code is implemented yet. See
-> [docs/architecture.md](docs/architecture.md) for the blueprint and
-> [docs/roadmap.md](docs/roadmap.md) for the build plan.
+> **Status: the framework is implemented; concrete tradecraft is out-of-tree.**
+> The teamserver, reference implants, build pipeline, operator UI, and durable
+> state are in place across the six internal layers. The capability contracts
+> are wired and dispatched; concrete offensive behavior is supplied as separate,
+> opt-in modules. See [docs/architecture.md](docs/architecture.md) for the
+> blueprint, [docs/roadmap.md](docs/roadmap.md) for the archived (complete)
+> milestone plan, and [docs/todo.md](docs/todo.md) for open work.
 
 ---
 
@@ -99,7 +102,11 @@ Start here:
   operational lifecycle, the engagement model, the monolithic-kernel layers,
   implants and profiles, the build pipeline, OPSEC, transports, security, and the
   sensitive-capability boundary.
-- **[docs/roadmap.md](docs/roadmap.md)** -- milestones and the ordered build plan.
+- **[docs/roadmap.md](docs/roadmap.md)** -- the archived milestone plan (M0.1
+  through M11.1, all complete); kept as the historical acceptance-criteria
+  record.
+- **[docs/todo.md](docs/todo.md)** -- post-roadmap work: implant verb coverage,
+  production hardening, and architecture-gap audits.
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
 - **[docs/decisions/](docs/decisions/)** -- architecture decision records.
 
