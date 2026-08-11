@@ -29,9 +29,11 @@ internal sealed class Beacon
 {
     // The capability verbs the reference implant advertises at handshake
     // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-    // shell verb, the three recon verbs the runner implements, and the lateral
+    // shell verb, the three recon verbs the runner implements, the lateral
     // verbs (move for child derivation; token and exec_remote for the standard
-    // access-token and remote-execution surfaces per ADR 0004).
+    // access-token and remote-execution surfaces per ADR 0004), and the persist
+    // verbs (install/remove/list for the documented Run/schtasks/service/cron/
+    // systemd mechanisms per ADR 0004).
     private static readonly string[] Caps =
     {
         "shell.exec",
@@ -41,6 +43,9 @@ internal sealed class Beacon
         "lateral.move",
         "lateral.token",
         "lateral.exec_remote",
+        "persist.install",
+        "persist.remove",
+        "persist.list",
     };
 
     private readonly string _beaconUrl;

