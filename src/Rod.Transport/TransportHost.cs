@@ -60,6 +60,12 @@ public static class TransportHost
 
         // Core-state ports -> walking-skeleton in-memory adapters (roadmap M1).
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();
+        // Operator password verifier -> walking-skeleton in-memory adapter. The
+        // durable Postgres adapter replaces this from Rod.Persistence (ADR 0003)
+        // the same way it replaces the repository above; the port is stable either
+        // way. Operator authentication itself (cookie sessions, login) is wired in
+        // Rod.Operators via AddRodOperatorAuth.
+        services.AddSingleton<IOperatorCredentialStore, InMemoryOperatorCredentialStore>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();

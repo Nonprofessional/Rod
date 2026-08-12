@@ -24,6 +24,15 @@ internal sealed class PostgresOperatorRepository : IOperatorRepository
         return await db.Operators.AsNoTracking().FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
     }
 
+    public async Task<Operator?> FindByHandleAsync(string handle, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        // Handles are unique by provisioning (one operator per handle), so this
+        // resolves to zero or one row; FirstOrDefaultAsync translates to a
+        // limit-by-one equality probe on the handle column.
+        return await db.Operators.AsNoTracking().FirstOrDefaultAsync(o => o.Handle == handle, cancellationToken);
+    }
+
     public async Task<Operator> GetOrThrowAsync(OperatorId id, CancellationToken cancellationToken = default)
         => await FindAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Operator {id} does not exist.");
