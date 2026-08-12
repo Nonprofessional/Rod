@@ -119,13 +119,23 @@ public class HandshakePresenceTests
         var call = client.CheckIn();
 
         // The server refuses the TLS handshake (the cert does not chain to the
-        // dev CA), so any gRPC operation on the call surfaces an RpcException.
-        // Trigger the round-trip by writing then awaiting the response stream.
-        await Assert.ThrowsAsync<RpcException>(async () =>
+        // dev CA), so the connection is torn down before any beacon handler
+        // runs. Where that surfaces in the client stack depends on the .NET
+        // runtime patch and the exact frame the connection dies in: gRPC may
+        // own the failure (RpcException) or the HTTP/2 layer may give up first
+        // (HttpIOException). Both confirm the TLS refusal; accepting either
+        // keeps the assertion honest across runtimes instead of pinning it to
+        // whichever one the local machine happens to produce.
+        var thrown = await Record.ExceptionAsync(async () =>
         {
             await call.RequestStream.WriteAsync(HandshakeFrame(ImplantId.New(), 1, 0));
             await call.ResponseStream.MoveNext(CancellationToken.None);
         });
+        Assert.NotNull(thrown);
+        Assert.True(
+            thrown is RpcException or HttpIOException,
+            $"Expected the TLS refusal to surface as RpcException or HttpIOException, " +
+            $"but got {thrown.GetType().FullName}: {thrown.Message}");
     }
 
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
