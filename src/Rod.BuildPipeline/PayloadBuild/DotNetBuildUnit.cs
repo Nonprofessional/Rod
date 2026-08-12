@@ -137,11 +137,13 @@ public sealed class DotNetBuildUnit : IBuildUnit
     }
 
     // Renders the baked profile as a compact JSON map, base64-url-encoded without
-    // padding so it is safe to embed verbatim in a C# string literal. Identical to
-    // GoBuildUnit.RenderBakedProfile: same keys, same encoding, so the two units'
-    // baked profiles are interchangeable and the per-implant key never leaks --
-    // only its fingerprint is recorded (architecture.md Sec 7). The implant reads
-    // its key from the teamserver at enroll time, not from the baked profile.
+    // padding so it is safe to embed verbatim in a C# string literal. This shape
+    // is the language-neutral wire contract: any build unit -- a community
+    // Go/C/Nim unit out-of-tree, or this in-tree .NET unit (ADR 0009) -- must emit
+    // the same keys and encoding so an implant of any language decodes the same
+    // profile, and the per-implant key never leaks -- only its fingerprint is
+    // recorded (architecture.md Sec 7). The implant reads its key from the
+    // teamserver at enroll time, not from the baked profile.
     public static string RenderBakedProfile(BuildParams @params)
     {
         var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
@@ -153,9 +155,9 @@ public sealed class DotNetBuildUnit : IBuildUnit
         // path, User-Agent, custom headers, request timeout, and body envelope
         // that shape the wire so two implants do not look the same. Headers ride
         // as a nested JSON object (an empty profile emits {}) and the envelope is
-        // the lowercase enum name, rendered byte-for-byte identically to
-        // GoBuildUnit.RenderBakedProfile so the two units' baked profiles are
-        // interchangeable. Header object keys are sorted for stable byte output.
+        // the lowercase enum name. Header object keys are sorted for stable byte
+        // output so the baked profile matches the wire-contract shape across build
+        // units.
         var map = new Dictionary<string, object>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
@@ -177,9 +179,9 @@ public sealed class DotNetBuildUnit : IBuildUnit
     }
 
     // Renders the profile's custom headers as a JSON-object value (a
-    // Dictionary<string,string>, {} when empty) with keys sorted so the Go and
-    // .NET build units emit byte-identical baked profiles regardless of the
-    // runtime's dictionary iteration order. Mirrors GoBuildUnit.
+    // Dictionary<string,string>, {} when empty) with keys sorted so the baked
+    // profile's byte output is stable across builds regardless of the runtime's
+    // dictionary iteration order.
     private static Dictionary<string, string> RenderHeadersMap(IReadOnlyDictionary<string, string> headers)
     {
         var ordered = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -331,7 +333,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // The default implant tree is <repo>/implant-dotnet, found by walking up from
     // this assembly to the directory containing both 'src' and 'implant-dotnet'.
     // Keeps the build unit independent of the working directory it is invoked
-    // from. Mirrors GoBuildUnit.ResolveDefaultImplantSourceDir.
+    // from.
     private static string ResolveDefaultImplantSourceDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

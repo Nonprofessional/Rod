@@ -19,8 +19,7 @@ namespace Rod.Integration.Tests;
 /// beacons over mTLS, completes the handshake, runs a dispatched shell.exec task,
 /// and the operator sees the captured output plus the TaskCompleted audit event.
 /// This is the same round-trip HandshakePresenceTests/TaskRoundTripTests prove
-/// in-process, now driven by the actual .NET implant assembly. Mirrors
-/// GoImplantTests.
+/// in-process, now driven by the actual .NET implant assembly.
 /// </summary>
 public class DotNetImplantTests
 {
@@ -33,7 +32,6 @@ public class DotNetImplantTests
     /// listing must then show the child with its ParentImplantId set to the parent.
     /// This is the implant-driven round-trip the AC names -- the in-process
     /// ChildEnrollmentHttpTests already prove the server-side parentage model.
-    /// Mirrors GoImplant_DerivesChildOnLateralMove_EndToEnd.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_DerivesChildOnLateralMove_EndToEnd()
@@ -178,7 +176,7 @@ public class DotNetImplantTests
                 // The mTLS beacon port the implant is connected to is a known-open
                 // loopback port, so a portscan over a tight range around it reports
                 // that port open in the captured output.
-                var scanRange = GoImplantTests.PortScanRangeAround(env.MtlsPort);
+                var scanRange = TestSupport.PortScanRangeAround(env.MtlsPort);
                 var reconIssued = await env.Http.PostAsJsonAsync(
                     $"/engagements/{engagementId}/tasks",
                     new { ImplantId = implantId, Verb = "recon.portscan", Arguments = $"127.0.0.1 {scanRange}" });

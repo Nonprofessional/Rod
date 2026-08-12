@@ -149,7 +149,7 @@ public static class PayloadEndpoints
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            language = Language.Go; // the default until real per-language units land.
+            language = Language.DotNet; // the in-tree reference unit is .NET (ADR 0009).
             return true;
         }
         return Enum.TryParse(text, ignoreCase: true, out language);

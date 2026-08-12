@@ -6,8 +6,11 @@ namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
 /// The stub build unit (roadmap M3.1): proves the build contract round-trip
-/// without any real toolchain. Real per-language build units arrive with M3.2
-/// (Go) and M3.3 (.NET); until then this is the unit the registry resolves.
+/// without any real toolchain. The real in-tree reference build unit is .NET
+/// (ADR 0009); community build units for other languages (Go/C/Nim) live
+/// out-of-tree. The stub occupies the <see cref="Language.Go"/> slot so the
+/// registry always has a deterministic, toolchain-free unit for tests and for
+/// any language slot that has no in-tree unit.
 ///
 /// It emits a deterministic, benign artifact: a UTF-8 manifest of the baked-in
 /// config followed by a fixed, clearly-fake marker byte sequence. There is no
@@ -15,9 +18,6 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// Sec 7). The per-implant key never appears in the manifest; only its
 /// fingerprint does, so a captured artifact does not leak the key material it
 /// was built with.
-///
-/// Registered under <see cref="Language.Go"/> as the default until the real Go
-/// build unit (M3.2) takes that slot.
 /// </summary>
 public sealed class StubBuildUnit : IBuildUnit
 {

@@ -14,8 +14,8 @@ namespace Rod.Build.Tests;
 /// producer. Proves the unit compiles a non-empty, fingerprinted artifact for the
 /// configured target, that two builds of the same params never share a
 /// fingerprint (per-implant material is generated at request time), and that the
-/// baked profile does not leak the per-implant key into the artifact. Mirrors
-/// GoBuildUnitTests. Skipped when dotnet is not on PATH.
+/// baked profile does not leak the per-implant key into the artifact. The
+/// per-build tests are skipped when dotnet is not on PATH.
 /// </summary>
 public class DotNetBuildUnitTests
 {
@@ -53,22 +53,6 @@ public class DotNetBuildUnitTests
 
         var keyFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
         Assert.Contains(keyFingerprint, json);
-    }
-
-    [Fact]
-    public void RenderBakedProfile_Matches_GoBuildUnitEncoding()
-    {
-        // The two build units must produce byte-identical baked profiles for the
-        // same params -- the baked shape is the language-neutral contract the
-        // implants decode, so a Go-built and a .NET-built implant read the same
-        // profile format. A non-default class exercises the verbs field too.
-        var key = "shared-key";
-        var @params = Params(key, ImplantClass.Pivot);
-
-        var dotnet = DotNetBuildUnit.RenderBakedProfile(@params);
-        var go = GoBuildUnit.RenderBakedProfile(@params);
-
-        Assert.Equal(go, dotnet);
     }
 
     [Theory]

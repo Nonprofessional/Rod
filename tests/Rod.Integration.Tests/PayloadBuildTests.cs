@@ -11,9 +11,10 @@ namespace Rod.Integration.Tests;
 /// Roadmap M3.1 acceptance: requesting a payload invokes a build unit and returns
 /// an artifact, fingerprinted and recorded. Drives the full slice end-to-end
 /// through the in-memory TestServer -- the operator POSTs a build request, the
-/// build pipeline invokes the language's build unit (the real Go unit from M3.2
-/// for the Go slot), and the operator gets back a fingerprinted artifact while a
-/// PayloadBuilt audit event is appended to the engagement's hash-chained trail.
+/// build pipeline invokes the in-tree .NET build unit (ADR 0009; the real
+/// reference unit for the .NET slot), and the operator gets back a fingerprinted
+/// artifact while a PayloadBuilt audit event is appended to the engagement's
+/// hash-chained trail.
 /// The build service is audit-agnostic by design; the transport endpoint composes
 /// the recording (architecture.md Sec 6, Sec 11), the same way the beacon stream
 /// records task completion. The requesting operator is the logged-in operator,
@@ -31,7 +32,7 @@ public class PayloadBuildTests
         return created!.EngagementId;
     }
 
-    [GoFact]
+    [DotNetFact]
     public async Task BuildPayload_InvokesBuildUnit_ReturnsFingerprintedArtifact()
     {
         var (client, host, _) = AuthenticatedHost.Create();
@@ -44,7 +45,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "Go",
+                    Language: "DotNet",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -59,7 +60,7 @@ public class PayloadBuildTests
             Assert.NotNull(body);
             Assert.False(string.IsNullOrWhiteSpace(body!.ArtifactId));
             Assert.Equal("Stage2", body.Class);
-            Assert.Equal("Go", body.Language);
+            Assert.Equal("DotNet", body.Language);
             Assert.False(string.IsNullOrWhiteSpace(body.ContentType));
             Assert.True(body.Size > 0);
             // SHA-256 lowercase hex, 64 chars.
@@ -70,7 +71,7 @@ public class PayloadBuildTests
         }
     }
 
-    [GoFact]
+    [DotNetFact]
     public async Task TwoBuilds_WithIdenticalRequest_ProduceDifferentArtifacts()
     {
         // Per-implant material is generated at request time, so two builds of the
@@ -97,7 +98,7 @@ public class PayloadBuildTests
         var response = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                Language: "Go",
+                Language: "DotNet",
                 Class: "Stage2",
                 TargetOs: "linux",
                 TargetArch: "amd64",
@@ -110,7 +111,7 @@ public class PayloadBuildTests
         return await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
     }
 
-    [GoFact]
+    [DotNetFact]
     public async Task BuildPayload_RecordsPayloadBuiltAuditEvent_OnTheChain()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();
@@ -124,7 +125,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "Go",
+                    Language: "DotNet",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
