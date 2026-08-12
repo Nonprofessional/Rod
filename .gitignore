@@ -482,16 +482,16 @@ $RECYCLE.BIN/
 *.swp
 
 # Operator UI: the Vite build output is produced by `npm run build` (CI does it
-# before `dotnet build`); only the React sources under src/Rod.TeamServer/Client
+# before `dotnet build`); only the React sources under src/teamserver/Rod.TeamServer/Client
 # are tracked, not the emitted wwwroot bundle.
-src/Rod.TeamServer/wwwroot/
+src/teamserver/Rod.TeamServer/wwwroot/
 
 # .NET implant: build output and the per-build baked-profile source are produced
 # locally by dotnet and by the build unit, not tracked. The checked-in
 # BakedProfile.cs stub is tracked (empty -- the build unit overwrites it in a
 # temp copy at build time); the generated client bindings live under obj/ and
 # are covered by the [Oo]bj/ pattern above.
-implant-dotnet/bin/
-implant-dotnet/obj/
+src/implant/dotnet/bin/
+src/implant/dotnet/obj/
 
 

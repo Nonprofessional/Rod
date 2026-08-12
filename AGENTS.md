@@ -130,13 +130,14 @@ authoritative rule; this section summarizes it.
 
 ## 8. Where things live
 
-- **Teamserver**: the `Rod.*` .NET projects, monolithic kernel, six internal
-  layers, clean dependency rules.
+- **Teamserver**: the `Rod.*` .NET projects under `src/teamserver/`, monolithic
+  kernel, six internal layers, clean dependency rules.
 - **Build units**: the in-tree .NET build unit; community units in other
   languages plug in through the build contract.
 - **Redirectors**: .NET Native AOT forwarders (direction; none ship in-tree yet).
-- **Implants**: the .NET reference implant under `implant-dotnet/`, independent
-  and disposable; community implants in other languages arrive out-of-tree.
+- **Implants**: the .NET reference implant under `src/implant/dotnet/`,
+  independent and disposable; community implants in other languages arrive
+  out-of-tree.
 - **Wire protocol and capability registry**: the long-lived, language-neutral
   contract implants build against.
 - All domain data is engagement-scoped; cross-engagement access is impossible by

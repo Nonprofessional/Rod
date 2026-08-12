@@ -28,7 +28,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // The implant source tree, relative to the build-pipeline project, that this
     // unit compiles. Overridable via the constructor so tests can point at a
     // fixture or skip a real build. The default walks up from the assembly to find
-    // the repo root and lands at <root>/implant-dotnet (the tree added with M3.3).
+    // the repo root and lands at <root>/src/implant/dotnet (the tree added with M3.3).
     private readonly string _implantSourceDir;
     private readonly string _dotnetBinary;
 
@@ -37,7 +37,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
     /// <summary>
     /// Builds a .NET build unit. <paramref name="implantSourceDir"/> is the implant
     /// tree to compile (the one containing the .csproj and Program.cs); defaults
-    /// to <c>&lt;repo&gt;/implant-dotnet</c>. <paramref name="dotnetBinary"/> is the
+    /// to <c>&lt;repo&gt;/src/implant/dotnet</c>. <paramref name="dotnetBinary"/> is the
     /// dotnet executable, defaulting to PATH resolution of <c>dotnet</c>.
     /// </summary>
     public DotNetBuildUnit(string? implantSourceDir = null, string? dotnetBinary = null)
@@ -56,22 +56,23 @@ public sealed class DotNetBuildUnit : IBuildUnit
         var baked = RenderBakedProfile(@params);
 
         // A unique temp work dir per build that mirrors the implant's relative
-        // layout in the repo: <work>/implant-dotnet references <work>/src/Rod.
-        // Protocol/protos/rod.proto via a relative path, and resolves CPM and the
-        // shared build props from <work>. Copying that structure keeps the build
-        // hermetic -- the real source tree is never mutated and two concurrent
-        // builds never step on each other (also why the Go build unit partitions
-        // GOCACHE).
+        // layout in the repo: <work>/src/implant/dotnet references <work>/src/
+        // teamserver/Rod.Protocol/protos/rod.proto via a relative path, and
+        // resolves CPM and the shared build props from <work>. Copying that
+        // structure keeps the build hermetic -- the real source tree is never
+        // mutated and two concurrent builds never step on each other (also why
+        // the Go build unit partitions GOCACHE).
         var workDir = Path.Combine(Path.GetTempPath(), "rod-dotnet-build-" + Guid.NewGuid().ToString("N"));
-        var stagingDir = Path.Combine(workDir, "implant-dotnet");
+        var stagingDir = Path.Combine(workDir, "src", "implant", "dotnet");
         var outputDir = Path.Combine(workDir, "out");
         try
         {
             CopyTree(_implantSourceDir, stagingDir);
 
             // Reproduce the relative layout the csproj assumes: the proto is at
-            // <work>/src/Rod.Protocol/protos/rod.proto (referenced as ../src/...
-            // from the implant dir), and CPM + shared props sit at <work>/.
+            // <work>/src/teamserver/Rod.Protocol/protos/rod.proto (referenced as
+            // ../../teamserver/... from the implant dir), and CPM + shared props
+            // sit at <work>/.
             CopyProtoTree(_implantSourceDir, workDir);
             CopyRepoProps(_implantSourceDir, workDir);
 
@@ -239,6 +240,23 @@ public sealed class DotNetBuildUnit : IBuildUnit
         }
     }
 
+    // Walks up from the implant source tree to the repo root: the directory
+    // holding both src/ and tests/. Used to locate the shared MSBuild props and
+    // the teamserver proto the implant builds against, regardless of how deep
+    // the implant sits under src/.
+    private static DirectoryInfo? FindRepoRoot(DirectoryInfo start)
+    {
+        DirectoryInfo? dir = start;
+        while (dir is not null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "src"))
+                && Directory.Exists(Path.Combine(dir.FullName, "tests")))
+                return dir;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
     // Copies the repo-root MSBuild props (Directory.Build.props and
     // Directory.Packages.props) into the work dir so the staging copy of the
     // implant resolves CPM and the shared build settings the same way it does in
@@ -247,8 +265,9 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // (e.g. an older tree), it is skipped rather than failing.
     private static void CopyRepoProps(string implantSourceDir, string workDir)
     {
-        // The implant tree is <repo>/implant-dotnet, so the repo root is its parent.
-        var repoRoot = Directory.GetParent(implantSourceDir)?.FullName;
+        // The shared props sit at the repo root: the directory holding both src/
+        // and tests/, found by walking up from the implant tree.
+        var repoRoot = FindRepoRoot(new DirectoryInfo(implantSourceDir))?.FullName;
         if (repoRoot is null || !Directory.Exists(repoRoot))
             return;
         foreach (var name in new[] { "Directory.Build.props", "Directory.Packages.props" })
@@ -259,22 +278,22 @@ public sealed class DotNetBuildUnit : IBuildUnit
         }
     }
 
-    // Copies the teamserver proto tree (src/Rod.Protocol/protos/) into the work
-    // dir under the same relative path the implant's csproj references it by
-    // (../src/Rod.Protocol/protos/ from the implant dir). The proto is the
-    // single source of truth for the wire contract and is referenced, not
-    // copied, by the csproj -- so the build needs the same relative layout to
-    // find it. rod.proto has no imports, so only it (and its protos/ dir) is
-    // needed.
+    // Copies the teamserver proto tree (src/teamserver/Rod.Protocol/protos/) into
+    // the work dir under the same relative path the implant's csproj references
+    // it by (../../teamserver/Rod.Protocol/protos/ from the implant dir). The
+    // proto is the single source of truth for the wire contract and is
+    // referenced, not copied, by the csproj -- so the build needs the same
+    // relative layout to find it. rod.proto has no imports, so only it (and its
+    // protos/ dir) is needed.
     private static void CopyProtoTree(string implantSourceDir, string workDir)
     {
-        var repoRoot = Directory.GetParent(implantSourceDir)?.FullName;
+        var repoRoot = FindRepoRoot(new DirectoryInfo(implantSourceDir))?.FullName;
         if (repoRoot is null || !Directory.Exists(repoRoot))
             return;
-        var protoSrcDir = Path.Combine(repoRoot, "src", "Rod.Protocol", "protos");
+        var protoSrcDir = Path.Combine(repoRoot, "src", "teamserver", "Rod.Protocol", "protos");
         if (!Directory.Exists(protoSrcDir))
             return;
-        var protoDstDir = Path.Combine(workDir, "src", "Rod.Protocol", "protos");
+        var protoDstDir = Path.Combine(workDir, "src", "teamserver", "Rod.Protocol", "protos");
         Directory.CreateDirectory(protoDstDir);
         foreach (var file in Directory.EnumerateFiles(protoSrcDir))
             File.Copy(file, Path.Combine(protoDstDir, Path.GetFileName(file)), overwrite: true);
@@ -330,22 +349,22 @@ public sealed class DotNetBuildUnit : IBuildUnit
         return (process.ExitCode, stdout, stderr);
     }
 
-    // The default implant tree is <repo>/implant-dotnet, found by walking up from
-    // this assembly to the directory containing both 'src' and 'implant-dotnet'.
-    // Keeps the build unit independent of the working directory it is invoked
-    // from.
+    // The default implant tree is <repo>/src/implant/dotnet, found by walking up
+    // from this assembly to the repo root -- the directory holding src/implant/
+    // dotnet alongside src/teamserver. Keeps the build unit independent of the
+    // working directory it is invoked from.
     private static string ResolveDefaultImplantSourceDir()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            if (Directory.Exists(Path.Combine(dir.FullName, "implant-dotnet"))
-                && Directory.Exists(Path.Combine(dir.FullName, "src")))
-                return Path.Combine(dir.FullName, "implant-dotnet");
+            if (Directory.Exists(Path.Combine(dir.FullName, "src", "implant", "dotnet"))
+                && Directory.Exists(Path.Combine(dir.FullName, "src", "teamserver")))
+                return Path.Combine(dir.FullName, "src", "implant", "dotnet");
             dir = dir.Parent;
         }
         // Fall back to a relative path so the error message in BuildAsync is clear.
-        return Path.Combine("..", "..", "..", "..", "..", "implant-dotnet");
+        return Path.Combine("..", "..", "..", "..", "..", "src", "implant", "dotnet");
     }
 
     private static void TryCleanup(string path)

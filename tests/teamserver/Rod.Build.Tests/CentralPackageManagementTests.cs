@@ -10,10 +10,23 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class CentralPackageManagementTests
 {
-    private static readonly string RepoRoot =
-        // Assembly runs from <repo>/tests/Rod.Build.Tests/bin/...
-        new DirectoryInfo(AppContext.BaseDirectory)
-            .Parent!.Parent!.Parent!.Parent!.Parent!.FullName;
+    private static readonly string RepoRoot = FindRepoRoot(new DirectoryInfo(AppContext.BaseDirectory));
+
+    // Walks up from the test assembly's bin dir to the repo root -- the directory
+    // holding both src/ and tests/ -- so the csproj glob below sees every project,
+    // not just the ones beside the test. Tolerates the test project changing depth.
+    private static string FindRepoRoot(DirectoryInfo start)
+    {
+        DirectoryInfo? dir = start;
+        while (dir is not null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "src"))
+                && Directory.Exists(Path.Combine(dir.FullName, "tests")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException("Could not locate the repo root from the test assembly.");
+    }
 
     private static readonly IReadOnlyList<string> ProjectFiles = Directory.GetFiles(
         RepoRoot, "*.csproj", SearchOption.AllDirectories).OrderBy(p => p).ToArray();

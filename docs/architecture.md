@@ -123,10 +123,10 @@ in-house. The dependency rule is enforced by architecture tests.
   maintains one in-tree reference, not one per language (ADR 0009, Sec. 6).
 - **Implants.** Target-resident, disposable, speaking the wire protocol and
   independent of the teamserver language. (Sec. 5.) The **reference .NET
-  implant** lives in the top-level `implant-dotnet/` tree: a benign, readable
+  implant** lives in the `src/implant/dotnet/` tree: a benign, readable
   stage-2 implant that enrolls over HTTP (submitting its own public key),
   beacons over mTLS, and runs the core verb set. It compiles its wire bindings
-  from the canonical `src/Rod.Protocol/protos/rod.proto` at build time (no
+  from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
   committed generated code), and `DotNetBuildUnit` bakes the per-implant
   profile in at compile time. It performs no evasion and no obfuscation
   (RESPONSIBLE-USE.md, Sec. 7); the in-repo tradecraft it carries is bounded by
@@ -141,7 +141,7 @@ in-house. The dependency rule is enforced by architecture tests.
   retire, and the audit writes -- is implemented (M4.4, [todo.md](todo.md)).
 - **Operator UI.** The web front end; lives in the teamserver project.
 
-### 4.3 Source-tree map (`src/`)
+### 4.3 Source-tree map (`src/teamserver/`)
 
 The teamserver is a single .NET solution (`Rod.slnx`) split into the projects
 below. Six of them are the **internal layers** of §4.1; two are not layers and
@@ -162,7 +162,7 @@ note on its current state are listed.
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport` and `Rod.Operators` (the latter wired in M2.4, since transport itself cannot reference the operator layer). | Implemented (M1.5 host + UI shell; M2.4 wires the operator layer). |
 
 The dependency column is not aspirational: it is the rule the architecture tests
-in `tests/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
+in `tests/teamserver/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
 forbidden project reference fails the build.
 
 ## 5. Implants and profiles

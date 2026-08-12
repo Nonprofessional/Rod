@@ -7,7 +7,7 @@
     Postgres-backed adapters that implement the Rod.CoreState and Rod.Audit
     persistence ports. It is one of the layers outside the inner ring, so it may
     reference core state and audit inward only; the layer dependency rules
-    (tests/Rod.Architecture.Tests) constrain it just like Rod.Operators and
+    (tests/teamserver/Rod.Architecture.Tests) constrain it just like Rod.Operators and
     Rod.Tradecraft.
 
     The inner ring (Rod.CoreState, Rod.Audit) is deliberately zero-package and

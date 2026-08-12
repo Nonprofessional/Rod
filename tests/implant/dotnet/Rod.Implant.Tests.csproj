@@ -5,7 +5,7 @@
     Like the implant itself, this project is an EXTERNAL component: it is
     intentionally NOT part of Rod.slnx, mirroring how the Go reference implant's
     _test.go files lived in the implant's own module. CI runs it explicitly
-    (`dotnet test implant-dotnet-tests/Rod.Implant.Tests.csproj`).
+    (`dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj`).
 
     The implant's internal handler types (Runner, Collect, Exfil, Persist,
     Lateral) and its internal pure parse/chunk helpers are visible to this
@@ -38,7 +38,7 @@
   <!-- References the implant so the tests reach its internal handler types and
        the public wire types its gRPC client build generates. -->
   <ItemGroup>
-    <ProjectReference Include="..\implant-dotnet\Rod.Implant.csproj" />
+    <ProjectReference Include="..\..\..\src\implant\dotnet\Rod.Implant.csproj" />
   </ItemGroup>
 
   <ItemGroup>

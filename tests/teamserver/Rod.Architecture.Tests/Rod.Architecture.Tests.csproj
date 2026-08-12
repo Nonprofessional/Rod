@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.CoreState\Rod.CoreState.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Audit\Rod.Audit.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Transport\Rod.Transport.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Operators\Rod.Operators.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Persistence\Rod.Persistence.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Audit\Rod.Audit.csproj" />
   </ItemGroup>
 
 </Project>

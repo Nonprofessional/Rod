@@ -212,17 +212,17 @@ public class DotNetImplantTests
     }
 
     // Walks up from the test assembly to find the repo root (the directory holding
-    // both 'src' and 'implant-dotnet'), then returns the implant source tree. The
-    // build unit does the same resolution; the test mirrors it so the subprocess
-    // runs the same source the build unit compiles.
+    // src/implant/dotnet alongside src/teamserver), then returns the implant
+    // source tree. The build unit does the same resolution; the test mirrors it so
+    // the subprocess runs the same source the build unit compiles.
     private static string LocateImplantSource()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            if (Directory.Exists(Path.Combine(dir.FullName, "implant-dotnet"))
-                && Directory.Exists(Path.Combine(dir.FullName, "src")))
-                return Path.Combine(dir.FullName, "implant-dotnet");
+            if (Directory.Exists(Path.Combine(dir.FullName, "src", "implant", "dotnet"))
+                && Directory.Exists(Path.Combine(dir.FullName, "src", "teamserver")))
+                return Path.Combine(dir.FullName, "src", "implant", "dotnet");
             dir = dir.Parent;
         }
         throw new InvalidOperationException("Could not locate the .NET implant source tree from the test assembly.");

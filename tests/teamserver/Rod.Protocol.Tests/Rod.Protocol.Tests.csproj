@@ -14,14 +14,12 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
-  <!-- Referenced so the build-contract unit tests (roadmap M3.1) exercise the
-       stub build unit and the fingerprint helper in isolation from transport. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
-    <Using Include="Xunit" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Protocol\Rod.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

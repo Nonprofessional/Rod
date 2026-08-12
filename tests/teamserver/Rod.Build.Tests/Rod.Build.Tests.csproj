@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -14,12 +14,14 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
+  <!-- Referenced so the build-contract unit tests (roadmap M3.1) exercise the
+       stub build unit and the fingerprint helper in isolation from transport. -->
   <ItemGroup>
-    <Using Include="Xunit" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Rod.CoreState\Rod.CoreState.csproj" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
 </Project>

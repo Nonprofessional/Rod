@@ -29,18 +29,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Rod.Transport\Rod.Transport.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Transport\Rod.Transport.csproj" />
     <!-- Referenced so the operator layer (M2.4: live bus + SSE endpoint) can be
          layered into the test host alongside the transport core. -->
-    <ProjectReference Include="..\..\src\Rod.Operators\Rod.Operators.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Operators\Rod.Operators.csproj" />
     <!-- Referenced so the tradecraft layer (M8.1: capability registry wired onto
          the live task path) can be layered into the test host alongside the
          transport core. -->
-    <ProjectReference Include="..\..\src\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Tradecraft\Rod.Tradecraft.csproj" />
     <!-- Referenced so the durable PostgreSQL store (M10.1: Postgres-backed
          operators and engagements) can be layered into the test host and the
          durability acceptance test can resolve its DbContext directly. -->
-    <ProjectReference Include="..\..\src\Rod.Persistence\Rod.Persistence.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Persistence\Rod.Persistence.csproj" />
   </ItemGroup>
 
 </Project>

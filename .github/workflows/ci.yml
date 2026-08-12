@@ -23,11 +23,11 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-          cache-dependency-path: src/Rod.TeamServer/Client/package-lock.json
+          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
-        # Emits the React bundle into src/Rod.TeamServer/wwwroot so the .NET
+        # Emits the React bundle into src/teamserver/Rod.TeamServer/wwwroot so the .NET
         # build packages it. The output is gitignored.
-        working-directory: src/Rod.TeamServer/Client
+        working-directory: src/teamserver/Rod.TeamServer/Client
         run: |
           npm ci
           npm run build
@@ -49,9 +49,9 @@ jobs:
         with:
           node-version: lts/*
           cache: npm
-          cache-dependency-path: src/Rod.TeamServer/Client/package-lock.json
+          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
-        working-directory: src/Rod.TeamServer/Client
+        working-directory: src/teamserver/Rod.TeamServer/Client
         run: |
           npm ci
           npm run build
@@ -89,11 +89,11 @@ jobs:
         run: dotnet build Rod.slnx --configuration Release --no-restore
       - name: .NET implant unit tests
         # The per-handler unit tests live in a separate xUnit project
-        # (implant-dotnet-tests) that is intentionally external to Rod.slnx,
+        # (tests/implant/dotnet) that is intentionally external to Rod.slnx,
         # mirroring the implant itself. It exercises the internal handlers
         # (collect/exfil/recon/persist/lateral) and runner dispatch via
         # InternalsVisibleTo, without standing up a real teamserver.
-        run: dotnet test implant-dotnet-tests/Rod.Implant.Tests.csproj --configuration Release
+        run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
       - name: .NET implant end-to-end (roadmap M3.3)
         # DotNetImplantTests publishes the reference .NET implant to a temp dir
         # via `dotnet publish`, then runs `dotnet Rod.Implant.dll` as a real

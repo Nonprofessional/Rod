@@ -11,7 +11,7 @@
     .NET build unit (Rod.DotNetBuildUnit) compiles it per build request.
 
     The protobuf/gRPC wire bindings are generated at build time from the
-    canonical teamserver proto (src/Rod.Protocol/protos/rod.proto) via Grpc.Tools.
+    canonical teamserver proto (src/teamserver/Rod.Protocol/protos/rod.proto) via Grpc.Tools.
     No generated code is committed; rod.proto is the single source of truth, the
     same contract every Rod implant of every language builds against.
   -->
@@ -35,14 +35,14 @@
   <ItemGroup>
     <!--
       The wire protocol contract, generated as a gRPC client. The proto is the
-      teamserver's (src/Rod.Protocol/protos/rod.proto); the Link keeps it visible
+      teamserver's (src/teamserver/Rod.Protocol/protos/rod.proto); the Link keeps it visible
       under protos/ in the implant project without copying it. Client-only: the
       implant dials the Beacon.CheckIn stream; it does not host any service.
       rod.proto has no imports, so no ProtoRoot is needed; Grpc.Tools compiles
       the single file directly.
     -->
     <Protobuf
-      Include="..\src\Rod.Protocol\protos\rod.proto"
+      Include="..\..\teamserver\Rod.Protocol\protos\rod.proto"
       Link="protos\rod.proto"
       GrpcServices="Client" />
   </ItemGroup>
@@ -58,7 +58,7 @@
   <ItemGroup>
     <!-- The internal handler types (Runner, Collect, Exfil, Persist, Lateral)
          and the internal pure parse/chunk helpers are visible to the external
-         xUnit test project (implant-dotnet-tests), the .NET equivalent of the
+         xUnit test project (tests/implant/dotnet), the .NET equivalent of the
          Go reference implant's same-package _test.go access. -->
     <InternalsVisibleTo Include="Rod.Implant.Tests" />
   </ItemGroup>
