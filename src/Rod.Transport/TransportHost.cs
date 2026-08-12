@@ -404,18 +404,28 @@ public static class TransportHost
         Action<IServiceCollection>? configureServices = null,
         Action<IEndpointRouteBuilder>? mapEndpoints = null,
         Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
-        => Host.CreateDefaultBuilder(args ?? Array.Empty<string>())
-            .ConfigureWebHostDefaults(web => web
-                .ConfigureServices(services =>
+    => Host.CreateDefaultBuilder(args ?? Array.Empty<string>())
+        .ConfigureWebHostDefaults(web => web
+            .ConfigureServices(services =>
+            {
+                services.AddRodTransport(configuration);
+                // Core authentication/authorization plumbing (no scheme, no
+                // policy) so the middleware below is always safe to run, whether
+                // or not a caller layers the operator cookie scheme on top via
+                // AddRodOperatorAuth. Endpoints opt into the session with
+                // RequireAuthorization; with no scheme configured such a request
+                // simply fails closed rather than throwing at startup.
+                services.AddAuthentication();
+                services.AddAuthorization();
+                configureServices?.Invoke(services);
+            })
+            .Configure(app => app
+                .UseRouting()
+                .UseAuthentication()
+                .UseAuthorization()
+                .UseEndpoints(endpoints =>
                 {
-                    services.AddRodTransport(configuration);
-                    configureServices?.Invoke(services);
-                })
-                .Configure(app => app
-                    .UseRouting()
-                    .UseEndpoints(endpoints =>
-                    {
-                        MapRodEndpoints(endpoints);
-                        mapEndpoints?.Invoke(endpoints);
-                    })));
+                    MapRodEndpoints(endpoints);
+                    mapEndpoints?.Invoke(endpoints);
+                })));
 }

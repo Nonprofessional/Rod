@@ -1,4 +1,5 @@
 using Rod.Operators;
+using Rod.Operators.Auth;
 using Rod.Persistence;
 using Rod.Tradecraft;
 using Rod.Transport;
@@ -37,6 +38,13 @@ builder.Services.AddRodTradecraft();
 // reason as AddRodOperators/AddRodTradecraft above. Absent the connection
 // string, it registers nothing and the in-memory adapters stay in place.
 builder.Services.AddRodPersistence(builder.Configuration);
+// Layer in operator authentication (architecture.md Sec 4, the production-
+// hardening todo): the cookie session scheme, the password hasher, the login
+// service, and the bootstrap account seed that provisions the first operator.
+// Transport cannot reference Rod.Operators (architecture test
+// LayerDependencyTests), so the composition root assembles it here -- the same
+// reason as AddRodOperators above.
+builder.Services.AddRodOperatorAuth(builder.Configuration);
 
 // Bind the configured listeners (roadmap M2.2, architecture.md Sec 8). Each entry
 // is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and
@@ -57,11 +65,21 @@ builder.WebHost.UseRodListeners(listenerConfigs);
 var app = builder.Build();
 
 app.UseStaticFiles();
+// Operator session middleware: authentication establishes the operator from the
+// cookie, authorization gates the endpoints that opt in via RequireAuthorization.
+// Ordered before endpoint mapping so the auth result is visible to every mapped
+// route; the SPA fallback and static assets below it stay reachable anonymously.
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapRodEndpoints();
 // The operator layer's SSE event stream (roadmap M2.4): mapped alongside the
 // transport endpoints from the composition root for the same layer-separation
 // reason as AddRodOperators above.
 app.MapOperatorEndpoints();
+// The operator session endpoints (login/logout/me): mapped alongside the other
+// operator-layer endpoints from the composition root for the same layer-
+// separation reason as AddRodOperators above.
+app.MapOperatorAuthEndpoints();
 // The tradecraft layer's capability catalog (roadmap M11.1): mapped from the
 // composition root for the same layer-separation reason as AddRodTradecraft --
 // transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
