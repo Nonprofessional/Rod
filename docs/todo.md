@@ -80,10 +80,16 @@ roadmap scope.
 Keep architecture.md as the source of truth. These items audit the
 implementation against it and record decisions.
 
-- [ ] **Audit architecture.md vs. implementation.** Walk every section; record
+- [x] **Audit architecture.md vs. implementation.** Walk every section; record
       where the code diverges and whether each gap is intentional. _AC:_ a
-      written audit noting every divergence and its resolution.
-- [ ] **ADRs for deferred decisions.** Capture decisions that were made
+      written audit noting every divergence and its resolution. _(Shipped:
+      [audits/2026-08-11-architecture-vs-implementation.md](audits/2026-08-11-architecture-vs-implementation.md)
+      walks Sec 1--14 with 17 findings and recommended edits; the follow-up
+      commit reconciled the doc with the implementation.)_
+- [x] **ADRs for deferred decisions.** Capture decisions that were made
       implicitly during the roadmap (e.g. arg shape staying a single string,
       catalog endpoint placement, placeholder-only verbs). _AC:_ each deferred
-      decision has an ADR under docs/decisions/.
+      decision has an ADR under docs/decisions/. _(Shipped: [ADR 0005](decisions/0005-task-arguments-single-string.md)
+      task-argument shape, [ADR 0006](decisions/0006-capability-catalog-endpoint.md)
+      catalog endpoint placement, [ADR 0007](decisions/0007-placeholder-verbs.md)
+      placeholder-only verbs -- all Accepted.)_
