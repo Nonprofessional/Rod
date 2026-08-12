@@ -62,9 +62,13 @@ The walking-skeleton defaults are fine for development and tests but not for
 real deployments. architecture.md names these; they were deliberately out of
 roadmap scope.
 
-- [ ] **Operator authentication.** Replace the browser self-assigned identity
+- [x] **Operator authentication.** Replace the browser self-assigned identity
       with real operator auth. _AC:_ an operator session is established by
-      authenticated credentials, not a client-generated id.
+      authenticated credentials, not a client-generated id. _(Shipped: cookie
+      sessions over a verified handle and password, identity derived from the
+      session principal on every operator endpoint, a config-seeded first
+      operator, and a durable `operator_credentials` store; see ADR 0008.
+      Per-engagement RBAC stays deferred.)_
 - [ ] **Real implant CA.** Replace the dev self-signed CA
       (`DevCertificateAuthority`) with a production CA path. _AC:_ enrollment
       binds certificates to a non-dev CA chain.
