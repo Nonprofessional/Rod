@@ -491,7 +491,7 @@ internal static class Persist
     // Splits "<mechanism> <name> <payload...>" into the three parts. The payload
     // keeps its internal whitespace; only the first two tokens are the mechanism
     // and name. Returns false when fewer than three fields are present.
-    private static bool TryParseInstallArgs(
+    internal static bool TryParseInstallArgs(
         string arguments, out string mechanism, out string name, out string payload)
     {
         mechanism = string.Empty;
@@ -508,7 +508,7 @@ internal static class Persist
 
     // Splits "<mechanism> <name>" into the two parts. Returns false when the
     // field count is not exactly two.
-    private static bool TryParseRemoveArgs(string arguments, out string mechanism, out string name)
+    internal static bool TryParseRemoveArgs(string arguments, out string mechanism, out string name)
     {
         mechanism = string.Empty;
         name = string.Empty;

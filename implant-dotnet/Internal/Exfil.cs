@@ -124,7 +124,7 @@ internal static class Exfil
     // Splits "<name> <path>" into the two parts. The path keeps its internal
     // whitespace; only the first token is the name. Returns false when no
     // fields are present. A single field is valid (name-only) with empty path.
-    private static bool TryParsePushArgs(string arguments, out string name, out string path)
+    internal static bool TryParsePushArgs(string arguments, out string name, out string path)
     {
         name = string.Empty;
         path = string.Empty;
@@ -140,7 +140,7 @@ internal static class Exfil
     // Returns a best-effort content type from the extension, defaulting to
     // application/octet-stream. Conservative on purpose: the operator asked for
     // the file, not a parsed rendering.
-    private static string SniffContentType(string path)
+    internal static string SniffContentType(string path)
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return ext switch

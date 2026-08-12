@@ -7,9 +7,8 @@
     no evasion, no obfuscation, no persistence (RESPONSIBLE-USE.md, Sec 7).
 
     This project is an EXTERNAL component, coupled to the teamserver only by the
-    wire protocol: it is intentionally NOT part of Rod.slnx, mirroring how the
-    Go implant/ module is its own tree. The teamserver's .NET build unit
-    (Rod.DotNetBuildUnit) compiles it per build request.
+    wire protocol: it is intentionally NOT part of Rod.slnx. The teamserver's
+    .NET build unit (Rod.DotNetBuildUnit) compiles it per build request.
 
     The protobuf/gRPC wire bindings are generated at build time from the
     canonical teamserver proto (src/Rod.Protocol/protos/rod.proto) via Grpc.Tools.
@@ -54,6 +53,14 @@
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The internal handler types (Runner, Collect, Exfil, Persist, Lateral)
+         and the internal pure parse/chunk helpers are visible to the external
+         xUnit test project (implant-dotnet-tests), the .NET equivalent of the
+         Go reference implant's same-package _test.go access. -->
+    <InternalsVisibleTo Include="Rod.Implant.Tests" />
   </ItemGroup>
 
 </Project>

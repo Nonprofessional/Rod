@@ -194,7 +194,7 @@ internal static class Lateral
     // Splits "<host> <command...>" into the host and the command string. The
     // command keeps its internal whitespace; only the first token is the host.
     // Returns false when fewer than two fields are present.
-    private static bool TryParseExecRemoteArgs(string arguments, out string host, out string command)
+    internal static bool TryParseExecRemoteArgs(string arguments, out string host, out string command)
     {
         host = string.Empty;
         command = string.Empty;
@@ -209,7 +209,7 @@ internal static class Lateral
     // Splits the lateral.move argument string into the child stager token and an
     // optional implant class. Returns false when the token is empty or more than
     // two fields are present, mirroring the recon verbs' strict parse.
-    private static bool TryParseArgs(string arguments, out string token, out string? @class)
+    internal static bool TryParseArgs(string arguments, out string token, out string? @class)
     {
         token = string.Empty;
         @class = null;

