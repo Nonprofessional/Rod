@@ -62,10 +62,9 @@ public class DotNetImplantTests
                 // Operator tasks the parent with lateral.move, passing the child's
                 // stager token as the argument. The handler derives a child that
                 // enrolls back naming the parent (architecture.md Sec 10.1).
-                var operatorId = Guid.NewGuid();
                 var issued = await env.Http.PostAsJsonAsync(
                     $"/engagements/{engagementId}/tasks",
-                    new { ImplantId = parentId, IssuedBy = operatorId, Verb = "lateral.move", Arguments = childToken });
+                    new { ImplantId = parentId, Verb = "lateral.move", Arguments = childToken });
                 issued.EnsureSuccessStatusCode();
                 var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
                 Assert.NotNull(issuedBody);
@@ -143,10 +142,9 @@ public class DotNetImplantTests
                 // in the command lets the assertion confirm the captured output is
                 // genuinely this task's output, not a stale read.
                 var marker = "rod-dotnet-marker-" + Guid.NewGuid().ToString("N")[..8];
-                var operatorId = Guid.NewGuid();
                 var issued = await env.Http.PostAsJsonAsync(
                     $"/engagements/{engagementId}/tasks",
-                    new { ImplantId = implantId, IssuedBy = operatorId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                    new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
                 issued.EnsureSuccessStatusCode();
                 var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
                 Assert.NotNull(issuedBody);
@@ -183,7 +181,7 @@ public class DotNetImplantTests
                 var scanRange = GoImplantTests.PortScanRangeAround(env.MtlsPort);
                 var reconIssued = await env.Http.PostAsJsonAsync(
                     $"/engagements/{engagementId}/tasks",
-                    new { ImplantId = implantId, IssuedBy = operatorId, Verb = "recon.portscan", Arguments = $"127.0.0.1 {scanRange}" });
+                    new { ImplantId = implantId, Verb = "recon.portscan", Arguments = $"127.0.0.1 {scanRange}" });
                 reconIssued.EnsureSuccessStatusCode();
                 var reconBody = await reconIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
                 Assert.NotNull(reconBody);
@@ -388,7 +386,11 @@ public class DotNetImplantTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
@@ -408,16 +410,17 @@ public class DotNetImplantTests
                 + "\n-----END CERTIFICATE-----\n";
             await File.WriteAllTextAsync(env.CACertFile, caPem);
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 
         public async Task<string> MintStagerTokenAsync()
         {
             var createResponse = await Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: Guid.NewGuid(),
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation .NET Slice"));
             createResponse.EnsureSuccessStatusCode();
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -442,9 +445,6 @@ public class DotNetImplantTests
         public async Task<(string EngagementId, string ParentToken, string ChildToken)> MintEngagementWithTwoTokensAsync()
         {
             var createResponse = await Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: Guid.NewGuid(),
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation .NET Slice"));
             createResponse.EnsureSuccessStatusCode();
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();

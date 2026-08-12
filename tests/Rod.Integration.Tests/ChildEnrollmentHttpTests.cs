@@ -137,14 +137,9 @@ public class ChildEnrollmentHttpTests
 
     private static (HttpClient Client, IHost Host) CreateClient()
     {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var (client, host, _) = AuthenticatedHost.Create();
+        // Every test drives the operator API, so establish the session up front.
+        AuthenticatedHost.LoginAsync(client).GetAwaiter().GetResult();
         return (client, host);
     }
 
@@ -152,11 +147,8 @@ public class ChildEnrollmentHttpTests
     // (engagementId, secret) so a test can derive further tokens for siblings.
     private static async Task<(string EngagementId, string Secret)> MintTokenForNewEngagementAsync(HttpClient client)
     {
-        var createResponse = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        var createResponse = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);

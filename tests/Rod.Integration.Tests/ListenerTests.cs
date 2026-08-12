@@ -43,6 +43,8 @@ public class ListenerTests
             BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
             PublicEndpoint: "http://c2.example.test"));
 
+        await AuthenticatedHost.LoginAsync(env.Http);
+
         // The listener is recorded with its bind address and public endpoint.
         var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
         Assert.NotNull(listeners);
@@ -129,6 +131,8 @@ public class ListenerTests
                 BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
                 PublicEndpoint: "https://redirect-a.example.test"));
 
+        await AuthenticatedHost.LoginAsync(env.Http);
+
         var recordedBind = env.MtlsBind;
 
         // The registry resolves the public endpoint back to the listener that
@@ -152,6 +156,7 @@ public class ListenerTests
     {
         await using var env = await TestEnv.StartAsync(DefaultHttpListener());
 
+        await AuthenticatedHost.LoginAsync(env.Http);
         var response = await env.Http.GetAsync($"/listeners/{ListenerId.New()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -162,11 +167,8 @@ public class ListenerTests
 
     private static async Task<string> MintTokenForNewEngagementAsync(HttpClient client)
     {
-        var createResponse = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        var createResponse = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);
@@ -239,7 +241,11 @@ public class ListenerTests
                 rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
             }
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder.UseRodListeners(rewritten))
                 .Build();
             await env.Host.StartAsync();
@@ -275,7 +281,9 @@ public class ListenerTests
                     },
                 };
             }
-            return new HttpClient(handler) { BaseAddress = new Uri(baseAddress) };
+            // Wrap in CookieHandler so the operator session persists across the
+            // listener-routed requests.
+            return new HttpClient(new CookieHandler(handler)) { BaseAddress = new Uri(baseAddress) };
         }
 
         // Connects a gRPC channel that performs the client side of mTLS against the

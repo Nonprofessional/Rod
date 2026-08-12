@@ -18,7 +18,9 @@ public static class ListenerEndpoints
 {
     public static IEndpointRouteBuilder MapListenerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/listeners");
+        // Operator-facing: listener views and repoint require an authenticated
+        // operator session.
+        var group = endpoints.MapGroup("/listeners").RequireAuthorization();
 
         group.MapGet("/", ListListenersAsync).WithName(nameof(ListListenersAsync));
         group.MapGet("/{id}", GetListenerAsync).WithName(nameof(GetListenerAsync));

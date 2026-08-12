@@ -46,7 +46,9 @@ public static class ReportEndpoints
 {
     public static IEndpointRouteBuilder MapReportEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}");
+        // Operator-facing: timeline/report deliverables require an authenticated
+        // operator session.
+        var group = endpoints.MapGroup("/engagements/{engagementId}").RequireAuthorization();
         group.MapGet("/timeline", GetTimelineAsync).WithName(nameof(GetTimelineAsync));
         group.MapGet("/report", GetReportAsync).WithName(nameof(GetReportAsync));
         return endpoints;

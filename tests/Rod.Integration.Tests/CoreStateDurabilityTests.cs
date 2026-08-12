@@ -65,11 +65,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         {
             await EnsureSchemaAsync(envA.Host);
 
-            operatorId = OperatorId.New();
+            operatorId = envA.OperatorId;
             var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: operatorId.Value,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation Smokeshow"));
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -89,8 +86,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // round-trips through the uuid column.
         var operatorRow = await operators.FindAsync(operatorId);
         Assert.NotNull(operatorRow);
-        Assert.Equal("cneale", operatorRow!.Handle);
-        Assert.Equal("Cecil Neale", operatorRow.DisplayName);
+            Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
+            Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
 
         // The engagement is present with its owner membership intact (the owned
         // collection survived the reload).
@@ -129,11 +126,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 
             // A real engagement through the HTTP API so the engagement scoping is
             // exercised end to end (the membership it creates is irrelevant here).
-            var ownerId = OperatorId.New();
+            var ownerId = envA.OperatorId;
             var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId.Value,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation Smokeshow"));
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -270,11 +264,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         {
             await EnsureSchemaAsync(envA.Host);
 
-            var ownerId = OperatorId.New();
+            var ownerId = envA.OperatorId;
             var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId.Value,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation Smokeshow"));
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -376,11 +367,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         {
             await EnsureSchemaAsync(envA.Host);
 
-            ownerId = OperatorId.New();
+            ownerId = envA.OperatorId;
             var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId.Value,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation Smokeshow"));
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -451,11 +439,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         {
             await EnsureSchemaAsync(envA.Host);
 
-            ownerId = OperatorId.New();
+            ownerId = envA.OperatorId;
             var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId.Value,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
                 Name: "Operation Smokeshow"));
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -556,7 +541,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // Operator survived.
         var operatorRow = await operatorsB.FindAsync(ownerId);
         Assert.NotNull(operatorRow);
-        Assert.Equal("cneale", operatorRow!.Handle);
+        Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
 
         // Engagement survived with its owner membership.
         var engagementRow = await engagementsB.FindAsync(engagementId);
@@ -625,6 +610,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
 
         public static async Task<TestEnv> StartAsync(string connectionString)
         {
@@ -632,31 +618,41 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var httpPort = GetFreeTcpPort();
 
             // ConnectionStrings:Postgres selects the durable adapters (the same
-            // opt-in shape as Audit:DataDirectory). In-memory config mirrors what
-            // appsettings.json supplies for the real host.
-            var config = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Postgres"] = connectionString,
-                })
-                .Build();
+            // opt-in shape as Audit:DataDirectory), layered on the seeded-operator
+            // config so the host comes up authenticated the same way as the suite.
+            var config = AuthenticatedHost.BuildConfig(
+                extend: dict => dict["ConnectionStrings:Postgres"] = connectionString);
 
             env.Host = TransportHost.CreateHostBuilder(
                     configuration: config,
-                    configureServices: services => services.AddRodPersistence(config))
+                    configureServices: services => AuthenticatedHost.ComposeServices(
+                        services, config, extra: s => s.AddRodPersistence(config)),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints))
                 .ConfigureWebHost(webBuilder => webBuilder
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(httpPort)))
                 .Build();
+
+            // Apply the schema before the hosted services start: the operator
+            // bootstrap seed (a hosted service) writes the initial operator row, so
+            // the durable schema it targets must already exist. The host itself does
+            // not auto-migrate (migrations are a deliberate operator step), so the
+            // test creates the schema here the way an operator would before startup.
+            await EnsureSchemaAsync(env.Host);
             await env.Host.StartAsync();
+
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
 
             // The client dials the in-test Kestrel on loopback, so it must never
             // route through an inherited proxy (ALL_PROXY/HTTP_PROXY in the build
             // environment): a SOCKS proxy cannot reach WSL's localhost and the
-            // request resets mid-response. Bypass the proxy entirely.
-            env.Http = new HttpClient(new HttpClientHandler { UseProxy = false })
+            // request resets mid-response. Bypass the proxy entirely. The
+            // CookieHandler wraps that proxy-bypassing handler so the operator
+            // session persists across the authenticated round-trips.
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler { UseProxy = false }))
             {
                 BaseAddress = new Uri($"http://127.0.0.1:{httpPort}"),
             };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 

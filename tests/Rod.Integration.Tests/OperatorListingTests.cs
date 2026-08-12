@@ -1,11 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Rod.Transport;
+using Rod.CoreState;
+using Rod.CoreState.Operators;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -15,36 +12,23 @@ namespace Rod.Integration.Tests;
 /// same HTTP API the skeleton already exposes. <c>GET /engagements</c> lists
 /// engagements (with the owner handle), and <c>GET /engagements/{id}/implants</c>
 /// lists an engagement's enrolled sessions with an online indicator. Drives the
-/// in-memory TestServer end to end: create -> enroll -> list.
+/// in-memory TestServer end to end: create -> enroll -> list. Every route is
+/// operator-facing and requires the cookie session; the owner of any created
+/// engagement is the logged-in operator.
 /// </summary>
 public class OperatorListingTests
 {
-    private static (HttpClient Client, IHost Host) CreateClient()
-    {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
+    private static (HttpClient Client, IHost Host, OperatorId OperatorId) CreateClient()
+        => AuthenticatedHost.Create();
 
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
-        return (client, host);
-    }
-
-    private static async Task<(string EngagementId, string OwnerHandle)> CreateEngagementAsync(
-        HttpClient client, string name, string ownerHandle)
+    private static async Task<string> CreateEngagementAsync(HttpClient client, string name)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: ownerHandle,
-            OwnerDisplayName: ownerHandle,
-            Name: name));
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: name));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);
-        return (created!.EngagementId, created.OwnerHandle);
+        return created!.EngagementId;
     }
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
@@ -59,11 +43,12 @@ public class OperatorListingTests
     [Fact]
     public async Task GetEngagements_ListsCreatedEngagements_WithOwnerHandle()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = CreateClient();
         using (client)
         using (host)
         {
-            var (id, handle) = await CreateEngagementAsync(client, "Operation Smokeshow", "cneale");
+            await AuthenticatedHost.LoginAsync(client);
+            var id = await CreateEngagementAsync(client, "Operation Smokeshow");
 
             var response = await client.GetAsync("/engagements");
 
@@ -72,18 +57,21 @@ public class OperatorListingTests
             Assert.NotNull(body);
             var match = Assert.Single(body!, e => e.EngagementId == id);
             Assert.Equal("Operation Smokeshow", match.Name);
-            // The owner handle is joined from the operator, not the engagement.
-            Assert.Equal(handle, match.OwnerHandle);
+            // The owner handle is the logged-in operator's, joined from the
+            // operator record rather than named in the request.
+            Assert.Equal(AuthenticatedHost.Handle, match.OwnerHandle);
         }
     }
 
     [Fact]
     public async Task GetEngagements_ReturnsEmptyArray_WhenNoneExist()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = CreateClient();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
+
             var response = await client.GetAsync("/engagements");
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -96,11 +84,12 @@ public class OperatorListingTests
     [Fact]
     public async Task GetImplants_ListsEnrolledImplants_ForEngagement()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = CreateClient();
         using (client)
         using (host)
         {
-            var (engagementId, _) = await CreateEngagementAsync(client, "Operation Lantern", "jdoe");
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client, "Operation Lantern");
             var secret = await MintTokenAsync(client, engagementId);
 
             var enrollResponse = await client.PostAsJsonAsync("/implants/enroll",
@@ -125,10 +114,12 @@ public class OperatorListingTests
     [Fact]
     public async Task GetImplants_Returns400_ForMalformedEngagementId()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = CreateClient();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
+
             var response = await client.GetAsync("/engagements/not-a-guid/implants");
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
@@ -137,11 +128,12 @@ public class OperatorListingTests
     [Fact]
     public async Task GetImplantTasks_ListsIssuedTasks_ForImplant()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = CreateClient();
         using (client)
         using (host)
         {
-            var (engagementId, _) = await CreateEngagementAsync(client, "Operation Beacon", "mholloway");
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client, "Operation Beacon");
             var secret = await MintTokenAsync(client, engagementId);
 
             var enrollResponse = await client.PostAsJsonAsync("/implants/enroll",
@@ -152,11 +144,9 @@ public class OperatorListingTests
             Assert.False(string.IsNullOrWhiteSpace(enrolled!.ImplantId));
             var implantId = enrolled.ImplantId!;
 
-            var ownerId = Guid.NewGuid();
             await client.PostAsJsonAsync($"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implantId,
-                    IssuedBy: ownerId,
                     Verb: "shell.exec",
                     Arguments: "whoami"));
 

@@ -2,14 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Rod.CoreState.Live;
-using Rod.Operators;
-using Rod.Transport;
+using Rod.CoreState;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -17,36 +11,43 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Roadmap M2.4 acceptance: two operators connected to one engagement see each
 /// other's actions live over the SSE event stream. Drives the in-memory
-/// TestServer end to end: each operator opens
-/// <c>/engagements/{id}/events</c> with a query-param identity, and the live bus
-/// fans task-issued and presence events out to every connected session. Live
-/// state is best-effort and transient -- the audit trail (architecture.md
-/// Sec 11) is the durable record; these tests cover the realtime projection.
+/// TestServer end to end: each operator opens <c>/engagements/{id}/events</c>
+/// under their own cookie session, and the live bus fans task-issued and
+/// presence events out to every connected session. Live state is best-effort and
+/// transient -- the audit trail (architecture.md Sec 11) is the durable record;
+/// these tests cover the realtime projection.
 /// </summary>
 public class OperatorLiveTests
 {
-    // A host that layers the operator layer (M2.4) onto the transport core, so
-    // the SSE endpoint, the live bus, and the presence roster are all wired --
-    // the same composition the teamserver host performs.
+    private const string OperatorPassword = "p@ssw0rd!";
+
+    // A host that layers the operator and operator-auth layers onto the transport
+    // core, the same composition the teamserver host performs. The seed account is
+    // created implicitly; each test provisions the named operators it needs.
     private static IHost CreateHost()
     {
-        var host = TransportHost.CreateHostBuilder(
-                configureServices: services => services.AddRodOperators(),
-                mapEndpoints: endpoints => endpoints.MapOperatorEndpoints())
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
+        var (_, host, _) = AuthenticatedHost.Create();
         return host;
     }
 
-    private static async Task<string> CreateEngagementAsync(HttpClient client, Guid ownerId, string handle)
+    // Registers a named operator and returns its id, so a test can attribute
+    // assertions to a specific account independently of the client session.
+    private static Task<OperatorId> RegisterAsync(IHost host, string handle, string displayName)
+        => AuthenticatedHost.RegisterOperatorAsync(host, handle, displayName, OperatorPassword);
+
+    // A cookie-persisting client logged in as the named operator. Each operator
+    // gets its own client so the sessions (and their SSE streams) stay distinct.
+    private static async Task<HttpClient> OperatorClientAsync(IHost host, string handle)
+    {
+        var client = AuthenticatedHost.CreateClient(host);
+        await AuthenticatedHost.LoginAsync(client, handle, OperatorPassword);
+        return client;
+    }
+
+    private static async Task<string> CreateEngagementAsync(HttpClient client, string name)
     {
         var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId,
-                OwnerHandle: handle,
-                OwnerDisplayName: handle,
-                Name: $"Operation {handle}"));
+            new EngagementEndpoints.CreateEngagementRequest(Name: name));
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(body);
@@ -55,10 +56,10 @@ public class OperatorLiveTests
 
     // Opens an SSE stream and returns a reader that surfaces parsed events. The
     // reader runs until the stream is disposed; the caller cancels by disposing.
-    private static async Task<SseReader> OpenStreamAsync(HttpClient client, string engagementId, Guid operatorId, string handle)
+    private static async Task<SseReader> OpenStreamAsync(HttpClient client, string engagementId)
     {
         var request = new HttpRequestMessage(HttpMethod.Get,
-            $"/engagements/{engagementId}/events?operatorId={operatorId:N}&handle={handle}&displayName={handle}");
+            $"/engagements/{engagementId}/events");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
@@ -88,23 +89,21 @@ public class OperatorLiveTests
     public async Task Two_Operators_See_Each_Others_Actions_Live()
     {
         using var host = CreateHost();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        using var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var ownerA = await RegisterAsync(host, "alpha", "Alpha Operator");
+        await RegisterAsync(host, "bravo", "Bravo Operator");
+        using var clientA = await OperatorClientAsync(host, "alpha");
+        using var clientB = await OperatorClientAsync(host, "bravo");
 
-        var ownerA = Guid.NewGuid();
-        var engagementId = await CreateEngagementAsync(client, ownerA, "alpha");
-        var implantId = await EnrollImplantAsync(client, engagementId);
+        var engagementId = await CreateEngagementAsync(clientA, "Operation alpha");
+        var implantId = await EnrollImplantAsync(clientA, engagementId);
 
         // Operator A connects first and reads its hello frame.
-        await using var streamA = await OpenStreamAsync(client, engagementId, ownerA, "alpha");
+        await using var streamA = await OpenStreamAsync(clientA, engagementId);
         var helloA = await streamA.ReadAsync();
         Assert.Equal("hello", helloA.Event);
 
         // Operator B connects; A should see B join live.
-        var ownerB = Guid.NewGuid();
-        await using var streamB = await OpenStreamAsync(client, engagementId, ownerB, "bravo");
+        await using var streamB = await OpenStreamAsync(clientB, engagementId);
         // Drain B's hello frame first so the next event B reads is the live one.
         await streamB.ReadAsync();
 
@@ -114,11 +113,10 @@ public class OperatorLiveTests
 
         // Operator A issues a task over HTTP; B should see it issued live,
         // attributed to A.
-        var issued = await client.PostAsJsonAsync(
+        var issued = await clientA.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
             new TaskEndpoints.IssueTaskRequest(
                 ImplantId: implantId.ToString("N"),
-                IssuedBy: ownerA,
                 Verb: "shell.exec",
                 Arguments: "whoami"));
         issued.EnsureSuccessStatusCode();
@@ -126,22 +124,19 @@ public class OperatorLiveTests
         var bSeesTask = await streamB.ReadAsync();
         Assert.Equal("TaskIssued", bSeesTask.Event);
         Assert.Contains("shell.exec", bSeesTask.Data);
-        Assert.Contains(ownerA.ToString("N"), bSeesTask.Data);
+        Assert.Contains(ownerA.Value.ToString("N"), bSeesTask.Data);
     }
 
     [Fact]
     public async Task Operator_Receives_Hello_With_Current_Presence()
     {
         using var host = CreateHost();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        using var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        await RegisterAsync(host, "solo", "Solo Operator");
+        using var client = await OperatorClientAsync(host, "solo");
 
-        var owner = Guid.NewGuid();
-        var engagementId = await CreateEngagementAsync(client, owner, "solo");
+        var engagementId = await CreateEngagementAsync(client, "Operation solo");
 
-        await using var stream = await OpenStreamAsync(client, engagementId, owner, "solo");
+        await using var stream = await OpenStreamAsync(client, engagementId);
         var hello = await stream.ReadAsync();
 
         Assert.Equal("hello", hello.Event);
@@ -154,23 +149,24 @@ public class OperatorLiveTests
     public async Task Events_Are_Engagement_Scoped()
     {
         using var host = CreateHost();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        using var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        await RegisterAsync(host, "x-ray", "X-Ray Operator");
+        await RegisterAsync(host, "yankee", "Yankee Operator");
+        await RegisterAsync(host, "yankee-2", "Yankee Two Operator");
+        using var clientX = await OperatorClientAsync(host, "x-ray");
+        using var clientY = await OperatorClientAsync(host, "yankee");
+        using var clientY2 = await OperatorClientAsync(host, "yankee-2");
 
-        var ownerX = Guid.NewGuid();
-        var ownerY = Guid.NewGuid();
-        var engagementX = await CreateEngagementAsync(client, ownerX, "x-ray");
-        var engagementY = await CreateEngagementAsync(client, ownerY, "yankee");
+        var engagementX = await CreateEngagementAsync(clientX, "Operation x-ray");
+        var engagementY = await CreateEngagementAsync(clientY, "Operation yankee");
 
         // An operator connected to engagement X should never see engagement Y's
         // presence or tasking.
-        await using var streamX = await OpenStreamAsync(client, engagementX, ownerX, "x-ray");
+        await using var streamX = await OpenStreamAsync(clientX, engagementX);
         await streamX.ReadAsync(); // hello
 
         // Activity on Y: a second operator joins Y.
-        await OpenStreamAsync(client, engagementY, Guid.NewGuid(), "yankee-2");
+        await using var streamY2 = await OpenStreamAsync(clientY2, engagementY);
+        await streamY2.ReadAsync(); // hello
 
         // Assert by negative: X's stream does not surface Y's join within a short
         // window. A presence join on Y publishes only to Y's subscribers, so X
@@ -180,21 +176,20 @@ public class OperatorLiveTests
     }
 
     [Fact]
-    public async Task Events_Require_Operator_Identity()
+    public async Task Events_Require_Authentication()
     {
         using var host = CreateHost();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        using var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        await RegisterAsync(host, "gated", "Gated Operator");
+        using var owner = await OperatorClientAsync(host, "gated");
 
-        var owner = Guid.NewGuid();
-        var engagementId = await CreateEngagementAsync(client, owner, "gated");
+        var engagementId = await CreateEngagementAsync(owner, "Operation gated");
 
-        // Missing operatorId/handle query parameters: the endpoint refuses
-        // rather than starting an anonymous session.
-        var response = await client.GetAsync($"/engagements/{engagementId}/events");
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // An anonymous request -- no cookie session -- is refused before the
+        // handler runs: the events route requires an authenticated operator, so
+        // the middleware answers 401 rather than starting an anonymous stream.
+        using var anonymous = AuthenticatedHost.CreateClient(host);
+        var response = await anonymous.GetAsync($"/engagements/{engagementId}/events");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // Parses the SSE wire format (event: / data: lines, blank-line terminated)

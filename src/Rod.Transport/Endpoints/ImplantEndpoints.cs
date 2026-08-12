@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -30,7 +31,9 @@ public static class ImplantEndpoints
 {
     public static IEndpointRouteBuilder MapImplantEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/implants");
+        // Operator-facing: implant views and retire require an authenticated
+        // operator session.
+        var group = endpoints.MapGroup("/engagements/{engagementId}/implants").RequireAuthorization();
         group.MapGet("/", ListImplantsAsync).WithName(nameof(ListImplantsAsync));
         group.MapGet("/{implantId}/tasks", ListImplantTasksAsync)
             .WithName(nameof(ListImplantTasksAsync));
@@ -106,17 +109,21 @@ public static class ImplantEndpoints
     private static async Task<IResult> RetireAsync(
         string engagementId,
         string implantId,
-        RetireImplantRequest body,
+        ClaimsPrincipal user,
         ImplantService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        // The retiring operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth,
+        // production-hardening todo).
+        var retiredBy = user.TryGetOperatorId();
+        if (retiredBy is null)
+            return Results.Unauthorized();
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(implantId, out var implantValue))
             return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
-        if (body.RetiredBy is null)
-            return Results.BadRequest(new Problem("Retiring operator id is required."));
 
         Rod.CoreState.Application.ImplantRetired retired;
         try
@@ -125,7 +132,7 @@ public static class ImplantEndpoints
                 new RetireImplantCommand(
                     new EngagementId(engagementValue),
                     new ImplantId(implantValue),
-                    new OperatorId(body.RetiredBy.Value)),
+                    retiredBy.Value),
                 cancellationToken);
         }
         catch (ImplantNotFoundException ex)
@@ -189,13 +196,6 @@ public static class ImplantEndpoints
         string? Outcome,
         DateTimeOffset CreatedAt,
         DateTimeOffset? CompletedAt);
-
-    /// <summary>
-    /// Request to retire an implant. <see cref="RetiredBy"/> is the operator
-    /// taking the implant out of operation; the engagement and implant are read
-    /// from the route.
-    /// </summary>
-    public sealed record RetireImplantRequest(Guid? RetiredBy);
 
     public sealed record RetireImplantResponse(
         string ImplantId,

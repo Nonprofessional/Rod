@@ -42,7 +42,6 @@ public class ExfilRoundTripTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
         var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
-        var operatorId = OperatorId.New();
 
         // Open the beacon stream and complete the handshake first.
         using var channel = env.ConnectBeacon(leafCert, leafKey);
@@ -57,7 +56,7 @@ public class ExfilRoundTripTests
         // the enrolled implant is Stage-2, so issuance succeeds.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
-            new { ImplantId = implant.Id.ToString(), IssuedBy = operatorId.Value, Verb = "exfil.push", Arguments = "loot.txt /opt/secret/loot.txt" });
+            new { ImplantId = implant.Id.ToString(), Verb = "exfil.push", Arguments = "loot.txt /opt/secret/loot.txt" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
@@ -139,7 +138,6 @@ public class ExfilRoundTripTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
         var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
-        var operatorId = OperatorId.New();
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
@@ -151,7 +149,7 @@ public class ExfilRoundTripTests
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
-            new { ImplantId = implant.Id.ToString(), IssuedBy = operatorId.Value, Verb = "exfil.push", Arguments = "blob.bin /opt/blob.bin" });
+            new { ImplantId = implant.Id.ToString(), Verb = "exfil.push", Arguments = "blob.bin /opt/blob.bin" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
@@ -302,14 +300,22 @@ public class ExfilRoundTripTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 

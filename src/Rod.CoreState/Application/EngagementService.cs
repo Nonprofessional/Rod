@@ -7,9 +7,9 @@ namespace Rod.CoreState.Application;
 /// <summary>
 /// The first engagement use cases (roadmap M1.1): create an engagement, and mint
 /// a stager token for it. Orchestrates the core-state ports; holds no state of
-/// its own. The walking skeleton resolves the creating/issuing operator through
-/// the request -- real operator authentication arrives with the operator layer
-/// (M2.4).
+/// its own. The owner is the authenticated operator the transport layer resolved
+/// off the session principal (operator auth, production-hardening todo); the
+/// service trusts that caller to have already proven its identity.
 /// </summary>
 public sealed class EngagementService
 {
@@ -31,8 +31,10 @@ public sealed class EngagementService
     }
 
     /// <summary>
-    /// Registers the operator (if new) and creates an engagement owned by them.
-    /// The owner is recorded as the engagement's single Owner member.
+    /// Creates an engagement owned by the authenticated operator. The owner is
+    /// recorded as the engagement's single Owner member; its handle is resolved
+    /// from the operator record so the response carries it without the caller
+    /// having to supply it.
     /// </summary>
     public async Task<EngagementCreated> CreateEngagementAsync(
         CreateEngagementCommand command,
@@ -40,14 +42,9 @@ public sealed class EngagementService
     {
         var now = _clock.GetUtcNow();
 
-        // The skeleton resolves the operator from the request; M2.4 replaces this
-        // with authenticated operator identity.
-        var owner = await _operators.FindAsync(command.OwnerId, cancellationToken);
-        if (owner is null)
-        {
-            owner = Operator.Register(command.OwnerId, command.OwnerHandle, command.OwnerDisplayName, now);
-            await _operators.SaveAsync(owner, cancellationToken);
-        }
+        // The owner is the authenticated operator; auth guarantees the account
+        // exists, so this is a resolve-for-handle, not a get-or-create.
+        var owner = await _operators.GetOrThrowAsync(command.OwnerId, cancellationToken);
 
         var engagement = Engagement.Create(EngagementId.New(), command.Name, owner.Id, now);
         await _engagements.SaveAsync(engagement, cancellationToken);
@@ -84,12 +81,11 @@ public sealed class EngagementService
     }
 }
 
-/// <summary>Request to create an engagement.</summary>
-public sealed record CreateEngagementCommand(
-    OperatorId OwnerId,
-    string OwnerHandle,
-    string OwnerDisplayName,
-    string Name);
+/// <summary>
+/// Request to create an engagement. The owner is the authenticated operator;
+/// only the name is supplied by the caller.
+/// </summary>
+public sealed record CreateEngagementCommand(OperatorId OwnerId, string Name);
 
 /// <summary>Result of creating an engagement.</summary>
 public sealed record EngagementCreated(

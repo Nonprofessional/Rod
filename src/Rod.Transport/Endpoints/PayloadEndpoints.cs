@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -28,7 +29,8 @@ public static class PayloadEndpoints
 {
     public static IEndpointRouteBuilder MapPayloadEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/payloads");
+        // Operator-facing: a payload build requires an authenticated operator session.
+        var group = endpoints.MapGroup("/engagements/{engagementId}/payloads").RequireAuthorization();
 
         group.MapPost("/", BuildAsync).WithName(nameof(BuildAsync));
 
@@ -38,14 +40,19 @@ public static class PayloadEndpoints
     private static async Task<IResult> BuildAsync(
         string engagementId,
         BuildPayloadRequest body,
+        ClaimsPrincipal user,
         PayloadBuildService builds,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        // The requesting operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth,
+        // production-hardening todo).
+        var requestedBy = user.TryGetOperatorId();
+        if (requestedBy is null)
+            return Results.Unauthorized();
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
-        if (body.RequestedBy is null)
-            return Results.BadRequest(new Problem("Requesting operator id is required."));
 
         // Language and class come in as strings and parse to the enums; anything
         // that does not parse is a 400. The defaults keep a minimal request
@@ -58,7 +65,7 @@ public static class PayloadEndpoints
         var artifact = await builds.BuildAsync(
             new BuildRequest(
                 new EngagementId(engagementValue),
-                new OperatorId(body.RequestedBy.Value),
+                requestedBy.Value,
                 language,
                 @class,
                 new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
@@ -76,7 +83,7 @@ public static class PayloadEndpoints
             AuditEvent.Fact(
                 eventId: Guid.NewGuid(),
                 engagementId: artifact.EngagementId.Value,
-                operatorId: body.RequestedBy.Value,
+                operatorId: requestedBy.Value.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
                 verb: artifact.Class.ToString(),
@@ -165,7 +172,6 @@ public static class PayloadEndpoints
     // them gets a profile with the unchanged wire shape. Defaulted so a minimal
     // positional construction (as in the integration tests) stays valid.
     public sealed record BuildPayloadRequest(
-        Guid? RequestedBy,
         string? Language,
         string? Class,
         string? TargetOs,

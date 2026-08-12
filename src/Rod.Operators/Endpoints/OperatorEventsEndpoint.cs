@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Live;
+using Rod.CoreState.Operators;
 using Rod.Operators.Presence;
 
 namespace Rod.Operators.Endpoints;
@@ -22,16 +23,20 @@ namespace Rod.Operators.Endpoints;
 /// late joiner sees who is already online before any events arrive. On
 /// disconnect (client cancellation) the operator is left.
 ///
-/// Identity comes from query parameters in this milestone (operatorId, handle,
-/// displayName); real operator authentication arrives later and replaces only
-/// how the identity is established.
+/// Identity is derived from the authenticated operator principal (cookie
+/// session): the route carries <see cref="OperatorClaims.RequireAuthorization"/>,
+/// and the id/handle/display name are read off the principal's claims rather
+/// than the request, so a live stream is only ever opened for a logged-in
+/// operator. EventSource carries the auth cookie (SameSite=Lax) with the
+/// connection.
 /// </summary>
 public static class OperatorEventsEndpoint
 {
     public static IEndpointRouteBuilder MapOperatorEventEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/engagements/{engagementId}/events", StreamAsync)
-            .WithName("StreamOperatorEvents");
+            .WithName("StreamOperatorEvents")
+            .RequireAuthorization();
 
         return endpoints;
     }
@@ -51,14 +56,20 @@ public static class OperatorEventsEndpoint
         }
 
         var engagement = new EngagementId(idValue);
-        var identity = ReadOperatorIdentity(context.Request.Query);
-        if (identity is null)
+        var identityClaim = context.User.TryGetOperatorIdentity();
+        if (identityClaim is null)
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            // RequireAuthorization rejects anonymous requests before the handler
+            // runs; this is the defense-in-depth fallback for a principal that
+            // authenticated but lacks operator claims.
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(
-                new Problem("operatorId and handle query parameters are required."), cancellationToken);
+                new Problem("An authenticated operator session is required."), cancellationToken);
             return;
         }
+
+        var identity = new OperatorPresenceService.OperatorSnapshot(
+            identityClaim.Value.Id, identityClaim.Value.Handle, identityClaim.Value.DisplayName);
 
         // SSE framing: chunked text/event-stream, never cached (the stream is
         // live and per-connection).
@@ -98,23 +109,6 @@ public static class OperatorEventsEndpoint
         {
             await presence.LeaveAsync(engagement, identity.Id, CancellationToken.None);
         }
-    }
-
-    // Reads the operator identity off the query string. The walking skeleton
-    // resolves it from the request; real operator auth arrives later and
-    // replaces only this read.
-    private static OperatorPresenceService.OperatorSnapshot? ReadOperatorIdentity(IQueryCollection query)
-    {
-        if (!Guid.TryParse(query["operatorId"], out var idValue))
-            return null;
-        var handle = query["handle"].ToString();
-        if (string.IsNullOrWhiteSpace(handle))
-            return null;
-        var displayName = query["displayName"].ToString();
-        if (string.IsNullOrWhiteSpace(displayName))
-            displayName = handle;
-
-        return new OperatorPresenceService.OperatorSnapshot(new OperatorId(idValue), handle, displayName);
     }
 
     // Writes one SSE frame: an event name line, a data line carrying a JSON

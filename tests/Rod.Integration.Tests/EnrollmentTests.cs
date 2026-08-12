@@ -2,13 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState.Pki;
-using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.V1;
 
@@ -21,31 +16,22 @@ namespace Rod.Integration.Tests;
 /// (stager redeem, implant creation, CA issue) via the implant-side endpoint and
 /// verifies the issued binding by inspecting the certificate (no real mTLS
 /// handshake; that is M1.3). Failure paths assert each redeem outcome maps to
-/// the right wire <see cref="EnrollStatus"/>.
+/// the right wire <see cref="EnrollStatus"/>. The implant enrollment endpoint is
+/// anonymous (implants authenticate with the stager token, not a cookie); the
+/// operator routes that mint a stager token require the operator session.
 /// </summary>
 public class EnrollmentTests
 {
     private static (HttpClient Client, IHost Host) CreateClient()
     {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var (client, host, _) = AuthenticatedHost.Create();
         return (client, host);
     }
 
     private static async Task<string> MintTokenForNewEngagementAsync(HttpClient client)
     {
-        var createResponse = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        var createResponse = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);
@@ -64,6 +50,7 @@ public class EnrollmentTests
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
@@ -118,6 +105,8 @@ public class EnrollmentTests
         using (client)
         using (host)
         {
+            // Enrollment is implant-facing and anonymous; no operator session is
+            // involved, and the bogus token never resolves to an engagement.
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "totally-bogus-secret", Class: null));
 
@@ -134,6 +123,7 @@ public class EnrollmentTests
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
 
             // First enroll consumes the single-use token.
@@ -164,6 +154,7 @@ public class EnrollmentTests
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
 
             using var implantKey = RSA.Create(2048);
@@ -205,6 +196,7 @@ public class EnrollmentTests
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
 
             var response = await client.PostAsJsonAsync("/implants/enroll",

@@ -36,35 +36,22 @@ namespace Rod.Integration.Tests;
 /// </summary>
 public class TradecraftTaskPathTests
 {
-    // A host that layers the tradecraft layer (M8.1) and the operator layer
-    // (M2.4) onto the transport core, so the capability registry is wired into
-    // the live task path -- the same composition the teamserver host performs.
+    // A host that layers the tradecraft layer (M8.1) and the operator + auth
+    // layers onto the transport core, so the capability registry is wired into
+    // the live task path and the operator API requires a cookie session -- the
+    // same composition the teamserver host performs.
     private static (HttpClient Client, IHost Host) CreateClient()
     {
-        IHost host = TransportHost.CreateHostBuilder(
-                configureServices: services =>
-                {
-                    services.AddRodOperators();
-                    services.AddRodTradecraft();
-                },
-                mapEndpoints: endpoints => endpoints.MapOperatorEndpoints())
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var (client, host, _) = AuthenticatedHost.Create(
+            configureServices: services => services.AddRodTradecraft());
         return (client, host);
     }
 
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Casey Neale",
-            Name: "Operation Smokeshow"));
+        await AuthenticatedHost.LoginAsync(client);
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;
@@ -106,7 +93,6 @@ public class TradecraftTaskPathTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: verb,
                     Arguments: "arg"));
 
@@ -139,7 +125,6 @@ public class TradecraftTaskPathTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: EvasionCapabilities.Avoid,
                     Arguments: "arg"));
 
@@ -165,7 +150,6 @@ public class TradecraftTaskPathTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: "does.not.exist",
                     Arguments: "arg"));
 
@@ -197,7 +181,6 @@ public class TradecraftTaskPathTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: EvasionCapabilities.Avoid,
                     Arguments: "payload"));
             issued.EnsureSuccessStatusCode();

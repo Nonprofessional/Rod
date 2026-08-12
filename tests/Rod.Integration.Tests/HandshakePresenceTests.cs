@@ -174,14 +174,22 @@ public class HandshakePresenceTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 

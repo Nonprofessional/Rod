@@ -1,12 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
-using Rod.Transport;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -20,31 +16,16 @@ namespace Rod.Integration.Tests;
 /// PayloadBuilt audit event is appended to the engagement's hash-chained trail.
 /// The build service is audit-agnostic by design; the transport endpoint composes
 /// the recording (architecture.md Sec 6, Sec 11), the same way the beacon stream
-/// records task completion.
+/// records task completion. The requesting operator is the logged-in operator,
+/// recorded by the server off the session principal, so the audit attributes the
+/// build to that identity regardless of the request body.
 /// </summary>
 public class PayloadBuildTests
 {
-    private static (HttpClient Client, IHost Host) CreateClient()
-    {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
-        return (client, host);
-    }
-
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Casey Neale",
-            Name: "Operation Smokeshow"));
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;
@@ -53,16 +34,16 @@ public class PayloadBuildTests
     [GoFact]
     public async Task BuildPayload_InvokesBuildUnit_ReturnsFingerprintedArtifact()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    RequestedBy: Guid.NewGuid(),
                     Language: "Go",
                     Class: "Stage2",
                     TargetOs: "linux",
@@ -95,15 +76,15 @@ public class PayloadBuildTests
         // Per-implant material is generated at request time, so two builds of the
         // same request never share a key and never share a fingerprint
         // (architecture.md Sec 6/Sec 5.1).
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var operatorId = Guid.NewGuid();
 
-            var first = await PostBuildAsync(client, engagementId, operatorId);
-            var second = await PostBuildAsync(client, engagementId, operatorId);
+            var first = await PostBuildAsync(client, engagementId);
+            var second = await PostBuildAsync(client, engagementId);
 
             Assert.NotEqual(first!.ArtifactId, second!.ArtifactId);
             Assert.NotEqual(first.Fingerprint, second.Fingerprint);
@@ -111,12 +92,11 @@ public class PayloadBuildTests
     }
 
     private static async Task<PayloadEndpoints.BuildPayloadResponse?> PostBuildAsync(
-        HttpClient client, string engagementId, Guid operatorId)
+        HttpClient client, string engagementId)
     {
         var response = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                RequestedBy: operatorId,
                 Language: "Go",
                 Class: "Stage2",
                 TargetOs: "linux",
@@ -133,18 +113,17 @@ public class PayloadBuildTests
     [GoFact]
     public async Task BuildPayload_RecordsPayloadBuiltAuditEvent_OnTheChain()
     {
-        var (client, host) = CreateClient();
+        var (client, host, operatorId) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
             var audit = host.Services.GetRequiredService<IAuditStore>();
 
-            var operatorId = Guid.NewGuid();
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    RequestedBy: operatorId,
                     Language: "Go",
                     Class: "Stage2",
                     TargetOs: "linux",
@@ -164,6 +143,9 @@ public class PayloadBuildTests
             var evt = Assert.Single(trail, e => e.Kind == AuditEventKind.PayloadBuilt);
             Assert.Equal("Stage2", evt.Verb);
             Assert.Equal(body!.Fingerprint, evt.Outcome);
+            // The audit attributes the build to the authenticated operator, not any
+            // client-supplied identity.
+            Assert.Equal(operatorId.Value, evt.OperatorId);
             Assert.Null(AuditChain.VerifyTrail(trail));
         }
     }
@@ -171,14 +153,15 @@ public class PayloadBuildTests
     [Fact]
     public async Task BuildPayload_Returns400_ForMalformedEngagementId()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
+
             var response = await client.PostAsJsonAsync(
                 "/engagements/not-a-guid/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    RequestedBy: Guid.NewGuid(),
                     Language: null,
                     Class: null,
                     TargetOs: null,
@@ -196,16 +179,16 @@ public class PayloadBuildTests
     [Fact]
     public async Task BuildPayload_Returns400_ForUnknownLanguage()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    RequestedBy: Guid.NewGuid(),
                     Language: "Rust", // not a registered build language
                     Class: null,
                     TargetOs: null,

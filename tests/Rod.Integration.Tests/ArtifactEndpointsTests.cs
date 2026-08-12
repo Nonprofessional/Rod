@@ -19,6 +19,8 @@ namespace Rod.Integration.Tests;
 /// task's artifacts, and retrieves one back, all scoped by engagement, and each
 /// attachment is recorded as an attributed, hash-chained event on the
 /// engagement trail. The evidence and the tasking that gathered it stay bound.
+/// The attaching operator is the logged-in operator; the request carries no
+/// identity, and the audit attributes the attachment to that operator.
 /// </summary>
 public class ArtifactEndpointsTests
 {
@@ -28,14 +30,15 @@ public class ArtifactEndpointsTests
         await using var env = await TestEnv.StartAsync();
         var (engagementId, implantId) = await SeedEngagementAndImplantAsync(env);
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
-        var attacher = OperatorId.New();
+
+        await AuthenticatedHost.LoginAsync(env.Http);
 
         // A task exists in the engagement to attach evidence to. It is queued,
         // not completed -- artifacts bind to the task that gathered them, and
         // need not wait for the result.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId.ToString(), IssuedBy = OperatorId.New().Value, Verb = "collect.file", Arguments = "/etc/passwd" });
+            new { ImplantId = implantId.ToString(), Verb = "collect.file", Arguments = "/etc/passwd" });
         issued.EnsureSuccessStatusCode();
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
@@ -43,7 +46,6 @@ public class ArtifactEndpointsTests
         var attached = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: attacher.Value,
                 Name: "passwd.txt",
                 ContentType: "text/plain",
                 Content: content));
@@ -54,7 +56,8 @@ public class ArtifactEndpointsTests
         Assert.Equal("text/plain", attachedBody.ContentType);
         Assert.Equal(content.Length, attachedBody.Size);
         Assert.Equal(taskId, attachedBody.TaskId);
-        Assert.Equal(attacher.Value, attachedBody.OperatorId);
+        // The attachment is attributed to the authenticated operator.
+        Assert.Equal(env.OperatorId.Value, attachedBody.OperatorId);
 
         // A second artifact on the same task, stored later, so the list order is
         // observable.
@@ -62,7 +65,6 @@ public class ArtifactEndpointsTests
         await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: attacher.Value,
                 Name: "shadow.bin",
                 ContentType: null,
                 Content: later));
@@ -95,7 +97,9 @@ public class ArtifactEndpointsTests
         var trail = await audit.ListAsync(engagementId);
         var artifactEvent = Assert.Single(trail, e =>
             e.Kind == AuditEventKind.ArtifactAttached && e.Outcome == attachedBody.ArtifactId);
-        Assert.Equal(attacher.Value, artifactEvent.OperatorId);
+        // The audit attributes the attachment to the authenticated operator, not
+        // any client-supplied identity.
+        Assert.Equal(env.OperatorId.Value, artifactEvent.OperatorId);
         Assert.Equal(Guid.Parse(taskId), artifactEvent.TaskId);
         Assert.Equal("passwd.txt;text/plain", artifactEvent.Payload);
     }
@@ -107,15 +111,16 @@ public class ArtifactEndpointsTests
         var (engagementA, implantA) = await SeedEngagementAndImplantAsync(env);
         var (engagementB, _) = await SeedEngagementAndImplantAsync(env);
 
+        await AuthenticatedHost.LoginAsync(env.Http);
+
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementA}/tasks",
-            new { ImplantId = implantA.ToString(), IssuedBy = OperatorId.New().Value, Verb = "collect.file" });
+            new { ImplantId = implantA.ToString(), Verb = "collect.file" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
         var attached = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementA}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: OperatorId.New().Value,
                 Name: "secret.txt",
                 ContentType: "text/plain",
                 Content: "top-secret"u8.ToArray()));
@@ -138,10 +143,12 @@ public class ArtifactEndpointsTests
         var (engagementA, implantA) = await SeedEngagementAndImplantAsync(env);
         var (_, _) = await SeedEngagementAndImplantAsync(env);
 
+        await AuthenticatedHost.LoginAsync(env.Http);
+
         // A task that belongs to engagement A, addressed against its own implant.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementA}/tasks",
-            new { ImplantId = implantA.ToString(), IssuedBy = OperatorId.New().Value, Verb = "collect.file" });
+            new { ImplantId = implantA.ToString(), Verb = "collect.file" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
         // The same task id read through a different engagement is a 404, so an
@@ -150,7 +157,6 @@ public class ArtifactEndpointsTests
         var response = await env.Http.PostAsJsonAsync(
             $"/engagements/{foreignEngagement}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: OperatorId.New().Value,
                 Name: "x",
                 ContentType: null,
                 Content: new byte[] { 1 }));
@@ -158,30 +164,23 @@ public class ArtifactEndpointsTests
     }
 
     [Fact]
-    public async Task Attach_Returns400_ForMissingOperatorOrContent()
+    public async Task Attach_Returns400_ForEmptyContent_OrMalformedId()
     {
         await using var env = await TestEnv.StartAsync();
         var (engagementId, implantId) = await SeedEngagementAndImplantAsync(env);
+
+        await AuthenticatedHost.LoginAsync(env.Http);
+
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId.ToString(), IssuedBy = OperatorId.New().Value, Verb = "collect.file" });
+            new { ImplantId = implantId.ToString(), Verb = "collect.file" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
-        // No attaching operator.
-        var noOperator = await env.Http.PostAsJsonAsync(
-            $"/engagements/{engagementId}/tasks/{taskId}/artifacts",
-            new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: null,
-                Name: "x",
-                ContentType: null,
-                Content: new byte[] { 1 }));
-        Assert.Equal(HttpStatusCode.BadRequest, noOperator.StatusCode);
-
-        // Empty content.
+        // The attaching operator always comes from the session; the remaining 400
+        // cases are empty content and malformed ids.
         var noContent = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: OperatorId.New().Value,
                 Name: "x",
                 ContentType: null,
                 Content: Array.Empty<byte>()));
@@ -244,12 +243,14 @@ public class ArtifactEndpointsTests
     /// <summary>
     /// A real Kestrel teamserver with the operator HTTP API bound. Artifacts are
     /// operator-facing, so the mTLS implant endpoint is not exercised here; the
-    /// harness mirrors the other operator-API tests minus the beacon wiring.
+    /// harness mirrors the other operator-API tests minus the beacon wiring. The
+    /// operator + auth layers are composed so the API requires a cookie session.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
@@ -257,13 +258,21 @@ public class ArtifactEndpointsTests
             var env = new TestEnv();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
             return env;
         }
 

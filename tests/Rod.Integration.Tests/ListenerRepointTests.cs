@@ -159,12 +159,20 @@ public class ListenerRepointTests
                 rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
             }
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder.UseRodListeners(rewritten))
                 .Build();
             await env.Host.StartAsync();
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://{env.HttpBind}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://{env.HttpBind}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 

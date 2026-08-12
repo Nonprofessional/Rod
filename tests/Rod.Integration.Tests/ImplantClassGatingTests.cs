@@ -26,24 +26,15 @@ public class ImplantClassGatingTests
 {
     private static (HttpClient Client, IHost Host) CreateClient()
     {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var (client, host, _) = AuthenticatedHost.Create();
         return (client, host);
     }
 
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Casey Neale",
-            Name: "Operation Smokeshow"));
+        await AuthenticatedHost.LoginAsync(client);
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;
@@ -109,7 +100,6 @@ public class ImplantClassGatingTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: verb,
                     Arguments: "arg"));
 

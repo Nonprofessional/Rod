@@ -65,7 +65,7 @@ public class TimelineAndReportTests
         // the implant's class on its subject.
         var created = Assert.Single(timeline.Entries, e => e.Kind == "EngagementCreated");
         Assert.NotNull(created.Operator);
-        Assert.Equal("cneale", created.Operator!.Handle);
+        Assert.Equal(AuthenticatedHost.Handle, created.Operator!.Handle);
         Assert.Equal(owner.Value, created.Operator.OperatorId);
 
         var issued = Assert.Single(timeline.Entries, e => e.Kind == "TaskIssued");
@@ -107,7 +107,7 @@ public class TimelineAndReportTests
 
         Assert.NotNull(report);
         Assert.Equal("Operation Smokeshow", report!.Engagement.Name);
-        Assert.Equal("cneale", report.Engagement.OwnerHandle);
+        Assert.Equal(AuthenticatedHost.Handle, report.Engagement.OwnerHandle);
         Assert.Equal(owner.Value, report.Engagement.OwnerId);
         Assert.NotEmpty(report.ContentHash);
 
@@ -158,7 +158,7 @@ public class TimelineAndReportTests
         Assert.Contains("## Tasks", body);
         Assert.Contains("## Artifacts", body);
         Assert.Contains("## Timeline", body);
-        Assert.Contains("cneale", body);
+        Assert.Contains(AuthenticatedHost.Handle, body);
         Assert.Contains("shell.exec", body);
         Assert.Contains("passwd.txt", body);
     }
@@ -188,9 +188,9 @@ public class TimelineAndReportTests
         // The facts move: retire the implant (a new attributed event lands on the
         // trail, and the implant inventory gains a retirement timestamp). The
         // digest must change -- it covers the timeline, not a constant.
-        var retire = await env.Http.PostAsJsonAsync(
+        var retire = await env.Http.PostAsync(
             $"/engagements/{engagementId}/implants/{implantIdString}:retire",
-            new ImplantEndpoints.RetireImplantRequest(RetiredBy: owner.Value));
+            content: null);
         Assert.Equal(HttpStatusCode.OK, retire.StatusCode);
 
         var after = await env.Http.GetFromJsonAsync<EngagementReport>(
@@ -205,6 +205,7 @@ public class TimelineAndReportTests
     public async Task TimelineAndReport_Return404_ForUnknownEngagement()
     {
         await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
         var foreign = Guid.NewGuid();
 
         var timeline = await env.Http.GetAsync($"/engagements/{foreign}/timeline");
@@ -218,6 +219,7 @@ public class TimelineAndReportTests
     public async Task TimelineAndReport_Return400_ForMalformedEngagementId()
     {
         await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
 
         var timeline = await env.Http.GetAsync("/engagements/not-a-guid/timeline");
         Assert.Equal(HttpStatusCode.BadRequest, timeline.StatusCode);
@@ -237,12 +239,10 @@ public class TimelineAndReportTests
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
 
-        var owner = OperatorId.New();
-        var created = await env.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: owner.Value,
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var owner = env.OperatorId;
+        var created = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         created.EnsureSuccessStatusCode();
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         var engagementId = Guid.Parse(engagement!.EngagementId);
@@ -263,7 +263,7 @@ public class TimelineAndReportTests
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId, IssuedBy = owner.Value, Verb = "shell.exec", Arguments = "whoami" });
+            new { ImplantId = implantId, Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
 
         Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
@@ -286,7 +286,6 @@ public class TimelineAndReportTests
         var attached = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks/{request.TaskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: owner.Value,
                 Name: "passwd.txt",
                 ContentType: "text/plain",
                 Content: content));
@@ -453,6 +452,7 @@ public class TimelineAndReportTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
@@ -462,14 +462,22 @@ public class TimelineAndReportTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
             return env;
         }
 

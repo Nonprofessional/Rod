@@ -1,9 +1,11 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
 // The domain entity shares its name with System.Threading.Tasks.Task. Pin it
 // here so the endpoint's Task references resolve to the entity; the BCL type is
@@ -26,7 +28,8 @@ public static class TaskEndpoints
 {
     public static IEndpointRouteBuilder MapTaskEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/tasks");
+        // Operator-facing: tasking requires an authenticated operator session.
+        var group = endpoints.MapGroup("/engagements/{engagementId}/tasks").RequireAuthorization();
 
         group.MapPost("/", IssueAsync).WithName("IssueTask");
         // The collection route is listed before {taskId} so the literal "/" does
@@ -43,16 +46,21 @@ public static class TaskEndpoints
     private static async Task<IResult> IssueAsync(
         string engagementId,
         IssueTaskRequest body,
+        ClaimsPrincipal user,
         TaskService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        // The issuing operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth,
+        // production-hardening todo).
+        var issuedBy = user.TryGetOperatorId();
+        if (issuedBy is null)
+            return Results.Unauthorized();
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(body.ImplantId, out var implantValue))
             return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
-        if (body.IssuedBy is null)
-            return Results.BadRequest(new Problem("Issuing operator id is required."));
         if (string.IsNullOrWhiteSpace(body.Verb))
             return Results.BadRequest(new Problem("Task verb is required."));
 
@@ -63,7 +71,7 @@ public static class TaskEndpoints
                 new IssueTaskCommand(
                     new EngagementId(engagementValue),
                     new ImplantId(implantValue),
-                    new OperatorId(body.IssuedBy.Value),
+                    issuedBy.Value,
                     body.Verb,
                     body.Arguments ?? string.Empty),
                 cancellationToken);
@@ -172,9 +180,10 @@ public static class TaskEndpoints
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
+    // The issuing operator is the authenticated operator; the request carries
+    // only the target implant and the verb to run.
     public sealed record IssueTaskRequest(
         string ImplantId,
-        Guid? IssuedBy,
         string Verb,
         string? Arguments);
 

@@ -27,7 +27,10 @@ namespace Rod.Integration.Tests;
 /// enrolled, session opened, task issued/dispatched/completed, payload built,
 /// implant retired -- and asserts each landed as an attributed, hash-chained
 /// event on the per-engagement trail, readable through the audit endpoint. The
-/// chain verifies end to end (tamper-evidence by construction).
+/// chain verifies end to end (tamper-evidence by construction). Every operator
+/// action is attributed to the authenticated operator; with a single seeded
+/// operator the owner, the task issuer, the builder, and the retireer are the
+/// same identity, recorded by the server off the session principal.
 /// </summary>
 public class OperationalEventLogTests
 {
@@ -37,14 +40,15 @@ public class OperationalEventLogTests
         await using var env = await TestEnv.StartAsync();
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
+        await AuthenticatedHost.LoginAsync(env.Http);
+
+        // The single seeded operator is every actor in this lifecycle -- the
+        // server records that identity off the session, not the request body.
+        var owner = env.OperatorId;
 
         // 1. Engagement created -> EngagementCreated (genesis link).
-        var owner = OperatorId.New();
-        var created = await env.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: owner.Value,
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        var created = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         created.EnsureSuccessStatusCode();
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         var engagementId = Guid.Parse(engagement!.EngagementId);
@@ -73,10 +77,10 @@ public class OperationalEventLogTests
         Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
-        var taskIssuer = OperatorId.New();
+        var taskIssuer = env.OperatorId;
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId, IssuedBy = taskIssuer.Value, Verb = "shell.exec", Arguments = "whoami" });
+            new { ImplantId = implantId, Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
@@ -99,7 +103,6 @@ public class OperationalEventLogTests
         var build = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                RequestedBy: taskIssuer.Value,
                 Language: null,
                 Class: null,
                 TargetOs: "linux",
@@ -112,9 +115,9 @@ public class OperationalEventLogTests
         build.EnsureSuccessStatusCode();
 
         // 6. Implant retired -> ImplantRetired.
-        var retire = await env.Http.PostAsJsonAsync(
+        var retire = await env.Http.PostAsync(
             $"/engagements/{engagementId}/implants/{implantId}:retire",
-            new ImplantEndpoints.RetireImplantRequest(RetiredBy: owner.Value));
+            content: null);
         Assert.Equal(HttpStatusCode.OK, retire.StatusCode);
 
         // --- Read the whole trail back through the per-engagement audit endpoint
@@ -168,6 +171,7 @@ public class OperationalEventLogTests
     public async Task AuditEndpoint_Returns400_ForMalformedEngagementId()
     {
         await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
         var response = await env.Http.GetAsync($"/engagements/not-a-guid/audit");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -224,12 +228,14 @@ public class OperationalEventLogTests
 
     /// <summary>
     /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator API. Mirrors the TaskRoundTripTests harness.
+    /// plain-HTTP operator API. Mirrors the TaskRoundTripTests harness. The
+    /// operator + auth layers are composed so the API requires a cookie session.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
@@ -239,14 +245,22 @@ public class OperationalEventLogTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
             return env;
         }
 

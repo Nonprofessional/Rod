@@ -27,7 +27,9 @@ public static class CapabilityEndpoints
 {
     public static IEndpointRouteBuilder MapCapabilityEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/capabilities");
+        // Operator-facing: the capability catalog requires an authenticated
+        // operator session.
+        var group = endpoints.MapGroup("/capabilities").RequireAuthorization();
         group.MapGet("/", ListAsync).WithName("ListCapabilities");
         return endpoints;
     }

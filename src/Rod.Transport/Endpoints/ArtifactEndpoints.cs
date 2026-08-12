@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -33,12 +34,17 @@ public static class ArtifactEndpoints
     {
         // Attach and list are task-scoped (an artifact belongs to the task that
         // gathered it); retrieve is engagement-scoped by artifact id, so a saved
-        // artifact is reachable without re-threading the task id.
-        var taskGroup = endpoints.MapGroup("/engagements/{engagementId}/tasks/{taskId}/artifacts");
+        // artifact is reachable without re-threading the task id. All three are
+        // operator-facing and require an authenticated operator session.
+        var taskGroup = endpoints
+            .MapGroup("/engagements/{engagementId}/tasks/{taskId}/artifacts")
+            .RequireAuthorization();
         taskGroup.MapPost("/", AttachArtifactAsync).WithName(nameof(AttachArtifactAsync));
         taskGroup.MapGet("/", ListArtifactsAsync).WithName(nameof(ListArtifactsAsync));
 
-        var engagementGroup = endpoints.MapGroup("/engagements/{engagementId}/artifacts");
+        var engagementGroup = endpoints
+            .MapGroup("/engagements/{engagementId}/artifacts")
+            .RequireAuthorization();
         engagementGroup.MapGet("/{artifactId}", GetArtifactAsync).WithName(nameof(GetArtifactAsync));
 
         return endpoints;
@@ -48,17 +54,22 @@ public static class ArtifactEndpoints
         string engagementId,
         string taskId,
         AttachArtifactRequest body,
+        ClaimsPrincipal user,
         IArtifactStore artifacts,
         ITaskRepository tasks,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        // The attaching operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth,
+        // production-hardening todo).
+        var attachedBy = user.TryGetOperatorId();
+        if (attachedBy is null)
+            return Results.Unauthorized();
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(taskId, out var taskValue))
             return Results.BadRequest(new Problem("Task id is not a valid identifier."));
-        if (body.AttachedBy is null)
-            return Results.BadRequest(new Problem("Attaching operator id is required."));
         if (string.IsNullOrWhiteSpace(body.Name))
             return Results.BadRequest(new Problem("Artifact name is required."));
         if (body.Content is null || body.Content.Length == 0)
@@ -76,7 +87,7 @@ public static class ArtifactEndpoints
             ArtifactId: artifactId,
             EngagementId: engagementValue,
             TaskId: taskValue,
-            OperatorId: body.AttachedBy,
+            OperatorId: attachedBy.Value.Value,
             Name: body.Name.Trim(),
             ContentType: contentType,
             Content: body.Content,
@@ -95,7 +106,7 @@ public static class ArtifactEndpoints
             AuditEvent.Fact(
                 eventId: Guid.NewGuid(),
                 engagementId: engagementValue,
-                operatorId: body.AttachedBy.Value,
+                operatorId: attachedBy.Value.Value,
                 implantId: task.ImplantId.Value,
                 taskId: taskValue,
                 verb: "attach-artifact",
@@ -154,13 +165,12 @@ public static class ArtifactEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The attach request is JSON, matching every other mutating operator endpoint:
-    // the operator is named in the body (AttachedBy, the repo-wide attribution
-    // convention), and the artifact bytes ride as base64 in Content. A base64
-    // field keeps the request shape uniform with the rest of the API and avoids
-    // introducing the first multipart handler; large binaries move to an object
-    // store when the backend lands.
+    // the attaching operator is the authenticated principal (not a body field),
+    // and the artifact bytes ride as base64 in Content. A base64 field keeps the
+    // request shape uniform with the rest of the API and avoids introducing the
+    // first multipart handler; large binaries move to an object store when the
+    // backend lands.
     public sealed record AttachArtifactRequest(
-        Guid? AttachedBy,
         string Name,
         string? ContentType,
         byte[] Content);

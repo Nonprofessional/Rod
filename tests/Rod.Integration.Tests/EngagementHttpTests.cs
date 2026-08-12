@@ -1,11 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Rod.Transport;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -14,53 +9,48 @@ namespace Rod.Integration.Tests;
 /// Roadmap M1.1 acceptance: create an engagement over HTTP, then mint a stager
 /// token for it -- end to end through the in-memory TestServer. This exercises
 /// the core-state domain (ports, aggregates, stager-token service) driven by the
-/// transport-layer endpoints, proving the vertical slice works as a whole.
+/// transport-layer endpoints, proving the vertical slice works as a whole. Every
+/// engagement route now requires an authenticated operator session (operator
+/// authentication, production-hardening todo): the owner is the logged-in
+/// operator, recorded by the server off the session principal rather than named
+/// in the request body.
 /// </summary>
 public class EngagementHttpTests
 {
-    /// <summary>
-    /// Builds the teamserver host under the in-memory <see cref="TestServer"/> and
-    /// hands back an <see cref="HttpClient"/> rooted at it. The host owns the
-    /// client's lifetime and is disposed together with it.
-    /// </summary>
-    private static (HttpClient Client, IHost Host) CreateClient()
+    [Fact]
+    public async Task PostEngagements_Anonymous_IsUnauthorized()
     {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-
-        // TestServer is the IServer registered by UseTestServer; it knows how to
-        // serve the pipeline in memory.
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
-        return (client, host);
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            // No login: the operator session is the gate.
+            var response = await client.PostAsJsonAsync("/engagements",
+                new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
     }
 
     [Fact]
     public async Task PostEngagements_CreatesEngagement_WithOwnerAsMember()
     {
-        var (client, host) = CreateClient();
+        var (client, host, operatorId) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
-            var ownerId = Guid.NewGuid();
+            await AuthenticatedHost.LoginAsync(client);
 
-            var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: ownerId,
-                OwnerHandle: "cneale",
-                OwnerDisplayName: "Cecil Neale",
-                Name: "Operation Smokeshow"));
+            var response = await client.PostAsJsonAsync("/engagements",
+                new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
 
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
             var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             Assert.NotNull(created);
             Assert.Equal("Operation Smokeshow", created!.Name);
-            Assert.Equal(ownerId.ToString("N"), created.OwnerId);
-            Assert.Equal("cneale", created.OwnerHandle);
+            // The owner is the authenticated operator, recorded by the server.
+            Assert.Equal(operatorId.Value.ToString("N"), created.OwnerId);
+            Assert.Equal(AuthenticatedHost.Handle, created.OwnerHandle);
             Assert.False(string.IsNullOrWhiteSpace(created.EngagementId));
             Assert.True(Guid.TryParse(created.EngagementId, out _));
         }
@@ -69,16 +59,15 @@ public class EngagementHttpTests
     [Fact]
     public async Task PostStagerToken_MintsToken_ForCreatedEngagement()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
+
             // Create the engagement first -- the mint endpoint keys off its id.
-            var createResponse = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: Guid.NewGuid(),
-                OwnerHandle: "jdoe",
-                OwnerDisplayName: "Jane Doe",
-                Name: "Operation Lantern"));
+            var createResponse = await client.PostAsJsonAsync("/engagements",
+                new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Lantern"));
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             Assert.NotNull(created);
 
@@ -100,10 +89,12 @@ public class EngagementHttpTests
     [Fact]
     public async Task PostStagerToken_Returns404_ForUnknownEngagement()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
+
             var response = await client.PostAsync($"/engagements/{Guid.NewGuid()}/stager-tokens", content: null);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
@@ -112,15 +103,14 @@ public class EngagementHttpTests
     [Fact]
     public async Task PostEngagements_Returns400_WhenNameMissing()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
-            var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-                OwnerId: Guid.NewGuid(),
-                OwnerHandle: "x",
-                OwnerDisplayName: "X",
-                Name: ""));
+            await AuthenticatedHost.LoginAsync(client);
+
+            var response = await client.PostAsJsonAsync("/engagements",
+                new EngagementEndpoints.CreateEngagementRequest(Name: ""));
 
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }

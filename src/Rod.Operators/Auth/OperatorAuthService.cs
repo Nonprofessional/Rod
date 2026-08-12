@@ -64,9 +64,10 @@ public sealed class OperatorAuthService
 
     /// <summary>
     /// Builds the principal persisted as the cookie session: the operator id
-    /// under <see cref="OperatorClaims.OperatorIdClaimType"/> (so transport can
-    /// read it without referencing this layer), the handle as the name, and the
-    /// authentication scheme as the identity label.
+    /// under <see cref="OperatorClaims.OperatorIdClaimType"/> and its handle and
+    /// display name under their claims (so transport can resolve the full
+    /// operator identity off the principal without referencing this layer), the
+    /// handle as the name, and the authentication scheme as the identity label.
     /// </summary>
     public static ClaimsPrincipal CreatePrincipal(Operator op)
     {
@@ -75,6 +76,8 @@ public sealed class OperatorAuthService
             ClaimTypes.Name,
             ClaimTypes.Role);
         identity.AddClaim(new Claim(OperatorClaims.OperatorIdClaimType, op.Id.Value.ToString()));
+        identity.AddClaim(new Claim(OperatorClaims.OperatorHandleClaimType, op.Handle));
+        identity.AddClaim(new Claim(OperatorClaims.OperatorDisplayNameClaimType, op.DisplayName));
         identity.AddClaim(new Claim(ClaimTypes.Name, op.Handle));
         return new ClaimsPrincipal(identity);
     }

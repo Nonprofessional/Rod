@@ -60,7 +60,7 @@ public class AuditRetentionTests
 
             // Attach an artifact so evidence retention is exercised alongside the
             // trail (M6.2 evidence must outlive teardown too).
-            (artifactId, artifactBytes) = await AttachArtifactAsync(envA.Http, engagementId, owner);
+            (artifactId, artifactBytes) = await AttachArtifactAsync(envA.Http, engagementId);
 
             // Give the retire + attach audit writes a moment to flush to disk
             // (each append flushes; this is belt-and-braces for the read-back).
@@ -144,11 +144,8 @@ public class AuditRetentionTests
     {
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
 
-        var owner = OperatorId.New();
+        var owner = env.OperatorId;
         var created = await env.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: owner.Value,
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
             Name: "Operation Smokeshow"));
         created.EnsureSuccessStatusCode();
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
@@ -168,10 +165,10 @@ public class AuditRetentionTests
         Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
-        var taskIssuer = OperatorId.New();
+        var taskIssuer = env.OperatorId;
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId, IssuedBy = taskIssuer.Value, Verb = "shell.exec", Arguments = "whoami" });
+            new { ImplantId = implantId, Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
@@ -191,9 +188,9 @@ public class AuditRetentionTests
         await call.RequestStream.CompleteAsync();
 
         // Retire the implant (M4.4): the ImplantRetired event joins the trail.
-        var retire = await env.Http.PostAsJsonAsync(
+        var retire = await env.Http.PostAsync(
             $"/engagements/{engagementId}/implants/{implantId}:retire",
-            new ImplantEndpoints.RetireImplantRequest(RetiredBy: owner.Value));
+            content: null);
         Assert.Equal(HttpStatusCode.OK, retire.StatusCode);
 
         return (engagementId, owner, taskIssuer, implantId, issuedBody!.TaskId);
@@ -202,7 +199,7 @@ public class AuditRetentionTests
     // Attaches a single artifact to the lifecycle's task and returns its id and
     // bytes so the retention test can verify the evidence came back intact.
     private static async Task<(string ArtifactId, byte[] Bytes)> AttachArtifactAsync(
-        HttpClient http, Guid engagementId, OperatorId attacher)
+        HttpClient http, Guid engagementId)
     {
         var taskId = await FirstTaskIdAsync(http, engagementId);
         var bytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
@@ -210,7 +207,6 @@ public class AuditRetentionTests
         var attach = await http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks/{taskId}/artifacts",
             new ArtifactEndpoints.AttachArtifactRequest(
-                AttachedBy: attacher.Value,
                 Name: "loot.bin",
                 ContentType: "application/octet-stream",
                 Content: bytes));
@@ -304,6 +300,7 @@ public class AuditRetentionTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
@@ -314,23 +311,27 @@ public class AuditRetentionTests
             env.HttpPort = GetFreeTcpPort();
 
             // The Audit:DataDirectory section selects the file-backed stores
-            // (roadmap M6.4). In-memory config mirrors what appsettings.json
-            // supplies for the real host, so the test does not depend on a file.
-            var config = new ConfigurationBuilder()
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Audit:DataDirectory"] = dataDirectory,
-                })
-                .Build();
+            // (roadmap M6.4), layered on top of the seeded-operator config so
+            // every TestEnv comes up authenticated the same way as the suite.
+            var config = AuthenticatedHost.BuildConfig(
+                extend: dict => dict["Audit:DataDirectory"] = dataDirectory);
 
-            env.Host = TransportHost.CreateHostBuilder(configuration: config)
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
             return env;
         }
 

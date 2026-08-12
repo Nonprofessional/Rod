@@ -22,7 +22,10 @@ public static class PresenceEndpoints
 {
     public static IEndpointRouteBuilder MapPresenceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/presence");
+        // Operator-facing: presence reads require an authenticated operator session.
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/presence")
+            .RequireAuthorization();
 
         group.MapGet("/", ListOnlineAsync).WithName(nameof(ListOnlineAsync));
         group.MapGet("/{implantId}", GetAsync).WithName(nameof(GetAsync));

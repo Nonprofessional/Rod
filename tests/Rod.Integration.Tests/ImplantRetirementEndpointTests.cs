@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
@@ -10,8 +8,6 @@ using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Sessions;
-using Rod.Transport;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -24,27 +20,28 @@ namespace Rod.Integration.Tests;
 /// handshake, and a retired implant is untaskable (architecture.md Sec 7, 9).
 /// The implant and the audit/handshake state all live in the one TestServer
 /// host, so the retire mutates the same implant the handshake and task gates
-/// read.
+/// read. The retiring operator is the logged-in operator; the retire request
+/// carries no identity, and the audit attributes the action to that operator.
 /// </summary>
 public class ImplantRetirementEndpointTests
 {
     [Fact]
     public async Task Retire_RecordsAudit_ClosesSession_RefusesHandshakeAndTasks()
     {
-        var (client, host) = CreateClient();
+        var (client, host, operatorId) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
             var secret = await MintStagerTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
-            var retiredBy = OperatorId.New();
-
-            // Retire the implant through the operator API.
-            var retire = await client.PostAsJsonAsync(
+            // Retire the implant through the operator API. The retiring operator
+            // is the session principal; the request carries no body.
+            var retire = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{implantId}:retire",
-                new ImplantEndpoints.RetireImplantRequest(RetiredBy: retiredBy.Value));
+                content: null);
             Assert.Equal(HttpStatusCode.OK, retire.StatusCode);
             var retireBody = await retire.Content.ReadFromJsonAsync<ImplantEndpoints.RetireImplantResponse>();
             Assert.NotNull(retireBody);
@@ -61,7 +58,9 @@ public class ImplantRetirementEndpointTests
             var retireEvent = Assert.Single(events, e => e.Kind == AuditEventKind.ImplantRetired);
             Assert.Equal("retire", retireEvent.Verb);
             Assert.Equal(Guid.Parse(implantId), retireEvent.ImplantId);
-            Assert.Equal(retiredBy.Value, retireEvent.OperatorId);
+            // The retire is attributed to the authenticated operator, not any
+            // client-supplied identity.
+            Assert.Equal(operatorId.Value, retireEvent.OperatorId);
             Assert.Equal("retired", retireEvent.Payload);
             Assert.Equal(retireBody.RetiredAt.ToString("O"), retireEvent.Outcome);
 
@@ -91,7 +90,6 @@ public class ImplantRetirementEndpointTests
                 new
                 {
                     ImplantId = implantId,
-                    IssuedBy = OperatorId.New().Value,
                     Verb = "shell.exec",
                     Arguments = "whoami",
                 });
@@ -102,17 +100,18 @@ public class ImplantRetirementEndpointTests
     [Fact]
     public async Task Retire_IsIdempotent_AndKeepsRetiredAt_Steady()
     {
-        var (client, host) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
             var secret = await MintStagerTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
-            var first = await client.PostAsJsonAsync(
+            var first = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{implantId}:retire",
-                new ImplantEndpoints.RetireImplantRequest(RetiredBy: OperatorId.New().Value));
+                content: null);
             var firstBody = await first.Content.ReadFromJsonAsync<ImplantEndpoints.RetireImplantResponse>();
             Assert.NotNull(firstBody);
             Assert.True(firstBody!.JustRetired);
@@ -120,9 +119,9 @@ public class ImplantRetirementEndpointTests
             // A second retire of the same implant is a no-op on the entity: the
             // response says "not just retired" and RetiredAt is unchanged. The
             // audit trail still records the (duplicate) operator action.
-            var second = await client.PostAsJsonAsync(
+            var second = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{implantId}:retire",
-                new ImplantEndpoints.RetireImplantRequest(RetiredBy: OperatorId.New().Value));
+                content: null);
             Assert.Equal(HttpStatusCode.OK, second.StatusCode);
             var secondBody = await second.Content.ReadFromJsonAsync<ImplantEndpoints.RetireImplantResponse>();
             Assert.NotNull(secondBody);
@@ -145,39 +144,25 @@ public class ImplantRetirementEndpointTests
     [Fact]
     public async Task Retire_Returns404_ForUnknownImplant()
     {
-        var (client, _) = CreateClient();
+        var (client, host, _) = AuthenticatedHost.Create();
         using (client)
+        using (host)
         {
+            await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
 
-            var response = await client.PostAsJsonAsync(
+            var response = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{Guid.NewGuid()}:retire",
-                new ImplantEndpoints.RetireImplantRequest(RetiredBy: OperatorId.New().Value));
+                content: null);
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
     }
 
-    private static (HttpClient Client, IHost Host) CreateClient()
-    {
-        IHost host = TransportHost.CreateHostBuilder()
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-        var server = host.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
-        return (client, host);
-    }
-
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "cneale",
-            OwnerDisplayName: "Cecil Neale",
-            Name: "Operation Smokeshow"));
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;

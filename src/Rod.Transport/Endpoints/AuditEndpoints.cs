@@ -19,7 +19,10 @@ public static class AuditEndpoints
 {
     public static IEndpointRouteBuilder MapAuditEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/audit");
+        // Operator-facing: the event trail requires an authenticated operator session.
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/audit")
+            .RequireAuthorization();
         group.MapGet("/", ListAsync).WithName(nameof(ListAsync));
         return endpoints;
     }

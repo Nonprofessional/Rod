@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -19,7 +20,10 @@ public static class EngagementEndpoints
 {
     public static IEndpointRouteBuilder MapEngagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements");
+        // Operator-facing: every engagement route requires an authenticated
+        // operator session (cookie auth wired via AddRodOperatorAuth). The
+        // implant-facing enrollment path is mapped separately and stays anonymous.
+        var group = endpoints.MapGroup("/engagements").RequireAuthorization();
 
         group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
         group.MapPost("/", CreateEngagementAsync)
@@ -58,25 +62,23 @@ public static class EngagementEndpoints
 
     private static async Task<IResult> CreateEngagementAsync(
         CreateEngagementRequest body,
+        ClaimsPrincipal user,
         EngagementService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        // The owner is the authenticated operator, resolved off the session
+        // principal rather than named in the body (operator auth,
+        // production-hardening todo). The group already requires authorization,
+        // so a present-but-missing claim is a defensive 401, not a normal path.
+        var ownerId = user.TryGetOperatorId();
+        if (ownerId is null)
+            return Results.Unauthorized();
         if (string.IsNullOrWhiteSpace(body.Name))
             return Results.BadRequest(new Problem("Engagement name is required."));
-        if (string.IsNullOrWhiteSpace(body.OwnerHandle))
-            return Results.BadRequest(new Problem("Owner handle is required."));
-        if (string.IsNullOrWhiteSpace(body.OwnerDisplayName))
-            return Results.BadRequest(new Problem("Owner display name is required."));
-        if (body.OwnerId is null)
-            return Results.BadRequest(new Problem("Owner id is required."));
 
         var created = await service.CreateEngagementAsync(
-            new CreateEngagementCommand(
-                new OperatorId(body.OwnerId.Value),
-                body.OwnerHandle,
-                body.OwnerDisplayName,
-                body.Name),
+            new CreateEngagementCommand(ownerId.Value, body.Name),
             cancellationToken);
 
         var response = new EngagementResponse(
@@ -162,11 +164,9 @@ public static class EngagementEndpoints
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
-    public sealed record CreateEngagementRequest(
-        Guid? OwnerId,
-        string OwnerHandle,
-        string OwnerDisplayName,
-        string Name);
+    // The owner is the authenticated operator; only the engagement name is
+    // supplied by the caller.
+    public sealed record CreateEngagementRequest(string Name);
 
     public sealed record EngagementResponse(
         string EngagementId,

@@ -41,7 +41,6 @@ public class TaskRoundTripTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
         var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
-        var operatorId = OperatorId.New();
 
         // Open the beacon stream and complete the handshake first.
         using var channel = env.ConnectBeacon(leafCert, leafKey);
@@ -52,10 +51,12 @@ public class TaskRoundTripTests
         Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
-        // Operator tasks the implant over HTTP.
+        // Operator tasks the implant over HTTP. The operator session is the gate;
+        // the issuer is the logged-in operator, not a body field.
+        await AuthenticatedHost.LoginAsync(env.Http);
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
-            new { ImplantId = implant.Id.ToString(), IssuedBy = operatorId.Value, Verb = "shell.exec", Arguments = "whoami" });
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
@@ -105,6 +106,9 @@ public class TaskRoundTripTests
         // full-lifecycle trail is asserted in OperationalEventLogTests.
         var trail = await audit.ListAsync(implant.EngagementId.Value);
         Assert.Contains(trail, e => e.Kind == AuditEventKind.TaskCompleted);
+        // The task arc is attributed to the authenticated operator, not any
+        // client-supplied identity.
+        Assert.Contains(trail, e => e.Kind == AuditEventKind.TaskIssued && e.OperatorId == env.OperatorId.Value);
 
         await call.RequestStream.CompleteAsync();
     }
@@ -187,6 +191,7 @@ public class TaskRoundTripTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
+        public OperatorId OperatorId { get; private set; }
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
@@ -196,14 +201,25 @@ public class TaskRoundTripTests
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            env.Host = TransportHost.CreateHostBuilder()
+            // Compose the operator + auth layers so the operator API requires a
+            // cookie session; the operator id is the seeded one, read back from
+            // the host. The beacon mTLS endpoint is unaffected.
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
+            env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);
 
-            env.Http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}") };
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
             return env;
         }
 

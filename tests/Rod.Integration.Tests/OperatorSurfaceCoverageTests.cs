@@ -42,41 +42,25 @@ namespace Rod.Integration.Tests;
 /// </remarks>
 public class OperatorSurfaceCoverageTests
 {
-    // A host that layers the tradecraft layer (M8.1) and the operator layer
-    // (M2.4) onto the transport core, plus the capability-catalog endpoint
-    // (M11.1) -- the same composition the teamserver host performs. Mirrors the
-    // fixture in TradecraftTaskPathTests; the only addition is
-    // MapCapabilityEndpoints alongside MapOperatorEndpoints.
+    // A host that layers the tradecraft layer (M8.1), the operator + auth layers,
+    // and the capability-catalog endpoint (M11.1) onto the transport core -- the
+    // same composition the teamserver host performs. Mirrors the fixture in
+    // TradecraftTaskPathTests; the additions over the authenticated host are
+    // AddRodTradecraft and MapCapabilityEndpoints.
     private static (HttpClient Client, IHost Host) CreateClient()
     {
-        IHost host = TransportHost.CreateHostBuilder(
-                configureServices: services =>
-                {
-                    services.AddRodOperators();
-                    services.AddRodTradecraft();
-                },
-                mapEndpoints: endpoints =>
-                {
-                    endpoints.MapOperatorEndpoints();
-                    endpoints.MapCapabilityEndpoints();
-                })
-            .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())
-            .Build();
-        host.Start();
-        var server = host.Services.GetRequiredService<IServer>() as TestServer
-            ?? throw new InvalidOperationException("TestServer was not registered.");
-        var client = server.CreateClient();
-        client.BaseAddress = new Uri("http://localhost");
+        var (client, host, _) = AuthenticatedHost.Create(
+            configureServices: services => services.AddRodTradecraft(),
+            mapEndpoints: endpoints => endpoints.MapCapabilityEndpoints());
+        // Every test drives the operator API, so establish the session up front.
+        AuthenticatedHost.LoginAsync(client).GetAwaiter().GetResult();
         return (client, host);
     }
 
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var response = await client.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
-            OwnerId: Guid.NewGuid(),
-            OwnerHandle: "jokelly",
-            OwnerDisplayName: "Jordan O'Kelly",
-            Name: "Operation Lantern"));
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Lantern"));
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;
@@ -164,7 +148,6 @@ public class OperatorSurfaceCoverageTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: verb,
                     Arguments: "operand"));
 
@@ -189,7 +172,6 @@ public class OperatorSurfaceCoverageTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(
                     ImplantId: implant.Id.ToString(),
-                    IssuedBy: OperatorId.New().Value,
                     Verb: "recon.portscan",
                     Arguments: "10.0.0.0/24"));
             issued.EnsureSuccessStatusCode();
@@ -239,9 +221,9 @@ public class OperatorSurfaceCoverageTests
 
             // Retire the implant: it is taken out of operation and its retirement
             // is reflected in the listing (M4.4 / M6.1).
-            var retireResponse = await client.PostAsJsonAsync(
+            var retireResponse = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{implant.Id}:retire",
-                new ImplantEndpoints.RetireImplantRequest(RetiredBy: OperatorId.New().Value));
+                content: null);
             Assert.Equal(HttpStatusCode.OK, retireResponse.StatusCode);
             var retired = await retireResponse.Content.ReadFromJsonAsync<ImplantEndpoints.RetireImplantResponse>();
             Assert.NotNull(retired);
