@@ -80,7 +80,11 @@ ports; no Postgres yet.
       artifact, fingerprinted and recorded.
 - [x] **M3.2 Reference Go implant + build unit.** A Go implant that enrolls,
       beacons, and runs core verbs, built via its own build unit.
-      _AC:_ Go implant checks in and tasks end-to-end.
+      _AC:_ Go implant checks in and tasks end-to-end. _(Superseded by
+      [ADR 0009](decisions/0009-single-in-tree-toolchain-dotnet.md): the in-tree
+      Go implant and build unit were removed; .NET (M3.3) is the sole in-tree
+      reference implant. Go and other languages remain available as out-of-tree
+      community units through the build contract.)_
 - [x] **M3.3 Reference .NET implant + build unit.** A C#/.NET implant for
       Windows; in-memory execution path. _AC:_ .NET implant checks in and tasks
       end-to-end.

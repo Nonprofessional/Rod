@@ -33,11 +33,16 @@ guidance file tracked in git.
 
 - **Teamserver target: .NET 10 (LTS).** Use `net10.0` TFMs and the latest C#
   language features. The SDK is pinned in `global.json` for reproducible builds.
-- **Redirectors: Go** (latest stable), single static binary.
-- **Build units: one per implant language** (C#/.NET, Go, C/C++, Nim), each with
-  its own toolchain. Coupled to the teamserver only by the build contract.
-- **Implants: polyglot** -- the language fits the target (see
-  docs/architecture.md). Never couple the teamserver to a single implant language.
+- **Redirectors: .NET (Native AOT).** A single-file native forwarder when one
+  ships in-tree; no Go. See ADR 0009.
+- **Build units: the in-tree unit is .NET.** Additional languages (Go, C/C++,
+  Nim) stay available through the language-neutral build contract and the
+  `Language` enum, supplied as out-of-tree community units -- not maintained
+  in-tree.
+- **Implants: one .NET reference implant, polyglot by contract.** The in-tree
+  reference implant is .NET; the wire protocol is the product, so a community
+  implant in any language builds against the same contract without coupling the
+  teamserver to its language. See ADR 0009.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do not
   duplicate these per-project.
@@ -62,7 +67,6 @@ exists.
 | Apply migrations | `dotnet ef database update -p <Infra> -s <Web>` |
 | Build / test / run | `dotnet build`, `dotnet test`, `dotnet run` |
 | Format | `dotnet format` |
-| Go build/test | `go build ./...`, `go test ./...` |
 
 Hand-edit only where no tool equivalent exists.
 
@@ -128,9 +132,11 @@ authoritative rule; this section summarizes it.
 
 - **Teamserver**: the `Rod.*` .NET projects, monolithic kernel, six internal
   layers, clean dependency rules.
-- **Build units**: per-language implant compilers, driven by the build contract.
-- **Redirectors**: Go forwarders under the infrastructure tree.
-- **Implants**: per-language build units, each independent and disposable.
+- **Build units**: the in-tree .NET build unit; community units in other
+  languages plug in through the build contract.
+- **Redirectors**: .NET Native AOT forwarders (direction; none ship in-tree yet).
+- **Implants**: the .NET reference implant under `implant-dotnet/`, independent
+  and disposable; community implants in other languages arrive out-of-tree.
 - **Wire protocol and capability registry**: the long-lived, language-neutral
   contract implants build against.
 - All domain data is engagement-scoped; cross-engagement access is impossible by
