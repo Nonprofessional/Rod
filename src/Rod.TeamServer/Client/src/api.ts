@@ -65,10 +65,53 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
   return (await response.json()) as T
 }
 
+// --- Operator session (architecture.md Sec 4) --------------------------------
+//
+// The browser session is established by verified credentials, not a client-
+// generated id: POST /operators/login sets the auth cookie, GET /operators/me
+// reads the server-recorded operator back, and POST /operators/logout clears it.
+// Every other call in this module relies on that cookie; an unauthenticated
+// browser gets 401 and the UI shows the login view. This replaces the walking
+// skeleton's self-assigned identity.
+
+export interface SessionOperator {
+  operatorId: string
+  handle: string
+  displayName: string
+}
+
+export interface LoginInput {
+  handle: string
+  password: string
+}
+
+export async function login(input: LoginInput): Promise<void> {
+  const response = await fetch('operators/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
+}
+
+export async function logout(): Promise<void> {
+  await fetch('operators/logout', { method: 'POST' })
+}
+
+// Resolves the authenticated operator off the session cookie. Throws on 401 so
+// the route guard can fall back to the login view.
+export async function getSessionOperator(): Promise<SessionOperator> {
+  const response = await fetch('operators/me')
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
+  const body = (await response.json()) as { id: string; handle: string; displayName: string }
+  return { operatorId: body.id, handle: body.handle, displayName: body.displayName }
+}
+
 export interface CreateEngagementInput {
-  ownerId: string
-  ownerHandle: string
-  ownerDisplayName: string
   name: string
 }
 
@@ -80,12 +123,7 @@ export async function createEngagement(input: CreateEngagementInput): Promise<En
   const response = await fetch('engagements', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      ownerId: input.ownerId,
-      ownerHandle: input.ownerHandle,
-      ownerDisplayName: input.ownerDisplayName,
-      name: input.name,
-    }),
+    body: JSON.stringify(input),
   })
   return jsonOrThrow(response)
 }
@@ -108,7 +146,6 @@ export async function listTasks(engagementId: string, implantId: string): Promis
 
 export interface IssueTaskInput {
   implantId: string
-  issuedBy: string
   verb: string
   arguments: string
 }
@@ -134,9 +171,8 @@ export async function getTask(engagementId: string, taskId: string): Promise<Tas
 // Server-Sent Events keep each connected operator session live on an engagement.
 // The bus fans task-issued / task-completed / operator-joined / operator-left
 // events out to every subscriber, so two operators see each other's actions in
-// real time without polling. Identity is supplied by query parameters in this
-// milestone; real operator auth arrives later and replaces only how the identity
-// is established, not this stream.
+// real time without polling. The operator's identity is read off the session
+// cookie server-side, so this stream carries no identity of its own.
 
 export type LiveEventName =
   | 'hello'
@@ -171,20 +207,15 @@ export interface EngagementStreamHandlers {
   onError?: (event: Event) => void
 }
 
-// Opens an SSE stream for an engagement with the operator's session identity.
-// Returns a close() that tears the stream down; the caller invokes it on
-// unmount. The EventSource reconnects automatically on a dropped connection.
+// Opens an SSE stream for an engagement. The auth cookie identifies the operator
+// server-side, so no identity travels in the URL. Returns a close() that tears
+// the stream down; the caller invokes it on unmount. The EventSource reconnects
+// automatically on a dropped connection.
 export function subscribeToEngagement(
   engagementId: string,
-  identity: { operatorId: string; handle: string; displayName: string },
   handlers: EngagementStreamHandlers,
 ): () => void {
-  const params = new URLSearchParams({
-    operatorId: identity.operatorId,
-    handle: identity.handle,
-    displayName: identity.displayName,
-  })
-  const source = new EventSource(`engagements/${engagementId}/events?${params.toString()}`)
+  const source = new EventSource(`engagements/${engagementId}/events`)
 
   const parse = (data: string): LiveEventPayload | null => {
     try {
@@ -308,7 +339,7 @@ export async function listArtifacts(engagementId: string, taskId: string): Promi
 export async function attachArtifact(
   engagementId: string,
   taskId: string,
-  input: { attachedBy: string | null; name: string; contentType: string | null; content: string },
+  input: { name: string; contentType: string | null; content: string },
 ): Promise<ArtifactSummary> {
   const response = await fetch(`engagements/${engagementId}/tasks/${taskId}/artifacts`, {
     method: 'POST',
@@ -429,11 +460,8 @@ export async function getReportMarkdown(engagementId: string): Promise<string> {
 // --- Implant retire / burn (roadmap M4.4) -----------------------------------
 //
 // Takes an implant out of operation: a retired implant is refused at handshake
-// and untaskable. Idempotent; reflects retirement in the listing.
-
-export interface RetireImplantInput {
-  retiredBy: string | null
-}
+// and untaskable. Idempotent; reflects retirement in the listing. The retiring
+// operator is the authenticated operator, so no body is sent.
 
 export interface RetireImplantResult {
   implantId: string
@@ -447,13 +475,10 @@ export interface RetireImplantResult {
 export async function retireImplant(
   engagementId: string,
   implantId: string,
-  input: RetireImplantInput,
 ): Promise<RetireImplantResult> {
   return jsonOrThrow(
     await fetch(`engagements/${engagementId}/implants/${implantId}:retire`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(input),
     }),
   )
 }
@@ -498,7 +523,6 @@ export async function repointListener(listenerId: string, publicEndpoint: string
 // read-only after enrollment, so OPSEC changes go through a rebuild + redeploy.
 
 export interface BuildPayloadInput {
-  requestedBy: string | null
   language: string | null
   class: string | null
   targetOs: string | null
@@ -535,4 +559,3 @@ export async function buildPayload(engagementId: string, input: BuildPayloadInpu
     }),
   )
 }
-

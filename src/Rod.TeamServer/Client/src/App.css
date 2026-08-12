@@ -381,3 +381,35 @@ h4 {
   margin: 16px 0 6px;
 }
 
+/* --- Operator auth: login form + sign-out link ----------------------------- */
+
+.login-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.login-form input {
+  padding: 6px 8px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  border-radius: 4px;
+  background: inherit;
+  color: inherit;
+  font: inherit;
+}
+
+/* A borderless, text-like button for header actions such as sign-out. */
+button.link {
+  border: none;
+  background: transparent;
+  color: #6b6b76;
+  padding: 0;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+button.link:hover {
+  color: inherit;
+}
+

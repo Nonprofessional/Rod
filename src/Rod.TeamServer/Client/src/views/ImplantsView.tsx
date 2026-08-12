@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Implant, type StagerToken, listImplants, mintStagerToken, retireImplant } from '../api'
-import type { SessionOperator } from './EngagementsView'
 
 // The implants panel (roadmap M11.1): the enrolled sessions for an engagement,
 // each with its class, online state, kill date, and parentage. An operator can
@@ -10,11 +9,9 @@ import type { SessionOperator } from './EngagementsView'
 
 export function ImplantsView({
   engagementId,
-  operator,
   onlineTick,
 }: {
   engagementId: string
-  operator: SessionOperator
   // Bumped by the parent whenever a live event suggests a change, so the list
   // refreshes without per-view polling.
   onlineTick: number
@@ -54,7 +51,7 @@ export function ImplantsView({
       return
     }
     try {
-      await retireImplant(engagementId, implantId, { retiredBy: operator.operatorId })
+      await retireImplant(engagementId, implantId)
       await refresh()
       setError(null)
     } catch (e) {

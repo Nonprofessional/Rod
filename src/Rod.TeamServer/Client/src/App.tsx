@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
+import { type LoginInput, type SessionOperator, getSessionOperator, login, logout } from './api'
 import { EngagementView } from './views/EngagementView'
-import { EngagementsView, type SessionOperator } from './views/EngagementsView'
+import { EngagementsView } from './views/EngagementsView'
+import { LoginView } from './views/LoginView'
 
 // Operator UI shell (roadmap M1.5, expanded M11.1): lists engagements, drills
 // into one to reach the full capability surface -- tasking (recon through
@@ -9,9 +11,11 @@ import { EngagementsView, type SessionOperator } from './views/EngagementsView'
 // timeline, report), and the M4 OPSEC controls (listeners/redirectors, payload
 // build). Each open engagement holds a Server-Sent Events stream open so every
 // connected operator sees tasking, results, and presence in real time (M2.4).
-// Identity is self-assigned for the session (real operator auth arrives later);
-// navigation is hash-based so the host's static-file fallback keeps deep links
-// working without a server-side router.
+//
+// The session is the teamserver's cookie: GET /operators/me resolves the signed-
+// in operator (never a client-generated id), and an unauthenticated browser is
+// routed to the login view. Navigation is hash-based so the host's static-file
+// fallback keeps deep links working without a server-side router.
 
 type Route =
   | { kind: 'engagements' }
@@ -38,44 +42,66 @@ function useRoute(): Route {
   return route
 }
 
-// One operator identity for the browser session. The walking skeleton resolves
-// it client-side (a self-typed handle plus a stable id); real operator
-// authentication arrives later and replaces only how this identity is
-// established, not the components that consume it. Persists across route
-// changes so engagement ownership and live presence stay consistent.
-function useSessionOperator(): [SessionOperator, (next: Partial<SessionOperator>) => void] {
-  const [operator, setOperator] = useState<SessionOperator>(() => {
-    const stored = window.localStorage.getItem('rod.operator')
-    if (stored) {
-      try {
-        return JSON.parse(stored) as SessionOperator
-      } catch {
-        // Corrupt store; fall through to a fresh identity.
-      }
-    }
-    return { operatorId: crypto.randomUUID(), handle: 'operator', displayName: 'Operator' }
-  })
-
-  const update = useCallback((next: Partial<SessionOperator>) => {
-    setOperator((current) => {
-      const merged = { ...current, ...next }
-      window.localStorage.setItem('rod.operator', JSON.stringify(merged))
-      return merged
-    })
-  }, [])
-
-  return [operator, update]
-}
-
 function App() {
   const route = useRoute()
-  const [operator, setOperator] = useSessionOperator()
+  // The operator identity is whatever the teamserver says it is over the session
+  // cookie. null while the session is being resolved or when no session exists;
+  // the route guard renders the login view in the latter case.
+  const [operator, setOperator] = useState<SessionOperator | null>(null)
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    getSessionOperator()
+      .then((op) => {
+        if (!cancelled) setOperator(op)
+      })
+      .catch(() => {
+        // No session cookie (401); stay on the login view.
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const onLogin = useCallback(async (input: LoginInput) => {
+    await login(input)
+    setOperator(await getSessionOperator())
+  }, [])
+
+  const onLogout = useCallback(async () => {
+    await logout()
+    setOperator(null)
+  }, [])
 
   const onTab = useCallback((tab: string) => {
     if (route.kind === 'engagement') {
       window.location.hash = `/engagements/${route.engagementId}/${tab}`
     }
   }, [route])
+
+  if (checking) {
+    return (
+      <div className="app">
+        <main className="app-main">
+          <p className="muted">Loading session…</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (!operator) {
+    return (
+      <div className="app">
+        <main className="app-main">
+          <LoginView onLogin={onLogin} />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="app">
@@ -92,13 +118,16 @@ function App() {
             </a>
           </>
         )}
-        <span className="who" title="Your session identity (real operator auth arrives later)">
+        <span className="who" title="Your authenticated session">
           <code>{operator.handle}</code>
         </span>
+        <button className="link" onClick={() => void onLogout()}>
+          Sign out
+        </button>
       </header>
       <main className="app-main">
         {route.kind === 'engagements' ? (
-          <EngagementsView operator={operator} setOperator={setOperator} />
+          <EngagementsView />
         ) : (
           <EngagementView
             engagementId={route.engagementId}

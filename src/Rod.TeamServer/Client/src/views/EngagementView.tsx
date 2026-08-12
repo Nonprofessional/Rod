@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   type LiveOperator,
+  type SessionOperator,
   listImplants,
   subscribeToEngagement,
 } from '../api'
 import { Tabs } from '../components/Tabs'
 import { ArtifactsView } from './ArtifactsView'
 import { AuditView } from './AuditView'
-import { type SessionOperator } from './EngagementsView'
 import { ImplantsView } from './ImplantsView'
 import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
@@ -66,8 +66,7 @@ export function EngagementView({
   }, [refreshCount, tick])
 
   useEffect(() => {
-    if (!operator.handle.trim()) return
-    const close = subscribeToEngagement(engagementId, operator, {
+    const close = subscribeToEngagement(engagementId, {
       onHello: (operators) => setOnline(operators),
       onOperatorJoined: (id, handle) =>
         setOnline((current) =>
@@ -78,7 +77,7 @@ export function EngagementView({
       onTaskCompleted: () => setTick((t) => t + 1),
     })
     return close
-  }, [engagementId, operator])
+  }, [engagementId])
 
   const activeTab = (TABS.find((t) => t.id === tab)?.id ?? 'tasking') as TabId
 
@@ -113,16 +112,16 @@ export function EngagementView({
         <TaskingView engagementId={engagementId} operator={operator} onlineTick={tick} />
       )}
       {activeTab === 'implants' && (
-        <ImplantsView engagementId={engagementId} operator={operator} onlineTick={tick} />
+        <ImplantsView engagementId={engagementId} onlineTick={tick} />
       )}
       {activeTab === 'audit' && <AuditView engagementId={engagementId} onlineTick={tick} />}
       {activeTab === 'artifacts' && (
-        <ArtifactsView engagementId={engagementId} operator={operator} onlineTick={tick} />
+        <ArtifactsView engagementId={engagementId} onlineTick={tick} />
       )}
       {activeTab === 'timeline' && <TimelineView engagementId={engagementId} />}
       {activeTab === 'report' && <ReportView engagementId={engagementId} />}
       {activeTab === 'listeners' && <ListenersView />}
-      {activeTab === 'build' && <PayloadBuildView engagementId={engagementId} operator={operator} />}
+      {activeTab === 'build' && <PayloadBuildView engagementId={engagementId} />}
     </section>
   )
 }

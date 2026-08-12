@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { type BuildPayloadResult, buildPayload } from '../api'
-import type { SessionOperator } from './EngagementsView'
 
 // The payload-build panel (roadmap M4.1/M4.2/M4.3): builds an implant artifact,
 // baking in the beacon profile (sleep/jitter), the kill date (self-termination),
@@ -10,10 +9,8 @@ import type { SessionOperator } from './EngagementsView'
 
 export function PayloadBuildView({
   engagementId,
-  operator,
 }: {
   engagementId: string
-  operator: SessionOperator
 }) {
   const [language, setLanguage] = useState('Go')
   const [klass, setKlass] = useState('Stage2')
@@ -44,7 +41,6 @@ export function PayloadBuildView({
     setBusy(true)
     try {
       const built = await buildPayload(engagementId, {
-        requestedBy: operator.operatorId,
         language: language || null,
         class: klass || null,
         targetOs: targetOs || null,

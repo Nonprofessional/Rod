@@ -7,7 +7,6 @@ import {
   listArtifacts,
   listEngagementTasks,
 } from '../api'
-import type { SessionOperator } from './EngagementsView'
 
 // First-class evidence objects (roadmap M6.2): artifacts are attached to tasks.
 // This view lists the engagement's tasks, shows each task's artifacts, lets an
@@ -16,11 +15,9 @@ import type { SessionOperator } from './EngagementsView'
 
 export function ArtifactsView({
   engagementId,
-  operator,
   onlineTick,
 }: {
   engagementId: string
-  operator: SessionOperator
   onlineTick: number
 }) {
   const [tasks, setTasks] = useState<EngagementTask[]>([])
@@ -73,7 +70,6 @@ export function ArtifactsView({
     setBusy(true)
     try {
       await attachArtifact(engagementId, taskId, {
-        attachedBy: operator.operatorId,
         name: fileName,
         contentType: null,
         content: fileBytes,

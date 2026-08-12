@@ -3,7 +3,7 @@ import { type EngagementTask, type Implant, issueTask, listEngagementTasks, list
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
 import { OpsecBadges } from '../components/OpsecBadges'
 import { StatusBadge } from '../components/StatusBadge'
-import type { SessionOperator } from './EngagementsView'
+import type { SessionOperator } from '../api'
 
 // The tasking panel (roadmap M11.1): issue any capability verb -- recon through
 // exploit -- against any implant in the engagement, and watch the engagement-wide
@@ -85,7 +85,6 @@ export function TaskingView({
     try {
       await issueTask(engagementId, {
         implantId: selectedImplant,
-        issuedBy: operator.operatorId,
         verb,
         arguments: args,
       })
