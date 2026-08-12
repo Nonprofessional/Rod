@@ -64,11 +64,16 @@ public static class RodPersistenceHost
         // Replace the in-memory core-state ports whose durable adapters are
         // implemented. Each adapter is a singleton that resolves the factory and
         // creates a fresh context per call, matching the singleton lifetime of the
-        // application services that consume the ports. All eight core-state and
+        // application services that consume the ports. All nine core-state and
         // audit/artifact ports are now Postgres-backed when this extension runs:
-        // operators, engagements, implants, sessions, tasks, stager tokens, audit,
-        // and artifacts.
+        // operators, operator credentials, engagements, implants, sessions, tasks,
+        // stager tokens, audit, and artifacts.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
+        // The operator password verifier: the in-memory adapter registered by
+        // AddRodTransport is replaced by its durable twin so a provisioned
+        // password survives a teamserver restart. The port is hash-only and the
+        // bootstrap seed / login path consume it unchanged.
+        services.Replace(ServiceDescriptor.Singleton<IOperatorCredentialStore, PostgresOperatorCredentialStore>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
         services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
         services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());

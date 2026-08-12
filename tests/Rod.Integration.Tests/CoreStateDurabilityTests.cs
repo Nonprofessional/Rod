@@ -86,8 +86,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // round-trips through the uuid column.
         var operatorRow = await operators.FindAsync(operatorId);
         Assert.NotNull(operatorRow);
-            Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
-            Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
+        Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
+        Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
 
         // The engagement is present with its owner membership intact (the owned
         // collection survived the reload).
