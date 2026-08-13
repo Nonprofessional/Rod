@@ -101,7 +101,8 @@ implementation against it and record decisions.
       decision has an ADR under docs/decisions/. _(Shipped: [ADR 0005](decisions/0005-task-arguments-single-string.md)
       task-argument shape, [ADR 0006](decisions/0006-capability-catalog-endpoint.md)
       catalog endpoint placement, [ADR 0007](decisions/0007-placeholder-verbs.md)
-      placeholder-only verbs -- all Accepted.)_
+      placeholder-only verbs -- all since folded into
+      [architecture.md](architecture.md).)_
 - [ ] **Implant-side capability pluggability.** Make the reference implant
       class-aware and handler-registry-driven per
       [ADR 0012](decisions/0012-implant-capability-pluggability.md): derive the

@@ -9,7 +9,7 @@ targets from a central teamserver, reaching hosts behind NAT and firewalls over
 implant-initiated connections.
 
 > **Status: the framework is implemented; concrete tradecraft is out-of-tree.**
-> The teamserver, reference implants, build pipeline, operator UI, and durable
+> The teamserver, reference implant, build pipeline, operator UI, and durable
 > state are in place across the six internal layers. The capability contracts
 > are wired and dispatched; concrete offensive behavior is supplied as separate,
 > opt-in modules. See [docs/architecture.md](docs/architecture.md) for the
@@ -37,14 +37,16 @@ final report.
 - **Teamserver** -- a monolithic .NET 10 control-plane kernel with six internal
   layers: core state, transport, payload build pipeline, operator layer, storage
   and audit, and pluggable tradecraft.
-- **Build units** -- one per implant language (C#/.NET, Go, C/C++, Nim), driven
-  by the teamserver through a uniform build contract. This is what makes implants
-  polyglot without coupling them to the teamserver language.
+- **Build units** -- per-language units driven by the teamserver through a
+  uniform, language-neutral build contract. .NET ships in-tree; Go, C/C++, and
+  Nim arrive as out-of-tree community units against the same contract, so
+  implants stay polyglot without coupling them to the teamserver language.
 - **Implants** -- short-lived, disposable payloads on targets, untrusted by
   default, each with a unique key and a profile (beacon parameters, kill date,
   transport shape) baked in at generation.
-- **Redirectors** -- near-stateless Go forwarders that front listeners for OPSEC
-  and infrastructure flexibility; burned redirectors are swappable.
+- **Redirectors** -- near-stateless forwarders that front listeners for OPSEC and
+  infrastructure flexibility; the in-tree direction is a .NET Native AOT single
+  binary, and burned redirectors are swappable.
 - **Operator UI** -- the web front end operators use to run an engagement.
 
 Operations are organized around an **Engagement** -- the unit of tenancy,
@@ -60,9 +62,9 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 - **OPSEC as a first-class axis**: per-implant beacon profiles with jitter, kill
   dates, per-implant keys, malleable transport profiles, and disposable
   infrastructure.
-- **Polyglot implants from one control plane**: a .NET teamserver driving
-  implants in C#/.NET, Go, C/C++, or Nim through decoupled per-language build
-  units.
+- **Polyglot implants from one control plane**: a .NET teamserver driving a .NET
+  reference implant, with the language-neutral build contract open to out-of-tree
+  Go, C/C++, or Nim implants for targets .NET does not fit.
 - **Make the protocol the product**: a stable, language-neutral, transport-
   agnostic contract so implants can be implemented independently in whatever
   language fits the target.
@@ -86,13 +88,13 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
 | Data store | PostgreSQL | Authoritative state and per-engagement audit. |
-| Build units | C#/.NET, Go, C/C++, Nim toolchains | One per implant language; driven by the build contract. |
-| Redirectors | Go (latest stable) | Single static binary; easy VPS deploy. |
-| Implants | C#/.NET, Go, C/C++, Nim -- per target | Short-lived, disposable, per-implant keys. |
+| Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (ADR 0009). |
+| Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (ADR 0011). |
+| Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable, per-implant keys. |
 | Operator UI | Web (React) | Lives in the teamserver project; served same-origin. |
 
-See [docs/decisions/0001-stack-and-architecture.md](docs/decisions/0001-stack-and-architecture.md)
-for the rationale behind these choices.
+See [docs/architecture.md](docs/architecture.md) for the rationale behind these
+choices.
 
 ## Documentation
 
