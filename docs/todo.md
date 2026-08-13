@@ -124,3 +124,13 @@ implementation against it and record decisions.
       task-argument shape, [ADR 0006](decisions/0006-capability-catalog-endpoint.md)
       catalog endpoint placement, [ADR 0007](decisions/0007-placeholder-verbs.md)
       placeholder-only verbs -- all Accepted.)_
+- [ ] **Implant-side capability pluggability.** Make the reference implant
+      class-aware and handler-registry-driven per
+      [ADR 0012](decisions/0012-implant-capability-pluggability.md): derive the
+      handshake capability set from the baked class verbs intersected with the
+      compiled handlers (not a hardcoded list), and route dispatch through an
+      implant-side handler registry so a new verb is a handler plus a
+      registration rather than an edit to the runner. _AC:_ an implant
+      advertises exactly the verbs its build permits and its compiled handlers
+      implement -- never a verb it cannot run -- and the reference registry
+      contains no ADR 0004 verb.
