@@ -81,10 +81,18 @@ roadmap scope.
       configured CA and completes the mTLS handshake. See
       [ADR 0010](decisions/0010-production-implant-ca.md). A proper TLS server
       leaf + SAN stays a documented follow-on.)_
-- [ ] **Redirector deployment story.** Document and (where needed) tooling for
+- [x] **Redirector deployment story.** Document and (where needed) tooling for
       real redirector hosts behind the listener's public endpoint; the in-tree
       direction is a .NET Native AOT forwarder (ADR 0009). _AC:_ a burned
-      redirector is swapped end to end, not just in the registry.
+      redirector is swapped end to end, not just in the registry. _(Shipped:
+      the in-tree reference redirector -- an opaque L4 TCP forwarder published
+      as a Native AOT single binary (`src/redirector/dotnet/`) -- fronts a
+      listener and splices the byte stream without inspecting or altering it,
+      so the mTLS beacon channel and HTTPS enroll request carry through end to
+      end. Together with the M4.4 listener repoint it swaps a burned redirector
+      end to end: deploy a fresh forwarder, `POST /listeners/{id}:repoint`,
+      decommission the old host. See [ADR 0011](decisions/0011-redirector-design.md)
+      and the deploy/rotate runbook ([operations/redirectors.md](operations/redirectors.md)).)_
 - [ ] **Observability.** Structured logs, metrics, and health beyond
       `GET /health`. _AC:_ operator and implant activity is observable in a
       production target's telemetry stack.

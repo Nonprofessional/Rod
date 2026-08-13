@@ -1,8 +1,8 @@
 # Rod.Redirector -- reference .NET Native AOT redirector (ADR 0011)
 
 The in-tree **reference redirector** for Rod
-([architecture.md Sec 8](../../docs/architecture.md),
-[ADR 0011](../../docs/decisions/0011-redirector-design.md)). It is a
+([architecture.md Sec 8](../../../docs/architecture.md),
+[ADR 0011](../../../docs/decisions/0011-redirector-design.md)). It is a
 near-stateless, **opaque L4 TCP forwarder**: an implant dials this redirector's
 public endpoint, and the redirector splices the byte stream to the teamserver
 listener's bind address without inspecting or altering it.
@@ -11,14 +11,14 @@ Because it forwards at L4, the **mTLS beacon channel** (HTTP/2 + client cert)
 and the **HTTPS enroll request** both pass through end to end -- the redirector
 never terminates transport, so it cannot break the client-certificate
 authentication the beacon depends on. This is benign plumbing (socat/rinetd
-semantics), [ADR-0004](../../docs/decisions/0004-offensive-tradecraft-boundary.md)-mainstream,
+semantics), [ADR-0004](../../../docs/decisions/0004-offensive-tradecraft-boundary.md)-mainstream,
 with no evasion and no payload awareness.
 
 A burned redirector is swapped by deploying a fresh one and **repointing the
 listener** (`POST /listeners/{id}:repoint`); this binary is the missing half of
 that rotation, the teamserver-side repoint (M4.4) being the other. The
 end-to-end runbook lives in
-[docs/operations/redirectors.md](../../docs/operations/redirectors.md).
+[docs/operations/redirectors.md](../../../docs/operations/redirectors.md).
 
 This project is a **standalone deployable** with no in-house references -- it is
 coupled to the teamserver only by the TCP stream it forwards. It ships in
@@ -36,7 +36,7 @@ dotnet test Rod.slnx --configuration Release --no-build
 ```
 
 The redirector targets a single static native binary with no runtime install
-([ADR 0009](../../docs/decisions/0009-single-in-tree-toolchain-dotnet.md)).
+([ADR 0009](../../../docs/decisions/0009-single-in-tree-toolchain-dotnet.md)).
 Publish the Native AOT binary for a target:
 
 ```

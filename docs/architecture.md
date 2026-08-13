@@ -322,7 +322,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   without touching the backend by repointing the listener's public endpoint
   (`POST /listeners/{id}:repoint`). The Kestrel bind is untouched; the old
   endpoint simply no longer resolves to any listener, which severs it. This
-  decoupling is what makes disposable infrastructure practical.
+  decoupling is what makes disposable infrastructure practical. The in-tree
+  reference redirector -- an opaque L4 TCP forwarder published as a Native AOT
+  binary -- ships this rotation end to end; see
+  [ADR 0011](decisions/0011-redirector-design.md) and the deploy/rotate runbook
+  ([operations/redirectors.md](operations/redirectors.md)).
 - **Message sizing and flow control.** A single frame stays well under 1 MiB and
   never exceeds the negotiated maximum. Bulk data (files, output) is chunked.
 - **Malleable transport profile (per implant).** Each implant carries a transport
@@ -334,8 +338,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   at `/implants/enroll`; URI and header routing at the public endpoint is a
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
-- Redirectors terminate transport only as needed and forward opaque payloads;
-  they can route frames whose inner payload they cannot deserialize.
+- Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
+  forwarder (Native AOT, [ADR 0011](decisions/0011-redirector-design.md)) that
+  never terminates transport, so the mTLS beacon channel and the HTTPS enroll
+  request carry through end to end. A deployment that needs L7 routing by
+  malleable URI/User-Agent terminates TLS at its own edge -- that is an operator
+  deployment concern, not an in-tree capability.
 
 ## 9. Security model
 
@@ -559,7 +567,7 @@ scrape.
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core, gRPC | Strong async networking, first-class gRPC, strong typing, mature web UI. LTS to ~2028. |
 | Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and skeleton deployments (ADR 0003). |
 | Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (ADR 0009) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
-| Redirectors | .NET Native AOT (planned), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) ships (M4.4); the forwarder binary is planned (todo.md). |
+| Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) ships (M4.4); the in-tree opaque L4 forwarder ships ([ADR 0011](decisions/0011-redirector-design.md); deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md)). |
 | Implants | .NET (reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One .NET reference implant; community implants slot in by contract for targets .NET does not fit. |
 | Operator UI | Web (React), served by the teamserver | Lives in the teamserver project; see ADR 0002. |
 
