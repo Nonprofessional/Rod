@@ -1,0 +1,74 @@
+# Rod.Redirector -- reference .NET Native AOT redirector (ADR 0011)
+
+The in-tree **reference redirector** for Rod
+([architecture.md Sec 8](../../docs/architecture.md),
+[ADR 0011](../../docs/decisions/0011-redirector-design.md)). It is a
+near-stateless, **opaque L4 TCP forwarder**: an implant dials this redirector's
+public endpoint, and the redirector splices the byte stream to the teamserver
+listener's bind address without inspecting or altering it.
+
+Because it forwards at L4, the **mTLS beacon channel** (HTTP/2 + client cert)
+and the **HTTPS enroll request** both pass through end to end -- the redirector
+never terminates transport, so it cannot break the client-certificate
+authentication the beacon depends on. This is benign plumbing (socat/rinetd
+semantics), [ADR-0004](../../docs/decisions/0004-offensive-tradecraft-boundary.md)-mainstream,
+with no evasion and no payload awareness.
+
+A burned redirector is swapped by deploying a fresh one and **repointing the
+listener** (`POST /listeners/{id}:repoint`); this binary is the missing half of
+that rotation, the teamserver-side repoint (M4.4) being the other. The
+end-to-end runbook lives in
+[docs/operations/redirectors.md](../../docs/operations/redirectors.md).
+
+This project is a **standalone deployable** with no in-house references -- it is
+coupled to the teamserver only by the TCP stream it forwards. It ships in
+`Rod.slnx` (unlike the reference implant, which is external because the
+teamserver build unit compiles it per payload-build request) so it gets central
+build, test, and format coverage.
+
+## Build
+
+Normal build and unit tests run with the rest of the solution:
+
+```
+dotnet build Rod.slnx --configuration Release
+dotnet test Rod.slnx --configuration Release --no-build
+```
+
+The redirector targets a single static native binary with no runtime install
+([ADR 0009](../../docs/decisions/0009-single-in-tree-toolchain-dotnet.md)).
+Publish the Native AOT binary for a target:
+
+```
+dotnet publish src/redirector/dotnet/Rod.Redirector.csproj \
+  -r linux-x64 -c Release
+# -> bin/Release/net10.0/linux-x64/publish/rod-redirector
+```
+
+`PublishAot` is set in the csproj, so `publish` with a RID produces the native
+binary. CI publishes it on every change to prove the AOT property holds.
+
+## Run
+
+```
+rod-redirector -listen 0.0.0.0:443 -upstream teamserver.internal:8443
+rod-redirector -listen *:443 -upstream teamserver.internal:8443 -allow 10.0.0.0/8,192.168.0.0/16
+```
+
+| Flag        | Env           | Meaning                                                                  |
+| ----------- | ------------- | ----------------------------------------------------------------------- |
+| `-listen`   | `ROD_LISTEN`  | bind endpoint `host:port`; host may be `*` / `0.0.0.0` / `::` or an IP. |
+| `-upstream` | `ROD_UPSTREAM`| teamserver listener endpoint `host:port`; host may be a DNS name.       |
+| `-allow`    | `ROD_ALLOW`   | optional comma-separated source CIDR allow-list. Empty allows all.      |
+
+Flags win over env. `Ctrl-C` / `SIGTERM` stop the accept loop and drain.
+
+## What it does and does not do
+
+- **Does:** forward opaque TCP bytes in both directions with correct half-close,
+  so request/response (enroll) and bidirectional (beacon) traffic carry through
+  unchanged; optionally restrict sources by CIDR.
+- **Does not:** terminate TLS, read or alter payloads, route by URI or
+  User-Agent, or enforce engagement tenancy (those are teamserver/edge concerns;
+  the malleable `User-Agent`/URI routing of Sec 7 is a TLS-terminating-edge
+  deployment concern, documented in ADR 0011).

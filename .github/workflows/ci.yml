@@ -103,6 +103,36 @@ jobs:
         # when dotnet is not on PATH.
         run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~DotNetImplantTests"
 
+  dotnet-redirector:
+    name: .NET redirector (Native AOT)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        # Native AOT publish uses the SDK pinned by global.json and the platform
+        # link-time toolchain the ubuntu-latest runner provides.
+        uses: actions/setup-dotnet@v4
+      - name: Install Native AOT link prerequisites
+        # .NET Native AOT link-time analysis needs zlib on the build host; the
+        # ubuntu-latest runner carries clang already. zlib1g-dev is a documented
+        # Native AOT dependency on Debian/Ubuntu.
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Publish Native AOT forwarder
+        # The redirector is a .NET Native AOT forwarder (ADR 0009/0011): a single
+        # static binary with no runtime install. PublishAot is set in the csproj,
+        # so this produces a native rod-redirector binary on the runner -- the
+        # real proof the AOT property holds end to end. Normal build, test, and
+        # format of the project are already covered by the build/test/format jobs
+        # above (it ships in Rod.slnx).
+        run: dotnet publish src/redirector/dotnet/Rod.Redirector/Rod.Redirector.csproj -r linux-x64 -c Release
+      - name: Verify single binary
+        run: |
+          set -e
+          bin="$(find src/redirector/dotnet/Rod.Redirector/bin/Release/net10.0/linux-x64/publish -maxdepth 1 -name rod-redirector -type f)"
+          test -n "$bin"
+          test -x "$bin"
+          ls -lh "$bin"
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

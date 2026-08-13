@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Rod.Redirector is the in-tree reference redirector (architecture.md Sec 8,
+    ADR 0009/0011): a near-stateless, opaque L4 TCP forwarder that fronts a
+    teamserver listener. An implant dials the redirector's public endpoint; the
+    redirector splices the byte stream to the listener's bind address without
+    inspecting or altering it, so the mTLS beacon channel (HTTP/2 + client cert)
+    and the HTTPS enroll request both pass through end to end. A burned
+    redirector is swapped by deploying a fresh one and repointing the listener
+    (POST /listeners/{id}:repoint); this binary is the missing half of that flow,
+    the teamserver-side repoint (M4.4) being the other.
+
+    This project is a standalone deployable with NO in-house references; it is
+    coupled to the teamserver only by the TCP stream it forwards, never by code.
+    It ships in Rod.slnx (unlike the reference implant, which is external because
+    the teamserver build unit compiles it per payload-build request) so it gets
+    central build, test, and format coverage.
+
+    Native AOT (ADR 0009) produces a single static binary with no runtime
+    install, the property that made Go attractive for redirectors in ADR 0001 and
+    is now available from .NET. The forwarder is BCL-only and reflection-free to
+    stay AOT-clean; IsAotCompatible surfaces AOT-compatibility analysis on every
+    build (not just publish), and TreatWarningsAsErrors (set repo-wide by
+    Directory.Build.props) makes any AOT violation fail the build.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>rod-redirector</AssemblyName>
+    <RootNamespace>Rod.Redirector</RootNamespace>
+    <!--
+      Directory.Build.props at the repo root already sets Nullable,
+      TreatWarningsAsErrors, and the latest LangVersion repo-wide, and applies to
+      this tree (it walks up from the project dir). CPM is on repo-wide; this
+      project needs no packages (BCL only).
+    -->
+    <!-- Native AOT (ADR 0009): a single static binary, no runtime install. -->
+    <PublishAot>true</PublishAot>
+    <!-- Surface AOT-compatibility analysis on every build, not just publish. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- Fixed culture keeps the binary small and the logs deterministic. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The config parser, CIDR allow-list, and forwarder are internal; the xUnit
+         test project (tests/redirector/dotnet) reaches them via InternalsVisibleTo,
+         the .NET equivalent of the implant's same-assembly test access. -->
+    <InternalsVisibleTo Include="Rod.Redirector.Tests" />
+  </ItemGroup>
+
+</Project>

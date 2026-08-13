@@ -19,4 +19,13 @@
     <Project Path="tests/teamserver/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Tradecraft.Tests/Rod.Tradecraft.Tests.csproj" />
   </Folder>
+  <!-- The reference redirector (ADR 0009/0011): a standalone Native AOT forwarder
+       with no in-house references. Ships in the solution for central build, test,
+       and format coverage, unlike the external reference implant. -->
+  <Folder Name="/src/redirector/">
+    <Project Path="src/redirector/dotnet/Rod.Redirector.csproj" />
+  </Folder>
+  <Folder Name="/tests/redirector/">
+    <Project Path="tests/redirector/dotnet/Rod.Redirector.Tests.csproj" />
+  </Folder>
 </Solution>
