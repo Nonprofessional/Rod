@@ -509,3 +509,9 @@ Findings 3, 7, 8, 10, 11, 12, and 14 need no action.
 
 The deferred-ADR work (arg shape, catalog endpoint, placeholder verbs) is
 separate from this audit and follows it.
+
+> **Later update (2026-08-13):** the `docs/decisions/` ADRs referenced in this
+> snapshot (0001, 0003, 0004, 0009, and the deferred-decision set 0005/0006/0007)
+> were folded into [architecture.md](../architecture.md) and the
+> `docs/decisions/` directory removed; their links here are kept as the
+> historical record of this date's tree.

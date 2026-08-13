@@ -80,11 +80,10 @@ ports; no Postgres yet.
       artifact, fingerprinted and recorded.
 - [x] **M3.2 Reference Go implant + build unit.** A Go implant that enrolls,
       beacons, and runs core verbs, built via its own build unit.
-      _AC:_ Go implant checks in and tasks end-to-end. _(Superseded by
-      [ADR 0009](decisions/0009-single-in-tree-toolchain-dotnet.md): the in-tree
+      _AC:_ Go implant checks in and tasks end-to-end. _(Superseded: the in-tree
       Go implant and build unit were removed; .NET (M3.3) is the sole in-tree
       reference implant. Go and other languages remain available as out-of-tree
-      community units through the build contract.)_
+      community units through the build contract; see architecture.md Sec 12.2.)_
 - [x] **M3.3 Reference .NET implant + build unit.** A C#/.NET implant for
       Windows; in-memory execution path. _AC:_ .NET implant checks in and tasks
       end-to-end.
@@ -177,7 +176,7 @@ configured. Architecture Sec 12 names PostgreSQL as the authoritative store.
 - [x] **M10.1 PostgreSQL core state.** Replace the in-memory adapters with a
       durable PostgreSQL store for core state (engagements, operators, implants,
       sessions, tasks, stager tokens); move audit/artifact stores off JSON Lines.
-      Preceded by an ADR on data access.
+      Preceded by the data-access decision in architecture.md Sec 12.1.
       _AC:_ a teamserver restart leaves every engagement, operator, implant,
       session, task, and token in place; the audit chain still verifies.
 

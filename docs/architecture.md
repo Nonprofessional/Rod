@@ -100,10 +100,7 @@ contract with one build unit per language (Sec. 6), so C#/.NET, Go, C/C++, and
 Nim payloads compile from one language-agnostic control plane; a single implant
 language was rejected because it forces one language onto every target class
 (Windows in-memory tradecraft, cross-platform reach, and small footprint each
-demand a different one). The stack itself is in Sec. 12. (Stack rationale
-originally [ADR 0001](decisions/0001-stack-and-architecture.md), folded here; its
-tradecraft-boundary section moved to [ADR 0004](decisions/0004-offensive-tradecraft-boundary.md)
-and its Go edge to [ADR 0009](decisions/0009-single-in-tree-toolchain-dotnet.md).)
+demand a different one). The stack itself is in Sec. 12.
 
 ### 4.1 The six internal layers
 
@@ -134,7 +131,7 @@ in-house. The dependency rule is enforced by architecture tests.
   toolchain, coupled to the teamserver only by the build contract. Other
   languages (Go, C/C++, Nim) stay available through that same contract and the
   `Language` enum, supplied as out-of-tree community units -- the project
-  maintains one in-tree reference, not one per language (ADR 0009, Sec. 6).
+  maintains one in-tree reference, not one per language (Sec 12.2).
 - **Implants.** Target-resident, disposable, speaking the wire protocol and
   independent of the teamserver language. (Sec. 5.) The **reference .NET
   implant** lives in the `src/implant/dotnet/` tree: a benign, readable
@@ -144,9 +141,9 @@ in-house. The dependency rule is enforced by architecture tests.
   committed generated code), and `DotNetBuildUnit` bakes the per-implant
   profile in at compile time. It performs no evasion and no obfuscation
   (RESPONSIBLE-USE.md, Sec. 7); the in-repo tradecraft it carries is bounded by
-  ADR 0004. The wire protocol is the language-neutral product, so a community
+  Sec 13. The wire protocol is the language-neutral product, so a community
   implant in Go, C, or Nim builds against the same contract without coupling
-  the teamserver to its language (ADR 0009).
+  the teamserver to its language (Sec 12.2).
 - **Redirectors.** Near-stateless forwarders (.NET, Native AOT, single static
   binary) for OPSEC
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
@@ -170,8 +167,8 @@ note on its current state are listed.
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented (in-memory; M2.3: per-engagement hash chain -- tampering breaks the chain -- and the artifact store. M4.4: `ImplantRetired` audit kind, composed by transport on `:retire` so a retirement is recorded in the engagement trail. M6.1: the operational event log is complete -- every per-engagement action produces an attributed, immutable event (`EngagementCreated`, `StagerTokenMinted`, `ImplantEnrolled`, `SessionOpened`, `TaskIssued`, `TaskDispatched` join the existing `TaskCompleted`/`PayloadBuilt`/`ImplantRetired`), and a `GET /engagements/{id}/audit` read endpoint surfaces the trail oldest-first). M6.2: an `ArtifactAttached` audit kind records an evidence object being bound to the task that gathered it -- the artifact store, already a port since M2.3, is now reachable, so the evidence and the tasking stay linked on the trail). M6.4: the walking-skeleton retention adapter -- `FileAuditStore` and `FileArtifactStore`, JSON Lines under a configured `Audit:DataDirectory`, behind the same ports the in-memory adapters serve. The composition root swaps them in when the section is present (the real host sets it; the test host does not), so the per-engagement trail and its artifacts outlive a teamserver restart and infrastructure teardown. Each append writes and flushes one chained record, and the store recovers each engagement's chain head on startup, so a restarted teamserver continues each engagement's trail off its last stored event and the reloaded chain still verifies -- the M6.4 AC: tear down an engagement's infra, its audit trail remains). |
 | `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented (frame + M1.x messages; M4.2: `HANDSHAKE_STATUS_KILL_DATE_EXPIRED` for an implant refused past its kill date. M4.4: `HANDSHAKE_STATUS_IMPLANT_RETIRED` for an implant refused because it has been retired). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented (M1.x endpoints + M2.2 listener abstraction: HTTP(S) and mTLS listeners, bind address decoupled from the public endpoint; M3.1 payload-build endpoint that drives the build orchestrator and composes the PayloadBuilt audit write. M4.4: `POST /engagements/{engagementId}/implants/{implantId}:retire` retires an implant and composes the `ImplantRetired` audit write, and `POST /listeners/{id}:repoint` repoints a listener's public endpoint at runtime -- the bind is untouched, swapping a burned redirector without backend change). M6.1: the audit composition is extended to the whole lifecycle -- engagement create, stager-token mint, enroll, task issue, and the beacon's session-open and task-dispatch each append an attributed event (mirroring the task-completion write), and `GET /engagements/{engagementId}/audit` surfaces the per-engagement trail oldest-first). M6.2: artifact endpoints -- attach (`POST /engagements/{engagementId}/tasks/{taskId}/artifacts`), list per task, and retrieve by artifact id -- make evidence first-class and engagement-scoped, and an attach composes an `ArtifactAttached` audit write so the binding is recorded on the trail). M6.3: timeline and report export -- `GET /engagements/{engagementId}/timeline` and `GET /engagements/{engagementId}/report`, each in JSON and Markdown -- are the built-in consumers of the event + task + artifact store, rendering the engagement trail, task history, implant inventory, operator roster, and artifact index into the deliverable; a reproducibility digest (SHA-256 over the engagement's facts, excluding only the wall-clock generation time) anchors each export to the same tamper-evident trail head). |
-| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented (M3.1: the build-contract schema, the build-unit registry and dispatch, and the PayloadBuilt audit write composed by transport. M3.3: the real .NET build unit -- `DotNetBuildUnit` compiles the reference .NET implant per request via `dotnet publish`, baking the per-implant profile into a generated `BakedProfile.cs` in a per-build staging copy with no implant-key leak -- is the sole in-tree unit; the `StubBuildUnit` stays as the contract-reference test double with its own unit tests. M3.4: the unit bakes the class's reduced verb set (read from core state, Sec 5.2) into the profile, so an artifact is self-describing and two classes produce visibly different output; the key is still absent. M4.3: the malleable transport profile (Sec 7, Sec 8) -- enroll path, User-Agent, headers, request timeout, body envelope -- rides in the baked profile, and the build request DTO carries it so an operator can profile a payload. ADR 0009: the in-tree Go build unit was removed; .NET is the single in-tree toolchain, and other languages plug in as out-of-tree community units through the same contract). |
-| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.4: Server-Sent Events stream per engagement, a channel-backed live-event bus fanning task-issued / task-completed / presence events to every connected session, an operator-presence roster. Operator authentication: cookie sessions over a verified handle and password -- `POST /operators/login`, `POST /operators/logout`, `GET /operators/me` -- with every operator endpoint authorized and the acting operator derived from the session principal rather than the request body, a config-seeded first operator, and a hash-only credential port backed by the in-memory store or, when Postgres is configured, the durable `operator_credentials` table. See ADR 0008; per-engagement RBAC is deferred). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented (M3.1: the build-contract schema, the build-unit registry and dispatch, and the PayloadBuilt audit write composed by transport. M3.3: the real .NET build unit -- `DotNetBuildUnit` compiles the reference .NET implant per request via `dotnet publish`, baking the per-implant profile into a generated `BakedProfile.cs` in a per-build staging copy with no implant-key leak -- is the sole in-tree unit; the `StubBuildUnit` stays as the contract-reference test double with its own unit tests. M3.4: the unit bakes the class's reduced verb set (read from core state, Sec 5.2) into the profile, so an artifact is self-describing and two classes produce visibly different output; the key is still absent. M4.3: the malleable transport profile (Sec 7, Sec 8) -- enroll path, User-Agent, headers, request timeout, body envelope -- rides in the baked profile, and the build request DTO carries it so an operator can profile a payload. the in-tree Go build unit was removed; .NET is the single in-tree toolchain (Sec 12.2), and other languages plug in as out-of-tree community units through the same contract). |
+| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.4: Server-Sent Events stream per engagement, a channel-backed live-event bus fanning task-issued / task-completed / presence events to every connected session, an operator-presence roster. Operator authentication: cookie sessions over a verified handle and password -- `POST /operators/login`, `POST /operators/logout`, `GET /operators/me` -- with every operator endpoint authorized and the acting operator derived from the session principal rather than the request body, a config-seeded first operator, and a hash-only credential port backed by the in-memory store or, when Postgres is configured, the durable `operator_credentials` table. Cookies were chosen over JWT/bearer tokens (no client-side token store, refresh, or revocation machinery for a same-origin SPA); ASP.NET Core Identity was rejected (its own EF data model and user/role/login tables conflict with the project's ports and layered store); a password-hash field on the `Operator` aggregate was rejected (it violates the clean-domain, hash-only discipline the stager-token store already follows); per-engagement RBAC is deferred -- every authenticated operator can presently reach every endpoint, there is no server-side session revocation, and PBKDF2 work-factor tuning is the framework default with `IPasswordHasher<T>` as the single swap point for a future Argon2 verifier). |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract and dispatch only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.5: `ICapabilityModule` contract, capability registry + dispatcher, the five core verbs loaded through it; the dispatchable `shell.exec` stub proves the round-trip. M5.1: the recon descriptors -- `recon.portscan`, `recon.hostenum`, `recon.service` -- are loaded through this layer as placeholders alongside the core set, each flagged network-touching except the host-local `recon.hostenum`; the default registry lists both sets. M5.2: the lateral descriptors -- `lateral.move`, `lateral.token`, `lateral.exec_remote` -- are loaded through this layer as placeholders alongside the core and recon sets, each flagged with its OPSEC attribute (`derives-child` / `touches-credential` / `touches-network`); the default registry lists all three sets. M5.3: the persist descriptors -- `persist.install`, `persist.remove`, `persist.list` -- are loaded through this layer as placeholders alongside the core, recon, and lateral sets, install and remove flagged `writes-to-disk` (install also `persists`) and list unflagged as a read; the default registry lists all four sets. M5.4: the collect descriptors -- `collect.file`, `collect.cred`, `collect.keylog` -- and the exfil descriptors -- `exfil.push`, `exfil.stage` -- are loaded through this layer as placeholders alongside the core, recon, lateral, and persist sets, collect.file flagged `reads-filesystem`, collect.cred flagged `reads-credential`, collect.keylog flagged `reads-input` and `persists`, exfil.push flagged `touches-network`, and exfil.stage unflagged as a read; the default registry lists all six sets. M7.1: the evasion descriptors -- `evasion.avoid`, `evasion.unload` -- are loaded through this layer as placeholders alongside the core, recon, lateral, persist, collect, and exfil sets, each flagged `modifies-defenses`; the default registry lists all seven sets. Evasion is contract and dispatch only (Sec 10.2, Sec 13): the verbs are not gated to a class, and concrete behavior is out-of-tree, supplied as opt-in modules). M7.2: the exploit descriptors -- `exploit.invoke`, `exploit.module` -- are loaded through this layer as placeholders alongside the core, recon, lateral, persist, collect, exfil, and evasion sets, each flagged `exploits-target`; the default registry lists all eight sets. Exploit is contract and dispatch only (Sec 10.2, Sec 13): the verbs are not gated to a class, and concrete behavior is out-of-tree, supplied as opt-in modules). M8.1: the layer is wired onto the live task path -- an `AddRodTradecraft` composition hook registers the in-memory capability registry (loaded with every built-in verb) and the dispatcher as singletons, and swaps core state's strict class-table resolver for `CapabilityRegistryTaskResolver`, so task issuance admits a verb a registered module handles in addition to the per-class reduced set. The evasion and exploit verbs (Sec 10.2) are no longer refused before dispatch; their concrete behavior is still out-of-tree). |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport` and `Rod.Operators` (the latter wired in M2.4, since transport itself cannot reference the operator layer). | Implemented (M1.5 host + UI shell; M2.4 wires the operator layer). |
 
@@ -187,9 +184,7 @@ transport may depend on neither, so each owns its endpoint the way it owns its
 data. The catalog is a process-global read of the loaded module set -- registry
 metadata, not engagement-scoped domain state -- so it earns no CoreState port
 and no parallel DTO; an operator-scoped capability concern would be a *separate*
-engagement-scoped endpoint, not a retrofit onto the global catalog. (Catalog
-endpoint placement originally [ADR 0006](decisions/0006-capability-catalog-endpoint.md),
-folded here.)
+engagement-scoped endpoint, not a retrofit onto the global catalog.
 
 ## 5. Implants and profiles
 
@@ -269,6 +264,38 @@ redeemed token resolved, and not be retired) before binding the child. The
 parentage is surfaced on the operator implant listing so the UI can render
 lineage; a top-level (stager-derived) implant reports no parent.
 
+### 5.3 Implant-side capability pluggability _(planned)_
+
+The class verb set (Sec 5.2) is the server's authority; the implant's advertised
+set is its own, and the two must agree. The design closes the loop with the
+server side: a reference implant advertises exactly the verbs its build permits
+and its compiled handlers implement -- never a verb it cannot run. The
+advertised beacon capability set is the intersection of the baked class verbs
+with the compiled handler set, and dispatch routes through an implant-side
+handler registry (the implant analog of the server's `ICapabilityModule`)
+rather than a hard-coded `switch`, so adding a verb is a handler plus a
+registration, not an edit to the runner. Registration is compile-time -- no
+runtime assembly loading (that would break Native AOT, enlarge the artifact,
+and introduce on-disk plugin files), and the capability set is decided per
+class at build time, so runtime discovery buys nothing. Out-of-tree handlers
+for contract-only verbs (e.g. `collect.keylog`) compile into a separate
+per-engagement artifact; the reference implant ships no Sec 13 boundary verb.
+
+Rejected alternatives: runtime dynamic assembly loading for plugins (breaks
+Native AOT and the lean artifact, and is unnecessary since the set is fixed at
+build time); advertising the full baked class set regardless of implemented
+handlers (recreates the unknown-verb-for-an-advertised-verb failure the
+intersection exists to prevent); keeping the hard-coded switch and adding
+`collect.keylog` in-repo behind a flag (crosses the technique-kind boundary of
+Sec 13 and leaves no growth seam); and making the implant class-aware but
+keeping the switch (solves advertising but not extensibility -- the registry
+is what makes the design durable).
+
+The reference .NET implant has not yet caught up to this design -- today its
+beacon capability set is hard-coded and dispatch is a `switch` -- so this
+subsection records the direction; the work is tracked in [todo.md](todo.md)
+("Implant-side capability pluggability").
+
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 
 The flow: **operator build request -> teamserver emits build params -> the
@@ -280,7 +307,7 @@ recorded.**
   teamserver drives it through a **uniform build contract** and is coupled to
   it only by that contract, so a community build unit in Go, C/C++, or Nim can
   register and compile against the same contract with no in-language coupling
-  (the `Language` enum keeps those slots, ADR 0009).
+  (the `Language` enum keeps those slots, Sec 12.2).
 - **Build params** include implant config, the embedded per-implant key, target
   OS/arch, transport profile, and beacon parameters. They are produced at request
   time so each artifact is unique (per-implant keys, config, obfuscation) -- this
@@ -351,8 +378,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   decoupling is what makes disposable infrastructure practical. The in-tree
   reference redirector -- an opaque L4 TCP forwarder published as a Native AOT
   binary -- ships this rotation end to end; see
-  [ADR 0011](decisions/0011-redirector-design.md) and the deploy/rotate runbook
-  ([operations/redirectors.md](operations/redirectors.md)).
+  the deploy/rotate runbook ([operations/redirectors.md](operations/redirectors.md)).
 - **Message sizing and flow control.** A single frame stays well under 1 MiB and
   never exceeds the negotiated maximum. Bulk data (files, output) is chunked.
 - **Malleable transport profile (per implant).** Each implant carries a transport
@@ -365,11 +391,19 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
-  forwarder (Native AOT, [ADR 0011](decisions/0011-redirector-design.md)) that
-  never terminates transport, so the mTLS beacon channel and the HTTPS enroll
-  request carry through end to end. A deployment that needs L7 routing by
-  malleable URI/User-Agent terminates TLS at its own edge -- that is an operator
-  deployment concern, not an in-tree capability.
+  forwarder (Native AOT) that never terminates transport, so the mTLS beacon
+  channel and the HTTPS enroll request carry through end to end. It is L4, not
+  L7, because the beacon is mTLS: an L7 reverse proxy that terminated TLS could
+  not preserve the client-certificate authentication and would have to forward
+  at L4 anyway, and an L7 peek for plaintext HTTP re-introduces
+  transport-specific logic for marginal gain while breaking the AOT-clean,
+  reflection-free property. v1 runs one forwarding rule per process so a burned
+  port does not drag the others down (rejected: a multi-rule single process as
+  a single point of failure across ports). Source-IP allow-listing is the only
+  routing an opaque L4 forwarder can do; malleable User-Agent/URI routing lives
+  inside TLS and stays a TLS-terminating-edge concern an operator layers on. A
+  deployment that needs such L7 routing terminates TLS at its own edge -- that
+  is an operator deployment concern, not an in-tree capability.
 
 ## 9. Security model
 
@@ -380,6 +414,24 @@ fleet-wide code execution. Security is a first-class concern.
   identities bound to their engagement via client certificates.
 - **mTLS.** The mTLS transport is mutually authenticated; an implant's certificate
   binds `(implant_id, engagement_id)`.
+- **Production implant CA.** The teamserver consumes an externally provisioned
+  engagement CA; it does not generate the production CA. When
+  `Pki:CaCertificatePath` and `Pki:CaPrivateKeyPath` are configured,
+  `FileBackedCertificateAuthority` loads the CA certificate and its RSA private
+  key (optionally passphrase-encrypted) from disk and signs implant leaves with
+  the same leaf construction the dev authority uses -- only the issuer changes.
+  Absent the config the dev self-signed authority stays. The authority is built
+  eagerly at DI registration, so a missing file, an unparseable PEM, a non-RSA
+  key, or a key/cert mismatch fails the host at startup, not the first
+  enrollment; RSA is the only supported CA key type, matching the implant leaf
+  path. Rotation is operational (replace the files and restart). Rejected:
+  generating and persisting the CA from the teamserver (re-creates the dev
+  posture -- key in the C2 -- at production privilege); `IOptions<T>` binding
+  for the `Pki` section (diverges from the audit store, the other
+  config-selected adapter, which reads its key straight off `IConfiguration`);
+  and bundling a proper TLS server leaf + SAN (scope creep -- the
+  CA-as-trusted-root satisfies enrollment binding; a real server leaf with SAN
+  stays a separable hardening).
 - **Command signing** _(future)_. Dispatched tasks are intended to be signed so
   an implant only acts on teamserver-authorized tasking. Designed for, not
   implemented initially; until it lands, task integrity rests on the mTLS
@@ -436,8 +488,7 @@ input, binary blobs, nested config) it gets its own typed proto arm, leaving the
 opaque field and every other verb untouched. A shared typed-argument schema was
 rejected because the grammar is per-verb, not per-system -- it would move the
 grammar into the proto without removing it and couple every implant language to
-one schema. (Task-argument shape originally [ADR 0005](decisions/0005-task-arguments-single-string.md),
-folded here.)
+one schema.
 
 ### 10.1 Capability categories
 
@@ -474,8 +525,7 @@ task arguments, generates a fresh child keypair, and enrolls a child naming
 itself as parent; the enroll clients thread parentage onto the request, and the
 binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
 the HTTP path. The `lateral.token` and `lateral.exec_remote` verbs also ship
-in-repo reference handlers under the ADR 0004 boundary (Sec 13, AGENTS.md
-Sec 7): `lateral.token` enumerates the current process's Windows access-token
+in-repo reference handlers under the Sec 13 boundary (AGENTS.md Sec 7): `lateral.token` enumerates the current process's Windows access-token
 context (user, groups, privileges) via `whoami`, the documented administration
 command for inspecting the calling token; `lateral.exec_remote` runs a command
 on a remote host over documented administration channels (scheduled tasks on
@@ -489,7 +539,7 @@ The persistence verbs are registered the same way
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
 lateral they are gated to Stage-2 at task issuance (Sec 5.2). Persistence is a
 long-haul activity, and the reference implants ship standard, documented
-mechanisms under the ADR 0004 boundary (Sec 13, AGENTS.md Sec 7): the Windows
+mechanisms under the Sec 13 boundary (AGENTS.md Sec 7): the Windows
 `Run` registry key, scheduled tasks, and services, plus Linux cron and
 systemd user units -- the documented persistence surfaces every system
 administrator and offensive-security curriculum covers. Install, list, and
@@ -507,7 +557,7 @@ is a read that carries no such flag, like `persist.list` and the host-local
 `recon.hostenum` (it stages already-collected data on the teamserver). Like
 recon, lateral, and persist they are gated to Stage-2 at task issuance
 (Sec 5.2). Collection and exfiltration are long-haul activities. Under the
-ADR 0004 boundary (Sec 13, AGENTS.md Sec 7) the reference implants ship
+Sec 13 boundary (AGENTS.md Sec 7) the reference implants ship
 in-repo handlers for `collect.file` (filesystem reads, with large files
 chunked into the exfil channel), `collect.cred` (standard credential-store
 *listings* -- SSH key presence with fingerprints, AWS profile names, Windows
@@ -563,8 +613,7 @@ DI-resolved registry (last-registration-wins), deliberately bounding the
 teamserver's runtime attack surface by its compile-time inputs. And the server
 only gates and forwards on the live task path -- it never invokes a capability
 module server-side, so execution stays on the implant, where the target's
-filesystem, network, and credentials actually live. (Placeholder-verb design
-originally [ADR 0007](decisions/0007-placeholder-verbs.md), folded here.)
+filesystem, network, and credentials actually live.
 
 ### 10.3 Tasking lifecycle
 
@@ -623,22 +672,86 @@ scrape.
 | Concern | Choice | Why |
 |---------|--------|-----|
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core, gRPC | Strong async networking, first-class gRPC, strong typing, mature web UI. LTS to ~2028. |
-| Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and skeleton deployments (ADR 0003). |
-| Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (ADR 0009) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
-| Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) ships (M4.4); the in-tree opaque L4 forwarder ships ([ADR 0011](decisions/0011-redirector-design.md); deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md)). |
+| Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and skeleton deployments (see Sec 12.1). |
+| Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
+| Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) ships (M4.4); the in-tree opaque L4 forwarder ships (deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md)). |
 | Implants | .NET (reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One .NET reference implant; community implants slot in by contract for targets .NET does not fit. |
-| Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. (Operator UI choice originally [ADR 0002](decisions/0002-operator-ui-react.md), folded here.) |
+| Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. |
 
 The wire protocol and capability registry are the long-lived, language-neutral
 contract implants build against; the build contract is the language-neutrality
 boundary for generation.
 
+### 12.1 Data access (PostgreSQL via EF Core)
+
+PostgreSQL is reached through **Entity Framework Core 10** over the Npgsql
+provider, with all persistence code isolated in a dedicated `Rod.Persistence`
+project that depends inward on `Rod.CoreState` and `Rod.Audit` only. The inner
+ring (`Rod.CoreState`, `Rod.Audit`) is zero-package, so the EF/Npgsql dependency
+cannot live there; `Rod.Persistence` is the structural answer, the same reason
+`Rod.Operators` and `Rod.Tradecraft` are separate projects wired at the
+composition root. The domain model stays persistence-ignorant -- no EF
+attributes, no concurrency fields on entities -- and ids map to Postgres `uuid`
+through per-id value converters; enums are stored as `int` to keep the audit
+chain's canonical `(int)Kind` hash stable. Concurrency (single-use stager-token
+redeem, task FIFO) lives at the adapter, not on the domain. The durable
+adapters are selected at the composition root when `ConnectionStrings:Postgres`
+is present, replacing the in-memory defaults through the same opt-in swap the
+other ports use; absent it, the in-memory adapters stay and every existing test
+is unchanged. The audit chain math stays in `Rod.Audit` and is untouched -- a
+durable store recovers each engagement's chain head from the highest-sequence
+row on startup and stamps new appends through the same `ComputeHash`. The
+acceptance test provisions a live Postgres via Testcontainers, gated to skip
+(not fail) when Docker is unavailable.
+
+Rejected alternatives: **raw Npgsql** (loses migrations and the
+value-converter/construction story across six aggregates, and contradicts the
+EF-migration command the toolchain already commits to); **Dapper over Npgsql**
+(same drawbacks for a smaller saving); and a **managed-Postgres-as-a-service
+abstraction** (premature -- it defers the access question this answers without
+resolving how the host reaches the database today).
+
+### 12.2 Toolchain: a single in-tree .NET stack
+
+Rod ships one in-tree toolchain end to end: **.NET 10**. The reference implant
+and the in-tree redirector are both .NET; the Go reference implant and its
+build unit were removed. The wire protocol remains the language-neutral product
+and the `Language` enum (Go/DotNet/C/Nim) and build contract stay, so an
+out-of-tree community implant in Go, C, or Nim registers a build unit and
+compiles against the same contract -- polyglot by contract, not by in-tree
+parity. .NET is cross-platform via self-contained publishes
+(Linux/Windows/macOS from one source), and Native AOT produces the
+single-file, no-runtime binary that was the original reason to reach for Go on
+the redirector edge.
+
+Rejected alternatives: **keep both reference implants in lockstep** (recurring
+cost of writing and maintaining every verb twice, no longer forced by
+cross-platform reach); **collapse to Go instead of .NET** (the control plane
+is .NET 10, so standardizing on .NET keeps the whole stack in one toolchain);
+and **asymmetric polyglot -- .NET full, a second language specialist only**
+(still leaves a second toolchain to build and test in CI for a small team,
+with no benefit over the opt-in contract path). The trade-off the .NET-only
+choice accepts: a larger self-contained footprint than a Go static binary, and
+a CLR/AMSI/ETW surface more heavily instrumented by Windows AV/EDR --
+acceptable for the reference/learning posture, with the class of tradecraft
+that needs another language arriving as an out-of-tree community implant
+through the contract this keeps open.
+
 ## 13. Sensitive-capability statement
 
 The boundary between in-repo and out-of-tree tradecraft is decided by **what
-kind of technique it is**, not by capability category. The authoritative rule
-and its rationale live in [ADR 0004](decisions/0004-offensive-tradecraft-boundary.md);
-this section summarizes it.
+kind of technique it is**, not by capability category. The line is drawn by
+technique kind because category is the wrong axis: a category-wide "in" pulls
+LSASS dumping in alongside benign credential-store listings, and a
+category-wide "out" pushes out documented token manipulation alongside novel
+evasion. Two alternatives were rejected on that test -- keeping the original
+"all tradecraft out-of-tree" boundary (leaves the reference implants
+contract-only and forces every operator to rebuild the same standard handlers
+the field already publishes), and deleting the boundary entirely (in-the-wild
+zero-days and weaponized proof-of-concepts create real harm the standard,
+documented techniques do not). When it is unclear which side a technique falls
+on, default to out-of-tree; tightening later is cheap, and loosening under
+pressure is how the line erodes.
 
 - **In-repo: standard, mainstream, documented techniques.** Mechanisms
   documented in OS vendor references and covered by offensive-security

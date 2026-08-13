@@ -2,7 +2,7 @@
 
 Operational runbook for the in-tree reference redirector, the **opaque L4 TCP
 forwarder** that fronts a teamserver listener ([architecture.md](../architecture.md)
-Sec 7 and Sec 8; [ADR 0011](../decisions/0011-redirector-design.md)). The
+Sec 7 and Sec 8). The
 forwarder source is at
 [../../src/redirector/dotnet/](../../src/redirector/dotnet/).
 
@@ -24,7 +24,7 @@ service interruption to live implants.
 ## 1. Build the forwarder binary
 
 The redirector targets a single static native binary with no runtime install
-(ADR 0009). Publish it for the redirector host's RID:
+(architecture.md Sec 12.2). Publish it for the redirector host's RID:
 
 ```
 dotnet publish src/redirector/dotnet/Rod.Redirector.csproj -r linux-x64 -c Release
@@ -190,11 +190,11 @@ thing that moved is the public endpoint implants dial.
   inside TLS and is invisible at L4. A deployment that needs L7 routing or a
   cover site terminates TLS at its own edge, in front of (or instead of) this
   forwarder. That is an operator deployment concern, not an in-tree capability
-  (ADR 0011).
+  (architecture.md Sec 8).
 
 ## See also
 
-- [ADR 0011](../decisions/0011-redirector-design.md) -- the redirector design
+- [architecture.md Sec 8](../architecture.md) -- the redirector design
   decision (L4 opaque forwarder, Native AOT, alternatives considered).
 - [architecture.md](../architecture.md) Sec 7 and Sec 8 -- transports,
   listeners, and the redirector abstraction.

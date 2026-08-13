@@ -34,7 +34,7 @@ guidance file tracked in git.
 - **Teamserver target: .NET 10 (LTS).** Use `net10.0` TFMs and the latest C#
   language features. The SDK is pinned in `global.json` for reproducible builds.
 - **Redirectors: .NET (Native AOT).** A single-file native forwarder when one
-  ships in-tree; no Go. See ADR 0009.
+  ships in-tree; no Go. See architecture.md Sec 12.2.
 - **Build units: the in-tree unit is .NET.** Additional languages (Go, C/C++,
   Nim) stay available through the language-neutral build contract and the
   `Language` enum, supplied as out-of-tree community units -- not maintained
@@ -42,7 +42,7 @@ guidance file tracked in git.
 - **Implants: one .NET reference implant, polyglot by contract.** The in-tree
   reference implant is .NET; the wire protocol is the product, so a community
   implant in any language builds against the same contract without coupling the
-  teamserver to its language. See ADR 0009.
+  teamserver to its language. See architecture.md Sec 12.2.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do not
   duplicate these per-project.
@@ -104,7 +104,7 @@ tests encode the layer rules; adding a forbidden reference must fail a test.
 
 The boundary between in-repo and out-of-tree tradecraft is decided by
 **what kind of technique it is**, not by capability category. See
-[ADR 0004](docs/decisions/0004-offensive-tradecraft-boundary.md) for the
+[architecture.md Sec 13](docs/architecture.md) for the
 authoritative rule; this section summarizes it.
 
 - **In-repo: standard, mainstream, documented techniques.** Mechanisms that are

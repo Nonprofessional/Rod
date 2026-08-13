@@ -88,8 +88,8 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
 | Data store | PostgreSQL | Authoritative state and per-engagement audit. |
-| Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (ADR 0009). |
-| Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (ADR 0011). |
+| Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (architecture.md Sec 12.2). |
+| Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (architecture.md Sec 8). |
 | Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable, per-implant keys. |
 | Operator UI | Web (React) | Lives in the teamserver project; served same-origin. |
 
@@ -110,7 +110,6 @@ Start here:
 - **[docs/todo.md](docs/todo.md)** -- post-roadmap work: implant verb coverage,
   production hardening, and architecture-gap audits.
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
-- **[docs/decisions/](docs/decisions/)** -- architecture decision records.
 
 ## License
 
