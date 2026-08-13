@@ -88,8 +88,22 @@ external build units and implants. A single .NET process (the teamserver) holds
 the core; polyglot needs are met by decoupling at the build boundary (Sec. 6),
 not by splitting the whole system into microservices.
 
-The rationale and the monolith-vs-microservices trade-off are in
-[decisions/0001](decisions/0001-stack-and-architecture.md).
+A monolithic kernel gives a security-critical core one blast radius and one
+state model, with low inter-component latency and the simplest deployment for a
+small team. The parts that change most (implant builds, transports, tradecraft)
+are already decoupled as build units, redirectors, and capability modules, so
+hot-swapping is not lost; the alternative -- a container-per-concern split -- is
+heavier to operate and secure for no current gain, so the strong *logical*
+layering (enforced by architecture tests, below) is kept and a future move
+toward services stays open. Polyglot implants are met by a uniform build
+contract with one build unit per language (Sec. 6), so C#/.NET, Go, C/C++, and
+Nim payloads compile from one language-agnostic control plane; a single implant
+language was rejected because it forces one language onto every target class
+(Windows in-memory tradecraft, cross-platform reach, and small footprint each
+demand a different one). The stack itself is in Sec. 12. (Stack rationale
+originally [ADR 0001](decisions/0001-stack-and-architecture.md), folded here; its
+tradecraft-boundary section moved to [ADR 0004](decisions/0004-offensive-tradecraft-boundary.md)
+and its Go edge to [ADR 0009](decisions/0009-single-in-tree-toolchain-dotnet.md).)
 
 ### 4.1 The six internal layers
 
@@ -165,6 +179,18 @@ The dependency column is not aspirational: it is the rule the architecture tests
 in `tests/teamserver/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
 forbidden project reference fails the build.
 
+One consequence of the layer rule: an endpoint backed by data in an outer layer
+transport cannot reference is exposed by that layer itself and mapped at the
+composition root, not hosted in transport. `Rod.Operators` does this for its SSE
+stream and `Rod.Tradecraft` for `GET /capabilities` (the capability catalog):
+transport may depend on neither, so each owns its endpoint the way it owns its
+data. The catalog is a process-global read of the loaded module set -- registry
+metadata, not engagement-scoped domain state -- so it earns no CoreState port
+and no parallel DTO; an operator-scoped capability concern would be a *separate*
+engagement-scoped endpoint, not a retrofit onto the global catalog. (Catalog
+endpoint placement originally [ADR 0006](decisions/0006-capability-catalog-endpoint.md),
+folded here.)
+
 ## 5. Implants and profiles
 
 An implant is a short-lived, disposable payload on a target. It is **untrusted by
@@ -228,7 +254,7 @@ Admission is not execution: a verb may be class-admissible (the class gate
 does not refuse it) yet ship no built-in handler, running only when an
 operator supplies an out-of-tree module. The contract-only verbs
 (`collect.keylog`, and the `evasion` and `exploit` categories in their
-entirety) follow this shape (ADR 0007, Sec 10.2); they are listed in the
+entirety) follow this shape (Sec 10.2); they are listed in the
 class set and in the capability catalog but carry no in-repo handler.
 
 A capable implant can deploy another class on the same host (e.g. a web-shell
@@ -396,6 +422,23 @@ A **capability** is a verb an implant advertises and the teamserver may dispatch
 namespaced `namespace.action`, each carrying a `version` and `attributes`. The
 teamserver gates dispatch on the advertised verb.
 
+A task's **arguments stay a single opaque `string` at every contract boundary**
+-- the proto field, core state, the transport DTO, the dispatch contract, and the
+implant's dispatch entrypoint. The verb is the typed discriminator; the string is
+the verb's own grammar, parsed by the handler that owns it (whitespace tokens,
+hyphen ranges, comma lists, trailing-command shapes -- deliberately diverse, no
+shared parser). A `string` is the lowest-common-denominator shape every implant
+language parses with its own stdlib, it keeps the server out of argument
+validation (the server gates on the verb and passes the string through
+untouched), and it keeps each language's parser free. The escape hatch is
+per-verb, not global: when one verb's grammar outgrows a string (streaming
+input, binary blobs, nested config) it gets its own typed proto arm, leaving the
+opaque field and every other verb untouched. A shared typed-argument schema was
+rejected because the grammar is per-verb, not per-system -- it would move the
+grammar into the proto without removing it and couple every implant language to
+one schema. (Task-argument shape originally [ADR 0005](decisions/0005-task-arguments-single-string.md),
+folded here.)
+
 ### 10.1 Capability categories
 
 | Category | Example verbs | Summary |
@@ -508,6 +551,21 @@ behavior is intentionally not part of the core**: the core provides the contract
 and the plumbing; the tradecraft is supplied as separate, opt-in, out-of-tree
 `CapabilityModule`s. See Sec. 13.
 
+Every built-in verb is registered in the default registry, contract-only ones
+included: a contract-only verb is a real `PlaceholderCapabilityModule` that
+satisfies the registry and the task gate but returns `Failed` (never `NotFound`)
+if dispatched before an operator supplies a module. That makes the out-of-tree
+path a *registration*, not a schema change -- a module registered for
+`evasion.avoid` or `exploit.invoke` is taskable through the same UI and gate as
+any built-in verb. There is **no runtime assembly loader**: an out-of-tree module
+is compiled into the teamserver process and registered against the
+DI-resolved registry (last-registration-wins), deliberately bounding the
+teamserver's runtime attack surface by its compile-time inputs. And the server
+only gates and forwards on the live task path -- it never invokes a capability
+module server-side, so execution stays on the implant, where the target's
+filesystem, network, and credentials actually live. (Placeholder-verb design
+originally [ADR 0007](decisions/0007-placeholder-verbs.md), folded here.)
+
 ### 10.3 Tasking lifecycle
 
 `Task` -> dispatched to a `Session` -> `TaskExecution` (streams, result, status)
@@ -569,7 +627,7 @@ scrape.
 | Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (ADR 0009) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
 | Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) ships (M4.4); the in-tree opaque L4 forwarder ships ([ADR 0011](decisions/0011-redirector-design.md); deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md)). |
 | Implants | .NET (reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One .NET reference implant; community implants slot in by contract for targets .NET does not fit. |
-| Operator UI | Web (React), served by the teamserver | Lives in the teamserver project; see ADR 0002. |
+| Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. (Operator UI choice originally [ADR 0002](decisions/0002-operator-ui-react.md), folded here.) |
 
 The wire protocol and capability registry are the long-lived, language-neutral
 contract implants build against; the build contract is the language-neutrality
