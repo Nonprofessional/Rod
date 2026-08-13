@@ -138,6 +138,52 @@ public class HandshakePresenceTests
             $"but got {thrown.GetType().FullName}: {thrown.Message}");
     }
 
+    [Fact]
+    public async Task Handshake_FileBackedCa_BindsEnrollmentToExternalCa()
+    {
+        // The production CA path (architecture.md Sec 9): when
+        // Pki:CaCertificatePath and Pki:CaPrivateKeyPath are configured, the
+        // teamserver signs implant leaves with that externally provisioned CA.
+        // An implant enrolled through it completes the mTLS handshake -- its leaf
+        // chains to the configured CA, which is what the server trusts -- so
+        // enrollment binds to a non-dev CA chain.
+        using var dir = new TempDir();
+        var (caCert, caKey) = BuildExternalCa();
+        WritePem(dir, "ca.crt", Pem("CERTIFICATE", caCert.Export(X509ContentType.Cert)));
+        WritePem(dir, "ca.key", caKey.ExportRSAPrivateKeyPem());
+
+        await using var env = await TestEnv.StartAsync(extendConfig: d =>
+        {
+            d["Pki:CaCertificatePath"] = Path.Combine(dir.Root, "ca.crt");
+            d["Pki:CaPrivateKeyPath"] = Path.Combine(dir.Root, "ca.key");
+        });
+
+        // The config-driven swap registered the file-backed authority, not the dev CA.
+        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
+        Assert.IsType<FileBackedCertificateAuthority>(ca);
+        var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
+        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
+        var clock = env.Host.Services.GetRequiredService<TimeProvider>();
+
+        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        using var channel = env.ConnectBeacon(leafCert, leafKey);
+        var client = new Beacon.BeaconClient(channel);
+        var call = client.CheckIn();
+        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
+
+        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        var response = ParseResponse(call.ResponseStream.Current);
+        Assert.Equal(HandshakeStatus.Ok, response.Status);
+
+        // The leaf chained to the external CA at TLS and the implant is now online.
+        var online = await sessions.ListActiveAsync(implant.EngagementId);
+        Assert.Single(online);
+        Assert.Equal(implant.Id, online[0].ImplantId);
+
+        await call.RequestStream.CompleteAsync();
+        await call.ResponseStream.MoveNext(CancellationToken.None);
+    }
+
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
         IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
     {
@@ -178,13 +224,13 @@ public class HandshakePresenceTests
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
-        public static async Task<TestEnv> StartAsync()
+        public static async Task<TestEnv> StartAsync(Action<Dictionary<string, string?>>? extendConfig = null)
         {
             var env = new TestEnv();
             env.MtlsPort = GetFreeTcpPort();
             env.HttpPort = GetFreeTcpPort();
 
-            var config = AuthenticatedHost.BuildConfig();
+            var config = AuthenticatedHost.BuildConfig(extendConfig);
             env.Host = TransportHost.CreateHostBuilder(
                     configureServices: services => AuthenticatedHost.ComposeServices(services, config),
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
@@ -269,5 +315,44 @@ public class HandshakePresenceTests
                 new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, critical: true));
         request.CertificateExtensions.Add(RodImplantEngagementExtension.Build(engagementId));
         return request.CreateSelfSigned(notBefore, notAfter);
+    }
+
+    // A self-signed CA root for the file-backed-authority path, written to PEM so
+    // FileBackedCertificateAuthority can load it. Production supplies the
+    // equivalent externally; here it is generated in-process.
+    private static (X509Certificate2 Ca, RSA Key) BuildExternalCa()
+    {
+        var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=Rod Test External CA,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, critical: true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, critical: true));
+        // Long-lived so the 30-day implant leaves always fit inside it; a real
+        // externally provisioned engagement CA behaves the same way.
+        return (request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(365)), key);
+    }
+
+    private static string Pem(string type, byte[] der)
+        => $"-----BEGIN {type}-----\n"
+           + Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks)
+           + $"\n-----END {type}-----\n";
+
+    private static void WritePem(TempDir dir, string name, string pem)
+        => File.WriteAllText(Path.Combine(dir.Root, name), pem);
+
+    // A self-cleaning temp directory for the file-backed-CA PEM files.
+    private sealed class TempDir : IDisposable
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), "Rod.Integration.Tests-" + Guid.NewGuid().ToString("N"));
+
+        public TempDir() => Directory.CreateDirectory(Root);
+
+        public void Dispose()
+        {
+            try { Directory.Delete(Root, recursive: true); }
+            catch (IOException) { /* best effort */ }
+            catch (UnauthorizedAccessException) { /* best effort */ }
+        }
     }
 }

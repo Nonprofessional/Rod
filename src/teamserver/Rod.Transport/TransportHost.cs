@@ -69,7 +69,29 @@ public static class TransportHost
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
-        services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
+        // Implant CA (architecture.md Sec 9): the self-signed DevCertificateAuthority
+        // is the walking-skeleton default; an externally provisioned engagement CA,
+        // supplied as PEM files via the Pki section, replaces it for production
+        // (FileBackedCertificateAuthority). Mirrors the Audit:DataDirectory opt-in
+        // below: presence selects the production adapter, absence keeps the dev
+        // default and every existing test unchanged. The authority is constructed
+        // eagerly so a missing, unreadable, or mismatched CA fails the host at
+        // startup, not at the first enrollment.
+        var pkiCertPath = configuration?["Pki:CaCertificatePath"];
+        var pkiKeyPath = configuration?["Pki:CaPrivateKeyPath"];
+        if (!string.IsNullOrWhiteSpace(pkiCertPath) || !string.IsNullOrWhiteSpace(pkiKeyPath))
+        {
+            if (string.IsNullOrWhiteSpace(pkiCertPath) || string.IsNullOrWhiteSpace(pkiKeyPath))
+                throw new InvalidOperationException(
+                    "Pki:CaCertificatePath and Pki:CaPrivateKeyPath must be configured together; supply both or neither.");
+            services.AddSingleton<IImplantCertificateAuthority>(
+                new FileBackedCertificateAuthority(new FileBackedCertificateAuthorityOptions(
+                    pkiCertPath!, pkiKeyPath!, configuration?["Pki:CaPrivateKeyPassphrase"])));
+        }
+        else
+        {
+            services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
+        }
         services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
 
