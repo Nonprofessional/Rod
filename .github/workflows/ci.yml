@@ -124,11 +124,11 @@ jobs:
         # real proof the AOT property holds end to end. Normal build, test, and
         # format of the project are already covered by the build/test/format jobs
         # above (it ships in Rod.slnx).
-        run: dotnet publish src/redirector/dotnet/Rod.Redirector/Rod.Redirector.csproj -r linux-x64 -c Release
+        run: dotnet publish src/redirector/dotnet/Rod.Redirector.csproj -r linux-x64 -c Release
       - name: Verify single binary
         run: |
           set -e
-          bin="$(find src/redirector/dotnet/Rod.Redirector/bin/Release/net10.0/linux-x64/publish -maxdepth 1 -name rod-redirector -type f)"
+          bin="$(find src/redirector/dotnet/bin/Release/net10.0/linux-x64/publish -maxdepth 1 -name rod-redirector -type f)"
           test -n "$bin"
           test -x "$bin"
           ls -lh "$bin"
