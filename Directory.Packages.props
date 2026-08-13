@@ -27,5 +27,11 @@
     <!-- Live Postgres for the durability acceptance test; ephemeral container
          per test, gated to skip when Docker is absent. -->
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.13.0" />
+    <!-- SSH.NET is pulled transitively by Testcontainers (SSH-based wait
+         strategies). Pinned above the vulnerable 2025.1.0 (GHSA-q939-rpr3-3284,
+         high severity) that Testcontainers 4.13.0 resolves to; the direct
+         PackageReference in Rod.Integration.Tests applies this central version
+         to the transitive. Fixed in 2026.0.0 per the GitHub/OSV advisory. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 </Project>

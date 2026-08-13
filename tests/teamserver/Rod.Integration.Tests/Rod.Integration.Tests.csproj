@@ -18,6 +18,10 @@
          M10.1). An ephemeral container per test class; tests skip (not fail)
          when Docker is unavailable, so CI without Docker stays green. -->
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <!-- Direct reference forces the transitive SSH.NET (pulled by
+         Testcontainers) up to the central version in Directory.Packages.props,
+         above the vulnerable 2025.1.0 (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" />
   </ItemGroup>
 
   <ItemGroup>
