@@ -179,7 +179,10 @@ public class FileBackedCertificateAuthorityTests
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, critical: true));
         request.CertificateExtensions.Add(
             new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, critical: true));
-        var ca = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(30));
+        // A real externally provisioned CA is long-lived so the 30-day leaves always
+        // fit inside it; mirror that here (a 30-day CA would let a leaf issued a
+        // moment later outlive the issuer and fail CertificateRequest.Create).
+        var ca = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(365));
         return (ca, key);
     }
 
