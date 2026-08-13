@@ -93,9 +93,18 @@ roadmap scope.
       end to end: deploy a fresh forwarder, `POST /listeners/{id}:repoint`,
       decommission the old host. See [ADR 0011](decisions/0011-redirector-design.md)
       and the deploy/rotate runbook ([operations/redirectors.md](operations/redirectors.md)).)_
-- [ ] **Observability.** Structured logs, metrics, and health beyond
-      `GET /health`. _AC:_ operator and implant activity is observable in a
-      production target's telemetry stack.
+- [ ] **Teamserver observability.** Structured logs, metrics, and health
+      beyond `GET /health` on the server side. _AC:_ operator activity and the
+      ingested C2 event stream (beacon check-ins, task results, exfil) are
+      queryable in the teamserver's own telemetry surface.
+- [x] **No implant-side telemetry (non-goal).** The reference implant carries
+      no logging or metrics SDK and no exporter; its activity is observable
+      only through the C2 stream the teamserver records. _AC:_ the implant
+      artifact stays at its current 3-package footprint and opens no second
+      network destination beyond the C2 channel. _(Resolved: implant-side
+      telemetry is excluded on footprint and OPSEC grounds -- an exporter
+      phoning a metrics backend is a detection signal. Out-of-tree implants may
+      ship their own; the reference .NET implant does not.)_
 
 ## Architecture audit and gaps
 
