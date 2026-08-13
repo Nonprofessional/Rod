@@ -69,9 +69,18 @@ roadmap scope.
       session principal on every operator endpoint, a config-seeded first
       operator, and a durable `operator_credentials` store; see ADR 0008.
       Per-engagement RBAC stays deferred.)_
-- [ ] **Real implant CA.** Replace the dev self-signed CA
+- [x] **Real implant CA.** Replace the dev self-signed CA
       (`DevCertificateAuthority`) with a production CA path. _AC:_ enrollment
-      binds certificates to a non-dev CA chain.
+      binds certificates to a non-dev CA chain. _(Shipped:
+      `FileBackedCertificateAuthority` consumes an externally provisioned
+      engagement CA (PEM cert + RSA key on disk) and signs implant leaves with
+      the same leaf construction as the dev authority, so only the issuer
+      changes; `AddRodTransport` selects it by the `Pki` config section the way
+      it selects the audit store, and constructs it eagerly so a bad CA fails
+      the host at startup. An integration test enrolls an implant under the
+      configured CA and completes the mTLS handshake. See
+      [ADR 0010](decisions/0010-production-implant-ca.md). A proper TLS server
+      leaf + SAN stays a documented follow-on.)_
 - [ ] **Redirector deployment story.** Document and (where needed) tooling for
       real redirector hosts behind the listener's public endpoint; the in-tree
       direction is a .NET Native AOT forwarder (ADR 0009). _AC:_ a burned
