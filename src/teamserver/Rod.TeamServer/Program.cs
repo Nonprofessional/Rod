@@ -24,11 +24,14 @@ builder.Services.AddRodTransport(builder.Configuration);
 // LayerDependencyTests), so the composition root assembles it here.
 builder.Services.AddRodOperators();
 // Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3):
-// the capability registry and dispatcher, and the registry-backed task
-// resolver that replaces core state's strict class-table default. Transport
-// cannot reference Rod.Tradecraft (architecture test LayerDependencyTests), so
-// the composition root assembles it here -- the same reason as AddRodOperators.
-builder.Services.AddRodTradecraft();
+// the capability registry and the registry-backed task resolver that replaces
+// core state's strict class-table default, plus any out-of-tree capability
+// modules listed under Tradecraft:Modules (Sec 10.2) -- each replaces the
+// placeholder for its verb, so adding one never edits this composition root.
+// Transport cannot reference Rod.Tradecraft (architecture test
+// LayerDependencyTests), so the composition root assembles it here -- the same
+// reason as AddRodOperators.
+builder.Services.AddRodTradecraft(builder.Configuration);
 // Wire the durable PostgreSQL store (architecture.md Sec 12, ADR 0003):
 // when ConnectionStrings:Postgres is set, this registers the EF Core
 // DbContext and replaces the in-memory core-state ports whose durable adapters

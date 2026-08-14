@@ -68,12 +68,34 @@ public static class RodTradecraftHost
     /// <c>configureServices</c> hook.
     /// </remarks>
     public static IServiceCollection AddRodTradecraft(this IServiceCollection services)
+        => services.AddRodTradecraft(configuration: null);
+
+    /// <summary>
+    /// Wires the tradecraft layer onto the live task path and loads any
+    /// out-of-tree capability modules listed under <c>Tradecraft:Modules</c> in
+    /// <paramref name="configuration"/> (architecture.md Sec 10.2). Each entry is
+    /// a <c>Namespace.Type, AssemblyName</c> string; the module is instantiated at
+    /// startup and registered after the built-in load, so it replaces the
+    /// placeholder for its verb -- adding one never edits the composition root.
+    /// A null configuration (the test host, or any host that does not opt in)
+    /// keeps the built-in placeholders in place.
+    /// </summary>
+    public static IServiceCollection AddRodTradecraft(
+        this IServiceCollection services,
+        Microsoft.Extensions.Configuration.IConfiguration? configuration)
     {
         // One registry for the process; load the built-in verbs before the
-        // container resolves anything. Out-of-tree modules register afterwards
-        // and replace the placeholder for their verb (last registration wins).
+        // container resolves anything. Out-of-tree modules load afterwards and
+        // replace the placeholder for their verb (last registration wins).
         var registry = new InMemoryCapabilityRegistry();
         LoadCapabilitiesAsync(registry, CancellationToken.None).GetAwaiter().GetResult();
+        if (configuration is not null)
+        {
+            // Loads the config-listed modules; a bad entry fails startup loudly
+            // rather than leaving the verb on its placeholder.
+            CapabilityModuleLoader.LoadAsync(registry: registry, configuration: configuration, cancellationToken: CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
 
         services.AddSingleton<ICapabilityRegistry>(registry);
 

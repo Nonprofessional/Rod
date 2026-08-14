@@ -104,15 +104,24 @@ internal static class AuthenticatedHost
     /// operator-facing endpoint, or omit it to assert the 401 an anonymous request
     /// now receives.
     /// </returns>
+    /// <param name="configureServicesWithConfig">
+    /// An optional second service hook that also receives the built configuration
+    /// -- for layers whose registration reads config (the tradecraft module list).
+    /// </param>
     public static (HttpClient Client, IHost Host, OperatorId OperatorId) Create(
         Action<IServiceCollection>? configureServices = null,
         Action<IEndpointRouteBuilder>? mapEndpoints = null,
-        Action<Dictionary<string, string?>>? extendConfig = null)
+        Action<Dictionary<string, string?>>? extendConfig = null,
+        Action<IServiceCollection, IConfiguration>? configureServicesWithConfig = null)
     {
         var config = BuildConfig(extendConfig);
 
         IHost host = TransportHost.CreateHostBuilder(
-                configureServices: services => ComposeServices(services, config, configureServices),
+                configureServices: services =>
+                {
+                    ComposeServices(services, config, configureServices);
+                    configureServicesWithConfig?.Invoke(services, config);
+                },
                 mapEndpoints: endpoints => ComposeEndpoints(endpoints, mapEndpoints),
                 configuration: config)
             .ConfigureWebHost(webBuilder => webBuilder.UseTestServer())

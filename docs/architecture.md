@@ -637,11 +637,16 @@ satisfies the registry and the task gate until an operator supplies a module.
 That makes the out-of-tree path a *registration*, not a schema change -- a
 module registered for `evasion.avoid` or `exploit.invoke` replaces the
 placeholder (last-registration-wins) and is taskable through the same UI and
-gate as any built-in verb. There is **no runtime assembly loader**: an out-of-tree
-module is compiled into the teamserver process and registered against the
-DI-resolved registry (last-registration-wins), deliberately bounding the
-teamserver's runtime attack surface by its compile-time inputs. The capability
-contract is therefore registration-only: `ICapabilityModule` carries its
+gate as any built-in verb. The one runtime loader is config-listed and narrowly
+bounded: the `Tradecraft:Modules` section names each module as a
+`Namespace.Type, AssemblyName` string, the assembly is resolved by that name
+alone (already loaded, or a same-named dll in the application directory), and
+the type is instantiated at startup and registered against the DI-resolved
+registry (last-registration-wins). There is no directory scanning and no
+arbitrary plugin path -- a module reaches the process exactly when an operator
+built it, placed it next to the binary, and listed it, so adding one never
+edits the composition root; a misconfigured entry fails startup loudly. The
+capability contract is registration-only: `ICapabilityModule` carries its
 `Descriptor` and nothing else, and the server-side dispatcher surface the
 skeleton once sketched is retired. The server only gates and forwards on the
 live task path -- it never invokes a capability module server-side -- so
