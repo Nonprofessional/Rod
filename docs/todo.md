@@ -26,10 +26,14 @@ historical milestone id, from commit bodies.
       CapabilityDispatcher contract: registered today, invoked nowhere. _AC:_
       a module built against the contract loads and replaces its placeholder
       without touching core code.
-- [ ] **Session staleness sweep.** Touch is wired on every beacon frame, but
-      a stream that dies silently leaves the session active forever. _AC:_ a
-      session whose last-seen is older than a configured threshold is closed
-      and the implant drops off the online roster.
+- [x] **Session staleness sweep.** Touch is wired on every beacon frame, but
+      a stream that dies silently leaves the session active forever. Shipped:
+      a hosted sweeper closes sessions older than `Sessions:Staleness:Threshold`,
+      fans a `SessionClosed` live event per close, and the beacon stream ends
+      itself on the next frame so a recovered implant re-handshakes
+      (architecture.md Sec 10.3). _AC:_ a session whose last-seen is older than
+      a configured threshold is closed and the implant drops off the online
+      roster.
 - [ ] **List pagination.** Task, audit, and artifact listings return the full
       history; a long engagement grows these without bound. _AC:_ list
       endpoints accept a cursor or limit and the UI walks pages.

@@ -83,4 +83,22 @@ public sealed class InMemorySessionRegistry : ISessionRegistry
             .ToArray();
         return Task.FromResult<IReadOnlyList<Session>>(matches);
     }
+
+    public Task<IReadOnlyList<Session>> SweepStaleAsync(
+        DateTimeOffset cutoff,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        // Close every Active session that has gone silent past the cutoff. Each
+        // close is idempotent at the entity level; the status filter here makes
+        // the sweep itself safe to run concurrently with a reconnect close.
+        var closed = _sessions.Values
+            .Where(s => s.Status == SessionStatus.Active && s.LastSeenAt < cutoff)
+            .OrderBy(s => s.StartedAt)
+            .ToArray();
+        foreach (var session in closed)
+            session.Close(at);
+
+        return Task.FromResult<IReadOnlyList<Session>>(closed);
+    }
 }

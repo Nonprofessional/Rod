@@ -73,4 +73,18 @@ public interface ISessionRegistry
     Task<IReadOnlyList<Session>> ListByImplantAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Closes every Active session whose <see cref="Session.LastSeenAt"/> is
+    /// older than <paramref name="cutoff"/> at <paramref name="at"/>, and returns
+    /// the sessions it closed. This is the staleness sweep (architecture.md
+    /// Sec 10.3): a beacon stream that dies silently -- the connection drops
+    /// without a clean close, or the implant vanishes mid-stream -- leaves the
+    /// session Active forever without it; sweeping it closed is what drops the
+    /// implant off the online roster.
+    /// </summary>
+    Task<IReadOnlyList<Session>> SweepStaleAsync(
+        DateTimeOffset cutoff,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default);
 }

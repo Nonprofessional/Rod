@@ -181,6 +181,7 @@ export type LiveEventName =
   | 'OperatorLeft'
   | 'TaskIssued'
   | 'TaskCompleted'
+  | 'SessionClosed'
 
 export interface LiveOperator {
   id: string
@@ -205,6 +206,7 @@ export interface EngagementStreamHandlers {
   onOperatorLeft?: (operatorId: string, handle: string) => void
   onTaskIssued?: (taskId: string, payload: string) => void
   onTaskCompleted?: (taskId: string, payload: string) => void
+  onSessionClosed?: (implantId: string, payload: string) => void
   onError?: (event: Event) => void
 }
 
@@ -245,6 +247,10 @@ export function subscribeToEngagement(
   source.addEventListener('TaskCompleted', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onTaskCompleted?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('SessionClosed', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onSessionClosed?.(payload?.implantId ?? '', payload?.payload ?? '')
   })
   source.onerror = (e) => handlers.onError?.(e)
 

@@ -126,4 +126,41 @@ public class SessionRegistryTests
         Assert.Single(aOnly);
         Assert.All(aOnly, s => Assert.Equal(engagementA, s.EngagementId));
     }
+
+    [Fact]
+    public async Task SweepStale_ClosesSilentSessions_AndReturnsThem()
+    {
+        // A session whose last-seen stamp predates the cutoff is closed -- the
+        // staleness sweep (architecture.md Sec 10.3) that drops dead streams off
+        // the online roster.
+        var registry = new InMemorySessionRegistry();
+        var engagement = EngagementId.New();
+        var stale = await registry.OpenAsync(NewImplant(engagement), Array.Empty<string>(), Now);
+        var fresh = await registry.OpenAsync(NewImplant(engagement), Array.Empty<string>(), Now.AddMinutes(5));
+
+        var closed = await registry.SweepStaleAsync(cutoff: Now.AddMinutes(2), at: Now.AddMinutes(10));
+
+        var swept = Assert.Single(closed);
+        Assert.Equal(stale.Id, swept.Id);
+        Assert.Equal(SessionStatus.Closed, swept.Status);
+        Assert.Equal(Now.AddMinutes(10), swept.EndedAt);
+        // The fresh session survives untouched.
+        Assert.Equal(SessionStatus.Active, fresh.Status);
+        Assert.Equal(fresh.Id, (await registry.GetActiveAsync(fresh.ImplantId))!.Id);
+        // The swept implant dropped off the active roster.
+        Assert.Null(await registry.GetActiveAsync(stale.ImplantId));
+    }
+
+    [Fact]
+    public async Task SweepStale_LeavesNothingToClose_WhenAllSessionsAreFresh()
+    {
+        var registry = new InMemorySessionRegistry();
+        var engagement = EngagementId.New();
+        await registry.OpenAsync(NewImplant(engagement), Array.Empty<string>(), Now.AddMinutes(5));
+
+        var closed = await registry.SweepStaleAsync(cutoff: Now, at: Now.AddMinutes(10));
+
+        Assert.Empty(closed);
+        Assert.Single(await registry.ListActiveAsync(engagement));
+    }
 }

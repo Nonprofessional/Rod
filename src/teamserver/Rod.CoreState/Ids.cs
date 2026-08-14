@@ -9,6 +9,13 @@ namespace Rod.CoreState;
 public readonly record struct OperatorId(Guid Value)
 {
     public static OperatorId New() => new(Guid.NewGuid());
+
+    /// <summary>
+    /// The null operator, for system-initiated events no human operator
+    /// performed (e.g. a staleness sweep closing a session).
+    /// </summary>
+    public static OperatorId Empty => new(Guid.Empty);
+
     public override string ToString() => Value.ToString("N");
 }
 

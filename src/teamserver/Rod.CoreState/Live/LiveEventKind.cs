@@ -38,4 +38,13 @@ public enum LiveEventKind
     /// next (refused) handshake.
     /// </summary>
     ImplantRetired,
+
+    /// <summary>
+    /// A session was closed by the staleness sweep: its beacon stream stopped
+    /// producing frames longer than the configured threshold (architecture.md
+    /// Sec 10.3). System-initiated, so it carries the null operator
+    /// (<c>OperatorId.Empty</c>); connected operators refresh the roster on it,
+    /// seeing the implant drop offline without polling.
+    /// </summary>
+    SessionClosed,
 }

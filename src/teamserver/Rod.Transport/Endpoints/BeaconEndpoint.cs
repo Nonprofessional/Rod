@@ -136,6 +136,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         var sessionContext = new SessionContext(
             implant,
             handshake.EngagementId,
+            handshake.SessionId,
             handshake.DeployedBy,
             handshakeRequest.Capabilities);
         try
@@ -171,7 +172,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // so this dictionary lives for the life of one beacon stream; the reader
         // loop is the sole writer, so it needs no extra synchronization.
         var exfil = new ExfilReassembler();
-        var reader = ReadResultsAsync(session, requestStream, exfil, linked.Token);
+        var reader = ReadResultsAsync(session, requestStream, exfil, linked);
         var writer = DispatchTasksAsync(session.Implant, responseStream, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
@@ -198,12 +199,27 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         SessionContext session,
         IAsyncStreamReader<Frame> requestStream,
         ExfilReassembler exfil,
-        CancellationToken cancellationToken)
+        CancellationTokenSource linked)
     {
+        var cancellationToken = linked.Token;
         while (await requestStream.MoveNext(cancellationToken))
         {
             await _sessions.TouchAsync(
                 session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
+
+            // The session may have been closed out from under this stream -- the
+            // staleness sweep, or a reconnect that opened a newer session for the
+            // implant. TouchAsync is a no-op then, so every later frame would
+            // keep refreshing a session this stream no longer holds; end the
+            // stream instead so the implant reconnects and re-handshakes (its
+            // beacon loop treats a dropped stream as a normal reconnect).
+            var active = await _sessions.GetActiveAsync(session.Implant, cancellationToken);
+            if (active is null || active.Id != session.SessionId)
+            {
+                linked.Cancel();
+                return;
+            }
+
             await HandleFrameAsync(session, requestStream.Current, exfil, cancellationToken);
         }
     }
@@ -543,6 +559,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private sealed record SessionContext(
         ImplantId Implant,
         EngagementId EngagementId,
+        SessionId SessionId,
         OperatorId OperatorId,
         IReadOnlyCollection<string> Capabilities);
 

@@ -659,6 +659,19 @@ filesystem, network, and credentials actually live.
 -> recorded in the engagement audit trail. Sensitive verbs additionally require
 engagement authorization and are always audited.
 
+A session is the per-connection entity: each beacon frame advances its
+last-seen stamp, and the stream's end closes it. A stream that dies silently --
+the implant vanishes mid-stream, or the connection drops without a clean close
+-- would otherwise leave its session Active forever, so a hosted staleness
+sweeper closes every Active session whose last-seen stamp is older than the
+configured `Sessions:Staleness:Threshold` (checked every
+`Sessions:Staleness:SweepInterval`). Closing the session is what drops the
+implant off the online roster; each swept close also fans out a
+`SessionClosed` live event so connected operators see it immediately, and the
+beacon stream's reader ends the connection on its next frame so a recovered
+implant reconnects and re-handshakes instead of refreshing a session it no
+longer holds.
+
 Task issuance gates the verb through a capability resolver
 (`ITaskCapabilityResolver`). The per-class reduced verb set (Sec 5.2) is the
 primary authority; the composition root swaps in a registry-backed resolver

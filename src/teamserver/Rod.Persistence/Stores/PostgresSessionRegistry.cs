@@ -128,4 +128,30 @@ internal sealed class PostgresSessionRegistry : ISessionRegistry
             .OrderBy(s => s.StartedAt)
             .ToArrayAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Session>> SweepStaleAsync(
+        DateTimeOffset cutoff,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        // Every Active session that has gone silent past the cutoff. Loaded
+        // tracked so the Close transitions persist in the same context; the
+        // status filter makes a concurrent reconnect close harmless (the entity
+        // refuses a second close, so a re-query would be needed -- the filter
+        // keeps the sweep's own view correct instead).
+        var stale = await db.Sessions
+            .Where(s => s.Status == SessionStatus.Active && s.LastSeenAt < cutoff)
+            .OrderBy(s => s.StartedAt)
+            .ToArrayAsync(cancellationToken);
+        foreach (var session in stale)
+        {
+            if (session.Status == SessionStatus.Active && session.LastSeenAt < cutoff)
+                session.Close(at);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return stale.Where(s => s.Status == SessionStatus.Closed).ToArray();
+    }
 }

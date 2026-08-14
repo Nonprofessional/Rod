@@ -158,6 +158,23 @@ public static class TransportHost
         services.AddSingleton<TaskService>();
         services.AddSingleton<ImplantService>();
 
+        // Session staleness sweep (architecture.md Sec 10.3): registered only
+        // when a configuration is supplied -- the composition root always has
+        // one, the bare test host never opts in. The hosted sweeper runs the
+        // threshold check on a timer; absent the Sessions:Staleness section it
+        // uses the 15-minute default. A present-but-misconfigured section fails
+        // startup loudly rather than leaving dead sessions on the roster.
+        if (configuration is not null)
+        {
+            var staleness = SessionStalenessOptions.FromConfiguration(configuration);
+            services.AddSingleton(staleness);
+            services.AddSingleton<SessionSweepService>();
+            // Registered as a plain singleton plus the hosted wrapper, so the
+            // concrete type stays resolvable (tests drive a pass directly).
+            services.AddSingleton<SessionStalenessSweeper>();
+            services.AddHostedService(sp => sp.GetRequiredService<SessionStalenessSweeper>());
+        }
+
         // Build pipeline (/, ADR 0009): the build-unit registry and
         // the orchestrator that drives it. The .NET slot holds the real in-tree
         // reference build unit (compiles the .NET reference implant via dotnet

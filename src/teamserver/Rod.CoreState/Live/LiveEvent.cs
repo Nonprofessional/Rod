@@ -78,4 +78,17 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.ImplantRetired, operatorId, implantId, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a session-closed event for the staleness sweep (architecture.md
+    /// Sec 10.3): the server closed the session itself, so the operator id is
+    /// <see cref="OperatorId.Empty"/> and no task is involved.
+    /// <paramref name="payload"/> describes why the session was swept.
+    /// </summary>
+    public static LiveEvent SessionClosed(
+        EngagementId engagement,
+        ImplantId implantId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.SessionClosed, OperatorId.Empty, implantId, TaskId: null, payload, at);
 }
