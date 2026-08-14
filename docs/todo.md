@@ -20,12 +20,18 @@ historical milestone id, from commit bodies.
 
 ## Teamserver
 
-- [ ] **Out-of-tree module loading.** Give out-of-tree capability modules a
+- [x] **Out-of-tree module loading.** Give out-of-tree capability modules a
       supported registration path (assembly scan or a config-listed type
       list) so adding one never edits the composition root, and settle the
-      CapabilityDispatcher contract: registered today, invoked nowhere. _AC:_
-      a module built against the contract loads and replaces its placeholder
-      without touching core code.
+      CapabilityDispatcher contract: registered today, invoked nowhere.
+      Shipped: `Tradecraft:Modules` lists `Namespace.Type, AssemblyName`
+      entries, loaded at startup and registered over the placeholders (last
+      registration wins), with bad entries failing startup loudly; the
+      contract is settled as registration-only -- the server gates and
+      forwards, dispatch lives on the implant, and the retired server-side
+      dispatcher surface is documented as such (architecture.md Sec 10.2).
+      _AC:_ a module built against the contract loads and replaces its
+      placeholder without touching core code.
 - [x] **Session staleness sweep.** Touch is wired on every beacon frame, but
       a stream that dies silently leaves the session active forever. Shipped:
       a hosted sweeper closes sessions older than `Sessions:Staleness:Threshold`,
