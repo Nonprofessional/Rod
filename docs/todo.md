@@ -50,12 +50,24 @@ historical milestone id, from commit bodies.
 
 ## Tests
 
-- [ ] **Protocol layer rule.** The architecture tests assert every layer's
+- [x] **Protocol layer rule.** The architecture tests assert every layer's
       dependency matrix except Protocol's own "depends on nothing in-house"
       rule, and a dead (unused) project reference passes because the checks
-      inspect namespace usage. _AC:_ Protocol's rule is tested and a
-      forbidden csproj reference fails even when no code uses it.
-- [ ] **Concurrency coverage.** The shared in-memory stores and the live bus
-      use locks and Interlocked with no hammer tests. _AC:_ multi-threaded
-      tests exercise the task claim, stager redemption, audit append, and
-      live-bus subscribe/publish paths.
+      inspect namespace usage. Shipped:
+      `Protocol_Dependencies_PointInwardOnly` asserts the contract project
+      depends on nothing in-house like the other layers, and the new
+      `ProjectReferenceTests` read the csproj reference edges against the
+      allowed matrix, so a forbidden reference fails the build even when no
+      code uses it (architecture.md Sec 4.1). _AC:_ Protocol's rule is
+      tested and a forbidden csproj reference fails even when no code uses it.
+- [x] **Concurrency coverage.** The shared in-memory stores and the live bus
+      use locks and Interlocked with no hammer tests. Shipped: real
+      multi-threaded hammer tests (gated worker tasks) in
+      `Rod.CoreState.Tests`, `Rod.Audit.Tests`, and the new
+      `Rod.Operators.Tests` drive the task claim (every task handed out
+      exactly once), stager redemption (a single-use token redeems exactly
+      once), audit append (a concurrent trail reconstructs as one valid hash
+      chain), and live-bus subscribe/publish (duplicate-free, engagement-
+      scoped fan-out under churn) paths (architecture.md Sec 4.1, Sec 10.3,
+      Sec 11). _AC:_ multi-threaded tests exercise the task claim, stager
+      redemption, audit append, and live-bus subscribe/publish paths.
