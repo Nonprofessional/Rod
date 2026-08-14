@@ -23,15 +23,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <!--
-      Directory.Build.props at the repo root already sets Nullable,
-      TreatWarningsAsErrors, and the latest LangVersion repo-wide, and applies
-      to this tree (it walks up from the project dir). The implant adopts the
-      same discipline as the teamserver. CPM is on repo-wide and the implant's
-      package versions are governed centrally by Directory.Packages.props.
+      Directory.Build.props at the repo root sets the shared build settings
+      (TargetFramework, Nullable, ImplicitUsings, TreatWarningsAsErrors, latest
+      LangVersion) repo-wide and applies to this tree (it walks up from the
+      project dir). The implant adopts the same discipline as the teamserver.
+      CPM is on repo-wide and the implant's package versions are governed
+      centrally by Directory.Packages.props.
     -->
     <AssemblyName>Rod.Implant</AssemblyName>
     <RootNamespace>Rod.Implant</RootNamespace>

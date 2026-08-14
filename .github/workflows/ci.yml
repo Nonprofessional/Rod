@@ -86,19 +86,15 @@ jobs:
       - name: Setup .NET
         # The reference .NET implant targets net10.0; the latest SDK satisfies it.
         uses: actions/setup-dotnet@v4
-      - name: Restore
-        run: dotnet restore Rod.slnx
-      - name: Build
-        # Building the solution also compiles the implant's gRPC client bindings
-        # from the canonical rod.proto via Grpc.Tools (no committed generated
-        # code), so a clean build here proves the proto compile path.
-        run: dotnet build Rod.slnx --configuration Release --no-restore
       - name: .NET implant unit tests
         # The per-handler unit tests live in a separate xUnit project
         # (tests/implant/dotnet) that is intentionally external to Rod.slnx,
-        # mirroring the implant itself. It exercises the internal handlers
-        # (collect/exfil/recon/persist/lateral) and runner dispatch via
-        # InternalsVisibleTo, without standing up a real teamserver.
+        # mirroring the implant itself. Restoring it compiles the implant's
+        # gRPC client bindings from the canonical rod.proto via Grpc.Tools (no
+        # committed generated code), so this step also proves the proto compile
+        # path. It exercises the internal handlers (collect/exfil/recon/persist/
+        # lateral) and runner dispatch via InternalsVisibleTo, without standing
+        # up a real teamserver.
         run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
       - name: .NET implant end-to-end (roadmap M3.3)
         # DotNetImplantTests publishes the reference .NET implant to a temp dir

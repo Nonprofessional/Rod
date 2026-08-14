@@ -68,8 +68,7 @@ public static class EngagementEndpoints
         CancellationToken cancellationToken)
     {
         // The owner is the authenticated operator, resolved off the session
-        // principal rather than named in the body (operator auth,
-        // production-hardening todo). The group already requires authorization,
+        // principal rather than named in the body (operator auth). The group already requires authorization,
         // so a present-but-missing claim is a defensive 401, not a normal path.
         var ownerId = user.TryGetOperatorId();
         if (ownerId is null)

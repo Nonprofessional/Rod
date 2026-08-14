@@ -176,7 +176,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["verbs"] = verbs,
         };
         var json = JsonSerializer.Serialize(map);
-        return Base64Url(Encoding.UTF8.GetBytes(json));
+        return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
     }
 
     // Renders the profile's custom headers as a JSON-object value (a
@@ -373,11 +373,4 @@ public sealed class DotNetBuildUnit : IBuildUnit
         catch { /* best-effort; temp dir is disposable */ }
     }
 
-    // RFC 4648 base64url without padding -- matches the encoding used by the Go
-    // build unit and the implant's own DecodeBase64Url decoder.
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
 }

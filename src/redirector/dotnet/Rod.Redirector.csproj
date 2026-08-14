@@ -27,16 +27,14 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>rod-redirector</AssemblyName>
     <RootNamespace>Rod.Redirector</RootNamespace>
     <!--
-      Directory.Build.props at the repo root already sets Nullable,
-      TreatWarningsAsErrors, and the latest LangVersion repo-wide, and applies to
-      this tree (it walks up from the project dir). CPM is on repo-wide; this
-      project needs no packages (BCL only).
+      Directory.Build.props at the repo root sets the shared build settings
+      (TargetFramework, Nullable, ImplicitUsings, TreatWarningsAsErrors, latest
+      LangVersion) repo-wide and applies to this tree (it walks up from the
+      project dir). CPM is on repo-wide; this project needs no packages (BCL
+      only).
     -->
     <!-- Native AOT (ADR 0009): a single static binary, no runtime install. -->
     <PublishAot>true</PublishAot>

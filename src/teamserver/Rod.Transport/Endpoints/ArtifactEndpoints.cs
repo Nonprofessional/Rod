@@ -22,11 +22,10 @@ namespace Rod.Transport.Endpoints;
 /// Scoped by engagement (architecture.md Sec 3): the engagement id in the path
 /// binds every lookup, and a retrieve cross-checks the stored artifact's
 /// engagement, so an artifact in one engagement is never reachable from another.
-/// Attribution is body-driven, the repo-wide convention (no operator auth in the
-/// walking skeleton): the attach request names the operator, and the
-/// <see cref="ArtifactAttached"/> audit write is composed in the handler -- the
-/// artifact store stays audit-agnostic, the transport layer is where the
-/// artifact meets the trail.
+/// Attribution is server-resolved: the attaching operator is the authenticated
+/// session principal, and the <see cref="ArtifactAttached"/> audit write is
+/// composed in the handler -- the artifact store stays audit-agnostic, the
+/// transport layer is where the artifact meets the trail.
 /// </summary>
 public static class ArtifactEndpoints
 {
@@ -61,8 +60,7 @@ public static class ArtifactEndpoints
         CancellationToken cancellationToken)
     {
         // The attaching operator is the authenticated operator, resolved off the
-        // session principal rather than named in the body (operator auth,
-        // production-hardening todo).
+        // session principal rather than named in the body (operator auth).
         var attachedBy = user.TryGetOperatorId();
         if (attachedBy is null)
             return Results.Unauthorized();

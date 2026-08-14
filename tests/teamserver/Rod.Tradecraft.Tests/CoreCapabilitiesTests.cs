@@ -77,7 +77,7 @@ public class CoreCapabilitiesTests
         var overrideModule = new FixedModule("shell.exec", "real implementation");
         await registry.RegisterAsync(overrideModule);
 
-        await RodTradecraftHost.LoadCoreCapabilitiesAsync(registry);
+        await RodTradecraftHost.LoadCapabilitiesAsync(registry);
 
         var found = await registry.FindAsync("shell.exec");
         Assert.Same(overrideModule, found);

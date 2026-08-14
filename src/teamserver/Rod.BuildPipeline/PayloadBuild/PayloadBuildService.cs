@@ -46,7 +46,7 @@ public sealed class PayloadBuildService
                 $"No build unit registered for language {request.Language}.");
 
         var now = _clock.GetUtcNow();
-        var key = Base64Url(RandomNumberGenerator.GetBytes(32));
+        var key = Base64UrlCodec.Encode(RandomNumberGenerator.GetBytes(32));
 
         var @params = new BuildParams(
             request.EngagementId,
@@ -71,14 +71,6 @@ public sealed class PayloadBuildService
     }
 
     private static readonly TimeSpan DefaultKillDateOffset = TimeSpan.FromDays(30);
-
-    // RFC 4648 base64url without padding -- URL-safe, matches the stager-token and
-    // implant-key encoding in core state.
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
 }
 
 /// <summary>

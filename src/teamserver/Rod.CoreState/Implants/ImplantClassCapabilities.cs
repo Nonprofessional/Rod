@@ -19,9 +19,9 @@ namespace Rod.CoreState.Implants;
 /// <remarks>
 /// The values live in core state -- the inner ring both the build pipeline and
 /// the tradecraft layer may depend on -- so the rule is defined once and read by
-/// every layer that needs it, without a cross-layer dependency. Concrete verb
-/// behavior stays out of this repository (RESPONSIBLE-USE.md, AGENTS.md Sec 7):
-/// this is the contract, not the tradecraft.
+/// every layer that needs it, without a cross-layer dependency. The standard,
+/// documented categories run concrete handlers on the reference implant; the
+/// sensitive categories (Sec 13) stay contract-only in this repository.
 /// </remarks>
 public static class ImplantClassCapabilities
 {

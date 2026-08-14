@@ -26,10 +26,6 @@ internal sealed class PostgresImplantRepository : IImplantRepository
         return await db.Implants.AsNoTracking().FirstOrDefaultAsync(i => i.Id == id, cancellationToken);
     }
 
-    public async Task<Implant> GetOrThrowAsync(ImplantId id, CancellationToken cancellationToken = default)
-        => await FindAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Implant {id} does not exist.");
-
     public async Task<IReadOnlyList<Implant>> ListByEngagementAsync(
         EngagementId engagementId,
         CancellationToken cancellationToken = default)

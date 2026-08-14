@@ -115,8 +115,7 @@ public static class ImplantEndpoints
         CancellationToken cancellationToken)
     {
         // The retiring operator is the authenticated operator, resolved off the
-        // session principal rather than named in the body (operator auth,
-        // production-hardening todo).
+        // session principal rather than named in the body (operator auth).
         var retiredBy = user.TryGetOperatorId();
         if (retiredBy is null)
             return Results.Unauthorized();

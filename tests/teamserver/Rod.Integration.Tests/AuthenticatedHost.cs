@@ -23,7 +23,7 @@ namespace Rod.Integration.Tests;
 /// transport core with the operator and operator-auth layers -- the same shape the
 /// teamserver host assembles -- and seeds the initial operator from configuration
 /// so a test can establish the cookie session that every operator-facing endpoint
-/// now requires (operator authentication, production-hardening todo). The server is
+/// now requires (operator authentication). The server is
 /// the sole authority on who the caller is: the seeded operator's id is read back
 /// from the repository, and the audit trail records that server-resolved identity
 /// rather than any client-supplied value.

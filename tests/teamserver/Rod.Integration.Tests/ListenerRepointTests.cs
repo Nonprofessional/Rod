@@ -39,12 +39,6 @@ public class ListenerRepointTests
                 PublicEndpoint: oldEndpoint));
 
         var recordedBind = env.MtlsBind;
-        var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
-
-        // The old endpoint resolves to the listener before the repoint.
-        var before = await registry.GetByPublicEndpointAsync(oldEndpoint);
-        Assert.NotNull(before);
-        Assert.Equal(recordedBind, before!.BindAddress);
 
         // Listeners are visible through the operator API; find the one to repoint.
         var list = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
@@ -65,16 +59,6 @@ public class ListenerRepointTests
         // acceptance point: the redirector moved, the backend did not.
         Assert.Equal(recordedBind, repointed.BindAddress);
         Assert.NotNull(repointed.RepointedAt);
-
-        // The new endpoint now resolves to the listener...
-        var afterNew = await registry.GetByPublicEndpointAsync(newEndpoint);
-        Assert.NotNull(afterNew);
-        Assert.Equal(recordedBind, afterNew!.BindAddress);
-
-        // ...and the old endpoint no longer resolves to anything -- the burned
-        // redirector is severed. An implant still dialing it resolves to no
-        // listener.
-        Assert.Null(await registry.GetByPublicEndpointAsync(oldEndpoint));
 
         // The operator API reflects the repoint: same listener id, new endpoint,
         // bind unchanged.

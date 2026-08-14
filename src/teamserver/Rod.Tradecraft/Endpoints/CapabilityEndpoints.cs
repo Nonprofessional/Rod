@@ -67,5 +67,4 @@ public static class CapabilityEndpoints
                 d.Attributes);
     }
 
-    public sealed record Problem(string Error);
 }

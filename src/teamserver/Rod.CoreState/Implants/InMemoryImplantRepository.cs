@@ -15,10 +15,6 @@ public sealed class InMemoryImplantRepository : IImplantRepository
     public Task<Implant?> FindAsync(ImplantId id, CancellationToken cancellationToken = default)
         => Task.FromResult(_implants.TryGetValue(id, out var implant) ? implant : null);
 
-    public async Task<Implant> GetOrThrowAsync(ImplantId id, CancellationToken cancellationToken = default)
-        => await FindAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Implant {id} does not exist.");
-
     public Task<IReadOnlyList<Implant>> ListByEngagementAsync(
         EngagementId engagementId,
         CancellationToken cancellationToken = default)

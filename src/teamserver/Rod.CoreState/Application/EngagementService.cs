@@ -8,7 +8,7 @@ namespace Rod.CoreState.Application;
 /// The first engagement use cases (roadmap M1.1): create an engagement, and mint
 /// a stager token for it. Orchestrates the core-state ports; holds no state of
 /// its own. The owner is the authenticated operator the transport layer resolved
-/// off the session principal (operator auth, production-hardening todo); the
+/// off the session principal  (operator auth); the
 /// service trusts that caller to have already proven its identity.
 /// </summary>
 public sealed class EngagementService

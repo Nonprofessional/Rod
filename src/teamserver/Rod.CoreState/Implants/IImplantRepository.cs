@@ -11,8 +11,6 @@ public interface IImplantRepository
 {
     Task<Implant?> FindAsync(ImplantId id, CancellationToken cancellationToken = default);
 
-    Task<Implant> GetOrThrowAsync(ImplantId id, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// All implants enrolled into an engagement, oldest first. Scoped by
     /// engagement so cross-engagement access never reaches this with another

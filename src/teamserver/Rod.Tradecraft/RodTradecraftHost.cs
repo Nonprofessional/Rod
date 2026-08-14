@@ -226,17 +226,6 @@ public static class RodTradecraftHost
         }
     }
 
-    /// <summary>
-    /// Backward-compatible alias for <see cref="LoadCapabilitiesAsync"/>. Loads
-    /// the core, recon, lateral, persist, collect, exfil, evasion, and exploit
-    /// sets; kept under the original name so callers and tests from the M2.5
-    /// skeleton keep compiling.
-    /// </summary>
-    public static Task LoadCoreCapabilitiesAsync(
-        ICapabilityRegistry registry,
-        CancellationToken cancellationToken = default)
-        => LoadCapabilitiesAsync(registry, cancellationToken);
-
     // Registers a placeholder for descriptor's verb unless the registry already
     // has a module for it (an out-of-tree override). Centralized so the core,
     // recon, lateral, persist, collect, exfil, evasion, and exploit loops share

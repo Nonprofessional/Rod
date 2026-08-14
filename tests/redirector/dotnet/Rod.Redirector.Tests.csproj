@@ -10,9 +10,6 @@
   -->
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <!--
       Directory.Build.props at the repo root already sets Nullable,

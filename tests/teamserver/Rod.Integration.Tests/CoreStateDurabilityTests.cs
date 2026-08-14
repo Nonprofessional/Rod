@@ -175,8 +175,9 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // after restart. Then retire the parent (M4.4): the entity records
             // RetiredAt; the session is left to history.
             activeSessionId = (await sessions.OpenAsync(child, capabilities: new[] { "tunnel.open" }, at: DateTimeOffset.UtcNow)).Id;
-            var storedParent = await implants.GetOrThrowAsync(parentId);
-            Assert.True(storedParent.Retire(DateTimeOffset.UtcNow));
+            var storedParent = await implants.FindAsync(parentId);
+            Assert.NotNull(storedParent);
+            Assert.True(storedParent!.Retire(DateTimeOffset.UtcNow));
             await implants.SaveAsync(storedParent);
         }
 

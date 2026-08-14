@@ -9,10 +9,10 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// </summary>
 public enum Language
 {
-    /// <summary>Go -- cross-platform implants and the redirector language.</summary>
+    /// <summary>Go -- cross-platform implants; an out-of-tree community unit slot.</summary>
     Go,
 
-    /// <summary>C#/.NET -- Windows in-memory tradecraft.</summary>
+    /// <summary>C#/.NET -- the in-tree reference toolchain (Sec 12.2).</summary>
     DotNet,
 
     /// <summary>C/C++ -- small footprint implants.</summary>

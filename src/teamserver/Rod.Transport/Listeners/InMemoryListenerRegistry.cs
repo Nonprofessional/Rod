@@ -4,9 +4,9 @@ namespace Rod.Transport.Listeners;
 
 /// <summary>
 /// In-memory <see cref="IListenerRegistry"/> for the walking skeleton. Listeners
-/// live in a process-local map keyed by id; the public-endpoint lookup filters
-/// that map. State is lost on restart, which is correct for disposable
-/// infrastructure (architecture.md Sec 8). The port keeps callers agnostic to that.
+/// live in a process-local map keyed by id. State is lost on restart, which is
+/// correct for disposable infrastructure (architecture.md Sec 8). The port keeps
+/// callers agnostic to that.
 /// </summary>
 public sealed class InMemoryListenerRegistry : IListenerRegistry
 {
@@ -42,15 +42,6 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
 
     public Task<Listener?> FindAsync(ListenerId listener, CancellationToken cancellationToken = default)
         => Task.FromResult(_listeners.TryGetValue(listener, out var found) ? found : null);
-
-    public Task<Listener?> GetByPublicEndpointAsync(
-        string publicEndpoint,
-        CancellationToken cancellationToken = default)
-    {
-        var match = _listeners.Values.FirstOrDefault(l =>
-            string.Equals(l.PublicEndpoint, publicEndpoint, StringComparison.OrdinalIgnoreCase));
-        return Task.FromResult(match);
-    }
 
     public Task<Listener?> RepointAsync(
         ListenerId listener,

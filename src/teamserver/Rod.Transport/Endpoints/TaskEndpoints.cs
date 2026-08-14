@@ -57,8 +57,7 @@ public static class TaskEndpoints
         CancellationToken cancellationToken)
     {
         // The issuing operator is the authenticated operator, resolved off the
-        // session principal rather than named in the body (operator auth,
-        // production-hardening todo).
+        // session principal rather than named in the body (operator auth).
         var issuedBy = user.TryGetOperatorId();
         if (issuedBy is null)
             return Results.Unauthorized();

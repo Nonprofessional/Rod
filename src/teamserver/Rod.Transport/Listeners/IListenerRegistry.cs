@@ -28,19 +28,12 @@ public interface IListenerRegistry
     Task<Listener?> FindAsync(ListenerId listener, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The listener serving the given public endpoint, or null. This is the lookup
-    /// an implant dialing a redirector resolves to: the public endpoint is the
-    /// address baked into its profile, and this maps it back to the listener (and
-    /// its bind address) that terminates the connection.
-    /// </summary>
-    Task<Listener?> GetByPublicEndpointAsync(string publicEndpoint, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Repoints the listener's public endpoint -- the redirector or host-header
     /// implants dial -- without touching its bound socket (architecture.md
-    /// Sec 7/8, M4.4). After this returns, <see cref="GetByPublicEndpointAsync"/>
-    /// resolves the new endpoint to this listener and the old one no longer does
-    /// (severing a burned redirector). Returns null when the listener is unknown.
+    /// Sec 7/8, M4.4). The registry is repopulated at startup from configuration,
+    /// so the mapping is fixed once the host binds; a repoint swaps the public
+    /// endpoint the listener reports (severing a burned redirector). Returns null
+    /// when the listener is unknown.
     /// </summary>
     Task<Listener?> RepointAsync(
         ListenerId listener,

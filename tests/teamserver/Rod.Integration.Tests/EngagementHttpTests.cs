@@ -11,7 +11,7 @@ namespace Rod.Integration.Tests;
 /// the core-state domain (ports, aggregates, stager-token service) driven by the
 /// transport-layer endpoints, proving the vertical slice works as a whole. Every
 /// engagement route now requires an authenticated operator session (operator
-/// authentication, production-hardening todo): the owner is the logged-in
+/// authentication): the owner is the logged-in
 /// operator, recorded by the server off the session principal rather than named
 /// in the request body.
 /// </summary>

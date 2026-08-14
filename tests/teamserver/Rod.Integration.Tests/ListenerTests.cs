@@ -135,14 +135,8 @@ public class ListenerTests
 
         var recordedBind = env.MtlsBind;
 
-        // The registry resolves the public endpoint back to the listener that
-        // terminates it -- the lookup an implant dialing a redirector resolves to.
-        var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
-        var byPublic = await registry.GetByPublicEndpointAsync("https://redirect-a.example.test");
-        Assert.NotNull(byPublic);
-        Assert.Equal(recordedBind, byPublic!.BindAddress);
-
-        // And it is visible, separately, through the operator API.
+        // The registry carries the listener with its decoupled public endpoint,
+        // visible through the operator API.
         var body = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
         Assert.NotNull(body);
         var listener = Assert.Single(body!, l => l.Name == "mtls-redirected");
