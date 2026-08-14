@@ -38,4 +38,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Fresh-clone convenience: the built operator UI is gitignored, so the first
+       build of this project needs Node to produce wwwroot/index.html. When the
+       bundle is missing, build the SPA with npm before the .NET build packages
+       it. npm is probed first so a backend-only checkout without Node still
+       builds; the root route then answers with a plain explanation instead of
+       a broken UI (Program.cs). -->
+  <Target Name="EnsureOperatorUiBundle" BeforeTargets="Build" Condition="!Exists('wwwroot/index.html')">
+    <Exec Command="npm --version" IgnoreExitCode="true" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_RodNpmProbe" />
+    </Exec>
+    <Exec Condition="'$(_RodNpmProbe)' == '0'" Command="npm ci &amp;&amp; npm run build" WorkingDirectory="Client" ConsoleToMSBuild="true" />
+    <Message Condition="'$(_RodNpmProbe)' != '0'" Importance="high" Text="Operator UI bundle not found (wwwroot/index.html) and npm is not on PATH; the server will run API-only. Build it with npm ci &amp;&amp; npm run build in src/teamserver/Rod.TeamServer/Client." />
+  </Target>
+
 </Project>

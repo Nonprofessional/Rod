@@ -1,32 +1,26 @@
-# React + TypeScript + Vite
+# Rod operator UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The React + TypeScript + Vite single-page app operators use to run an
+engagement (architecture.md Sec 4.2). It talks to the teamserver's HTTP API
+same-origin: the host serves the built bundle from `wwwroot`, and Vite's dev
+server proxies API calls to the teamserver in development.
 
-Currently, two official plugins are available:
+## Develop
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. Start the teamserver (`dotnet run` from `src/teamserver/Rod.TeamServer`);
+   the default dev listener is `http://localhost:5080`.
+2. Run `npm ci` once, then `npm run dev` in this directory.
+3. Open the Vite URL (default `http://localhost:5173`). API calls proxy to
+   `http://localhost:5080`; override with `ROD_API_TARGET` when the
+   teamserver runs elsewhere.
 
-## React Compiler
+## Build
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+`npm run build` type-checks (`tsc -b`) and emits the bundle into
+`../wwwroot`, which the teamserver host serves at `/`. `wwwroot` is
+gitignored; on a fresh clone, building `Rod.TeamServer` builds the UI first
+when Node is available (the `EnsureOperatorUiBundle` MSBuild target).
 
-## Expanding the Oxlint configuration
+## Lint
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+`npm run lint` runs oxlint.

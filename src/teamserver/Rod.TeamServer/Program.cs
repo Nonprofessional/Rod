@@ -64,11 +64,46 @@ builder.WebHost.UseRodListeners(listenerConfigs);
 
 var app = builder.Build();
 
-app.UseStaticFiles();
+// Defense-in-depth response headers (architecture.md Sec 9). The operator UI
+// renders implant-controlled strings (task output, audit payloads), so a strict
+// CSP backs React's escaping: no inline scripts or styles exist in the bundle,
+// which keeps the policy tight. Embedding and MIME-sniffing controls round it
+// out. Applied to every response, including the API, so a stray HTML-shaped API
+// response is still covered.
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "no-referrer";
+    await next(context);
+});
+
+// Serve the built operator UI (Vite output under wwwroot). index.html is
+// no-cache because it references hashed asset names and must be fresh after a
+// rebuild; the hashed /assets/* files are immutable and cache for a year.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = staticContext =>
+    {
+        var headers = staticContext.Context.Response.Headers;
+        if (string.Equals(staticContext.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            headers.CacheControl = "no-cache";
+        }
+        else if (staticContext.File.PhysicalPath is { } path &&
+                 path.Contains($"{Path.DirectorySeparatorChar}assets{Path.DirectorySeparatorChar}"))
+        {
+            headers.CacheControl = "public,max-age=31536000,immutable";
+        }
+    },
+});
 // Operator session middleware: authentication establishes the operator from the
 // cookie, authorization gates the endpoints that opt in via RequireAuthorization.
 // Ordered before endpoint mapping so the auth result is visible to every mapped
-// route; the SPA fallback and static assets below it stay reachable anonymously.
+// route; the static UI shell above it stays reachable anonymously.
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRodEndpoints();
@@ -88,14 +123,27 @@ app.MapOperatorAuthEndpoints();
 // table.
 app.MapCapabilityEndpoints();
 
-// SPA fallback: anything not handled by a static file or an API route returns
-// the React shell, so client-side routing owns deep links (e.g. /engagements/..).
-app.MapGet("/{**slug}", async context =>
+// The operator UI shell. The SPA is hash-routed, so the browser only ever
+// requests the root from the server -- there is no catch-all fallback that
+// would turn unknown API paths into a 200 HTML response. When the bundle is
+// missing (a backend-only checkout without Node), say so plainly instead of
+// failing at request time with a file error.
+app.MapGet("/", async context =>
 {
-    // Don't shadow API or health routes that registered above; MapRodEndpoints
-    // already claimed those, so this only runs for unmatched paths.
+    var index = app.Environment.WebRootFileProvider.GetFileInfo("index.html");
+    if (!index.Exists)
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        await context.Response.WriteAsync(
+            "Operator UI bundle not found. Build it once with " +
+            "`npm ci && npm run build` " +
+            "in src/teamserver/Rod.TeamServer/Client (Node.js required), then restart the teamserver.");
+        return;
+    }
     context.Response.ContentType = "text/html";
-    await context.Response.SendFileAsync("wwwroot/index.html");
+    context.Response.Headers.CacheControl = "no-cache";
+    await using var stream = index.CreateReadStream();
+    await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
 });
 
 app.Run();
