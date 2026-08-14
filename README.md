@@ -141,8 +141,6 @@ Start here:
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
 - **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
   redirector build/deploy/rotate runbook.
-- **[docs/audits/](docs/audits/)** -- point-in-time architecture-vs-
-  implementation audit records.
 - **[SECURITY.md](SECURITY.md)** -- vulnerability reporting and scope.
 
 ## License
