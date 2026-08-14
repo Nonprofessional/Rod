@@ -26,4 +26,5 @@ namespace Rod.Audit;
     WriteIndented = false)]
 [JsonSerializable(typeof(AuditEvent))]
 [JsonSerializable(typeof(Artifact))]
+[JsonSerializable(typeof(PayloadRecord))]
 internal sealed partial class AuditJsonContext : JsonSerializerContext;

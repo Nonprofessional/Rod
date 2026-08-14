@@ -100,13 +100,14 @@ public static class TransportHost
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
 
-        // Audit + artifact stores: in-memory by default (roadmap M2.3 -- the
-        // hash-chained trail and first-class evidence objects), or file-backed
-        // when the Audit:DataDirectory section is configured (roadmap M6.4 -- the
-        // trail and artifacts survive a teamserver restart and infrastructure
-        // teardown, the M6.4 acceptance point). The ports are stable either way;
-        // only the adapter is swapped. The durable pair is the Postgres stand-in
-        // for the walking skeleton, behind the same ports.
+        // Audit, artifact, and payload stores: in-memory by default (roadmap
+        // M2.3 -- the hash-chained trail and first-class evidence objects), or
+        // file-backed when the Audit:DataDirectory section is configured (roadmap
+        // M6.4 -- the trail, artifacts, and built payloads survive a teamserver
+        // restart and infrastructure teardown, the M6.4 acceptance point). The
+        // ports are stable either way; only the adapter is swapped. The durable
+        // trio is the Postgres stand-in for the walking skeleton, behind the same
+        // ports.
         var dataDirectory = configuration?["Audit:DataDirectory"];
         if (!string.IsNullOrWhiteSpace(dataDirectory))
         {
@@ -114,6 +115,7 @@ public static class TransportHost
             services.AddSingleton(persistence);
             services.AddSingleton<IAuditStore, FileAuditStore>();
             services.AddSingleton<IArtifactStore, FileArtifactStore>();
+            services.AddSingleton<IPayloadStore, FilePayloadStore>();
         }
         else
         {
@@ -126,6 +128,11 @@ public static class TransportHost
             // M2.3). First-class evidence objects attached to tasks; consumed by
             // the operator layer (M2.4) and beacon ingest later.
             services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
+
+            // Payload store port -> walking-skeleton in-memory adapter. Built
+            // payloads await retrieval; the file-backed adapter replaces it when
+            // Audit:DataDirectory is set.
+            services.AddSingleton<IPayloadStore, InMemoryPayloadStore>();
         }
 
         // Live-event bus port -> a no-op default. Transport must not reference

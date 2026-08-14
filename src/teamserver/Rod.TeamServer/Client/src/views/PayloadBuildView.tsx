@@ -166,6 +166,12 @@ export function PayloadBuildView({
           <dd>{result.size} bytes</dd>
           <dt>Built at</dt>
           <dd>{new Date(result.builtAt).toLocaleString()}</dd>
+          <dt>Download</dt>
+          <dd>
+            <a href={`engagements/${engagementId}/payloads/${result.artifactId}`} download>
+              Retrieve artifact
+            </a>
+          </dd>
         </dl>
       )}
     </div>

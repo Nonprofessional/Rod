@@ -72,6 +72,49 @@ public class PayloadBuildTests
     }
 
     [DotNetFact]
+    public async Task BuiltPayload_IsRetrievableFromItsLocation()
+    {
+        // The build response's Location resolves to a real download route: the
+        // operator retrieves the compiled bytes, engagement-scoped, with a
+        // content disposition naming the payload.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var built = await PostBuildAsync(client, engagementId);
+            Assert.NotNull(built);
+
+            var download = await client.GetAsync($"/engagements/{engagementId}/payloads/{built!.ArtifactId}");
+            Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+            Assert.Equal(built.ContentType, download.Content.Headers.ContentType!.MediaType);
+            Assert.StartsWith("attachment;", download.Content.Headers.ContentDisposition!.ToString());
+            var bytes = await download.Content.ReadAsByteArrayAsync();
+            Assert.Equal(built.Size, bytes.Length);
+        }
+    }
+
+    [Fact]
+    public async Task BuiltPayload_IsInvisibleToAnotherEngagement()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var first = await CreateEngagementAsync(client);
+            var second = await CreateEngagementAsync(client);
+
+            var built = await PostBuildAsync(client, first);
+
+            var download = await client.GetAsync($"/engagements/{second}/payloads/{built!.ArtifactId}");
+            Assert.Equal(HttpStatusCode.NotFound, download.StatusCode);
+        }
+    }
+
+    [DotNetFact]
     public async Task TwoBuilds_WithIdenticalRequest_ProduceDifferentArtifacts()
     {
         // Per-implant material is generated at request time, so two builds of the
@@ -142,7 +185,7 @@ public class PayloadBuildTests
             // creation event (M6.1 genesis), so it is no longer a single entry.
             var trail = await audit.ListAsync(Guid.Parse(engagementId));
             var evt = Assert.Single(trail, e => e.Kind == AuditEventKind.PayloadBuilt);
-            Assert.Equal("Stage2", evt.Verb);
+            Assert.Equal("payload.build", evt.Verb);
             Assert.Equal(body!.Fingerprint, evt.Outcome);
             // The audit attributes the build to the authenticated operator, not any
             // client-supplied identity.
