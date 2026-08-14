@@ -47,9 +47,9 @@ internal sealed class Config
     public TimeSpan Jitter { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
-    /// The hard self-termination timestamp (architecture.md Sec 7). Past it the
-    /// implant exits and refuses to run. Enforcement is recorded-only in this
-    /// milestone; full enforcement arrives with M4.2.
+    /// The hard self-termination timestamp (architecture.md Sec 7). Enforced at
+    /// startup (refuses to run) and at the top of every beacon cycle
+    /// (self-terminates once passed).
     /// </summary>
     public DateTimeOffset KillDate { get; set; }
 

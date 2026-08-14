@@ -31,28 +31,16 @@ public class DotNetBuildUnitTests
     [Fact]
     public void RenderBakedProfile_DoesNotLeak_PerImplantKey()
     {
-        // The baked profile carries only the key's fingerprint, never the key
-        // itself -- a captured artifact must not leak the material it was built
-        // with (architecture.md Sec 7).
+        // No key material is baked: neither the key itself nor any derived value
+        // (fingerprint included) lands in the artifact, so a captured payload
+        // cannot leak what it was built with (architecture.md Sec 7).
         var key = "super-secret-per-implant-key-value";
         var baked = DotNetBuildUnit.RenderBakedProfile(Params(key));
 
         Assert.DoesNotContain(key, baked);
-    }
-
-    [Fact]
-    public void RenderBakedProfile_IncludesKeyFingerprint()
-    {
-        // The baked profile is base64url-encoded JSON; decode it back and confirm
-        // the key's fingerprint is recorded there (a captured artifact is traceable
-        // to its key without the key itself leaking).
-        var key = "another-key";
-        var baked = DotNetBuildUnit.RenderBakedProfile(Params(key));
-
         var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
-
         var keyFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
-        Assert.Contains(keyFingerprint, json);
+        Assert.DoesNotContain(keyFingerprint, json);
     }
 
     [Theory]

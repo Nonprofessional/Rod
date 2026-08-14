@@ -1,14 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The reference .NET stage-2 implant (roadmap M3.3). A benign, readable
-    implant that enrolls over HTTP (submitting its own public key), beacons over
-    mTLS, and runs the shell.exec core verb (architecture.md Sec 5). It performs
-    no evasion, no obfuscation, no persistence (RESPONSIBLE-USE.md, Sec 7).
+    The reference .NET stage-2 implant (roadmap M3.3). A benign, readable,
+    cross-platform implant that enrolls over HTTP (submitting its own public
+    key), beacons over mTLS, and runs the standard-category verb set: shell
+    exec, recon, lateral (child derivation, token inspection, remote exec over
+    admin channels), persistence (Run key / scheduled tasks / services / cron /
+    systemd), collect (file and credential-store enumeration), and exfil to the
+    engagement artifact store (architecture.md Sec 10.1). It performs no
+    evasion, no obfuscation, and no destructive behavior; keyboard capture and
+    LSASS dumping stay out-of-tree by the Sec 13 boundary.
 
     This project is an EXTERNAL component, coupled to the teamserver only by the
     wire protocol: it is intentionally NOT part of Rod.slnx. The teamserver's
-    .NET build unit (Rod.DotNetBuildUnit) compiles it per build request.
+    .NET build unit (DotNetBuildUnit) compiles it per build request.
 
     The protobuf/gRPC wire bindings are generated at build time from the
     canonical teamserver proto (src/teamserver/Rod.Protocol/protos/rod.proto) via Grpc.Tools.

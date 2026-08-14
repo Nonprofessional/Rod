@@ -92,7 +92,7 @@ public class ExfilTests
         var reassembled = new List<byte>();
         for (var i = 0; i < chunks.Count; i++)
         {
-            Assert.Equal((ulong)(i + 1), chunks[i].Sequence);
+            Assert.Equal((ulong)i, chunks[i].Sequence);
             reassembled.AddRange(chunks[i].Data.ToByteArray());
         }
         Assert.True(chunks[^1].Terminal, "last chunk should be terminal");

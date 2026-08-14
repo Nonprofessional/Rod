@@ -13,12 +13,13 @@ namespace Rod.Implant.Internal;
 // Dispatches the capability verbs the reference implant advertises
 // (architecture.md Sec 10): the shell.exec core verb, the recon.portscan /
 // recon.hostenum / recon.service recon verbs, and the lateral.move child-
-// derivation verb. The runner is the dispatch point future verbs (file.push,
+// derivation verb; the persist, collect, and exfil verbs live in their own
+// handler classes. The runner is the dispatch point future verbs (file.push,
 // probe.read, ...) extend.
 //
-// This is a benign reference runner: it shells out to the platform shell for the
-// one core verb and reports output. It performs no evasion, no obfuscation, and
-// no destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); the
+// This is a benign reference runner: it shells out to the platform shell and
+// documented administration tools only. It performs no evasion, no obfuscation,
+// and no destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); the
 // operator is responsible for targeting only systems they are authorized to test
 // (RESPONSIBLE-USE.md).
 

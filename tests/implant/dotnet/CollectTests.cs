@@ -82,7 +82,7 @@ public class CollectTests
         var reassembled = new List<byte>();
         for (var i = 0; i < chunks.Count; i++)
         {
-            Assert.Equal((ulong)(i + 1), chunks[i].Sequence);
+            Assert.Equal((ulong)i, chunks[i].Sequence);
             reassembled.AddRange(chunks[i].Data.ToByteArray());
         }
         Assert.True(chunks[^1].Terminal, "last chunk should be terminal");
@@ -160,17 +160,15 @@ public class CollectTests
         }
     }
 
-    // The ChunkFile unit tests exercise the chunker directly. The empty-input
-    // case is the one path collect.file never reaches inline (a 0-byte file
-    // returns as an inline empty string), so it earns a dedicated unit test.
+    // The ChunkFile unit tests exercise the chunker directly. An empty buffer
+    // produces no chunks at all: nothing to stream, and the server drops empty
+    // frames.
 
     [Fact]
-    public void ChunkFile_EmptyInput_OneTerminalChunk()
+    public void ChunkFile_EmptyInput_ProducesNoChunks()
     {
         var chunks = Collect.ChunkFile("empty.txt", "text/plain", Array.Empty<byte>());
-        var c = Assert.Single(chunks);
-        Assert.True(c.Terminal);
-        Assert.Equal(1UL, c.Sequence);
+        Assert.Empty(chunks);
     }
 
     [Fact]
@@ -182,7 +180,7 @@ public class CollectTests
         Assert.Equal(2, chunks.Count);
         Assert.False(chunks[0].Terminal);
         Assert.True(chunks[1].Terminal);
-        Assert.Equal(1UL, chunks[0].Sequence);
-        Assert.Equal(2UL, chunks[1].Sequence);
+        Assert.Equal(0UL, chunks[0].Sequence);
+        Assert.Equal(1UL, chunks[1].Sequence);
     }
 }

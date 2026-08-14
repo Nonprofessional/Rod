@@ -1,13 +1,11 @@
 // Rod.Implant is the reference .NET stage-2 implant (roadmap M3.3). It enrolls
-// into an engagement, opens the mTLS beacon stream, and runs the core capability
-// verbs the teamserver dispatches (architecture.md Sec 5).
-//
-// This is a benign reference implant: it enrolls over the teamserver's HTTP
-// enroll endpoint, beacons over mTLS, and shells out for the single core verb
-// shell.exec. It performs no evasion, no obfuscation, no persistence, and no
-// destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7). It exists to
-// prove the end-to-end slice -- enroll, beacon, task -- against the real
-// teamserver and to give the .NET build unit something real to compile.
+// into an engagement, opens the mTLS beacon stream, and runs the standard-
+// category capability verbs the teamserver dispatches (architecture.md Sec 5,
+// Sec 10.1). It is a benign reference: no evasion, no obfuscation, and no
+// destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); keyboard
+// capture and LSASS dumping stay out-of-tree by the Sec 13 boundary. It proves
+// the end-to-end slice -- enroll, beacon, task -- against the real teamserver
+// and gives the .NET build unit something real to compile.
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -132,7 +130,7 @@ internal static class ImplantApp
             try
             {
                 return await C2.EnrollAsync(
-                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken);
+                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken: cancellationToken);
             }
             catch (C2.EnrollRejectedException)
             {

