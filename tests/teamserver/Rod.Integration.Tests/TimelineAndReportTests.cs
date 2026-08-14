@@ -111,9 +111,9 @@ public class TimelineAndReportTests
         Assert.Equal(owner.Value, report.Engagement.OwnerId);
         Assert.NotEmpty(report.ContentHash);
 
-        // Operator roster: the owner is present, marked Owner.
+        // Operator roster: the owner is present.
         var ownerEntry = Assert.Single(report.Operators, o => o.OperatorId == owner.Value);
-        Assert.Equal("Owner", ownerEntry.Role);
+        Assert.Equal(AuthenticatedHost.Handle, ownerEntry.Handle);
 
         // Implant inventory: the enrolled Stage-2 implant.
         var implantEntry = Assert.Single(report.Implants);
@@ -395,7 +395,6 @@ public class TimelineAndReportTests
     {
         public Guid OperatorId { get; set; }
         public string Handle { get; set; } = "";
-        public string Role { get; set; } = "";
     }
 
     private sealed class ReportImplant

@@ -32,7 +32,7 @@ public class EngagementHttpTests
     }
 
     [Fact]
-    public async Task PostEngagements_CreatesEngagement_WithOwnerAsMember()
+    public async Task PostEngagements_CreatesEngagement_RecordingOwner()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();
         using (client)

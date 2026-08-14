@@ -9,8 +9,7 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Engagement** | The unit of tenancy, isolation, authorization, and evidence -- one authorized operation. All domain state is engagement-scoped and disposable with the operation. |
-| **Operator** | A global human identity; an authorized user of the platform. Access derives entirely from engagement memberships. |
-| **Role** | `Owner` / `Lead` / `Operator` / `Observer` within an engagement. |
+| **Operator** | A global human identity; an authenticated user of the platform. Any authenticated operator can operate on any engagement; accountability is through the attributed audit trail. |
 | **Stager token** | An engagement-scoped, short-lived, bounded-use secret used only during initial enrollment/deployment. |
 
 ## Implants and sessions

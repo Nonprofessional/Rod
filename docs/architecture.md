@@ -31,7 +31,7 @@ The architecture is organized around the red-team operational lifecycle, not
 around "managed components". Each phase states what the platform must support.
 
 1. **Planning and engagement setup.** Define the engagement: scope, ROE,
-   operators, roles. The engagement is created as an isolation boundary.
+   operators. The engagement is created as an isolation boundary.
 2. **Infrastructure stand-up.** Provision teamserver, listeners, redirectors,
    domains, certificates. Infrastructure is **disposable and reprovisionable**;
    burn rate is expected, so it is config-driven and tear-down friendly.
@@ -65,12 +65,12 @@ Everything is organized around an **Engagement** -- the unit of tenancy,
 isolation, authorization, and evidence. An engagement models one authorized
 operation.
 
-- A high-privilege **Operator** creates an **Engagement**.
+- An authenticated **Operator** creates an **Engagement**, recorded as its owner.
 - **Implants** enrol into exactly one engagement; an implant's identity is bound
   to its engagement and is disposable with it.
-- The engagement owner adds other **Operators** with a **Role**
-  (`Owner` / `Lead` / `Operator` / `Observer`); members can view and task
-  implants in that engagement, scoped by role.
+- Any authenticated **Operator** can view and task implants in the engagement.
+  There are no role tiers: like mainstream C2s, Rod trusts its named operators
+  and holds them accountable through the attributed audit trail.
 - All domain data -- implants, sessions, tasks, results, artifacts, modules,
   audit -- is **scoped by engagement**. Cross-engagement access is impossible by
   construction.

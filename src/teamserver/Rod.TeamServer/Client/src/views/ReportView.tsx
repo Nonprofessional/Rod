@@ -78,7 +78,7 @@ export function ReportView({ engagementId }: { engagementId: string }) {
               <ul className="sessions">
                 {report.operators.map((o) => (
                   <li key={o.operatorId}>
-                    <code>{o.handle}</code> <span className="muted">{o.role}</span>
+                    <code>{o.handle}</code>
                   </li>
                 ))}
               </ul>

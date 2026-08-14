@@ -61,9 +61,9 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
             ?? throw new StagerTokenException($"Engagement {engagementId} does not exist.");
 
-        if (!engagement.HasMember(issuedBy))
+        if (engagement.OwnerId != issuedBy)
             throw new StagerTokenException(
-                $"Operator {issuedBy} is not a member of engagement {engagementId} and cannot mint stager tokens for it.");
+                $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint stager tokens for it.");
 
         var secretBytes = RandomNumberGenerator.GetBytes(32);
         var expiresAt = issuedAt + DefaultLifetime;

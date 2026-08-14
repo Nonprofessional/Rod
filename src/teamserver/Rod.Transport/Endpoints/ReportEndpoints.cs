@@ -155,14 +155,12 @@ internal static class ReportBuilder
         var engagementTasks = await tasks.ListByEngagementAsync(engagementId, cancellationToken);
         var engagementArtifacts = await artifacts.ListAsync(engagementValue, cancellationToken);
 
-        // Operator resolution: every member operator and every operator named on
-        // the trail/task/artifact, plus the owner. Unknown ids (an event predates
-        // the operator record) fall back to the bare id -- the same tolerance the
-        // engagement listing applies. The default Guid.Empty operator (implant-
-        // initiated events that predate attribution) renders as "system".
+        // Operator resolution: the engagement owner and every operator named on
+        // the trail/task/artifact. Unknown ids (an event predates the operator
+        // record) fall back to the bare id -- the same tolerance the engagement
+        // listing applies. The default Guid.Empty operator (implant-initiated
+        // events that predate attribution) renders as "system".
         var operatorIds = new HashSet<Guid>();
-        foreach (var member in engagement.Members)
-            operatorIds.Add(member.OperatorId.Value);
         operatorIds.Add(engagement.OwnerId.Value);
         foreach (var e in trail)
             if (e.OperatorId != Guid.Empty)
@@ -232,8 +230,7 @@ internal static class ReportBuilder
 
         foreach (var op in report.Operators)
             sb.Append(op.OperatorId).Append(sep)
-                .Append(op.Handle).Append(sep)
-                .Append(op.Role).Append(rec);
+                .Append(op.Handle).Append(rec);
 
         foreach (var implant in report.Implants)
             sb.Append(implant.ImplantId).Append(sep)
@@ -334,20 +331,18 @@ internal sealed record ReportBuilderContext(
             Entries: entries);
     }
 
-    // The report bundle. Built in display order: operators (owner first, then by
-    // added-at), implants and tasks oldest-first (the store order), artifacts
+    // The report bundle. Built in display order: operators (the engagement
+    // owner), implants and tasks oldest-first (the store order), artifacts
     // oldest-first, and the enriched timeline. The content hash is stamped last,
     // over the fully resolved facts.
     public EngagementReport Report(Engagement engagement)
     {
-        var operatorRoster = engagement.Members
-            .OrderByDescending(m => m.Role == Role.Owner)
-            .ThenBy(m => m.AddedAt)
-            .Select(m => new ReportOperator(
-                OperatorId: m.OperatorId.Value,
-                Handle: OperatorHandle(m.OperatorId.Value),
-                Role: m.Role.ToString()))
-            .ToArray();
+        var operatorRoster = new[]
+        {
+            new ReportOperator(
+                OperatorId: engagement.OwnerId.Value,
+                Handle: OperatorHandle(engagement.OwnerId.Value))
+        };
 
         var implantInventory = Implants
             .Select(i => new ReportImplant(
@@ -515,8 +510,8 @@ internal static class ReportMarkdown
             sb.Append("_None._\n");
         else
             foreach (var op in report.Operators)
-                sb.Append("- `").Append(op.Handle).Append("` — ").Append(op.Role)
-                    .Append(" (`").Append(op.OperatorId.ToString("N")).Append("`)\n");
+                sb.Append("- `").Append(op.Handle).Append("` (`")
+                    .Append(op.OperatorId.ToString("N")).Append("`)\n");
         sb.Append('\n');
 
         sb.Append("## Implants\n\n");
@@ -638,11 +633,10 @@ public sealed record ReportEngagement(
     string OwnerHandle,
     DateTimeOffset CreatedAt);
 
-/// <summary>A member of the engagement, with the resolved handle and role.</summary>
+/// <summary>An operator who acted on the engagement, with the resolved handle.</summary>
 public sealed record ReportOperator(
     Guid OperatorId,
-    string Handle,
-    string Role);
+    string Handle);
 
 /// <summary>An enrolled implant, with its class, parentage, and retirement state.</summary>
 public sealed record ReportImplant(

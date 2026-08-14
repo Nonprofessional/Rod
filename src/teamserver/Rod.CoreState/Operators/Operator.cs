@@ -1,11 +1,9 @@
-using Rod.CoreState.Engagements;
-
 namespace Rod.CoreState.Operators;
 
 /// <summary>
 /// A global human identity and authorized user of the platform (glossary). An
-/// operator has no inherent access; it derives all authority from its
-/// <see cref="Engagements.EngagementMembership"/> in each engagement.
+/// operator authenticates with a handle and password; any authenticated operator
+/// can operate on any engagement.
 /// </summary>
 public sealed class Operator
 {

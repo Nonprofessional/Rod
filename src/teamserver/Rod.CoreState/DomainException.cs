@@ -18,15 +18,6 @@ public abstract class DomainException : InvalidOperationException
     }
 }
 
-/// <summary>An engagement invariant was violated -- e.g. removing its owner.</summary>
-public sealed class EngagementDomainException : DomainException
-{
-    public EngagementDomainException(string message)
-        : base(message)
-    {
-    }
-}
-
 /// <summary>A stager-token operation violated its rules -- e.g. unknown engagement.</summary>
 public class StagerTokenException : DomainException
 {

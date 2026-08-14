@@ -440,7 +440,7 @@ export interface EngagementReport {
   }
   generatedAt: string
   contentHash: string
-  operators: { operatorId: string; handle: string; role: string }[]
+  operators: { operatorId: string; handle: string }[]
   implants: { implantId: string; class: string; parentImplantId: string | null; retiredAt: string | null }[]
   tasks: ReportTask[]
   artifacts: { artifactId: string; taskId: string; name: string; contentType: string; size: number }[]

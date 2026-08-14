@@ -89,14 +89,11 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
         Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
 
-        // The engagement is present with its owner membership intact (the owned
-        // collection survived the reload).
+        // The engagement is present with its owner intact.
         var engagementRow = await engagements.FindAsync(engagementId);
         Assert.NotNull(engagementRow);
         Assert.Equal("Operation Smokeshow", engagementRow!.Name);
         Assert.Equal(operatorId, engagementRow.OwnerId);
-        Assert.Single(engagementRow.Members);
-        Assert.Equal(operatorId, engagementRow.Members[0].OperatorId);
     }
 
     [Fact]
@@ -543,11 +540,11 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.NotNull(operatorRow);
         Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
 
-        // Engagement survived with its owner membership.
+        // Engagement survived with its owner.
         var engagementRow = await engagementsB.FindAsync(engagementId);
         Assert.NotNull(engagementRow);
         Assert.Equal("Operation Smokeshow", engagementRow!.Name);
-        Assert.Single(engagementRow.Members);
+        Assert.Equal(ownerId, engagementRow!.OwnerId);
 
         // Implant survived, scoped and not retired.
         var implantRow = await implantsB.FindAsync(implantId);

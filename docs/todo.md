@@ -52,7 +52,7 @@ roadmap scope.
       sessions over a verified handle and password, identity derived from the
       session principal on every operator endpoint, a config-seeded first
       operator, and a durable `operator_credentials` store (architecture.md Sec 4.3).
-      Per-engagement RBAC stays deferred.)_
+      Per-engagement RBAC is deliberately out of scope: Rod follows the mainstream C2 trusted-operators model -- named operators get full access, held accountable through the attributed audit trail.)_
 - [x] **Real implant CA.** Replace the dev self-signed CA
       (`DevCertificateAuthority`) with a production CA path. _AC:_ enrollment
       binds certificates to a non-dev CA chain. _(Shipped:
