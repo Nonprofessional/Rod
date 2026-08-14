@@ -26,6 +26,7 @@ export function AuditView({
   onlineTick: number
 }) {
   const [events, setEvents] = useState<AuditEventEntry[]>([])
+  const [eventsCursor, setEventsCursor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -34,7 +35,10 @@ export function AuditView({
   const refresh = useCallback(async () => {
     setBusy(true)
     try {
-      setEvents(await listAudit(engagementId))
+      // The newest window of the trail; older pages load on demand.
+      const page = await listAudit(engagementId)
+      setEvents(page.items)
+      setEventsCursor(page.nextCursor)
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -43,6 +47,21 @@ export function AuditView({
       setLoading(false)
     }
   }, [engagementId])
+
+  const loadOlder = useCallback(async () => {
+    if (!eventsCursor) return
+    setBusy(true)
+    try {
+      const page = await listAudit(engagementId, eventsCursor)
+      setEvents((current) => [...current, ...page.items])
+      setEventsCursor(page.nextCursor)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }, [engagementId, eventsCursor])
 
   useEffect(() => {
     void refresh()
@@ -115,6 +134,13 @@ export function AuditView({
             ))}
           </tbody>
         </table>
+      )}
+      {eventsCursor && (
+        <p>
+          <button onClick={() => void loadOlder()} disabled={busy}>
+            {busy ? 'Loading…' : 'Load older'}
+          </button>
+        </p>
       )}
     </div>
   )

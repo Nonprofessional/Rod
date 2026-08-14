@@ -178,16 +178,16 @@ public class OperatorSurfaceCoverageTests
 
             // Engagement-wide task list: the issued verb appears across the
             // engagement, not just under one implant.
-            var tasks = await client.GetFromJsonAsync<ImplantEndpoints.ImplantTaskResponse[]>(
+            var tasks = await client.GetFromJsonAsync<TaskEndpoints.TaskListResponse>(
                 $"/engagements/{engagementId}/tasks");
             Assert.NotNull(tasks);
-            Assert.Contains(tasks!, t => t.Verb == "recon.portscan" && t.ImplantId == implant.Id.ToString());
+            Assert.Contains(tasks!.Items, t => t.Verb == "recon.portscan" && t.ImplantId == implant.Id.ToString());
 
             // Audit trail: a TaskIssued event is attributed to the action.
-            var audit = await client.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+            var audit = await client.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
                 $"/engagements/{engagementId}/audit");
             Assert.NotNull(audit);
-            Assert.Contains(audit!, e => e.Kind == nameof(Rod.Audit.AuditEventKind.TaskIssued));
+            Assert.Contains(audit!.Items, e => e.Kind == nameof(Rod.Audit.AuditEventKind.TaskIssued));
 
             // Timeline export: a reproducible, content-hashed timeline.
             var timeline = await client.GetFromJsonAsync<TimelineReportResponse>(

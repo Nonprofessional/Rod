@@ -123,11 +123,11 @@ public class OperationalEventLogTests
         // --- Read the whole trail back through the per-engagement audit endpoint
         //     and assert every action produced an attributed event, in order, and
         //     the hash chain verifies. ---
-        var trailResponse = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+        var trailResponse = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
             $"/engagements/{engagementId}/audit");
         Assert.NotNull(trailResponse);
 
-        var byKind = trailResponse!.ToDictionary(e => e.Kind);
+        var byKind = trailResponse!.Items.ToDictionary(e => e.Kind);
         // Every lifecycle kind is present.
         Assert.Contains("EngagementCreated", byKind.Keys);
         Assert.Contains("StagerTokenMinted", byKind.Keys);
@@ -162,9 +162,9 @@ public class OperationalEventLogTests
         Assert.Equal(trail.Select(e => e.EventId), trail.OrderBy(e => e.At).Select(e => e.EventId));
 
         // Cross-engagement isolation: a foreign engagement id yields an empty trail.
-        var foreign = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+        var foreign = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
             $"/engagements/{Guid.NewGuid()}/audit");
-        Assert.Empty(foreign!);
+        Assert.Empty(foreign!.Items);
     }
 
     [Fact]

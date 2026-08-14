@@ -130,37 +130,50 @@ public static class TaskEndpoints
 
     private static async Task<IResult> ListAsync(
         string engagementId,
+        int? limit,
+        string? cursor,
         ITaskRepository tasks,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!ListPaging.TryBind(limit, cursor, c => TaskPageCursor.TryDecode(c, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
 
-        // The engagement's whole task history across every implant, oldest first.
-        // Scoped by engagement by construction (architecture.md Sec 3); the
-        // operator UI surveys all tasking across the engagement from this view
-        // () instead of polling each implant in turn. Reuses
+        // One page of the engagement's task history across every implant, newest
+        // window first across pages, oldest first within a page. Scoped by
+        // engagement by construction (architecture.md Sec 3); the operator UI
+        // surveys all tasking across the engagement from this view, walking
+        // pages instead of loading the unbounded full history. Reuses
         // ImplantTaskResponse (same field set the per-implant listing returns)
         // so the two task-list shapes read identically to a client.
-        var list = await tasks.ListByEngagementAsync(
+        var page = await tasks.ListByEngagementPageAsync(
             new EngagementId(engagementValue),
+            boundLimit,
+            boundCursor,
             cancellationToken);
-        var body = list
-            .Select(t => new ImplantEndpoints.ImplantTaskResponse(
-                t.Id.ToString(),
-                t.ImplantId.ToString(),
-                t.IssuedBy.ToString(),
-                t.Verb,
-                t.Arguments,
-                t.Status.ToString(),
-                t.Output,
-                t.Outcome?.ToString(),
-                t.CreatedAt,
-                t.CompletedAt))
-            .ToArray();
+        var body = new TaskListResponse(
+            page.Items.Select(ToResponse).ToArray(),
+            page.NextCursor);
 
         return Results.Ok(body);
     }
+
+    private static ImplantEndpoints.ImplantTaskResponse ToResponse(Task t)
+        => new(
+            t.Id.ToString(),
+            t.ImplantId.ToString(),
+            t.IssuedBy.ToString(),
+            t.Verb,
+            t.Arguments,
+            t.Status.ToString(),
+            t.Output,
+            t.Outcome?.ToString(),
+            t.CreatedAt,
+            t.CompletedAt);
 
     private static async Task<IResult> GetAsync(
         string engagementId,
@@ -201,6 +214,15 @@ public static class TaskEndpoints
         string Verb,
         string Arguments,
         DateTimeOffset CreatedAt);
+
+    /// <summary>
+    /// One page of the engagement's task history: the page's items (oldest first
+    /// within the page) plus the cursor that walks one page older, null when the
+    /// beginning of the history is reached.
+    /// </summary>
+    public sealed record TaskListResponse(
+        ImplantEndpoints.ImplantTaskResponse[] Items,
+        string? NextCursor);
 
     public sealed record TaskResponse(
         string TaskId,

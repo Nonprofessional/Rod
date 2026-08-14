@@ -25,11 +25,13 @@ export function TaskingView({
   const [groups, setGroups] = useState<CapabilityGroup[]>([])
   const [implants, setImplants] = useState<Implant[]>([])
   const [tasks, setTasks] = useState<EngagementTask[]>([])
+  const [tasksCursor, setTasksCursor] = useState<string | null>(null)
   const [selectedImplant, setSelectedImplant] = useState('')
   const [verb, setVerb] = useState('shell.exec')
   const [args, setArgs] = useState('whoami')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // Load the capability catalog once; the picker is static for the session.
@@ -41,12 +43,14 @@ export function TaskingView({
 
   const refresh = useCallback(async () => {
     try {
-      const [implantList, taskList] = await Promise.all([
+      // The newest window of the task history; older pages load on demand.
+      const [implantList, taskPage] = await Promise.all([
         listImplants(engagementId),
         listEngagementTasks(engagementId),
       ])
       setImplants(implantList)
-      setTasks(taskList)
+      setTasks(taskPage.items)
+      setTasksCursor(taskPage.nextCursor)
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -54,6 +58,21 @@ export function TaskingView({
       setLoading(false)
     }
   }, [engagementId])
+
+  const loadOlderTasks = useCallback(async () => {
+    if (!tasksCursor) return
+    setLoadingMore(true)
+    try {
+      const page = await listEngagementTasks(engagementId, tasksCursor)
+      setTasks((current) => [...current, ...page.items])
+      setTasksCursor(page.nextCursor)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [engagementId, tasksCursor])
 
   useEffect(() => {
     void refresh()
@@ -214,6 +233,13 @@ export function TaskingView({
             ))}
           </tbody>
         </table>
+      )}
+      {tasksCursor && (
+        <p>
+          <button onClick={() => void loadOlderTasks()} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : 'Load older'}
+          </button>
+        </p>
       )}
     </div>
   )

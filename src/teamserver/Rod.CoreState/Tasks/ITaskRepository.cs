@@ -47,6 +47,29 @@ public interface ITaskRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// One page of the engagement's task history (architecture.md Sec 10.3): the
+    /// newest <paramref name="limit"/> tasks, or the next older page when
+    /// <paramref name="cursor"/> carries the previous page's
+    /// <see cref="TaskPage.NextCursor"/>. A long engagement no longer grows the
+    /// listing endpoint without bound -- the operator UI walks pages.
+    /// </summary>
+    System.Threading.Tasks.Task<TaskPage> ListByEngagementPageAsync(
+        EngagementId engagement,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One page of an implant's task history, newest window first, with the same
+    /// cursor semantics as <see cref="ListByEngagementPageAsync"/>.
+    /// </summary>
+    System.Threading.Tasks.Task<TaskPage> ListByImplantPageAsync(
+        ImplantId implant,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The next not-yet-dispatched task for an implant, oldest first (FIFO by
     /// enqueue time), or null when none is queued. A peek: the caller (task
     /// issuance gating, tests) reads without changing state.

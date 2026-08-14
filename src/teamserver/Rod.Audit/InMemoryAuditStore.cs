@@ -76,4 +76,22 @@ public sealed class InMemoryAuditStore : IAuditStore
             .ToArray();
         return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
     }
+
+    public Task<AuditPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        // The event id breaks timestamp ties so a page boundary is stable even
+        // when several events share one instant.
+        var ordered = _events.Values
+            .Where(e => e.EngagementId == engagementId)
+            .OrderBy(e => e.At)
+            .ThenBy(e => e.EventId)
+            .ToArray();
+        var (items, next) = ListPageWindow.TakeNewest(
+            ordered, limit, cursor, e => e.At, e => e.EventId);
+        return Task.FromResult(new AuditPage(items, next));
+    }
 }

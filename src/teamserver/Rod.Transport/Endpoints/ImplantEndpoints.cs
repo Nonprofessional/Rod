@@ -73,6 +73,8 @@ public static class ImplantEndpoints
     private static async Task<IResult> ListImplantTasksAsync(
         string engagementId,
         string implantId,
+        int? limit,
+        string? cursor,
         IImplantRepository implants,
         ITaskRepository tasks,
         CancellationToken cancellationToken)
@@ -81,6 +83,11 @@ public static class ImplantEndpoints
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(implantId, out var implantValue))
             return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+        if (!ListPaging.TryBind(limit, cursor, c => TaskPageCursor.TryDecode(c, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
 
         // Confirm the implant belongs to this engagement before listing its
         // tasks; a foreign implant id yields no rows here (architecture.md Sec 3).
@@ -88,20 +95,25 @@ public static class ImplantEndpoints
         if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
             return Results.NotFound(new Problem("Implant does not exist in this engagement."));
 
-        var list = await tasks.ListByImplantAsync(new ImplantId(implantValue), cancellationToken);
-        var body = list
-            .Select(t => new ImplantTaskResponse(
-                t.Id.ToString(),
-                t.ImplantId.ToString(),
-                t.IssuedBy.ToString(),
-                t.Verb,
-                t.Arguments,
-                t.Status.ToString(),
-                t.Output,
-                t.Outcome?.ToString(),
-                t.CreatedAt,
-                t.CompletedAt))
-            .ToArray();
+        // One page of the implant's task history, same cursor semantics and
+        // envelope as the engagement-wide listing.
+        var page = await tasks.ListByImplantPageAsync(
+            new ImplantId(implantValue), boundLimit, boundCursor, cancellationToken);
+        var body = new TaskEndpoints.TaskListResponse(
+            page.Items
+                .Select(t => new ImplantTaskResponse(
+                    t.Id.ToString(),
+                    t.ImplantId.ToString(),
+                    t.IssuedBy.ToString(),
+                    t.Verb,
+                    t.Arguments,
+                    t.Status.ToString(),
+                    t.Output,
+                    t.Outcome?.ToString(),
+                    t.CreatedAt,
+                    t.CompletedAt))
+                .ToArray(),
+            page.NextCursor);
 
         return Results.Ok(body);
     }

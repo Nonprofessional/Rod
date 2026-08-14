@@ -21,8 +21,10 @@ export function ArtifactsView({
   onlineTick: number
 }) {
   const [tasks, setTasks] = useState<EngagementTask[]>([])
+  const [tasksCursor, setTasksCursor] = useState<string | null>(null)
   const [taskId, setTaskId] = useState('')
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([])
+  const [artifactsCursor, setArtifactsCursor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [fileName, setFileName] = useState('')
@@ -30,25 +32,63 @@ export function ArtifactsView({
 
   const refreshTasks = useCallback(async () => {
     try {
-      setTasks(await listEngagementTasks(engagementId))
+      // The newest window of the task history; older pages load on demand so
+      // the task picker can walk back to any task in a long engagement.
+      const page = await listEngagementTasks(engagementId)
+      setTasks(page.items)
+      setTasksCursor(page.nextCursor)
       setError(null)
     } catch (e) {
       setError(String(e))
     }
   }, [engagementId])
 
+  const loadOlderTasks = useCallback(async () => {
+    if (!tasksCursor) return
+    setBusy(true)
+    try {
+      const page = await listEngagementTasks(engagementId, tasksCursor)
+      setTasks((current) => [...current, ...page.items])
+      setTasksCursor(page.nextCursor)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }, [engagementId, tasksCursor])
+
   const refreshArtifacts = useCallback(async () => {
     if (!taskId) {
       setArtifacts([])
+      setArtifactsCursor(null)
       return
     }
     try {
-      setArtifacts(await listArtifacts(engagementId, taskId))
+      // A fresh first page on every task switch; older pages load on demand.
+      const page = await listArtifacts(engagementId, taskId)
+      setArtifacts(page.items)
+      setArtifactsCursor(page.nextCursor)
       setError(null)
     } catch (e) {
       setError(String(e))
     }
   }, [engagementId, taskId])
+
+  const loadOlderArtifacts = useCallback(async () => {
+    if (!taskId || !artifactsCursor) return
+    setBusy(true)
+    try {
+      const page = await listArtifacts(engagementId, taskId, artifactsCursor)
+      setArtifacts((current) => [...current, ...page.items])
+      setArtifactsCursor(page.nextCursor)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }, [engagementId, taskId, artifactsCursor])
 
   useEffect(() => {
     void refreshTasks()
@@ -130,6 +170,11 @@ export function ArtifactsView({
           </option>
         ))}
       </select>
+      {tasksCursor && (
+        <button onClick={() => void loadOlderTasks()} disabled={busy}>
+          {busy ? 'Loading…' : 'Load older tasks'}
+        </button>
+      )}
 
       {taskId && (
         <form className="inline-form" onSubmit={onAttach}>
@@ -170,6 +215,13 @@ export function ArtifactsView({
             ))}
           </tbody>
         </table>
+      )}
+      {artifactsCursor && (
+        <p>
+          <button onClick={() => void loadOlderArtifacts()} disabled={busy}>
+            {busy ? 'Loading…' : 'Load older'}
+          </button>
+        </p>
       )}
     </div>
   )

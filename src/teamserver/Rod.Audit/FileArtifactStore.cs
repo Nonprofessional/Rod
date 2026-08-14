@@ -102,6 +102,26 @@ public sealed class FileArtifactStore : IArtifactStore
         return matches;
     }
 
+    public Task<ArtifactPage> ForTaskPageAsync(
+        Guid taskId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        // Metadata only -- the page surface carries no bytes, so this avoids
+        // rehydrating every blob the way the full listing does.
+        var ordered = _index.Values
+            .Where(a => a.TaskId == taskId)
+            .OrderBy(a => a.StoredAt)
+            .ThenBy(a => a.ArtifactId)
+            .ToArray();
+        var (items, next) = ListPageWindow.TakeNewest(
+            ordered, limit, cursor, a => a.StoredAt, a => a.ArtifactId);
+        return Task.FromResult(new ArtifactPage(items, next));
+    }
+
     public async Task<IReadOnlyList<Artifact>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         EnsureRecovered();

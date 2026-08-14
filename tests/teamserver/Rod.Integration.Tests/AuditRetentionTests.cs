@@ -86,12 +86,12 @@ public class AuditRetentionTests
 
         // The trail reads back through the per-engagement audit endpoint on the
         // new host, oldest-first, every kind present and correctly attributed.
-        var trailResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+        var trailResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
             $"/engagements/{engagementId}/audit");
         Assert.NotNull(trailResponse);
-        Assert.Equal(trailCountAfterA, trailResponse!.Length);
+        Assert.Equal(trailCountAfterA, trailResponse!.Items.Length);
 
-        var byKind = trailResponse.ToDictionary(e => e.Kind);
+        var byKind = trailResponse.Items.ToDictionary(e => e.Kind);
         Assert.Contains("EngagementCreated", byKind.Keys);
         Assert.Contains("StagerTokenMinted", byKind.Keys);
         Assert.Contains("ImplantEnrolled", byKind.Keys);
@@ -110,8 +110,8 @@ public class AuditRetentionTests
 
         // Oldest-first ordering survived the reload.
         Assert.Equal(
-            trailResponse.Select(e => e.EventId),
-            trailResponse.OrderBy(e => e.At).Select(e => e.EventId));
+            trailResponse.Items.Select(e => e.EventId),
+            trailResponse.Items.OrderBy(e => e.At).Select(e => e.EventId));
 
         // The hash chain still verifies after the teardown -- the reloaded trail
         // is tamper-evident across the restart, not just within one host. This is
@@ -131,9 +131,9 @@ public class AuditRetentionTests
         var foreignTrail = await recoveredAudit.ListAsync(Guid.NewGuid());
         Assert.Empty(foreignTrail);
 
-        var foreignResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+        var foreignResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
             $"/engagements/{Guid.NewGuid()}/audit");
-        Assert.Empty(foreignResponse!);
+        Assert.Empty(foreignResponse!.Items);
     }
 
     // Drives the full  lifecycle (mirrors OperationalEventLogTests) so the
@@ -219,9 +219,9 @@ public class AuditRetentionTests
     // The lifecycle's first task id, read off the audit trail's TaskIssued event.
     private static async Task<Guid> FirstTaskIdAsync(HttpClient http, Guid engagementId)
     {
-        var trail = await http.GetFromJsonAsync<AuditEndpoints.AuditEventEntry[]>(
+        var trail = await http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
             $"/engagements/{engagementId}/audit");
-        var issued = Assert.Single(trail!, e => e.Kind == "TaskIssued");
+        var issued = Assert.Single(trail!.Items, e => e.Kind == "TaskIssued");
         return issued.TaskId;
     }
 

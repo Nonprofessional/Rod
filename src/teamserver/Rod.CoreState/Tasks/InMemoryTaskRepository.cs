@@ -70,6 +70,69 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         return System.Threading.Tasks.Task.FromResult<IReadOnlyList<Task>>(matches);
     }
 
+    public System.Threading.Tasks.Task<TaskPage> ListByEngagementPageAsync(
+        EngagementId engagement,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var ordered = _tasks.Values
+            .Where(t => t.EngagementId == engagement)
+            .OrderBy(t => _order.GetValueOrDefault(t.Id))
+            .ToArray();
+        return System.Threading.Tasks.Task.FromResult(Page(ordered, limit, cursor));
+    }
+
+    public System.Threading.Tasks.Task<TaskPage> ListByImplantPageAsync(
+        ImplantId implant,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        var ordered = _tasks.Values
+            .Where(t => t.ImplantId == implant)
+            .OrderBy(t => _order.GetValueOrDefault(t.Id))
+            .ToArray();
+        return System.Threading.Tasks.Task.FromResult(Page(ordered, limit, cursor));
+    }
+
+    // Pages an enqueue-ordered array from the newest end: a null cursor starts
+    // at the newest task, a cursor skips everything at-or-newer than its encoded
+    // sequence. The returned page reads oldest first and carries the next cursor
+    // (the oldest included task's sequence) only when older tasks remain.
+    private TaskPage Page(Task[] orderedAscending, int limit, string? cursor)
+    {
+        long? after = null;
+        if (cursor is not null)
+        {
+            if (!TaskPageCursor.TryDecode(cursor, out var decoded))
+                throw new ArgumentException("Cursor is not a valid task page cursor.", nameof(cursor));
+            after = decoded;
+        }
+
+        var taken = new List<Task>(limit);
+        var hasOlder = false;
+        for (var i = orderedAscending.Length - 1; i >= 0; i--)
+        {
+            var seq = _order.GetValueOrDefault(orderedAscending[i].Id);
+            if (after is { } a && seq >= a)
+                continue; // Already on an earlier (newer) page.
+
+            taken.Add(orderedAscending[i]);
+            if (taken.Count == limit)
+            {
+                hasOlder = i > 0;
+                break;
+            }
+        }
+
+        taken.Reverse(); // Oldest first within the page, matching the full listing.
+        var next = hasOlder
+            ? TaskPageCursor.Encode(_order.GetValueOrDefault(taken[0].Id))
+            : null;
+        return new TaskPage(taken, next);
+    }
+
     public System.Threading.Tasks.Task<Task?> NextPendingAsync(ImplantId implant, CancellationToken cancellationToken = default)
     {
         // Oldest still-queued task for the implant by global enqueue order; the

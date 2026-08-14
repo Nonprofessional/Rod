@@ -34,9 +34,13 @@ historical milestone id, from commit bodies.
       (architecture.md Sec 10.3). _AC:_ a session whose last-seen is older than
       a configured threshold is closed and the implant drops off the online
       roster.
-- [ ] **List pagination.** Task, audit, and artifact listings return the full
-      history; a long engagement grows these without bound. _AC:_ list
-      endpoints accept a cursor or limit and the UI walks pages.
+- [x] **List pagination.** Task, audit, and artifact listings return the full
+      history; a long engagement grows these without bound. Shipped: the three
+      list endpoints accept a limit and an opaque cursor (newest window first),
+      every store adapter -- in-memory, file-backed, and Postgres -- pages with
+      the same semantics, and the UI walks pages with load-older controls
+      (architecture.md Sec 4.3, Sec 11). _AC:_ list endpoints accept a cursor
+      or limit and the UI walks pages.
 
 ## Tests
 

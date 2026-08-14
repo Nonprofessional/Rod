@@ -32,6 +32,18 @@ public interface IArtifactStore
     Task<IReadOnlyList<Artifact>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// One page of a task's artifacts: the newest <paramref name="limit"/>
+    /// records, or the next older page when <paramref name="cursor"/> carries the
+    /// previous page's <see cref="ArtifactPage.NextCursor"/>, with the same
+    /// newest-window-first semantics as the audit trail's pages.
+    /// </summary>
+    Task<ArtifactPage> ForTaskPageAsync(
+        Guid taskId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The engagement's artifacts, oldest first. Per-engagement by construction;
     /// cross-engagement access never reaches this with another engagement's id.
     /// </summary>

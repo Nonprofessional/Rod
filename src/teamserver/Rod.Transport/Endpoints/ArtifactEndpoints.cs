@@ -129,6 +129,8 @@ public static class ArtifactEndpoints
     private static async Task<IResult> ListArtifactsAsync(
         string engagementId,
         string taskId,
+        int? limit,
+        string? cursor,
         IArtifactStore artifacts,
         ITaskRepository tasks,
         CancellationToken cancellationToken)
@@ -137,13 +139,22 @@ public static class ArtifactEndpoints
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(taskId, out var taskValue))
             return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+        if (!ListPaging.TryBind(limit, cursor, c => TimestampIdCursor.TryDecode(c, out _, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
 
         var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
             return Results.NotFound(new Problem("Task does not exist in this engagement."));
 
-        var forTask = await artifacts.ForTaskAsync(taskValue, cancellationToken);
-        var body = forTask.Select(ArtifactResponse.Of).ToArray();
+        // One page of the task's artifacts, newest window first across pages --
+        // a heavily evidenced task no longer grows this listing without bound.
+        var page = await artifacts.ForTaskPageAsync(taskValue, boundLimit, boundCursor, cancellationToken);
+        var body = new ArtifactListResponse(
+            page.Items.Select(ArtifactResponse.Of).ToArray(),
+            page.NextCursor);
         return Results.Ok(body);
     }
 
@@ -183,6 +194,14 @@ public static class ArtifactEndpoints
         string Name,
         string? ContentType,
         byte[] Content);
+
+    /// <summary>
+    /// One page of a task's artifacts: the page's records plus the cursor that
+    /// walks one page older, null when the beginning is reached.
+    /// </summary>
+    public sealed record ArtifactListResponse(
+        ArtifactResponse[] Items,
+        string? NextCursor);
 
     // The list shape omits the artifact bytes -- an artifact's metadata is small
     // and enumerable, its content is fetched on demand through the retrieve

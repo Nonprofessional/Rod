@@ -117,6 +117,42 @@ internal sealed class PostgresAuditStore : IAuditStore
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<AuditPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        // The paged view keys on (At, EventId) -- the same key the in-memory and
+        // file adapters page on -- so page boundaries stay stable across adapters.
+        IQueryable<AuditEvent> query = db.AuditEvents
+            .AsNoTracking()
+            .Where(e => e.EngagementId == engagementId);
+        if (cursor is not null)
+        {
+            if (!TimestampIdCursor.TryDecode(cursor, out var afterTicks, out var afterId))
+                throw new ArgumentException("Cursor is not a valid list page cursor.", nameof(cursor));
+            var afterAt = new DateTimeOffset(afterTicks, TimeSpan.Zero);
+            query = query.Where(e => e.At < afterAt || (e.At == afterAt && e.EventId.CompareTo(afterId) < 0));
+        }
+
+        var newestFirst = await query
+            .OrderByDescending(e => e.At)
+            .ThenByDescending(e => e.EventId)
+            .Take(limit + 1)
+            .ToArrayAsync(cancellationToken);
+
+        var hasMore = newestFirst.Length > limit;
+        var items = newestFirst.Take(limit).ToArray();
+        Array.Reverse(items); // Oldest first within the page, matching the full listing.
+        var next = hasMore
+            ? TimestampIdCursor.Encode(items[0].At, items[0].EventId)
+            : null;
+        return new AuditPage(items, next);
+    }
+
     // The shadow property name on AuditEvent (see AuditEventConfiguration). Kept
     // here as a private constant so the queries reference one symbol.
     private const string AppendSequenceShadow = "AppendSequence";

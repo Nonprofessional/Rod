@@ -153,6 +153,39 @@ public sealed class FileAuditStore : IAuditStore
         return matches;
     }
 
+    public async Task<AuditPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        // Same refusal as ListAsync: a tampered trail is never served as
+        // evidence, paged or not.
+        if (_brokenEngagements.Contains(engagementId))
+            throw new InvalidOperationException(
+                $"Audit chain verification failed for engagement {engagementId}; the trail is refused.");
+
+        var matches = new List<AuditEvent>();
+        await foreach (var @event in ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (@event.EngagementId == engagementId)
+                matches.Add(@event);
+        }
+
+        // The event id breaks timestamp ties so a page boundary is stable even
+        // when several events share one instant.
+        matches.Sort(static (a, b) =>
+        {
+            var byAt = a.At.CompareTo(b.At);
+            return byAt != 0 ? byAt : a.EventId.CompareTo(b.EventId);
+        });
+        var (items, next) = ListPageWindow.TakeNewest(
+            matches.ToArray(), limit, cursor, e => e.At, e => e.EventId);
+        return new AuditPage(items, next);
+    }
+
     // Streams every stored event in append order (oldest first on disk). A
     // missing file is an empty trail, not an error -- the store has simply never
     // been written to. FileShare.ReadWrite lets a read coexist with an in-flight

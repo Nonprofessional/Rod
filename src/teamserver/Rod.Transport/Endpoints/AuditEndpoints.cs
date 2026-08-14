@@ -29,17 +29,27 @@ public static class AuditEndpoints
 
     private static async Task<IResult> ListAsync(
         string engagementId,
+        int? limit,
+        string? cursor,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!ListPaging.TryBind(limit, cursor, c => TimestampIdCursor.TryDecode(c, out _, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
 
         // The trail is per-engagement by construction (architecture.md Sec 3/11);
         // cross-engagement access never reaches here with another engagement's id.
-        // Returned oldest-first so the timeline reads in causal order.
-        var events = await audit.ListAsync(engagementValue, cancellationToken);
-        var body = events.Select(AuditEventEntry.Of).ToArray();
+        // One page per request: newest window first across pages, oldest first
+        // within a page so the page itself still reads in causal order.
+        var page = await audit.ListPageAsync(engagementValue, boundLimit, boundCursor, cancellationToken);
+        var body = new AuditListResponse(
+            page.Items.Select(AuditEventEntry.Of).ToArray(),
+            page.NextCursor);
         return Results.Ok(body);
     }
 
@@ -78,6 +88,15 @@ public static class AuditEndpoints
                 e.Outcome,
                 e.At);
     }
+
+    /// <summary>
+    /// One page of the engagement's audit trail: the page's events (oldest first
+    /// within the page) plus the cursor that walks one page older, null when the
+    /// beginning of the trail is reached.
+    /// </summary>
+    public sealed record AuditListResponse(
+        AuditEventEntry[] Items,
+        string? NextCursor);
 
     public sealed record Problem(string Error);
 }

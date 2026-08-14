@@ -38,4 +38,17 @@ public interface IAuditStore
     /// engagement's id.
     /// </summary>
     Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One page of the engagement's event trail (architecture.md Sec 11): the
+    /// newest <paramref name="limit"/> events, or the next older page when
+    /// <paramref name="cursor"/> carries the previous page's
+    /// <see cref="AuditPage.NextCursor"/>. A long engagement no longer grows the
+    /// listing endpoint without bound -- the operator UI walks pages.
+    /// </summary>
+    Task<AuditPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default);
 }

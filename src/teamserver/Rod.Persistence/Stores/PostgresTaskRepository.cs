@@ -80,6 +80,68 @@ internal sealed class PostgresTaskRepository : ITaskRepository
             .ToArrayAsync(cancellationToken);
     }
 
+    public async System.Threading.Tasks.Task<TaskPage> ListByEngagementPageAsync(
+        EngagementId engagement,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        return await PageAsync(
+            db.Tasks.AsNoTracking().Where(t => t.EngagementId == engagement),
+            limit, cursor, cancellationToken);
+    }
+
+    public async System.Threading.Tasks.Task<TaskPage> ListByImplantPageAsync(
+        ImplantId implant,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        return await PageAsync(
+            db.Tasks.AsNoTracking().Where(t => t.ImplantId == implant),
+            limit, cursor, cancellationToken);
+    }
+
+    // Keyset pagination over the enqueue sequence: the newest window first (a
+    // null cursor), each next cursor reading strictly older rows. The LIMIT
+    // fetches one extra row so "is there a next page" needs no second query.
+    private static async System.Threading.Tasks.Task<TaskPage> PageAsync(
+        IQueryable<Task> scoped,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken)
+    {
+        if (cursor is not null)
+        {
+            if (!TaskPageCursor.TryDecode(cursor, out var after))
+                throw new ArgumentException("Cursor is not a valid task page cursor.", nameof(cursor));
+            scoped = scoped.Where(t => EF.Property<long>(t, TaskConfiguration.EnqueueSequenceShadow) < after);
+        }
+
+        // Project the enqueue sequence alongside the entity: the shadow value
+        // must be read inside the query -- EF.Property refuses to read it off an
+        // already-materialized instance.
+        var newestFirst = await scoped
+            .OrderByDescending(t => EF.Property<long>(t, TaskConfiguration.EnqueueSequenceShadow))
+            .Take(limit + 1)
+            .Select(t => new
+            {
+                t,
+                Seq = EF.Property<long>(t, TaskConfiguration.EnqueueSequenceShadow),
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var hasMore = newestFirst.Length > limit;
+        var items = newestFirst.Take(limit).Select(x => x.t).ToArray();
+        Array.Reverse(items); // Oldest first within the page, matching the full listing.
+        var next = hasMore
+            ? TaskPageCursor.Encode(newestFirst[limit - 1].Seq)
+            : null;
+        return new TaskPage(items, next);
+    }
+
     public async System.Threading.Tasks.Task<Task?> NextPendingAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default)

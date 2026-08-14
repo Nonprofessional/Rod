@@ -154,9 +154,9 @@ public class OperatorListingTests
                 $"/engagements/{engagementId}/implants/{implantId}/tasks");
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var body = await response.Content.ReadFromJsonAsync<ImplantEndpoints.ImplantTaskResponse[]>();
+            var body = await response.Content.ReadFromJsonAsync<TaskEndpoints.TaskListResponse>();
             Assert.NotNull(body);
-            var match = Assert.Single(body!);
+            var match = Assert.Single(body!.Items);
             Assert.Equal("shell.exec", match.Verb);
             Assert.Equal("whoami", match.Arguments);
             Assert.Equal("Queued", match.Status);

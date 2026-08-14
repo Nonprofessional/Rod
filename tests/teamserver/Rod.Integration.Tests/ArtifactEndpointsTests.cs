@@ -69,16 +69,18 @@ public class ArtifactEndpointsTests
                 ContentType: null,
                 Content: later));
 
-        // List the task's artifacts: two, oldest-first, metadata only (no bytes).
-        var list = await env.Http.GetFromJsonAsync<ArtifactBody[]>(
+        // List the task's artifacts: one page, two records, oldest-first,
+        // metadata only (no bytes), and the walk is exhausted.
+        var list = await env.Http.GetFromJsonAsync<ArtifactEndpoints.ArtifactListResponse>(
             $"/engagements/{engagementId}/tasks/{taskId}/artifacts");
         Assert.NotNull(list);
-        Assert.Equal(2, list!.Length);
-        Assert.True(list[0].StoredAt <= list[1].StoredAt);
-        Assert.Equal("passwd.txt", list[0].Name);
-        Assert.Equal("shadow.bin", list[1].Name);
+        Assert.Null(list!.NextCursor);
+        Assert.Equal(2, list.Items.Length);
+        Assert.True(list.Items[0].StoredAt <= list.Items[1].StoredAt);
+        Assert.Equal("passwd.txt", list.Items[0].Name);
+        Assert.Equal("shadow.bin", list.Items[1].Name);
         // A null content type falls back to the opaque default on the wire.
-        Assert.Equal("application/octet-stream", list[1].ContentType);
+        Assert.Equal("application/octet-stream", list.Items[1].ContentType);
 
         // Retrieve returns the stored bytes, by content type, by name -- the raw
         // evidence, not a JSON projection.

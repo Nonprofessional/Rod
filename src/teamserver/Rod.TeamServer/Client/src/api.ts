@@ -276,11 +276,24 @@ export async function listCapabilities(): Promise<CapabilityDescriptor[]> {
   return jsonOrThrow(await fetch('capabilities'))
 }
 
+// --- Paged lists --------------------------------------------------
+//
+// Task, audit, and artifact listings are paged: each call returns one page --
+// the newest window on the first call, one page older per cursor -- plus the
+// cursor for the next older page (null at the beginning of history). A long
+// engagement no longer grows any listing response without bound; the views walk
+// pages with their "load older" controls.
+
+export interface ListPage<T> {
+  items: T[]
+  nextCursor: string | null
+}
+
 // --- Engagement-wide task list  ------------------------------
 //
-// The whole task history for an engagement across every implant, oldest first.
-// Reuses the per-implant task shape so both list views read identically to a
-// client.
+// The task history for an engagement across every implant, one page per call,
+// oldest first within the page. Reuses the per-implant task shape so both list
+// views read identically to a client.
 
 export interface EngagementTask {
   taskId: string
@@ -295,8 +308,12 @@ export interface EngagementTask {
   completedAt: string | null
 }
 
-export async function listEngagementTasks(engagementId: string): Promise<EngagementTask[]> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks`))
+export async function listEngagementTasks(
+  engagementId: string,
+  cursor?: string,
+): Promise<ListPage<EngagementTask>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks${query}`))
 }
 
 // --- Audit trail  ---------------------------------------------
@@ -319,8 +336,12 @@ export interface AuditEventEntry {
   at: string
 }
 
-export async function listAudit(engagementId: string): Promise<AuditEventEntry[]> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/audit`))
+export async function listAudit(
+  engagementId: string,
+  cursor?: string,
+): Promise<ListPage<AuditEventEntry>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/audit${query}`))
 }
 
 // --- Artifacts  -----------------------------------------------
@@ -339,8 +360,13 @@ export interface ArtifactSummary {
   storedAt: string
 }
 
-export async function listArtifacts(engagementId: string, taskId: string): Promise<ArtifactSummary[]> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks/${taskId}/artifacts`))
+export async function listArtifacts(
+  engagementId: string,
+  taskId: string,
+  cursor?: string,
+): Promise<ListPage<ArtifactSummary>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks/${taskId}/artifacts${query}`))
 }
 
 export async function attachArtifact(

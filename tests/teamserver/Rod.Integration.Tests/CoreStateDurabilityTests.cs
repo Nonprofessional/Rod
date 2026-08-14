@@ -579,6 +579,71 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.Equal(artifactBytes.Length, artifactRow.Size);
     }
 
+    [Fact]
+    public async Task PagedListings_WalkTheDurableStores_WhenPostgresWired()
+    {
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        await using var env = await TestEnv.StartAsync(_postgres.ConnectionString);
+        var tasks = env.Host.Services.GetRequiredService<ITaskRepository>();
+        var audit = env.Host.Services.GetRequiredService<IAuditStore>();
+
+        var engagementId = EngagementId.New();
+        var implantId = ImplantId.New();
+        var seeded = new List<TaskId>();
+        for (var i = 0; i < 12; i++)
+        {
+            seeded.Add(await EnqueueAsync(tasks, engagementId, implantId, env.OperatorId, "shell.exec", $"arg-{i}"));
+            await audit.AppendAsync(AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementId.Value,
+                operatorId: env.OperatorId.Value,
+                implantId: implantId.Value,
+                taskId: seeded[^1].Value,
+                verb: "shell.exec",
+                kind: AuditEventKind.TaskIssued,
+                payload: $"arg-{i}",
+                output: null,
+                outcome: seeded[^1].ToString(),
+                at: DateTimeOffset.UtcNow.AddMinutes(i)));
+        }
+
+        // The Postgres keyset pages walk the same way the in-memory adapter's
+        // do: newest window first, oldest first within the page, null cursor at
+        // the beginning of history.
+        var seen = new List<TaskId>();
+        string? cursor = null;
+        do
+        {
+            var page = await tasks.ListByEngagementPageAsync(engagementId, limit: 5, cursor);
+            seen.AddRange(page.Items.Select(t => t.Id));
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        Assert.Equal(seeded.OrderBy(id => id.Value).ToArray(), seen.OrderBy(id => id.Value).ToArray());
+
+        var seenEvents = new List<Guid>();
+        cursor = null;
+        do
+        {
+            var page = await audit.ListPageAsync(engagementId.Value, limit: 5, cursor);
+            seenEvents.AddRange(page.Items.Select(e => e.EventId));
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        Assert.Equal(12, seenEvents.Distinct().Count());
+        var full = await audit.ListAsync(engagementId.Value);
+        Assert.Equal(
+            full.Select(e => e.EventId).OrderBy(id => id).ToArray(),
+            seenEvents.OrderBy(id => id).ToArray());
+    }
+
     // Helper: enqueue a task and return its id, keeping the test bodies linear.
     private static async Task<TaskId> EnqueueAsync(
         ITaskRepository tasks,

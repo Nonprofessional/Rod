@@ -50,6 +50,40 @@ internal sealed class PostgresArtifactStore : IArtifactStore
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<ArtifactPage> ForTaskPageAsync(
+        Guid taskId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        IQueryable<Artifact> query = db.Artifacts
+            .AsNoTracking()
+            .Where(a => a.TaskId == taskId);
+        if (cursor is not null)
+        {
+            if (!TimestampIdCursor.TryDecode(cursor, out var afterTicks, out var afterId))
+                throw new ArgumentException("Cursor is not a valid list page cursor.", nameof(cursor));
+            var afterAt = new DateTimeOffset(afterTicks, TimeSpan.Zero);
+            query = query.Where(a => a.StoredAt < afterAt || (a.StoredAt == afterAt && a.ArtifactId.CompareTo(afterId) < 0));
+        }
+
+        var newestFirst = await query
+            .OrderByDescending(a => a.StoredAt)
+            .ThenByDescending(a => a.ArtifactId)
+            .Take(limit + 1)
+            .ToArrayAsync(cancellationToken);
+
+        var hasMore = newestFirst.Length > limit;
+        var items = newestFirst.Take(limit).ToArray();
+        Array.Reverse(items); // Oldest first within the page, matching the full listing.
+        var next = hasMore
+            ? TimestampIdCursor.Encode(items[0].StoredAt, items[0].ArtifactId)
+            : null;
+        return new ArtifactPage(items, next);
+    }
+
     public async Task<IReadOnlyList<Artifact>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
