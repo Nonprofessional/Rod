@@ -6,7 +6,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Registry behavior for the tradecraft layer skeleton (roadmap M2.5,
+/// Registry behavior for the tradecraft layer skeleton (,
 /// architecture.md Sec 10). <see cref="InMemoryCapabilityRegistry"/> indexes
 /// modules by their descriptor's verb (case-insensitive), lists descriptors in
 /// registration order, and lets a later registration replace an earlier one so

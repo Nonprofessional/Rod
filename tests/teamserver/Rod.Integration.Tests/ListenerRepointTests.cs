@@ -11,7 +11,7 @@ using Rod.Transport.Listeners;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M4.4 acceptance: swap a burned redirector without backend change.
+/// Roadmap  acceptance: swap a burned redirector without backend change.
 /// A listener's public endpoint (the redirector implants dial) is decoupled from
 /// its bind address (the socket Kestrel opens) -- repointing it at runtime moves
 /// the address implants are told to dial and severs the old one, while the bound

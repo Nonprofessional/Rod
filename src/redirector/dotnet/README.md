@@ -15,7 +15,7 @@ with no evasion and no payload awareness.
 
 A burned redirector is swapped by deploying a fresh one and **repointing the
 listener** (`POST /listeners/{id}:repoint`); this binary is the missing half of
-that rotation, the teamserver-side repoint (M4.4) being the other. The
+that rotation, the teamserver-side repoint being the other. The
 end-to-end runbook lives in
 [docs/operations/redirectors.md](../../../docs/operations/redirectors.md).
 

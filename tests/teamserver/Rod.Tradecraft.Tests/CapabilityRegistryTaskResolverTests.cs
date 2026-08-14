@@ -10,7 +10,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap M8.1 at the resolver level: the capability-registry-backed
+/// Roadmap  at the resolver level: the capability-registry-backed
 /// <see cref="ITaskCapabilityResolver"/> admits a verb the per-class reduced set
 /// does not when a module is registered for it (architecture.md Sec 10.2/10.3).
 /// The class table stays the primary authority; the registry opens the
@@ -62,7 +62,7 @@ public class CapabilityRegistryTaskResolverTests
         // An operator-supplied, out-of-tree module (here a fixed-result stand-in)
         // registered for an exploit verb is the authority for it, and the resolver
         // admits the verb -- the "registered capability module reached" half of
-        // the M8.1 acceptance criteria at the resolver level.
+        // the acceptance criteria at the resolver level.
         var registry = new InMemoryCapabilityRegistry();
         await registry.RegisterAsync(new FixedModule(ExploitCapabilities.Invoke));
         var resolver = new CapabilityRegistryTaskResolver(registry);

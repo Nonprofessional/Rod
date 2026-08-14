@@ -11,8 +11,8 @@
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <!-- Live Postgres for the durability acceptance test (ADR 0003, roadmap
-         M10.1). An ephemeral container per test class; tests skip (not fail)
+    <!-- Live Postgres for the durability acceptance test (ADR 0003). An
+         ephemeral container per test class; tests skip (not fail)
          when Docker is unavailable, so CI without Docker stays green. -->
     <PackageReference Include="Testcontainers.PostgreSql" />
     <!-- Direct reference forces the transitive SSH.NET (pulled by
@@ -31,14 +31,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Transport\Rod.Transport.csproj" />
-    <!-- Referenced so the operator layer (M2.4: live bus + SSE endpoint) can be
+    <!-- Referenced so the operator layer (live bus + SSE endpoint) can be
          layered into the test host alongside the transport core. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Operators\Rod.Operators.csproj" />
-    <!-- Referenced so the tradecraft layer (M8.1: capability registry wired onto
+    <!-- Referenced so the tradecraft layer (capability registry wired onto
          the live task path) can be layered into the test host alongside the
          transport core. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Tradecraft\Rod.Tradecraft.csproj" />
-    <!-- Referenced so the durable PostgreSQL store (M10.1: Postgres-backed
+    <!-- Referenced so the durable PostgreSQL store (Postgres-backed
          operators and engagements) can be layered into the test host and the
          durability acceptance test can resolve its DbContext directly. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Persistence\Rod.Persistence.csproj" />

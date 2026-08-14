@@ -10,7 +10,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="EnrollmentService"/>'s child-enrollment path
-/// (architecture.md Sec 5.2, roadmap M5.2) -- the M5.2 acceptance point: a child
+/// (architecture.md Sec 5.2, ) -- the acceptance point: a child
 /// implant enrols from a parent within scope, with parentage linkage recorded.
 /// Complements the top-level enroll checks in <see cref="EnrollmentServiceTests"/>
 /// and the HTTP slice that follows. Drives the service against the in-memory ports
@@ -70,7 +70,7 @@ public class ChildEnrollmentServiceTests
     [Fact]
     public async Task EnrolChild_RecordsTheParent_AndBindsTheSameEngagement()
     {
-        // The M5.2 acceptance point: a child enrols from a parent within scope,
+        // The  acceptance point: a child enrols from a parent within scope,
         // with parentage recorded. The child's engagement is the redeemed token's
         // engagement (which equals the parent's), and the result carries the parent.
         var (service, tokens, engagements, implants) = NewService();
@@ -125,7 +125,7 @@ public class ChildEnrollmentServiceTests
     [Fact]
     public async Task EnrolChild_RefusesRetiredParent()
     {
-        // A retired implant is out of operation (architecture.md Sec 7, M4.4) and
+        // A retired implant is out of operation (architecture.md Sec 7, ) and
         // cannot derive children; the enroll is refused before the child is
         // recorded.
         var (service, tokens, engagements, implants) = NewService();

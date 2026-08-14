@@ -9,7 +9,7 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Checks of <see cref="ImplantService"/>'s retire use case (architecture.md
-/// Sec 7, M4.4). Retiring an implant marks it retired, closes its active
+/// Sec 7, ). Retiring an implant marks it retired, closes its active
 /// session, and publishes an <see cref="LiveEventKind.ImplantRetired"/> event on
 /// the live bus so connected operators see the implant leave the live fleet.
 /// Drives the service against the in-memory ports the rest of the core-state

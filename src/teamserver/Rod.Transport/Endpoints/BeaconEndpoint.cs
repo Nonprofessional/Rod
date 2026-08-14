@@ -16,7 +16,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-initiated beacon stream (roadmap M1.3, tasking added M1.4, exfil
+/// The implant-initiated beacon stream (, tasking added, exfil
 /// capture added under ADR 0004). An implant opens a long-lived reverse
 /// connection; the first frame it sends is the handshake
 /// (payload = <see cref="HandshakeRequest"/>), and the first frame the server
@@ -31,8 +31,7 @@ namespace Rod.Transport.Endpoints;
 /// closed.
 ///
 /// When a result is captured the stream also publishes a
-/// <see cref="LiveEventKind.TaskCompleted"/> event on the live bus (roadmap
-/// M2.4), so every connected operator session sees the outcome in real time;
+/// <see cref="LiveEventKind.TaskCompleted"/> event on the live bus, so every connected operator session sees the outcome in real time;
 /// the audit write is the durable record, the live event the transient fan-out.
 /// The same fan-out is used for exfil captures so a live operator sees an
 /// artifact arrive without re-polling the artifact endpoint.
@@ -109,7 +108,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
         var implant = ResolveImplantId(handshakeRequest, httpContext);
 
-        // The session opening is recorded (architecture.md Sec 11, roadmap M6.1).
+        // The session opening is recorded (architecture.md Sec 11, ).
         // A handshake is implant-initiated, so the event is attributed to the
         // operator who deployed the implant (handshake.DeployedBy); the payload
         // carries the negotiated protocol version and the outcome the session id.
@@ -149,7 +148,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // The tasking session (roadmap M1.4): a reader draining result frames and a
+    // The tasking session (): a reader draining result frames and a
     // writer pushing queued tasks downstream, run concurrently. Concurrency is
     // required because tasks enter the queue out-of-band -- an operator POSTs
     // them over HTTP, not over this stream -- so the writer must keep polling the
@@ -261,7 +260,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             throw;
         }
 
-        // The dispatch is recorded (architecture.md Sec 11, roadmap M6.1). Dispatch
+        // The dispatch is recorded (architecture.md Sec 11, ). Dispatch
         // is server-driven (the implant pulls the queue), so the event is
         // attributed to the operator whose tasking it carries out. The payload is
         // the verb/arguments and the outcome the dispatched task id -- a task's
@@ -286,7 +285,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // UNSPECIFIED default, which older implants still send) takes the
     // capture-and-audit path; EXFIL_CHUNK reassembles a streamed artifact into
     // the artifact store. Non-result, non-exfil frames are ignored for now
-    // (keepalives, etc.). This is the transport-layer composition the M1.4 AC
+    // (keepalives, etc.). This is the transport-layer composition the AC
     // calls for -- task state lives in core, the audit event in the audit
     // layer, and the beacon stream is where both meet on a completed task
     // (architecture.md Sec 10.3/11).
@@ -368,7 +367,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 at: completed.CompletedAt),
             cancellationToken);
 
-        // Fan the completion out to connected operator sessions (roadmap M2.4).
+        // Fan the completion out to connected operator sessions ().
         // The audit write above is the durable record; this live event is the
         // transient projection operators read while connected, so they see the
         // outcome without re-polling the task endpoint.
@@ -491,7 +490,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             // compose the SessionOpened audit write from it -- a handshake is
             // implant-initiated, so the event is attributed to the implant's
             // DeployedBy and needs the engagement/implant/session ids the result
-            // carries (architecture.md Sec 11, roadmap M6.1).
+            // carries (architecture.md Sec 11, ).
             return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result);
         }
         catch (HandshakeException ex)

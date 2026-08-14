@@ -5,7 +5,7 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Direct checks of the <see cref="Implant.Retire"/> aggregate behavior
-/// (architecture.md Sec 7, M4.4). An enrolled implant is live until retired;
+/// (architecture.md Sec 7, ). An enrolled implant is live until retired;
 /// retiring stamps <see cref="Implant.RetiredAt"/>, flips
 /// <see cref="Implant.IsRetired"/>, and is idempotent so a second retire is a
 /// no-op. The handshake and task gates that read <see cref="Implant.IsRetired"/>

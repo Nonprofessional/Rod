@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type EngagementReport, getReport, getReportMarkdown } from '../api'
 
-// The engagement report (roadmap M6.3): the full evidence bundle -- engagement,
+// The engagement report: the full evidence bundle -- engagement,
 // operators, implants, tasks, artifacts, and the timeline -- in one reproducible,
 // content-hashed export. Toggles between a structured summary (JSON) and the raw
 // Markdown export.

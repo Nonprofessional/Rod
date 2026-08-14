@@ -25,18 +25,18 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M8.1 acceptance: a registered capability module is reached from the
+/// Roadmap  acceptance: a registered capability module is reached from the
 /// live task path, and an evasion/exploit verb is no longer refused before
 /// dispatch. Drives the operator-facing task endpoint through the in-memory
 /// TestServer with the tradecraft layer layered onto the transport core -- the
-/// same composition the teamserver host performs. Before M8.1 the evasion and
+/// same composition the teamserver host performs. Before  the evasion and
 /// exploit verbs were refused at issuance (422) because they are not in the
 /// per-class reduced verb set; the registry-backed task resolver now admits them
 /// (architecture.md Sec 10.2/10.3).
 /// </summary>
 public class TradecraftTaskPathTests
 {
-    // A host that layers the tradecraft layer (M8.1) and the operator + auth
+    // A host that layers the tradecraft layer () and the operator + auth
     // layers onto the transport core, so the capability registry is wired into
     // the live task path and the operator API requires a cookie session -- the
     // same composition the teamserver host performs.
@@ -80,7 +80,7 @@ public class TradecraftTaskPathTests
     {
         // The capability registry lists every built-in verb, so the
         // registry-backed resolver admits the no-class-gate evasion and exploit
-        // verbs (architecture.md Sec 10.2). These were 422 before M8.1; they are
+        // verbs (architecture.md Sec 10.2). These were 422 before ; they are
         // now queued (201) -- the verb is no longer refused before dispatch.
         var (client, host) = CreateClient();
         using (client)
@@ -160,7 +160,7 @@ public class TradecraftTaskPathTests
     [Fact]
     public async Task TaskPath_ReachesARegisteredOutOfTreeModuleAndCarriesTheVerb()
     {
-        // The full M8.1 acceptance: an out-of-tree module registered for an
+        // The full  acceptance: an out-of-tree module registered for an
         // evasion verb is the authority for it, the verb passes the live task
         // gate, and the queued task dispatches carrying the verb. The module
         // replaces the built-in placeholder by registering after AddRodTradecraft

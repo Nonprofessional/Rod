@@ -1,8 +1,8 @@
 namespace Rod.Audit;
 
 /// <summary>
-/// Artifact store port (architecture.md Sec 11; storage &amp; audit layer, roadmap
-/// M2.3). Artifacts are first-class objects attached to tasks; this port is the
+/// Artifact store port (architecture.md Sec 11; storage &amp; audit layer).
+/// Artifacts are first-class objects attached to tasks; this port is the
 /// evidence backbone alongside <see cref="IAuditStore"/>. The walking skeleton
 /// ships an in-memory implementation; the port keeps callers agnostic to that.
 ///

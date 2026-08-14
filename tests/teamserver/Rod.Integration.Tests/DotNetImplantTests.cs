@@ -11,7 +11,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M3.3 acceptance: the reference .NET implant checks in and tasks
+/// Roadmap  acceptance: the reference .NET implant checks in and tasks
 /// end-to-end. A real teamserver (Kestrel mTLS beacon endpoint + plain-HTTP
 /// operator/enroll API) is stood up, the reference .NET implant is published to a
 /// temp dir and launched against it as a real subprocess (dotnet Rod.Implant.dll),
@@ -24,7 +24,7 @@ namespace Rod.Integration.Tests;
 public class DotNetImplantTests
 {
     /// <summary>
-    /// Roadmap M9.1 acceptance: a parent implant derives a child on lateral.move
+    /// Roadmap  acceptance: a parent implant derives a child on lateral.move
     /// that enrolls back, and the child's parentage is recorded server-side. The
     /// parent runs as a real subprocess; the operator tasks it lateral.move with a
     /// second (child) stager token in the arguments; the handler generates a fresh
@@ -133,7 +133,7 @@ public class DotNetImplantTests
             {
                 // Wait for the implant to enroll, then beacon: it appears online in
                 // its engagement once the mTLS handshake completes. Presence is the
-                // active-sessions projection (roadmap M2.1).
+                // active-sessions projection ().
                 var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
 
                 // Operator tasks the implant over HTTP (shell.exec). A unique marker
@@ -160,7 +160,7 @@ public class DotNetImplantTests
 
                 // The audit trail carries the TaskCompleted event for this task
                 // (architecture.md Sec 11). A task now produces a three-event arc
-                // (M6.1): issued, dispatched, then completed.
+                // (): issued, dispatched, then completed.
                 var fetchedFull = await env.Http.GetFromJsonAsync<TaskBody>(
                     $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
                 Assert.NotNull(fetchedFull);
@@ -171,7 +171,7 @@ public class DotNetImplantTests
                 Assert.Equal("shell.exec", fetchedFull.Audit[2].Verb);
                 Assert.Equal("Succeeded", fetchedFull.Audit[2].Outcome);
 
-                // M5.1 acceptance: a recon task's scan results are captured as task
+                //  acceptance: a recon task's scan results are captured as task
                 // output against an authorized target (architecture.md Sec 10.3).
                 // The mTLS beacon port the implant is connected to is a known-open
                 // loopback port, so a portscan over a tight range around it reports

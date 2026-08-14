@@ -63,7 +63,7 @@ internal sealed class Config
 
     /// <summary>
     /// The malleable transport profile applied to the enroll request
-    /// (architecture.md Sec 7, M4.3): the URI path, User-Agent, custom headers,
+    /// (architecture.md Sec 7, ): the URI path, User-Agent, custom headers,
     /// per-request timeout, and body envelope that shape the wire so two implants
     /// do not look the same. Defaults leave the wire shape unchanged.
     /// </summary>
@@ -120,7 +120,7 @@ internal sealed class Config
             Sleep = EnvTimeSpan("ROD_SLEEP", TimeSpan.FromSeconds(30)),
             Jitter = EnvTimeSpan("ROD_JITTER", TimeSpan.FromSeconds(10)),
             CACertPath = Env("ROD_CA_CERT", string.Empty),
-            // Malleable transport profile (architecture.md Sec 7, M4.3). Each knob
+            // Malleable transport profile (architecture.md Sec 7, ). Each knob
             // falls back to the matching ROD_* env, then to a no-op default, so a
             // profiled bake or an explicit flag changes the enroll wire shape and
             // an un-profiled build stays unchanged.
@@ -375,7 +375,7 @@ internal sealed class Config
 
 /// <summary>
 /// The malleable wire-shape profile applied to the enroll request
-/// (architecture.md Sec 7, M4.3). Each knob is optional and defaults to a value
+/// (architecture.md Sec 7, ). Each knob is optional and defaults to a value
 /// that keeps the request identical to the un-profiled shape. Mirrors the Go
 /// implant's config.TransportProfile.
 /// </summary>
@@ -394,7 +394,7 @@ internal sealed class TransportProfile
     /// <summary>
     /// The URI path appended to the enroll host to form the enroll URL. Defaults
     /// to <see cref="DefaultEnrollPath"/>. A profile may set it to a malleable
-    /// path a redirector rewrites (M4.4).
+    /// path a redirector rewrites ().
     /// </summary>
     public string EnrollPath { get; set; } = string.Empty;
 

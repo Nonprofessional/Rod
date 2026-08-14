@@ -8,8 +8,8 @@ using Rod.CoreState.Live;
 namespace Rod.Operators.Live;
 
 /// <summary>
-/// In-memory <see cref="ILiveEventBus"/> for the walking skeleton (roadmap M2.4
-/// -- no Postgres / no out-of-process bus yet). Each engagement owns a set of
+/// In-memory <see cref="ILiveEventBus"/> for the walking skeleton
+/// -- no Postgres / no out-of-process bus yet. Each engagement owns a set of
 /// subscriber channels; <see cref="PublishAsync"/> fans an event out to every
 /// current subscriber on that engagement, and <see cref="SubscribeAsync"/>
 /// yields a per-subscriber stream. State is process-local and lost on restart;

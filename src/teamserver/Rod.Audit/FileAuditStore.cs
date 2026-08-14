@@ -8,10 +8,10 @@ namespace Rod.Audit;
 
 /// <summary>
 /// Durable <see cref="IAuditStore"/> for the walking skeleton (architecture.md
-/// Sec 11; roadmap M6.4). Each appended event is stamped onto its engagement's
+/// Sec 11; ). Each appended event is stamped onto its engagement's
 /// hash chain and written as one JSON Lines record to <c>audit.jsonl</c> under
 /// the data directory, so the trail outlives a teamserver restart and
-/// infrastructure teardown -- the M6.4 acceptance point. This is the file-backed
+/// infrastructure teardown -- the acceptance point. This is the file-backed
 /// stand-in for the eventual Postgres-backed store, behind the same port the
 /// in-memory adapter serves.
 ///

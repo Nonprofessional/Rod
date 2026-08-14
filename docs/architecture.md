@@ -3,9 +3,8 @@
 > **Status:** Living document. This is the agreed architecture for Rod as an
 > authorized-use red-team command-and-control (C2) platform. The repository
 > holds the teamserver and a .NET reference implant, with a Postgres persistence
-> layer; [roadmap.md](roadmap.md) is the archived delivery plan, and
-> [todo.md](todo.md) tracks open work. Sections marked _(future)_ are designed
-> for but not yet implemented.
+> layer; [todo.md](todo.md) tracks open work. Sections marked _(future)_ are
+> designed for but not yet implemented.
 
 ## 1. Overview
 

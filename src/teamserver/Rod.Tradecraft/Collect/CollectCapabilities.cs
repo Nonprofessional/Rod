@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Collect;
 /// <summary>
 /// The collection capability verbs (architecture.md Sec 10.1, the "collect"
 /// category): file, credential, and input collection within an authorized
-/// engagement. These are the verbs roadmap M5.4 loads through the registry
+/// engagement. These are the verbs  loads through the registry
 /// alongside the core, recon, lateral, and persist sets, so the registry lists
 /// them and a future task-issuance path can resolve them.
 /// </summary>

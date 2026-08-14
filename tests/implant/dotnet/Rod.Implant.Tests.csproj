@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The xUnit unit tests for the reference .NET implant (roadmap M3.3, ADR 0009).
+    The xUnit unit tests for the reference .NET implant (ADR 0009).
     Like the implant itself, this project is an EXTERNAL component: it is
     intentionally NOT part of Rod.slnx, mirroring how the Go reference implant's
     _test.go files lived in the implant's own module. CI runs it explicitly

@@ -10,7 +10,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.CoreState.Tests;
 
 /// <summary>
-/// Round-trip checks of the task queue and history -- the M2.1 core-state layer
+/// Round-trip checks of the task queue and history -- the core-state layer
 /// lift. <see cref="InMemoryTaskRepository"/> drains queued tasks per implant in
 /// FIFO enqueue order and exposes both implant- and engagement-scoped history
 /// (architecture.md Sec 4.1, Sec 10.3). Engagement scoping keeps a caller in one

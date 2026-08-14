@@ -10,12 +10,12 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M1.2 acceptance: enroll a fake implant and receive a certificate
+/// Roadmap  acceptance: enroll a fake implant and receive a certificate
 /// bound to <c>(implant_id, engagement_id)</c> plus the CA chain -- end to end
 /// through the in-memory TestServer. This drives the full enrollment slice
 /// (stager redeem, implant creation, CA issue) via the implant-side endpoint and
 /// verifies the issued binding by inspecting the certificate (no real mTLS
-/// handshake; that is M1.3). Failure paths assert each redeem outcome maps to
+/// handshake; that is ). Failure paths assert each redeem outcome maps to
 /// the right wire <see cref="EnrollStatus"/>. The implant enrollment endpoint is
 /// anonymous (implants authenticate with the stager token, not a cookie); the
 /// operator routes that mint a stager token require the operator session.

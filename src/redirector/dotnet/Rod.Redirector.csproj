@@ -9,7 +9,7 @@
     and the HTTPS enroll request both pass through end to end. A burned
     redirector is swapped by deploying a fresh one and repointing the listener
     (POST /listeners/{id}:repoint); this binary is the missing half of that flow,
-    the teamserver-side repoint (M4.4) being the other.
+    the teamserver-side repoint being the other.
 
     This project is a standalone deployable with NO in-house references; it is
     coupled to the teamserver only by the TCP stream it forwards, never by code.

@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Evasion;
 /// <summary>
 /// The evasion capability verbs (architecture.md Sec 10.1, the "evasion"
 /// category): detection-evasion hooks within an authorized engagement. These are
-/// the verbs roadmap M7.1 loads through the registry alongside the core, recon,
+/// the verbs  loads through the registry alongside the core, recon,
 /// lateral, persist, collect, and exfil sets, so the registry lists them and a
 /// future task-issuance path can resolve them.
 /// </summary>

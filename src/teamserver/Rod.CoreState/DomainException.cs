@@ -89,7 +89,7 @@ public enum HandshakeReason
     KillDateExpired,
 
     /// <summary>
-    /// The implant has been retired (architecture.md Sec 7, M4.4). A retired
+    /// The implant has been retired (architecture.md Sec 7, ). A retired
     /// implant is taken out of operation and never gets a session again; the
     /// teamserver refuses to open one and the stream closes.
     /// </summary>
@@ -140,7 +140,7 @@ public enum TaskRejectionReason
     ImplantEngagementMismatch,
 
     /// <summary>
-    /// The implant has been retired (architecture.md Sec 7, M4.4). A retired
+    /// The implant has been retired (architecture.md Sec 7, ). A retired
     /// implant is taken out of operation and is untaskable; the issuance is
     /// refused before the task is queued.
     /// </summary>
@@ -187,7 +187,7 @@ public enum InvalidParentImplantReason
     EngagementMismatch,
 
     /// <summary>
-    /// The parent has been retired (architecture.md Sec 7, M4.4). A retired
+    /// The parent has been retired (architecture.md Sec 7, ). A retired
     /// implant is out of operation and cannot derive children; the enroll is
     /// refused before the child is recorded.
     /// </summary>

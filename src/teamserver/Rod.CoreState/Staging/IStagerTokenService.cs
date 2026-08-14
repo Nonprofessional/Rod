@@ -3,7 +3,7 @@ namespace Rod.CoreState.Staging;
 /// <summary>
 /// Mints and redeems stager tokens. The mint result carries the plaintext secret
 /// exactly once; only a hash is retained server-side so a stolen store cannot
-/// replay tokens. Redeem (M1.2) is the entry point of enrollment: a presenting
+/// replay tokens. Redeem () is the entry point of enrollment: a presenting
 /// stager is verified against the stored hash, checked for expiry and remaining
 /// uses, and consumed on success.
 /// </summary>

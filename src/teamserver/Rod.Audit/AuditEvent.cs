@@ -8,8 +8,8 @@ namespace Rod.Audit;
 /// and -- for task events -- the captured <see cref="Output"/> and
 /// <see cref="Outcome"/>. This is the engagement timeline by construction.
 ///
-/// Events are hash-chained per engagement (storage &amp; audit layer, roadmap
-/// M2.3): <see cref="PreviousHash"/> is the hash of the previous event in the
+/// Events are hash-chained per engagement (storage &amp; audit layer):
+/// <see cref="PreviousHash"/> is the hash of the previous event in the
 /// same engagement (the genesis all-zero hash for the first event), and
 /// <see cref="Hash"/> is this event's hash, taken over its contents together
 /// with <see cref="PreviousHash"/>. Each event therefore commits to its

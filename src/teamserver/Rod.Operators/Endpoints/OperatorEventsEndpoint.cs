@@ -11,7 +11,7 @@ using Rod.Operators.Presence;
 namespace Rod.Operators.Endpoints;
 
 /// <summary>
-/// The operator-facing live event stream (roadmap M2.4, architecture.md Sec 4.1
+/// The operator-facing live event stream (, architecture.md Sec 4.1
 /// layer 4): a Server-Sent Events endpoint that keeps an operator session open
 /// per engagement and pushes every live event on it -- operator joined/left,
 /// task issued, task completed. This is the wire path for "two operators see

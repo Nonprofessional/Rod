@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Recon;
 /// <summary>
 /// The recon capability verbs (architecture.md Sec 10.1, the "recon" category):
 /// target and network reconnaissance -- port scanning, host enumeration, and
-/// service probing. These are the verbs roadmap M5.1 loads through the registry
+/// service probing. These are the verbs  loads through the registry
 /// alongside the core set, so the registry lists them and a future task-issuance
 /// path can resolve them.
 /// </summary>

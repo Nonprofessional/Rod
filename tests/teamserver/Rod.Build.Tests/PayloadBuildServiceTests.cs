@@ -8,7 +8,7 @@ namespace Rod.Build.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="PayloadBuildService"/> -- the teamserver-side
-/// orchestrator that drives build units (roadmap M3.1). Focuses on the
+/// orchestrator that drives build units (). Focuses on the
 /// per-implant material the service generates at request time (architecture.md
 /// Sec 6/Sec 5.1), which the build-unit tests read back only indirectly through
 /// the baked profile.
@@ -72,8 +72,8 @@ public class PayloadBuildServiceTests
     [Fact]
     public async Task Build_FlowsTheMalleableTransportProfile_ToTheArtifact()
     {
-        // The malleable transport knobs set on the request (architecture.md Sec 7,
-        // M4.3) flow BuildRequest -> BuildParams -> baked artifact unchanged, so an
+        // The malleable transport knobs set on the request (architecture.md
+        // Sec 7) flow BuildRequest -> BuildParams -> baked artifact unchanged, so an
         // operator profile is reflected in the generated payload. The stub manifest
         // is UTF-8 text, so a substring check is enough; the per-knob round trip is
         // covered in the build-unit tests, this proves the orchestrator carries it.

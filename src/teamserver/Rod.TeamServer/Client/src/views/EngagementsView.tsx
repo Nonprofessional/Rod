@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Engagement, createEngagement, listEngagements } from '../api'
 
-// The engagements list (roadmap M1.5): enumerate every engagement the operator
+// The engagements list: enumerate every engagement the operator
 // can reach and create a new one. Drilling into an engagement hands off to the
-// engagement detail view, which carries the full capability surface (M11.1).
+// engagement detail view, which carries the full capability surface .
 // The engagement's owner is the authenticated operator, resolved server-side,
 // so this view carries no identity of its own.
 

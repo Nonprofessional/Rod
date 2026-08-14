@@ -13,12 +13,12 @@ using Rod.CoreState.Operators;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing payload-build endpoints (roadmap M3.1): an operator
+/// The operator-facing payload-build endpoints (): an operator
 /// requests a payload for an engagement, the build pipeline invokes the
 /// language's build unit, the bytes are stored in the payload store, and the
 /// fingerprinted artifact is recorded into the audit trail. The build response's
 /// Location resolves to a download route that returns the compiled bytes, so a
-/// built payload is retrievable, not just recorded -- the M3.1 acceptance point.
+/// built payload is retrievable, not just recorded -- the acceptance point.
 ///
 /// Scoped by engagement (architecture.md Sec 3): the engagement id in the path
 /// binds the build. The endpoint composes the audit write, mirroring how task
@@ -198,7 +198,7 @@ public static class PayloadEndpoints
             : fallback;
 
     // Builds the malleable transport profile off the request body
-    // (architecture.md Sec 7, M4.3). Endpoint and uri path are the always-set
+    // (architecture.md Sec 7, ). Endpoint and uri path are the always-set
     // positional fields; the malleable knobs default when the operator omits
     // them, so a minimal build request stays valid. Headers arrive as a flat
     // name/value map and are applied verbatim; an empty or null map adds none.
@@ -249,7 +249,7 @@ public static class PayloadEndpoints
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
-    // The malleable transport knobs (M4.3) are all optional: EnrollPath,
+    // The malleable transport knobs () are all optional: EnrollPath,
     // UserAgent, Headers, RequestTimeoutSeconds, Envelope. An operator who omits
     // them gets a profile with the unchanged wire shape. Defaulted so a minimal
     // positional construction (as in the integration tests) stays valid.

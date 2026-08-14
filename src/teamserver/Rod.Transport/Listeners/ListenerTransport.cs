@@ -2,7 +2,7 @@ namespace Rod.Transport.Listeners;
 
 /// <summary>
 /// The C2 transport a <see cref="Listener"/> terminates (architecture.md Sec 8).
-/// M2.2 ships <see cref="Http"/> and <see cref="Mtls"/>; DNS, SMB, and TCP are the
+///  ships <see cref="Http"/> and <see cref="Mtls"/>; DNS, SMB, and TCP are the
 /// remaining transports the architecture calls out, added in later milestones.
 /// </summary>
 public enum ListenerTransport

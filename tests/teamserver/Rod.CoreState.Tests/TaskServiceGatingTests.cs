@@ -103,7 +103,7 @@ public class TaskServiceGatingTests
     public async Task IssueAsync_RejectsRetiredImplant()
     {
         // A retired implant is out of operation and untaskable (architecture.md
-        // Sec 7, M4.4). The refusal happens before the verb gate, so even a verb
+        // Sec 7, ). The refusal happens before the verb gate, so even a verb
         // in the implant's class set is refused once the implant is retired.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
@@ -126,7 +126,7 @@ public class TaskServiceGatingTests
         // only verb (evasion, exploit) on its own. That path opens when the
         // tradecraft layer wires a registry-backed resolver in (architecture.md
         // Sec 10.2); core state alone stays strict, so this test host and the
-        // core-state unit tests keep the behavior they had before M8.1.
+        // core-state unit tests keep the behavior they had before .
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
         var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
@@ -145,7 +145,7 @@ public class TaskServiceGatingTests
         // The task gate consults the capability resolver (architecture.md Sec
         // 10.3): a resolver that admits a verb the class set does not -- standing
         // in for the tradecraft-backed resolver a registered module satisfies --
-        // lets the verb through. This is the M8.1 mechanic in isolation: the
+        // lets the verb through. This is the mechanic in isolation: the
         // resolver, not the class table alone, is the gate authority.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();

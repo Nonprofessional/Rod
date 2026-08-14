@@ -1,4 +1,4 @@
-# Rod.Implant -- reference .NET stage-2 implant (M3.3)
+# Rod.Implant -- reference .NET stage-2 implant
 
 The reference **stage-2 implant** in the .NET language, cross-platform
 ([architecture.md Sec 5](../../../docs/architecture.md)). It is a benign, readable

@@ -11,7 +11,7 @@ using Rod.V1;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-side enrollment endpoint (roadmap M1.2): a stager redeems its
+/// The implant-side enrollment endpoint (): a stager redeems its
 /// token and receives a certificate bound to <c>(implant_id, engagement_id)</c>
 /// plus the CA chain. The engagement is resolved from the redeemed token -- a
 /// real stager carries the secret and the endpoint, not the engagement id.
@@ -20,8 +20,8 @@ namespace Rod.Transport.Endpoints;
 /// neutral contract lives in Rod.Protocol (architecture.md Sec 8/9), so this is
 /// the layer that translates the core's redeem exceptions into status codes.
 ///
-/// A child implant derives from a parent through the same endpoint (roadmap
-/// M5.2, architecture.md Sec 5.2): the request carries the parent implant id,
+/// A child implant derives from a parent through the same endpoint
+///architecture.md Sec 5.2: the request carries the parent implant id,
 /// the service resolves and validates it against the redeemed token's
 /// engagement, and the recorded linkage is echoed on the response.
 /// </summary>
@@ -54,7 +54,7 @@ public static class EnrollmentEndpoints
         // The implant's own public key (DER SubjectPublicKeyInfo, base64 over JSON).
         // When present the leaf is signed over it so the implant keeps its private
         // key for mTLS (architecture.md Sec 9). Optional: a request without it gets
-        // a server-generated ephemeral leaf (the M1.2 shape).
+        // a server-generated ephemeral leaf (the shape).
         byte[]? clientPublicKey = null;
         if (!string.IsNullOrWhiteSpace(body.PublicKey))
         {
@@ -69,8 +69,8 @@ public static class EnrollmentEndpoints
             }
         }
 
-        // The parent a child is derived from (architecture.md Sec 5.2, roadmap
-        // M5.2). Optional: a top-level enroll leaves it null. When present the
+        // The parent a child is derived from (architecture.md Sec 5.2).
+        // Optional: a top-level enroll leaves it null. When present the
         // service resolves the parent and binds the child into the same
         // engagement -- the parent id alone does not grant cross-engagement
         // derivation.
@@ -88,7 +88,7 @@ public static class EnrollmentEndpoints
                 new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey, parentImplantId),
                 cancellationToken);
 
-            // The enrollment is recorded (architecture.md Sec 11, roadmap M6.1).
+            // The enrollment is recorded (architecture.md Sec 11, ).
             // Enrollment is implant-initiated, so it is attributed to the operator
             // who deployed the implant -- the one who minted the redeemed token,
             // carried on the implant as DeployedBy. The payload carries the class
@@ -175,8 +175,8 @@ public static class EnrollmentEndpoints
     /// Mirrors the wire <see cref="Rod.V1.EnrollResponse"/>. <see cref="Status"/>
     /// is the wire enum so the JSON contract and the proto contract cannot drift.
     /// Certificate material is base64 over JSON; the proto carries raw bytes.
-    /// <see cref="ParentImplantId"/> records the child's lineage (roadmap M5.2
-    /// server-side, M9.1 implant-side): the binary wire surface carries it as
+    /// <see cref="ParentImplantId"/> records the child's lineage
+    /// server-side, implant-side: the binary wire surface carries it as
     /// <c>parent_implant_id</c>, and this JSON contract is the live producer on the
     /// HTTP enroll path.
     /// </summary>

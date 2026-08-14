@@ -12,7 +12,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// The HTTP slice of roadmap M5.2 (architecture.md Sec 5.2): a child implant
+/// The HTTP slice of (architecture.md Sec 5.2): a child implant
 /// enrols from a parent within scope, with the parentage linkage recorded and
 /// surfaced. Complements <see cref="ChildEnrollmentServiceTests"/> (the core
 /// parent-resolution rules) by driving the full enroll endpoint + the operator
@@ -26,7 +26,7 @@ public class ChildEnrollmentHttpTests
     [Fact]
     public async Task ChildEnrols_OverHttp_RecordsParent_AndListingSurfacesIt()
     {
-        // The M5.2 accept point on the wire: a child enrolls with a parent id
+        // The  accept point on the wire: a child enrolls with a parent id
         // over HTTP, the enroll response echoes the parent, and the operator
         // listing shows the parentage so the UI can render lineage.
         var (client, host) = CreateClient();

@@ -16,7 +16,7 @@ security model depends on is preserved.
 
 This is the deploy/rotate half of the "Redirector deployment story." The
 teamserver-side half -- repointing a listener's public endpoint without touching
-the backend bind -- already shipped at M4.4. Together they let an operator swap
+the backend bind -- already ships. Together they let an operator swap
 a burned redirector **end to end**: deploy a fresh forwarder, repoint the
 listener, decommission the old host. No backend restart, no bind change, no
 service interruption to live implants.
@@ -142,7 +142,7 @@ redirector is swapped **end to end**, not just in the registry. The flow:
    upstream listener bind address. B is now serving on its own public endpoint
    (e.g. `198.51.100.20:443`) but nothing is dialed against it yet.
 
-2. **Repoint the listener** to B. The teamserver-side half (M4.4):
+2. **Repoint the listener** to B. The teamserver-side half:
 
    ```
    POST /listeners/{id}:repoint

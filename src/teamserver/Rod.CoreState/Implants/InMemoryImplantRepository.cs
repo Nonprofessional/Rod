@@ -5,7 +5,7 @@ namespace Rod.CoreState.Implants;
 
 /// <summary>
 /// In-memory <see cref="IImplantRepository"/> for the walking skeleton
-/// (roadmap M1 -- no Postgres yet). State lives in process and is lost on
+/// ( -- no Postgres yet). State lives in process and is lost on
 /// restart; the port keeps callers agnostic to that.
 /// </summary>
 public sealed class InMemoryImplantRepository : IImplantRepository

@@ -1,7 +1,7 @@
 namespace Rod.Audit.Tests;
 
 /// <summary>
-/// The M2.3 acceptance check for the artifact store: artifacts are first-class
+/// The  acceptance check for the artifact store: artifacts are first-class
 /// objects attached to tasks (architecture.md Sec 11). A task lists its own
 /// artifacts; another task on the same engagement sees none of them; the
 /// engagement view is scoped and oldest-first.

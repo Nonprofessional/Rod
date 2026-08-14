@@ -13,7 +13,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M4.4 acceptance: retire an implant cleanly. Drives the retire
+/// Roadmap  acceptance: retire an implant cleanly. Drives the retire
 /// action through the operator HTTP API and asserts the full burn-handling
 /// contract -- the retire is recorded in the engagement audit trail, the
 /// implant's active session is closed, a retired implant is refused at

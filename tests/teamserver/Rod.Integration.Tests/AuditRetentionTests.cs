@@ -22,14 +22,14 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M6.4 acceptance: the engagement trail survives infrastructure
+/// Roadmap  acceptance: the engagement trail survives infrastructure
 /// teardown. Drives the full operational lifecycle on a teamserver bound to a
 /// durable audit/artifact store, then tears that teamserver down (stops the host
 /// -- the in-memory core state, the listeners, the live bus all vanish) and
 /// starts a fresh one pointed at the same data directory. The audit trail and
 /// the attached artifact must come back whole, the chain must still verify, and
 /// a brand-new engagement must start an independent trail (no bleed). This is
-/// the M6.4 AC: tear down an engagement's infra; its audit trail remains
+/// the AC: tear down an engagement's infra; its audit trail remains
 /// (architecture.md Sec 11; lifecycle step 10).
 /// </summary>
 public class AuditRetentionTests
@@ -59,7 +59,7 @@ public class AuditRetentionTests
             implantId = implant;
 
             // Attach an artifact so evidence retention is exercised alongside the
-            // trail (M6.2 evidence must outlive teardown too).
+            // trail ( evidence must outlive teardown too).
             (artifactId, artifactBytes) = await AttachArtifactAsync(envA.Http, engagementId);
 
             // Give the retire + attach audit writes a moment to flush to disk
@@ -115,7 +115,7 @@ public class AuditRetentionTests
 
         // The hash chain still verifies after the teardown -- the reloaded trail
         // is tamper-evident across the restart, not just within one host. This is
-        // the core of the M6.4 contract.
+        // the core of the contract.
         var trail = await recoveredAudit.ListAsync(engagementId);
         Assert.Null(AuditChain.VerifyTrail(trail));
 
@@ -136,7 +136,7 @@ public class AuditRetentionTests
         Assert.Empty(foreignResponse!);
     }
 
-    // Drives the full M6.1 lifecycle (mirrors OperationalEventLogTests) so the
+    // Drives the full  lifecycle (mirrors OperationalEventLogTests) so the
     // reloaded trail has every kind to verify against. Returns the engagement id,
     // the owner, the task issuer, and the enrolled implant id.
     private static async Task<(Guid EngagementId, OperatorId Owner, OperatorId TaskIssuer, string ImplantId, string TaskId)>
@@ -187,7 +187,7 @@ public class AuditRetentionTests
 
         await call.RequestStream.CompleteAsync();
 
-        // Retire the implant (M4.4): the ImplantRetired event joins the trail.
+        // Retire the implant (): the ImplantRetired event joins the trail.
         var retire = await env.Http.PostAsync(
             $"/engagements/{engagementId}/implants/{implantId}:retire",
             content: null);
@@ -311,7 +311,7 @@ public class AuditRetentionTests
             env.HttpPort = GetFreeTcpPort();
 
             // The Audit:DataDirectory section selects the file-backed stores
-            // (roadmap M6.4), layered on top of the seeded-operator config so
+            // (), layered on top of the seeded-operator config so
             // every TestEnv comes up authenticated the same way as the suite.
             var config = AuthenticatedHost.BuildConfig(
                 extend: dict => dict["Audit:DataDirectory"] = dataDirectory);

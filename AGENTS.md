@@ -91,13 +91,12 @@ tests encode the layer rules; adding a forbidden reference must fail a test.
   `... (M2.2)`. The subject must read well on its own; the rest of the message
   adds context, not identity.
 - **Body:** explain the *why* first, then what changed as bullets. Reference
-  `docs/architecture.md` for design authority (it is stable), not the roadmap
-  (it is a plan and gets reworked). Prefer `architecture.md Sec 8` over a
-  roadmap id -- the commit outlives the roadmap.
-- **Roadmap milestone ids** (`M2.2` etc.) are development-time breadcrumbs only.
-  Never put them in the subject. If mentioned, put them once in the body as a
-  trailing `Roadmap: Mx.x` line, and never as the sole reference -- the commit
-  must still make sense after the roadmap is reworked or removed.
+  `docs/architecture.md` for design authority (it is stable). Prefer
+  `architecture.md Sec 8` over a historical milestone id -- the commit
+  outlives the plan.
+- **Historical milestone ids** (`M2.2` etc.) are retired: the roadmap is gone
+  and the ids resolve nowhere. Never add new ones to code, comments, or commit
+  messages; when touching an old comment that still cites one, drop the id.
 - No attribution trailers (see Sec. 2 for the full ban).
 
 ## 7. Sensitive-capability discipline
@@ -134,7 +133,9 @@ authoritative rule; this section summarizes it.
   kernel, six internal layers, clean dependency rules.
 - **Build units**: the in-tree .NET build unit; community units in other
   languages plug in through the build contract.
-- **Redirectors**: .NET Native AOT forwarders (direction; none ship in-tree yet).
+- **Redirectors**: the in-tree .NET Native AOT forwarder
+  (`src/redirector/dotnet/`) and its runbook
+  (`docs/operations/redirectors.md`).
 - **Implants**: the .NET reference implant under `src/implant/dotnet/`,
   independent and disposable; community implants in other languages arrive
   out-of-tree.

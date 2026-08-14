@@ -22,7 +22,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M6.3 acceptance: export a reproducible engagement timeline and report
+/// Roadmap  acceptance: export a reproducible engagement timeline and report
 /// (architecture.md Sec 11). Drives the full operational lifecycle -- engagement
 /// created, stager token minted, implant enrolled, session opened, a task's
 /// issued/dispatched/completed arc, an artifact attached -- and reads it back as
@@ -30,7 +30,7 @@ namespace Rod.Integration.Tests;
 /// exports are reproducible (a content hash stable across reads, moving when the
 /// underlying facts move) and engagement-scoped (a foreign engagement is empty or
 /// 404). The report is a read-only projection of the event + task + artifact
-/// store -- the M6.1/M6.2 evidence rendered into the deliverable.
+/// store -- the / evidence rendered into the deliverable.
 /// </summary>
 public class TimelineAndReportTests
 {

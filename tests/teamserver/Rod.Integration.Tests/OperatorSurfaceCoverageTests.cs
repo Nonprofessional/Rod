@@ -22,9 +22,9 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M11.1 acceptance: recon through exploit are issuable from the
-/// operator surface, and the M6 evidence views (audit, artifacts, timeline,
-/// report) are reachable, and the M4 OPSEC controls (implant retire, redirector
+/// Roadmap  acceptance: recon through exploit are issuable from the
+/// operator surface, and the evidence views (audit, artifacts, timeline,
+/// report) are reachable, and the OPSEC controls (implant retire, redirector
 /// repoint) are exposed. Drives the operator-facing HTTP API through the
 /// in-memory TestServer with the tradecraft and operator layers layered onto the
 /// transport core -- the same composition the teamserver host performs.
@@ -34,7 +34,7 @@ namespace Rod.Integration.Tests;
 /// engagement-wide task list (<c>GET /engagements/{id}/tasks</c>) are the two
 /// backend pieces this milestone adds so the UI is data-driven rather than
 /// hardcoding the verb table; the rest of the surface (audit, artifact,
-/// timeline, report, retire, repoint) was already present from M6/M4 and this
+/// timeline, report, retire, repoint) was already present from / and this
 /// test confirms the operator can reach it end to end. The AC is *issuable*, not
 /// *executable*: every verb is accepted for tasking (201); the placeholder
 /// modules fail on dispatch, which is correct -- concrete tradecraft is
@@ -42,8 +42,8 @@ namespace Rod.Integration.Tests;
 /// </remarks>
 public class OperatorSurfaceCoverageTests
 {
-    // A host that layers the tradecraft layer (M8.1), the operator + auth layers,
-    // and the capability-catalog endpoint (M11.1) onto the transport core -- the
+    // A host that layers the tradecraft layer (), the operator + auth layers,
+    // and the capability-catalog endpoint () onto the transport core -- the
     // same composition the teamserver host performs. Mirrors the fixture in
     // TradecraftTaskPathTests; the additions over the authenticated host are
     // AddRodTradecraft and MapCapabilityEndpoints.
@@ -120,7 +120,7 @@ public class OperatorSurfaceCoverageTests
 
     // One representative verb per capability category: core, recon, lateral,
     // persist, collect, exfil, evasion, exploit. Each must be issuable from the
-    // operator surface (the M11.1 AC: recon through exploit are issuable).
+    // operator surface (the AC: recon through exploit are issuable).
     public static readonly IEnumerable<object[]> RepresentativeVerbs = new[]
     {
         new object[] { "shell.exec" },
@@ -159,8 +159,8 @@ public class OperatorSurfaceCoverageTests
     public async Task EngagementWideTaskList_AuditTrail_TimelineAndReport_AreReachable()
     {
         // The evidence half of the AC: after tasking, the engagement-wide task
-        // list (M11.1), the audit trail (M6.1), and the timeline/report exports
-        // (M6.3) all carry the issued task over HTTP.
+        // list (), the audit trail (), and the timeline/report exports
+        // () all carry the issued task over HTTP.
         var (client, host) = CreateClient();
         using (client)
         using (host)
@@ -209,7 +209,7 @@ public class OperatorSurfaceCoverageTests
     [Fact]
     public async Task OpsecControls_ImplantRetireAndRedirectorRepoint_AreExposed()
     {
-        // The M4 OPSEC controls are reachable from the operator surface: retire
+        // The  OPSEC controls are reachable from the operator surface: retire
         // (burn) an implant, and repoint (swap) a listener's public endpoint --
         // the redirector implants dial -- without touching the backend.
         var (client, host) = CreateClient();
@@ -220,7 +220,7 @@ public class OperatorSurfaceCoverageTests
             var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
 
             // Retire the implant: it is taken out of operation and its retirement
-            // is reflected in the listing (M4.4 / M6.1).
+            // is reflected in the listing.
             var retireResponse = await client.PostAsync(
                 $"/engagements/{engagementId}/implants/{implant.Id}:retire",
                 content: null);
@@ -232,7 +232,7 @@ public class OperatorSurfaceCoverageTests
             // Register a listener directly with the registry (the TestServer host
             // does not bind sockets, so GET /listeners would otherwise be empty),
             // then swap its public endpoint through the operator API. This is the
-            // M4.4 acceptance: a burned redirector is replaced without backend
+            //  acceptance: a burned redirector is replaced without backend
             // change.
             var registry = host.Services.GetRequiredService<IListenerRegistry>();
             var clock = host.Services.GetRequiredService<TimeProvider>();

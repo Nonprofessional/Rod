@@ -8,13 +8,13 @@ namespace Rod.Audit;
 /// issuance/dispatch/completion, a payload build, an implant's retirement, an
 /// evidence artifact attached to a task, and an artifact the implant itself
 /// exfiltrated over the beacon stream. Together they form the engagement
-/// timeline -- the attributed, append-only, hash-chained event stream the M6.1
+/// timeline -- the attributed, append-only, hash-chained event stream the
 /// acceptance point calls for.
 /// </summary>
 public enum AuditEventKind
 {
     /// <summary>
-    /// An operator created an engagement (architecture.md Sec 3, roadmap M6.1).
+    /// An operator created an engagement (architecture.md Sec 3, ).
     /// The first event in any engagement's trail. The event carries the
     /// engagement name in its payload and the new engagement id as its outcome;
     /// it is attributed to the creating owner. The chain's genesis link.
@@ -22,17 +22,17 @@ public enum AuditEventKind
     EngagementCreated,
 
     /// <summary>
-    /// An operator minted a stager token for an engagement (roadmap M1.1/M6.1).
-    /// The payload carries the token's bounded-use/expiry shape; the outcome is
+    /// An operator minted a stager token for an engagement. The payload carries
+    /// the token's bounded-use/expiry shape; the outcome is
     /// the new token id. The secret itself is never recorded -- only the fact
     /// that a token was minted, by whom, and against which engagement.
     /// </summary>
     StagerTokenMinted,
 
     /// <summary>
-    /// A stager token was redeemed and an implant enrolled into its engagement
-    /// (roadmap M1.2/M6.1). The payload carries the implant's class (and the
-    /// parent when it is a child derivation, architecture.md Sec 5.2); the
+    /// A stager token was redeemed and an implant enrolled into its engagement.
+    /// The payload carries the implant's class (and the parent when it is a
+    /// child derivation, architecture.md Sec 5.2); the
     /// outcome is the new implant id. Enrollment is implant-initiated, so the
     /// event is attributed to the operator who minted the redeemed token -- the
     /// one who authorized the deployment -- carried on the implant as
@@ -41,8 +41,8 @@ public enum AuditEventKind
     ImplantEnrolled,
 
     /// <summary>
-    /// An implant opened a session on a successful handshake (roadmap M1.3/M6.1).
-    /// The payload carries the negotiated protocol version; the outcome is the
+    /// An implant opened a session on a successful handshake. The payload
+    /// carries the negotiated protocol version; the outcome is the
     /// session id. As with enrollment the actor is the implant, but the event is
     /// attributed to the operator who deployed it (the token issuer), so the
     /// "an implant came online" fact is bound to an accountable operator.
@@ -50,8 +50,8 @@ public enum AuditEventKind
     SessionOpened,
 
     /// <summary>
-    /// An operator issued a task against an implant (roadmap M1.4/M6.1). The
-    /// event carries the verb and arguments in its payload and the new task id
+    /// An operator issued a task against an implant. The event carries the verb
+    /// and arguments in its payload and the new task id
     /// as its outcome. Issuance is the operator's intent; <see cref="TaskDispatched"/>
     /// records the server handing the task to the implant, and
     /// <see cref="TaskCompleted"/> records the result. A task's full attributed
@@ -60,8 +60,7 @@ public enum AuditEventKind
     TaskIssued,
 
     /// <summary>
-    /// A queued task was handed to an implant on its beacon stream (roadmap
-    /// M1.4/M6.1). The payload carries the verb and arguments; the outcome is
+    /// A queued task was handed to an implant on its beacon stream. The payload carries the verb and arguments; the outcome is
     /// the dispatched task id. Dispatch is server-driven (the implant pulls the
     /// queue), so the event is attributed to the operator who issued the task --
     /// the one whose tasking the dispatch carries out.
@@ -84,7 +83,7 @@ public enum AuditEventKind
     PayloadBuilt,
 
     /// <summary>
-    /// An implant was retired (architecture.md Sec 7, M4.4). The event carries
+    /// An implant was retired (architecture.md Sec 7, ). The event carries
     /// the implant id and the retiring operator; the outcome is the recorded
     /// retirement timestamp. A retired implant is refused at handshake and
     /// untaskable thereafter. The event has no task -- retirement is an
@@ -94,7 +93,7 @@ public enum AuditEventKind
 
     /// <summary>
     /// An operator attached an evidence artifact to a task (architecture.md
-    /// Sec 11, roadmap M6.2). Artifacts -- files, screenshots, captured command
+    /// Sec 11, ). Artifacts -- files, screenshots, captured command
     /// output -- are first-class objects linked to the task that gathered them,
     /// not loose files; this event records the binding. The payload carries the
     /// artifact's name and content type, and the outcome is the new artifact id.

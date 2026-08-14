@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
@@ -11,7 +11,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
-  <!-- Referenced so the build-contract unit tests (roadmap M3.1) exercise the
+  <!-- Referenced so the build-contract unit tests exercise the
        stub build unit and the fingerprint helper in isolation from transport. -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\teamserver\Rod.BuildPipeline\Rod.BuildPipeline.csproj" />

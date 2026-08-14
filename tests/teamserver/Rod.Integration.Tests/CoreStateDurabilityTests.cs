@@ -24,9 +24,9 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M10.1 durability: core state survives a teamserver restart when the
+/// Roadmap  durability: core state survives a teamserver restart when the
 /// Postgres-backed adapters are wired. Each test covers a slice of the durable
-/// stores over a live PostgreSQL container; the final test is the full M10.1
+/// stores over a live PostgreSQL container; the final test is the full
 /// acceptance criterion -- every engagement, operator, implant, session, task,
 /// and token in place after a restart, and the audit chain still verifies.
 /// </summary>
@@ -172,7 +172,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             await sessions.CloseAsync(reconnect.Id, at: DateTimeOffset.UtcNow);
 
             // Open a session on the child and leave it active -- the online implant
-            // after restart. Then retire the parent (M4.4): the entity records
+            // after restart. Then retire the parent (): the entity records
             // RetiredAt; the session is left to history.
             activeSessionId = (await sessions.OpenAsync(child, capabilities: new[] { "tunnel.open" }, at: DateTimeOffset.UtcNow)).Id;
             var storedParent = await implants.FindAsync(parentId);
@@ -408,7 +408,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task FullLifecycle_SurvivesRestart_AndAuditChainVerifies_WhenPostgresWired()
     {
-        // The M10.1 acceptance criterion: a teamserver restart leaves every
+        // The  acceptance criterion: a teamserver restart leaves every
         // engagement, operator, implant, session, task, and token in place, and
         // the audit chain still verifies. Drives one engagement's full lifecycle
         // through the durable adapters, tears the host down, starts a fresh one
@@ -524,7 +524,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 
         // --- Host B: a fresh teamserver over the same Postgres. Every piece of
         //     state must read back through the public ports, and the audit chain
-        //     must still verify. This is the M10.1 acceptance criterion. ---
+        //     must still verify. This is the acceptance criterion. ---
         await using var envB = await TestEnv.StartAsync(connectionString);
 
         var operatorsB = envB.Host.Services.GetRequiredService<IOperatorRepository>();
@@ -569,7 +569,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var auditTrail = await auditB.ListAsync(auditEngagementId);
         Assert.Equal(auditEventCount, auditTrail.Count);
         // The hash chain still verifies after the restart -- the reloaded trail
-        // is tamper-evident across hosts, the core M10.1 contract.
+        // is tamper-evident across hosts, the core  contract.
         Assert.Null(AuditChain.VerifyTrail(auditTrail));
 
         // The artifact came back byte-exact.

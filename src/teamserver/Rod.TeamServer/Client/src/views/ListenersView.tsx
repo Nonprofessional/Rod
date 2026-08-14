@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ListenerSummary, listListeners, repointListener } from '../api'
 
-// The listeners / redirector panel (roadmap M4.4): the bound C2 ingress, each
+// The listeners / redirector panel: the bound C2 ingress, each
 // with the socket it opens (bind) and the public endpoint implants dial
 // (typically a redirector). Repointing swaps that public endpoint at runtime --
 // a burned redirector is replaced without backend change. Global infrastructure,

@@ -4,7 +4,7 @@ using Rod.Audit;
 namespace Rod.Persistence.Stores;
 
 /// <summary>
-/// PostgreSQL-backed <see cref="IAuditStore"/> (ADR 0003, roadmap M10.1 Phase 4).
+/// PostgreSQL-backed <see cref="IAuditStore"/> (ADR 0003, Phase 4).
 /// Each appended event is stamped onto its engagement's hash chain and written
 /// as one row to <c>audit_events</c>, so the trail outlives a teamserver restart.
 /// The hash math stays in <see cref="AuditChain"/> (storage-agnostic); this

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Rod.CoreState\Rod.CoreState.csproj" />
@@ -6,7 +6,7 @@
   </ItemGroup>
 
   <!-- The tradecraft layer exposes the operator-facing capability catalog
-       endpoint (roadmap M11.1: the UI surfaces every capability category as
+       endpoint (the UI surfaces every capability category as
        tasking, driven by the registry rather than a hardcoded verb table). It
        maps that endpoint itself for the same layer-separation reason the
        operator layer maps its SSE stream: transport cannot reference

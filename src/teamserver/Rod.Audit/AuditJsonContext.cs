@@ -4,8 +4,7 @@ using System.Text.Json.Serialization;
 namespace Rod.Audit;
 
 /// <summary>
-/// Source-generated JSON wiring for the durable audit/artifact stores (roadmap
-/// M6.4). The file-backed adapters serialize the chained <see cref="AuditEvent"/>
+/// Source-generated JSON wiring for the durable audit/artifact stores. The file-backed adapters serialize the chained <see cref="AuditEvent"/>
 /// and the metadata-only <see cref="Artifact"/> records to JSON Lines; a
 /// <see cref="JsonSerializerContext"/> keeps that serialization reflection-free
 /// and trim/AOT-clean, so the audit layer adds no runtime reflection cost and

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type TimelineReport, getTimeline, getTimelineMarkdown } from '../api'
 
-// The engagement timeline (roadmap M6.3): a reproducible, content-hashed
+// The engagement timeline: a reproducible, content-hashed
 // projection of the audit trail enriched with operator/implant/task context.
 // Toggles between a rendered table (JSON) and the raw Markdown export for
 // cut-paste into a report.

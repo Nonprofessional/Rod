@@ -13,7 +13,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap M7.1 acceptance at the contract layer: the evasion verbs
+/// Roadmap  acceptance at the contract layer: the evasion verbs
 /// (architecture.md Sec 10.1, Sec 10.2) load through the tradecraft registry
 /// alongside the core, recon, lateral, persist, collect, and exfil sets, are
 /// listed in the Evasion category, dispatch as registered-but-not-implemented
@@ -22,7 +22,7 @@ namespace Rod.Tradecraft.Tests;
 /// attributes, and respect the same out-of-tree-override rule.
 /// </summary>
 /// <remarks>
-/// These tests are the M7.1 acceptance criteria in code: an out-of-tree module
+/// These tests are the acceptance criteria in code: an out-of-tree module
 /// that registers for an evasion verb is the authority for it and is dispatched
 /// through the contract. Evasion is a sensitive category (architecture.md Sec 13,
 /// RESPONSIBLE-USE.md): the core ships no concrete behavior, only the contract,
@@ -117,7 +117,7 @@ public class EvasionCapabilitiesTests
         // An out-of-tree evasion module registered before the built-in load must
         // stay the authority for its verb: the loader deduplicates against what
         // the registry already holds, the same rule that protects core, recon,
-        // lateral, persist, collect, and exfil overrides. This is the M7.1
+        // lateral, persist, collect, and exfil overrides. This is the
         // acceptance criterion: an out-of-tree module registers and dispatches
         // through the contract.
         var registry = new InMemoryCapabilityRegistry();

@@ -2,7 +2,7 @@ namespace Rod.Audit;
 
 /// <summary>
 /// Where the durable audit/artifact adapters persist their evidence
-/// (architecture.md Sec 11; roadmap M6.4). When the composition root binds this
+/// (architecture.md Sec 11; ). When the composition root binds this
 /// from the <c>Audit</c> configuration section, the file-backed stores replace
 /// the in-memory ones, so the engagement trail and its artifacts outlive a
 /// teamserver restart and infrastructure teardown. Absent -- the default in the

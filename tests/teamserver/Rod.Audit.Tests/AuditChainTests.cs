@@ -1,8 +1,8 @@
 namespace Rod.Audit.Tests;
 
 /// <summary>
-/// The pure chain math, independent of any store (storage &amp; audit layer,
-/// roadmap M2.3). Each event commits to its predecessor; the first link of an
+/// The pure chain math, independent of any store (storage &amp; audit layer).
+/// Each event commits to its predecessor; the first link of an
 /// engagement starts at the genesis hash; the canonical form is stable. These
 /// hold regardless of the storage adapter, so they live against
 /// <see cref="AuditChain"/> directly.

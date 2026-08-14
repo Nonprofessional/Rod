@@ -6,7 +6,7 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Direct checks of the <see cref="Session"/> aggregate invariants
-/// (architecture.md Sec 4.1, Sec 10.3) -- the M2.1 core-state layer lift. A
+/// (architecture.md Sec 4.1, Sec 10.3) -- the core-state layer lift. A
 /// session opens Active, binds to its implant and engagement, carries the
 /// advertised capabilities, advances its last-seen time on touch, and can only
 /// be closed from Active.

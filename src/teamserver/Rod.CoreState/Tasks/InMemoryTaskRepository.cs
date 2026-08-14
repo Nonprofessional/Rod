@@ -10,8 +10,8 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.CoreState.Tasks;
 
 /// <summary>
-/// In-memory <see cref="ITaskRepository"/> for the walking skeleton (roadmap M2
-/// -- no Postgres yet). Tasks live in a process-local map keyed by task id;
+/// In-memory <see cref="ITaskRepository"/> for the walking skeleton
+/// -- no Postgres yet. Tasks live in a process-local map keyed by task id;
 /// per-implant dispatch drains the queued tasks in FIFO enqueue order, and the
 /// same map backs the implant- and engagement-scoped history. Implant- and
 /// engagement-scoped queries filter that map, so a caller scoped to one

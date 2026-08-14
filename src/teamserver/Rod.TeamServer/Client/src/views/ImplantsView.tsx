@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Implant, type StagerToken, listImplants, mintStagerToken, retireImplant } from '../api'
 
-// The implants panel (roadmap M11.1): the enrolled sessions for an engagement,
+// The implants panel: the enrolled sessions for an engagement,
 // each with its class, online state, kill date, and parentage. An operator can
 // mint a stager token (to enroll a new implant) and retire (burn) a live implant
-// -- the M4.4 OPSEC control that takes an implant out of operation (refused at
+// -- the OPSEC control that takes an implant out of operation (refused at
 // handshake and untaskable afterwards).
 
 export function ImplantsView({

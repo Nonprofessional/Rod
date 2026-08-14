@@ -167,7 +167,7 @@ export async function issueTask(
   return jsonOrThrow(response)
 }
 
-// --- Live event stream (roadmap M2.4) ---------------------------------------
+// --- Live event stream  ---------------------------------------
 //
 // Server-Sent Events keep each connected operator session live on an engagement.
 // The bus fans task-issued / task-completed / operator-joined / operator-left
@@ -209,7 +209,7 @@ export interface EngagementStreamHandlers {
 }
 
 // Opens an SSE stream for an engagement. The auth cookie identifies the operator
-// server-side, so no identity travels in the URL. Returns a close() that tears
+// server-side, so no identity travels in the URL. Returns a close that tears
 // the stream down; the caller invokes it on unmount. The EventSource reconnects
 // automatically on a dropped connection.
 export function subscribeToEngagement(
@@ -251,7 +251,7 @@ export function subscribeToEngagement(
   return () => source.close()
 }
 
-// --- Capability catalog (roadmap M11.1) -------------------------------------
+// --- Capability catalog  -------------------------------------
 //
 // The verb table is data-driven from the registry (GET /capabilities) so the UI
 // surfaces every capability category as tasking without hardcoding the verbs.
@@ -270,7 +270,7 @@ export async function listCapabilities(): Promise<CapabilityDescriptor[]> {
   return jsonOrThrow(await fetch('capabilities'))
 }
 
-// --- Engagement-wide task list (roadmap M11.1) ------------------------------
+// --- Engagement-wide task list  ------------------------------
 //
 // The whole task history for an engagement across every implant, oldest first.
 // Reuses the per-implant task shape so both list views read identically to a
@@ -293,7 +293,7 @@ export async function listEngagementTasks(engagementId: string): Promise<Engagem
   return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks`))
 }
 
-// --- Audit trail (roadmap M6.1) ---------------------------------------------
+// --- Audit trail  ---------------------------------------------
 //
 // The per-engagement, append-only, hash-chained event stream. Every action that
 // changes engagement state or binds an identity produces an immutable, attributed
@@ -317,7 +317,7 @@ export async function listAudit(engagementId: string): Promise<AuditEventEntry[]
   return jsonOrThrow(await fetch(`engagements/${engagementId}/audit`))
 }
 
-// --- Artifacts (roadmap M6.2) -----------------------------------------------
+// --- Artifacts  -----------------------------------------------
 //
 // First-class evidence objects attached to tasks. Attach (base64 body), list per
 // task (metadata only), and retrieve a single artifact's bytes as a file
@@ -366,7 +366,7 @@ export async function fetchArtifactBlob(engagementId: string, artifactId: string
   return response.blob()
 }
 
-// --- Timeline and report export (roadmap M6.3) ------------------------------
+// --- Timeline and report export  ------------------------------
 //
 // Built-in consumers of the event + task + artifact store. Both export as JSON
 // by default, or Markdown when format='markdown' (returned as text). Each
@@ -458,7 +458,7 @@ export async function getReportMarkdown(engagementId: string): Promise<string> {
   return response.text()
 }
 
-// --- Implant retire / burn (roadmap M4.4) -----------------------------------
+// --- Implant retire / burn  -----------------------------------
 //
 // Takes an implant out of operation: a retired implant is refused at handshake
 // and untaskable. Idempotent; reflects retirement in the listing. The retiring
@@ -484,7 +484,7 @@ export async function retireImplant(
   )
 }
 
-// --- Listeners and redirector repoint (roadmap M4.4) -----------------------
+// --- Listeners and redirector repoint  -----------------------
 //
 // Listeners are the bound C2 ingress; their public endpoint is the redirector
 // implants dial, decoupled from the bind address. Repointing swaps that endpoint
@@ -516,7 +516,7 @@ export async function repointListener(listenerId: string, publicEndpoint: string
   )
 }
 
-// --- Payload build with OPSEC profile (roadmap M4.1/M4.2/M4.3) --------------
+// --- Payload build with OPSEC profile (//) --------------
 //
 // Builds an implant artifact, baking in the beacon profile (sleep/jitter), the
 // kill date, and the malleable transport profile (endpoint, URIs, headers,

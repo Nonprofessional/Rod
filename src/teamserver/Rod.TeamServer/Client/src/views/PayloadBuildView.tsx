@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { type BuildPayloadResult, buildPayload } from '../api'
 
-// The payload-build panel (roadmap M4.1/M4.2/M4.3): builds an implant artifact,
+// The payload-build panel (//): builds an implant artifact,
 // baking in the beacon profile (sleep/jitter), the kill date (self-termination),
 // and the malleable transport profile (endpoint, URIs, headers, timing, envelope).
 // These are baked at generation -- a live implant's profile is read-only after

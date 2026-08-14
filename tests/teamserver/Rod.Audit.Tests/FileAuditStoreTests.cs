@@ -5,12 +5,12 @@ using System.Text.Json.Nodes;
 namespace Rod.Audit.Tests;
 
 /// <summary>
-/// The M6.4 acceptance check for the durable audit store: the trail is
+/// The  acceptance check for the durable audit store: the trail is
 /// hash-chained per engagement, tamper-evident, and -- the new property --
 /// survives disposal and recreation of the store, so a restarted teamserver
 /// continues each engagement's chain off its last stored event. This mirrors
 /// <see cref="InMemoryAuditStoreTests"/> against a temp directory, then adds the
-/// reload cases that make retention real (architecture.md Sec 11; roadmap M6.4).
+/// reload cases that make retention real (architecture.md Sec 11; ).
 /// </summary>
 public class FileAuditStoreTests
 {
@@ -219,7 +219,7 @@ public class FileAuditStoreTests
         Assert.Null(await store.FindAsync(Guid.NewGuid()));
     }
 
-    // The M6.4 property: a fresh store over the same directory recovers each
+    // The  property: a fresh store over the same directory recovers each
     // engagement's chain head and continues the trail off its last stored event,
     // rather than restarting the chain. A restarted teamserver behaves exactly
     // like one that never stopped.

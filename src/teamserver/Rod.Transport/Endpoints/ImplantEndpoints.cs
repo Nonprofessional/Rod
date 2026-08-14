@@ -14,7 +14,7 @@ using Rod.CoreState.Tasks;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing implant endpoints (roadmap M1.5, the operator UI):
+/// The operator-facing implant endpoints (, the operator UI):
 /// which implants have enrolled into an engagement, with a live online indicator
 /// and their retirement state, plus the tasks directed at a given implant and
 /// the retire action. Joins the implant registry with the session registry so
@@ -22,9 +22,9 @@ namespace Rod.Transport.Endpoints;
 /// for an implant's task history. Scoped by engagement so implant identity never
 /// leaks across engagements (architecture.md Sec 3).
 ///
-/// An implant is online exactly when it has an active session (roadmap M2.1); the
+/// An implant is online exactly when it has an active session (); the
 /// listing projects that onto the enrolled implants. Retiring an implant
-/// (roadmap M4.4) takes it out of operation: it is marked retired, its active
+/// () takes it out of operation: it is marked retired, its active
 /// session is closed, and the retire is recorded in the engagement audit trail.
 /// </summary>
 public static class ImplantEndpoints

@@ -5,7 +5,7 @@ import { OpsecBadges } from '../components/OpsecBadges'
 import { StatusBadge } from '../components/StatusBadge'
 import type { SessionOperator } from '../api'
 
-// The tasking panel (roadmap M11.1): issue any capability verb -- recon through
+// The tasking panel: issue any capability verb -- recon through
 // exploit -- against any implant in the engagement, and watch the engagement-wide
 // task history update. The capability picker is grouped by category and carries
 // each verb's OPSEC attributes as risk badges (architecture.md Sec 7), driven by

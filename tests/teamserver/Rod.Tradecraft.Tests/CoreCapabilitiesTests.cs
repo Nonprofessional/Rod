@@ -7,7 +7,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// The roadmap M2.5 acceptance point: a stub module registers and is
+/// The  acceptance point: a stub module registers and is
 /// dispatched, and the core verbs load through the tradecraft layer
 /// (architecture.md Sec 10.1). <see cref="RodTradecraftHost.BuildDefaultRegistryAsync"/>
 /// wires an in-memory registry preloaded with the core verbs, and dispatching
@@ -35,7 +35,7 @@ public class CoreCapabilitiesTests
     [Fact]
     public async Task DefaultRegistry_DispatchesShellExecThroughTheStub()
     {
-        // The M2.5 acceptance literal: a stub module registers and is
+        // The  acceptance literal: a stub module registers and is
         // dispatched. shell.exec is the dispatchable core verb; the stub echoes
         // its arguments so the round-trip is observable.
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();

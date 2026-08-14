@@ -14,8 +14,8 @@ using Rod.Persistence.Stores;
 namespace Rod.Persistence;
 
 /// <summary>
-/// Composition-root wiring for the durable PostgreSQL store (ADR 0003, roadmap
-/// M10.1). When the <c>ConnectionStrings:Postgres</c> section is present, this
+/// Composition-root wiring for the durable PostgreSQL store (ADR 0003).
+/// When the <c>ConnectionStrings:Postgres</c> section is present, this
 /// registers the EF Core <see cref="RodPersistenceDbContext"/> against the Npgsql
 /// provider and <b>replaces</b> the in-memory port registrations added by
 /// <c>AddRodTransport</c> with the Postgres-backed adapters, for whichever stores

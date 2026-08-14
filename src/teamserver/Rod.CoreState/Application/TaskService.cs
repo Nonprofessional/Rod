@@ -11,15 +11,15 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.CoreState.Application;
 
 /// <summary>
-/// The tasking use cases (roadmap M1.4): an operator issues a task against an
+/// The tasking use cases (): an operator issues a task against an
 /// implant; the beacon stream pulls the next queued task to dispatch; the
 /// implant's result is captured back into the task. Orchestrates the core-state
 /// task port; holds no state of its own, and -- by design -- knows nothing of
 /// the audit trail. The transport layer composes the audit write on result
 /// capture (architecture.md Sec 11); audit wiring arrives properly with the
-/// storage &amp; audit layer (roadmap M2.3).
+/// storage &amp; audit layer ().
 ///
-/// As of the operator layer (roadmap M2.4), issuing a task also publishes a
+/// As of the operator layer (), issuing a task also publishes a
 /// <see cref="LiveEventKind.TaskIssued"/> event on the live bus so every
 /// connected operator session sees new tasking the moment it is queued. The bus
 /// is optional at the constructor: the core-state unit tests construct this
@@ -55,7 +55,7 @@ public sealed class TaskService
 
     /// <summary>
     /// Constructs the service with a live-event bus. The composition root wires
-    /// the bus (roadmap M2.4); the three-argument constructor above keeps the
+    /// the bus (); the three-argument constructor above keeps the
     /// core-state unit tests bus-free.
     /// </summary>
     public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock, ILiveEventBus? bus)
@@ -124,7 +124,7 @@ public sealed class TaskService
         }
 
         // A retired implant is out of operation and untaskable (architecture.md
-        // Sec 7, M4.4). Checked after the binding resolves and before the verb
+        // Sec 7, ). Checked after the binding resolves and before the verb
         // gate, so a retirement is refused regardless of the verb.
         if (implant.IsRetired)
         {

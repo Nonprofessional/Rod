@@ -2,7 +2,7 @@ namespace Rod.Audit;
 
 /// <summary>
 /// A first-class evidence object linked to a task (architecture.md Sec 11;
-/// storage &amp; audit layer, roadmap M2.3). Files, screenshots, captured command
+/// storage &amp; audit layer, ). Files, screenshots, captured command
 /// output, and the like are not loose files -- they are attributed, engagement-
 /// scoped objects attached to the task that produced them, so the evidence and
 /// the tasking that gathered it stay bound. The audit trail and the report

@@ -11,7 +11,7 @@ namespace Rod.Audit;
 /// rather than the core-state typed ids -- the layer boundary is crossed with
 /// primitives, not by importing core-state types.
 ///
-/// Hash-chaining (where tampering breaks the chain) is the M2.3 concern; the
+/// Hash-chaining (where tampering breaks the chain) is the concern; the
 /// port shape is stable for it. <see cref="AppendAsync"/> is the only mutating
 /// operation by contract -- nothing here removes or rewrites events.
 /// </summary>

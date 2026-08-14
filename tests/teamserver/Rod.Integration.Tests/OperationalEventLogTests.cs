@@ -21,7 +21,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M6.1 acceptance: every per-engagement action produces an attributed,
+/// Roadmap  acceptance: every per-engagement action produces an attributed,
 /// immutable event in the engagement trail (architecture.md Sec 11). Drives the
 /// full operational lifecycle -- engagement created, stager token minted, implant
 /// enrolled, session opened, task issued/dispatched/completed, payload built,

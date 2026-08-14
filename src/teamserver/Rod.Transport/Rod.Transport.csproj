@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Rod.CoreState\Rod.CoreState.csproj" />
@@ -13,7 +13,7 @@
          still depends on nothing in-house. -->
     <ProjectReference Include="..\Rod.Audit\Rod.Audit.csproj" />
     <!-- Rod.BuildPipeline drives the external build units (architecture.md Sec 6).
-         The operator-facing payload-build endpoint (roadmap M3.1) drives the
+         The operator-facing payload-build endpoint drives the
          build orchestrator and composes the PayloadBuilt audit write, so transport
          depends inward on the build contract. BuildPipeline still depends on core
          state only. -->
@@ -27,7 +27,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- gRPC server: terminates the implant-initiated beacon stream (M1.3). The
+  <!-- gRPC server: terminates the implant-initiated beacon stream. The
        wire contract (services/messages) is generated in Rod.Protocol; this
        package binds those server stubs to ASP.NET Core endpoint routing. -->
   <ItemGroup>

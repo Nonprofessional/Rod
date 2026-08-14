@@ -32,7 +32,7 @@ internal sealed class PostgresEngagementRepository : IEngagementRepository
     public async Task<IReadOnlyList<Engagement>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        // Oldest first, matching the in-memory adapter (roadmap M1.5).
+        // Oldest first, matching the in-memory adapter ().
         return await db.Engagements
             .AsNoTracking()
             .OrderBy(e => e.CreatedAt)

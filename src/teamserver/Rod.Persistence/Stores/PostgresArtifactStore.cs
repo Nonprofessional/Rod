@@ -4,7 +4,7 @@ using Rod.Audit;
 namespace Rod.Persistence.Stores;
 
 /// <summary>
-/// PostgreSQL-backed <see cref="IArtifactStore"/> (ADR 0003, roadmap M10.1 Phase
+/// PostgreSQL-backed <see cref="IArtifactStore"/> (ADR 0003, Phase
 /// 4). Each artifact's bytes are stored as a <c>bytea</c> column on
 /// <c>artifacts</c> alongside its metadata, so evidence linked to a task outlives
 /// a teamserver restart. Behind the same port the in-memory and file adapters

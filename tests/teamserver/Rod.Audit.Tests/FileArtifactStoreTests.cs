@@ -3,12 +3,11 @@ using System.IO;
 namespace Rod.Audit.Tests;
 
 /// <summary>
-/// The M6.4 acceptance check for the durable artifact store: artifacts attached
+/// The  acceptance check for the durable artifact store: artifacts attached
 /// to tasks round-trip through disk and survive disposal and recreation of the
 /// store, so evidence linked to a task outlives a teamserver restart alongside
 /// the audit trail. Mirrors <see cref="InMemoryArtifactStoreTests"/> against a
-/// temp directory, then adds the reload case (architecture.md Sec 11; roadmap
-/// M6.4).
+/// temp directory, then adds the reload case (architecture.md Sec 11).
 /// </summary>
 public class FileArtifactStoreTests
 {
@@ -122,7 +121,7 @@ public class FileArtifactStoreTests
         Assert.Null(await store.FindAsync(Guid.NewGuid()));
     }
 
-    // The M6.4 property: a fresh store over the same directory recovers the
+    // The  property: a fresh store over the same directory recovers the
     // metadata index from artifacts.jsonl and serves a previously-stored
     // artifact with its exact bytes. Evidence survives the teardown.
     [Fact]

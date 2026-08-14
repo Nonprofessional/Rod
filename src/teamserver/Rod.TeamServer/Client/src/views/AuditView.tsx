@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type AuditEventEntry, listAudit } from '../api'
 
-// The operational event log (roadmap M6.1): the per-engagement, append-only,
+// The operational event log: the per-engagement, append-only,
 // hash-chained audit trail, oldest-first in causal order. Every action that
 // changes engagement state or binds an identity produces an immutable, attributed
 // event. A kind filter narrows the view (e.g. only TaskIssued); the full set is

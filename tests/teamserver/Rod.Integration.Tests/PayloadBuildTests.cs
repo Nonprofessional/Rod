@@ -8,7 +8,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M3.1 acceptance: requesting a payload invokes a build unit and returns
+/// Roadmap  acceptance: requesting a payload invokes a build unit and returns
 /// an artifact, fingerprinted and recorded. Drives the full slice end-to-end
 /// through the in-memory TestServer -- the operator POSTs a build request, the
 /// build pipeline invokes the in-tree .NET build unit (ADR 0009; the real
@@ -182,7 +182,7 @@ public class PayloadBuildTests
             // The build is recorded: the engagement's trail holds a PayloadBuilt
             // event carrying the class and the artifact's fingerprint, and the
             // chain is intact. The trail also carries the engagement's own
-            // creation event (M6.1 genesis), so it is no longer a single entry.
+            // creation event ( genesis), so it is no longer a single entry.
             var trail = await audit.ListAsync(Guid.Parse(engagementId));
             var evt = Assert.Single(trail, e => e.Kind == AuditEventKind.PayloadBuilt);
             Assert.Equal("payload.build", evt.Verb);

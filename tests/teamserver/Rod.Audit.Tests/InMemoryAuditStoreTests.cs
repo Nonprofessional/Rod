@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 namespace Rod.Audit.Tests;
 
 /// <summary>
-/// The M2.3 acceptance check for the audit store: the trail is hash-chained per
+/// The  acceptance check for the audit store: the trail is hash-chained per
 /// engagement and tamper-evident. Appending the same event twice is rejected
 /// (append-only); reads are oldest-first and engagement-scoped; and rewriting a
 /// stored event breaks the chain at the next link, which
@@ -93,7 +93,7 @@ public class InMemoryAuditStoreTests
     [Fact]
     public async Task Tamper_BreaksTheChain_AtTheNextLink()
     {
-        // The M2.3 acceptance: tampering with a stored event is detectable.
+        // The  acceptance: tampering with a stored event is detectable.
         var store = new InMemoryAuditStore();
         var engagement = Guid.NewGuid();
         var task = Guid.NewGuid();

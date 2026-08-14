@@ -3,16 +3,16 @@
   <!--
     Rod.TeamServer is the runnable teamserver process (architecture.md Sec 4) and
     the composition root: it wires Rod.Transport's services and endpoints and
-    serves the operator UI (roadmap M1.5). It is not one of the six internal
-    layers, and the layer dependency rules (tests/teamserver/Rod.Architecture.Tests) do not
+    serves the operator UI. It is not one of the six internal layers, and the
+    layer dependency rules (tests/teamserver/Rod.Architecture.Tests) do not
     constrain it. As the composition root it references the layers it assembles:
-    transport, and from roadmap M2.4 the operator layer, whose SSE event stream
-    and live bus are wired here (transport itself cannot reference
-    Rod.Operators). From M8.1 it also references Rod.Tradecraft, whose capability
-    registry is wired here so the live task path resolves verbs through it
-    (transport itself cannot reference Rod.Tradecraft either). From M10.1 it also
-    references Rod.Persistence, whose Postgres-backed adapters swap in for the
-    in-memory ports when ConnectionStrings:Postgres is set (ADR 0003).
+    transport, plus the operator layer, whose SSE event stream and live bus are
+    wired here (transport itself cannot reference Rod.Operators). It also
+    references Rod.Tradecraft, whose capability registry is wired here so the
+    live task path resolves verbs through it (transport itself cannot reference
+    Rod.Tradecraft either), and Rod.Persistence, whose Postgres-backed adapters
+    swap in for the in-memory ports when ConnectionStrings:Postgres is set
+    (ADR 0003).
   -->
   <ItemGroup>
     <ProjectReference Include="..\Rod.Transport\Rod.Transport.csproj" />

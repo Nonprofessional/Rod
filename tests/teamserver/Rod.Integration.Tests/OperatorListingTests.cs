@@ -8,7 +8,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M1.5 acceptance: the operator UI's read views are served over the
+/// Roadmap  acceptance: the operator UI's read views are served over the
 /// same HTTP API the skeleton already exposes. <c>GET /engagements</c> lists
 /// engagements (with the owner handle), and <c>GET /engagements/{id}/implants</c>
 /// lists an engagement's enrolled sessions with an online indicator. Drives the

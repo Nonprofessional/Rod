@@ -1,4 +1,4 @@
-// Capability-catalog helpers (roadmap M11.1). The operator UI groups verbs by
+// Capability-catalog helpers. The operator UI groups verbs by
 // category and surfaces each verb's OPSEC attributes as risk badges. The catalog
 // is data-driven from GET /capabilities (the registry), so this module only
 // knows the category/attribute *labels* -- the verbs themselves arrive from the

@@ -15,7 +15,7 @@
     reference. That is why the EF Core / Npgsql dependency lives here, not in the
     domain. The composition root in Rod.TeamServer swaps the in-memory port
     implementations for these adapters when ConnectionStrings:Postgres is set
-    (the same opt-in pattern as the M6.4 Audit:DataDirectory swap); absent, the
+    (the same opt-in pattern as the Audit:DataDirectory swap); absent, the
     in-memory adapters stay registered and nothing here runs.
   -->
   <ItemGroup>

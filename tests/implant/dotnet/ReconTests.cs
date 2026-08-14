@@ -4,7 +4,7 @@ using Rod.V1;
 namespace Rod.Implant.Tests;
 
 // ReconTests ports recon_test.go from the Go reference implant to xUnit,
-// covering the recon verbs added in roadmap M5.1 (recon.portscan,
+// covering the recon verbs added in  (recon.portscan,
 // recon.hostenum, recon.service). Each network-touching test drives
 // Runner.Dispatch against a real loopback listener so an open port is observable
 // without a network dependency, mirroring how RunnerDispatchTests exercises

@@ -8,7 +8,7 @@ using Rod.CoreState.Staging;
 namespace Rod.CoreState.Application;
 
 /// <summary>
-/// The enrollment use case (roadmap M1.2): a stager token is redeemed to bind a
+/// The enrollment use case (): a stager token is redeemed to bind a
 /// new implant to an engagement, the implant is recorded with a server-generated
 /// per-implant key and kill date, and the CA issues a certificate binding
 /// <c>(implant_id, engagement_id)</c> (architecture.md Sec 9). Orchestrates the
@@ -19,7 +19,7 @@ namespace Rod.CoreState.Application;
 public sealed class EnrollmentService
 {
     // Skeleton defaults; these become per-request / profile inputs later
-    // (kill date is an M4.2 concern; the value here only sets the recorded shape).
+    // (kill date is an concern; the value here only sets the recorded shape).
     private static readonly TimeSpan DefaultKillDateOffset = TimeSpan.FromDays(30);
 
     private readonly IEngagementRepository _engagements;
@@ -53,11 +53,11 @@ public sealed class EnrollmentService
     /// key and can present the certificate in mTLS (architecture.md Sec 9). This is
     /// the path a real implant takes: it generates its key pair and sends only the
     /// public half. When absent, the CA generates an ephemeral leaf key (the
-    /// original M1.2 shape, kept for back-compat with tests that do not need an
+    /// original  shape, kept for back-compat with tests that do not need an
     /// mTLS-capable identity).
     ///
     /// When <see cref="EnrollCommand.ParentImplantId"/> is set the implant is a
-    /// child derived from that parent (architecture.md Sec 5.2, roadmap M5.2): the
+    /// child derived from that parent (architecture.md Sec 5.2, ): the
     /// parent must exist, belong to the same engagement the token redeemed, and not
     /// be retired, or a <see cref="InvalidParentImplantException"/> is thrown for
     /// the caller to map to a wire status. The child enrols into the redeemed
@@ -184,7 +184,7 @@ public sealed class EnrollmentService
 /// signs a leaf over, so the implant keeps its private key for mTLS
 /// (architecture.md Sec 9); null leaves the CA to generate an ephemeral leaf key.
 ///
-/// <see cref="ParentImplantId"/> (roadmap M5.2) derives a child implant: when set,
+/// <see cref="ParentImplantId"/> () derives a child implant: when set,
 /// the service resolves and scope-checks the parent before recording the child.
 /// Null (the default) enrolls a top-level implant from the stager token.
 /// </summary>

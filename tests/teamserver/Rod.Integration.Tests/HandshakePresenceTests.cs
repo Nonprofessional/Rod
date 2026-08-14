@@ -22,14 +22,14 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M1.3 acceptance: a connecting implant appears online in its
+/// Roadmap  acceptance: a connecting implant appears online in its
 /// engagement. Drives the full slice end to end through a real Kestrel mTLS
 /// endpoint -- the implant opens the gRPC beacon stream presenting its bound
 /// client certificate, completes the handshake, and the operator sees it online
-/// via the presence query (now backed by the session registry, M2.1). Failure
+/// via the presence query (now backed by the session registry, ). Failure
 /// paths assert each refusal maps to the right wire status.
 ///
-/// This is the real mTLS handshake the rest of M1 only inspected certificates
+/// This is the real mTLS handshake the rest of only inspected certificates
 /// for: the client cert chains to the dev CA, and the server's identity check
 /// binds it to the enrolled engagement (architecture.md Sec 9).
 /// </summary>

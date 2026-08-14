@@ -3,7 +3,7 @@ using System.Xml.Linq;
 namespace Rod.Build.Tests;
 
 /// <summary>
-/// Guards the central package management (CPM) rule from roadmap M0.1: every
+/// Guards the central package management (CPM) rule from: every
 /// <c>PackageReference</c> must be versionless in the project file, with the
 /// version resolved from <c>Directory.Packages.props</c>. Catches a regression
 /// where a template or edit re-introduces a <c>Version="..."</c> attribute.

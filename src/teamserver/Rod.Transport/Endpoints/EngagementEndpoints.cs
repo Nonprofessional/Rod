@@ -12,7 +12,7 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The operator-facing engagement endpoints: create an engagement and mint a
-/// stager token for it (roadmap M1.1), and list engagements (roadmap M1.5, the
+/// stager token for it (), and list engagements (, the
 /// operator UI). DTOs live here, in transport, so the core stays serialization-
 /// and protocol-free (AGENTS.md Sec 5).
 /// </summary>
@@ -88,7 +88,7 @@ public static class EngagementEndpoints
             created.CreatedAt);
 
         // The engagement's own creation is the trail's genesis link (architecture.md
-        // Sec 11, roadmap M6.1): attributed to the creating owner, carrying the
+        // Sec 11, ): attributed to the creating owner, carrying the
         // name in its payload and the new engagement id as its outcome. It is the
         // first event in this engagement's chain, so it follows the genesis hash.
         await audit.AppendAsync(
@@ -133,8 +133,8 @@ public static class EngagementEndpoints
                 minted.ExpiresAt,
                 minted.MaxUses);
 
-            // A stager-token mint is recorded (architecture.md Sec 11, roadmap
-            // M6.1): attributed to the minting operator, the payload the token's
+            // A stager-token mint is recorded (architecture.md Sec 11):
+            // attributed to the minting operator, the payload the token's
             // bounded-use/expiry shape, the outcome the new token id. The secret
             // itself is never recorded -- only the fact that a token was minted.
             await audit.AppendAsync(

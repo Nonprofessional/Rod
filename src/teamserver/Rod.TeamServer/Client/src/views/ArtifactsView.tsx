@@ -8,7 +8,7 @@ import {
   listEngagementTasks,
 } from '../api'
 
-// First-class evidence objects (roadmap M6.2): artifacts are attached to tasks.
+// First-class evidence objects: artifacts are attached to tasks.
 // This view lists the engagement's tasks, shows each task's artifacts, lets an
 // operator attach a file (encoded as base64 over the JSON API), and downloads a
 // stored artifact's bytes through the file endpoint. Scoped by engagement.

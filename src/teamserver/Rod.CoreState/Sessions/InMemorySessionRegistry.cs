@@ -5,8 +5,8 @@ using Rod.CoreState.Implants;
 namespace Rod.CoreState.Sessions;
 
 /// <summary>
-/// In-memory <see cref="ISessionRegistry"/> for the walking skeleton (roadmap M2
-/// -- no Postgres yet). Sessions live in a process-local map keyed by session id;
+/// In-memory <see cref="ISessionRegistry"/> for the walking skeleton
+/// -- no Postgres yet. Sessions live in a process-local map keyed by session id;
 /// implant- and engagement-scoped queries filter that map. An implant holds at
 /// most one active session at a time, so opening a new one closes the prior
 /// active session for that implant first. State is lost on restart; the port

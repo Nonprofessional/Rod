@@ -5,12 +5,12 @@ import { EngagementView } from './views/EngagementView'
 import { EngagementsView } from './views/EngagementsView'
 import { LoginView } from './views/LoginView'
 
-// Operator UI shell (roadmap M1.5, expanded M11.1): lists engagements, drills
+// Operator UI shell (, expanded ): lists engagements, drills
 // into one to reach the full capability surface -- tasking (recon through
 // exploit), implants (with retire), the M6 evidence views (audit, artifacts,
 // timeline, report), and the M4 OPSEC controls (listeners/redirectors, payload
 // build). Each open engagement holds a Server-Sent Events stream open so every
-// connected operator sees tasking, results, and presence in real time (M2.4).
+// connected operator sees tasking, results, and presence in real time .
 //
 // The session is the teamserver's cookie: GET /operators/me resolves the signed-
 // in operator (never a client-generated id), and an unauthenticated browser is

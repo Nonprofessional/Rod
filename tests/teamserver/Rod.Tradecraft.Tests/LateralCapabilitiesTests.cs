@@ -10,7 +10,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap M5.2 acceptance at the contract layer: the lateral-movement verbs
+/// Roadmap  acceptance at the contract layer: the lateral-movement verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core and recon sets, are listed in the Lateral category, dispatch as
 /// registered-but-not-implemented (their concrete behavior is out-of-tree, like

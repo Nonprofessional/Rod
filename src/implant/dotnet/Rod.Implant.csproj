@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The reference .NET stage-2 implant (roadmap M3.3). A benign, readable,
+    The reference .NET stage-2 implant. A benign, readable,
     cross-platform implant that enrolls over HTTP (submitting its own public
     key), beacons over mTLS, and runs the standard-category verb set: shell
     exec, recon, lateral (child derivation, token inspection, remote exec over

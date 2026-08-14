@@ -21,10 +21,10 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M2.2 acceptance: a listener accepts an implant connection end-to-end.
+/// Roadmap  acceptance: a listener accepts an implant connection end-to-end.
 /// Drives the full slice through real Kestrel sockets configured via
 /// <see cref="TransportHost.UseRodListeners"/> -- the listener abstraction (HTTP(S)
-/// and mTLS) that fronts the same M1.x endpoints, with the bind address decoupled
+/// and mTLS) that fronts the same  endpoints, with the bind address decoupled
 /// from the public endpoint (architecture.md Sec 8). This is the listener-centric
 /// counterpart to the <c>UseRodMtls</c>-based handshake tests: the connection
 /// terminates through a named, registered listener rather than a bespoke socket.
@@ -36,7 +36,7 @@ public class ListenerTests
     {
         // An HTTP listener serves the operator API and the implant enrollment
         // endpoint over plain HTTP (no client certificate). This is the end-to-end
-        // M2.2 AC for the HTTP transport: an implant enrolls through the listener.
+        //  AC for the HTTP transport: an implant enrolls through the listener.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "http-1",
             Transport: ListenerTransport.Http,
@@ -72,7 +72,7 @@ public class ListenerTests
     public async Task MtlsListener_AcceptsImplantConnection_EndToEnd()
     {
         // An mTLS listener terminates mutual TLS using the implant CA and carries
-        // the beacon stream. This is the end-to-end M2.2 AC for the mTLS transport:
+        // the beacon stream. This is the end-to-end  AC for the mTLS transport:
         // an implant connects through the listener, completes the handshake, and
         // appears online -- the same path the UseRodMtls handshake test drives, but
         // here through a named listener populated via UseRodListeners.

@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Core;
 
 /// <summary>
 /// The built-in stub for the <c>shell.exec</c> core verb (architecture.md
-/// Sec 10.1, roadmap M2.5). It exists so the skeleton can prove a module
+/// Sec 10.1, ). It exists so the skeleton can prove a module
 /// registers and is dispatched through the tradecraft contract: dispatching
 /// <c>shell.exec</c> against it returns a fixed, recognizable result.
 /// </summary>

@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Persist;
 /// <summary>
 /// The persistence capability verbs (architecture.md Sec 10.1, the "persist"
 /// category): establishing, enumerating, and tearing down footholds within an
-/// authorized engagement. These are the verbs roadmap M5.3 loads through the
+/// authorized engagement. These are the verbs  loads through the
 /// registry alongside the core, recon, and lateral sets, so the registry lists
 /// them and a future task-issuance path can resolve them.
 /// </summary>

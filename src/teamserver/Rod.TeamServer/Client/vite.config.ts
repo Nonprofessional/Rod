@@ -23,7 +23,7 @@ export default defineConfig({
     proxy: {
       // Engagement-scoped routes cover tasking, audit, artifacts, timeline,
       // report, payloads, stager tokens, and implants. Listeners and the
-      // capability catalog are global routes added in M4.4/M11.1. Operator
+      // capability catalog are global routes. Operator
       // session routes (login/logout/me) are added with operator auth.
       '/engagements': apiTarget,
       '/operators': apiTarget,

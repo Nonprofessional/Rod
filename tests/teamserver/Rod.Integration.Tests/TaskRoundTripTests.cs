@@ -21,7 +21,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M1.4 acceptance: task an implant, see its output, and an audit event.
+/// Roadmap  acceptance: task an implant, see its output, and an audit event.
 /// Drives the full slice end to end through a real Kestrel mTLS endpoint -- the
 /// operator POSTs a <c>shell.exec</c> task over HTTP, the beacon stream pushes it
 /// to the implant, the implant writes back a result, and the operator reads the
@@ -80,12 +80,12 @@ public class TaskRoundTripTests
 
         // Give the server a beat to capture the result and append the audit event
         // (both happen on the stream thread before the next dispatch round). A
-        // task now produces a three-event arc (M6.1): TaskIssued, TaskDispatched,
+        // task now produces a three-event arc (): TaskIssued, TaskDispatched,
         // TaskCompleted, so wait for all three before readback.
         await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
         // The operator reads the task back: captured output plus the task's audit
-        // arc -- issued, dispatched, then completed (architecture.md Sec 11, M6.1).
+        // arc -- issued, dispatched, then completed (architecture.md Sec 11, ).
         var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
             $"/engagements/{implant.EngagementId}/tasks/{request.TaskId}");
         Assert.NotNull(fetched);
@@ -245,7 +245,7 @@ public class TaskRoundTripTests
 
     /// <summary>
     /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator API. Mirrors the M1.3 handshake test harness.
+    /// plain-HTTP operator API. Mirrors the handshake test harness.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {

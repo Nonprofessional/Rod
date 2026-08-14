@@ -62,7 +62,7 @@ public sealed class PayloadBuildService
 
     // The kill date defaults to a window from build time when the caller does not
     // pin one; a pinned date wins. Enforced later as a self-termination check
-    // (roadmap M4.2); here it is only baked into the artifact.
+    // (); here it is only baked into the artifact.
     private static DateTimeOffset ResolveKillDate(DateTimeOffset now, DateTimeOffset? requested)
     {
         if (requested is { } pinned && pinned > now)

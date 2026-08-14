@@ -7,7 +7,7 @@ using Rod.CoreState.Implants;
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
-/// The real .NET build unit (roadmap M3.3). Drives the reference .NET implant's
+/// The real .NET build unit (). Drives the reference .NET implant's
 /// toolchain to compile a self-contained, per-implant artifact through the build
 /// contract (architecture.md Sec 6). It runs <c>dotnet publish</c> against the
 /// implant source tree, baking the per-implant profile into a generated
@@ -28,7 +28,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // The implant source tree, relative to the build-pipeline project, that this
     // unit compiles. Overridable via the constructor so tests can point at a
     // fixture or skip a real build. The default walks up from the assembly to find
-    // the repo root and lands at <root>/src/implant/dotnet (the tree added with M3.3).
+    // the repo root and lands at <root>/src/implant/dotnet (the tree added with ).
     private readonly string _implantSourceDir;
     private readonly string _dotnetBinary;
 

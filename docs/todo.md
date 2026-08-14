@@ -1,63 +1,52 @@
 # Rod -- Todo
 
-Open work beyond the [archived roadmap](roadmap.md). The roadmap delivered the
-framework and the capability contracts; the items here fill in concrete
-behavior, harden the system for real use, and close gaps between
-[architecture.md](architecture.md) and the implementation.
+Open work only: completed items are checked off and trimmed, and their detail
+lives in the commit history and [architecture.md](architecture.md). The
+designed-but-deferred security items (command signing, sealing, ROE
+guardrails, cert revocation) stay in architecture.md Sec 9.
 
 Add items freely; check them off as they ship. Each item carries a one-line
 acceptance criterion. Keep the [repository conventions](../AGENTS.md): small
 focused commits, English only, the offensive-tradecraft boundary
-(architecture.md Sec 13), and reference the architecture section, not the
-roadmap, from commit bodies. Shipped items keep a one-line outcome; the detail
-lives in architecture.md and the commit history.
+(architecture.md Sec 13), and reference the architecture section, not a
+historical milestone id, from commit bodies.
 
-## Implant verb coverage
+## Implant
 
-- [x] **in-repo verb handlers (recon / lateral / persist / collect / exfil).**
-      _AC:_ the recon, lateral, persist, collect, and exfil verbs round-trip end
-      to end on the reference implant within the Sec 13 boundary. _(Shipped;
-      per-verb surface in architecture.md Sec 10.1.)_
-- [x] **`collect.keylog` stays out-of-tree.** _AC:_ the descriptor ships with
-      its OPSEC attributes and the reference implant carries no handler.
-      _(Shipped; the registry-and-dispatch seam lets an out-of-tree module
-      register against it.)_
-
-## Production hardening
-
-- [x] **Operator authentication.** _AC:_ an operator session is established by
-      authenticated credentials, not a client-generated id. _(Shipped: cookie
-      sessions over a verified handle and password; per-engagement RBAC is
-      deliberately out of scope -- the trusted-operators model, Sec 4.1/9.)_
-- [x] **Real implant CA.** _AC:_ enrollment binds certificates to a non-dev CA
-      chain. _(Shipped: `FileBackedCertificateAuthority` consumes an externally
-      provisioned engagement CA, selected by the `Pki` config section,
-      architecture.md Sec 9. A proper TLS server leaf + SAN stays a documented
-      follow-on.)_
-- [x] **Redirector deployment story.** _AC:_ a burned redirector is swapped end
-      to end, not just in the registry. _(Shipped: the in-tree .NET Native AOT
-      forwarder plus listener repoint; deploy/rotate runbook in
-      [operations/redirectors.md](operations/redirectors.md).)_
-
-## Architecture audit and gaps
-
-Keep architecture.md as the source of truth. These items audit the
-implementation against it and record decisions.
-
-- [x] **Audit architecture.md vs. implementation.** _AC:_ a written audit
-      noting every divergence and its resolution. _(Shipped: Sec 1--14 walked
-      with 17 findings; the follow-up commit reconciled the doc and the record
-      was removed.)_
-- [x] **Capture deferred decisions.** _AC:_ each deferred decision is written
-      into architecture.md. _(Shipped: task-argument shape, capability-catalog
-      endpoint placement, placeholder-only verbs.)_
 - [ ] **Implant-side capability pluggability.** Make the reference implant
-      class-aware and handler-registry-driven per
-      [architecture.md Sec 5.3](architecture.md): derive the handshake
-      capability set from the baked class verbs intersected with the compiled
-      handlers (not a hardcoded list), and route dispatch through an
-      implant-side handler registry so a new verb is a handler plus a
-      registration rather than an edit to the runner. _AC:_ an implant
-      advertises exactly the verbs its build permits and its compiled handlers
-      implement -- never a verb it cannot run -- and the reference registry
-      contains no verb excluded by the Sec 13 boundary.
+      class-aware and handler-registry-driven per architecture.md Sec 5.3:
+      derive the handshake capability set from the baked class verbs
+      intersected with the compiled handlers (not a hardcoded list), and route
+      dispatch through an implant-side handler registry so a new verb is a
+      handler plus a registration rather than an edit to the runner. _AC:_ an
+      implant advertises exactly the verbs its build permits and its compiled
+      handlers implement -- never a verb it cannot run -- and the reference
+      registry contains no verb excluded by the Sec 13 boundary.
+
+## Teamserver
+
+- [ ] **Out-of-tree module loading.** Give out-of-tree capability modules a
+      supported registration path (assembly scan or a config-listed type
+      list) so adding one never edits the composition root, and settle the
+      CapabilityDispatcher contract: registered today, invoked nowhere. _AC:_
+      a module built against the contract loads and replaces its placeholder
+      without touching core code.
+- [ ] **Session staleness sweep.** Touch is wired on every beacon frame, but
+      a stream that dies silently leaves the session active forever. _AC:_ a
+      session whose last-seen is older than a configured threshold is closed
+      and the implant drops off the online roster.
+- [ ] **List pagination.** Task, audit, and artifact listings return the full
+      history; a long engagement grows these without bound. _AC:_ list
+      endpoints accept a cursor or limit and the UI walks pages.
+
+## Tests
+
+- [ ] **Protocol layer rule.** The architecture tests assert every layer's
+      dependency matrix except Protocol's own "depends on nothing in-house"
+      rule, and a dead (unused) project reference passes because the checks
+      inspect namespace usage. _AC:_ Protocol's rule is tested and a
+      forbidden csproj reference fails even when no code uses it.
+- [ ] **Concurrency coverage.** The shared in-memory stores and the live bus
+      use locks and Interlocked with no hammer tests. _AC:_ multi-threaded
+      tests exercise the task claim, stager redemption, audit append, and
+      live-bus subscribe/publish paths.

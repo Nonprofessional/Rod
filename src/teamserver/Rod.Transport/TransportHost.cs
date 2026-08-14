@@ -24,7 +24,7 @@ using Rod.Transport.Listeners;
 namespace Rod.Transport;
 
 /// <summary>
-/// Assembles the teamserver HTTP host for the walking skeleton (roadmap M1):
+/// Assembles the teamserver HTTP host for the walking skeleton ():
 /// wires the core-state ports to their in-memory adapters, registers the
 /// engagement and enrollment use cases, and maps the operator- and implant-facing
 /// endpoints.
@@ -37,7 +37,7 @@ public static class TransportHost
 
     /// <summary>
     /// Registers core-state ports, adapters, and use cases, and selects the audit
-    /// and artifact store by configuration (roadmap M6.4). When the
+    /// and artifact store by configuration (). When the
     /// <c>Audit:DataDirectory</c> section is present, the file-backed
     /// <see cref="FileAuditStore"/>/<see cref="FileArtifactStore"/> replace the
     /// in-memory adapters so the engagement trail and its artifacts survive a
@@ -55,7 +55,7 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
-        // gRPC server: the beacon stream terminates here (roadmap M1.3). The
+        // gRPC server: the beacon stream terminates here (). The
         // message caps enforce the rod.proto sizing contract (a single frame
         // stays well under 1 MiB; bulk data is chunked): 2 MiB leaves headroom
         // for the envelope and protobuf overhead above the 1 MiB payload budget,
@@ -67,7 +67,7 @@ public static class TransportHost
             options.MaxSendMessageSize = 2 * 1024 * 1024;
         });
 
-        // Core-state ports -> walking-skeleton in-memory adapters (roadmap M1).
+        // Core-state ports -> walking-skeleton in-memory adapters ().
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();
         // Operator password verifier -> walking-skeleton in-memory adapter. The
         // durable Postgres adapter replaces this from Rod.Persistence (ADR 0003)
@@ -104,18 +104,18 @@ public static class TransportHost
         services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
 
-        // Listener registry (roadmap M2.2): the bound C2 ingress the teamserver is
+        // Listener registry (): the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
 
-        // Audit, artifact, and payload stores: in-memory by default (roadmap
-        // M2.3 -- the hash-chained trail and first-class evidence objects), or
-        // file-backed when the Audit:DataDirectory section is configured (roadmap
-        // M6.4 -- the trail, artifacts, and built payloads survive a teamserver
-        // restart and infrastructure teardown, the M6.4 acceptance point). The
-        // ports are stable either way; only the adapter is swapped. The durable
-        // trio is the Postgres stand-in for the walking skeleton, behind the same
+        // Audit, artifact, and payload stores: in-memory by default -- the
+        // hash-chained trail and first-class evidence objects -- or file-backed
+        // when the Audit:DataDirectory section is configured -- the trail,
+        // artifacts, and built payloads survive a teamserver restart and
+        // infrastructure teardown, the acceptance point. The ports are stable
+        // either way; only the adapter is swapped. The durable trio is the
+        // Postgres stand-in for the walking skeleton, behind the same
         // ports.
         var dataDirectory = configuration?["Audit:DataDirectory"];
         if (!string.IsNullOrWhiteSpace(dataDirectory))
@@ -129,13 +129,12 @@ public static class TransportHost
         else
         {
             // Audit port -> walking-skeleton in-memory adapter. The store is
-            // hash-chained per engagement (roadmap M2.3): tampering with a stored
+            // hash-chained per engagement (): tampering with a stored
             // event breaks the chain at the next link.
             services.AddSingleton<IAuditStore, InMemoryAuditStore>();
 
-            // Artifact store port -> walking-skeleton in-memory adapter (roadmap
-            // M2.3). First-class evidence objects attached to tasks; consumed by
-            // the operator layer (M2.4) and beacon ingest later.
+            // Artifact store port -> walking-skeleton in-memory adapter. First-class evidence objects attached to tasks; consumed by
+            // the operator layer () and beacon ingest later.
             services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
 
             // Payload store port -> walking-skeleton in-memory adapter. Built
@@ -159,7 +158,7 @@ public static class TransportHost
         services.AddSingleton<TaskService>();
         services.AddSingleton<ImplantService>();
 
-        // Build pipeline (roadmap M3.1/M3.3, ADR 0009): the build-unit registry and
+        // Build pipeline (/, ADR 0009): the build-unit registry and
         // the orchestrator that drives it. The .NET slot holds the real in-tree
         // reference build unit (compiles the .NET reference implant via dotnet
         // publish); the stub unit is the contract reference and is exercised by its
@@ -202,7 +201,7 @@ public static class TransportHost
     }
 
     /// <summary>
-    /// Binds one socket per configured listener (roadmap M2.2, architecture.md Sec 8)
+    /// Binds one socket per configured listener (, architecture.md Sec 8)
     /// and registers each into the <see cref="IListenerRegistry"/>. Each entry picks
     /// its transport: <see cref="ListenerTransport.Http"/> opens a plain socket;
     /// <see cref="ListenerTransport.Mtls"/> opens an HTTPS socket that terminates
@@ -360,18 +359,17 @@ public static class TransportHost
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         app.MapPayloadEndpoints();
-        // The per-engagement operational event log (roadmap M6.1): the durable,
+        // The per-engagement operational event log (): the durable,
         // hash-chained audit trail read view. Distinct from the operators-layer
         // live SSE route (the transient fan-out).
         app.MapAuditEndpoints();
-        // First-class evidence objects linked to tasks (roadmap M6.2): attach,
+        // First-class evidence objects linked to tasks (): attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         app.MapArtifactEndpoints();
-        // The built-in consumers of the event + task + artifact store (roadmap
-        // M6.3): export the engagement timeline and report (JSON + Markdown),
+        // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
         // reproducibility-stamped. Read-only projections of the evidence trail.
         app.MapReportEndpoints();
-        // The implant-initiated beacon stream (roadmap M1.3): gRPC over the
+        // The implant-initiated beacon stream (): gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
         // A trivial health probe so the listener is observably up.
@@ -389,14 +387,13 @@ public static class TransportHost
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
-        // The per-engagement operational event log (roadmap M6.1): the durable,
+        // The per-engagement operational event log (): the durable,
         // hash-chained audit trail read view.
         endpoints.MapAuditEndpoints();
-        // First-class evidence objects linked to tasks (roadmap M6.2): attach,
+        // First-class evidence objects linked to tasks (): attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         endpoints.MapArtifactEndpoints();
-        // The built-in consumers of the event + task + artifact store (roadmap
-        // M6.3): export the engagement timeline and report (JSON + Markdown),
+        // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
         // reproducibility-stamped. Read-only projections of the evidence trail.
         endpoints.MapReportEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
@@ -434,7 +431,7 @@ public static class TransportHost
     /// <param name="configuration">
     /// Optional configuration forwarded to <see cref="AddRodTransport(IServiceCollection, IConfiguration?)"/>
     /// so a test host can select the durable audit/artifact stores via the
-    /// <c>Audit:DataDirectory</c> section (roadmap M6.4). Null keeps the in-memory
+    /// <c>Audit:DataDirectory</c> section (). Null keeps the in-memory
     /// adapters, matching every existing caller.
     /// </param>
     public static IHostBuilder CreateHostBuilder(

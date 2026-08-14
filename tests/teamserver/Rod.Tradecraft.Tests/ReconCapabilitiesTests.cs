@@ -9,7 +9,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap M5.1 acceptance at the contract layer: the recon verbs
+/// Roadmap  acceptance at the contract layer: the recon verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core set, are listed in the Recon category, dispatch as registered-but-not-
 /// implemented (their concrete behavior is out-of-tree, like the non-shell core

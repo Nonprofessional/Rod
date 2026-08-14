@@ -6,7 +6,7 @@ namespace Rod.Tradecraft.Lateral;
 /// The lateral-movement capability verbs (architecture.md Sec 10.1, the
 /// "lateral" category): movement within authorized scope -- deriving a child
 /// implant, reusing a credential token, and executing on a remote host. These
-/// are the verbs roadmap M5.2 loads through the registry alongside the core and
+/// are the verbs  loads through the registry alongside the core and
 /// recon sets, so the registry lists them and a future task-issuance path can
 /// resolve them.
 /// </summary>

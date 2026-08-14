@@ -5,7 +5,7 @@ namespace Rod.Tradecraft.Exfil;
 /// <summary>
 /// The exfiltration capability verbs (architecture.md Sec 10.1, the "exfil"
 /// category): staging collected data and transferring it over the C2 channel
-/// within an authorized engagement. These are the verbs roadmap M5.4 loads
+/// within an authorized engagement. These are the verbs  loads
 /// through the registry alongside the core, recon, lateral, persist, and collect
 /// sets, so the registry lists them and a future task-issuance path can resolve
 /// them.

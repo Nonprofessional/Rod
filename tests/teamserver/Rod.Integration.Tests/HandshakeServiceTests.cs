@@ -7,7 +7,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="HandshakeService"/> -- the use case that opens an
-/// implant's session (roadmap M1.3, lifted to sessions in M2.1). Without spinning
+/// implant's session (, lifted to sessions in ). Without spinning
 /// up TLS: the service refuses an unknown implant, an unsupported protocol
 /// version, and a certificate-vs-engagement mismatch, and on success it opens a
 /// session for the implant in its engagement with the advertised capabilities.
@@ -177,7 +177,7 @@ public class HandshakeServiceTests
         var sessions = new InMemorySessionRegistry();
         var engagement = EngagementId.New();
 
-        // A retired implant (architecture.md Sec 7, M4.4). The kill date is in
+        // A retired implant (architecture.md Sec 7, ). The kill date is in
         // the future and the engagement matches, so the refusal is specifically
         // the retirement -- a retired implant never gets a session again.
         var implant = Implant.Enroll(

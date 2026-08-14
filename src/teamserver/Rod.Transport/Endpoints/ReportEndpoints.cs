@@ -17,7 +17,7 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing timeline and report export endpoints (roadmap M6.3): the
+/// The operator-facing timeline and report export endpoints (): the
 /// built-in consumers of the event + task + artifact store (architecture.md Sec 11).
 /// A red-team operation ends in a deliverable -- a timeline, findings, and evidence
 /// -- and Rod treats the audit trail as the <em>source for report generation</em>,
@@ -26,7 +26,7 @@ namespace Rod.Transport.Endpoints;
 /// JSON (machine-consumed, e.g. by an operator UI) and as Markdown (the human
 /// deliverable).
 ///
-/// Read-only by construction: like the M6.1 audit read and the M6.2 artifact
+/// Read-only by construction: like the audit read and the artifact
 /// listing, these endpoints compose nothing onto the trail and mutate no state.
 /// Every engagement fact they surface is already durable and attributed; the
 /// report is a projection of it. Scoped by engagement (architecture.md Sec 3): the
@@ -626,7 +626,7 @@ public sealed record TimelineTaskRef(Guid TaskId, string? Verb, string? Outcome)
 
 /// <summary>
 /// The chronological engagement timeline, enriched and integrity-stamped. The
-/// M6.3 deliverable as a pure projection of the audit trail: ordered oldest-first,
+///  deliverable as a pure projection of the audit trail: ordered oldest-first,
 /// each entry attributed and hash-linked, with a reproducibility digest over the
 /// whole.
 /// </summary>
@@ -686,7 +686,7 @@ public sealed record ReportArtifactIndexEntry(
 /// <summary>
 /// The full engagement report bundle: summary, operator roster, implant
 /// inventory, task history, artifact index, and the enriched timeline, with a
-/// reproducibility digest over all of it. The M6.3 deliverable rendered from the
+/// reproducibility digest over all of it. The  deliverable rendered from the
 /// audit/task/artifact stores -- a single, attributed, hash-stamped account of the
 /// engagement.
 /// </summary>

@@ -6,7 +6,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap M1.1 acceptance: create an engagement over HTTP, then mint a stager
+/// Roadmap  acceptance: create an engagement over HTTP, then mint a stager
 /// token for it -- end to end through the in-memory TestServer. This exercises
 /// the core-state domain (ports, aggregates, stager-token service) driven by the
 /// transport-layer endpoints, proving the vertical slice works as a whole. Every

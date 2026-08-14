@@ -5,7 +5,7 @@ using Xunit;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// An ephemeral PostgreSQL container for the M10.1 durability acceptance test
+/// An ephemeral PostgreSQL container for the durability acceptance test
 /// (ADR 0003). One container per test class; the connection string it exposes is
 /// fed to <c>ConnectionStrings:Postgres</c> so the composition root swaps the
 /// in-memory core-state ports for the Postgres-backed adapters.

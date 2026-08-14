@@ -6,7 +6,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Dispatcher behavior for the tradecraft layer skeleton (roadmap M2.5,
+/// Dispatcher behavior for the tradecraft layer skeleton (,
 /// architecture.md Sec 10.3). <see cref="CapabilityDispatcher"/> resolves a verb
 /// to its registered module and hands the invocation off; a verb with no module
 /// is a normal <see cref="CapabilityStatus.NotFound"/> result rather than a

@@ -5,8 +5,8 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// raw JSON document; <see cref="Base64"/> wraps it as a single base64 string so
 /// the request body no longer looks like a structured C2 message -- a classic
 /// malleable-transport transform (architecture.md Sec 7). The teamserver-side
-/// enroll endpoint is envelope-agnostic in this milestone (M4.3); the redirector
-/// is where envelope unwrapping would terminate (M4.4).
+/// enroll endpoint is envelope-agnostic in this milestone (); the redirector
+/// is where envelope unwrapping would terminate ().
 /// </summary>
 public enum TransportEnvelope
 {
@@ -37,7 +37,7 @@ public sealed record TransportProfile(
     /// <summary>The enroll URI path, relative to the endpoint host. Defaults to
     /// <c>/implants/enroll</c>, the teamserver's fixed enroll route. A profile
     /// may set it to a malleable path the redirector rewrites to the real route
-    /// (M4.4); here it is baked in verbatim so two profiles can differ on it.</summary>
+    /// (); here it is baked in verbatim so two profiles can differ on it.</summary>
     public string EnrollPath { get; init; } = Defaults.EnrollPath;
 
     /// <summary>The <c>User-Agent</c> header the implant presents on enroll, so

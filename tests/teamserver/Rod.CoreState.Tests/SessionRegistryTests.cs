@@ -5,7 +5,7 @@ using Rod.CoreState.Sessions;
 namespace Rod.CoreState.Tests;
 
 /// <summary>
-/// Round-trip checks of <see cref="InMemorySessionRegistry"/> -- the M2.1
+/// Round-trip checks of <see cref="InMemorySessionRegistry"/> -- the
 /// core-state layer lift. Sessions open on connect, close on disconnect, and
 /// survive in the per-implant history; an implant holds at most one active
 /// session so a reconnect closes the prior one; engagement scoping never leaks

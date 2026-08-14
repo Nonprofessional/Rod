@@ -15,11 +15,11 @@ import { ReportView } from './ReportView'
 import { TaskingView } from './TaskingView'
 import { TimelineView } from './TimelineView'
 
-// The engagement detail shell (roadmap M11.1): the full capability surface under
+// The engagement detail shell: the full capability surface under
 // one set of tabs -- tasking (recon through exploit), implants (with retire), the
 // M6 evidence views (audit, artifacts, timeline, report), and the M4 OPSEC
 // controls (listeners/redirectors, payload build). One SSE stream stays open so
-// every connected operator sees tasking, results, and presence live (M2.4).
+// every connected operator sees tasking, results, and presence live .
 
 type TabId = 'tasking' | 'implants' | 'audit' | 'artifacts' | 'timeline' | 'report' | 'listeners' | 'build'
 

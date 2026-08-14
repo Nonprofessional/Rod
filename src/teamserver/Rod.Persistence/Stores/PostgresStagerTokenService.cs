@@ -16,7 +16,7 @@ namespace Rod.Persistence.Stores;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The check-then-consume on redeem is the one place in M10.1 where the durable
+/// The check-then-consume on redeem is the one place in  where the durable
 /// store must guard against a real concurrency hazard: two concurrent redeems of
 /// a single-use token could both pass a read-then-decrement sequence. It is done
 /// with a single conditional <c>UPDATE</c> that puts every precondition (the

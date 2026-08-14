@@ -18,7 +18,7 @@ namespace Rod.Tradecraft;
 
 /// <summary>
 /// Composition-root hooks for the pluggable tradecraft layer (architecture.md
-/// Sec 4.1 layer 6, roadmap M2.5). The layer holds the capability-module
+/// Sec 4.1 layer 6, ). The layer holds the capability-module
 /// contract, the registry, and the dispatcher; concrete tradecraft is supplied
 /// as separate, opt-in, out-of-tree modules (architecture.md Sec 13, AGENTS.md
 /// Sec 7).
@@ -92,7 +92,7 @@ public static class RodTradecraftHost
     /// Maps the tradecraft layer's endpoints: the capability catalog
     /// (<c>GET /capabilities</c>) that lets the operator UI surface every
     /// capability category as tasking from the registry rather than a hardcoded
-    /// verb table (roadmap M11.1). Call alongside <c>MapRodEndpoints</c>; the
+    /// verb table (). Call alongside <c>MapRodEndpoints</c>; the
     /// composition root calls it after <c>MapOperatorEndpoints</c>.
     /// </summary>
     /// <remarks>

@@ -6,12 +6,12 @@ using Rod.Audit;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing operational-event-log read endpoint (roadmap M6.1): the
+/// The operator-facing operational-event-log read endpoint (): the
 /// per-engagement, append-only, attributed event stream (architecture.md Sec 11).
 /// Every action that changes engagement state or binds an identity produces an
 /// immutable, hash-chained event; this endpoint returns that trail oldest-first
 /// so the engagement timeline is observable end to end. It is the raw evidence
-/// feed -- timeline and report export (M6.3) are later consumers of the same
+/// feed -- timeline and report export () are later consumers of the same
 /// store. Distinct from the operators-layer <c>GET .../events</c> SSE route,
 /// which is the transient live fan-out, not the durable trail.
 /// </summary>

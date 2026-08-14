@@ -96,7 +96,7 @@ jobs:
         # lateral) and runner dispatch via InternalsVisibleTo, without standing
         # up a real teamserver.
         run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
-      - name: .NET implant end-to-end (roadmap M3.3)
+      - name: .NET implant end-to-end
         # DotNetImplantTests publishes the reference .NET implant to a temp dir
         # via `dotnet publish`, then runs `dotnet Rod.Implant.dll` as a real
         # subprocess against a real teamserver -- enrolls over HTTP, beacons over

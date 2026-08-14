@@ -16,8 +16,7 @@ implant-initiated connections.
 > tradecraft -- exploits, evasion, LSASS dumping, keyboard capture -- is
 > supplied as separate, opt-in modules against the same contracts
 > (architecture.md Sec 13). See [docs/architecture.md](docs/architecture.md) for
-> the blueprint, [docs/roadmap.md](docs/roadmap.md) for the archived (complete)
-> milestone plan, and [docs/todo.md](docs/todo.md) for open work.
+> the blueprint and [docs/todo.md](docs/todo.md) for open work.
 
 ---
 
@@ -133,11 +132,7 @@ Start here:
   operational lifecycle, the engagement model, the monolithic-kernel layers,
   implants and profiles, the build pipeline, OPSEC, transports, security, and the
   sensitive-capability boundary.
-- **[docs/roadmap.md](docs/roadmap.md)** -- the archived milestone plan (M0.1
-  through M11.1, all complete); kept as the historical acceptance-criteria
-  record.
-- **[docs/todo.md](docs/todo.md)** -- post-roadmap work: implant verb coverage,
-  production hardening, and architecture-gap audits.
+- **[docs/todo.md](docs/todo.md)** -- open work.
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
 - **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
   redirector build/deploy/rotate runbook.

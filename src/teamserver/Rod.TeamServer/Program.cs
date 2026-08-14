@@ -5,32 +5,32 @@ using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
 
-// The teamserver composition root (architecture.md Sec 4, roadmap M1.5). This is
+// The teamserver composition root (architecture.md Sec 4, ). This is
 // the single runnable .NET process: it wires the transport layer's services and
-// operator/implant endpoints, binds the configured listeners (roadmap M2.2), serves
+// operator/implant endpoints, binds the configured listeners (), serves
 // the built operator UI (Vite output under wwwroot), and falls any non-file,
 // non-API request back to index.html so the client-side router owns deep links. UI
 // <-> data goes over the HTTP API; the host itself adds no domain logic.
 
 var builder = WebApplication.CreateBuilder(args);
 // Pass configuration through so the composition root can select the durable
-// audit/artifact stores when the Audit:DataDirectory section is present (roadmap
-// M6.4 -- the engagement trail outlives a restart and infrastructure teardown).
+// audit/artifact stores when the Audit:DataDirectory section is present
+//  -- the engagement trail outlives a restart and infrastructure teardown.
 // Absent, the in-memory adapters stay in place.
 builder.Services.AddRodTransport(builder.Configuration);
-// Layer in the operator layer (roadmap M2.4): the live-event bus that fans task
+// Layer in the operator layer (): the live-event bus that fans task
 // and presence events out to connected operator sessions, plus the presence
 // roster. Transport cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here.
 builder.Services.AddRodOperators();
-// Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3,
-// M8.1): the capability registry and dispatcher, and the registry-backed task
+// Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3):
+// the capability registry and dispatcher, and the registry-backed task
 // resolver that replaces core state's strict class-table default. Transport
 // cannot reference Rod.Tradecraft (architecture test LayerDependencyTests), so
 // the composition root assembles it here -- the same reason as AddRodOperators.
 builder.Services.AddRodTradecraft();
-// Wire the durable PostgreSQL store (architecture.md Sec 12, ADR 0003, roadmap
-// M10.1): when ConnectionStrings:Postgres is set, this registers the EF Core
+// Wire the durable PostgreSQL store (architecture.md Sec 12, ADR 0003):
+// when ConnectionStrings:Postgres is set, this registers the EF Core
 // DbContext and replaces the in-memory core-state ports whose durable adapters
 // are implemented with the Postgres-backed pair, so state survives a restart.
 // Rod.Persistence cannot be referenced by Rod.Transport (architecture test
@@ -46,7 +46,7 @@ builder.Services.AddRodPersistence(builder.Configuration);
 // reason as AddRodOperators above.
 builder.Services.AddRodOperatorAuth(builder.Configuration);
 
-// Bind the configured listeners (roadmap M2.2, architecture.md Sec 8). Each entry
+// Bind the configured listeners (, architecture.md Sec 8). Each entry
 // is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and
 // the public endpoint implants dial -- decoupled, so a burned redirector is
 // replaceable without backend change. When the section is absent the host falls
@@ -107,7 +107,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRodEndpoints();
-// The operator layer's SSE event stream (roadmap M2.4): mapped alongside the
+// The operator layer's SSE event stream (): mapped alongside the
 // transport endpoints from the composition root for the same layer-separation
 // reason as AddRodOperators above.
 app.MapOperatorEndpoints();
@@ -115,7 +115,7 @@ app.MapOperatorEndpoints();
 // operator-layer endpoints from the composition root for the same layer-
 // separation reason as AddRodOperators above.
 app.MapOperatorAuthEndpoints();
-// The tradecraft layer's capability catalog (roadmap M11.1): mapped from the
+// The tradecraft layer's capability catalog (): mapped from the
 // composition root for the same layer-separation reason as AddRodTradecraft --
 // transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
 // from the layer that owns the registry. Lets the operator UI surface every

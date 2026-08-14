@@ -5,7 +5,7 @@ using Rod.V1;
 namespace Rod.Implant.Internal;
 
 // Holds the lateral.* verbs the reference implant advertises (architecture.md
-// Sec 10.1). lateral.move (M9.1) derives a child implant. lateral.token and
+// Sec 10.1). lateral.move () derives a child implant. lateral.token and
 // lateral.exec_remote (ADR 0004) cover the standard access-token and
 // remote-execution surfaces every mainstream C2 exposes: on Windows, the
 // documented administration channels (whoami for token context, schtasks for
@@ -14,7 +14,7 @@ namespace Rod.Implant.Internal;
 //
 // The child's stager token is not baked into this implant (its own token is
 // spent at its own enroll); the operator provisions it in the task arguments.
-// This keeps derivation inside the M5.2 token-gated authorization model -- the
+// This keeps derivation inside the token-gated authorization model -- the
 // server still resolves and scope-checks the parent before recording the
 // linkage -- and mirrors how the recon verbs take their target in arguments.
 //
