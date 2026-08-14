@@ -21,7 +21,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          # Pinned like global.json pins the SDK: Vite 8 needs >=20.19 or
+          # >=22.12, and an unpinned lts/* lets a runner image change the
+          # toolchain under us.
+          node-version: 24
           cache: npm
           cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
@@ -31,6 +34,9 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Lint operator UI
+        working-directory: src/teamserver/Rod.TeamServer/Client
+        run: npm run lint
       - name: Restore
         run: dotnet restore Rod.slnx
       - name: Build
@@ -47,7 +53,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 24
           cache: npm
           cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
