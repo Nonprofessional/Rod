@@ -8,12 +8,15 @@ operators drives a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver, reaching hosts behind NAT and firewalls over
 implant-initiated connections.
 
-> **Status: the framework is implemented; concrete tradecraft is out-of-tree.**
+> **Status: the framework is implemented; sensitive tradecraft is out-of-tree.**
 > The teamserver, reference implant, build pipeline, operator UI, and durable
 > state are in place across the six internal layers. The capability contracts
-> are wired and dispatched; concrete offensive behavior is supplied as separate,
-> opt-in modules. See [docs/architecture.md](docs/architecture.md) for the
-> blueprint, [docs/roadmap.md](docs/roadmap.md) for the archived (complete)
+> are wired and dispatched; the reference implant runs the standard, documented
+> category (recon, lateral, persist, collect, exfil), while sensitive
+> tradecraft -- exploits, evasion, LSASS dumping, keyboard capture -- is
+> supplied as separate, opt-in modules against the same contracts
+> (architecture.md Sec 13). See [docs/architecture.md](docs/architecture.md) for
+> the blueprint, [docs/roadmap.md](docs/roadmap.md) for the archived (complete)
 > milestone plan, and [docs/todo.md](docs/todo.md) for open work.
 
 ---
@@ -68,9 +71,10 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 - **Make the protocol the product**: a stable, language-neutral, transport-
   agnostic contract so implants can be implemented independently in whatever
   language fits the target.
-- **Operation isolation and evidence**: per-engagement isolation, least
-  privilege, multiplayer collaboration, and a complete, tamper-evident audit
-  trail that is the source for the final report.
+- **Operation isolation and evidence**: per-engagement isolation, multiplayer
+  collaboration with attributed actions (every event records the operator who
+  acted), and a complete, tamper-evident audit trail that is the source for the
+  final report.
 
 ## Non-goals (initial)
 
@@ -87,7 +91,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 | Component | Stack | Notes |
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
-| Data store | PostgreSQL | Authoritative state and per-engagement audit. |
+| Data store | PostgreSQL (opt-in) | Authoritative state and per-engagement audit when `ConnectionStrings:Postgres` is set; in-memory and file-backed walking-skeleton stores are the defaults. |
 | Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (architecture.md Sec 12.2). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (architecture.md Sec 8). |
 | Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable, per-implant keys. |
@@ -95,6 +99,31 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 
 See [docs/architecture.md](docs/architecture.md) for the rationale behind these
 choices.
+
+## Getting started
+
+Prerequisites: .NET SDK 10 (pinned in `global.json`) and Node.js 22.12+ for the
+operator UI.
+
+```
+dotnet build Rod.slnx     # builds the teamserver and the operator UI (wwwroot)
+dotnet run --project src/teamserver/Rod.TeamServer
+```
+
+The teamserver starts on the default dev listener `http://127.0.0.1:5080`; the
+operator UI is served at the same origin. The first operator account is seeded
+from the `Operators` configuration section (see `appsettings.json`); log in at
+the UI and create an engagement, mint a stager token, and enroll the reference
+implant (`src/implant/dotnet`, run it with `-enroll-url ... -token ...`).
+
+Configuration is opt-in sections of `appsettings.json`:
+
+- `ConnectionStrings:Postgres` -- durable teamserver state (PostgreSQL).
+- `Audit:DataDirectory` -- file-backed audit trail, artifacts, and built
+  payloads that survive a restart.
+- `Pki` -- an externally provisioned engagement CA (PEM cert + key) for implant
+  enrollment; omit for the dev self-signed CA.
+- `Listeners` -- C2 ingress (HTTP(S) and mTLS transports).
 
 ## Documentation
 
@@ -110,6 +139,11 @@ Start here:
 - **[docs/todo.md](docs/todo.md)** -- post-roadmap work: implant verb coverage,
   production hardening, and architecture-gap audits.
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
+- **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
+  redirector build/deploy/rotate runbook.
+- **[docs/audits/](docs/audits/)** -- point-in-time architecture-vs-
+  implementation audit records.
+- **[SECURITY.md](SECURITY.md)** -- vulnerability reporting and scope.
 
 ## License
 

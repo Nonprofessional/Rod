@@ -30,10 +30,11 @@ disclosure. Reporters are credited unless they prefer to remain anonymous.
 ## Scope
 
 In scope: anything that breaks Rod's security model -- for example authentication
-or authorization bypass, engagement isolation escape, certificate or CA
-weaknesses, protocol parser vulnerabilities, redirector trust violations, build
-unit or capability-module supply-chain integrity, sealing or command-signing
-bypass, or audit-trail tampering.
+bypass, engagement isolation escape, certificate or CA weaknesses, protocol
+parser vulnerabilities, redirector trust violations, build unit or
+capability-module supply-chain integrity, or audit-trail tampering. (Sealing and
+command signing are documented future work in architecture.md Sec 9; once they
+land, bypasses join this scope.)
 
 Out of scope (by design, documented -- not vulnerabilities):
 

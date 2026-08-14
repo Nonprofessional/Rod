@@ -3,10 +3,13 @@
 - **Date:** 2026-08-11
 - **Baseline:** [architecture.md](../architecture.md) at HEAD (609 lines, 14 sections)
 
-> **Note:** this is a point-in-time snapshot. [ADR 0009](../decisions/0009-single-in-tree-toolchain-dotnet.md)
-> later removed the in-tree Go implant and Go build unit; findings below that
-> reference `implant/` or `GoBuildUnit` describe the baseline as of this date,
-> not the current tree.
+> **Note:** this is a point-in-time snapshot. ADR 0009 later removed the
+> in-tree Go implant and Go build unit; findings below that reference `implant/`
+> or `GoBuildUnit` describe the baseline as of this date, not the current tree.
+> The ADR files were folded into architecture.md on 2026-08-13 (see the former
+> ADR index in architecture.md Sec 4.3), the redirector landed the same day, and
+> the reference implant shipped its standard-category handlers on 2026-08-11 --
+> findings 5, 16, and the Go references are superseded accordingly.
 - **Scope:** every load-bearing claim in architecture.md Sec 1--14, checked against
   the source under `src/`, `implant/`, and `implant-dotnet/`.
 - **Method:** per-section claim extraction, then code verification

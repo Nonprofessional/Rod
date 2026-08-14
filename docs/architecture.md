@@ -136,7 +136,8 @@ in-house. The dependency rule is enforced by architecture tests.
   independent of the teamserver language. (Sec. 5.) The **reference .NET
   implant** lives in the `src/implant/dotnet/` tree: a benign, readable
   stage-2 implant that enrolls over HTTP (submitting its own public key),
-  beacons over mTLS, and runs the core verb set. It compiles its wire bindings
+  beacons over mTLS, and runs the standard-category verb set (Sec 10.1). It
+  compiles its wire bindings
   from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
   committed generated code), and `DotNetBuildUnit` bakes the per-implant
   profile in at compile time. It performs no evasion and no obfuscation
@@ -147,19 +148,22 @@ in-house. The dependency rule is enforced by architecture tests.
 - **Redirectors.** Near-stateless forwarders (.NET, Native AOT, single static
   binary) for OPSEC
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
-  The forwarder binary itself is planned; the server-side rotation path a
-  redirector depends on -- listener repoint (`POST /listeners/{id}:repoint`),
-  retire, and the audit writes -- is implemented (M4.4, [todo.md](todo.md)).
+  The in-tree reference forwarder ships (`src/redirector/dotnet/`): an opaque
+  L4 TCP splice published as a single static binary. Together with the
+  server-side rotation path -- listener repoint (`POST /listeners/{id}:repoint`)
+  and retire with their audit writes (M4.4) -- a burned redirector is swapped
+  end to end; see [operations/redirectors.md](operations/redirectors.md).
 - **Operator UI.** The web front end; lives in the teamserver project.
 
 ### 4.3 Source-tree map (`src/teamserver/`)
 
 The teamserver is a single .NET solution (`Rod.slnx`) split into the projects
-below. Six of them are the **internal layers** of §4.1; two are not layers and
+below. Six of them are the **internal layers** of §4.1; three are not layers and
 sit alongside them -- `Rod.Protocol` (the language-neutral wire contract every
-transport speaks) and `Rod.TeamServer` (the single runnable process and
-composition root). Each project's role, the layer rule it lives under, and a
-note on its current state are listed.
+transport speaks), `Rod.Persistence` (the durable PostgreSQL adapters behind
+the core-state and audit ports), and `Rod.TeamServer` (the single runnable
+process and composition root). Each project's role, the layer rule it lives
+under, and a note on its current state are listed.
 
 | Project | Role | Layer rule (what it may depend on) | State |
 |---------|------|------------------------------------|-------|
@@ -170,11 +174,33 @@ note on its current state are listed.
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented (M3.1: the build-contract schema, the build-unit registry and dispatch, and the PayloadBuilt audit write composed by transport. M3.3: the real .NET build unit -- `DotNetBuildUnit` compiles the reference .NET implant per request via `dotnet publish`, baking the per-implant profile into a generated `BakedProfile.cs` in a per-build staging copy with no implant-key leak -- is the sole in-tree unit; the `StubBuildUnit` stays as the contract-reference test double with its own unit tests. M3.4: the unit bakes the class's reduced verb set (read from core state, Sec 5.2) into the profile, so an artifact is self-describing and two classes produce visibly different output; the key is still absent. M4.3: the malleable transport profile (Sec 7, Sec 8) -- enroll path, User-Agent, headers, request timeout, body envelope -- rides in the baked profile, and the build request DTO carries it so an operator can profile a payload. the in-tree Go build unit was removed; .NET is the single in-tree toolchain (Sec 12.2), and other languages plug in as out-of-tree community units through the same contract). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.4: Server-Sent Events stream per engagement, a channel-backed live-event bus fanning task-issued / task-completed / presence events to every connected session, an operator-presence roster. Operator authentication: cookie sessions over a verified handle and password -- `POST /operators/login`, `POST /operators/logout`, `GET /operators/me` -- with every operator endpoint authorized and the acting operator derived from the session principal rather than the request body, a config-seeded first operator, and a hash-only credential port backed by the in-memory store or, when Postgres is configured, the durable `operator_credentials` table. Cookies were chosen over JWT/bearer tokens (no client-side token store, refresh, or revocation machinery for a same-origin SPA); ASP.NET Core Identity was rejected (its own EF data model and user/role/login tables conflict with the project's ports and layered store); a password-hash field on the `Operator` aggregate was rejected (it violates the clean-domain, hash-only discipline the stager-token store already follows); per-engagement RBAC is deferred -- every authenticated operator can presently reach every endpoint, there is no server-side session revocation, and PBKDF2 work-factor tuning is the framework default with `IPasswordHasher<T>` as the single swap point for a future Argon2 verifier). |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract and dispatch only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented (M2.5: `ICapabilityModule` contract, capability registry + dispatcher, the five core verbs loaded through it; the dispatchable `shell.exec` stub proves the round-trip. M5.1: the recon descriptors -- `recon.portscan`, `recon.hostenum`, `recon.service` -- are loaded through this layer as placeholders alongside the core set, each flagged network-touching except the host-local `recon.hostenum`; the default registry lists both sets. M5.2: the lateral descriptors -- `lateral.move`, `lateral.token`, `lateral.exec_remote` -- are loaded through this layer as placeholders alongside the core and recon sets, each flagged with its OPSEC attribute (`derives-child` / `touches-credential` / `touches-network`); the default registry lists all three sets. M5.3: the persist descriptors -- `persist.install`, `persist.remove`, `persist.list` -- are loaded through this layer as placeholders alongside the core, recon, and lateral sets, install and remove flagged `writes-to-disk` (install also `persists`) and list unflagged as a read; the default registry lists all four sets. M5.4: the collect descriptors -- `collect.file`, `collect.cred`, `collect.keylog` -- and the exfil descriptors -- `exfil.push`, `exfil.stage` -- are loaded through this layer as placeholders alongside the core, recon, lateral, and persist sets, collect.file flagged `reads-filesystem`, collect.cred flagged `reads-credential`, collect.keylog flagged `reads-input` and `persists`, exfil.push flagged `touches-network`, and exfil.stage unflagged as a read; the default registry lists all six sets. M7.1: the evasion descriptors -- `evasion.avoid`, `evasion.unload` -- are loaded through this layer as placeholders alongside the core, recon, lateral, persist, collect, and exfil sets, each flagged `modifies-defenses`; the default registry lists all seven sets. Evasion is contract and dispatch only (Sec 10.2, Sec 13): the verbs are not gated to a class, and concrete behavior is out-of-tree, supplied as opt-in modules). M7.2: the exploit descriptors -- `exploit.invoke`, `exploit.module` -- are loaded through this layer as placeholders alongside the core, recon, lateral, persist, collect, exfil, and evasion sets, each flagged `exploits-target`; the default registry lists all eight sets. Exploit is contract and dispatch only (Sec 10.2, Sec 13): the verbs are not gated to a class, and concrete behavior is out-of-tree, supplied as opt-in modules). M8.1: the layer is wired onto the live task path -- an `AddRodTradecraft` composition hook registers the in-memory capability registry (loaded with every built-in verb) and the dispatcher as singletons, and swaps core state's strict class-table resolver for `CapabilityRegistryTaskResolver`, so task issuance admits a verb a registered module handles in addition to the per-class reduced set. The evasion and exploit verbs (Sec 10.2) are no longer refused before dispatch; their concrete behavior is still out-of-tree). |
-| `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport` and `Rod.Operators` (the latter wired in M2.4, since transport itself cannot reference the operator layer). | Implemented (M1.5 host + UI shell; M2.4 wires the operator layer). |
+| `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, stager tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented (M10.1: EF Core 10 over Npgsql behind a context factory so singleton services hold no captive scoped context, migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered). |
+| `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport` and `Rod.Operators` (the latter wired in M2.4, since transport itself cannot reference the operator layer). | Implemented (M1.5 host + UI shell; M2.4 wires the operator layer; M8.1 wires the tradecraft registry and the capability-catalog endpoint; M10.1 wires the Postgres adapters). |
 
 The dependency column is not aspirational: it is the rule the architecture tests
 in `tests/teamserver/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
-forbidden project reference fails the build.
+forbidden project reference that code actually uses fails the build.
+
+#### Former ADR index
+
+Until 2026-08 the design decisions lived as numbered ADR files under
+`docs/decisions/`; they were folded into this document and the files retired.
+Comments in the source tree still cite the ids, so they resolve here:
+
+| ADR | Folded into |
+|-----|-------------|
+| 0001 monolithic kernel | Sec 4 |
+| 0002 .NET reference implant + wire protocol as the product | Sec 4.2, Sec 12.2 |
+| 0003 PostgreSQL as the durable store | Sec 12.1 |
+| 0004 offensive-tradecraft boundary | Sec 10.2, Sec 13 |
+| 0005 (task argument shape) | Sec 10.3 |
+| 0006 (capability-catalog endpoint placement) | Sec 4.3 |
+| 0007 (placeholder-only verbs) | Sec 10.1 |
+| 0008 operator authentication | Sec 4.1 layer 4 |
+| 0009 single in-tree .NET toolchain | Sec 12.2 |
+| 0010 production implant CA | Sec 9 |
+| 0011 production redirector | Sec 4.2, Sec 8 |
+| 0012 implant-side capability pluggability | Sec 5.3 |
 
 One consequence of the layer rule: an endpoint backed by data in an outer layer
 transport cannot reference is exposed by that layer itself and mapped at the
