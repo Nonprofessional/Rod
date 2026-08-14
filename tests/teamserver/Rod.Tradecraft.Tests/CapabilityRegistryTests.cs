@@ -19,7 +19,7 @@ public class CapabilityRegistryTests
     public async Task Register_ThenFind_ReturnsTheModule()
     {
         var registry = new InMemoryCapabilityRegistry();
-        var module = new CoreCapabilityModule();
+        var module = new Stub(CoreCapabilities.ShellExec);
 
         await registry.RegisterAsync(module);
 
@@ -44,7 +44,7 @@ public class CapabilityRegistryTests
         // strings; a caller must not be told the verb is unknown because of
         // casing.
         var registry = new InMemoryCapabilityRegistry();
-        await registry.RegisterAsync(new CoreCapabilityModule());
+        await registry.RegisterAsync(new Stub(CoreCapabilities.ShellExec));
 
         var found = await registry.FindAsync("SHELL.EXEC");
 
@@ -74,8 +74,8 @@ public class CapabilityRegistryTests
         // An out-of-tree module loaded after the core placeholder must win for
         // its verb: the last registration is the single authority.
         var registry = new InMemoryCapabilityRegistry();
-        var placeholder = new Stub("shell.exec", output: "placeholder");
-        var real = new Stub("shell.exec", output: "real");
+        var placeholder = new Stub("shell.exec");
+        var real = new Stub("shell.exec");
 
         await registry.RegisterAsync(placeholder);
         await registry.RegisterAsync(real);
@@ -87,22 +87,13 @@ public class CapabilityRegistryTests
         Assert.Single(listed);
     }
 
-    // A tiny module whose descriptor and result are fixed at construction, so the
-    // tests above can register arbitrary verbs without pulling in real tradecraft.
+    // A tiny module whose descriptor is fixed at construction, so the tests above
+    // can register arbitrary verbs without pulling in real tradecraft.
     private sealed class Stub : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public Stub(string verb, string output = "")
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Core, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public Stub(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Core, "1.0");
     }
 }

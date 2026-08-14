@@ -5,16 +5,17 @@ namespace Rod.Tradecraft.Core;
 
 /// <summary>
 /// A registration-only module: it declares a <see cref="CapabilityDescriptor"/>
-/// so the registry lists the verb, but dispatch returns a "not implemented"
-/// failure. Used for the core verbs whose concrete behavior runs on the implant
-/// (architecture.md Sec 10.3) and is not part of this repository -- they must
-/// appear in the registry (the core verbs load through it) without committing
-/// any in-process tradecraft.
+/// so the registry lists the verb and the task-issuance gate admits it, but no
+/// behavior runs in-process -- verb execution lives on the implant
+/// (architecture.md Sec 5.3, Sec 10.2/10.3). Every built-in verb, core included,
+/// registers through this shape so the capability catalog lists the full
+/// framework set without committing any in-process tradecraft.
 /// </summary>
 /// <remarks>
-/// One instance carries one verb. The composition root creates one per
-/// not-yet-implemented core verb; replacing one with a real module is a later
-/// <see cref="ICapabilityModule"/> implementation registered for the same verb.
+/// One instance carries one verb. An operator-supplied out-of-tree module
+/// registered for the same verb replaces the placeholder (last registration
+/// wins), which is the whole out-of-tree path: a registration, never a schema
+/// change or a composition-root edit (architecture.md Sec 10.2, AGENTS.md Sec 7).
 /// </remarks>
 public sealed class PlaceholderCapabilityModule : ICapabilityModule
 {
@@ -25,19 +26,5 @@ public sealed class PlaceholderCapabilityModule : ICapabilityModule
     public PlaceholderCapabilityModule(CapabilityDescriptor descriptor)
     {
         Descriptor = descriptor;
-    }
-
-    /// <summary>
-    /// Always returns a failure explaining the verb is registered but has no
-    /// in-process implementation. Concrete behavior is out-of-tree
-    /// (architecture.md Sec 13, AGENTS.md Sec 7).
-    /// </summary>
-    public Task<CapabilityResult> ExecuteAsync(
-        CapabilityInvocation invocation,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(CapabilityResult.Failed(
-            $"'{Descriptor.Verb}' is registered but has no in-process implementation."));
     }
 }

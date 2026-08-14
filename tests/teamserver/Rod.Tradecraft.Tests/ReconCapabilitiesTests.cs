@@ -11,8 +11,7 @@ namespace Rod.Tradecraft.Tests;
 /// <summary>
 /// Roadmap  acceptance at the contract layer: the recon verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
-/// core set, are listed in the Recon category, dispatch as registered-but-not-
-/// implemented (their concrete behavior is out-of-tree, like the non-shell core
+/// core set, are listed in the Recon category, register as placeholders (their concrete behavior is out-of-tree, like the non-shell core
 /// verbs), and respect the same out-of-tree-override rule.
 /// </summary>
 public class ReconCapabilitiesTests
@@ -53,20 +52,16 @@ public class ReconCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesAReconVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersTheReconVerbs_AsPlaceholders()
     {
         // Concrete recon behavior is out-of-tree (architecture.md Sec 13,
-        // AGENTS.md Sec 7), so dispatching a recon verb against the default
-        // registry reports a failure -- the verb is known, just unimplemented
-        // in-process -- the same outcome the non-shell core verbs produce.
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(ReconCapabilities.PortScan, "127.0.0.1 1-1024"));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(ReconCapabilities.PortScan, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(ReconCapabilities.PortScan);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -93,7 +88,7 @@ public class ReconCapabilitiesTests
         // stay the authority for its verb: the loader deduplicates against what
         // the registry already holds, the same rule that protects core overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("recon.portscan", "real recon module");
+        var overrideModule = new FixedModule("recon.portscan");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -105,23 +100,13 @@ public class ReconCapabilitiesTests
         Assert.Contains(ReconCapabilities.HostEnum, verbs);
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in CoreCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Recon, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Recon, "1.0");
     }
 }

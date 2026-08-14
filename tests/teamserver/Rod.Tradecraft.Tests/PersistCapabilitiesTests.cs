@@ -13,8 +13,7 @@ namespace Rod.Tradecraft.Tests;
 /// <summary>
 /// Roadmap  acceptance at the contract layer: the persistence verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
-/// core, recon, and lateral sets, are listed in the Persist category, dispatch as
-/// registered-but-not-implemented (their concrete behavior is out-of-tree, like
+/// core, recon, and lateral sets, are listed in the Persist category, register as placeholders (their concrete behavior is out-of-tree, like
 /// the non-shell core verbs and the recon and lateral verbs), carry their OPSEC
 /// attributes, and respect the same out-of-tree-override rule.
 /// </summary>
@@ -60,21 +59,16 @@ public class PersistCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesAPersistVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersThePersistVerbs_AsPlaceholders()
     {
         // Concrete persistence behavior is out-of-tree (architecture.md Sec 13,
-        // AGENTS.md Sec 7), so dispatching a persist verb against the default
-        // registry reports a failure -- the verb is known, just unimplemented
-        // in-process -- the same outcome the non-shell core verbs and the recon
-        // and lateral verbs produce.
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(PersistCapabilities.List, ""));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(PersistCapabilities.List, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(PersistCapabilities.List);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -106,7 +100,7 @@ public class PersistCapabilitiesTests
         // the registry already holds, the same rule that protects core, recon,
         // and lateral overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("persist.install", "real persist module");
+        var overrideModule = new FixedModule("persist.install");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -118,23 +112,13 @@ public class PersistCapabilitiesTests
         Assert.Contains(PersistCapabilities.Remove, verbs);
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in LateralCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Persist, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Persist, "1.0");
     }
 }

@@ -1,3 +1,4 @@
+using Rod.CoreState.Implants;
 using Rod.Tradecraft;
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Collect;
@@ -16,7 +17,7 @@ namespace Rod.Tradecraft.Tests;
 /// Roadmap  acceptance at the contract layer: the evasion verbs
 /// (architecture.md Sec 10.1, Sec 10.2) load through the tradecraft registry
 /// alongside the core, recon, lateral, persist, collect, and exfil sets, are
-/// listed in the Evasion category, dispatch as registered-but-not-implemented
+/// listed in the Evasion category, register as placeholders
 /// (their concrete behavior is out-of-tree, like the non-shell core verbs and the
 /// recon, lateral, persist, collect, and exfil verbs), carry their OPSEC
 /// attributes, and respect the same out-of-tree-override rule.
@@ -67,22 +68,16 @@ public class EvasionCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesAnEvasionVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersTheEvasionVerbs_AsPlaceholders()
     {
-        // Concrete evasion behavior is out-of-tree (architecture.md Sec 10.2,
-        // Sec 13, RESPONSIBLE-USE.md, AGENTS.md Sec 7), so dispatching an evasion
-        // verb against the default registry reports a failure -- the verb is
-        // known, just unimplemented in-process -- the same outcome the non-shell
-        // core verbs and the recon, lateral, persist, collect, and exfil verbs
-        // produce.
+        // Concrete evasion behavior is out-of-tree (architecture.md Sec 13,
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(EvasionCapabilities.Avoid, ""));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(EvasionCapabilities.Avoid, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(EvasionCapabilities.Avoid);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -118,10 +113,10 @@ public class EvasionCapabilitiesTests
         // stay the authority for its verb: the loader deduplicates against what
         // the registry already holds, the same rule that protects core, recon,
         // lateral, persist, collect, and exfil overrides. This is the
-        // acceptance criterion: an out-of-tree module registers and dispatches
-        // through the contract.
+        // acceptance criterion: an out-of-tree module registers and replaces the
+        // placeholder through the contract.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("evasion.avoid", "real evasion module");
+        var overrideModule = new FixedModule("evasion.avoid");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -132,32 +127,20 @@ public class EvasionCapabilitiesTests
         var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();
         Assert.Contains(EvasionCapabilities.Unload, verbs);
 
-        // And the override dispatches through the contract: the loader did not
-        // replace it, so a dispatch reaches the out-of-tree module.
-        var dispatcher = new CapabilityDispatcher(registry);
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation("evasion.avoid", ""));
-        Assert.Equal(CapabilityStatus.Succeeded, result.Status);
-        Assert.Equal("real evasion module", result.Output);
+        // And the override stays the authority end to end: the registry-backed
+        // task resolver admits the verb because the out-of-tree module is what
+        // is registered, not the placeholder.
+        var resolver = new CapabilityRegistryTaskResolver(registry);
+        Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, "evasion.avoid"));
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in ExfilCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Evasion, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Evasion, "1.0");
     }
 }

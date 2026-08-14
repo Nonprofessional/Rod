@@ -81,7 +81,7 @@ public class CapabilityRegistryTaskResolverTests
         Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, "recon.portscan"));
     }
 
-    // A module whose result is fixed, standing in for an operator-supplied
+    // A module whose descriptor is fixed, standing in for an operator-supplied
     // out-of-tree exploit module without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
@@ -89,10 +89,5 @@ public class CapabilityRegistryTaskResolverTests
 
         public FixedModule(string verb)
             => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Exploit, "1.0");
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded("out-of-tree"));
     }
 }

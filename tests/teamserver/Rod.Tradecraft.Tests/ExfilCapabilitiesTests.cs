@@ -16,7 +16,7 @@ namespace Rod.Tradecraft.Tests;
 /// Roadmap  acceptance at the contract layer: the exfiltration verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, lateral, persist, and collect sets, are listed in the Exfil
-/// category, dispatch as registered-but-not-implemented (their concrete behavior
+/// category, register as placeholders (their concrete behavior
 /// is out-of-tree, like the non-shell core verbs and the recon, lateral, and
 /// persist verbs), carry their OPSEC attributes, and respect the same
 /// out-of-tree-override rule.
@@ -59,21 +59,16 @@ public class ExfilCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesAnExfilVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersTheExfilVerbs_AsPlaceholders()
     {
         // Concrete exfiltration behavior is out-of-tree (architecture.md Sec 13,
-        // AGENTS.md Sec 7), so dispatching an exfil verb against the default
-        // registry reports a failure -- the verb is known, just unimplemented
-        // in-process -- the same outcome the non-shell core verbs and the recon,
-        // lateral, and persist verbs produce.
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(ExfilCapabilities.Push, ""));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(ExfilCapabilities.Push, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(ExfilCapabilities.Push);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -109,7 +104,7 @@ public class ExfilCapabilitiesTests
         // the registry already holds, the same rule that protects core, recon,
         // lateral, persist, and collect overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("exfil.push", "real exfil module");
+        var overrideModule = new FixedModule("exfil.push");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -121,23 +116,13 @@ public class ExfilCapabilitiesTests
         Assert.Contains(ExfilCapabilities.Stage, verbs);
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in PersistCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Exfil, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Exfil, "1.0");
     }
 }

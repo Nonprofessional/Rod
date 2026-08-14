@@ -171,7 +171,7 @@ public class TradecraftTaskPathTests
         using (host)
         {
             var registry = host.Services.GetRequiredService<ICapabilityRegistry>();
-            var overrideModule = new FixedResultModule(EvasionCapabilities.Avoid, "out-of-tree evasion");
+            var overrideModule = new FixedResultModule(EvasionCapabilities.Avoid);
             await registry.RegisterAsync(overrideModule);
 
             var engagementId = await CreateEngagementAsync(client);
@@ -198,23 +198,14 @@ public class TradecraftTaskPathTests
         }
     }
 
-    // A module whose result is fixed at construction, standing in for an
+    // A module whose descriptor is fixed at construction, standing in for an
     // operator-supplied, out-of-tree evasion module without writing real
     // tradecraft.
     private sealed class FixedResultModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedResultModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Evasion, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedResultModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Evasion, "1.0");
     }
 }

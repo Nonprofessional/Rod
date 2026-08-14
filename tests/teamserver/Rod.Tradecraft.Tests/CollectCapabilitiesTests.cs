@@ -16,7 +16,7 @@ namespace Rod.Tradecraft.Tests;
 /// Roadmap  acceptance at the contract layer: the collection verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, lateral, persist, and exfil sets, are listed in the Collect
-/// category, dispatch as registered-but-not-implemented (their concrete behavior
+/// category, register as placeholders (their concrete behavior
 /// is out-of-tree, like the non-shell core verbs and the recon, lateral, and
 /// persist verbs), carry their OPSEC attributes, and respect the same
 /// out-of-tree-override rule.
@@ -65,21 +65,16 @@ public class CollectCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesACollectVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersTheCollectVerbs_AsPlaceholders()
     {
         // Concrete collection behavior is out-of-tree (architecture.md Sec 13,
-        // AGENTS.md Sec 7), so dispatching a collect verb against the default
-        // registry reports a failure -- the verb is known, just unimplemented
-        // in-process -- the same outcome the non-shell core verbs and the recon,
-        // lateral, and persist verbs produce.
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(CollectCapabilities.File, ""));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(CollectCapabilities.File, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(CollectCapabilities.File);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -115,7 +110,7 @@ public class CollectCapabilitiesTests
         // the registry already holds, the same rule that protects core, recon,
         // lateral, and persist overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("collect.file", "real collect module");
+        var overrideModule = new FixedModule("collect.file");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -127,23 +122,13 @@ public class CollectCapabilitiesTests
         Assert.Contains(CollectCapabilities.Cred, verbs);
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in PersistCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Collect, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Collect, "1.0");
     }
 }

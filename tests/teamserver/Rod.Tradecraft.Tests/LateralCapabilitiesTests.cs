@@ -12,8 +12,7 @@ namespace Rod.Tradecraft.Tests;
 /// <summary>
 /// Roadmap  acceptance at the contract layer: the lateral-movement verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
-/// core and recon sets, are listed in the Lateral category, dispatch as
-/// registered-but-not-implemented (their concrete behavior is out-of-tree, like
+/// core and recon sets, are listed in the Lateral category, register as placeholders (their concrete behavior is out-of-tree, like
 /// the non-shell core verbs and the recon verbs), carry their OPSEC attributes,
 /// and respect the same out-of-tree-override rule.
 /// </summary>
@@ -55,21 +54,16 @@ public class LateralCapabilitiesTests
     }
 
     [Fact]
-    public async Task DefaultRegistry_DispatchesALateralVerb_AsRegisteredButNotImplemented()
+    public async Task DefaultRegistry_RegistersTheLateralVerbs_AsPlaceholders()
     {
-        // Concrete lateral-movement behavior is out-of-tree (architecture.md
-        // Sec 13, AGENTS.md Sec 7), so dispatching a lateral verb against the
-        // default registry reports a failure -- the verb is known, just
-        // unimplemented in-process -- the same outcome the non-shell core verbs
-        // and the recon verbs produce.
+        // Concrete lateral-movement behavior is out-of-tree (architecture.md Sec 13,
+        // AGENTS.md Sec 7): the verbs register as placeholders only -- the
+        // registry lists them and the task gate admits them, while execution
+        // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var dispatcher = new CapabilityDispatcher(registry);
 
-        var result = await dispatcher.DispatchAsync(
-            new CapabilityInvocation(LateralCapabilities.Move, "stage2 ./child"));
-
-        Assert.Equal(CapabilityStatus.Failed, result.Status);
-        Assert.Contains(LateralCapabilities.Move, result.Error ?? string.Empty);
+        var found = await registry.FindAsync(LateralCapabilities.Move);
+        Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
     [Fact]
@@ -99,7 +93,7 @@ public class LateralCapabilitiesTests
         // the registry already holds, the same rule that protects core and recon
         // overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("lateral.move", "real lateral module");
+        var overrideModule = new FixedModule("lateral.move");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
@@ -111,23 +105,13 @@ public class LateralCapabilitiesTests
         Assert.Contains(LateralCapabilities.Token, verbs);
     }
 
-    // A module whose result is fixed at construction, so a test can stand in for
-    // an out-of-tree override without writing real tradecraft. Mirrors the helper
-    // in ReconCapabilitiesTests.
+    // A module whose descriptor is fixed at construction, so a test can stand in
+    // for an out-of-tree override without writing real tradecraft.
     private sealed class FixedModule : ICapabilityModule
     {
         public CapabilityDescriptor Descriptor { get; }
-        private readonly string _output;
 
-        public FixedModule(string verb, string output)
-        {
-            Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Lateral, "1.0");
-            _output = output;
-        }
-
-        public Task<CapabilityResult> ExecuteAsync(
-            CapabilityInvocation invocation,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(CapabilityResult.Succeeded(_output));
+        public FixedModule(string verb)
+            => Descriptor = CapabilityDescriptor.Of(verb, CapabilityCategory.Lateral, "1.0");
     }
 }
