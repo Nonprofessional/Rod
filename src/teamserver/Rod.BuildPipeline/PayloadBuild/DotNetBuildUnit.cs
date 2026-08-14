@@ -258,11 +258,12 @@ public sealed class DotNetBuildUnit : IBuildUnit
     }
 
     // Copies the repo-root MSBuild props (Directory.Build.props and
-    // Directory.Packages.props) into the work dir so the staging copy of the
-    // implant resolves CPM and the shared build settings the same way it does in
-    // the real tree. The implant's csproj walks up from its dir to find these, so
-    // they must sit one level above the staging copy. If a props file is absent
-    // (e.g. an older tree), it is skipped rather than failing.
+    // Directory.Packages.props) and the SDK pin (global.json) into the work dir
+    // so the staging copy of the implant resolves CPM, the shared build settings,
+    // and the pinned SDK the same way it does in the real tree. The implant's
+    // csproj walks up from its dir to find these, so they must sit one level
+    // above the staging copy. If a file is absent (e.g. an older tree), it is
+    // skipped rather than failing.
     private static void CopyRepoProps(string implantSourceDir, string workDir)
     {
         // The shared props sit at the repo root: the directory holding both src/
@@ -270,7 +271,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
         var repoRoot = FindRepoRoot(new DirectoryInfo(implantSourceDir))?.FullName;
         if (repoRoot is null || !Directory.Exists(repoRoot))
             return;
-        foreach (var name in new[] { "Directory.Build.props", "Directory.Packages.props" })
+        foreach (var name in new[] { "Directory.Build.props", "Directory.Packages.props", "global.json" })
         {
             var src = Path.Combine(repoRoot, name);
             if (File.Exists(src))
