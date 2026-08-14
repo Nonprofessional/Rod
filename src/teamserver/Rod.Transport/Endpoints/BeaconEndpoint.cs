@@ -137,7 +137,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         var sessionContext = new SessionContext(
             implant,
             handshake.EngagementId,
-            handshake.DeployedBy);
+            handshake.DeployedBy,
+            handshakeRequest.Capabilities);
         try
         {
             await RunSessionAsync(sessionContext, requestStream, responseStream, context.CancellationToken);
@@ -191,8 +192,9 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
     // Reader: await each upstream frame, capture it into the task and append the
     // audit event, or -- when the frame is an ExfilChunk -- reassemble and store
-    // the artifact. Ends on a clean client close (MoveNext returns false);
-    // throws on an abort.
+    // the artifact. Each frame also advances the session's last-seen stamp, so
+    // the presence roster reflects real activity, not just stream open/close.
+    // Ends on a clean client close (MoveNext returns false); throws on an abort.
     private async Task ReadResultsAsync(
         SessionContext session,
         IAsyncStreamReader<Frame> requestStream,
@@ -200,7 +202,11 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         CancellationToken cancellationToken)
     {
         while (await requestStream.MoveNext(cancellationToken))
+        {
+            await _sessions.TouchAsync(
+                session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
             await HandleFrameAsync(session, requestStream.Current, exfil, cancellationToken);
+        }
     }
 
     // Writer: poll the queue and push each queued task downstream. Operators task
@@ -528,15 +534,18 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         return stream.WriteAsync(frame);
     }
 
-    // The identity triplet threaded from CheckIn down to the frame handler. The
-    // handshake resolves all three once; passing them as a single value keeps
-    // the handler signatures short and avoids re-deriving engagement/operator
-    // from each task record (exfil chunks carry a task id but the operator who
-    // deployed the implant is not on the task the way it is on TaskCompleted).
+    // The identity context threaded from CheckIn down to the frame handler. The
+    // handshake resolves it once; passing it as a single value keeps the handler
+    // signatures short and avoids re-deriving engagement/operator from each task
+    // record (exfil chunks carry a task id but the operator who deployed the
+    // implant is not on the task the way it is on TaskCompleted). Capabilities
+    // are the advertised verb set, re-passed to each session touch so the
+    // last-seen refresh never clobbers the handshake advertisement.
     private sealed record SessionContext(
         ImplantId Implant,
         EngagementId EngagementId,
-        OperatorId OperatorId);
+        OperatorId OperatorId,
+        IReadOnlyCollection<string> Capabilities);
 
     // Reassembles ExfilChunk frames into a single byte buffer keyed by
     // (task id, artifact name). The beacon reader loop is the sole writer, so a

@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
+using Rod.Operators.Live;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -173,6 +174,57 @@ public class OperatorLiveTests
         // stays quiet.
         var next = await streamX.TryReadAsync(TimeSpan.FromMilliseconds(300));
         Assert.Null(next);
+    }
+
+    [Fact]
+    public async Task Engagement_LeavesTheBus_WhenItsLastSubscriberGoes()
+    {
+        // A per-engagement subscriber set must not outlive its last subscriber:
+        // an engagement with no connected operator holds no state on the bus.
+        // The internal map is the only observable for this, so the test reflects
+        // into it -- a regression guard for the leak, not a public API.
+        var bus = new InMemoryLiveEventBus();
+        var engagement = EngagementId.New();
+
+        using var cts = new CancellationTokenSource();
+        var consume = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var _ in bus.SubscribeAsync(engagement, cts.Token))
+                {
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected: the subscription is cancelled below.
+            }
+        });
+
+        await WaitUntilAsync(() => Task.FromResult(EngagementCount(bus) == 1));
+        cts.Cancel();
+        await consume;
+        await WaitUntilAsync(() => Task.FromResult(EngagementCount(bus) == 0));
+    }
+
+    private static int EngagementCount(InMemoryLiveEventBus bus)
+    {
+        var field = typeof(InMemoryLiveEventBus).GetField(
+            "_engagements",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var map = (System.Collections.ICollection)field.GetValue(bus)!;
+        return map.Count;
+    }
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (await condition())
+                return;
+            await Task.Delay(25);
+        }
     }
 
     [Fact]

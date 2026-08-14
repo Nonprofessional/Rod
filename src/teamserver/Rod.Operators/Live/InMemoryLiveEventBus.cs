@@ -49,35 +49,52 @@ public sealed class InMemoryLiveEventBus : ILiveEventBus
         EngagementId engagement,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var set = _engagements.GetOrAdd(engagement, _ => new SubscriberSet(ChannelCapacity));
-        var subscriber = set.Add();
+        // A subscriber set is retired the moment its last subscriber leaves, so
+        // an engagement with no connected operator holds no state at all. The
+        // loop guards the retire race: a set marked removed returns null from
+        // Add, and the subscriber retries against a fresh set instead of
+        // attaching to a set no publisher can reach.
+        while (true)
+        {
+            var set = _engagements.GetOrAdd(engagement, _ => new SubscriberSet(ChannelCapacity));
+            var subscriber = set.Add();
+            if (subscriber is null)
+                continue;
 
-        try
-        {
-            await foreach (var item in subscriber.Reader.ReadAllAsync().WithCancellation(cancellationToken))
-                yield return item;
-        }
-        finally
-        {
-            // Always remove on exit, including cancellation, so the engagement's
-            // subscriber set does not leak a dead channel.
-            set.Remove(subscriber);
+            try
+            {
+                await foreach (var item in subscriber.Reader.ReadAllAsync().WithCancellation(cancellationToken))
+                    yield return item;
+                yield break;
+            }
+            finally
+            {
+                // Always remove on exit, including cancellation, so the engagement's
+                // subscriber set does not leak a dead channel -- and retire the set
+                // itself when this was its last subscriber.
+                if (set.Remove(subscriber))
+                    _engagements.TryRemove(KeyValuePair.Create(engagement, set));
+            }
         }
     }
 
     // Holds one engagement's subscribers and the lock that serializes
     // add/remove/publish against that engagement. Per-engagement locks keep
-    // independent engagements from contending.
+    // independent engagements from contending. Once the last subscriber leaves,
+    // the set is marked removed so a racing Add returns null and the caller
+    // retries against a fresh set -- a removed set can never hold a live
+    // channel again.
     private sealed class SubscriberSet
     {
         private readonly List<Channel<LiveEvent>> _subscribers = new();
         private readonly Lock _gate = new();
         private readonly int _capacity;
         private readonly BoundedChannelFullMode _fullMode = BoundedChannelFullMode.DropOldest;
+        private bool _removed;
 
         public SubscriberSet(int capacity) => _capacity = capacity;
 
-        public Channel<LiveEvent> Add()
+        public Channel<LiveEvent>? Add()
         {
             var channel = Channel.CreateBounded<LiveEvent>(new BoundedChannelOptions(_capacity)
             {
@@ -87,18 +104,31 @@ public sealed class InMemoryLiveEventBus : ILiveEventBus
             });
 
             lock (_gate)
+            {
+                if (_removed)
+                    return null;
                 _subscribers.Add(channel);
-
-            return channel;
+                return channel;
+            }
         }
 
-        public void Remove(Channel<LiveEvent> channel)
+        // Removes the subscriber and completes its channel. Returns true when the
+        // subscriber was the last one: the set is then retired so the bus can
+        // drop it from the engagement map.
+        public bool Remove(Channel<LiveEvent> channel)
         {
             lock (_gate)
             {
                 _subscribers.Remove(channel);
+                channel.Writer.TryComplete();
+
+                if (_subscribers.Count == 0)
+                {
+                    _removed = true;
+                    return true;
+                }
+                return false;
             }
-            channel.Writer.TryComplete();
         }
 
         // Fan-out to every current subscriber. A snapshot is taken under the lock
@@ -109,7 +139,11 @@ public sealed class InMemoryLiveEventBus : ILiveEventBus
         {
             Channel<LiveEvent>[] snapshot;
             lock (_gate)
+            {
+                if (_removed)
+                    return;
                 snapshot = _subscribers.ToArray();
+            }
 
             foreach (var channel in snapshot)
                 channel.Writer.TryWrite(@event);
