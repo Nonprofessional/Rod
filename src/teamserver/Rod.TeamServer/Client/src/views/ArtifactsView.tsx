@@ -93,7 +93,9 @@ export function ArtifactsView({
       link.href = url
       link.download = artifact.name
       link.click()
-      URL.revokeObjectURL(url)
+      // Revoke after the click has been handed to the browser: revoking in the
+      // same tick aborts the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
     } catch (e) {
       setError(String(e))
     }

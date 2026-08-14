@@ -9,6 +9,15 @@ import { type AuditEventEntry, listAudit } from '../api'
 
 const ALL_KINDS = '(all)'
 
+// Events without an operator or implant carry the empty GUID on the wire (a
+// non-nullable server field), not null -- render it as a dash, not as
+// "00000000-...".
+const EMPTY_GUID = '00000000-0000-0000-0000-000000000000'
+
+function shortId(id: string): string {
+  return id === EMPTY_GUID ? '\u2014' : id.slice(0, 8)
+}
+
 export function AuditView({
   engagementId,
   onlineTick,
@@ -19,6 +28,7 @@ export function AuditView({
   const [events, setEvents] = useState<AuditEventEntry[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [kind, setKind] = useState(ALL_KINDS)
 
   const refresh = useCallback(async () => {
@@ -30,6 +40,7 @@ export function AuditView({
       setError(String(e))
     } finally {
       setBusy(false)
+      setLoading(false)
     }
   }, [engagementId])
 
@@ -63,7 +74,9 @@ export function AuditView({
         </button>
       </div>
       {error && <p className="error">{error}</p>}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="muted">Loading audit trail…</p>
+      ) : filtered.length === 0 ? (
         <p className="muted">No events recorded yet.</p>
       ) : (
         <table>
@@ -89,10 +102,10 @@ export function AuditView({
                   <code>{e.verb}</code>
                 </td>
                 <td>
-                  <code>{e.operatorId ? e.operatorId.slice(0, 8) : '\u2014'}</code>
+                  <code>{shortId(e.operatorId)}</code>
                 </td>
                 <td>
-                  <code>{e.implantId ? e.implantId.slice(0, 8) : '\u2014'}</code>
+                  <code>{shortId(e.implantId)}</code>
                 </td>
                 <td>
                   <pre className="output">{e.payload || '\u2014'}</pre>

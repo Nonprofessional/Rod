@@ -62,8 +62,14 @@ function App() {
       .finally(() => {
         if (!cancelled) setChecking(false)
       })
+    // A mid-session 401 (cookie expired or revoked) anywhere in the API layer
+    // returns the shell to the login view instead of leaving a half-working UI
+    // that errors on every call.
+    const onUnauthorized = () => setOperator(null)
+    window.addEventListener('rod-unauthorized', onUnauthorized)
     return () => {
       cancelled = true
+      window.removeEventListener('rod-unauthorized', onUnauthorized)
     }
   }, [])
 

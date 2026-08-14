@@ -51,6 +51,15 @@ export interface Problem {
   error: string
 }
 
+// The session cookie expired or was revoked mid-use. The shell listens for the
+// unauthorized event and returns to the login view; a view's inline error text
+// is not enough when every subsequent call will 401.
+export class SessionExpiredError extends Error {}
+
+function notifySessionExpired(): void {
+  window.dispatchEvent(new Event('rod-unauthorized'))
+}
+
 async function jsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`
@@ -59,6 +68,10 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
       if (body?.error) detail = body.error
     } catch {
       // Non-JSON error body; keep the status text.
+    }
+    if (response.status === 401) {
+      notifySessionExpired()
+      throw new SessionExpiredError(detail)
     }
     throw new Error(detail)
   }
@@ -136,14 +149,6 @@ export async function listImplants(engagementId: string): Promise<Implant[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/implants`))
 }
 
-export async function listTasks(engagementId: string, implantId: string): Promise<Task[]> {
-  return jsonOrThrow<Task[]>(
-    await fetch(`engagements/${engagementId}/implants/${implantId}/tasks`),
-  ).catch(
-    () => [] as Task[],
-  )
-}
-
 export interface IssueTaskInput {
   implantId: string
   verb: string
@@ -160,10 +165,6 @@ export async function issueTask(
     body: JSON.stringify(input),
   })
   return jsonOrThrow(response)
-}
-
-export async function getTask(engagementId: string, taskId: string): Promise<Task> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks/${taskId}`))
 }
 
 // --- Live event stream (roadmap M2.4) ---------------------------------------

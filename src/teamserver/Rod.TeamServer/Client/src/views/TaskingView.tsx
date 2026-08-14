@@ -30,6 +30,7 @@ export function TaskingView({
   const [args, setArgs] = useState('whoami')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Load the capability catalog once; the picker is static for the session.
   useEffect(() => {
@@ -49,12 +50,21 @@ export function TaskingView({
       setError(null)
     } catch (e) {
       setError(String(e))
+    } finally {
+      setLoading(false)
     }
   }, [engagementId])
 
   useEffect(() => {
     void refresh()
   }, [refresh, onlineTick])
+
+  // A stale implant selection must never carry into another engagement: the
+  // component instance survives an engagement switch, so reset the picker when
+  // the engagement changes instead of issuing against the wrong one.
+  useEffect(() => {
+    setSelectedImplant('')
+  }, [engagementId])
 
   // Default the selected implant to the first non-retired one once implants load.
   useEffect(() => {
@@ -95,6 +105,15 @@ export function TaskingView({
     } finally {
       setBusy(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="card">
+        <h3>Tasking</h3>
+        <p className="muted">Loading tasking…</p>
+      </div>
+    )
   }
 
   if (implants.length === 0) {

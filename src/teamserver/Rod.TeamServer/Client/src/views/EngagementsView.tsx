@@ -11,6 +11,7 @@ export function EngagementsView() {
   const [items, setItems] = useState<Engagement[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
 
   const refresh = useCallback(async () => {
@@ -22,6 +23,7 @@ export function EngagementsView() {
       setError(String(e))
     } finally {
       setBusy(false)
+      setLoading(false)
     }
   }, [])
 
@@ -56,7 +58,9 @@ export function EngagementsView() {
         </button>
       </form>
 
-      {items.length === 0 ? (
+      {loading ? (
+        <p className="muted">Loading engagements…</p>
+      ) : items.length === 0 ? (
         <p className="muted">No engagements yet.</p>
       ) : (
         <table>

@@ -192,6 +192,14 @@ code {
   background: rgba(128, 128, 128, 0.18);
 }
 
+.status.queued {
+  background: rgba(52, 152, 219, 0.2);
+}
+
+.status.dispatched {
+  background: rgba(241, 196, 15, 0.2);
+}
+
 .status.completed {
   background: rgba(46, 204, 113, 0.2);
 }
