@@ -72,6 +72,9 @@ public static class RodOperatorAuthHost
 
         services.AddSingleton<IPasswordHasher<Operator>, PasswordHasher<Operator>>();
         services.AddSingleton<OperatorAuthService>();
+        // The per-handle login throttle shares the process clock; a successful
+        // login resets the failure counter for its handle.
+        services.AddSingleton<LoginThrottle>(sp => new LoginThrottle(sp.GetRequiredService<TimeProvider>()));
         services.AddHostedService<OperatorAuthBootstrap>();
 
         return services;

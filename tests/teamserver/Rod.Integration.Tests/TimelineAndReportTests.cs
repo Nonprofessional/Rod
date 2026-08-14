@@ -46,6 +46,10 @@ public class TimelineAndReportTests
         Assert.NotNull(timeline);
         Assert.Equal("Operation Smokeshow", timeline!.EngagementName);
         Assert.NotEmpty(timeline.ContentHash);
+        // The export verified the audit chain before rendering (architecture.md
+        // Sec 11): a healthy trail is flagged intact.
+        Assert.True(timeline.ChainVerified);
+        Assert.Null(timeline.ChainBreak);
 
         var kinds = timeline.Entries.Select(e => e.Kind).ToArray();
         Assert.Contains("EngagementCreated", kinds);
@@ -379,6 +383,8 @@ public class TimelineAndReportTests
         public string EngagementName { get; set; } = "";
         public DateTimeOffset GeneratedAt { get; set; }
         public string ContentHash { get; set; } = "";
+        public bool ChainVerified { get; set; }
+        public string? ChainBreak { get; set; }
         public List<TimelineEntry> Entries { get; set; } = new();
     }
 

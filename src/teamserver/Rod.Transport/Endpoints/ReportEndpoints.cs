@@ -151,6 +151,10 @@ internal static class ReportBuilder
         // trail and tasks are oldest-first by contract; implants, operators, and
         // artifacts resolve per entity.
         var trail = await audit.ListAsync(engagementValue, cancellationToken);
+        // Verify the hash chain before any export is built: the deliverable is
+        // evidence, so a tampered trail must be flagged in the output rather
+        // than silently rendered (architecture.md Sec 11).
+        var chainBreak = AuditChain.VerifyTrail(trail);
         var engagementImplants = await implants.ListByEngagementAsync(engagementId, cancellationToken);
         var engagementTasks = await tasks.ListByEngagementAsync(engagementId, cancellationToken);
         var engagementArtifacts = await artifacts.ListAsync(engagementValue, cancellationToken);
@@ -207,7 +211,7 @@ internal static class ReportBuilder
 
         return new ReportBuilderContext(
             engagement, trail, engagementImplants, engagementTasks, engagementArtifacts,
-            operatorNames, implantClasses, implantById, taskById, artifactsByTask);
+            operatorNames, implantClasses, implantById, taskById, artifactsByTask, chainBreak);
     }
 
     // The canonical join for the reproducibility hash. Fixed field order, fields
@@ -315,7 +319,8 @@ internal sealed record ReportBuilderContext(
     IReadOnlyDictionary<Guid, string> ImplantClasses,
     IReadOnlyDictionary<Guid, Implant> ImplantById,
     IReadOnlyDictionary<Guid, Task> TaskById,
-    IReadOnlyDictionary<Guid, List<Artifact>> ArtifactsByTask)
+    IReadOnlyDictionary<Guid, List<Artifact>> ArtifactsByTask,
+    ChainBreak? ChainBreak)
 {
     private string OperatorHandle(Guid id)
         => id == Guid.Empty ? "system" : OperatorNames.GetValueOrDefault(id, id.ToString());
@@ -328,6 +333,8 @@ internal sealed record ReportBuilderContext(
             EngagementName: engagement.Name,
             GeneratedAt: DateTimeOffset.UtcNow,
             ContentHash: ReportBuilder.ComputeTimelineHash(entries),
+            ChainVerified: ChainBreak is null,
+            ChainBreak: ChainBreak?.ToString(),
             Entries: entries);
     }
 
@@ -394,6 +401,8 @@ internal sealed record ReportBuilderContext(
                 CreatedAt: engagement.CreatedAt),
             GeneratedAt: DateTimeOffset.UtcNow,
             ContentHash: string.Empty,
+            ChainVerified: ChainBreak is null,
+            ChainBreak: ChainBreak?.ToString(),
             Operators: operatorRoster,
             Implants: implantInventory,
             Tasks: taskHistory,
@@ -458,7 +467,8 @@ internal static class TimelineMarkdown
         sb.Append("- Engagement: `").Append(timeline.EngagementId.ToString("N")).Append("`\n");
         sb.Append("- Generated: ").Append(timeline.GeneratedAt.ToString("O")).Append('\n');
         sb.Append("- Integrity: `").Append(timeline.ContentHash).Append("`\n");
-        sb.Append('\n');
+        if (!timeline.ChainVerified)
+            sb.Append("- **Audit chain verification failed:** ").Append(timeline.ChainBreak).Append("**\n");
 
         if (timeline.Entries.Count == 0)
         {
@@ -501,6 +511,8 @@ internal static class ReportMarkdown
         sb.Append("- Owner: `").Append(report.Engagement.OwnerHandle).Append("` (`")
             .Append(report.Engagement.OwnerId.ToString("N")).Append("`)\n");
         sb.Append("- Created: ").Append(report.Engagement.CreatedAt.ToString("O")).Append('\n');
+        if (!report.ChainVerified)
+            sb.Append("- **Audit chain verification failed:** ").Append(report.ChainBreak).Append("**\n");
         sb.Append("- Generated: ").Append(report.GeneratedAt.ToString("O")).Append('\n');
         sb.Append("- Integrity: `").Append(report.ContentHash).Append("`\n");
         sb.Append('\n');
@@ -623,6 +635,8 @@ public sealed record TimelineReport(
     string EngagementName,
     DateTimeOffset GeneratedAt,
     string ContentHash,
+    bool ChainVerified,
+    string? ChainBreak,
     IReadOnlyList<TimelineEntry> Entries);
 
 /// <summary>Engagement summary carried at the head of the report bundle.</summary>
@@ -680,6 +694,8 @@ public sealed record EngagementReport(
     ReportEngagement Engagement,
     DateTimeOffset GeneratedAt,
     string ContentHash,
+    bool ChainVerified,
+    string? ChainBreak,
     IReadOnlyList<ReportOperator> Operators,
     IReadOnlyList<ReportImplant> Implants,
     IReadOnlyList<ReportTask> Tasks,

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.IO;
+using System.Text.Json.Nodes;
 
 namespace Rod.Audit.Tests;
 
@@ -140,6 +141,36 @@ public class FileAuditStoreTests
         Assert.NotNull(breakAt);
         Assert.Equal(0, breakAt!.Index);
         Assert.Equal(ChainBreakKind.HashMismatch, breakAt.Kind);
+    }
+
+    [Fact]
+    public async Task Reload_RefusesToServe_AnEngagementWhoseChainWasTampered()
+    {
+        using var dir = new TempDir();
+        var engagement = Guid.NewGuid();
+        var task = Guid.NewGuid();
+
+        var store = new FileAuditStore(Options(dir.Path));
+        await store.AppendAsync(Fact(engagement, task, 0));
+        await store.AppendAsync(Fact(engagement, task, 1));
+        await store.AppendAsync(Fact(engagement, task, 2));
+
+        // Forge the first record on disk: its stored hash no longer matches its
+        // contents, so the chain fails verification at recovery. A fresh store
+        // over the same directory must refuse the engagement's trail rather than
+        // serve tampered evidence.
+        var path = Path.Combine(dir.Path, "audit.jsonl");
+        var lines = File.ReadAllLines(path);
+        var node = JsonNode.Parse(lines[0])!.AsObject();
+        node["output"] = "forged";
+        lines[0] = node.ToJsonString();
+        File.WriteAllLines(path, lines);
+
+        var reloaded = new FileAuditStore(Options(dir.Path));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await reloaded.ListAsync(engagement));
+
+        Assert.Contains("verification failed", ex.Message);
     }
 
     [Fact]

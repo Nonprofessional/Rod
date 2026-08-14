@@ -134,6 +134,14 @@ public sealed class FileAuditStore : IAuditStore
 
     public async Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
+        EnsureRecovered();
+
+        // Refuse to serve a trail that failed chain verification: the evidence
+        // deliverable must never silently present tampered records as intact.
+        if (_brokenEngagements.Contains(engagementId))
+            throw new InvalidOperationException(
+                $"Audit chain verification failed for engagement {engagementId}; the trail is refused.");
+
         var matches = new List<AuditEvent>();
         await foreach (var @event in ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -179,6 +187,12 @@ public sealed class FileAuditStore : IAuditStore
     // head, and a duplicate EventId (one that landed before this process started)
     // is still refused. Recovery runs under the append lock so it cannot race an
     // append.
+    //
+    // Recovery also verifies every engagement's hash chain (architecture.md
+    // Sec 11): the tamper-evidence property is exercised in production here, not
+    // only in tests. A trail that fails verification is refused at read time --
+    // serving tampered evidence would make the report deliverable itself
+    // untrustworthy.
     private void EnsureRecovered()
     {
         if (_headsRecovered)
@@ -191,6 +205,10 @@ public sealed class FileAuditStore : IAuditStore
 
             if (File.Exists(_auditPath))
             {
+                // The file is append-order, so a single pass collects each
+                // engagement's trail oldest-first -- exactly the shape
+                // AuditChain.VerifyTrail walks.
+                var byEngagement = new Dictionary<Guid, List<AuditEvent>>();
                 foreach (var line in File.ReadLines(_auditPath))
                 {
                     if (line.Length == 0)
@@ -202,10 +220,27 @@ public sealed class FileAuditStore : IAuditStore
 
                     _heads[@event.EngagementId] = @event.Hash;
                     _appendedIds.Add(@event.EventId);
+
+                    if (!byEngagement.TryGetValue(@event.EngagementId, out var trail))
+                    {
+                        trail = new List<AuditEvent>();
+                        byEngagement[@event.EngagementId] = trail;
+                    }
+                    trail.Add(@event);
+                }
+
+                foreach (var (engagementId, trail) in byEngagement)
+                {
+                    if (AuditChain.VerifyTrail(trail) is { } breakAt)
+                        _brokenEngagements.Add(engagementId);
                 }
             }
 
             _headsRecovered = true;
         }
     }
+
+    // Engagements whose recovered trail failed chain verification. Their reads
+    // are refused (ListAsync throws) rather than served as evidence.
+    private readonly HashSet<Guid> _brokenEngagements = new();
 }

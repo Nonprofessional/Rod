@@ -153,4 +153,64 @@ public class OperatorAuthTests
             Assert.Equal(HttpStatusCode.Unauthorized, after.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task Login_EntersCooldown_AfterRepeatedFailures_And429s()
+    {
+        var (client, host) = CreateClient();
+        using (host)
+        {
+            // Five wrong passwords put the handle into cooldown; the sixth
+            // attempt is refused before the credential store is touched.
+            for (var i = 0; i < 5; i++)
+            {
+                var failed = await PostLoginAsync(client, Handle, "wrong-password");
+                Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+            }
+
+            var refused = await PostLoginAsync(client, Handle, Password);
+            Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode);
+        }
+    }
+
+    [Fact]
+    public void LoginThrottle_CooldownExpires_AndResetClearsIt()
+    {
+        var clock = new MutableTimeProvider();
+        var throttle = new LoginThrottle(clock);
+
+        for (var i = 0; i < 5; i++)
+            throttle.RecordFailure("op");
+        Assert.False(throttle.IsAllowed("op"));
+
+        // A stale window starts fresh: allowed again, and one failure within
+        // the new window does not re-enter cooldown.
+        clock.Advance(TimeSpan.FromMinutes(15));
+        Assert.True(throttle.IsAllowed("op"));
+        throttle.RecordFailure("op");
+        Assert.True(throttle.IsAllowed("op"));
+
+        // A success clears the counter outright.
+        throttle.Reset("op");
+        Assert.True(throttle.IsAllowed("op"));
+    }
+
+    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient client, string handle, string password)
+    {
+        var payload = new { handle, password };
+        return await client.PostAsJsonAsync("/operators/login", payload);
+    }
+}
+
+/// <summary>
+/// A manually advanced clock for the login throttle unit tests; the throttle
+/// windows are minutes long, so the test steps time forward instead of waiting.
+/// </summary>
+internal sealed class MutableTimeProvider : TimeProvider
+{
+    private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Advance(TimeSpan by) => _now += by;
 }

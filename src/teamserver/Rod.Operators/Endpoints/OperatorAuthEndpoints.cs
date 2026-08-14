@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Rod.CoreState.Operators;
 using Rod.Operators.Auth;
 
@@ -32,16 +33,39 @@ public static class OperatorAuthEndpoints
     private static async Task<IResult> LoginAsync(
         LoginRequest body,
         OperatorAuthService auth,
+        LoginThrottle throttle,
+        ILoggerFactory loggerFactory,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body?.Handle) || string.IsNullOrWhiteSpace(body?.Password))
             return Results.BadRequest(new { message = "Handle and password are required." });
 
-        var result = await auth.TryLoginAsync(body.Handle, body.Password, cancellationToken);
-        if (!result.Success || result.Principal is null || result.Operator is null)
-            return Results.Unauthorized();
+        var handle = body.Handle.Trim();
+        var logger = loggerFactory.CreateLogger("Rod.Operators.Endpoints.OperatorAuthEndpoints");
+        var remote = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
+        // The account is the only boundary between an attacker and the
+        // teamserver (no per-engagement RBAC by design), so repeated failures
+        // put the handle into a cooldown instead of allowing unbounded online
+        // brute force (architecture.md Sec 9).
+        if (!throttle.IsAllowed(handle))
+        {
+            logger.LogWarning("Login for handle {Handle} from {Remote} refused: cooldown active.", handle, remote);
+            return Results.Json(new { message = "Too many failed attempts; try again later." },
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        var result = await auth.TryLoginAsync(handle, body.Password, cancellationToken);
+        if (!result.Success || result.Principal is null || result.Operator is null)
+        {
+            throttle.RecordFailure(handle);
+            logger.LogWarning("Login for handle {Handle} from {Remote} failed.", handle, remote);
+            return Results.Unauthorized();
+        }
+
+        throttle.Reset(handle);
+        logger.LogInformation("Operator {Handle} logged in from {Remote}.", handle, remote);
         await context.SignInAsync(
             OperatorAuthConstants.AuthenticationScheme,
             result.Principal);
