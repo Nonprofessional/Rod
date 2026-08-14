@@ -7,6 +7,7 @@ using Rod.Operators.Layers;
 using Rod.Persistence.Layers;
 using Rod.Tradecraft.Layers;
 using Rod.Transport.Layers;
+using Rod.V1;
 
 namespace Rod.Architecture.Tests;
 
@@ -30,6 +31,9 @@ public class LayerDependencyTests
     private static readonly Assembly Operators = typeof(OperatorsLayer).Assembly;
     private static readonly Assembly Tradecraft = typeof(TradecraftLayer).Assembly;
     private static readonly Assembly Persistence = typeof(PersistenceLayer).Assembly;
+    // Rod.Protocol ships only generated bindings (package rod.v1 -> namespace
+    // Rod.V1), so the anchor type is a generated message, not a Layers marker.
+    private static readonly Assembly Protocol = typeof(ProtocolVersion).Assembly;
 
     // Every in-house layer base namespace. A type that references any of these
     // namespaces has a dependency on that layer.
@@ -106,6 +110,16 @@ public class LayerDependencyTests
     [Fact]
     public void Persistence_Dependencies_PointInwardOnly()
         => AssertOnlyDependsOn(Persistence, nameof(Persistence), "Rod.Persistence", "Rod.CoreState", "Rod.Audit");
+
+    // Protocol is the language-neutral wire contract (architecture.md Sec 8):
+    // it depends on nothing in-house, exactly like core state and audit. This
+    // test was the missing half of the layer matrix -- without it, a forbidden
+    // reference from the contract project would go unnoticed as long as no code
+    // used it. The namespace checks inspect usage, so the dead-reference case
+    // is guarded at the csproj level by ProjectReferenceTests.
+    [Fact]
+    public void Protocol_Dependencies_PointInwardOnly()
+        => AssertNoDependencies(Protocol, nameof(Protocol), "Rod.Protocol");
 
     // Protocol types must never leak into core (AGENTS.md Sec 5).
     [Fact]

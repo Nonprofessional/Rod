@@ -176,8 +176,9 @@ under, and a note on its current state are listed.
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, terminates mTLS, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
 
 The dependency column is not aspirational: it is the rule the architecture tests
-in `tests/teamserver/Rod.Architecture.Tests/LayerDependencyTests.cs` enforce. Adding a
-forbidden project reference that code actually uses fails the build.
+enforce. `LayerDependencyTests.cs` checks namespace usage, and
+`ProjectReferenceTests.cs` checks the csproj reference edges themselves, so adding
+a forbidden project reference fails the build even when no code uses it yet.
 
 #### Former ADR index
 
