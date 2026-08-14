@@ -43,6 +43,11 @@ public static class TaskEndpoints
         return endpoints;
     }
 
+    // Task arguments ride the wire as one string per task and sit in the queue
+    // until dispatch; bound them so a single task cannot pin megabytes and every
+    // downstream TaskRequest frame stays inside the gRPC message cap.
+    private const int MaxArgumentBytes = 512 * 1024;
+
     private static async Task<IResult> IssueAsync(
         string engagementId,
         IssueTaskRequest body,
@@ -63,6 +68,8 @@ public static class TaskEndpoints
             return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
         if (string.IsNullOrWhiteSpace(body.Verb))
             return Results.BadRequest(new Problem("Task verb is required."));
+        if (body.Arguments is { Length: > MaxArgumentBytes })
+            return Results.BadRequest(new Problem($"Task arguments exceed {MaxArgumentBytes} bytes."));
 
         TaskIssued issued;
         try

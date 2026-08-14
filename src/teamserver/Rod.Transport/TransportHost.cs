@@ -55,8 +55,17 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
-        // gRPC server: the beacon stream terminates here (roadmap M1.3).
-        services.AddGrpc();
+        // gRPC server: the beacon stream terminates here (roadmap M1.3). The
+        // message caps enforce the rod.proto sizing contract (a single frame
+        // stays well under 1 MiB; bulk data is chunked): 2 MiB leaves headroom
+        // for the envelope and protobuf overhead above the 1 MiB payload budget,
+        // and bounds every TaskResult/ExfilChunk an implant can send in one
+        // frame.
+        services.AddGrpc(options =>
+        {
+            options.MaxReceiveMessageSize = 2 * 1024 * 1024;
+            options.MaxSendMessageSize = 2 * 1024 * 1024;
+        });
 
         // Core-state ports -> walking-skeleton in-memory adapters (roadmap M1).
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();

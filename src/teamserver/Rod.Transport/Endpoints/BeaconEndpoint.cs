@@ -49,24 +49,30 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly HandshakeService _handshake;
     private readonly ISessionRegistry _sessions;
     private readonly TaskService _tasks;
+    private readonly ITaskRepository _taskRecords;
     private readonly IAuditStore _audit;
     private readonly IArtifactStore _artifacts;
     private readonly ILiveEventBus _bus;
+    private readonly TimeProvider _clock;
 
     public BeaconEndpoint(
         HandshakeService handshake,
         ISessionRegistry sessions,
         TaskService tasks,
+        ITaskRepository taskRecords,
         IAuditStore audit,
         IArtifactStore artifacts,
-        ILiveEventBus bus)
+        ILiveEventBus bus,
+        TimeProvider clock)
     {
         _handshake = handshake;
         _sessions = sessions;
         _tasks = tasks;
+        _taskRecords = taskRecords;
         _audit = audit;
         _artifacts = artifacts;
         _bus = bus;
+        _clock = clock;
     }
 
     public override async Task CheckIn(
@@ -138,7 +144,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
         finally
         {
-            await _sessions.CloseAsync(handshake.SessionId, DateTimeOffset.UtcNow, CancellationToken.None);
+            await _sessions.CloseAsync(handshake.SessionId, _clock.GetUtcNow(), CancellationToken.None);
         }
     }
 
@@ -371,15 +377,22 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         if (!Guid.TryParse(chunk.TaskId, out var taskId))
             return;
 
-        var terminal = exfil.Append(taskId, chunk, out var reassembled);
-        if (!terminal)
+        if (exfil.Append(taskId, chunk, out var reassembled) != ExfilAppendResult.Completed)
             return;
 
-        // The terminal chunk closes the stream: build the artifact from the
-        // reassembled bytes, save it scoped to the engagement and bound to the
-        // task, and record the capture in the audit trail.
+        // The terminal chunk closes the stream. Before materializing an artifact,
+        // verify the task the implant stamped really belongs to this session's
+        // implant and engagement -- otherwise an implant could attach evidence to
+        // another engagement's task ids.
+        var task = await _taskRecords.FindAsync(new TaskId(taskId), cancellationToken);
+        if (task is null || task.ImplantId != session.Implant || task.EngagementId != session.EngagementId)
+            return;
+
+        // Build the artifact from the reassembled bytes, save it scoped to the
+        // engagement and bound to the task, and record the capture in the audit
+        // trail.
         var artifactId = Guid.NewGuid();
-        var now = DateTimeOffset.UtcNow;
+        var now = _clock.GetUtcNow();
         var artifact = new Artifact(
             ArtifactId: artifactId,
             EngagementId: session.EngagementId.Value,
@@ -506,27 +519,81 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // (the endpoint is resolved per stream) keeps incomplete buffers from one
     // session leaking into another. A terminal chunk flushes the buffer and
     // reports the reassembled bytes back to the caller.
+    //
+    // The reassembly bounds are a memory-DoS guard, not an input-validation
+    // convenience: the stream carries an authenticated implant, but the total
+    // bytes of an exfil stream are whatever that implant claims, so an
+    // unbounded reassembler would let one implant pin process memory. Chunks
+    // must arrive in sequence; a gap, a repeat, a cap overflow, or an
+    // oversized declaration drops the chunk and evicts its stream, so a
+    // misbehaving stream cannot accumulate.
     private sealed class ExfilReassembler
     {
+        // One artifact (name, content type) and one stream total a beacon
+        // session can have open at once; a stream over these bounds is dropped
+        // whole. The per-stream byte cap matches the operator attach cap, so
+        // both evidence paths share one ceiling.
+        private const int MaxNameBytes = 256;
+        private const int MaxContentTypeBytes = 128;
+        private const int MaxStreamBytes = 64 * 1024 * 1024;
+        private const int MaxOpenStreams = 16;
+
         private readonly Dictionary<Key, Buffer> _buffers = new();
 
-        public bool Append(Guid taskId, ExfilChunk chunk, out Reassembled reassembled)
+        public ExfilAppendResult Append(Guid taskId, ExfilChunk chunk, out Reassembled reassembled)
         {
             reassembled = default;
+
+            if (chunk.Name.Length == 0 || chunk.Name.Length > MaxNameBytes
+                || chunk.ContentType.Length > MaxContentTypeBytes
+                || chunk.Data.Length == 0)
+            {
+                return ExfilAppendResult.Dropped;
+            }
+
             var key = new Key(taskId, chunk.Name);
             if (!_buffers.TryGetValue(key, out var buffer))
             {
+                if (_buffers.Count >= MaxOpenStreams)
+                    return ExfilAppendResult.Dropped;
+
                 buffer = new Buffer(chunk.Name, chunk.ContentType);
                 _buffers[key] = buffer;
             }
+
+            // Sequence discipline: the first chunk starts the stream at 0 or 1
+            // (both origins have shipped; accept either), every later chunk must
+            // be exactly the next index. Anything else drops the stream so a
+            // repeated or reordered send cannot corrupt the artifact.
+            if (buffer.NextSequence is { } next)
+            {
+                if (chunk.Sequence != next)
+                {
+                    _buffers.Remove(key);
+                    return ExfilAppendResult.Dropped;
+                }
+            }
+            else if (chunk.Sequence != 0 && chunk.Sequence != 1)
+            {
+                _buffers.Remove(key);
+                return ExfilAppendResult.Dropped;
+            }
+
+            if (buffer.Data.Count + chunk.Data.Length > MaxStreamBytes)
+            {
+                _buffers.Remove(key);
+                return ExfilAppendResult.Dropped;
+            }
+
+            buffer.NextSequence = chunk.Sequence + 1;
             buffer.Data.AddRange(chunk.Data);
 
             if (!chunk.Terminal)
-                return false;
+                return ExfilAppendResult.Buffered;
 
             _buffers.Remove(key);
             reassembled = new Reassembled(buffer.Name, buffer.ContentType, buffer.Data.ToArray());
-            return true;
+            return ExfilAppendResult.Completed;
         }
 
         private readonly record struct Key(Guid TaskId, string Name);
@@ -536,7 +603,17 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             public string Name { get; } = name;
             public string ContentType { get; } = contentType;
             public List<byte> Data { get; } = new();
+            public ulong? NextSequence { get; set; }
         }
+    }
+
+    // What Append did with a chunk: buffered into its stream, completed a
+    // stream (terminal, reassembled payload available), or dropped it.
+    private enum ExfilAppendResult
+    {
+        Buffered,
+        Completed,
+        Dropped,
     }
 
     // The reassembled artifact payload handed back from the ExfilReassembler on

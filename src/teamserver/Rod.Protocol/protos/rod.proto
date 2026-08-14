@@ -66,8 +66,10 @@ message Frame {
 // engagement-scoped Artifact attributed to the implant. task_id ties the chunk
 // stream to the exfil.push task that produced it; name is the logical artifact
 // name; content_type is a MIME hint (defaults to application/octet-stream);
-// sequence is the 0-origin chunk index within the stream; terminal marks the
-// last chunk. The engagement is bound via mTLS, not the wire.
+// sequence is the chunk index within the stream -- the first chunk starts at
+// 0 or 1 (both origins have shipped; the teamserver accepts either) and every
+// following chunk must be exactly the next index; terminal marks the last
+// chunk. The engagement is bound via mTLS, not the wire.
 message ExfilChunk {
   string task_id = 1;
   string name = 2;

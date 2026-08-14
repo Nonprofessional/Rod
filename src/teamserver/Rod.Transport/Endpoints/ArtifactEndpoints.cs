@@ -72,8 +72,13 @@ public static class ArtifactEndpoints
             return Results.BadRequest(new Problem("Task id is not a valid identifier."));
         if (string.IsNullOrWhiteSpace(body.Name))
             return Results.BadRequest(new Problem("Artifact name is required."));
+        if (body.Name.Length > MaxArtifactNameBytes)
+            return Results.BadRequest(new Problem($"Artifact name exceeds {MaxArtifactNameBytes} bytes."));
         if (body.Content is null || body.Content.Length == 0)
             return Results.BadRequest(new Problem("Artifact content is required."));
+        if (body.Content.Length > MaxArtifactBytes)
+            return Results.Json(new Problem($"Artifact content exceeds {MaxArtifactBytes} bytes."),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
 
         var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
@@ -161,6 +166,12 @@ public static class ArtifactEndpoints
 
         return Results.File(artifact.Content, artifact.ContentType, artifact.Name);
     }
+
+    // Attachment bounds: a name longer than this is hostile or a bug, and a
+    // single evidence object larger than 64 MiB should move to the exfil stream
+    // or an object store rather than one JSON attach request.
+    private const int MaxArtifactNameBytes = 256;
+    private const int MaxArtifactBytes = 64 * 1024 * 1024;
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
