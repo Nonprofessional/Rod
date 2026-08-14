@@ -16,6 +16,7 @@
     <Project Path="tests/teamserver/Rod.Build.Tests/Rod.Build.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.CoreState.Tests/Rod.CoreState.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Integration.Tests/Rod.Integration.Tests.csproj" />
+    <Project Path="tests/teamserver/Rod.Operators.Tests/Rod.Operators.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Tradecraft.Tests/Rod.Tradecraft.Tests.csproj" />
   </Folder>
