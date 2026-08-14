@@ -10,13 +10,13 @@ namespace Rod.Implant.Tests;
 // terminal-flag correctness, and the exfil.stage manifest.
 public class ExfilTests
 {
-    private static Runner NewRunner() => new();
+    private static HandlerRegistry NewRegistry() => HandlerRegistry.Default();
 
     [Fact]
     public void ExfilPush_EmptyArgs_FailsWithCause()
     {
-        var runner = NewRunner();
-        var (outcome, output, chunks) = runner.Dispatch("exfil.push", "");
+        var registry = NewRegistry();
+        var (outcome, output, chunks) = registry.Dispatch("exfil.push", "");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("exfil.push expects", output);
         Assert.Empty(chunks);
@@ -25,8 +25,8 @@ public class ExfilTests
     [Fact]
     public void ExfilPush_NameOnly_StagedManifest()
     {
-        var runner = NewRunner();
-        var (outcome, output, chunks) = runner.Dispatch("exfil.push", " loot.tar.gz");
+        var registry = NewRegistry();
+        var (outcome, output, chunks) = registry.Dispatch("exfil.push", " loot.tar.gz");
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.Contains("staged loot.tar.gz", output);
         Assert.Empty(chunks);
@@ -35,9 +35,9 @@ public class ExfilTests
     [Fact]
     public void ExfilPush_MissingFile_FailsWithCause()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
-        var (outcome, output, _) = runner.Dispatch(
+        var (outcome, output, _) = registry.Dispatch(
             "exfil.push", "absent " + Path.Combine(dir.Path, "missing"));
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("stat ", output);
@@ -46,9 +46,9 @@ public class ExfilTests
     [Fact]
     public void ExfilPush_Directory_RefusesWithCause()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
-        var (outcome, output, _) = runner.Dispatch("exfil.push", "dir " + dir.Path);
+        var (outcome, output, _) = registry.Dispatch("exfil.push", "dir " + dir.Path);
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("directory", output);
     }
@@ -56,13 +56,13 @@ public class ExfilTests
     [Fact]
     public void ExfilPush_StreamsFileContents()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
         var path = Path.Combine(dir.Path, "loot.txt");
         const string want = "exfil payload line one\nline two\n";
         File.WriteAllBytes(path, Encoding.UTF8.GetBytes(want));
 
-        var (outcome, output, chunks) = runner.Dispatch("exfil.push", "loot.txt " + path);
+        var (outcome, output, chunks) = registry.Dispatch("exfil.push", "loot.txt " + path);
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.Contains("pushed loot.txt", output);
         var c = Assert.Single(chunks);
@@ -75,7 +75,7 @@ public class ExfilTests
     [Fact]
     public void ExfilPush_LargeFile_MultiChunkTerminal()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
         var path = Path.Combine(dir.Path, "blob.bin");
         const int chunkSize = 512 * 1024;
@@ -84,7 +84,7 @@ public class ExfilTests
             payload[i] = (byte)(i % 251);
         File.WriteAllBytes(path, payload);
 
-        var (outcome, _, chunks) = runner.Dispatch("exfil.push", "blob.bin " + path);
+        var (outcome, _, chunks) = registry.Dispatch("exfil.push", "blob.bin " + path);
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.True(chunks.Count >= 3, $"want >= 3 chunks, got {chunks.Count}");
         Assert.False(chunks[0].Terminal);
@@ -102,8 +102,8 @@ public class ExfilTests
     [Fact]
     public void ExfilStage_ReportsEmptyManifest()
     {
-        var runner = NewRunner();
-        var (outcome, output, chunks) = runner.Dispatch("exfil.stage", "");
+        var registry = NewRegistry();
+        var (outcome, output, chunks) = registry.Dispatch("exfil.stage", "");
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.Contains("no local staging area", output);
         Assert.Empty(chunks);

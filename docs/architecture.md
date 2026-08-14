@@ -288,21 +288,20 @@ redeemed token resolved, and not be retired) before binding the child. The
 parentage is surfaced on the operator implant listing so the UI can render
 lineage; a top-level (stager-derived) implant reports no parent.
 
-### 5.3 Implant-side capability pluggability _(planned)_
+### 5.3 Implant-side capability pluggability
 
 The class verb set (Sec 5.2) is the server's authority; the implant's advertised
-set is its own, and the two must agree. The design closes the loop with the
-server side: a reference implant advertises exactly the verbs its build permits
-and its compiled handlers implement -- never a verb it cannot run. The
-advertised beacon capability set is the intersection of the baked class verbs
-with the compiled handler set, and dispatch routes through an implant-side
-handler registry (the implant analog of the server's `ICapabilityModule`)
-rather than a hard-coded `switch`, so adding a verb is a handler plus a
-registration, not an edit to the runner. Registration is compile-time -- no
-runtime assembly loading (that would break Native AOT, enlarge the artifact,
-and introduce on-disk plugin files), and the capability set is decided per
-class at build time, so runtime discovery buys nothing. Out-of-tree handlers
-for contract-only verbs (e.g. `collect.keylog`) compile into a separate
+set is its own, and the two must agree. A reference implant advertises exactly
+the verbs its build permits and its compiled handlers implement -- never a verb
+it cannot run. The advertised beacon capability set is the intersection of the
+baked class verbs with the compiled handler set, and dispatch routes through an
+implant-side handler registry (the implant analog of the server's
+`ICapabilityModule`) rather than a hard-coded `switch`, so adding a verb is a
+handler plus a registration, not an edit to the runner. Registration is
+compile-time -- no runtime assembly loading (that would break Native AOT, enlarge
+the artifact, and introduce on-disk plugin files), and the capability set is
+decided per class at build time, so runtime discovery buys nothing. Out-of-tree
+handlers for contract-only verbs (e.g. `collect.keylog`) compile into a separate
 per-engagement artifact; the reference implant ships no Sec 13 boundary verb.
 
 Rejected alternatives: runtime dynamic assembly loading for plugins (breaks
@@ -315,10 +314,17 @@ Sec 13 and leaves no growth seam); and making the implant class-aware but
 keeping the switch (solves advertising but not extensibility -- the registry
 is what makes the design durable).
 
-The reference .NET implant has not yet caught up to this design -- today its
-beacon capability set is hard-coded and dispatch is a `switch` -- so this
-subsection records the direction; the work is tracked in [todo.md](todo.md)
-("Implant-side capability pluggability").
+The reference .NET implant implements this end to end. `HandlerRegistry`
+holds one compiled handler per verb and is the implant's only dispatch path:
+the beacon loop calls it directly and advertises `AdvertisedVerbs` -- the
+registry verbs filtered by the baked class set -- at handshake. The build
+unit's baked `verbs` key reaches the implant through the profile (mapped onto
+`ROD_VERBS`, parsed into `Config.ClassVerbs`); an un-baked dev binary (empty
+class set) advertises its full compiled handler set, so the checked-in stub
+keeps running from flags/env. The implant tests pin both halves of the
+contract: the advertised set is the baked-verbs/handlers intersection for
+every class, an added registration widens it, and the reference registry
+contains no Sec 13 boundary verb.
 
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 

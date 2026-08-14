@@ -13,13 +13,13 @@ namespace Rod.Implant.Tests;
 // teamserver's enroll handler for a single handler unit test.
 public class LateralTests
 {
-    private static Runner NewRunner() => new();
+    private static HandlerRegistry NewRegistry() => HandlerRegistry.Default();
 
-    // A runner whose lateral.move handler derivation is enabled, so the parser
+    // A registry whose lateral.move handler derivation is enabled, so the parser
     // is reached rather than the disabled-bundle refusal. Profile is a default
     // TransportProfile; it is never used because every test fails at the parser.
-    private static Runner NewRunnerWithEnroll()
-        => new(new EnrollBundle
+    private static HandlerRegistry NewRegistryWithEnroll()
+        => HandlerRegistry.Default(new EnrollBundle
         {
             Url = "http://127.0.0.1:9/enroll",
             ParentId = "parent-1",
@@ -29,11 +29,11 @@ public class LateralTests
     [Fact]
     public void LateralMove_DisabledBundle_FailsWithCause()
     {
-        // A runner built without an enroll bundle cannot derive children; the
+        // A registry built without an enroll bundle cannot derive children; the
         // handler reports the cause rather than enrolling against an empty
         // endpoint.
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("lateral.move", "child-token");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("lateral.move", "child-token");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("not available", output);
     }
@@ -47,8 +47,8 @@ public class LateralTests
         // A bundle with a URL enables derivation, but the argument still must
         // carry a token. Empty or over-long arguments are refused before any key
         // is generated.
-        var runner = NewRunnerWithEnroll();
-        var (outcome, output, _) = runner.Dispatch("lateral.move", args);
+        var registry = NewRegistryWithEnroll();
+        var (outcome, output, _) = registry.Dispatch("lateral.move", args);
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("lateral.move expects", output);
     }
@@ -60,8 +60,8 @@ public class LateralTests
         // hosts exercise the whoami path directly (covered by the build).
         if (OperatingSystem.IsWindows()) return;
 
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("lateral.token", "");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("lateral.token", "");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("lateral.token", output);
         Assert.Contains("Windows", output);
@@ -70,10 +70,10 @@ public class LateralTests
     [Fact]
     public void LateralExecRemote_MalformedArgs_FailsWithCause()
     {
-        var runner = NewRunner();
+        var registry = NewRegistry();
         foreach (var args in new[] { "", "   ", "single-host" })
         {
-            var (outcome, output, _) = runner.Dispatch("lateral.exec_remote", args);
+            var (outcome, output, _) = registry.Dispatch("lateral.exec_remote", args);
             Assert.Equal(TaskOutcome.Failed, outcome);
             Assert.Contains("lateral.exec_remote expects", output);
         }

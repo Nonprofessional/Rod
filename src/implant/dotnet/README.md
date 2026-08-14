@@ -18,6 +18,18 @@ end-to-end slice -- enroll, beacon, task -- against the real teamserver and to
 give the .NET build unit (`DotNetBuildUnit` in `Rod.BuildPipeline`)
 something real to compile per payload-build request.
 
+## Capabilities
+
+Dispatch and advertising are registry-driven
+([architecture.md Sec 5.3](../../../docs/architecture.md)). The beacon loop
+calls `HandlerRegistry` -- the implant analog of the server's
+`ICapabilityModule` -- and advertises the baked class verb set (the build
+unit's `verbs` profile key, read via `ROD_VERBS`) intersected with the
+compiled handlers, so the implant never advertises a verb it cannot run. A dev
+build with no bake advertises its full compiled set. Adding a verb is a handler
+plus one registration in `HandlerRegistry.Default`, never an edit to the
+beacon loop; the reference registry carries no Sec 13 boundary verb.
+
 This project is an **external component**, coupled to the teamserver only by the
 wire protocol: it is intentionally not part of `Rod.slnx`. The protobuf/gRPC
 wire bindings are generated at build time from the canonical teamserver proto

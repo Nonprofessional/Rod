@@ -59,10 +59,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The internal handler types (Runner, Collect, Exfil, Persist, Lateral)
-         and the internal pure parse/chunk helpers are visible to the external
-         xUnit test project (tests/implant/dotnet), the .NET equivalent of the
-         Go reference implant's same-package _test.go access. -->
+    <!-- The internal handler types (HandlerRegistry, Core, Collect, Exfil,
+         Persist, Lateral) and the internal pure parse/chunk helpers are
+         visible to the external xUnit test project (tests/implant/dotnet), the
+         .NET equivalent of the Go reference implant's same-package _test.go
+         access. -->
     <InternalsVisibleTo Include="Rod.Implant.Tests" />
   </ItemGroup>
 

@@ -13,15 +13,10 @@ historical milestone id, from commit bodies.
 
 ## Implant
 
-- [ ] **Implant-side capability pluggability.** Make the reference implant
-      class-aware and handler-registry-driven per architecture.md Sec 5.3:
-      derive the handshake capability set from the baked class verbs
-      intersected with the compiled handlers (not a hardcoded list), and route
-      dispatch through an implant-side handler registry so a new verb is a
-      handler plus a registration rather than an edit to the runner. _AC:_ an
-      implant advertises exactly the verbs its build permits and its compiled
-      handlers implement -- never a verb it cannot run -- and the reference
-      registry contains no verb excluded by the Sec 13 boundary.
+- [x] **Implant-side capability pluggability.** Shipped: the beacon
+      advertises the baked class verbs intersected with the compiled handlers,
+      and dispatch routes through the implant-side handler registry
+      (architecture.md Sec 5.3).
 
 ## Teamserver
 

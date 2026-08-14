@@ -12,7 +12,7 @@ namespace Rod.Implant.Tests;
 // platform refusal off-Windows and by the parser tests.
 public class PersistTests
 {
-    private static Runner NewRunner() => new();
+    private static HandlerRegistry NewRegistry() => HandlerRegistry.Default();
 
     [Theory]
     [InlineData("")]
@@ -21,8 +21,8 @@ public class PersistTests
     [InlineData("runkey onlyname")]
     public void PersistInstall_MalformedArgs_FailsWithCause(string args)
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("persist.install", args);
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("persist.install", args);
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("persist.install expects", output);
     }
@@ -34,8 +34,8 @@ public class PersistTests
     [InlineData("cron one two")]
     public void PersistRemove_MalformedArgs_FailsWithCause(string args)
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("persist.remove", args);
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("persist.remove", args);
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("persist.remove expects", output);
     }
@@ -43,8 +43,8 @@ public class PersistTests
     [Fact]
     public void PersistInstall_UnknownMechanism_FailsWithCause()
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("persist.install", "voodoo name payload");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("persist.install", "voodoo name payload");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("unknown mechanism", output);
     }
@@ -52,8 +52,8 @@ public class PersistTests
     [Fact]
     public void PersistList_UnknownMechanism_FailsWithCause()
     {
-        var runner = NewRunner();
-        var (outcome, output, _) = runner.Dispatch("persist.list", "voodoo");
+        var registry = NewRegistry();
+        var (outcome, output, _) = registry.Dispatch("persist.list", "voodoo");
         Assert.Equal(TaskOutcome.Failed, outcome);
         Assert.Contains("unknown mechanism", output);
     }
@@ -66,10 +66,10 @@ public class PersistTests
         // not exist. Asserted on non-Windows hosts (the CI runs Linux).
         if (OperatingSystem.IsWindows()) return;
 
-        var runner = NewRunner();
+        var registry = NewRegistry();
         foreach (var mech in new[] { "runkey", "schtasks", "service" })
         {
-            var (outcome, output, _) = runner.Dispatch("persist.install", $"{mech} name payload");
+            var (outcome, output, _) = registry.Dispatch("persist.install", $"{mech} name payload");
             Assert.Equal(TaskOutcome.Failed, outcome);
             Assert.Contains("Windows-only", output);
         }
@@ -87,8 +87,8 @@ public class PersistTests
             File.WriteAllText(Path.Combine(xdg.Path, "systemd", "user", "RodMarker.service"),
                 "[Service]\nExecStart=/bin/true\n");
 
-            var runner = NewRunner();
-            var (outcome, output, _) = runner.Dispatch("persist.list", "");
+            var registry = NewRegistry();
+            var (outcome, output, _) = registry.Dispatch("persist.list", "");
             Assert.Equal(TaskOutcome.Succeeded, outcome);
             Assert.Contains("systemd RodMarker", output);
         }
@@ -102,27 +102,27 @@ public class PersistTests
         using var xdg = TempDir.Create();
         using (new EnvScope("XDG_CONFIG_HOME", xdg.Path))
         {
-            var runner = NewRunner();
+            var registry = NewRegistry();
 
             // install: writes the unit file, then daemon-reloads. The .NET
             // handler writes the file before daemon-reload, so tolerate a
             // daemon-reload failure (hosts without systemd) and keep going --
             // the listing reads the directory directly.
-            var (ioc, iout, _) = runner.Dispatch("persist.install", "systemd RodRT /bin/true");
+            var (ioc, iout, _) = registry.Dispatch("persist.install", "systemd RodRT /bin/true");
             if (ioc == TaskOutcome.Failed && !iout.Contains("daemon-reload"))
                 Assert.Fail($"install failed unexpectedly: {iout}");
 
             // list: the just-installed unit shows up by name.
-            var (loc, listing, _) = runner.Dispatch("persist.list", "systemd");
+            var (loc, listing, _) = registry.Dispatch("persist.list", "systemd");
             Assert.Equal(TaskOutcome.Succeeded, loc);
             Assert.Contains("RodRT", listing);
 
             // remove: deletes the unit file and reloads.
-            var (roc, _, _) = runner.Dispatch("persist.remove", "systemd RodRT");
+            var (roc, _, _) = registry.Dispatch("persist.remove", "systemd RodRT");
             Assert.Equal(TaskOutcome.Succeeded, roc);
 
             // list again: the name is gone.
-            var (loc2, listing2, _) = runner.Dispatch("persist.list", "systemd");
+            var (loc2, listing2, _) = registry.Dispatch("persist.list", "systemd");
             Assert.Equal(TaskOutcome.Succeeded, loc2);
             Assert.DoesNotContain("RodRT", listing2);
         }
@@ -136,8 +136,8 @@ public class PersistTests
         using var xdg = TempDir.Create();
         using (new EnvScope("XDG_CONFIG_HOME", xdg.Path))
         {
-            var runner = NewRunner();
-            var (outcome, output, _) = runner.Dispatch("persist.remove", "systemd NeverInstalled");
+            var registry = NewRegistry();
+            var (outcome, output, _) = registry.Dispatch("persist.remove", "systemd NeverInstalled");
             Assert.Equal(TaskOutcome.Succeeded, outcome);
             Assert.Contains("already absent", output);
         }
