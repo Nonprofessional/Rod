@@ -182,21 +182,18 @@ public sealed class TaskService
     }
 
     /// <summary>
-    /// Pulls the next queued task for <paramref name="implant"/> and marks it
-    /// dispatched, or returns null when nothing is queued. What the beacon
-    /// stream drains on each check-in.
+    /// Atomically claims the next queued task for <paramref name="implant"/>,
+    /// or returns null when nothing is queued. What the beacon stream drains on
+    /// each check-in. The claim is atomic inside the repository adapter, so a
+    /// reconnect overlap for one implant cannot dispatch the same task twice.
     /// </summary>
     public async System.Threading.Tasks.Task<TaskDispatched?> DispatchNextAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default)
     {
-        var task = await _tasks.NextPendingAsync(implant, cancellationToken);
+        var task = await _tasks.ClaimNextPendingAsync(implant, _clock.GetUtcNow(), cancellationToken);
         if (task is null)
             return null;
-
-        var now = _clock.GetUtcNow();
-        task.MarkDispatched(now);
-        await _tasks.SaveAsync(task, cancellationToken);
 
         return new TaskDispatched(
             task.Id,
@@ -206,6 +203,24 @@ public sealed class TaskService
             task.Verb,
             task.Arguments,
             task.DispatchedAt!.Value);
+    }
+
+    /// <summary>
+    /// Returns a claimed task to the queue (architecture.md Sec 10.3): the
+    /// transport calls this when the downstream frame write failed, so the task
+    /// is redelivered on a later check-in instead of stranding Dispatched.
+    /// Throws <see cref="InvalidOperationException"/> when the task is not in
+    /// Dispatched -- same refusal shape as <see cref="RecordResultAsync"/>.
+    /// </summary>
+    public async System.Threading.Tasks.Task RequeueAsync(
+        TaskId id,
+        CancellationToken cancellationToken = default)
+    {
+        var task = await _tasks.FindAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Task {id} is not known.");
+
+        task.Requeue();
+        await _tasks.SaveAsync(task, cancellationToken);
     }
 
     /// <summary>

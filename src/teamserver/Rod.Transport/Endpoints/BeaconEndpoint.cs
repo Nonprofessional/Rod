@@ -233,6 +233,28 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         if (dispatched is null)
             return;
 
+        var request = new TaskRequest
+        {
+            TaskId = dispatched.TaskId.ToString(),
+            Verb = dispatched.Verb,
+            Arguments = dispatched.Arguments,
+        };
+        var frame = new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
+
+        // Write downstream first: the dispatch audit records a task the implant
+        // actually received. When the write fails, the task returns to the queue
+        // so a later check-in redelivers it -- a task whose frame never left
+        // must not strand in Dispatched (architecture.md Sec 10.3).
+        try
+        {
+            await responseStream.WriteAsync(frame);
+        }
+        catch
+        {
+            await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
+            throw;
+        }
+
         // The dispatch is recorded (architecture.md Sec 11, roadmap M6.1). Dispatch
         // is server-driven (the implant pulls the queue), so the event is
         // attributed to the operator whose tasking it carries out. The payload is
@@ -252,15 +274,6 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 outcome: dispatched.TaskId.ToString(),
                 at: dispatched.DispatchedAt),
             cancellationToken);
-
-        var request = new TaskRequest
-        {
-            TaskId = dispatched.TaskId.ToString(),
-            Verb = dispatched.Verb,
-            Arguments = dispatched.Arguments,
-        };
-        var frame = new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
-        await responseStream.WriteAsync(frame);
     }
 
     // An upstream frame: dispatch on its kind. TASK_RESULT (and the legacy
@@ -318,7 +331,19 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             _ => Rod.CoreState.Tasks.TaskOutcome.Failed,
         };
 
-        var completed = await _tasks.RecordResultAsync(taskId, result.Output, outcome, cancellationToken);
+        TaskCompleted completed;
+        try
+        {
+            completed = await _tasks.RecordResultAsync(taskId, result.Output, outcome, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            // An unknown task id or a retransmitted result after a reconnect
+            // (the task is no longer Dispatched). Ignore the frame rather than
+            // tearing the session down: the result for this id is either already
+            // recorded or belongs to someone else.
+            return;
+        }
 
         // The store stamps the chain hashes on append; the call site supplies only
         // the audited facts (AuditEvent.Fact leaves PreviousHash/Hash empty).

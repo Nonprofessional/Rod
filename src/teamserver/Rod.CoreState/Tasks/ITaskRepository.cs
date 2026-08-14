@@ -48,8 +48,21 @@ public interface ITaskRepository
 
     /// <summary>
     /// The next not-yet-dispatched task for an implant, oldest first (FIFO by
-    /// enqueue time), or null when none is queued. What the beacon stream drains
-    /// on each check-in.
+    /// enqueue time), or null when none is queued. A peek: the caller (task
+    /// issuance gating, tests) reads without changing state.
     /// </summary>
     System.Threading.Tasks.Task<Task?> NextPendingAsync(ImplantId implant, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically claims the next queued task for an implant: marks it
+    /// Dispatched at <paramref name="at"/> and persists the transition before
+    /// returning it, or returns null when nothing is queued. Concurrent claims
+    /// for the same implant never hand out the same task -- the beacon writer
+    /// drains through this, so a reconnect overlap cannot double-dispatch
+    /// (architecture.md Sec 10.3).
+    /// </summary>
+    System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
+        ImplantId implant,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default);
 }

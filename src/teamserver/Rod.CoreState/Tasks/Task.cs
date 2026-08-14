@@ -107,4 +107,19 @@ public sealed class Task
         Status = TaskStatus.Completed;
         CompletedAt = at;
     }
+
+    /// <summary>
+    /// Returns a dispatched task to the queue after its downstream write failed
+    /// (architecture.md Sec 10.3): the implant never saw the frame, so the task
+    /// must not stay Dispatched forever. Only legal from Dispatched; clears the
+    /// dispatch stamp so the next claim re-marks it.
+    /// </summary>
+    public void Requeue()
+    {
+        if (Status != TaskStatus.Dispatched)
+            throw new InvalidOperationException($"Task {Id} cannot be requeued from {Status}.");
+
+        Status = TaskStatus.Queued;
+        DispatchedAt = null;
+    }
 }

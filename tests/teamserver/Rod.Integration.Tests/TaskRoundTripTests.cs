@@ -113,6 +113,66 @@ public class TaskRoundTripTests
         await call.RequestStream.CompleteAsync();
     }
 
+    [Fact]
+    public async Task RetransmittedResult_IsIgnored_AndTheStreamStaysOpen()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
+        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
+        var audit = env.Host.Services.GetRequiredService<IAuditStore>();
+        var clock = env.Host.Services.GetRequiredService<TimeProvider>();
+
+        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+
+        using var channel = env.ConnectBeacon(leafCert, leafKey);
+        var client = new Beacon.BeaconClient(channel);
+        var call = client.CheckIn();
+
+        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
+        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id" });
+        issued.EnsureSuccessStatusCode();
+        var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+
+        // The implant's result arrives twice (a retransmission after a drop):
+        // the first capture completes the task, the second must be ignored, not
+        // tear the session down.
+        var result = new TaskResult
+        {
+            TaskId = request.TaskId,
+            Outcome = TaskOutcome.Succeeded,
+            Output = "uid=0",
+        };
+        await call.RequestStream.WriteAsync(ResultFrame(result));
+        await call.RequestStream.WriteAsync(ResultFrame(result));
+
+        await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
+
+        // The duplicate produced no second TaskCompleted event, and the stream is
+        // still alive: the next issued task is dispatched downstream.
+        Assert.Equal(1, (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count(e => e.Kind == AuditEventKind.TaskCompleted));
+
+        var secondIssued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id -u" });
+        secondIssued.EnsureSuccessStatusCode();
+        var secondBody = await secondIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        var secondRequest = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        Assert.Equal(secondBody!.TaskId, secondRequest.TaskId);
+
+        await call.RequestStream.CompleteAsync();
+    }
+
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
         IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
     {

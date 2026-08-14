@@ -80,4 +80,29 @@ public sealed class InMemoryTaskRepository : ITaskRepository
             .FirstOrDefault();
         return System.Threading.Tasks.Task.FromResult(next);
     }
+
+    public System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
+        ImplantId implant,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        // The peek-and-mark transition runs under one lock so two concurrent
+        // claims for the same implant cannot observe the same Queued task; the
+        // second claim sees the first's Dispatched state and moves on.
+        lock (_claimLock)
+        {
+            var next = _tasks.Values
+                .Where(t => t.ImplantId == implant && t.Status == TaskStatus.Queued)
+                .OrderBy(t => _order.GetValueOrDefault(t.Id))
+                .FirstOrDefault();
+            if (next is null)
+                return System.Threading.Tasks.Task.FromResult<Task?>(null);
+
+            next.MarkDispatched(at);
+            _tasks[next.Id] = next;
+            return System.Threading.Tasks.Task.FromResult<Task?>(next);
+        }
+    }
+
+    private readonly Lock _claimLock = new();
 }

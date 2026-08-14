@@ -130,4 +130,82 @@ public class TaskQueueHistoryTests
         Assert.Null(await tasks.NextPendingAsync(implantB));
         Assert.NotNull(await tasks.NextPendingAsync(implantA));
     }
+
+    [Fact]
+    public async Task ClaimNextPending_MarksDispatched_AndAdvancesTheQueue()
+    {
+        var tasks = new InMemoryTaskRepository();
+        var engagement = EngagementId.New();
+        var implant = ImplantId.New();
+
+        var t1 = Issue(engagement, implant, "shell.exec", Now);
+        var t2 = Issue(engagement, implant, "file.push", Now);
+        await tasks.SaveAsync(t1);
+        await tasks.SaveAsync(t2);
+
+        // The claim returns the oldest queued task already Dispatched at the
+        // given time and persisted; the next claim moves on to the next task.
+        var first = await tasks.ClaimNextPendingAsync(implant, Now.AddMinutes(1));
+        var second = await tasks.ClaimNextPendingAsync(implant, Now.AddMinutes(2));
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(t1.Id, first!.Id);
+        Assert.Equal(t2.Id, second!.Id);
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Dispatched, first.Status);
+        Assert.Equal(Now.AddMinutes(1), first.DispatchedAt);
+        Assert.Null(await tasks.ClaimNextPendingAsync(implant, Now.AddMinutes(3)));
+
+        // The claimed state is what a later peek observes, not a transient mark.
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Dispatched, (await tasks.FindAsync(t1.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task ConcurrentClaims_NeverHandOutTheSameTask()
+    {
+        var tasks = new InMemoryTaskRepository();
+        var engagement = EngagementId.New();
+        var implant = ImplantId.New();
+
+        const int count = 20;
+        for (var i = 0; i < count; i++)
+            await tasks.SaveAsync(Issue(engagement, implant, "shell.exec", Now));
+
+        // Two overlapping beacon sessions race for the same queue; the claim is
+        // atomic, so every handed-out task is distinct and Dispatched exactly
+        // once.
+        var claimed = await Task.WhenAll(
+            Enumerable.Range(0, count)
+                .Select(i => tasks.ClaimNextPendingAsync(implant, Now.AddSeconds(i))));
+
+        Assert.Equal(count, claimed.Select(t => t!.Id).Distinct().Count());
+        Assert.All(claimed, t => Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Dispatched, t!.Status));
+        Assert.Null(await tasks.ClaimNextPendingAsync(implant, Now.AddHours(1)));
+    }
+
+    [Fact]
+    public async Task Requeue_ReturnsDispatchedTaskToTheQueue_ClearingItsStamp()
+    {
+        var tasks = new InMemoryTaskRepository();
+        var engagement = EngagementId.New();
+        var implant = ImplantId.New();
+
+        var t1 = Issue(engagement, implant, "shell.exec", Now);
+        await tasks.SaveAsync(t1);
+
+        var claimed = (await tasks.ClaimNextPendingAsync(implant, Now.AddMinutes(1)))!;
+
+        // The downstream write failed: the task returns to the queue and the
+        // next claim hands it out again, fresh.
+        claimed.Requeue();
+        await tasks.SaveAsync(claimed);
+
+        Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Queued, claimed.Status);
+        Assert.Null(claimed.DispatchedAt);
+
+        var reclaimed = await tasks.ClaimNextPendingAsync(implant, Now.AddMinutes(2));
+        Assert.NotNull(reclaimed);
+        Assert.Equal(t1.Id, reclaimed!.Id);
+        Assert.Equal(Now.AddMinutes(2), reclaimed.DispatchedAt);
+    }
 }

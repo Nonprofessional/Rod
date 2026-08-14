@@ -93,5 +93,46 @@ internal sealed class PostgresTaskRepository : ITaskRepository
             .OrderBy(t => EF.Property<long>(t, TaskConfiguration.EnqueueSequenceShadow))
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    public async System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
+        ImplantId implant,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // FOR UPDATE SKIP LOCKED makes the claim atomic across concurrent
+        // beacons: the subquery locks the oldest Queued row (or skips it when
+        // another transaction already holds it), so two claims for one implant
+        // can never select the same task. The outer query turns the lock into a
+        // plain id; the entity is then loaded and transitioned inside the same
+        // transaction so the Dispatched mark commits with the lock released
+        // only after SaveChanges.
+        var claimedId = await db.Database.SqlQuery<Guid>($"""
+            SELECT task_id
+            FROM tasks
+            WHERE task_id = (
+                SELECT task_id
+                FROM tasks
+                WHERE implant_id = {implant.Value} AND status = {(int)Rod.CoreState.Tasks.TaskStatus.Queued}
+                ORDER BY enqueue_seq
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            """).FirstOrDefaultAsync(cancellationToken);
+
+        if (claimedId == Guid.Empty)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var task = await db.Tasks.FirstAsync(t => t.Id == new TaskId(claimedId), cancellationToken);
+        task.MarkDispatched(at);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return task;
+    }
 }
 
