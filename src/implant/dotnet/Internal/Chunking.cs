@@ -2,13 +2,13 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// Shared exfil chunking for the collect.file and exfil.push handlers
+// Shared exfil chunking for the file.pull and exfil.push handlers
 // (architecture.md Sec 10.1 exfil): one chunker, one contract. Slices a byte
 // buffer into ExfilChunk frames of a fixed size, stamps the terminal flag on
 // the last chunk, and numbers chunks 0-origin in stream order -- the server
 // reassembles strictly by sequence and materializes the artifact on the
 // terminal chunk. An empty buffer produces no chunks: an empty file is nothing
-// to stream (collect.file returns it inline; exfil.push reports zero chunks),
+// to stream (file.pull returns it inline; exfil.push reports zero chunks),
 // and the server drops empty frames.
 internal static class Chunking
 {

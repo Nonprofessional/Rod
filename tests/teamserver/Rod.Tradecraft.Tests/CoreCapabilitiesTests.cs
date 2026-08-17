@@ -18,7 +18,7 @@ public class CoreCapabilitiesTests
     [Fact]
     public async Task DefaultRegistry_ListsEveryCoreVerb()
     {
-        // The core verbs load through the registry: all five appear, each in
+        // The core verbs load through the registry: all three appear, each in
         // the core category, after the default registry is built.
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
 

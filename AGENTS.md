@@ -112,10 +112,11 @@ authoritative rule; this section summarizes it.
   legitimate system-administration or defensive-research side. The reference
   implants implement these directly so the framework is useful for learning,
   research, and authorized red-team work out of the box. Current in-repo surface:
-  shell execution, host/port recon, child-implant derivation, Windows access
-  tokens, remote execution, persistence (Run key / scheduled tasks / services /
-  cron / systemd), file and standard-store credential collection, and C2
-  exfiltration into engagement-scoped artifact storage.
+  shell execution, file transfer in both directions (`file.push`/`file.pull`),
+  host/port recon, child-implant derivation, Windows access tokens, remote
+  execution, persistence (Run key / scheduled tasks / services / cron / systemd),
+  standard-store credential collection, and C2 exfiltration into engagement-scoped
+  artifact storage.
 - **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days, weaponized
   proof-of-concepts, novel or unpublished detection-evasion and bypass
   techniques, LSASS memory dumping for credential theft, and input capture

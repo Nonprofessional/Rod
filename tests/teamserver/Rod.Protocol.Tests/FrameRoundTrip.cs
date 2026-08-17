@@ -67,7 +67,7 @@ public class FrameRoundTrip
         {
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = "imp-42",
-            Capabilities = { "shell.exec", "file.push", "probe.read" },
+            Capabilities = { "shell.exec", "file.push", "file.pull" },
         };
 
         var restored = HandshakeRequest.Parser.ParseFrom(original.ToByteArray());

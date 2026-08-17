@@ -12,7 +12,7 @@ implant-initiated connections.
 > The teamserver, reference implant, build pipeline, operator UI, and durable
 > state are in place across the six internal layers. The capability contracts
 > are wired and dispatched; the reference implant runs the standard, documented
-> category (recon, lateral, persist, collect, exfil), while sensitive
+> category (shell, file transfer, recon, lateral, persist, collect, exfil), while sensitive
 > tradecraft -- exploits, evasion, LSASS dumping, keyboard capture -- is
 > supplied as separate, opt-in modules against the same contracts
 > (architecture.md Sec 13). See [docs/architecture.md](docs/architecture.md) for

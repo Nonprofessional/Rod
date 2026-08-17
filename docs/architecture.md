@@ -262,16 +262,18 @@ Implants differ by purpose, not by a "managed device flavor":
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
 inner ring both the build pipeline and the tradecraft layer read). Stage-2
-carries the full core set plus the recon set, the lateral set, the persist set,
-the collect set, and the exfil set (recon, lateral movement, persistence,
-collection, and exfiltration are long-haul activities that justify a stage-2
-footprint); a stager only `file.pull`s the stage-2 it loads; a web-shell and an
-ephemeral run `shell.exec` and `probe.read` over their short-lived channels; a
-pivot carries `tunnel.open` and `probe.read` and no shell. No class but Stage-2
-carries a recon, lateral, persist, collect, or exfil verb. The set
-is the server's authority for what a class may do: task issuance gates on it in
-core state (a verb outside the set is refused before it is queued, Sec 10.3),
-and the build pipeline bakes it into each artifact so a generated payload is
+carries the full core set (shell plus both-direction file transfer) plus the
+recon set, the lateral set, the persist set, the collect set, and the exfil set
+(recon, lateral movement, persistence, collection, and exfiltration are
+long-haul activities that justify a stage-2 footprint); a stager only
+`file.pull`s the stage-2 it loads; a web-shell and an ephemeral run `shell.exec`
+over their short-lived channels; a pivot is reserved for tunneling artifacts --
+no tunnel verb has shipped, so it carries an empty set and admits nothing until
+the artifact that owns it defines what it runs. No class but Stage-2 carries a
+recon, lateral, persist, collect, or exfil verb. The set is the server's
+authority for what a class may do: task issuance gates on it in core state (a
+verb outside the set is refused before it is queued, Sec 10.3), and the build
+pipeline bakes it into each artifact so a generated payload is
 self-describing.
 
 Admission is not execution: a verb may be class-admissible (the class gate
@@ -593,11 +595,11 @@ one schema.
 
 | Category | Example verbs | Summary |
 |----------|---------------|---------|
-| **core** | `shell.exec`, `file.push`, `file.pull`, `tunnel.open`, `probe.read` | The mandatory-to-useful baseline. |
+| **core** | `shell.exec`, `file.push`, `file.pull` | The mandatory-to-useful baseline: command execution and file transfer in both directions. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` writes a base64 payload (capped at 1 MiB per task) to the target. |
 | **recon** | `recon.portscan`, `recon.hostenum`, `recon.service` | Target and network reconnaissance. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
-| **collect** | `collect.file`, `collect.cred`, `collect.keylog` | Data and credential collection. |
+| **collect** | `collect.cred`, `collect.keylog` | Credential and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
@@ -647,26 +649,26 @@ techniques remain out-of-tree.
 
 The collection and exfiltration verbs are registered the same way
 (`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
-`Rod.Tradecraft.Exfil.ExfilCapabilities`, category `Exfil`): `collect.file`
-carries a `reads-filesystem` attribute, `collect.cred` carries a
-`reads-credential` attribute, and `collect.keylog` carries `reads-input` and
-`persists` (it installs a resident input-capture hook); `exfil.push` carries a
-`touches-network` attribute (it transfers over the C2 channel), and `exfil.stage`
-is a read that carries no such flag, like `persist.list` and the host-local
-`recon.hostenum` (it stages already-collected data on the teamserver). Like
-recon, lateral, and persist they are gated to Stage-2 at task issuance
-(Sec 5.2). Collection and exfiltration are long-haul activities. Under the
-Sec 13 boundary (AGENTS.md Sec 7) the reference implants ship
-in-repo handlers for `collect.file` (filesystem reads, with large files
-chunked into the exfil channel), `collect.cred` (standard credential-store
-*listings* -- SSH key presence with fingerprints, AWS profile names, Windows
-saved-credential names via `cmdkey /list` -- without dumping secret material),
-and `exfil.push` / `exfil.stage` (data transferred over the C2 channel into
-engagement-scoped artifact storage, Sec 11). Two collection surfaces stay
-out-of-tree as pluggable contracts: LSASS memory dumping (no
-benign-system-tool side, tightly coupled to active credential theft) and
-`collect.keylog` input capture. Each of those runs only when an operator
-supplies an out-of-tree module for the verb.
+`Rod.Tradecraft.Exfil.ExfilCapabilities`, category `Exfil`): `collect.cred`
+carries a `reads-credential` attribute, and `collect.keylog` carries
+`reads-input` and `persists` (it installs a resident input-capture hook);
+`exfil.push` carries a `touches-network` attribute (it transfers over the C2
+channel), and `exfil.stage` is a read that carries no such flag, like
+`persist.list` and the host-local `recon.hostenum` (it stages already-collected
+data on the teamserver). Like recon, lateral, and persist they are gated to
+Stage-2 at task issuance (Sec 5.2). Collection and exfiltration are long-haul
+activities. Under the Sec 13 boundary (AGENTS.md Sec 7) the reference implant
+ships in-repo handlers for the core file verbs (`file.pull` reads the target's
+filesystem -- small files return inline, large ones chunk into the exfil
+channel -- and `file.push` lands an operator-supplied payload on disk),
+`collect.cred` (standard credential-store *listings* -- SSH key presence with
+fingerprints, AWS profile names, Windows saved-credential names via
+`cmdkey /list` -- without dumping secret material), and `exfil.push` /
+`exfil.stage` (data transferred over the C2 channel into engagement-scoped
+artifact storage, Sec 11). Two collection surfaces stay out-of-tree as
+pluggable contracts: LSASS memory dumping (no benign-system-tool side, tightly
+coupled to active credential theft) and `collect.keylog` input capture. Each of
+those runs only when an operator supplies an out-of-tree module for the verb.
 
 The evasion verbs are registered the same way
 (`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both
@@ -882,11 +884,12 @@ pressure is how the line erodes.
   documented in OS vendor references and covered by offensive-security
   curricula and peer frameworks (Metasploit, Sliver, Havoc) ship in the
   reference implants so Rod is useful for learning, research, and authorized
-  red-team work out of the box. This currently covers shell execution, host and
-  port reconnaissance, child-implant derivation, Windows access tokens, remote
-  execution over documented admin channels, standard persistence surfaces (Run
-  key, scheduled tasks, services, cron, systemd), filesystem and standard-store
-  credential collection, and C2 exfiltration into engagement-scoped artifact
+  red-team work out of the box. This currently covers shell execution, file
+  transfer in both directions, host and port reconnaissance, child-implant
+  derivation, Windows access tokens, remote execution over documented admin
+  channels, standard persistence surfaces (Run key, scheduled tasks, services,
+  cron, systemd), standard-store credential collection (listings only, no
+  secret material), and C2 exfiltration into engagement-scoped artifact
   storage.
 - **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days,
   weaponized proof-of-concepts, novel or unpublished detection-evasion and

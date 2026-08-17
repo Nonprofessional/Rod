@@ -133,7 +133,7 @@ public class EngagementLoopTests
         {
             var seeded = await env.Http.PostAsJsonAsync(
                 $"/engagements/{implant.EngagementId}/tasks",
-                new { ImplantId = implant.Id.ToString(), Verb = "probe.read", Arguments = $"check-{i}" });
+                new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = $"check-{i}" });
             seeded.EnsureSuccessStatusCode();
         }
 
@@ -179,7 +179,7 @@ public class EngagementLoopTests
         {
             Assert.True(await callB.ResponseStream.MoveNext(CancellationToken.None));
             var queued = TaskRequest.Parser.ParseFrom(callB.ResponseStream.Current.Payload);
-            Assert.Equal("probe.read", queued.Verb);
+            Assert.Equal("shell.exec", queued.Verb);
             Assert.True(VerifyTasking(caCert, implant.Id.ToString(), queued));
         }
 
@@ -256,7 +256,7 @@ public class EngagementLoopTests
         {
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = implant.ToString(),
-            Capabilities = { "shell.exec", "exfil.push", "probe.read" },
+            Capabilities = { "shell.exec", "exfil.push", "file.pull" },
         };
         return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
     }

@@ -44,9 +44,9 @@ public class DotNetBuildUnitTests
     }
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.file,collect.cred,collect.keylog,exfil.push,exfil.stage")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
-    [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
+    [InlineData(ImplantClass.Pivot, "")]
     public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
     {
         // The class's reduced verb set (architecture.md Sec 5.2) is baked into

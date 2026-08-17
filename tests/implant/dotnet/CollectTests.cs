@@ -1,93 +1,16 @@
-using System.Text;
 using Rod.Implant.Internal;
 using Rod.V1;
 
 namespace Rod.Implant.Tests;
 
-// CollectTests ports collect_test.go from the Go reference implant to xUnit,
-// covering the collect.* dispatch surface: argument parsing, collect.file
-// read/missing/directory refusal, the large-file chunking path, and collect.cred
-// source filtering plus the no-secret-material invariant. The AWS/SSH
-// enumeration runs against a synthetic HOME so the test never touches the
-// developer's own ~/.ssh or ~/.aws; cmdkey is Windows-only and its refusal is
-// documented by the platform branch.
+// CollectTests covers the collect.cred dispatch surface: source filtering
+// plus the no-secret-material invariant. The AWS/SSH enumeration runs against
+// a synthetic HOME so the test never touches the developer's own ~/.ssh or
+// ~/.aws; cmdkey is Windows-only and its refusal is documented by the platform
+// branch. The file-transfer verbs live in FileOpsTests.
 public class CollectTests
 {
     private static HandlerRegistry NewRegistry() => HandlerRegistry.Default();
-
-    [Fact]
-    public void CollectFile_MissingFile_FailsWithCause()
-    {
-        using var dir = TempDir.Create();
-        var registry = NewRegistry();
-        var (outcome, output, chunks) = registry.Dispatch(
-            "collect.file", Path.Combine(dir.Path, "absent"));
-        Assert.Equal(TaskOutcome.Failed, outcome);
-        Assert.Contains("stat ", output);
-        Assert.Empty(chunks);
-    }
-
-    [Fact]
-    public void CollectFile_EmptyPath_FailsWithCause()
-    {
-        var registry = NewRegistry();
-        var (outcome, output, _) = registry.Dispatch("collect.file", "");
-        Assert.Equal(TaskOutcome.Failed, outcome);
-        Assert.Contains("collect.file expects", output);
-    }
-
-    [Fact]
-    public void CollectFile_Directory_RefusesWithCause()
-    {
-        var registry = NewRegistry();
-        using var dir = TempDir.Create();
-        var (outcome, output, _) = registry.Dispatch("collect.file", dir.Path);
-        Assert.Equal(TaskOutcome.Failed, outcome);
-        Assert.Contains("directory", output);
-    }
-
-    [Fact]
-    public void CollectFile_SucceedsWithContents()
-    {
-        var registry = NewRegistry();
-        using var dir = TempDir.Create();
-        var path = Path.Combine(dir.Path, "note.txt");
-        const string want = "hello collect.file";
-        File.WriteAllBytes(path, Encoding.UTF8.GetBytes(want));
-
-        var (outcome, output, chunks) = registry.Dispatch("collect.file", path);
-        Assert.Equal(TaskOutcome.Succeeded, outcome);
-        Assert.Equal(want, output);
-        Assert.Empty(chunks);
-    }
-
-    [Fact]
-    public void CollectFile_LargeFile_ProducesChunks()
-    {
-        var registry = NewRegistry();
-        using var dir = TempDir.Create();
-        var path = Path.Combine(dir.Path, "big.bin");
-        // Just over the 1 MiB inline limit so the file streams as ExfilChunks.
-        const int inlineLimit = 1 << 20;
-        var payload = new byte[inlineLimit + 4096];
-        for (var i = 0; i < payload.Length; i++)
-            payload[i] = (byte)(i % 251);
-        File.WriteAllBytes(path, payload);
-
-        var (outcome, output, chunks) = registry.Dispatch("collect.file", path);
-        Assert.Equal(TaskOutcome.Succeeded, outcome);
-        Assert.Contains("chunks streamed", output);
-        Assert.NotEmpty(chunks);
-
-        var reassembled = new List<byte>();
-        for (var i = 0; i < chunks.Count; i++)
-        {
-            Assert.Equal((ulong)i, chunks[i].Sequence);
-            reassembled.AddRange(chunks[i].Data.ToByteArray());
-        }
-        Assert.True(chunks[^1].Terminal, "last chunk should be terminal");
-        Assert.Equal(payload, reassembled.ToArray());
-    }
 
     [Fact]
     public void CollectCred_UnknownSource_FailsWithCause()
@@ -158,29 +81,5 @@ public class CollectTests
             Assert.DoesNotContain("sUpErSeCrEtDoNoTlEaK", output);
             Assert.DoesNotContain("aNoThErSeCrEtVaLuE", output);
         }
-    }
-
-    // The ChunkFile unit tests exercise the chunker directly. An empty buffer
-    // produces no chunks at all: nothing to stream, and the server drops empty
-    // frames.
-
-    [Fact]
-    public void ChunkFile_EmptyInput_ProducesNoChunks()
-    {
-        var chunks = Collect.ChunkFile("empty.txt", "text/plain", Array.Empty<byte>());
-        Assert.Empty(chunks);
-    }
-
-    [Fact]
-    public void ChunkFile_OneAndAHalfChunks_TwoChunksLastTerminal()
-    {
-        const int chunkSize = 512 * 1024;
-        var data = new byte[chunkSize + 1024]; // 1.5 chunks
-        var chunks = Collect.ChunkFile("blob.bin", "application/octet-stream", data);
-        Assert.Equal(2, chunks.Count);
-        Assert.False(chunks[0].Terminal);
-        Assert.True(chunks[1].Terminal);
-        Assert.Equal(0UL, chunks[0].Sequence);
-        Assert.Equal(1UL, chunks[1].Sequence);
     }
 }

@@ -13,7 +13,7 @@ public enum CapabilityCategory
 {
     /// <summary>
     /// The mandatory-to-useful baseline (<c>shell.exec</c>, <c>file.push</c>,
-    /// <c>file.pull</c>, <c>tunnel.open</c>, <c>probe.read</c>).
+    /// <c>file.push</c>, <c>file.pull</c>).
     /// </summary>
     Core,
 

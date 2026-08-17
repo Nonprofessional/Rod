@@ -38,7 +38,7 @@ public class ArtifactEndpointsTests
         // need not wait for the result.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId.ToString(), Verb = "collect.file", Arguments = "/etc/passwd" });
+            new { ImplantId = implantId.ToString(), Verb = "file.pull", Arguments = "/etc/passwd" });
         issued.EnsureSuccessStatusCode();
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
@@ -117,7 +117,7 @@ public class ArtifactEndpointsTests
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementA}/tasks",
-            new { ImplantId = implantA.ToString(), Verb = "collect.file" });
+            new { ImplantId = implantA.ToString(), Verb = "file.pull" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
         var attached = await env.Http.PostAsJsonAsync(
@@ -150,7 +150,7 @@ public class ArtifactEndpointsTests
         // A task that belongs to engagement A, addressed against its own implant.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementA}/tasks",
-            new { ImplantId = implantA.ToString(), Verb = "collect.file" });
+            new { ImplantId = implantA.ToString(), Verb = "file.pull" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
         // The same task id read through a different engagement is a 404, so an
@@ -175,7 +175,7 @@ public class ArtifactEndpointsTests
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/tasks",
-            new { ImplantId = implantId.ToString(), Verb = "collect.file" });
+            new { ImplantId = implantId.ToString(), Verb = "file.pull" });
         var taskId = (await issued.Content.ReadFromJsonAsync<TaskIssuedBody>())!.TaskId;
 
         // The attaching operator always comes from the session; the remaining 400

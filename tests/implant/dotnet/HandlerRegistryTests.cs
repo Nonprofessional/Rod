@@ -17,6 +17,8 @@ public class HandlerRegistryTests
     private static readonly string[] ReferenceVerbs =
     {
         "shell.exec",
+        "file.push",
+        "file.pull",
         "recon.portscan",
         "recon.hostenum",
         "recon.service",
@@ -26,23 +28,22 @@ public class HandlerRegistryTests
         "persist.install",
         "persist.remove",
         "persist.list",
-        "collect.file",
         "collect.cred",
         "exfil.push",
         "exfil.stage",
     };
 
-    // The full stage-2 reduced verb set (architecture.md Sec 5.2). The verbs
-    // with no compiled handler in the reference implant (file.push, file.pull,
-    // tunnel.open, probe.read, collect.keylog) must drop out of the advertised
-    // set -- that is the whole point of the intersection.
+    // The full stage-2 reduced verb set (architecture.md Sec 5.2). A verb in
+    // it with no compiled handler in the reference implant (collect.keylog is
+    // the one today) must drop out of the advertised set -- that is the whole
+    // point of the intersection.
     private static readonly string[] Stage2ClassVerbs =
     {
-        "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
+        "shell.exec", "file.push", "file.pull",
         "recon.portscan", "recon.hostenum", "recon.service",
         "lateral.move", "lateral.token", "lateral.exec_remote",
         "persist.install", "persist.remove", "persist.list",
-        "collect.file", "collect.cred", "collect.keylog",
+        "collect.cred", "collect.keylog",
         "exfil.push", "exfil.stage",
     };
 
@@ -75,8 +76,6 @@ public class HandlerRegistryTests
         var advertised = registry.AdvertisedVerbs(Stage2ClassVerbs);
         // Exactly the compiled stage-2 subset, never a verb without a handler.
         Assert.Equal(ReferenceVerbs.OrderBy(v => v, StringComparer.Ordinal), advertised.OrderBy(v => v, StringComparer.Ordinal));
-        Assert.DoesNotContain("file.push", advertised);
-        Assert.DoesNotContain("probe.read", advertised);
         Assert.DoesNotContain("collect.keylog", advertised);
     }
 
@@ -90,23 +89,22 @@ public class HandlerRegistryTests
     }
 
     [Fact]
-    public void AdvertisedVerbs_WebShellBake_DropsUnimplementedVerbs()
+    public void AdvertisedVerbs_NarrowBake_DropsVerbsOutsideIt()
     {
-        // A web-shell class permits shell.exec and probe.read; the reference
-        // implant implements only shell.exec, so probe.read must not be
-        // advertised.
+        // A web-shell class permits only shell.exec; verbs it does not permit
+        // (recon.hostenum, compiled and all) must not be advertised.
         var registry = HandlerRegistry.Default(enroll: null);
-        var advertised = registry.AdvertisedVerbs(new[] { "shell.exec", "probe.read" });
-        Assert.Equal(new[] { "shell.exec" }, advertised);
+        Assert.Equal(new[] { "shell.exec" }, registry.AdvertisedVerbs(new[] { "shell.exec" }));
     }
 
     [Fact]
-    public void AdvertisedVerbs_StagerBake_IsEmptyWhenNothingIsImplemented()
+    public void AdvertisedVerbs_StagerBake_IsExactlyTheFetchVerb()
     {
-        // A stager class permits only file.pull, which the reference implant
-        // does not implement: the advertised set is empty, never a lie.
+        // A stager class permits only file.pull -- the fetch a stage-1 loader
+        // needs -- and the reference implant implements it, so that is exactly
+        // what a stager bake advertises.
         var registry = HandlerRegistry.Default(enroll: null);
-        Assert.Empty(registry.AdvertisedVerbs(new[] { "file.pull" }));
+        Assert.Equal(new[] { "file.pull" }, registry.AdvertisedVerbs(new[] { "file.pull" }));
     }
 
     [Fact]
@@ -119,11 +117,11 @@ public class HandlerRegistryTests
             enroll: null,
             additional: new[]
             {
-                new CapabilityHandler("probe.read",
-                    _ => new HandlerResult(TaskOutcome.Succeeded, "host facts", Array.Empty<ExfilChunk>())),
+                new CapabilityHandler("tunnel.open",
+                    _ => new HandlerResult(TaskOutcome.Succeeded, "tunnel up", Array.Empty<ExfilChunk>())),
             });
-        var advertised = registry.AdvertisedVerbs(new[] { "shell.exec", "probe.read" });
-        Assert.Equal(new[] { "shell.exec", "probe.read" }, advertised);
+        var advertised = registry.AdvertisedVerbs(new[] { "shell.exec", "tunnel.open" });
+        Assert.Equal(new[] { "shell.exec", "tunnel.open" }, advertised);
     }
 
     [Fact]

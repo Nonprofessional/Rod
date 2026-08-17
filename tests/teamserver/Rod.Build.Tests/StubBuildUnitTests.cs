@@ -27,11 +27,11 @@ public class StubBuildUnitTests
         key);
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,tunnel.open,probe.read,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.file,collect.cred,collect.keylog,exfil.push,exfil.stage")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
-    [InlineData(ImplantClass.WebShell, "shell.exec,probe.read")]
-    [InlineData(ImplantClass.Ephemeral, "shell.exec,probe.read")]
-    [InlineData(ImplantClass.Pivot, "tunnel.open,probe.read")]
+    [InlineData(ImplantClass.WebShell, "shell.exec")]
+    [InlineData(ImplantClass.Ephemeral, "shell.exec")]
+    [InlineData(ImplantClass.Pivot, "")]
     public async Task Build_BakesTheClassReducedVerbSet_IntoTheManifest(ImplantClass @class, string expectedVerbs)
     {
         // The class's reduced verb set is baked into the artifact

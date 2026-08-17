@@ -4,11 +4,11 @@ The reference **stage-2 implant** in the .NET language, cross-platform
 ([architecture.md Sec 5](../../../docs/architecture.md)). It is a benign, readable
 implant that enrolls over the teamserver's HTTP enroll endpoint (submitting its
 own public key), beacons over mTLS with the baked-in sleep/jitter/kill-date
-profile, and runs the standard-category verb set: shell exec, recon, lateral
-(child derivation, token inspection, remote exec over admin channels),
-persistence (Run key / scheduled tasks / services / cron / systemd), collect
-(file reads and credential-store enumeration), and exfil to the engagement
-artifact store (architecture.md Sec 10.1).
+profile, and runs the standard-category verb set: shell exec, file transfer
+(push/pull), recon, lateral (child derivation, token inspection, remote exec
+over admin channels), persistence (Run key / scheduled tasks / services / cron
+/ systemd), credential-store enumeration, and exfil to the engagement artifact
+store (architecture.md Sec 10.1).
 
 It performs **no evasion, no obfuscation, and no destructive behavior**
 ([RESPONSIBLE-USE.md](../../../RESPONSIBLE-USE.md),

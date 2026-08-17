@@ -166,7 +166,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // came back Closed with an EndedAt, and still appears in history.
             var first = await sessions.OpenAsync(parent, capabilities: new[] { "shell.exec" }, at: DateTimeOffset.UtcNow);
             closedSessionId = first.Id;
-            var reconnect = await sessions.OpenAsync(parent, capabilities: new[] { "shell.exec", "probe.read" }, at: DateTimeOffset.UtcNow);
+            var reconnect = await sessions.OpenAsync(parent, capabilities: new[] { "shell.exec", "file.pull" }, at: DateTimeOffset.UtcNow);
             // Then the reconnect's stream ends: an explicit close leaves the parent
             // with no active session so the child's session is the only live one.
             await sessions.CloseAsync(reconnect.Id, at: DateTimeOffset.UtcNow);
@@ -174,7 +174,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // Open a session on the child and leave it active -- the online implant
             // after restart. Then retire the parent: the entity records
             // RetiredAt; the session is left to history.
-            activeSessionId = (await sessions.OpenAsync(child, capabilities: new[] { "tunnel.open" }, at: DateTimeOffset.UtcNow)).Id;
+            activeSessionId = (await sessions.OpenAsync(child, capabilities: new[] { "file.push" }, at: DateTimeOffset.UtcNow)).Id;
             var storedParent = await implants.FindAsync(parentId);
             Assert.NotNull(storedParent);
             Assert.True(storedParent!.Retire(DateTimeOffset.UtcNow));

@@ -4,33 +4,43 @@ namespace Rod.Tradecraft.Core;
 
 /// <summary>
 /// The core capability verbs (architecture.md Sec 10.1, the "core" category):
-/// the mandatory-to-useful baseline every implant is expected to carry. These
-/// are the verbs the registry loads to prove core verbs
-/// flow through the tradecraft layer's contract.
+/// the mandatory-to-useful baseline every implant is expected to carry --
+/// command execution and file transfer in both directions. These
+/// are the verbs the registry loads through the tradecraft layer's contract.
 /// </summary>
 /// <remarks>
 /// Concrete behavior for these verbs is not part of this repository -- it lives
 /// in the implant and is captured as task output over the beacon stream
 /// (architecture.md Sec 10.3). Here they are descriptors only: enough for the
-/// registry to know the verb exists and for a future task-issuance gate to
-/// resolve it.
+/// registry to know the verb exists and for the task-issuance gate to resolve
+/// it. The file verbs carry OPSEC attributes (architecture.md Sec 7) so the
+/// picker can badge them: a push writes to the target's disk, a pull reads its
+/// filesystem.
 /// </remarks>
 public static class CoreCapabilities
 {
     /// <summary>One-shot shell command execution.</summary>
     public const string ShellExec = "shell.exec";
 
-    /// <summary>Upload a file to the implant.</summary>
+    /// <summary>Upload a file onto the target.</summary>
     public const string FilePush = "file.push";
 
-    /// <summary>Download a file from the implant.</summary>
+    /// <summary>Download a file off the target.</summary>
     public const string FilePull = "file.pull";
 
-    /// <summary>Open a tunnel through the implant.</summary>
-    public const string TunnelOpen = "tunnel.open";
+    // The OPSEC attributes for the file verbs (architecture.md Sec 7): a push
+    // lands bytes on the target's disk, a pull reads its filesystem.
+    private static readonly IReadOnlyDictionary<string, string> WritesToDisk =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["writes-to-disk"] = "true",
+        };
 
-    /// <summary>Read a host/probe value.</summary>
-    public const string ProbeRead = "probe.read";
+    private static readonly IReadOnlyDictionary<string, string> ReadsFilesystem =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["reads-filesystem"] = "true",
+        };
 
     /// <summary>
     /// Descriptors for every core verb, in declared order. The composition root
@@ -39,15 +49,13 @@ public static class CoreCapabilities
     public static readonly CapabilityDescriptor[] All =
     {
         CapabilityDescriptor.Of(ShellExec, CapabilityCategory.Core, "1.0"),
-        CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0"),
-        CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0"),
-        CapabilityDescriptor.Of(TunnelOpen, CapabilityCategory.Core, "1.0"),
-        CapabilityDescriptor.Of(ProbeRead, CapabilityCategory.Core, "1.0"),
+        CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk),
+        CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
     };
 
     /// <summary>Every core verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        ShellExec, FilePush, FilePull, TunnelOpen, ProbeRead,
+        ShellExec, FilePush, FilePull,
     };
 }

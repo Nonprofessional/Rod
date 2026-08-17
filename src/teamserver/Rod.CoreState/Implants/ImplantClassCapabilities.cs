@@ -43,11 +43,11 @@ public static class ImplantClassCapabilities
             // activities that justify a stage-2 footprint and no other class.
             [ImplantClass.Stage2] = new[]
             {
-                "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
+                "shell.exec", "file.push", "file.pull",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
-                "collect.file", "collect.cred", "collect.keylog",
+                "collect.cred", "collect.keylog",
                 "exfil.push", "exfil.stage",
             },
 
@@ -55,17 +55,19 @@ public static class ImplantClassCapabilities
             // hands off to (architecture.md Sec 5.2).
             [ImplantClass.Stager] = new[] { "file.pull" },
 
-            // A script in a web root: code execution over HTTP, no interactive
-            // PTY and no long-lived tunnel.
-            [ImplantClass.WebShell] = new[] { "shell.exec", "probe.read" },
+            // A script in a web root: code execution over HTTP, no file transfer
+            // and no interactive PTY.
+            [ImplantClass.WebShell] = new[] { "shell.exec" },
 
             // A short-lived, TTL'd implant from a one-liner bootstrap: enough for
-            // one-off execution and a quick read.
-            [ImplantClass.Ephemeral] = new[] { "shell.exec", "probe.read" },
+            // one-off execution and nothing more.
+            [ImplantClass.Ephemeral] = new[] { "shell.exec" },
 
-            // A host that cannot run its own implant: it forwards tasking and
-            // tunnels traffic, so it carries the tunnel/probe verbs and no shell.
-            [ImplantClass.Pivot] = new[] { "tunnel.open", "probe.read" },
+            // Reserved for tunneling artifacts (a host that cannot run its own
+            // implant). No tunnel verb has shipped, so the set is empty: the
+            // class admits nothing until the artifact that owns it defines what
+            // it runs (architecture.md Sec 5.2).
+            [ImplantClass.Pivot] = Array.Empty<string>(),
         };
 
     /// <summary>

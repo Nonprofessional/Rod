@@ -73,14 +73,14 @@ internal static class Exfil
     /// <summary>
     /// Reports what the implant has staged locally for a follow-up push. The
     /// reference implant has no durable staging area -- files are read on
-    /// demand by collect.file and exfil.push -- so this always reports an empty
+    /// demand by file.pull and exfil.push -- so this always reports an empty
     /// manifest. It exists as the documented counterpart to exfil.push so the
     /// capability registry stays complete and operators can probe the verb
     /// without a Failed outcome.
     /// </summary>
     public static (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) Stage(string arguments)
         => (TaskOutcome.Succeeded,
-            "(no local staging area; use collect.file or exfil.push to stream on demand)",
+            "(no local staging area; use file.pull or exfil.push to stream on demand)",
             Array.Empty<ExfilChunk>());
 
     // The size of each ExfilChunk data payload for files streamed out of band;

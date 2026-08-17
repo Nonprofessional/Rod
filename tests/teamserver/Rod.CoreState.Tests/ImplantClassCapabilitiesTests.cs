@@ -16,8 +16,6 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "shell.exec")]
     [InlineData(ImplantClass.Stage2, "file.push")]
     [InlineData(ImplantClass.Stage2, "file.pull")]
-    [InlineData(ImplantClass.Stage2, "tunnel.open")]
-    [InlineData(ImplantClass.Stage2, "probe.read")]
     [InlineData(ImplantClass.Stage2, "recon.portscan")]
     [InlineData(ImplantClass.Stage2, "recon.hostenum")]
     [InlineData(ImplantClass.Stage2, "recon.service")]
@@ -27,29 +25,22 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "persist.install")]
     [InlineData(ImplantClass.Stage2, "persist.remove")]
     [InlineData(ImplantClass.Stage2, "persist.list")]
-    [InlineData(ImplantClass.Stage2, "collect.file")]
     [InlineData(ImplantClass.Stage2, "collect.cred")]
     [InlineData(ImplantClass.Stage2, "collect.keylog")]
     [InlineData(ImplantClass.Stage2, "exfil.push")]
     [InlineData(ImplantClass.Stage2, "exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
-    [InlineData(ImplantClass.WebShell, "probe.read")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
-    [InlineData(ImplantClass.Ephemeral, "probe.read")]
-    [InlineData(ImplantClass.Pivot, "tunnel.open")]
-    [InlineData(ImplantClass.Pivot, "probe.read")]
     public void Allows_AdmitsTheReducedVerbSetForTheClass(ImplantClass @class, string verb)
         => Assert.True(ImplantClassCapabilities.Allows(@class, verb));
 
     [Theory]
     [InlineData(ImplantClass.Stager, "shell.exec", "a stager only pulls")]
-    [InlineData(ImplantClass.Stager, "tunnel.open", "a stager holds no tunnel")]
     [InlineData(ImplantClass.Stager, "recon.portscan", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Stager, "lateral.move", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Stager, "persist.install", "persistence is a stage-2 activity")]
-    [InlineData(ImplantClass.Stager, "collect.file", "collection and exfiltration are stage-2 long-haul activities")]
-    [InlineData(ImplantClass.WebShell, "tunnel.open", "a web-shell holds no tunnel")]
+    [InlineData(ImplantClass.Stager, "collect.cred", "collection and exfiltration are stage-2 long-haul activities")]
     [InlineData(ImplantClass.WebShell, "file.push", "a web-shell does not push")]
     [InlineData(ImplantClass.WebShell, "recon.hostenum", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.WebShell, "lateral.token", "lateral movement is a stage-2 activity")]
@@ -95,11 +86,11 @@ public class ImplantClassCapabilitiesTests
         Assert.Equal(
             new[]
             {
-                "shell.exec", "file.push", "file.pull", "tunnel.open", "probe.read",
+                "shell.exec", "file.push", "file.pull",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
-                "collect.file", "collect.cred", "collect.keylog",
+                "collect.cred", "collect.keylog",
                 "exfil.push", "exfil.stage",
             },
             verbs);
@@ -116,9 +107,17 @@ public class ImplantClassCapabilitiesTests
     }
 
     [Fact]
-    public void For_EveryClassReturnsAtLeastOneVerb()
+    public void For_EveryImplementedClassReturnsVerbs_PivotIsReservedEmpty()
     {
+        // Every class with a shipped artifact carries at least one verb. Pivot
+        // is reserved for tunneling artifacts: nothing ships for it yet, so its
+        // set is empty and it admits nothing (architecture.md Sec 5.2).
         foreach (ImplantClass @class in Enum.GetValues(typeof(ImplantClass)))
-            Assert.NotEmpty(ImplantClassCapabilities.For(@class));
+        {
+            if (@class == ImplantClass.Pivot)
+                Assert.Empty(ImplantClassCapabilities.For(@class));
+            else
+                Assert.NotEmpty(ImplantClassCapabilities.For(@class));
+        }
     }
 }

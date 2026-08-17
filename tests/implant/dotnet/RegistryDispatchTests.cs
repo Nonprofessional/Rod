@@ -3,10 +3,9 @@ using Rod.V1;
 
 namespace Rod.Implant.Tests;
 
-// RegistryDispatchTests ports the runner_test.go dispatch tests from the Go
-// reference implant to xUnit: shell.exec success and non-zero-exit failure, and
-// the unknown-verb refusal. Each drives HandlerRegistry.Dispatch against the
-// real platform shell, the same loopback-free counterpart to ReconTests.
+// RegistryDispatchTests covers the dispatch surface: shell.exec success and
+// non-zero-exit failure, and the unknown-verb refusal. Each drives
+// HandlerRegistry.Dispatch against the real platform shell.
 public class RegistryDispatchTests
 {
     [Fact]

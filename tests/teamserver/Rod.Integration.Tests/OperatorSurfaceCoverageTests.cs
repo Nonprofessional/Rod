@@ -31,11 +31,11 @@ namespace Rod.Integration.Tests;
 /// </summary>
 /// <remarks>
 /// The capability catalog endpoint (<c>GET /capabilities</c>) and the
-/// engagement-wide task list (<c>GET /engagements/{id}/tasks</c>) are the two
-/// backend pieces this milestone adds so the UI is data-driven rather than
-/// hardcoding the verb table; the rest of the surface (audit, artifact,
-/// timeline, report, retire, repoint) was already present from / and this
-/// test confirms the operator can reach it end to end. The AC is *issuable*, not
+/// engagement-wide task list (<c>GET /engagements/{id}/tasks</c>) are what keep
+/// the UI data-driven rather than hardcoding the verb table; the rest of the
+/// surface (audit, artifact, timeline, report, retire, repoint) predates
+/// them, and this test confirms the operator can reach it end to end. The
+/// assertion is *issuable*, not
 /// *executable*: every verb is accepted for tasking (201); the placeholder
 /// modules fail on dispatch, which is correct -- concrete tradecraft is
 /// out-of-tree (architecture.md Sec 13, AGENTS.md Sec 7).
@@ -127,7 +127,7 @@ public class OperatorSurfaceCoverageTests
         new object[] { "recon.portscan" },
         new object[] { "lateral.move" },
         new object[] { "persist.install" },
-        new object[] { "collect.file" },
+        new object[] { "file.pull" },
         new object[] { "exfil.push" },
         new object[] { EvasionCapabilities.Avoid },
         new object[] { ExploitCapabilities.Invoke },
