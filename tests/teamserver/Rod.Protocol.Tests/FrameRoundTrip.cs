@@ -5,30 +5,22 @@ namespace Rod.Protocol.Tests;
 
 /// <summary>
 /// Smoke test: a Frame survives a serialize/parse round trip with
-/// every field intact, and the envelope's application-layer identifiers travel
-/// with it. This proves the generated bindings are usable end to end.
+/// every field intact. This proves the generated bindings are usable end to end.
 /// </summary>
 public class FrameRoundTrip
 {
     [Fact]
-    public void Frame_RoundTrips_WithEnvelopeAndPayload()
+    public void Frame_RoundTrips_WithKindAndPayload()
     {
         var original = new Frame
         {
-            Envelope = new Envelope
-            {
-                EngagementId = "eng-7",
-                ImplantId = "imp-42",
-                Sequence = 123456789,
-            },
+            Kind = FrameKind.TaskResult,
             Payload = ByteString.CopyFrom(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }),
         };
 
         Frame restored = Frame.Parser.ParseFrom(original.ToByteArray());
 
-        Assert.Equal("eng-7", restored.Envelope.EngagementId);
-        Assert.Equal("imp-42", restored.Envelope.ImplantId);
-        Assert.Equal<ulong>(123456789, restored.Envelope.Sequence);
+        Assert.Equal(FrameKind.TaskResult, restored.Kind);
         Assert.Equal(original.Payload, restored.Payload);
     }
 

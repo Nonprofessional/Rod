@@ -18,19 +18,13 @@ message ProtocolVersion {
   int32 minor = 2;
 }
 
-// Per-frame identity. Application-layer binding that complements mTLS -- an
-// implant certificate binds (implant_id, engagement_id) (architecture.md Sec.9);
-// the envelope carries the same identifiers so the server can route and audit
-// without trusting the wire alone.
-message Envelope {
-  string engagement_id = 1;
-  string implant_id = 2;
-  uint64 sequence = 3;
-}
-
 // The unit that crosses every transport. Payload is opaque: its inner shape is
-// defined by later protocol messages (tasking, enrollment, results) introduced
-// alongside the core-state entities.
+// defined by the tasking, enrollment, and handshake messages below. Identity
+// travels in mTLS (an implant certificate binds (implant_id, engagement_id),
+// architecture.md Sec.9) and in the payload messages themselves, so the frame
+// carries no envelope of its own. Field number 1 is retired: it held an
+// envelope message nothing ever set, removed before any release shipped; it
+// must not be reused (the evolution rules in implant-contract.md).
 //
 // kind disambiguates the payload shape on the upstream (implant-to-server)
 // half of the CheckIn stream. It defaults to UNSPECIFIED for backward
@@ -47,7 +41,7 @@ enum FrameKind {
 }
 
 message Frame {
-  Envelope envelope = 1;
+  reserved 1;
   bytes payload = 2;
   FrameKind kind = 3;
 }

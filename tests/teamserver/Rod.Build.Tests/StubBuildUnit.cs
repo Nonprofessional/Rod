@@ -1,16 +1,15 @@
 using System.Linq;
 using System.Text;
+using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState.Implants;
 
-namespace Rod.BuildPipeline.PayloadBuild;
+namespace Rod.Build.Tests;
 
 /// <summary>
-/// The stub build unit: proves the build contract round-trip
-/// without any real toolchain. The real in-tree reference build unit is .NET
-/// (ADR 0009); community build units for other languages (Go/C/Nim) live
-/// out-of-tree. The stub occupies the <see cref="Language.Go"/> slot so the
-/// registry always has a deterministic, toolchain-free unit for tests and for
-/// any language slot that has no in-tree unit.
+/// A test-only build unit: proves the build contract round-trip without any
+/// real toolchain. The only unit the live host registers is the in-tree .NET
+/// one; community units for other languages (Go/C/Nim) live out-of-tree, so
+/// this stub lives in the test project, not the product.
 ///
 /// It emits a deterministic, benign artifact: a UTF-8 manifest of the baked-in
 /// config followed by a fixed, clearly-fake marker byte sequence. There is no
