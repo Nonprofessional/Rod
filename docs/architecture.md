@@ -532,10 +532,22 @@ fleet-wide code execution. Security is a first-class concern.
   `AuditEvent`. Tampering breaks the chain (Sec. 11).
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
   in certificates; redirectors never enforce tenancy.
-- **ROE guardrails** _(planned)_. The audit store is intended to feed
-  guardrails that warn or block high-risk actions against out-of-scope targets.
-  Not yet implemented; the audit store is in place and is the data source such
-  guardrails will read from.
+- **ROE guardrails.** Each engagement carries a rules-of-engagement profile
+  the server enforces at task issuance, after the class gate and before the
+  task is queued: `PermittedVerbs` (exact verbs or `namespace.*` wildcards)
+  and `PermittedImplants` (exact implant ids), each dimension empty meaning
+  unrestricted. A task outside the profile is refused with `422` and a
+  `TaskRoeRefused` audit event naming the violated rule -- the refusal is
+  part of the engagement's story, so it lands in the same trail as the
+  tasking it blocked; the scope change itself is recorded as `RoeUpdated`.
+  Operators apply a profile over the API (`PUT /engagements/{id}/roe`);
+  applying an empty profile reopens the engagement. The scope is pure
+  server-side state on the engagement (JSON column in the durable store, the
+  unrestricted default for records that predate it) -- the implant contract
+  carries nothing for it (implant-contract.md, evolution rule 4). Warn-only
+  modes and audit-history-driven rule suggestions stay future concerns; the
+  shipped gate blocks, because a warning an operator can click through is
+  not a rule of engagement.
 - **No self-protection.** Rod ships no protection against its own detection by
   defenders. Stealth is a deployment and capability concern (Sec. 7), not a
   security boundary of the platform.

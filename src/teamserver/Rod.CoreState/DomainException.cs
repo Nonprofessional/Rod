@@ -145,6 +145,14 @@ public enum TaskRejectionReason
     /// refused before the task is queued.
     /// </summary>
     ImplantRetired,
+
+    /// <summary>
+    /// The task falls outside the engagement's rules-of-engagement scope
+    /// (architecture.md Sec 9 -- ROE guardrails): the verb is not a permitted
+    /// verb or the implant is not a permitted target. Refused before the task
+    /// is queued; the transport records the refusal naming the violated rule.
+    /// </summary>
+    RoeViolation,
 }
 
 /// <summary>

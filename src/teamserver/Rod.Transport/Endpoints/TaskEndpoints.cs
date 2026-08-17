@@ -54,6 +54,7 @@ public static class TaskEndpoints
         ClaimsPrincipal user,
         TaskService service,
         IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         // The issuing operator is the authenticated operator, resolved off the
@@ -84,9 +85,34 @@ public static class TaskEndpoints
         }
         catch (TaskRejectedException ex)
         {
-            // An unsupported verb and a retired implant are both well-formed
-            // requests the server refuses to act on -> 422; an unknown or
-            // foreign implant is a routing failure -> 404.
+            // An unsupported verb, a retired implant, and an ROE refusal are
+            // all well-formed requests the server refuses to act on -> 422; an
+            // unknown or foreign implant is a routing failure -> 404.
+            if (ex.Reason == TaskRejectionReason.RoeViolation)
+            {
+                // The refusal is part of the engagement's story, so it lands in
+                // the trail (architecture.md Sec 9, Sec 11): attributed to the
+                // issuing operator, the payload the refused verb and arguments,
+                // the outcome the violated rule. No task exists to carry ids.
+                await audit.AppendAsync(
+                    AuditEvent.Fact(
+                        eventId: Guid.NewGuid(),
+                        engagementId: engagementValue,
+                        operatorId: issuedBy.Value.Value,
+                        implantId: implantValue,
+                        taskId: Guid.Empty,
+                        verb: body.Verb,
+                        kind: AuditEventKind.TaskRoeRefused,
+                        payload: body.Arguments ?? string.Empty,
+                        output: null,
+                        outcome: ex.Message,
+                        at: clock.GetUtcNow()),
+                    cancellationToken);
+                return Results.Json(
+                    new Problem(ex.Message),
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
             return ex.Reason switch
             {
                 TaskRejectionReason.UnsupportedVerbForClass

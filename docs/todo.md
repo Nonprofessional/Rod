@@ -30,11 +30,15 @@ gate shape ROE establishes.
       on the task (architecture.md Sec 9). _AC:_ an unsigned or wrongly
       signed command is rejected by the implant and the rejection is visible
       on the operator console.
-- [ ] **ROE guardrails.** A per-engagement rules-of-engagement profile gates
-      which capabilities and targets are taskable, enforced server-side
-      before a task is queued (architecture.md Sec 9).
-      _AC:_ a task outside the engagement's ROE profile is refused at queue
-      time with an audit entry naming the violated rule.
+- [x] **ROE guardrails.** Shipped: an engagement's ROE profile
+      (`PermittedVerbs` with `namespace.*` wildcards, `PermittedImplants`;
+      each empty = unrestricted) gates task issuance server-side after the
+      class gate and before queuing, applied over `PUT /engagements/{id}/roe`;
+      refusals answer `422` and append a `TaskRoeRefused` audit event naming
+      the violated rule, and the scope change is recorded as `RoeUpdated`
+      (architecture.md Sec 9). _AC:_ a task outside the engagement's ROE
+      profile is refused at queue time with an audit entry naming the
+      violated rule.
 - [ ] **Certificate revocation.** Operator and implant credentials gained a
       revocation path: a revoked credential fails authentication on its next
       use rather than living out its natural expiry (architecture.md Sec 9).

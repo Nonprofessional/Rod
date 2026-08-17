@@ -13,12 +13,25 @@ public sealed class Engagement
     public OperatorId OwnerId { get; }
     public DateTimeOffset CreatedAt { get; }
 
-    private Engagement(EngagementId id, string name, OperatorId ownerId, DateTimeOffset createdAt)
+    /// <summary>
+    /// The engagement's rules-of-engagement scope (architecture.md Sec 9).
+    /// Unrestricted until an operator applies a profile; see
+    /// <see cref="ApplyRoe"/>.
+    /// </summary>
+    public RoeProfile Roe { get; private set; } = RoeProfile.Unrestricted;
+
+    private Engagement(
+        EngagementId id,
+        string name,
+        OperatorId ownerId,
+        DateTimeOffset createdAt,
+        RoeProfile? roe = null)
     {
         Id = id;
         Name = name;
         OwnerId = ownerId;
         CreatedAt = createdAt;
+        Roe = roe ?? RoeProfile.Unrestricted;
     }
 
     /// <summary>
@@ -36,5 +49,17 @@ public sealed class Engagement
             throw new ArgumentException("Engagement name is required.", nameof(name));
 
         return new Engagement(id, name.Trim(), ownerId, createdAt);
+    }
+
+    /// <summary>
+    /// Applies the engagement's rules-of-engagement scope (architecture.md
+    /// Sec 9). Replaces any prior profile; an empty profile is the unrestricted
+    /// scope, so applying it reopens the engagement. The caller records the
+    /// change in the engagement's audit trail.
+    /// </summary>
+    public void ApplyRoe(RoeProfile roe)
+    {
+        ArgumentNullException.ThrowIfNull(roe);
+        Roe = roe;
     }
 }

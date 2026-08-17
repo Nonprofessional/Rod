@@ -79,6 +79,26 @@ public sealed class EngagementService
             token.ExpiresAt,
             token.MaxUses);
     }
+
+    /// <summary>
+    /// Applies the engagement's rules-of-engagement profile (architecture.md
+    /// Sec 9 -- ROE guardrails). The profile is the server-side scope of what
+    /// the engagement's operators may task; task issuance refuses anything
+    /// outside it before queuing. Applying an empty profile reopens the
+    /// engagement (the unrestricted scope). The change is effective
+    /// immediately for later issuances; the caller records it in the audit
+    /// trail.
+    /// </summary>
+    public async Task<RoeApplied> ApplyRoeAsync(
+        ApplyRoeCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        engagement.ApplyRoe(command.Profile);
+        await _engagements.SaveAsync(engagement, cancellationToken);
+
+        return new RoeApplied(engagement.Id, engagement.Roe);
+    }
 }
 
 /// <summary>
@@ -97,6 +117,12 @@ public sealed record EngagementCreated(
 
 /// <summary>Request to mint a stager token for an engagement's owner.</summary>
 public sealed record MintStagerTokenCommand(EngagementId EngagementId);
+
+/// <summary>Request to apply an engagement's rules-of-engagement profile.</summary>
+public sealed record ApplyRoeCommand(EngagementId EngagementId, RoeProfile Profile);
+
+/// <summary>Result of applying an ROE profile: the engagement and its scope now in force.</summary>
+public sealed record RoeApplied(EngagementId EngagementId, RoeProfile Profile);
 
 /// <summary>
 /// Result of minting a stager token. <see cref="Secret"/> is the plaintext,

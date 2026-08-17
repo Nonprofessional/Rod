@@ -114,4 +114,24 @@ public enum AuditEventKind
     /// <c>IssuedBy</c>) and carries the task the push was bound to.
     /// </summary>
     ExfilCaptured,
+
+    /// <summary>
+    /// An operator applied an engagement's rules-of-engagement profile
+    /// (architecture.md Sec 9 -- ROE guardrails). The payload carries the
+    /// profile's shape (permitted verbs and targets; empty lists are the
+    /// unrestricted scope) and the outcome is the engagement id. Every later
+    /// refusal the profile causes is a <see cref="TaskRoeRefused"/> event, so
+    /// this record is what the trail shows the scope in force at any moment.
+    /// </summary>
+    RoeUpdated,
+
+    /// <summary>
+    /// A task issuance was refused by the engagement's rules-of-engagement
+    /// profile before it was queued (architecture.md Sec 9). The payload
+    /// carries the verb and arguments that were refused, and the outcome names
+    /// the violated rule -- which verb or target was outside the engagement's
+    /// permitted scope. The event is attributed to the issuing operator; the
+    /// task never exists, so it carries no task id.
+    /// </summary>
+    TaskRoeRefused,
 }

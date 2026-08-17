@@ -32,6 +32,9 @@ public static class EngagementEndpoints
         group.MapPost("/{engagementId}/stager-tokens", MintStagerTokenAsync)
             .WithName(nameof(MintStagerTokenAsync));
 
+        group.MapPut("/{engagementId}/roe", ApplyRoeAsync)
+            .WithName(nameof(ApplyRoeAsync));
+
         return endpoints;
     }
 
@@ -54,7 +57,8 @@ public static class EngagementEndpoints
                 e.Name,
                 e.OwnerId.ToString(),
                 owner?.Handle ?? string.Empty,
-                e.CreatedAt));
+                e.CreatedAt,
+                RoeProfileResponse.From(e.Roe)));
         }
 
         return Results.Ok(body);
@@ -85,7 +89,8 @@ public static class EngagementEndpoints
             created.Name,
             created.OwnerId.ToString(),
             created.OwnerHandle,
-            created.CreatedAt);
+            created.CreatedAt,
+            RoeProfileResponse.From(RoeProfile.Unrestricted));
 
         // The engagement's own creation is the trail's genesis link (architecture.md
         // Sec 11, ): attributed to the creating owner, carrying the
@@ -161,6 +166,72 @@ public static class EngagementEndpoints
         }
     }
 
+    private static async Task<IResult> ApplyRoeAsync(
+        string engagementId,
+        ApplyRoeRequest body,
+        ClaimsPrincipal user,
+        EngagementService service,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        // The applying operator is the authenticated operator; the group
+        // already requires authorization, so a present-but-missing claim is a
+        // defensive 401, not a normal path.
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var idValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        try
+        {
+            var applied = await service.ApplyRoeAsync(
+                new ApplyRoeCommand(
+                    new EngagementId(idValue),
+                    new RoeProfile(body.PermittedVerbs, body.PermittedImplants)),
+                cancellationToken);
+
+            // The scope change is recorded (architecture.md Sec 9, Sec 11):
+            // attributed to the applying operator, the payload the profile's
+            // shape, the outcome the engagement id. This is the record the
+            // trail shows the scope in force at any moment; every refusal the
+            // profile causes is a TaskRoeRefused event against it.
+            await audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: applied.EngagementId.Value,
+                    operatorId: operatorId.Value.Value,
+                    implantId: Guid.Empty,
+                    taskId: Guid.Empty,
+                    verb: "apply-roe",
+                    kind: AuditEventKind.RoeUpdated,
+                    payload: Describe(applied.Profile),
+                    output: null,
+                    outcome: applied.EngagementId.ToString(),
+                    at: clock.GetUtcNow()),
+                cancellationToken);
+
+            return Results.Ok(new EngagementScopedRoeResponse(
+                applied.EngagementId.ToString(),
+                RoeProfileResponse.From(applied.Profile)));
+        }
+        catch (InvalidOperationException)
+        {
+            // Engagement id parsed but unknown.
+            return Results.NotFound(new Problem($"Engagement {engagementId} does not exist."));
+        }
+    }
+
+    // One line describing the scope in force -- the audit payload for an ROE
+    // update and the human-readable form of the profile.
+    internal static string Describe(RoeProfile profile)
+    {
+        var verbs = profile.PermittedVerbs.Count == 0 ? "*" : string.Join(",", profile.PermittedVerbs);
+        var targets = profile.PermittedImplants.Count == 0 ? "*" : string.Join(",", profile.PermittedImplants);
+        return $"permittedVerbs={verbs} permittedTargets={targets}";
+    }
+
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The owner is the authenticated operator; only the engagement name is
@@ -172,7 +243,26 @@ public static class EngagementEndpoints
         string Name,
         string OwnerId,
         string OwnerHandle,
-        DateTimeOffset CreatedAt);
+        DateTimeOffset CreatedAt,
+        RoeProfileResponse Roe);
+
+    // The ROE scope request: two allow-lists, each empty (or omitted) meaning
+    // unrestricted on that dimension.
+    public sealed record ApplyRoeRequest(
+        IReadOnlyList<string>? PermittedVerbs,
+        IReadOnlyList<string>? PermittedImplants);
+
+    public sealed record RoeProfileResponse(
+        IReadOnlyList<string> PermittedVerbs,
+        IReadOnlyList<string> PermittedImplants)
+    {
+        public static RoeProfileResponse From(RoeProfile profile)
+            => new(profile.PermittedVerbs, profile.PermittedImplants);
+    }
+
+    public sealed record EngagementScopedRoeResponse(
+        string EngagementId,
+        RoeProfileResponse Roe);
 
     public sealed record StagerTokenResponse(
         string StagerTokenId,

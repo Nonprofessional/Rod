@@ -30,8 +30,11 @@ public class TaskServiceGatingTests
         return implant;
     }
 
+    // No engagement records are stored, so the ROE lookup resolves nothing and
+    // the profile in force is the unrestricted default -- these tests exercise
+    // the class gate, not the scope gate (RoeGateTests covers that).
     private static TaskService NewService(InMemoryImplantRepository implants)
-        => new(new InMemoryTaskRepository(), implants, TimeProvider.System);
+        => new(new InMemoryTaskRepository(), implants, new InMemoryEngagementRepository(), TimeProvider.System);
 
     [Theory]
     [InlineData(ImplantClass.Stage2, "shell.exec")]
@@ -153,6 +156,7 @@ public class TaskServiceGatingTests
         var service = new TaskService(
             new InMemoryTaskRepository(),
             implants,
+            new InMemoryEngagementRepository(),
             TimeProvider.System,
             bus: null,
             capabilities: new AllowingResolver("evasion.avoid"));

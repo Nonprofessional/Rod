@@ -35,7 +35,10 @@ namespace Rod.CoreState.Application;
 /// is queued, throwing <see cref="TaskRejectedException"/> for the transport to
 /// map. The implant is resolved here so the gate reads the class the implant
 /// actually enrolled with, and the engagement binding is checked against it
-/// (architecture.md Sec 3).
+/// (architecture.md Sec 3). The engagement's rules-of-engagement scope is the
+/// final issuance gate (architecture.md Sec 9): a task outside the profile the
+/// engagement's operators set -- a non-permitted verb or target -- is refused
+/// the same way, after the class gate so the refusal names the ROE rule.
 ///
 /// As with <see cref="EnrollmentService"/> and <see cref="HandshakeService"/>,
 /// refusals propagate as exceptions the transport maps to wire status.
@@ -44,22 +47,32 @@ public sealed class TaskService
 {
     private readonly ITaskRepository _tasks;
     private readonly IImplantRepository _implants;
+    private readonly IEngagementRepository _engagements;
     private readonly TimeProvider _clock;
     private readonly ILiveEventBus? _bus;
     private readonly ITaskCapabilityResolver _capabilities;
 
-    public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock)
-        : this(tasks, implants, clock, bus: null, capabilities: new ClassTableCapabilityResolver())
+    public TaskService(
+        ITaskRepository tasks,
+        IImplantRepository implants,
+        IEngagementRepository engagements,
+        TimeProvider clock)
+        : this(tasks, implants, engagements, clock, bus: null, capabilities: new ClassTableCapabilityResolver())
     {
     }
 
     /// <summary>
     /// Constructs the service with a live-event bus. The composition root wires
-    /// the bus (); the three-argument constructor above keeps the
+    /// the bus (); the four-argument constructor above keeps the
     /// core-state unit tests bus-free.
     /// </summary>
-    public TaskService(ITaskRepository tasks, IImplantRepository implants, TimeProvider clock, ILiveEventBus? bus)
-        : this(tasks, implants, clock, bus, capabilities: new ClassTableCapabilityResolver())
+    public TaskService(
+        ITaskRepository tasks,
+        IImplantRepository implants,
+        IEngagementRepository engagements,
+        TimeProvider clock,
+        ILiveEventBus? bus)
+        : this(tasks, implants, engagements, clock, bus, capabilities: new ClassTableCapabilityResolver())
     {
     }
 
@@ -77,12 +90,14 @@ public sealed class TaskService
     public TaskService(
         ITaskRepository tasks,
         IImplantRepository implants,
+        IEngagementRepository engagements,
         TimeProvider clock,
         ILiveEventBus? bus,
         ITaskCapabilityResolver capabilities)
     {
         _tasks = tasks;
         _implants = implants;
+        _engagements = engagements;
         _clock = clock;
         _bus = bus;
         _capabilities = capabilities;
@@ -146,6 +161,24 @@ public sealed class TaskService
                 TaskRejectionReason.UnsupportedVerbForClass,
                 $"Verb '{command.Verb}' is not in the {implant.Class} reduced verb set " +
                 "and no capability module is registered for it.");
+        }
+
+        // The engagement's rules-of-engagement scope is the last gate before
+        // the queue (architecture.md Sec 9 -- ROE guardrails). Unlike the class
+        // gate it is operator-set per engagement, not baked per implant class:
+        // it narrows what the engagement's operators may task regardless of
+        // what the implant could run. Checked after the binding and capability
+        // gates so the refusal names the ROE rule, the most specific cause. An
+        // engagement the implant binding already validated always resolves
+        // here; a null engagement leaves the scope unrestricted rather than
+        // inventing a refusal the binding checks above did not.
+        var engagement = await _engagements.FindAsync(command.EngagementId, cancellationToken);
+        var roeViolation = engagement?.Roe.Evaluate(implant.Id.ToString(), command.Verb);
+        if (roeViolation is not null)
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.RoeViolation,
+                $"Task refused by the engagement's rules of engagement: {roeViolation}.");
         }
 
         var task = Task.Create(
