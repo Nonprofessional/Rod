@@ -140,6 +140,20 @@ work in `PermittedVerbs`). An engagement whose ROE profile omits your verb
 refuses it at queue time with an audit record naming the violated rule --
 build the metadata as if the operator's report depends on it, because it does.
 
+## Build-time transforms (planned)
+
+Build-time artifact transformation -- the slot where Metasploit put its
+encoders and payload encryption -- follows the same pattern as a capability
+module, one layer down: a post-build `IPayloadTransform` chain,
+config-listed under `Build:Transforms`, each transform owning its key
+material and its decode stub end to end. Nothing ships in-tree; the chain is
+the seam, and the fingerprint and `PayloadBuilt` audit record always describe
+the bytes actually stored (so the engagement report never lies about what a
+transform produced). See the todo list for the acceptance criteria; until it
+ships, a transform author wraps the built artifact outside the pipeline with
+the same guarantees to keep (record what you produced, never lose
+attribution).
+
 ## What stays out of the core, and why
 
 The boundary is technique-kind, not category (architecture.md Sec 13):

@@ -42,6 +42,28 @@ historical milestone id, from commit bodies.
       transport for egress-restricted targets. _AC:_ an implant checks in over
       DNS against a real listener entry.
 
+## Payload transforms (architecture.md Sec 6, Sec 13)
+
+Build-time artifact transformation is where MSF put its encoders and payload
+encryption; against modern EDR those are legacy, and concrete transforms stay
+out-of-tree by the Sec 13 boundary. The platform's job is the seam, so an
+operator's transform plugs into the build pipeline the way a tradecraft module
+plugs into the capability registry.
+
+- [ ] **Transform chain seam.** A post-build `IPayloadTransform` chain in the
+      build pipeline: each transform names itself, receives the built
+      artifact bytes plus the build context (params, profiles), and returns
+      transformed bytes plus metadata. The chain is config-driven
+      (`Build:Transforms`, the same explicit-list loading shape as
+      `Tradecraft:Modules`), the recorded fingerprint and the `PayloadBuilt`
+      audit event cover the transformed bytes and name every applied
+      transform, and each transform owns its own key material and decode
+      contract end to end (the service generates none). No in-tree transforms
+      ship -- the empty chain is the seam, exactly like the capability
+      placeholders. _AC:_ an out-of-tree transform registered by config runs
+      in the build, and the stored fingerprint plus audit trail prove which
+      transforms produced the stored bytes.
+
 ## Tradecraft extension kit (architecture.md Sec 10.2, Sec 13)
 
 The out-of-tree seams exist (config-listed server modules, compile-time implant
