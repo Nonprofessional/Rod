@@ -19,7 +19,7 @@ public class SessionRegistryTests
     private static Implant NewImplant(EngagementId engagement)
     {
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-abc",
+            ImplantId.New(), engagement,
             Now.AddDays(30), ImplantClass.Stage2, Now);
         // The registry only reads implant.Id / implant.EngagementId, so the
         // entity never needs to be persisted for these tests.

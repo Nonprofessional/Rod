@@ -66,7 +66,7 @@ public class TradecraftTaskPathTests
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, "key-stage2", now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
         return implant;
     }
@@ -117,8 +117,7 @@ public class TradecraftTaskPathTests
             var clock = host.Services.GetRequiredService<TimeProvider>();
             var now = clock.GetUtcNow();
             var implant = Implant.Enroll(
-                ImplantId.New(), new EngagementId(Guid.Parse(engagementId)),
-                "key-stager", now.AddDays(30), ImplantClass.Stager, now);
+                ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.Stager, now);
             await implants.SaveAsync(implant);
 
             var response = await client.PostAsJsonAsync(

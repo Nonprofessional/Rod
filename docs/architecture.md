@@ -34,8 +34,8 @@ around "managed components". Each phase states what the platform must support.
    domains, certificates. Infrastructure is **disposable and reprovisionable**;
    burn rate is expected, so it is config-driven and tear-down friendly.
 3. **Payload generation and staging.** Build per-implant artifacts with baked-in
-   C2 endpoint, per-implant key, beacon parameters, and kill date. Emit a stage-1
-   stager where useful.
+   C2 endpoint, beacon parameters, and kill date. Emit a stage-1 stager where
+   useful.
 4. **Delivery and initial access.** Delivery (phishing, host interaction, etc.)
    is out of scope for Rod, but the platform must **ingest the first callback**
    and correlate it to the engagement.
@@ -214,7 +214,8 @@ engagement-scoped endpoint, not a retrofit onto the global catalog.
 ## 5. Implants and profiles
 
 An implant is a short-lived, disposable payload on a target. It is **untrusted by
-default** and carries a unique per-implant key -- never a global shared secret.
+default** and generates its own keypair at first run -- there is no global
+shared secret, and no key material in the artifact at all.
 What a from-scratch implant must implement to interoperate -- and what is
 optional hardening or optional features -- is specified as a tier ladder in
 [implant-contract.md](implant-contract.md); that ladder is the contract's
@@ -222,11 +223,14 @@ complexity budget, and its evolution rules bind every future protocol change.
 
 ### 5.1 Profiles are baked in at generation
 
-A **profile** -- beacon parameters (sleep, jitter, kill date), the transport
-profile, the per-implant key, and the C2 endpoint -- is embedded into the
+A **profile** -- the check-in mode, beacon parameters (sleep, jitter, kill
+date), the transport profile, and the C2 endpoint -- is embedded into the
 artifact at build time, so each implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
-lost implant self-terminates at its kill date.
+lost implant self-terminates at its kill date. No key material is baked: the
+implant's cryptographic identity is the keypair it generates itself at first
+run, bound to its engagement by the CA-signed leaf issued at enroll (Sec 9) --
+a captured artifact carries nothing reusable.
 
 The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
 land in the decoded artifact across the .NET and stub build units, so a
@@ -238,10 +242,7 @@ refuses to open a session for an implant whose kill date has passed, returning
 is recorded; the implant itself refuses to start past its kill date and
 re-checks it at the top of each beacon cycle, so a long-running implant
 self-terminates the moment the date passes rather than waiting for a reconnect
-or restart. The per-implant key is generated server-side (a 32-byte
-cryptographically random value) at both enrollment and build time, so two
-implants -- or two builds of the same request -- never share a key; this is
-pinned by tests against both producers.
+or restart.
 
 ### 5.2 Implant classes (by operational purpose)
 
@@ -351,10 +352,10 @@ recorded.**
   implant runs on a stock target with no .NET installed -- the deployment shape
   an operation actually has. An unmappable target fails the build with the
   supported set named rather than silently building for the build host.
-- **Build params** include implant config, the embedded per-implant key, target
-  OS/arch, transport profile, and beacon parameters. They are produced at request
-  time so each artifact is unique (per-implant keys, config, obfuscation) -- this
-  is essential for OPSEC.
+- **Build params** include the implant class, target OS/arch, transport
+  profile, and beacon parameters (mode, sleep, jitter, kill date). They are
+  produced at request time so each artifact is unique -- this is essential for
+  OPSEC. No key material crosses the build contract (Sec 5.1).
 - **Staging** is a separate output: a stage-1 stager that fetches stage-2 has its
   own generation path.
 - **Artifact tracking.** Every generated artifact is fingerprinted and recorded
@@ -380,13 +381,14 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   past it (`HANDSHAKE_STATUS_KILL_DATE_EXPIRED`, no session opens), and the
   implant refuses to start past it and re-checks it each beacon cycle so a
   long-running implant self-terminates the moment the date passes.
-- **Per-implant cryptographic key.** Unique per implant, so compromising one does
-  not compromise all. Keys are generated server-side (32-byte
-  cryptographically random) at enrollment and at build time, so two implants
-  never share a key. Because the key is baked into the artifact (Sec 5.1), key
-  rotation is the operational flow *retire the compromised implant, repoint its
-  endpoint, and build a fresh artifact with a fresh server-generated key* (Sec
-  8) -- there is no live in-place key swap.
+- **Per-implant cryptographic identity.** Each implant generates its own RSA
+  keypair at first run and submits only the public half at enroll; the teamserver
+  CA signs a leaf bound to (implant_id, engagement_id) over it. There is no
+  shared secret anywhere, and the artifact carries no key material at all, so a
+  captured payload compromises nothing. Compromise handling is the operational
+  flow *retire the implant (refused at the next handshake), repoint its
+  endpoint, and build a fresh artifact* (Sec 8) -- there is no live in-place
+  key swap.
 - **Malleable transport profiles.** Configurable URIs, a User-Agent, custom HTTP
   headers, a per-request timeout, and a body envelope baked in per implant so the
   enroll wire shape matches legitimate traffic and two implants do not look the
@@ -525,11 +527,11 @@ fleet-wide code execution. Security is a first-class concern.
   built -- for TLS-terminating edges such as domain fronting -- it must be
   handshake-negotiated with a plaintext fallback, so Tier 0 implants keep
   interoperating (see [implant-contract.md](implant-contract.md)).
-- **Per-implant keys and rotation.** Unique keys per implant, generated
-  server-side at enrollment and build time (Sec. 7). The key is baked into the
-  artifact, so rotation is the operational flow *retire the compromised implant,
-  repoint its endpoint, and build a fresh artifact with a fresh server-generated
-  key* (Sec 7, Sec 8); there is no live in-place key swap.
+- **Per-implant identity and rotation.** Each implant owns a keypair it
+  generated itself; the server binds it with a CA-signed leaf at enroll and
+  never sees the private half (Sec 7, Sec 9). Artifacts carry no key material.
+  Rotation is the operational flow *retire the compromised implant, repoint its
+  endpoint, and build a fresh artifact*; there is no live in-place key swap.
 - **Retirement.** An implant can be retired from the operator API
   (`POST /engagements/{engagementId}/implants/{implantId}:retire`); a retired
   implant is refused at handshake (`HANDSHAKE_STATUS_IMPLANT_RETIRED`, no session
@@ -945,7 +947,7 @@ with -- and aim to surpass -- what established platforms offer in that area.
   external exploit and payload modules, so new tradecraft plugs in without core
   changes.
 - **OPSEC and infrastructure** -- disposable, reprovisionable infrastructure,
-  redirector decoupling, burn handling, and per-implant keying as first-class.
+  redirector decoupling, burn handling, and per-implant identity as first-class.
 - **Evidence and reporting** -- an immutable, attributed, hash-chained audit
   trail that is the source for timeline and report generation, surviving
   infrastructure teardown.

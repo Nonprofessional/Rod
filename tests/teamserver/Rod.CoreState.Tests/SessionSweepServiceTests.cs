@@ -44,7 +44,7 @@ public class SessionSweepServiceTests
     }
 
     private static Implant NewImplant(EngagementId engagement)
-        => Implant.Enroll(ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+        => Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
 
     [Fact]
     public async Task SweepStale_ClosesSilentSessions_AndPublishesOneEventEach()

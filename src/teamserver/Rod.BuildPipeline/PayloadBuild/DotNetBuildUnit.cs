@@ -12,10 +12,10 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract (architecture.md Sec 6). It runs <c>dotnet publish</c> against the
 /// implant source tree, baking the per-implant profile into a generated
 /// <c>BakedProfile.g.cs</c> source file so each artifact carries its own endpoint,
-/// beacon parameters, and kill date (architecture.md Sec 5.1) -- and so the
-/// per-implant key never has to be present at build time. Only the key's
-/// fingerprint is recorded in the baked profile, never the key itself
-/// (architecture.md Sec 7).
+/// check-in mode, beacon parameters, and kill date (architecture.md Sec 5.1).
+/// No key material exists at build time at all: the implant's identity is the
+/// keypair it generates at first run, bound by the CA at enroll
+/// (architecture.md Sec 9), so a captured artifact leaks nothing reusable.
 ///
 /// The teamserver is coupled to this unit only by the build contract: it sends
 /// <see cref="BuildParams"/> and gets a <see cref="BuildArtifact"/> back, and the

@@ -45,12 +45,11 @@ public sealed class StubBuildUnit : IBuildUnit
         return Task.FromResult(artifact);
     }
 
-    // Renders the baked-in config as a stable, human-readable manifest. The key
-    // itself is deliberately absent: only its fingerprint is recorded, so the
-    // artifact cannot leak the per-implant key it carries.
+    // Renders the baked-in config as a stable, human-readable manifest. No key
+    // material exists to record: the profile carries none (architecture.md
+    // Sec 9 -- identity is the enroll-time certificate binding).
     private static string RenderManifest(BuildParams @params, DateTimeOffset builtAt)
     {
-        var keyFingerprint = ArtifactFingerprint.Of(Encoding.UTF8.GetBytes(@params.Key));
         var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
         var beacon = @params.Beacon;
         // The malleable transport profile (architecture.md Sec 7): enroll path,
@@ -82,7 +81,7 @@ public sealed class StubBuildUnit : IBuildUnit
             .AppendLine($"sleep={(long)beacon.Sleep.TotalSeconds}s")
             .AppendLine($"jitter={(long)beacon.Jitter.TotalSeconds}s")
             .AppendLine($"kill_date={beacon.KillDate:O}")
-            .AppendLine($"key_fingerprint={keyFingerprint}")
+            .AppendLine($"mode={beacon.Mode}")
             .AppendLine($"built_at={builtAt:O}")
             .ToString();
     }

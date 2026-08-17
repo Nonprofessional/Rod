@@ -34,7 +34,7 @@ public class RoeEndpointsTests
         // verbs -- the refusal under test can only be the ROE gate's.
         var engagementId = await CreateEngagementAsync(env.Http);
         var implant = Implant.Enroll(
-            ImplantId.New(), new EngagementId(engagementId), "key-roe-it",
+            ImplantId.New(), new EngagementId(engagementId),
             clock.GetUtcNow().AddDays(30), ImplantClass.Stage2, clock.GetUtcNow());
         await implants.SaveAsync(implant);
 

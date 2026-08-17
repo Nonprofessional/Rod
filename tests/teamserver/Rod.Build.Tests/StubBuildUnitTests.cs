@@ -18,14 +18,13 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class StubBuildUnitTests
 {
-    private static BuildParams Params(string key, ImplantClass @class = ImplantClass.Stage2) => new(
+    private static BuildParams Params(ImplantClass @class = ImplantClass.Stage2) => new(
         EngagementId.New(),
         OperatorId.New(),
         @class,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test", "/beacon"),
-        new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
-        key);
+        new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
     [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
@@ -39,7 +38,7 @@ public class StubBuildUnitTests
         // (architecture.md Sec 5.2), so a captured payload is self-describing.
         var unit = new StubBuildUnit();
 
-        var artifact = await unit.BuildAsync(Params("key-one", @class));
+        var artifact = await unit.BuildAsync(Params(@class));
 
         var manifest = Encoding.UTF8.GetString(artifact.Content);
         Assert.Contains($"verbs={expectedVerbs}", manifest);
@@ -62,8 +61,7 @@ public class StubBuildUnitTests
             ImplantClass.Stage2,
             new TargetProfile("linux", "amd64"),
             new TransportProfile("http://c2.example.test", "/beacon"),
-            new BeaconProfile(sleep, jitter, killDate),
-            "key-one");
+            new BeaconProfile(sleep, jitter, killDate));
 
         var unit = new StubBuildUnit();
         var artifact = await unit.BuildAsync(@params);
@@ -99,8 +97,7 @@ public class StubBuildUnitTests
             ImplantClass.Stage2,
             new TargetProfile("linux", "amd64"),
             transport,
-            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
-            "key-one");
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
         var unit = new StubBuildUnit();
         var artifact = await unit.BuildAsync(@params);
@@ -120,7 +117,7 @@ public class StubBuildUnitTests
         // A minimal transport profile fills the malleable knobs with the documented
         // defaults, so the stub manifest records the unchanged wire shape.
         var unit = new StubBuildUnit();
-        var artifact = await unit.BuildAsync(Params("key-one"));
+        var artifact = await unit.BuildAsync(Params());
 
         var manifest = Encoding.UTF8.GetString(artifact.Content);
         Assert.Contains($"enroll_path={TransportProfile.Defaults.EnrollPath}", manifest);
@@ -135,7 +132,7 @@ public class StubBuildUnitTests
     {
         var unit = new StubBuildUnit();
 
-        var artifact = await unit.BuildAsync(Params("key-one"));
+        var artifact = await unit.BuildAsync(Params());
 
         Assert.Equal(Language.Go, artifact.Language);
         Assert.NotEmpty(artifact.Content);
@@ -148,29 +145,11 @@ public class StubBuildUnitTests
     {
         var unit = new StubBuildUnit();
 
-        var artifact = await unit.BuildAsync(Params("key-one"));
+        var artifact = await unit.BuildAsync(Params());
 
         var expected = Convert.ToHexString(SHA256.HashData(artifact.Content)).ToLowerInvariant();
         Assert.Equal(expected, artifact.Fingerprint);
         Assert.Equal(64, artifact.Fingerprint.Length);
-    }
-
-    [Fact]
-    public async Task Build_DoesNotLeak_PerImplantKey()
-    {
-        // The artifact must carry only the key's fingerprint, never the key
-        // itself -- a captured artifact must not leak the material it was built
-        // with (architecture.md Sec 7).
-        var unit = new StubBuildUnit();
-        var key = "super-secret-per-implant-key-value";
-
-        var artifact = await unit.BuildAsync(Params(key));
-
-        var manifest = Encoding.UTF8.GetString(artifact.Content);
-        Assert.DoesNotContain(key, manifest);
-        // ...but the key's fingerprint is recorded, so the artifact is traceable.
-        var keyFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
-        Assert.Contains(keyFingerprint, manifest);
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public class ImplantClassGatingTests
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, "key-" + @class, now.AddDays(30), @class, now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
         return implant;
     }

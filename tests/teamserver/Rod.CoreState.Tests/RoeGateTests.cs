@@ -29,7 +29,7 @@ public class RoeGateTests
 
         var implants = new InMemoryImplantRepository();
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement.Id, "key-roe", Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement.Id, Now.AddDays(30), ImplantClass.Stage2, Now);
         await implants.SaveAsync(implant);
 
         var service = new TaskService(new InMemoryTaskRepository(), implants, engagements, TimeProvider.System);

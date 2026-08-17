@@ -24,7 +24,6 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.EngagementId)
             .HasConversion(IdConverters.EngagementId)
             .HasColumnName("engagement_id");
-        builder.Property(i => i.Key).HasColumnName("key").HasMaxLength(512).IsRequired();
         builder.Property(i => i.KillDate).HasColumnName("kill_date");
         // ImplantClass is an int column, matching the audit hash's (int)Kind form.
         builder.Property(i => i.Class).HasColumnName("class");

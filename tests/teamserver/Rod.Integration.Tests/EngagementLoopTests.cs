@@ -240,7 +240,7 @@ public class EngagementLoopTests
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), "key-loop",
+            ImplantId.New(), EngagementId.New(),
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 

@@ -223,7 +223,7 @@ public class ExfilRoundTripTests
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), "key-exfil",
+            ImplantId.New(), EngagementId.New(),
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 

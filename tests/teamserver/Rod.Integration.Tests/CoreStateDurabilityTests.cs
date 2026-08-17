@@ -139,7 +139,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var parent = Implant.Enroll(
                 ImplantId.New(),
                 engagementId,
-                key: "k_parent",
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
                 @class: ImplantClass.Stage2,
                 createdAt: DateTimeOffset.UtcNow,
@@ -150,7 +149,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var child = Implant.EnrollChild(
                 ImplantId.New(),
                 engagementId,
-                key: "k_child",
                 killDate: parent.KillDate,
                 @class: ImplantClass.Pivot,
                 createdAt: DateTimeOffset.UtcNow,
@@ -280,7 +278,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var implant = Implant.Enroll(
                 ImplantId.New(),
                 engagementId,
-                key: "k_fifo",
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
                 @class: ImplantClass.Stage2,
                 createdAt: DateTimeOffset.UtcNow,
@@ -461,7 +458,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var implant = Implant.Enroll(
                 ImplantId.New(),
                 engagementId,
-                key: "k_full",
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
                 @class: ImplantClass.Stage2,
                 createdAt: DateTimeOffset.UtcNow,

@@ -50,7 +50,7 @@ public class ImplantServiceTests
         InMemoryImplantRepository implants, EngagementId engagement)
     {
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
         await implants.SaveAsync(implant);
         return implant;
     }

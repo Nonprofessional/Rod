@@ -21,7 +21,6 @@ public class ImplantRetirementTests
         => Implant.Enroll(
             ImplantId.New(),
             EngagementId.New(),
-            "key-abc",
             KillDate,
             ImplantClass.Stage2,
             createdAt ?? Created);

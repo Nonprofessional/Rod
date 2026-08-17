@@ -16,7 +16,7 @@ sections.
 
 | Term | Meaning |
 |------|---------|
-| **Implant** | A short-lived, disposable payload on a target host. Untrusted by default; carries a unique per-implant key. Speaks the wire protocol. |
+| **Implant** | A short-lived, disposable payload on a target host. Untrusted by default; generates its own keypair (identity bound by the CA-signed leaf at enroll -- no key material ships in the artifact). Speaks the wire protocol. |
 | **Session** | The implant's live channel in an engagement -- not one TCP connection. Reconnects (poll check-ins, flapped streams) reuse it; the staleness sweeper or retirement closes it. Online means "seen within the staleness threshold". |
 | **Beacon** | The implant's check-in over the reverse stream. Two modes are baked per implant: `stream` (persistent connection, interactive) and `poll` (drain tasking, close, sleep the interval with jitter -- the periodic low-and-slow shape). |
 | **Beacon profile** | The per-implant check-in mode, sleep, jitter, and kill-date parameters, baked into the artifact at generation. |

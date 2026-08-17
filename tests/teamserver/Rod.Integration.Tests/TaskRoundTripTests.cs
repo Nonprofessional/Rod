@@ -178,7 +178,7 @@ public class TaskRoundTripTests
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), "key-abc",
+            ImplantId.New(), EngagementId.New(),
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 

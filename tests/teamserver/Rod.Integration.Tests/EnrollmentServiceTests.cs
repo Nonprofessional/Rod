@@ -62,9 +62,6 @@ public class EnrollmentServiceTests
         var second = await service.EnrollAsync(new EnrollCommand(await MintTokenAsync(engagements, tokens)));
 
         Assert.NotEqual(first.ImplantId, second.ImplantId);
-        Assert.NotEmpty(first.Key);
-        Assert.NotEmpty(second.Key);
-        Assert.NotEqual(first.Key, second.Key);
     }
 
     [Fact]

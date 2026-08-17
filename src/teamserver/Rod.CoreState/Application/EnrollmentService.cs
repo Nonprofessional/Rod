@@ -9,9 +9,10 @@ namespace Rod.CoreState.Application;
 
 /// <summary>
 /// The enrollment use case: a stager token is redeemed to bind a
-/// new implant to an engagement, the implant is recorded with a server-generated
-/// per-implant key and kill date, and the CA issues a certificate binding
-/// <c>(implant_id, engagement_id)</c> (architecture.md Sec 9). Orchestrates the
+/// new implant to an engagement, the implant is recorded with a default kill
+/// date, and the CA issues a certificate binding
+/// <c>(implant_id, engagement_id)</c> over the implant's own public key
+/// (architecture.md Sec 9). Orchestrates the
 /// core-state ports; holds no state of its own. Redeem failures propagate as
 /// <see cref="StagerTokenRedeemException"/> so the transport endpoint can map
 /// them to wire status codes without the core depending on the wire protocol.
@@ -85,7 +86,9 @@ public sealed class EnrollmentService
             ? await ResolveParentAsync(parentId, redeemed.EngagementId, cancellationToken)
             : null;
 
-        // 4. Build the implant: server-generated per-implant key + default kill date.
+        // 4. Build the implant: default kill date. The implant carries no key
+        //    material -- its identity is the keypair it generated itself, bound
+        //    by the CA-signed leaf in step 5.
         //    EnrollChild records the parent when present; a null parent yields the
         //    top-level shape, so the two paths share one factory. The implant's
         //    DeployedBy is the operator who minted the redeemed token -- the one
@@ -93,9 +96,8 @@ public sealed class EnrollmentService
         //    follow (a session opening, tasking) attribute to an accountable
         //    operator (architecture.md Sec 11).
         var implantId = ImplantId.New();
-        var key = Base64Url(RandomNumberGenerator.GetBytes(32));
         var killDate = now + DefaultKillDateOffset;
-        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, key, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id);
+        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
@@ -109,7 +111,6 @@ public sealed class EnrollmentService
         return new EnrollmentResult(
             implant.Id,
             redeemed.EngagementId,
-            key,
             killDate,
             command.Class,
             issued.Leaf,
@@ -168,13 +169,6 @@ public sealed class EnrollmentService
         publicKey.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
         return _certificateAuthority.IssueWithPublicKeyAsync(subject, publicKey, cancellationToken);
     }
-
-    // RFC 4648 base64url without padding -- URL-safe, matches the stager-token encoding.
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
 }
 
 /// <summary>
@@ -196,15 +190,14 @@ public sealed record EnrollCommand(
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
-/// its per-implant key (shown once, as with the stager secret), the recorded kill
-/// date, the bound certificate plus CA chain, the operator who deployed it (the
+/// the recorded kill date, the bound certificate plus CA chain, the operator who
+/// deployed it (the
 /// token issuer, used to attribute the enrollment), the parent it was derived
 /// from (null for a top-level implant), and the enrollment timestamp.
 /// </summary>
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
     EngagementId EngagementId,
-    string Key,
     DateTimeOffset KillDate,
     ImplantClass Class,
     byte[] LeafCertificate,

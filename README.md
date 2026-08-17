@@ -44,8 +44,9 @@ final report.
   Nim arrive as out-of-tree community units against the same contract, so
   implants stay polyglot without coupling them to the teamserver language.
 - **Implants** -- short-lived, disposable payloads on targets, untrusted by
-  default, each with a unique key and a profile (beacon parameters, kill date,
-  transport shape) baked in at generation.
+  default: each generates its own keypair at first run (bound by a CA-signed
+  leaf at enroll; no key material ships in the artifact) and carries a baked
+  profile -- check-in mode, beacon parameters, kill date, transport shape.
 - **Redirectors** -- near-stateless forwarders that front listeners for OPSEC and
   infrastructure flexibility; the in-tree direction is a .NET Native AOT single
   binary, and burned redirectors are swappable.
@@ -62,7 +63,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
   generation, beaconing, post-exploitation, lateral movement, exfiltration, and a
   report/evidence deliverable.
 - **OPSEC as a first-class axis**: per-implant beacon profiles with jitter, kill
-  dates, per-implant keys, malleable transport profiles, and disposable
+  dates, per-implant identities, malleable transport profiles, and disposable
   infrastructure.
 - **Polyglot implants from one control plane**: a .NET teamserver driving a .NET
   reference implant, with the language-neutral build contract open to out-of-tree
@@ -93,7 +94,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 | Data store | PostgreSQL (opt-in) | Authoritative state and per-engagement audit when `ConnectionStrings:Postgres` is set; in-memory and file-backed stores are the defaults. |
 | Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (architecture.md Sec 12.2). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (architecture.md Sec 8). |
-| Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable, per-implant keys. |
+| Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable; implant-generated keys, no key material in artifacts. |
 | Operator UI | Web (React) | Lives in the teamserver project; served same-origin. |
 
 See [docs/architecture.md](docs/architecture.md) for the rationale behind these

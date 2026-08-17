@@ -62,7 +62,7 @@ public class ChildEnrollmentServiceTests
         IImplantRepository implants, EngagementId engagement)
     {
         var parent = Implant.Enroll(
-            ImplantId.New(), engagement, "key-parent", Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
         await implants.SaveAsync(parent);
         return parent;
     }

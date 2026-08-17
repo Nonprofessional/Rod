@@ -21,7 +21,7 @@ public class ImplantParentageTests
     {
         // A top-level implant (enrolled from a stager token) has no parent.
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), "key-abc", KillDate, ImplantClass.Stage2, Created);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created);
 
         Assert.Null(implant.ParentImplantId);
     }
@@ -32,7 +32,7 @@ public class ImplantParentageTests
         // A child derived from a parent records the parent's id verbatim.
         var parent = ImplantId.New();
         var child = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), "key-child", KillDate, ImplantClass.Stage2, Created, parentImplantId: parent);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created, parentImplantId: parent);
 
         Assert.Equal(parent, child.ParentImplantId);
     }
@@ -46,20 +46,11 @@ public class ImplantParentageTests
         var id = ImplantId.New();
         var engagement = EngagementId.New();
 
-        var topLevel = Implant.Enroll(id, engagement, "key-abc", KillDate, ImplantClass.Stage2, Created);
-        var asChild = Implant.EnrollChild(id, engagement, "key-abc", KillDate, ImplantClass.Stage2, Created, parentImplantId: null);
+        var topLevel = Implant.Enroll(id, engagement, KillDate, ImplantClass.Stage2, Created);
+        var asChild = Implant.EnrollChild(id, engagement, KillDate, ImplantClass.Stage2, Created, parentImplantId: null);
 
         Assert.Null(asChild.ParentImplantId);
         Assert.Equal(topLevel.ParentImplantId, asChild.ParentImplantId);
-    }
-
-    [Fact]
-    public void EnrollChild_RejectsBlankKey()
-    {
-        // The shared validation applies on the child path too.
-        Assert.Throws<ArgumentException>(
-            () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "  ", KillDate, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
     }
 
     [Fact]
@@ -67,10 +58,10 @@ public class ImplantParentageTests
     {
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", Created, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), Created, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", Created.AddSeconds(-1), ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), Created.AddSeconds(-1), ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
     }
 
     [Fact]
@@ -81,6 +72,6 @@ public class ImplantParentageTests
         // parent stays valid (the top-level shape).
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), "k", KillDate, ImplantClass.Stage2, Created, parentImplantId: default(ImplantId)));
+                ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created, parentImplantId: default(ImplantId)));
     }
 }

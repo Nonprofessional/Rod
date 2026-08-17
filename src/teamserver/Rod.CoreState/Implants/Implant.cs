@@ -4,13 +4,12 @@ namespace Rod.CoreState.Implants;
 
 /// <summary>
 /// An implant -- a short-lived, disposable payload enrolled into exactly one
-/// engagement (architecture.md Sec 5). Untrusted by default; carries a unique
-/// per-implant key and a kill date. Its identity is bound to its engagement and
-/// disposable with it; an implant certificate binds
-/// <c>(implant_id, engagement_id)</c> (architecture.md Sec 9).
+/// engagement (architecture.md Sec 5). Untrusted by default; carries a kill
+/// date and no key material -- its cryptographic identity is the keypair the
+/// implant generated itself, bound to its engagement by the CA-signed leaf at
+/// enroll (architecture.md Sec 9), and the entity is disposable with it.
 ///
-/// The kill date is enforced on both sides of the wire; per-implant keys
-/// are server-generated at enrollment and build time. Retirement marks an
+/// The kill date is enforced on both sides of the wire. Retirement marks an
 /// implant taken out of operation: a retired implant is refused at handshake and
 /// untaskable, and its active session is closed when it is retired.
 ///
@@ -26,7 +25,6 @@ public sealed class Implant
 {
     public ImplantId Id { get; }
     public EngagementId EngagementId { get; }
-    public string Key { get; }
     public DateTimeOffset KillDate { get; }
     public ImplantClass Class { get; }
     public DateTimeOffset CreatedAt { get; }
@@ -58,7 +56,6 @@ public sealed class Implant
     private Implant(
         ImplantId id,
         EngagementId engagementId,
-        string key,
         DateTimeOffset killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
@@ -67,7 +64,6 @@ public sealed class Implant
     {
         Id = id;
         EngagementId = engagementId;
-        Key = key;
         KillDate = killDate;
         Class = @class;
         CreatedAt = createdAt;
@@ -77,10 +73,11 @@ public sealed class Implant
 
     /// <summary>
     /// Factory for a newly enrolled top-level implant (architecture.md Sec 5):
-    /// one enrolled from a stager token, with no parent. <paramref name="key"/> is
-    /// the server-generated per-implant key (base64url); <paramref name="killDate"/>
-    /// is the hard self-termination timestamp. Both are produced by the enrollment
-    /// service, not the entity, so this type stays free of crypto.
+    /// one enrolled from a stager token, with no parent. The implant carries no
+    /// key material -- its cryptographic identity is the keypair it generated
+    /// itself, bound to the engagement by the CA-signed leaf at enroll
+    /// (architecture.md Sec 9), so there is nothing here to store or leak.
+    /// <paramref name="killDate"/> is the hard self-termination timestamp.
     /// <paramref name="deployedBy"/> is the operator who authorized the deployment
     /// (the token issuer); it defaults to unattributed so tests that do not care
     /// about attribution stay unchanged, while the production enrollment path
@@ -89,17 +86,16 @@ public sealed class Implant
     public static Implant Enroll(
         ImplantId id,
         EngagementId engagementId,
-        string key,
         DateTimeOffset killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy = default)
-        => EnrollChild(id, engagementId, key, killDate, @class, createdAt, deployedBy, parentImplantId: null);
+        => EnrollChild(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId: null);
 
     /// <summary>
     /// Factory for a child implant derived from <paramref name="parentImplantId"/>
     /// (architecture.md Sec 5.2). The child enrols into the parent's
-    /// engagement and records its parent; the same key/kill-date shape as a
+    /// engagement and records its parent; the same kill-date shape as a
     /// top-level implant applies. A null <paramref name="parentImplantId"/> yields
     /// a top-level implant, so <see cref="Enroll"/> delegates here. The caller (the
     /// enrollment use case) is responsible for resolving and scope-checking the
@@ -110,15 +106,12 @@ public sealed class Implant
     public static Implant EnrollChild(
         ImplantId id,
         EngagementId engagementId,
-        string key,
         DateTimeOffset killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy = default,
         ImplantId? parentImplantId = null)
     {
-        if (string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("Implant key is required.", nameof(key));
         if (killDate <= createdAt)
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
         // A default ImplantId (Guid.Empty) is never a real parent; only a non-default
@@ -126,7 +119,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, key, killDate, @class, createdAt, deployedBy, parentImplantId);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId);
     }
 
     /// <summary>

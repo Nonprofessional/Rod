@@ -25,30 +25,23 @@ public class ImplantDomainTests
         var id = ImplantId.New();
         var engagement = EngagementId.New();
 
-        var implant = Implant.Enroll(id, engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+        var implant = Implant.Enroll(id, engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
 
         Assert.Equal(id, implant.Id);
         Assert.Equal(engagement, implant.EngagementId);
-        Assert.Equal("key-abc", implant.Key);
         Assert.Equal(Now.AddDays(30), implant.KillDate);
         Assert.Equal(ImplantClass.Stage2, implant.Class);
         Assert.Equal(Now, implant.CreatedAt);
     }
 
-    [Fact]
-    public void Enroll_RejectsBlankKey()
-    {
-        Assert.Throws<ArgumentException>(
-            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), "  ", Now.AddDays(1), ImplantClass.Stage2, Now));
-    }
 
     [Fact]
     public void Enroll_RejectsKillDateAtOrBeforeCreation()
     {
         Assert.Throws<ArgumentException>(
-            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), "k", Now, ImplantClass.Stage2, Now));
+            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now, ImplantClass.Stage2, Now));
         Assert.Throws<ArgumentException>(
-            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), "k", Now.AddSeconds(-1), ImplantClass.Stage2, Now));
+            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now.AddSeconds(-1), ImplantClass.Stage2, Now));
     }
 
     // --- Stager token redeem ---

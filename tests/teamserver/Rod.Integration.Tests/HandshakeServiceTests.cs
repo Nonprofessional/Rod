@@ -36,7 +36,7 @@ public class HandshakeServiceTests
         var resolvedEngagement = engagement ?? EngagementId.New();
         var resolvedAt = createdAt ?? Now;
         var implant = Implant.Enroll(
-            ImplantId.New(), resolvedEngagement, "key-abc",
+            ImplantId.New(), resolvedEngagement,
             resolvedAt.AddDays(30), ImplantClass.Stage2, resolvedAt);
         await implants.SaveAsync(implant);
         return implant;
@@ -134,7 +134,7 @@ public class HandshakeServiceTests
         // (matching engagement) so the refusal is specifically the kill date.
         var killDate = Now.AddSeconds(30);
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-abc", killDate, ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, killDate, ImplantClass.Stage2, Now);
         await implants.SaveAsync(implant);
 
         var sessions = new InMemorySessionRegistry();
@@ -158,7 +158,7 @@ public class HandshakeServiceTests
         // The kill date is in the future at handshake time, so the gate passes
         // and a session opens normally -- the negative case for the check above.
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
         await implants.SaveAsync(implant);
 
         var service = new HandshakeService(implants, sessions, new FakeClock(Now));
@@ -181,7 +181,7 @@ public class HandshakeServiceTests
         // the future and the engagement matches, so the refusal is specifically
         // the retirement -- a retired implant never gets a session again.
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-abc", Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
         implant.Retire(Now);
         await implants.SaveAsync(implant);
 

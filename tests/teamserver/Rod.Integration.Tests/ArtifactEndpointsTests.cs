@@ -204,7 +204,6 @@ public class ArtifactEndpointsTests
         var implant = Implant.Enroll(
             implantId,
             engagementId,
-            key: "key-" + implantId,
             killDate: now.AddDays(30),
             @class: ImplantClass.Stage2,
             now);

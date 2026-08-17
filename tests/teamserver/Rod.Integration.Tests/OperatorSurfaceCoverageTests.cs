@@ -76,7 +76,7 @@ public class OperatorSurfaceCoverageTests
         var clock = host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-stage2", now.AddDays(30), ImplantClass.Stage2, now);
+            ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
         return implant;
     }

@@ -19,29 +19,13 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class DotNetBuildUnitTests
 {
-    private static BuildParams Params(string key, ImplantClass @class = ImplantClass.Stage2) => new(
+    private static BuildParams Params(ImplantClass @class = ImplantClass.Stage2) => new(
         EngagementId.New(),
         OperatorId.New(),
         @class,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
-        new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
-        key);
-
-    [Fact]
-    public void RenderBakedProfile_DoesNotLeak_PerImplantKey()
-    {
-        // No key material is baked: neither the key itself nor any derived value
-        // (fingerprint included) lands in the artifact, so a captured payload
-        // cannot leak what it was built with (architecture.md Sec 7).
-        var key = "super-secret-per-implant-key-value";
-        var baked = DotNetBuildUnit.RenderBakedProfile(Params(key));
-
-        Assert.DoesNotContain(key, baked);
-        var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
-        var keyFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
-        Assert.DoesNotContain(keyFingerprint, json);
-    }
+        new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
     [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
@@ -51,7 +35,7 @@ public class DotNetBuildUnitTests
     {
         // The class's reduced verb set (architecture.md Sec 5.2) is baked into
         // the profile, so the generated implant carries the verbs it may run.
-        var baked = DotNetBuildUnit.RenderBakedProfile(Params("key-one", @class));
+        var baked = DotNetBuildUnit.RenderBakedProfile(Params(@class));
 
         var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));
 
@@ -75,8 +59,7 @@ public class DotNetBuildUnitTests
             ImplantClass.Stage2,
             new TargetProfile("linux", "amd64"),
             new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
-            new BeaconProfile(sleep, jitter, killDate),
-            "key-one");
+            new BeaconProfile(sleep, jitter, killDate));
 
         var baked = DotNetBuildUnit.RenderBakedProfile(@params);
 
@@ -113,8 +96,7 @@ public class DotNetBuildUnitTests
             ImplantClass.Stage2,
             new TargetProfile("linux", "amd64"),
             transport,
-            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)),
-            "key-one");
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
         var baked = DotNetBuildUnit.RenderBakedProfile(@params);
 
@@ -170,7 +152,7 @@ public class DotNetBuildUnitTests
     {
         var unit = new DotNetBuildUnit();
 
-        var artifact = await unit.BuildAsync(Params("key-one"));
+        var artifact = await unit.BuildAsync(Params());
 
         Assert.Equal(Language.DotNet, artifact.Language);
         Assert.NotEmpty(artifact.Content);
@@ -183,7 +165,7 @@ public class DotNetBuildUnitTests
     {
         var unit = new DotNetBuildUnit();
 
-        var artifact = await unit.BuildAsync(Params("key-one"));
+        var artifact = await unit.BuildAsync(Params());
 
         var expected = Convert.ToHexString(SHA256.HashData(artifact.Content)).ToLowerInvariant();
         Assert.Equal(expected, artifact.Fingerprint);
@@ -199,8 +181,8 @@ public class DotNetBuildUnitTests
         // contract (architecture.md Sec 5.1/6).
         var unit = new DotNetBuildUnit();
 
-        var first = await unit.BuildAsync(Params("key-one"));
-        var second = await unit.BuildAsync(Params("key-one"));
+        var first = await unit.BuildAsync(Params());
+        var second = await unit.BuildAsync(Params());
 
         Assert.NotEqual(first.Fingerprint, second.Fingerprint);
     }

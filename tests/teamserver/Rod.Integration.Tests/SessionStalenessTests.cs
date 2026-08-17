@@ -43,7 +43,7 @@ public class SessionStalenessTests
     private static async Task<Implant> EnrollAsync(IHost host, EngagementId engagement, DateTimeOffset at)
     {
         var implants = host.Services.GetRequiredService<IImplantRepository>();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, "key-stale", at.AddDays(30), ImplantClass.Stage2, at);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, at.AddDays(30), ImplantClass.Stage2, at);
         await implants.SaveAsync(implant);
         return implant;
     }

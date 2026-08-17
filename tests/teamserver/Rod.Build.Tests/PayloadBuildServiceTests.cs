@@ -38,39 +38,6 @@ public class PayloadBuildServiceTests
     }
 
     [Fact]
-    public async Task Build_GeneratesDistinctKeys_PerRequest()
-    {
-        // The per-implant key is generated at request time (architecture.md Sec 6,
-        // Sec 7) so two builds never share material -- compromising one artifact
-        // must not compromise another. Two builds of the same request therefore
-        // carry different keys; a regression to a shared or constant key would
-        // fail this.
-        var service = NewService();
-
-        var first = await service.BuildAsync(Request());
-        var second = await service.BuildAsync(Request());
-
-        Assert.NotEmpty(first.Params.Key);
-        Assert.NotEmpty(second.Params.Key);
-        Assert.NotEqual(first.Params.Key, second.Params.Key);
-    }
-
-    [Fact]
-    public async Task Build_RecordsTheKeyFingerprint_NotTheKey_InTheArtifact()
-    {
-        // The artifact carries only the key's fingerprint, never the key itself
-        // (architecture.md Sec 7): a captured artifact must not leak the material
-        // it was built with. The stub manifest is UTF-8 text, so a plain substring
-        // check is enough.
-        var service = NewService();
-
-        var artifact = await service.BuildAsync(Request());
-
-        var manifest = System.Text.Encoding.UTF8.GetString(artifact.Content);
-        Assert.DoesNotContain(artifact.Params.Key, manifest);
-    }
-
-    [Fact]
     public async Task Build_FlowsTheMalleableTransportProfile_ToTheArtifact()
     {
         // The malleable transport knobs set on the request (architecture.md

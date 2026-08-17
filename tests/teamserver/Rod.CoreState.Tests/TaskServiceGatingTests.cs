@@ -25,7 +25,7 @@ public class TaskServiceGatingTests
         ImplantClass @class)
     {
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement, "key-" + @class, Now.AddDays(30), @class, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), @class, Now);
         await implants.SaveAsync(implant);
         return implant;
     }
