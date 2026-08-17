@@ -78,14 +78,21 @@ public sealed record TransportProfile(
 
 /// <summary>
 /// The beacon profile baked into an implant at generation (architecture.md Sec 5.1,
-/// Sec 7): the sleep interval, the jitter applied to each check-in, and the kill
-/// date past which the implant self-terminates. These are embedded into the
-/// artifact at build time so each implant is self-contained.
+/// Sec 7): the check-in mode, the sleep interval, the jitter applied to each
+/// check-in, and the kill date past which the implant self-terminates. These are
+/// embedded into the artifact at build time so each implant is self-contained.
 /// </summary>
+/// <param name="Mode">
+/// How one check-in cycle uses the beacon stream: <c>stream</c> holds the
+/// connection open (interactive, server-push tasking); <c>poll</c> drains
+/// queued tasking, closes, and sleeps the interval -- the low-and-slow OPSEC
+/// shape. Defaults to <c>stream</c>.
+/// </param>
 public sealed record BeaconProfile(
     TimeSpan Sleep,
     TimeSpan Jitter,
-    DateTimeOffset KillDate);
+    DateTimeOffset KillDate,
+    string Mode = "stream");
 
 /// <summary>
 /// The target the artifact is built for. Build params are produced at request

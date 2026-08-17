@@ -5,12 +5,14 @@ using Rod.CoreState.Implants;
 namespace Rod.CoreState.Sessions;
 
 /// <summary>
-/// In-memory <see cref="ISessionRegistry"/> by default.
-/// -- no Postgres yet. Sessions live in a process-local map keyed by session id;
-/// implant- and engagement-scoped queries filter that map. An implant holds at
-/// most one active session at a time, so opening a new one closes the prior
-/// active session for that implant first. State is lost on restart; the port
-/// keeps callers agnostic to that.
+/// In-memory <see cref="ISessionRegistry"/> by default -- the durable Postgres
+/// pair replaces it when configured. Sessions live in a process-local map keyed
+/// by session id; implant- and engagement-scoped queries filter that map. A
+/// session is the implant's live channel, not one TCP connection:
+/// <see cref="OpenAsync"/> reuses the implant's active session when one exists
+/// (a reconnect -- a poll check-in or a flapped stream -- refreshes capabilities
+/// and last-seen) and only opens a new entity after the prior session closed.
+/// State is lost on restart; the port keeps callers agnostic to that.
 /// </summary>
 public sealed class InMemorySessionRegistry : ISessionRegistry
 {
@@ -22,11 +24,19 @@ public sealed class InMemorySessionRegistry : ISessionRegistry
         DateTimeOffset at,
         CancellationToken cancellationToken = default)
     {
-        // An implant holds at most one active session; a reconnect closes the
-        // prior active session for that implant before opening the new one.
+        // Open-or-reuse: a session is the implant's live channel, not one TCP
+        // connection, so a reconnect (poll check-in, flapped stream) reuses the
+        // active session -- refreshing its capabilities and last-seen -- instead
+        // of churning a new session entity and a SessionOpened audit record per
+        // connection. Only a closed session (staleness sweep, retirement,
+        // explicit close) makes the next open a genuinely new one.
         var priorActive = _sessions.Values.FirstOrDefault(s =>
             s.ImplantId == implant.Id && s.Status == SessionStatus.Active);
-        priorActive?.Close(at);
+        if (priorActive is not null)
+        {
+            priorActive.Touch(capabilities, at);
+            return Task.FromResult(priorActive);
+        }
 
         var session = Session.Open(SessionId.New(), implant.Id, implant.EngagementId, capabilities, at);
         _sessions[session.Id] = session;

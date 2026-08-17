@@ -6,10 +6,11 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Round-trip checks of <see cref="InMemorySessionRegistry"/> -- the
-/// core-state layer lift. Sessions open on connect, close on disconnect, and
-/// survive in the per-implant history; an implant holds at most one active
-/// session so a reconnect closes the prior one; engagement scoping never leaks
-/// another engagement's sessions (architecture.md Sec 3, Sec 4.1).
+/// core-state layer lift. A session is the implant's live channel, not one TCP
+/// connection: open reuses the active session on a reconnect, and only a closed
+/// session (sweep, retirement, explicit close) makes the next open a new entity
+/// in the per-implant history; engagement scoping never leaks another
+/// engagement's sessions (architecture.md Sec 3, Sec 4.1).
 /// </summary>
 public class SessionRegistryTests
 {
@@ -50,7 +51,7 @@ public class SessionRegistryTests
     }
 
     [Fact]
-    public async Task Reconnect_ClosesPriorActiveSession()
+    public async Task Reconnect_ReusesTheActiveSession()
     {
         var registry = new InMemorySessionRegistry();
         var engagement = EngagementId.New();
@@ -59,14 +60,24 @@ public class SessionRegistryTests
         var first = await registry.OpenAsync(implant, new[] { "shell.exec" }, Now);
         var second = await registry.OpenAsync(implant, new[] { "recon.portscan" }, Now.AddSeconds(10));
 
-        // Only the new session is active; the prior one was closed by the reconnect.
-        Assert.NotEqual(first.Id, second.Id);
+        // The reconnect refreshed the same session: one entity, updated
+        // capabilities and last-seen, no churn in the history.
+        Assert.Equal(first.Id, second.Id);
         Assert.Equal(second.Id, (await registry.GetActiveAsync(implant.Id))!.Id);
+        Assert.Equal(new[] { "recon.portscan" }, second.Capabilities);
+        Assert.Equal(Now.AddSeconds(10), second.LastSeenAt);
         Assert.Single(await registry.ListActiveAsync(engagement));
-
-        // Both sessions are in the implant's connection history, oldest first.
         var history = await registry.ListByImplantAsync(implant.Id);
-        Assert.Equal(new[] { first.Id, second.Id }, history.Select(s => s.Id).ToArray());
+        var only = Assert.Single(history);
+        Assert.Equal(SessionStatus.Active, only.Status);
+
+        // A session that closed (sweep, retirement, explicit close) is history;
+        // the next open is a genuinely new entity with a new id.
+        await registry.CloseAsync(first.Id, Now.AddMinutes(1));
+        var third = await registry.OpenAsync(implant, new[] { "shell.exec" }, Now.AddMinutes(2));
+        Assert.NotEqual(first.Id, third.Id);
+        history = await registry.ListByImplantAsync(implant.Id);
+        Assert.Equal(2, history.Count);
         Assert.Equal(SessionStatus.Closed, history[0].Status);
         Assert.Equal(SessionStatus.Active, history[1].Status);
     }

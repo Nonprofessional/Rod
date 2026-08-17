@@ -121,13 +121,20 @@ public sealed class HandshakeService
                 $"Implant {implant.Id} was retired at {implant.RetiredAt:O}.");
         }
 
-        // 6. Open a session. The capabilities advertised here gate tasking
-        //    dispatch (architecture.md Sec 10). Opening a new
-        //    session closes any prior active session for the implant first, so a
-        //    reconnect does not leave a phantom live connection.
+        // 6. Open (or reuse) the session. The capabilities advertised here gate
+        //    tasking dispatch (architecture.md Sec 10). A session is the
+        //    implant's live channel, not one TCP connection: the registry reuses
+        //    the active session on a reconnect (a poll check-in or a flapped
+        //    stream) and only opens a new entity after the prior one closed.
+        //    Whether this handshake reused one is returned so the transport
+        //    writes the SessionOpened audit record only for a genuinely new
+        //    session -- a poll cadence must not flood the engagement trail.
+        var priorActive = await _sessions.GetActiveAsync(command.ImplantId, cancellationToken);
         var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);
 
-        return new HandshakeResult(session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now);
+        return new HandshakeResult(
+            session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now,
+            ReusedSession: priorActive is not null);
     }
 }
 
@@ -149,16 +156,19 @@ public sealed record HandshakeCommand(
     EngagementId? CertificateEngagementId);
 
 /// <summary>
-/// Result of a successful handshake: the session the implant just opened, its
-/// identity, its (confirmed) engagement, the operator who deployed it (used to
-/// attribute the session-opening event, since a handshake is implant-initiated),
-/// and the time the session started. The transport echoes the engagement id back
-/// so the implant can confirm its binding, and holds the session id to close when
-/// the stream ends.
+/// Result of a successful handshake: the session the implant holds (freshly
+/// opened, or the active one reused on a reconnect), its identity, its
+/// (confirmed) engagement, the operator who deployed it (used to attribute the
+/// session-opening event, since a handshake is implant-initiated), and the time
+/// of the handshake. <see cref="ReusedSession"/> tells the transport this
+/// handshake refreshed an existing session, so the SessionOpened audit record is
+/// written only for a new one. The transport echoes the engagement id back so
+/// the implant can confirm its binding.
 /// </summary>
 public sealed record HandshakeResult(
     SessionId SessionId,
     ImplantId ImplantId,
     EngagementId EngagementId,
     OperatorId DeployedBy,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    bool ReusedSession = false);

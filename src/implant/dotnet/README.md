@@ -3,8 +3,9 @@
 The reference **stage-2 implant** in the .NET language, cross-platform
 ([architecture.md Sec 5](../../../docs/architecture.md)). It is a benign, readable
 implant that enrolls over the teamserver's HTTP enroll endpoint (submitting its
-own public key), beacons over mTLS with the baked-in sleep/jitter/kill-date
-profile, and runs the standard-category verb set: shell exec, file transfer
+own public key), beacons over mTLS with the baked-in mode/sleep/jitter/kill-date
+profile (`-mode stream` holds the connection, `-mode poll` checks in on the
+baked cadence), and runs the standard-category verb set: shell exec, file transfer
 (push/pull), recon, lateral (child derivation, token inspection, remote exec
 over admin channels), persistence (Run key / scheduled tasks / services / cron
 / systemd), credential-store enumeration, and exfil to the engagement artifact
@@ -48,3 +49,7 @@ development (framework-dependent, from the source tree):
 dotnet build Rod.Implant.csproj
 dotnet run --project Rod.Implant.csproj -- -enroll-url http://127.0.0.1:5080/implants/enroll -token <stager-token>
 ```
+
+Add `-mode poll` for the low-and-slow check-in cadence (sleep/jitter between
+check-ins instead of a persistent connection); the default `-mode stream` is the
+interactive shape.

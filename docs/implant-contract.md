@@ -23,7 +23,9 @@ The smallest implant that enrolls, checks in, and executes tasking:
    the CA chain. Keep the private key; never transmit it.
 2. **Beacon.** Open the `Beacon.CheckIn` bidirectional stream over mTLS,
    presenting the leaf certificate (gRPC over HTTP/2; the transport profile
-   names the endpoint).
+   names the endpoint). Holding the stream open (stream mode) and
+   drain-then-close-sleep cycles (poll mode) are both Tier 0 -- the server
+   treats them identically.
 3. **Handshake.** Send `HandshakeRequest` (protocol version 1.0, the implant
    id, the advertised verb list) as the first frame; require
    `HANDSHAKE_STATUS_OK`. Treat every other status as permanent: log it and
@@ -54,7 +56,9 @@ the server cannot observe whether an implant adopted any of them:
   the local check bounds a lost implant that can no longer reach any server.
 - **Beacon discipline.** The baked sleep with jitter, and exponential
   backoff on consecutive failures, so a down teamserver is not polled at
-  beacon rate.
+  beacon rate. The check-in mode is the implant's choice on the same stream
+  contract: hold the connection open (stream) or drain-then-close-sleep
+  (poll, the low-and-slow shape).
 
 ## Tier 2 -- Optional features
 

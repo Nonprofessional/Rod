@@ -73,6 +73,15 @@ public static class PayloadEndpoints
             return Results.BadRequest(new Problem("Language is not recognized."));
         if (!TryParseClass(body.Class, out var @class))
             return Results.BadRequest(new Problem("Implant class is not recognized."));
+        // The check-in mode rides the beacon profile into the artifact: stream
+        // (persistent, interactive) or poll (low-and-slow check-ins). A typo
+        // must not silently build the interactive shape for an operator who
+        // asked for low-and-slow, so anything else is a 400.
+        var mode = body.Mode?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(mode))
+            mode = "stream";
+        if (mode is not ("stream" or "poll"))
+            return Results.BadRequest(new Problem("Mode must be 'stream' or 'poll'."));
 
         BuildArtifact artifact;
         try
@@ -87,7 +96,8 @@ public static class PayloadEndpoints
                 BuildTransport(body),
                 ParseDuration(body.SleepSeconds, DefaultSleep),
                 ParseDuration(body.JitterSeconds, DefaultJitter),
-                body.KillDate),
+                body.KillDate,
+                mode),
             cancellationToken);
         }
         catch (OperationCanceledException)
@@ -263,6 +273,7 @@ public static class PayloadEndpoints
         double? SleepSeconds,
         double? JitterSeconds,
         DateTimeOffset? KillDate,
+        string? Mode = null,
         string? EnrollPath = null,
         string? UserAgent = null,
         Dictionary<string, string>? Headers = null,

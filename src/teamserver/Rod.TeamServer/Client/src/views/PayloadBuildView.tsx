@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { type BuildPayloadResult, buildPayload } from '../api'
 
 // The payload-build panel (//): builds an implant artifact,
-// baking in the beacon profile (sleep/jitter), the kill date (self-termination),
-// and the malleable transport profile (endpoint, URIs, headers, timing, envelope).
+// baking in the beacon profile (mode, sleep/jitter), the kill date
+// (self-termination), and the malleable transport profile (endpoint, URIs,
+// headers, timing, envelope).
 // These are baked at generation -- a live implant's profile is read-only after
 // enrollment -- so OPSEC changes go through a rebuild and redeploy.
 
@@ -12,7 +13,7 @@ export function PayloadBuildView({
 }: {
   engagementId: string
 }) {
-  const [language, setLanguage] = useState('Go')
+  const [language, setLanguage] = useState('DotNet')
   const [klass, setKlass] = useState('Stage2')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
@@ -22,6 +23,7 @@ export function PayloadBuildView({
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
   const [envelope, setEnvelope] = useState('None')
+  const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
   const [killDate, setKillDate] = useState('')
@@ -52,6 +54,7 @@ export function PayloadBuildView({
         headers: null,
         requestTimeoutSeconds: num(requestTimeoutSeconds),
         envelope: envelope !== 'None' ? envelope : null,
+        mode: mode !== 'stream' ? mode : null,
         sleepSeconds: num(sleepSeconds),
         jitterSeconds: num(jitterSeconds),
         killDate: killDate ? new Date(killDate).toISOString() : null,
@@ -104,6 +107,13 @@ export function PayloadBuildView({
         </fieldset>
         <fieldset>
           <legend>Beacon profile</legend>
+          <label>
+            Mode
+            <select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option value="stream">stream (persistent)</option>
+              <option value="poll">poll (low and slow)</option>
+            </select>
+          </label>
           <label>
             Sleep (s)
             <input value={sleepSeconds} onChange={(e) => setSleepSeconds(e.target.value)} />

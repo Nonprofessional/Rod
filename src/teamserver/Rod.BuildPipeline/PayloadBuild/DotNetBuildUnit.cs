@@ -204,6 +204,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
         {
             ["enrollURL"] = @params.Transport.Endpoint,
             ["beaconURL"] = BeaconUrlFromEnroll(@params.Transport.Endpoint),
+            ["mode"] = @params.Beacon.Mode,
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",
             ["jitter"] = ((long)@params.Beacon.Jitter.TotalSeconds).ToString() + "s",

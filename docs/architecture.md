@@ -367,8 +367,14 @@ protocol be "the product" while implants stay polyglot.
 
 OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
-- **Per-implant beacon profile.** Configurable sleep with **jitter** (randomized
-  delta) to avoid periodic-check-in detection.
+- **Per-implant beacon profile, including the check-in mode.** Two shapes ride
+  the same stream contract: **stream** holds one long-lived connection (the
+  interactive shape -- server-push tasking, no reconnect cost) and **poll**
+  drains queued tasking, closes, and sleeps the interval with **jitter**
+  (randomized delta) before the next check-in -- the low-and-slow shape, since a
+  persistent connection to a C2 endpoint is itself a loud signal. The mode is
+  baked per implant at generation (`mode: stream|poll` on the build request),
+  so one engagement can mix an interactive foothold with sleeping beacons.
 - **Kill date.** A hard self-termination timestamp baked in per implant to limit
   exposure if lost. Enforced on both sides: the teamserver refuses a handshake
   past it (`HANDSHAKE_STATUS_KILL_DATE_EXPIRED`, no session opens), and the
@@ -736,18 +742,23 @@ filesystem, network, and credentials actually live.
 -> recorded in the engagement audit trail. Sensitive verbs additionally require
 engagement authorization and are always audited.
 
-A session is the per-connection entity: each beacon frame advances its
-last-seen stamp, and the stream's end closes it. A stream that dies silently --
-the implant vanishes mid-stream, or the connection drops without a clean close
--- would otherwise leave its session Active forever, so a hosted staleness
-sweeper closes every Active session whose last-seen stamp is older than the
-configured `Sessions:Staleness:Threshold` (checked every
-`Sessions:Staleness:SweepInterval`). Closing the session is what drops the
-implant off the online roster; each swept close also fans out a
-`SessionClosed` live event so connected operators see it immediately, and the
-beacon stream's reader ends the connection on its next frame so a recovered
-implant reconnects and re-handshakes instead of refreshing a session it no
-longer holds.
+A session is the implant's live channel, not one TCP connection: the handshake
+**reuses** an implant's active session on a reconnect (a poll-mode check-in or a
+flapped stream refreshes capabilities and last-seen) and opens a new entity only
+after the prior one closed, so a poll cadence neither churns session entities
+nor floods the trail with `SessionOpened` records -- the audit write happens
+only for a genuinely new session. Each beacon frame advances the session's
+last-seen stamp, and a stream ending does not close it; liveness is last-seen
+based. A stream that dies silently -- the implant vanishes mid-stream, or the
+connection drops without a clean close -- leaves its session Active until the
+hosted staleness sweeper closes every Active session whose last-seen stamp is
+older than the configured `Sessions:Staleness:Threshold` (checked every
+`Sessions:Staleness:SweepInterval`); retirement closes a session immediately.
+Closing the session is what drops the implant off the online roster; each swept
+close also fans out a `SessionClosed` live event so connected operators see it
+immediately, and the beacon stream's reader ends the connection on its next
+frame so a recovered implant reconnects and re-handshakes instead of refreshing
+a session it no longer holds.
 
 Task issuance gates the verb through a capability resolver
 (`ITaskCapabilityResolver`). The per-class reduced verb set (Sec 5.2) is the

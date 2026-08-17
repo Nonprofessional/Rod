@@ -28,8 +28,9 @@ namespace Rod.Transport.Endpoints;
 /// upstream, writing each completed task to the audit trail. The same channel
 /// also carries <see cref="ExfilChunk"/> frames when an implant streams an
 /// artifact off the target; the server reassembles those into the
-/// engagement-scoped artifact store. When the stream closes the session is
-/// closed.
+/// engagement-scoped artifact store. When the stream closes the session stays
+/// live -- liveness is last-seen based, and the staleness sweeper is the close
+/// path (architecture.md Sec 10.3).
 ///
 /// When a result is captured the stream also publishes a
 /// <see cref="LiveEventKind.TaskCompleted"/> event on the live bus, so every connected operator session sees the outcome in real time;
@@ -112,45 +113,48 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
         var implant = ResolveImplantId(handshakeRequest, httpContext);
 
-        // The session opening is recorded (architecture.md Sec 11).
-        // A handshake is implant-initiated, so the event is attributed to the
-        // operator who deployed the implant (handshake.DeployedBy); the payload
-        // carries the negotiated protocol version and the outcome the session id.
-        await _audit.AppendAsync(
-            AuditEvent.Fact(
-                eventId: Guid.NewGuid(),
-                engagementId: handshake.EngagementId.Value,
-                operatorId: handshake.DeployedBy.Value,
-                implantId: handshake.ImplantId.Value,
-                taskId: Guid.Empty,
-                verb: "handshake",
-                kind: AuditEventKind.SessionOpened,
-                payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
-                output: null,
-                outcome: handshake.SessionId.ToString(),
-                at: handshake.At),
-            CancellationToken.None);
+        // A genuinely new session is recorded (architecture.md Sec 11). A
+        // reused one (a reconnect -- a poll check-in or a flapped stream) is
+        // not: the session entity and its SessionOpened record already exist,
+        // and a poll cadence must not flood the engagement trail. A handshake
+        // is implant-initiated, so the event is attributed to the operator who
+        // deployed the implant (handshake.DeployedBy); the payload carries the
+        // negotiated protocol version and the outcome the session id.
+        if (!handshake.ReusedSession)
+        {
+            await _audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: handshake.EngagementId.Value,
+                    operatorId: handshake.DeployedBy.Value,
+                    implantId: handshake.ImplantId.Value,
+                    taskId: Guid.Empty,
+                    verb: "handshake",
+                    kind: AuditEventKind.SessionOpened,
+                    payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
+                    output: null,
+                    outcome: handshake.SessionId.ToString(),
+                    at: handshake.At),
+                CancellationToken.None);
+        }
 
-        // 3. The session is now open and the stream is the tasking channel. Hold
-        //    it open, draining results and pushing queued tasks; close the session
-        //    when the connection ends -- whether the implant closed cleanly or the
-        //    stream was aborted. The session context (engagement/implant/operator)
-        //    is threaded down so the frame handler can attribute exfil chunks
-        //    without re-deriving it from each task record.
+        // 3. The session is now live and the stream is the tasking channel. Hold
+        //    it open, draining results and pushing queued tasks. The stream
+        //    ending does NOT close the session: a session is the implant's live
+        //    channel, not one TCP connection -- a poll-mode implant ends every
+        //    check-in stream and opens the next seconds later. Liveness is
+        //    last-seen based; the staleness sweeper closes the session after the
+        //    configured silence threshold, and retirement closes it immediately.
+        //    The session context (engagement/implant/operator) is threaded down
+        //    so the frame handler can attribute exfil chunks without re-deriving
+        //    it from each task record.
         var sessionContext = new SessionContext(
             implant,
             handshake.EngagementId,
             handshake.SessionId,
             handshake.DeployedBy,
             handshakeRequest.Capabilities);
-        try
-        {
-            await RunSessionAsync(sessionContext, requestStream, responseStream, context.CancellationToken);
-        }
-        finally
-        {
-            await _sessions.CloseAsync(handshake.SessionId, _clock.GetUtcNow(), CancellationToken.None);
-        }
+        await RunSessionAsync(sessionContext, requestStream, responseStream, context.CancellationToken);
     }
 
     // The tasking session: a reader draining result frames and a

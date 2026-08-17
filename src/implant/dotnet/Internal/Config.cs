@@ -70,6 +70,14 @@ internal sealed class Config
     public TransportProfile Transport { get; set; } = new();
 
     /// <summary>
+    /// How one check-in cycle uses the beacon stream: "stream" holds the
+    /// connection open (interactive, server-push tasking); "poll" drains queued
+    /// tasking, closes, and sleeps the interval -- the low-and-slow OPSEC shape
+    /// (architecture.md Sec 7). Baked at build time; flag/env override.
+    /// </summary>
+    public string Mode { get; set; } = BeaconModes.Stream;
+
+    /// <summary>
     /// The class verb set baked in at build time (the profile's "verbs" key,
     /// architecture.md Sec 5.2/5.3). The beacon advertises the intersection of
     /// this set with the compiled handler registry, so a baked implant never
@@ -140,6 +148,7 @@ internal sealed class Config
                 RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
+            Mode = NormalizeMode(Env("ROD_MODE", BeaconModes.Stream)),
             ClassVerbs = ParseVerbList(Env("ROD_VERBS", string.Empty)),
         };
         var killDate = Env("ROD_KILL_DATE", string.Empty);
@@ -202,6 +211,10 @@ internal sealed class Config
                 case "--request-timeout":
                     config.Transport.RequestTimeout = ParseGoDuration(TakeValue(args, ref i, flag), TimeSpan.Zero);
                     break;
+                case "-mode":
+                case "--mode":
+                    config.Mode = NormalizeMode(TakeValue(args, ref i, flag));
+                    break;
                 default:
                     throw new ExitProgramException(2, $"unknown flag: {flag}\n{Usage}");
             }
@@ -232,11 +245,22 @@ internal sealed class Config
           -token string        stager token secret redeeming at enroll
           -sleep duration      beacon sleep interval (default 30s)
           -jitter duration     beacon jitter interval (default 10s)
+          -mode string         check-in mode: stream (persistent) or poll (default stream)
           -kill-date string    RFC3339 kill date past which the implant exits
           -ca-cert string      optional PEM file pinning the teamserver CA to trust
 
         Each flag falls back to the matching ROD_* environment variable.
         """;
+
+    // Validates the check-in mode; anything but stream/poll is a usage error
+    // rather than a silent default, so a typoed bake or flag fails loudly.
+    private static string NormalizeMode(string value)
+    {
+        var mode = value.Trim().ToLowerInvariant();
+        if (mode is not (BeaconModes.Stream or BeaconModes.Poll))
+            throw new ExitProgramException(2, $"mode must be 'stream' or 'poll', not '{value}'");
+        return mode;
+    }
 
     private static string Env(string key, string fallback)
         => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
@@ -390,6 +414,13 @@ internal sealed class Config
             throw new ExitProgramException(2, $"kill-date: cannot parse '{text}' as RFC3339");
         return date;
     }
+}
+
+/// <summary>The two check-in modes a beacon can run (see Config.Mode).</summary>
+internal static class BeaconModes
+{
+    public const string Stream = "stream";
+    public const string Poll = "poll";
 }
 
 /// <summary>

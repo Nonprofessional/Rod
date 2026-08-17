@@ -54,7 +54,7 @@ public sealed class PayloadBuildService
             request.Class,
             request.Target,
             request.Transport,
-            new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate)),
+            new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
             key);
 
         return await unit.BuildAsync(@params, cancellationToken);
@@ -88,4 +88,5 @@ public sealed record BuildRequest(
     TransportProfile Transport,
     TimeSpan Sleep,
     TimeSpan Jitter,
-    DateTimeOffset? KillDate);
+    DateTimeOffset? KillDate,
+    string Mode = "stream");

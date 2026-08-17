@@ -211,6 +211,72 @@ public class DotNetImplantTests
         // implant process and its publish dir are disposable.
     }
 
+    /// <summary>
+    /// Poll-mode end to end: the reference implant runs with -mode poll, so each
+    /// check-in drains queued tasking, closes the stream, and sleeps the beacon
+    /// interval instead of holding a line open. The task must still round-trip,
+    /// and across several check-in cycles the engagement trail holds exactly one
+    /// SessionOpened record -- the session is reused per check-in, not churned.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_PollMode_TasksAcrossCheckIns_WithoutSessionChurn()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, mode: "poll");
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                var marker = "rod-poll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                // The next check-in drains the task and reports the result.
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains(marker);
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                // Several check-in cycles later (sleep is 1s), the trail holds
+                // exactly one SessionOpened event: every check-in handshake
+                // reused the implant's one live session.
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                await AuthenticatedHost.LoginAsync(env.Http);
+                var page = await env.Http.GetFromJsonAsync<AuditPageBody>(
+                    $"/engagements/{engagementId}/audit?limit=200");
+                Assert.NotNull(page);
+                Assert.Single(page!.Items, e => e.Kind == "SessionOpened");
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
     // Walks up from the test assembly to find the repo root (the directory holding
     // src/implant/dotnet alongside src/teamserver), then returns the implant
     // source tree. The build unit does the same resolution; the test mirrors it so
@@ -265,7 +331,8 @@ public class DotNetImplantTests
     // identity (the dev CA doubles as the server cert). stdout/stderr are captured
     // for diagnostics on failure but are not asserted -- the acceptance criterion is the
     // teamserver-side outcome.
-    private static Process StartImplant(string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter)
+    private static Process StartImplant(
+        string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream")
     {
         var psi = new ProcessStartInfo
         {
@@ -287,6 +354,8 @@ public class DotNetImplantTests
         psi.ArgumentList.Add(ToGoDuration(sleep));
         psi.ArgumentList.Add("-jitter");
         psi.ArgumentList.Add(ToGoDuration(jitter));
+        psi.ArgumentList.Add("-mode");
+        psi.ArgumentList.Add(mode);
         return Process.Start(psi) ?? throw new InvalidOperationException("Failed to start implant.");
     }
 
@@ -336,6 +405,17 @@ public class DotNetImplantTests
     }
 
     // Minimal DTOs for the JSON round-trip; the transport owns the wire shape.
+
+    private sealed class AuditPageBody
+    {
+        public AuditEventBody[] Items { get; set; } = Array.Empty<AuditEventBody>();
+        public string? NextCursor { get; set; }
+    }
+
+    private sealed class AuditEventBody
+    {
+        public string Kind { get; set; } = string.Empty;
+    }
 
     private sealed class TaskIssuedBody
     {

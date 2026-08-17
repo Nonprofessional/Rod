@@ -13,16 +13,18 @@ namespace Rod.Persistence.Stores;
 /// calls so the singleton adapter stays safe for concurrent use.
 /// </summary>
 /// <remarks>
-/// Mirrors the in-memory adapter's semantics exactly: an implant holds at most
-/// one active session, so <see cref="OpenAsync"/> closes any prior active session
-/// for the implant before persisting the new one; <see cref="TouchAsync"/> and
-/// <see cref="CloseAsync"/> are silent no-ops when there is nothing to act on (a
-/// stray keepalive after close, or a duplicate close after a flap), so the
-/// entity's own "cannot be touched/closed from Closed" exceptions are never
-/// reached through the adapter. The new session id is generated server-side, as
-/// in the in-memory registry. The "find prior, close, open" sequence in
-/// <see cref="OpenAsync"/> runs inside one transaction so a reconnect cannot
-/// leave two active sessions for the same implant if two opens race.
+/// Mirrors the in-memory adapter's semantics exactly: a session is the
+/// implant's live channel, not one TCP connection, so <see cref="OpenAsync"/>
+/// reuses the implant's active session when one exists (refreshing capabilities
+/// and last-seen) and only persists a new entity after the prior session
+/// closed; <see cref="TouchAsync"/> and <see cref="CloseAsync"/> are silent
+/// no-ops when there is nothing to act on (a stray keepalive after close, or a
+/// duplicate close after a flap), so the entity's own "cannot be touched/closed
+/// from Closed" exceptions are never reached through the adapter. The new
+/// session id is generated server-side, as in the in-memory registry. The
+/// "find, reuse-or-insert" sequence in <see cref="OpenAsync"/> runs inside one
+/// transaction so two racing opens cannot leave two active sessions for the
+/// same implant.
 /// </remarks>
 internal sealed class PostgresSessionRegistry : ISessionRegistry
 {
@@ -40,11 +42,17 @@ internal sealed class PostgresSessionRegistry : ISessionRegistry
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        // An implant holds at most one active session; a reconnect closes the
-        // prior active session for that implant before opening the new one.
+        // Open-or-reuse: a reconnect refreshes the active session instead of
+        // churning a new entity per connection (see the in-memory adapter).
         var priorActive = await db.Sessions
             .FirstOrDefaultAsync(s => s.ImplantId == implant.Id && s.Status == SessionStatus.Active, cancellationToken);
-        priorActive?.Close(at);
+        if (priorActive is not null)
+        {
+            priorActive.Touch(capabilities, at);
+            await db.SaveChangesAsync(cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+            return priorActive;
+        }
 
         var session = Session.Open(SessionId.New(), implant.Id, implant.EngagementId, capabilities, at);
         db.Sessions.Add(session);

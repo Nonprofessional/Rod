@@ -94,7 +94,7 @@ internal static class ImplantApp
         };
 
         var beacon = new Beacon(
-            beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
+            config.Mode, beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
             config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
             config.ClassVerbs, Console.Error);
         try
@@ -224,6 +224,7 @@ internal static class BakedProfileSupport
         // the bake.
         SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
         SetEnvIfPresent(root, "verbs", "ROD_VERBS");
+        SetEnvIfPresent(root, "mode", "ROD_MODE");
         SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
         SetEnvIfPresent(root, "token", "ROD_STAGER_TOKEN");
         SetEnvIfPresent(root, "sleep", "ROD_SLEEP");

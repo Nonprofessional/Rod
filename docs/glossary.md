@@ -17,9 +17,9 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Implant** | A short-lived, disposable payload on a target host. Untrusted by default; carries a unique per-implant key. Speaks the wire protocol. |
-| **Session** | A live, authenticated implant connection in an engagement; the handle operators task against. |
-| **Beacon** | The implant's periodic check-in to fetch tasking and push results, with configurable interval and jitter. |
-| **Beacon profile** | The per-implant sleep, jitter, and kill-date parameters, baked into the artifact at generation. |
+| **Session** | The implant's live channel in an engagement -- not one TCP connection. Reconnects (poll check-ins, flapped streams) reuse it; the staleness sweeper or retirement closes it. Online means "seen within the staleness threshold". |
+| **Beacon** | The implant's check-in over the reverse stream. Two modes are baked per implant: `stream` (persistent connection, interactive) and `poll` (drain tasking, close, sleep the interval with jitter -- the periodic low-and-slow shape). |
+| **Beacon profile** | The per-implant check-in mode, sleep, jitter, and kill-date parameters, baked into the artifact at generation. |
 | **Kill date** | A hard self-termination timestamp baked in per implant; limits exposure if lost. |
 | **Malleable profile** | A configurable transport shape (URIs, headers, timing, payload) that mimics legitimate traffic, per implant. |
 

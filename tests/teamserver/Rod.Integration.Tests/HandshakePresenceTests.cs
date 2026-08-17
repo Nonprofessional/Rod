@@ -75,10 +75,19 @@ public class HandshakePresenceTests
         Assert.NotNull(operatorView);
         Assert.Single(operatorView!, r => r.ImplantId == implant.Id.ToString());
 
-        // Disconnecting closes the stream and the session is closed (offline).
+        // Ending the stream does NOT end the session: a session is the
+        // implant's live channel, not one TCP connection -- a poll-mode implant
+        // ends every check-in stream and reconnects seconds later, so liveness
+        // is last-seen based and the staleness sweeper is the close path.
         await call.RequestStream.CompleteAsync();
         await call.ResponseStream.MoveNext(CancellationToken.None); // server ends the stream
-        await Task.Delay(50); // the session is closed in the finally on stream close
+        await Task.Delay(50);
+        Assert.NotNull(await sessions.GetActiveAsync(implant.Id));
+
+        // The sweep (here driven directly, as the hosted sweeper would) is what
+        // takes the implant off the roster: close the silent session, and the
+        // implant reads offline.
+        await sessions.CloseAsync(session.Id, clock.GetUtcNow());
         Assert.Null(await sessions.GetActiveAsync(implant.Id));
     }
 

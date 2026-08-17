@@ -109,8 +109,8 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 
         // --- Host A: apply the schema, then create an engagement (needed to scope
         //     the implants), a top-level implant, a child implant derived from it,
-        //     and a session that connects, reconnects (closing the prior), and is
-        //     finally left with the child online and the parent retired. ---
+        //     and sessions that connect, reconnect (reusing the active one), and
+        //     end up with the child online and the parent retired. ---
         EngagementId engagementId;
         ImplantId parentId;
         ImplantId childId;
@@ -159,16 +159,18 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             childId = child.Id;
             await implants.SaveAsync(child);
 
-            // Open a session on the parent, then open another on the same parent
-            // (a reconnect): the registry must close the prior active session
-            // before opening the new one (the "at most one active session" rule).
-            // The first session's id is captured so we can assert on host B that it
-            // came back Closed with an EndedAt, and still appears in history.
+            // Open a session on the parent, then reconnect: the registry reuses
+            // the active session (refreshing capabilities and last-seen -- no new
+            // entity per connection), so the reconnect is the same session. Then
+            // an explicit close (the sweep's path) leaves the parent with no
+            // active session so the child's session is the only live one. The
+            // closed session's id is captured so host B can assert it came back
+            // Closed with an EndedAt, and still appears in history.
             var first = await sessions.OpenAsync(parent, capabilities: new[] { "shell.exec" }, at: DateTimeOffset.UtcNow);
-            closedSessionId = first.Id;
             var reconnect = await sessions.OpenAsync(parent, capabilities: new[] { "shell.exec", "file.pull" }, at: DateTimeOffset.UtcNow);
-            // Then the reconnect's stream ends: an explicit close leaves the parent
-            // with no active session so the child's session is the only live one.
+            Assert.Equal(first.Id, reconnect.Id);
+            Assert.Equal(new[] { "shell.exec", "file.pull" }, reconnect.Capabilities);
+            closedSessionId = first.Id;
             await sessions.CloseAsync(reconnect.Id, at: DateTimeOffset.UtcNow);
 
             // Open a session on the child and leave it active -- the online implant
@@ -209,8 +211,9 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.Equal(parentId, byEngagement[0].Id);
         Assert.Equal(childId, byEngagement[1].Id);
 
-        // The first session was closed by the reconnect: it reads as Closed with
-        // an EndedAt, and still appears in the parent's history.
+        // The parent's session was closed explicitly (the sweep's path): it
+        // reads as Closed with an EndedAt, and still appears in the parent's
+        // history.
         var closedRow = await sessionsB.FindAsync(closedSessionId);
         Assert.NotNull(closedRow);
         Assert.Equal(SessionStatus.Closed, closedRow!.Status);
@@ -231,11 +234,13 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var active = Assert.Single(activeInEngagement);
         Assert.Equal(activeSessionId, active.Id);
 
-        // The parent flapped twice (connect, reconnect) so its history holds both
-        // sessions, oldest first.
+        // The parent's connect and its reconnect shared one session (open
+        // reuses the active entity), so its history holds exactly that one
+        // closed session.
         var parentHistory = await sessionsB.ListByImplantAsync(parentId);
-        Assert.Equal(2, parentHistory.Count);
-        Assert.Equal(closedSessionId, parentHistory[0].Id);
+        var onlyParentSession = Assert.Single(parentHistory);
+        Assert.Equal(closedSessionId, onlyParentSession.Id);
+        Assert.Equal(SessionStatus.Closed, onlyParentSession.Status);
     }
 
     [Fact]
