@@ -137,6 +137,9 @@ Start here:
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
 - **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
   redirector build/deploy/rotate runbook.
+- **[docs/extending/tradecraft.md](docs/extending/tradecraft.md)** -- writing
+  out-of-tree capability modules (the sensitive categories are contracts only;
+  this is the seam guide).
 - **[SECURITY.md](SECURITY.md)** -- vulnerability reporting and scope.
 
 ## License

@@ -42,6 +42,25 @@ historical milestone id, from commit bodies.
       transport for egress-restricted targets. _AC:_ an implant checks in over
       DNS against a real listener entry.
 
+## Tradecraft extension kit (architecture.md Sec 10.2, Sec 13)
+
+The out-of-tree seams exist (config-listed server modules, compile-time implant
+handlers); the kit makes them effortless. See
+[extending/tradecraft.md](extending/tradecraft.md) for the current seams.
+
+- [ ] **Out-of-tree implant handlers without a fork.** A configured extension
+      directory whose sources the .NET build unit overlays onto the per-build
+      staging tree, with a generated registrations file feeding
+      `HandlerRegistry.Default`'s `additional` seam. _AC:_ dropping a handler
+      source into the directory and building yields an artifact that runs it --
+      no fork of the implant tree to maintain.
+- [ ] **Advertise contract-only verbs on baked artifacts.** The handshake
+      advertisement intersects compiled handlers with the baked class set, so
+      `evasion.*`/`exploit.*` handlers never appear there (dispatch is
+      unaffected). Bake the class set plus the registered contract-only verbs
+      so the roster reflects reality. _AC:_ an artifact built with an
+      out-of-tree evasion handler advertises the verb at handshake.
+
 ## Security (architecture.md Sec 9)
 
 - [ ] **Tasking replay nonces.** Command signing binds tasking to its implant

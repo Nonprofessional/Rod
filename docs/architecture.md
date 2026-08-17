@@ -722,7 +722,9 @@ satisfies the registry and the task gate until an operator supplies a module.
 That makes the out-of-tree path a *registration*, not a schema change -- a
 module registered for `evasion.avoid` or `exploit.invoke` replaces the
 placeholder (last-registration-wins) and is taskable through the same UI and
-gate as any built-in verb. The one runtime loader is config-listed and narrowly
+gate as any built-in verb. [extending/tradecraft.md](extending/tradecraft.md)
+is the worked guide for module authors: both halves of a capability, the
+registration paths, and the seams' current limits. The one runtime loader is config-listed and narrowly
 bounded: the `Tradecraft:Modules` section names each module as a
 `Namespace.Type, AssemblyName` string, the assembly is resolved by that name
 alone (already loaded, or a same-named dll in the application directory), and
