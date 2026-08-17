@@ -5,8 +5,9 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// raw JSON document; <see cref="Base64"/> wraps it as a single base64 string so
 /// the request body no longer looks like a structured C2 message -- a classic
 /// malleable-transport transform (architecture.md Sec 7). The teamserver-side
-/// enroll endpoint is envelope-agnostic in this milestone; the redirector
-/// is where envelope unwrapping would terminate.
+/// enroll endpoint understands both shapes (it decodes the envelope before
+/// binding), so an envelope-profiled implant enrolls against a stock deployment
+/// with no unwrapping edge in front of it.
 /// </summary>
 public enum TransportEnvelope
 {

@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +17,7 @@ namespace Rod.Integration.Tests;
 /// through the in-memory TestServer. This drives the full enrollment slice
 /// (stager redeem, implant creation, CA issue) via the implant-side endpoint and
 /// verifies the issued binding by inspecting the certificate (no real mTLS
-/// handshake; that is ). Failure paths assert each redeem outcome maps to
+/// handshake; the listener tests cover that). Failure paths assert each redeem outcome maps to
 /// the right wire <see cref="EnrollStatus"/>. The implant enrollment endpoint is
 /// anonymous (implants authenticate with the stager token, not a cookie); the
 /// operator routes that mint a stager token require the operator session.
@@ -206,6 +208,35 @@ public class EnrollmentTests
                     PublicKey: Convert.ToBase64String("not-a-real-public-key"u8.ToArray())));
 
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Enroll_AcceptsBase64EnvelopeBody()
+    {
+        // The malleable profile's base64 envelope (architecture.md Sec 7) wraps
+        // the JSON body as a single base64 string so the request stops looking
+        // like a structured C2 message. The teamserver decodes it before
+        // binding, so the envelope changes the wire shape, not the contract:
+        // the enroll succeeds exactly like the raw-JSON shape.
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var secret = await MintTokenForNewEngagementAsync(client);
+
+            var json = JsonSerializer.Serialize(
+                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+            var wrapped = "\"" + Convert.ToBase64String(Encoding.UTF8.GetBytes(json)) + "\"";
+            var response = await client.PostAsync("/implants/enroll",
+                new StringContent(wrapped, Encoding.UTF8, "application/json"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
+            Assert.NotNull(enrolled);
+            Assert.Equal(EnrollStatus.Ok, enrolled!.Status);
+            Assert.False(string.IsNullOrWhiteSpace(enrolled.ImplantId));
         }
     }
 }

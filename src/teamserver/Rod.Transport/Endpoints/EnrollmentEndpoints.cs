@@ -38,11 +38,18 @@ public static class EnrollmentEndpoints
     }
 
     private static async Task<IResult> EnrollAsync(
-        EnrollRequest body,
+        HttpRequest http,
         EnrollmentService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        var body = await ReadEnrollRequestAsync(http, cancellationToken);
+        if (body is null)
+        {
+            return Results.BadRequest(new Problem(
+                "Request body is not an enroll request (raw JSON or a base64-wrapped JSON string)."));
+        }
+
         if (string.IsNullOrWhiteSpace(body.StagerTokenSecret))
             return Results.Json(
                 new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
@@ -158,6 +165,60 @@ public static class EnrollmentEndpoints
             return Results.Json(
                 new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
+        }
+    }
+
+    // Reads the enroll body in either of the two shapes the malleable
+    // transport profile allows (architecture.md Sec 7): the raw JSON document,
+    // or a single base64 string wrapping it (the profile's base64 envelope --
+    // the body stops looking like a structured C2 message). The teamserver
+    // understands both, so an envelope-profiled implant enrolls against a stock
+    // deployment with no unwrapping edge in front; a TLS-terminating edge may
+    // still rewrite the shape, but nothing requires one. Anything that is
+    // neither shape returns null for a 400.
+    private static async Task<EnrollRequest?> ReadEnrollRequestAsync(
+        HttpRequest http, CancellationToken cancellationToken)
+    {
+        string raw;
+        using (var reader = new StreamReader(http.Body))
+            raw = await reader.ReadToEndAsync(cancellationToken);
+        raw = raw.Trim();
+        if (raw.Length == 0)
+            return null;
+
+        // A leading quote means the body is a JSON string -- the base64
+        // envelope. Decode it and parse the inner JSON as the request.
+        if (raw[0] == '"')
+        {
+            string? wrapped;
+            try
+            {
+                wrapped = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return null;
+            }
+            if (string.IsNullOrEmpty(wrapped))
+                return null;
+            try
+            {
+                raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(wrapped));
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<EnrollRequest>(raw,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
         }
     }
 
