@@ -52,17 +52,19 @@ gate shape ROE establishes.
 
 ## Tests
 
-- [ ] **End-to-end integration path.** Unit and hammer coverage is in place,
-      but no test drives the full implant-to-teamserver-to-operator loop.
-      One integration test host runs a real beacon stream, a teamserver, and
-      an operator client, and walks the engagement-critical loop: handshake,
-      task dispatch, staged artifact retrieval, staleness re-handshake after
-      a silent stream death, and paginated list walking over a seeded
-      history (architecture.md Sec 4.3, Sec 10.3, Sec 11).
+- [x] **End-to-end integration path.** Shipped: `EngagementLoopTests` walks
+      the engagement-critical loop against a real mTLS Kestrel host in one
+      test run -- handshake, signed task dispatch (signature verified the way
+      the implant verifies), captured result with its three-event audit arc,
+      exfil chunk capture into an artifact read back through the API, seeded
+      history walked through the paginated task and artifact listings, and a
+      silently abandoned stream swept closed so the recovered implant
+      re-handshakes and drains the queued tasking. Coordination is polling
+      readback, never sleeps (architecture.md Sec 4.3, Sec 10.3, Sec 11).
       _AC:_ the green path is asserted end-to-end in one test run without
       sleeps coordinating the parties.
-- [ ] **Green-board sweep.** A periodic gate rather than new coverage: run
-      `dotnet format Rod.slnx --verify-no-changes` and the full test suite
-      over the solution before opening each new work item, so formatting
-      and test debt never accumulates behind feature work.
-      _AC:_ the sweep runs clean on demand with no manual fix-up steps.
+- [x] **Green-board sweep.** Adopted as the working gate: before opening each
+      item this round the sweep ran (`dotnet format Rod.slnx
+      --verify-no-changes` plus the full solution test run) and stayed clean;
+      it is the habit, not a deliverable. _AC:_ the sweep runs clean on demand
+      with no manual fix-up steps.
