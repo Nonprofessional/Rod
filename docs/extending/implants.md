@@ -103,7 +103,8 @@ chunk anything larger.
 3. Thereafter the stream carries tasking downstream (`TaskRequest` payloads,
    no kind set -- discriminate positionally after the handshake) and results
    upstream (`TaskResult` with `kind = FRAME_KIND_TASK_RESULT`, `ExfilChunk`
-   with `kind = FRAME_KIND_EXFIL_CHUNK`). An upstream frame with `kind`
+   with `kind = FRAME_KIND_EXFIL_CHUNK`, `StagedPull` with
+   `kind = FRAME_KIND_STAGED_PULL`). An upstream frame with `kind`
    unset is tolerated as a `TaskResult` (legacy shape).
 
 **Using the stream:** hold it open for the session (stream mode -- the
@@ -122,6 +123,19 @@ carrying the task id, an artifact name, a MIME content type, a 0-origin
 sequence, and a terminal flag on the last one. The teamserver reassembles
 strictly by sequence into the engagement artifact store. Keep chunks at or
 under 512 KiB.
+
+### Staged uploads (downstream bulk)
+
+A `TaskRequest` whose `staged_bytes` field is set carries its bulk payload
+server-side, not in the arguments string: the arguments end with a
+`sha256:<hex>` token -- part of the signed tuple, so the payload is exactly as
+tamper-evident as an inline one -- and the bytes must be demanded before the
+task reports a result. Send one `Frame` with `kind = FRAME_KIND_STAGED_PULL`
+and a `StagedPull{task_id}` payload; the server answers on the same stream with
+a run of `StagedChunk` frames (`task_id` echo, 0-origin sequence, terminal on
+the last, 512 KiB data slices). Reassemble, verify the sha256 against the
+arguments token, then run the verb against the reassembled bytes and report the
+`TaskResult` as usual. Nothing bulk ever flows downstream unasked.
 
 ### Tasking signature verification (Tier 1, recommended)
 
@@ -210,6 +224,11 @@ Adopt per deployment need; absence degrades the feature, not interop:
 
 - **Exfil chunking** -- `ExfilChunk` frames stream bulk data into the
   artifact store.
+- **Staged uploads** -- the `StagedPull`/`StagedChunk` demand path streams a
+  staged task's bulk payload downstream (architecture.md Sec 10, the
+  per-verb typed arm). An implant without it still receives staged tasks;
+  it ignores the unknown `staged_bytes` field and fails the verb on its own
+  argument grammar, and no chunk frame ever arrives unasked.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
   headers, timeout, and base64 body envelope shape the enroll request.
 - **Child derivation** -- the parent-naming enroll flow behind
@@ -229,7 +248,11 @@ from quietly growing:
    capability) with a fallback to the existing shape, or it does not ship.
 3. **Every addition lands in a tier.** A change to this file accompanies any
    change to rod.proto: the change states its tier and what a Tier 0 implant
-   does about it (the usual answer: nothing).
+   does about it (the usual answer: nothing). The staged-upload arm
+   (`TaskRequest.staged_bytes`, `StagedPull`, `StagedChunk`) is the worked
+   example: Tier 2, negotiated implicitly by demand -- a Tier 0 implant
+   ignores the unknown field, never receives a chunk frame, and fails the
+   verb on its own grammar.
 4. **Weight stays server-side.** Capability reach grows in the teamserver,
    the tradecraft modules, and the build pipeline -- not in the minimum an
    implant must carry (architecture.md Sec 14).

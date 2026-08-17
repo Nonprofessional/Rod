@@ -48,6 +48,54 @@ public class FrameRoundTrip
         Assert.Equal(bytes, restored.Payload.Span.ToArray());
     }
 
+    // Staged tasking (architecture.md Sec 10, the typed arm): the optional
+    // marker on TaskRequest, the demand, and the chunk run. The unset case is
+    // the Tier 0 fallback property stated in extending/implants.md -- an
+    // ordinary task round-trips with the arm's field absent, not zero or
+    // defaulted, so an implant that never reads it sees exactly the task it
+    // always saw.
+
+    [Fact]
+    public void TaskRequest_StagedBytes_RoundTrips()
+    {
+        var staged = new TaskRequest
+        {
+            TaskId = "t-1",
+            Verb = "file.push",
+            Arguments = "/tmp/tool.bin sha256:abc",
+            StagedBytes = 10 * 1024 * 1024,
+        };
+
+        var restoredStaged = TaskRequest.Parser.ParseFrom(staged.ToByteArray());
+        Assert.True(restoredStaged.HasStagedBytes);
+        Assert.Equal(10UL * 1024 * 1024, restoredStaged.StagedBytes);
+
+        var inline = new TaskRequest { TaskId = "t-2", Verb = "shell.exec", Arguments = "id" };
+        var restoredInline = TaskRequest.Parser.ParseFrom(inline.ToByteArray());
+        Assert.False(restoredInline.HasStagedBytes);
+    }
+
+    [Fact]
+    public void StagedPullAndChunk_RoundTrip()
+    {
+        var pull = new StagedPull { TaskId = "t-1" };
+        var restoredPull = StagedPull.Parser.ParseFrom(pull.ToByteArray());
+        Assert.Equal("t-1", restoredPull.TaskId);
+
+        var chunk = new StagedChunk
+        {
+            TaskId = "t-1",
+            Sequence = 19,
+            Terminal = true,
+            Data = ByteString.CopyFrom(new byte[] { 0x01, 0x02 }),
+        };
+        var restoredChunk = StagedChunk.Parser.ParseFrom(chunk.ToByteArray());
+        Assert.Equal("t-1", restoredChunk.TaskId);
+        Assert.Equal(19UL, restoredChunk.Sequence);
+        Assert.True(restoredChunk.Terminal);
+        Assert.Equal(chunk.Data, restoredChunk.Data);
+    }
+
     // Handshake messages: the first payload exchanged on a
     // CheckIn stream must round-trip with version, identity, and capabilities
     // intact -- these are what the server gates presence on.

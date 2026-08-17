@@ -201,7 +201,8 @@ public sealed class TaskService
             command.IssuedBy,
             command.Verb,
             command.Arguments,
-            now);
+            now,
+            command.StagedBytes);
         await _tasks.SaveAsync(task, cancellationToken);
 
         // The queue accepted the task: wake the beacon writer so it is pushed
@@ -254,6 +255,7 @@ public sealed class TaskService
             task.IssuedBy,
             task.Verb,
             task.Arguments,
+            task.StagedBytes,
             task.DispatchedAt!.Value);
     }
 
@@ -316,13 +318,18 @@ public sealed class TaskService
 /// Request to issue a task. <see cref="EngagementId"/> and <see cref="ImplantId"/>
 /// scope it; <see cref="IssuedBy"/> attributes it; <see cref="Verb"/> is the
 /// capability verb (e.g. <c>shell.exec</c>); <see cref="Arguments"/> is its input.
+/// <see cref="StagedBytes"/> is the typed arm's advisory size
+/// (architecture.md Sec 10): set (by the transport, which stages the bytes as a
+/// task-bound artifact) when the payload is too large for the arguments string,
+/// null for the ordinary inline shape.
 /// </summary>
 public sealed record IssueTaskCommand(
     EngagementId EngagementId,
     ImplantId ImplantId,
     OperatorId IssuedBy,
     string Verb,
-    string Arguments);
+    string Arguments,
+    long? StagedBytes = null);
 
 /// <summary>Result of issuing a task: its identity, scope, attribution, and verb.</summary>
 public sealed record TaskIssued(
@@ -339,6 +346,8 @@ public sealed record TaskIssued(
 /// the operator whose tasking the dispatch carries out -- dispatch is
 /// server-driven (the implant pulls the queue), so the event the beacon composes
 /// attributes through this rather than through a request body.
+/// <see cref="StagedBytes"/> echoes the typed arm's marker so the stream writes
+/// it onto the TaskRequest (architecture.md Sec 10).
 /// </summary>
 public sealed record TaskDispatched(
     TaskId TaskId,
@@ -347,6 +356,7 @@ public sealed record TaskDispatched(
     OperatorId IssuedBy,
     string Verb,
     string Arguments,
+    long? StagedBytes,
     DateTimeOffset DispatchedAt);
 
 /// <summary>

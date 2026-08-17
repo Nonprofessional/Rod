@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -264,6 +265,76 @@ public class DotNetImplantTests
                     $"/engagements/{engagementId}/audit?limit=200");
                 Assert.NotNull(page);
                 Assert.Single(page!.Items, e => e.Kind == "SessionOpened");
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance for staged uploads (architecture.md Sec 10, the per-verb
+    /// typed arm), driven by the real implant: a 10 MiB file.push carries its
+    /// payload as staged content -- the sha256 bound into the signed
+    /// arguments, the bytes staged as a task-bound artifact -- and the implant
+    /// demands and reassembles the chunk run over its beacon stream. The
+    /// acceptance point is literal: the 10 MiB file lands whole on the target
+    /// (this host), byte for byte.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_StagedFilePush_LandsTenMiBWhole()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                var content = RandomNumberGenerator.GetBytes(10 * 1024 * 1024);
+                var targetPath = Path.Combine(Path.GetTempPath(), "rod-e2e-staged-" + Guid.NewGuid().ToString("N") + ".bin");
+                try
+                {
+                    var issued = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks",
+                        new { ImplantId = implantId, Verb = "file.push", Arguments = targetPath, Content = content });
+                    issued.EnsureSuccessStatusCode();
+                    var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                    Assert.NotNull(issuedBody);
+
+                    await WaitUntilAsync(async () =>
+                    {
+                        var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                            $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                        return fetched is { Status: "Completed", Outcome: "Succeeded" };
+                    }, deadline: TimeSpan.FromSeconds(60));
+
+                    // The file landed whole: every staged byte, in order, on disk.
+                    Assert.True(File.Exists(targetPath), "the staged file was not written: " + stderr);
+                    var landed = await File.ReadAllBytesAsync(targetPath);
+                    Assert.Equal(content.Length, landed.Length);
+                    Assert.Equal(content, landed);
+                }
+                finally
+                {
+                    try { File.Delete(targetPath); } catch { }
+                }
             }
             finally
             {

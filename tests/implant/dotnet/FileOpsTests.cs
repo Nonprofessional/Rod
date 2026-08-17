@@ -174,4 +174,64 @@ public class FileOpsTests
         Assert.Equal(0UL, chunks[0].Sequence);
         Assert.Equal(1UL, chunks[1].Sequence);
     }
+
+    // The staged push tests (architecture.md Sec 10, the typed arm): the bulk
+    // payload arrives as the reassembled chunk run, the sha256 token rides the
+    // signed arguments, and the handler verifies the hash before anything
+    // touches disk. No size cap applies on this path -- the bytes never rode a
+    // single frame.
+
+    private static string ShaToken(byte[] data)
+        => "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)).ToLowerInvariant();
+
+    [Fact]
+    public void PushStaged_WritesTheVerifiedBytes()
+    {
+        var registry = NewRegistry();
+        using var dir = TempDir.Create();
+        var path = Path.Combine(dir.Path, "dropped", "large.bin");
+        var payload = System.Security.Cryptography.RandomNumberGenerator.GetBytes(10 * 1024 * 1024);
+
+        var (outcome, output) = registry.DispatchStaged("file.push", path + " " + ShaToken(payload), payload);
+        Assert.Equal(TaskOutcome.Succeeded, outcome);
+        Assert.Contains("wrote", output);
+        Assert.Equal(payload, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void PushStaged_HashMismatch_RefusesToWrite()
+    {
+        var registry = NewRegistry();
+        using var dir = TempDir.Create();
+        var path = Path.Combine(dir.Path, "altered.bin");
+        var payload = System.Security.Cryptography.RandomNumberGenerator.GetBytes(4096);
+        var wrongToken = ShaToken(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4096));
+
+        var (outcome, output) = registry.DispatchStaged("file.push", path + " " + wrongToken, payload);
+        Assert.Equal(TaskOutcome.Failed, outcome);
+        Assert.Contains("hash mismatch", output);
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void PushStaged_MalformedGrammar_FailsWithCause()
+    {
+        var registry = NewRegistry();
+
+        var (outcomeNoToken, outputNoToken) = registry.DispatchStaged("file.push", "/tmp/dest", new byte[16]);
+        Assert.Equal(TaskOutcome.Failed, outcomeNoToken);
+        Assert.Contains("sha256", outputNoToken);
+
+        var (outcomeBadToken, _) = registry.DispatchStaged("file.push", "/tmp/dest sha256:nothex", new byte[16]);
+        Assert.Equal(TaskOutcome.Failed, outcomeBadToken);
+    }
+
+    [Fact]
+    public void DispatchStaged_VerbWithoutStagedHandler_FailsWithCause()
+    {
+        var registry = NewRegistry();
+        var (outcome, output) = registry.DispatchStaged("shell.exec", "whoami", new byte[16]);
+        Assert.Equal(TaskOutcome.Failed, outcome);
+        Assert.Contains("does not accept a staged payload", output);
+    }
 }

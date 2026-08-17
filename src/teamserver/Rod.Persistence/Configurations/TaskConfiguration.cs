@@ -38,6 +38,10 @@ internal sealed class TaskConfiguration : IEntityTypeConfiguration<Task>
             .HasColumnName("issued_by");
         builder.Property(t => t.Verb).HasColumnName("verb").HasMaxLength(256).IsRequired();
         builder.Property(t => t.Arguments).HasColumnName("arguments").IsRequired();
+        // The typed arm's advisory size (architecture.md Sec 10): null for the
+        // ordinary inline shape, the staged byte count when the payload rides
+        // the demand path. The bytes themselves live in the artifact store.
+        builder.Property(t => t.StagedBytes).HasColumnName("staged_bytes");
         builder.Property(t => t.Status).HasColumnName("status");
         builder.Property(t => t.Output).HasColumnName("output");
         builder.Property(t => t.Outcome).HasColumnName("outcome");

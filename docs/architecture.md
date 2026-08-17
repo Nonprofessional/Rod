@@ -590,8 +590,8 @@ namespaced `namespace.action`, each carrying a `version` and `attributes`. The
 teamserver gates dispatch on the advertised verb.
 
 A task's **arguments stay a single opaque `string` at every contract boundary**
--- the proto field, core state, the transport DTO, the dispatch contract, and the
-implant's dispatch entrypoint. The verb is the typed discriminator; the string is
+-- the proto field, core state, the transport DTO, the dispatch contract, and
+the implant's dispatch entrypoint. The verb is the typed discriminator; the string is
 the verb's own grammar, parsed by the handler that owns it (whitespace tokens,
 hyphen ranges, comma lists, trailing-command shapes -- deliberately diverse, no
 shared parser). A `string` is the lowest-common-denominator shape every implant
@@ -605,11 +605,23 @@ rejected because the grammar is per-verb, not per-system -- it would move the
 grammar into the proto without removing it and couple every implant language to
 one schema.
 
+`file.push` is the first shipped arm. A push too large for the arguments string
+(the inline shape caps at 1 MiB) is issued as staged content: the sha256 of the
+bytes is appended to the arguments -- so the payload's integrity lands inside
+the signed tasking tuple (Sec 9) exactly as the inline shape's does -- the bytes
+themselves are staged as a task-bound artifact (Sec 11), and the TaskRequest
+carries the staged size as a typed field. The implant demands the payload with
+a `StagedPull` and the stream answers with a chunked run, the mirror of exfil
+chunking in the other direction. Nothing bulk flows downstream unasked: an
+implant that never implemented the arm ignores the unknown field and fails the
+verb on its own grammar, so the addition costs a Tier 0 implant nothing
+(extending/implants.md).
+
 ### 10.1 Capability categories
 
 | Category | Example verbs | Summary |
 |----------|---------------|---------|
-| **core** | `shell.exec`, `file.push`, `file.pull` | The mandatory-to-useful baseline: command execution and file transfer in both directions. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` writes a base64 payload (capped at 1 MiB per task) to the target. |
+| **core** | `shell.exec`, `file.push`, `file.pull` | The mandatory-to-useful baseline: command execution and file transfer in both directions. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm). |
 | **recon** | `recon.portscan`, `recon.hostenum`, `recon.service` | Target and network reconnaissance. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |

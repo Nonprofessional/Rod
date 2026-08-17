@@ -13,11 +13,6 @@ historical milestone id, from commit bodies.
 
 ## Tasking and sessions (architecture.md Sec 10.3)
 
-- [ ] **Staged uploads.** `file.push` carries its payload inline in the task
-      arguments (1 MiB cap). Add the per-verb typed-arm path (Sec 10's escape
-      hatch) so a larger upload streams down in chunks the way `file.pull`
-      streams up. _AC:_ a 10 MiB file lands whole on the target through the
-      tasking channel.
 - [ ] **Interactive shells.** Shell tasking is one-shot today. Add the
       streaming task shape (a session-scoped PTY channel for `shell.exec`)
       over the existing stream contract. _AC:_ an operator types into a live

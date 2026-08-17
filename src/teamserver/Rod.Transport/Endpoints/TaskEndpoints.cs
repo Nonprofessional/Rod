@@ -48,11 +48,18 @@ public static class TaskEndpoints
     // downstream TaskRequest frame stays inside the gRPC message cap.
     private const int MaxArgumentBytes = 512 * 1024;
 
+    // The staged-content ceiling: the typed arm's payload rides the artifact
+    // store, not the arguments string, so it is bounded by the same ceiling an
+    // evidence attach honors -- one JSON request must stay sane, and anything
+    // larger belongs in an object store before it belongs in a task.
+    private const int MaxStagedBytes = 64 * 1024 * 1024;
+
     private static async Task<IResult> IssueAsync(
         string engagementId,
         IssueTaskRequest body,
         ClaimsPrincipal user,
         TaskService service,
+        IArtifactStore artifacts,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -71,6 +78,26 @@ public static class TaskEndpoints
         if (body.Arguments is { Length: > MaxArgumentBytes })
             return Results.BadRequest(new Problem($"Task arguments exceed {MaxArgumentBytes} bytes."));
 
+        // The typed arm (architecture.md Sec 10): a task whose bulk payload
+        // outgrows the arguments string carries it as Content instead. The
+        // payload's sha256 is appended to the arguments so it lands inside the
+        // signed tasking tuple -- the staged bytes are then exactly as
+        // tamper-evident as an inline ones -- and the task is issued with the
+        // staged marker. The bytes themselves are staged below, after the task
+        // exists to bind them to.
+        if (body.Content is { Length: 0 })
+            return Results.BadRequest(new Problem("Staged content must not be empty."));
+        if (body.Content is { Length: > MaxStagedBytes })
+            return Results.Json(
+                new Problem($"Staged content exceeds {MaxStagedBytes} bytes."),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+        var stagedHash = body.Content is null
+            ? null
+            : "sha256:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(body.Content)).ToLowerInvariant();
+        var arguments = body.Content is null
+            ? body.Arguments ?? string.Empty
+            : (body.Arguments ?? string.Empty).TrimEnd() + " " + stagedHash;
+
         TaskIssued issued;
         try
         {
@@ -80,7 +107,8 @@ public static class TaskEndpoints
                     new ImplantId(implantValue),
                     issuedBy.Value,
                     body.Verb,
-                    body.Arguments ?? string.Empty),
+                    arguments,
+                    body.Content?.Length ?? null),
                 cancellationToken);
         }
         catch (TaskRejectedException ex)
@@ -150,6 +178,43 @@ public static class TaskEndpoints
                 outcome: issued.TaskId.ToString(),
                 at: issued.CreatedAt),
             cancellationToken);
+
+        // A staged payload is bound to its task as an artifact -- the same
+        // first-class object an evidence attach produces (architecture.md Sec
+        // 11) -- so the bytes the implant will demand are stored, scoped, and
+        // audited exactly once. The beacon stream streams them downstream on
+        // the implant's StagedPull; the trail shows both the task's arc and
+        // the artifact that fed it.
+        if (body.Content is not null)
+        {
+            var artifactId = Guid.NewGuid();
+            await artifacts.SaveAsync(
+                new Artifact(
+                    ArtifactId: artifactId,
+                    EngagementId: issued.EngagementId.Value,
+                    TaskId: issued.TaskId.Value,
+                    OperatorId: issued.IssuedBy.Value,
+                    Name: StagedArtifacts.NameFor(issued.TaskId.Value),
+                    ContentType: "application/octet-stream",
+                    Content: body.Content,
+                    Size: body.Content.Length,
+                    StoredAt: clock.GetUtcNow()),
+                cancellationToken);
+            await audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: issued.EngagementId.Value,
+                    operatorId: issued.IssuedBy.Value,
+                    implantId: issued.ImplantId.Value,
+                    taskId: issued.TaskId.Value,
+                    verb: "stage-artifact",
+                    kind: AuditEventKind.ArtifactAttached,
+                    payload: $"{stagedHash};{body.Content.Length} bytes",
+                    output: null,
+                    outcome: artifactId.ToString("N"),
+                    at: clock.GetUtcNow()),
+                cancellationToken);
+        }
 
         return Results.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
     }
@@ -226,11 +291,17 @@ public static class TaskEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The issuing operator is the authenticated operator; the request carries
-    // only the target implant and the verb to run.
+    // the target implant and the verb to run. Content is the typed arm's
+    // optional payload (architecture.md Sec 10): present when the verb's bulk
+    // input outgrows the arguments string -- the server stages it as a
+    // task-bound artifact, binds its sha256 into the signed arguments, and the
+    // implant pulls it as downstream chunks. It rides as base64 in JSON, the
+    // same shape an artifact attach uses.
     public sealed record IssueTaskRequest(
         string ImplantId,
         string Verb,
-        string? Arguments);
+        string? Arguments,
+        byte[]? Content = null);
 
     public sealed record TaskIssuedResponse(
         string TaskId,

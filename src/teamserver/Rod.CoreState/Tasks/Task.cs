@@ -15,6 +15,12 @@ namespace Rod.CoreState.Tasks;
 /// a single argument string). <see cref="Output"/> and <see cref="Outcome"/> are
 /// set when the implant returns a result. Entity shape only: this type holds the
 /// lifecycle and the captured result, nothing more.
+///
+/// <see cref="StagedBytes"/> is the per-verb typed arm (architecture.md Sec 10):
+/// set when the task's bulk payload is staged server-side instead of riding the
+/// arguments string. The transport stages the bytes as a task-bound artifact
+/// and streams them downstream on the implant's demand; core state records only
+/// the advisory size -- the payload itself lives in the storage layer.
 /// </summary>
 public sealed class Task
 {
@@ -24,6 +30,7 @@ public sealed class Task
     public OperatorId IssuedBy { get; }
     public string Verb { get; }
     public string Arguments { get; }
+    public long? StagedBytes { get; }
     public TaskStatus Status { get; private set; }
     public string? Output { get; private set; }
     public TaskOutcome? Outcome { get; private set; }
@@ -38,6 +45,7 @@ public sealed class Task
         OperatorId issuedBy,
         string verb,
         string arguments,
+        long? stagedBytes,
         TaskStatus status,
         DateTimeOffset createdAt)
     {
@@ -47,6 +55,7 @@ public sealed class Task
         IssuedBy = issuedBy;
         Verb = verb;
         Arguments = arguments;
+        StagedBytes = stagedBytes;
         Status = status;
         CreatedAt = createdAt;
     }
@@ -55,7 +64,8 @@ public sealed class Task
     /// Factory for a freshly issued task. It enters the queue in
     /// <see cref="TaskStatus.Queued"/>. <paramref name="verb"/> is the capability
     /// verb; <paramref name="arguments"/> is its input (empty for argumentless
-    /// verbs).
+    /// verbs); <paramref name="stagedBytes"/> is the typed arm's advisory size
+    /// (architecture.md Sec 10), null when the task carries no staged payload.
     /// </summary>
     public static Task Create(
         TaskId id,
@@ -64,7 +74,8 @@ public sealed class Task
         OperatorId issuedBy,
         string verb,
         string arguments,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        long? stagedBytes = null)
     {
         if (string.IsNullOrWhiteSpace(verb))
             throw new ArgumentException("Task verb is required.", nameof(verb));
@@ -76,6 +87,7 @@ public sealed class Task
             issuedBy,
             verb.Trim(),
             arguments,
+            stagedBytes,
             TaskStatus.Queued,
             createdAt);
     }

