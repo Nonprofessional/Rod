@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Rod.Audit;
 using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState.Application;
@@ -20,6 +21,7 @@ using Rod.CoreState.Staging;
 using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
+using Rod.Transport.Listeners.Dns;
 
 namespace Rod.Transport;
 
@@ -249,6 +251,28 @@ public static class TransportHost
         IReadOnlyList<ListenerConfig> listeners,
         TimeProvider? clock = null)
     {
+        // DNS entries do not ride Kestrel: they are UDP datagram services,
+        // registered as hosted services on the container the web host builds.
+        // The bridge (sessions, tasking, audit composition) is one singleton
+        // shared by every DNS entry; each entry's service binds its socket and
+        // registers itself into the listener registry, the same
+        // bind-then-register shape the Kestrel path follows.
+        var dnsEntries = listeners.Where(l => l.Transport == ListenerTransport.Dns).ToArray();
+        if (dnsEntries.Length > 0)
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<DnsBeaconBridge>();
+                foreach (var entry in dnsEntries)
+                    services.AddHostedService(sp => new DnsListenerService(
+                        entry,
+                        sp.GetRequiredService<DnsBeaconBridge>(),
+                        sp.GetRequiredService<IListenerRegistry>(),
+                        sp.GetRequiredService<TimeProvider>(),
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>()));
+            });
+        }
+
         builder.ConfigureKestrel(kestrel =>
         {
             var registry = kestrel.ApplicationServices.GetRequiredService<IListenerRegistry>();
@@ -256,6 +280,11 @@ public static class TransportHost
 
             foreach (var config in listeners)
             {
+                // The DNS listener owns its UDP socket in the hosted service;
+                // Kestrel sees only the stream transports.
+                if (config.Transport == ListenerTransport.Dns)
+                    continue;
+
                 var (host, port) = ParseBindAddress(config.BindAddress);
                 var listener = Listener.Define(
                     ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint, now);

@@ -34,6 +34,13 @@
     <PackageReference Include="Grpc.AspNetCore" />
   </ItemGroup>
 
+  <!-- The DNS check-in codec, name grammar, and bridge are internal transport
+       machinery; the integration tests exercise them directly (the same
+       same-package access pattern the reference implant grants its tests). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Rod.Integration.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
   </PropertyGroup>
 

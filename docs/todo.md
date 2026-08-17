@@ -18,12 +18,6 @@ historical milestone id, from commit bodies.
       over the existing stream contract. _AC:_ an operator types into a live
       shell on a connected implant.
 
-## Transports (architecture.md Sec 8)
-
-- [ ] **DNS listener.** The listener abstraction is in place; add the DNS
-      transport for egress-restricted targets. _AC:_ an implant checks in over
-      DNS against a real listener entry.
-
 ## Payload transforms (architecture.md Sec 6, Sec 13)
 
 Build-time artifact transformation is where MSF put its encoders and payload

@@ -423,11 +423,26 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 8. Transports, listeners, and redirectors
 
-- Supported listener transports: **HTTP(S)** and **mTLS** are implemented;
-  **DNS**, **SMB**, and **TCP** are planned (the listener abstraction is in
+- Supported listener transports: **HTTP(S)**, **mTLS**, and **DNS** are
+  implemented; **SMB** and **TCP** are planned (the listener abstraction is in
   place, so adding them is a milestone concern, not an architectural one).
   Transport choice is a profile/deployment concern; the protocol semantics are
   transport-independent.
+- **DNS is the egress-restricted check-in transport.** A DNS listener entry
+  answers TXT queries under its public endpoint (the zone) over UDP: a poll
+  (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
+  the next queued tasking as a signed `TaskRequest` in TXT; result chunks
+  (`r.<b32(task-id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant-id)>.<zone>`)
+  report outcomes, reassembled server-side. The wire grammar is the DNS
+  check-in contract ([extending/implants.md](extending/implants.md)); the
+  responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
+  too large for the budget is not claimed over DNS -- it stays queued for a
+  stream transport. The transport's tradeoff is deliberate and documented: no
+  handshake and no mTLS ride DNS, an implant is identified by its id alone,
+  and a session must have been opened on a handshake-capable transport before
+  DNS can refresh it. Downstream tasking keeps the full Sec 9 posture -- the
+  TaskRequest carries the same command signature, and a DNS-delivered task
+  verifies exactly like a stream-delivered one.
 - An implant is always the **connection initiator** (reverse connection). The
   teamserver and redirectors never dial targets.
 - **Listener and public endpoint are decoupled, and the endpoint is repointable

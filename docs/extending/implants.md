@@ -137,6 +137,33 @@ the last, 512 KiB data slices). Reassemble, verify the sha256 against the
 arguments token, then run the verb against the reassembled bytes and report the
 `TaskResult` as usual. Nothing bulk ever flows downstream unasked.
 
+### DNS check-ins (Tier 2, the egress-restricted transport)
+
+A DNS listener entry answers TXT queries over UDP under its zone (the entry's
+public endpoint). The check-in grammar encodes into the query NAME as lowercase
+RFC 4648 base32 labels, no padding:
+
+```
+poll:          p.<b32(implant id)>.<zone>
+result chunk:  r.<b32(task id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
+```
+
+A poll is answered with zero or one TXT record whose strings concatenate to
+the base32 of a signed `TaskRequest` (verify it exactly like a stream-delivered
+one -- the signature covers the canonical tuple); an empty answer means no
+tasking. A result is reported as chunked queries (0-origin `seq`, `t` terminal
+or `m` more, UTF-8 chunks; an empty chunk rides as the bare label `e`),
+answered with an empty NOERROR. Send EDNS0 (the answers ride up to 1232
+bytes); short-argument tasking only -- a task that does not fit is not
+delivered over DNS.
+
+The transport's identity tradeoff is deliberate: no handshake and no mTLS ride
+DNS. An implant is identified by its id alone, and its session must have been
+opened on a handshake-capable transport first -- DNS refreshes presence
+(`last-seen`), it does not create sessions. Downstream tasking keeps the full
+Tier 1 posture: verify the signature before executing anything received over
+DNS.
+
 ### Tasking signature verification (Tier 1, recommended)
 
 Every dispatched `TaskRequest` carries an RSASSA-PSS/SHA-256 signature made by
@@ -229,6 +256,9 @@ Adopt per deployment need; absence degrades the feature, not interop:
   per-verb typed arm). An implant without it still receives staged tasks;
   it ignores the unknown `staged_bytes` field and fails the verb on its own
   argument grammar, and no chunk frame ever arrives unasked.
+- **DNS check-ins** -- the TXT-query grammar above, for egress-restricted
+  targets where only DNS leaves the network. Absence is graceful: an implant
+  without it simply beacons over the stream transports.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
   headers, timeout, and base64 body envelope shape the enroll request.
 - **Child derivation** -- the parent-naming enroll flow behind
