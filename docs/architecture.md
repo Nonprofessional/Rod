@@ -215,6 +215,10 @@ engagement-scoped endpoint, not a retrofit onto the global catalog.
 
 An implant is a short-lived, disposable payload on a target. It is **untrusted by
 default** and carries a unique per-implant key -- never a global shared secret.
+What a from-scratch implant must implement to interoperate -- and what is
+optional hardening or optional features -- is specified as a tier ladder in
+[implant-contract.md](implant-contract.md); that ladder is the contract's
+complexity budget, and its evolution rules bind every future protocol change.
 
 ### 5.1 Profiles are baked in at generation
 
@@ -421,6 +425,14 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   at `/implants/enroll`; URI and header routing at the public endpoint is a
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
+- **A plain-HTTP-envelope listener is a recorded design option, not scheduled
+  work.** The same rod.v1 payloads carried as opaque HTTP request/response
+  bodies over the same client certificates, dropping the gRPC/HTTP-2
+  requirement for target languages with a weak gRPC story. It changes the
+  framing, not the protocol semantics; transport choice is already a
+  listener/profile concern, so nothing else moves. It exists as the escape
+  hatch for implant reach ([implant-contract.md](implant-contract.md)) and is
+  built only when a community implant actually needs it.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
   channel and the HTTPS enroll request carry through end to end. It is L4, not
@@ -489,8 +501,16 @@ fleet-wide code execution. Security is a first-class concern.
   gain while the CA key is already the server's signing identity); signing
   the serialized `TaskRequest` bytes (couples verification to one protobuf
   runtime's serialization behavior).
-- **Sealing** _(future)_. End-to-end protection of task payloads so untrusted
-  redirectors cannot read or alter them. Designed for, not implemented initially.
+- **Sealing** _(future, deferred)_. End-to-end protection of task payloads so
+  untrusted redirectors cannot read or alter them. Deferred because the
+  concrete adversary is absent today: the reference redirector is an opaque L4
+  splice, the beacon channel is mTLS terminated at the teamserver, so an
+  untrusted hop sees only ciphertext -- and mainstream platforms ship nothing
+  equivalent. Building it would put mandatory cryptography on every implant's
+  task path (against the implant contract's evolution rules). If it is ever
+  built -- for TLS-terminating edges such as domain fronting -- it must be
+  handshake-negotiated with a plaintext fallback, so Tier 0 implants keep
+  interoperating (see [implant-contract.md](implant-contract.md)).
 - **Per-implant keys and rotation.** Unique keys per implant, generated
   server-side at enrollment and build time (Sec. 7). The key is baked into the
   artifact, so rotation is the operational flow *retire the compromised implant,
@@ -887,4 +907,9 @@ with -- and aim to surpass -- what established platforms offer in that area.
 When a capability area falls short of this bar, the right response is to raise
 the design, not to lower the bar. Concrete evasion techniques and exploit code
 remain out-of-tree modules (Sec. 13); the bar above concerns the platform's
-capability substrate, not bundled tradecraft.
+capability substrate, not bundled tradecraft. The bar has one hard boundary it
+may never cross: it applies to the teamserver substrate and the contract's
+quality, never to the implant-side minimum. Capability reach grows in the
+server, the tradecraft modules, and the build pipeline -- an addition that
+would put mandatory new work on every implant's task path fails this bar
+outright, whatever it adds (see [implant-contract.md](implant-contract.md)).

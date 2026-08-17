@@ -14,8 +14,11 @@ historical milestone id, from commit bodies.
 ## Security (architecture.md Sec 9)
 
 The designed-but-deferred items, promoted here now that the functional and
-test groundwork has shipped. Order matters: signing before sealing, sealing
-before ROE, revocation last since it builds on the cert story both depend on.
+test groundwork has shipped. Sealing was cut from this list back to Sec 9's
+future pool: the L4 opaque redirector leaves it without a concrete adversary
+today, and it would break the implant contract's no-mandatory-crypto rule.
+Order: ROE before revocation, since revocation's denylist pattern follows the
+gate shape ROE establishes.
 
 - [x] **Command signing.** Shipped: the beacon endpoint signs each dispatched
       `TaskRequest` with the tasking CA's RSA key (RSASSA-PSS/SHA-256 over the
@@ -27,11 +30,6 @@ before ROE, revocation last since it builds on the cert story both depend on.
       on the task (architecture.md Sec 9). _AC:_ an unsigned or wrongly
       signed command is rejected by the implant and the rejection is visible
       on the operator console.
-- [ ] **Sealing.** Tasked payloads are sealed to the target session key so
-      artifacts in the stager and audit trail carry no plaintext command
-      material (architecture.md Sec 9).
-      _AC:_ a stager blob and an audit record for the same task cannot be
-      decoded without the session key.
 - [ ] **ROE guardrails.** A per-engagement rules-of-engagement profile gates
       which capabilities and targets are taskable, enforced server-side
       before a task is queued (architecture.md Sec 9).

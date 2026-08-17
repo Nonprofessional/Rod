@@ -171,9 +171,10 @@ message HandshakeResponse {
 // verifier's identity, authoritative via mTLS and the handshake, not a field
 // on this message): binding it into the signature makes a frame signed for one
 // implant fail verification on any other, so captured tasking cannot be
-// replayed cross-implant within a CA. An empty signature means unsigned and
-// must be rejected by the implant: acting only on teamserver-authorized
-// tasking is the point of the field.
+// replayed cross-implant within a CA. An empty signature means unsigned.
+// Verification is each implant's own hardening choice -- the reference
+// implant rejects unsigned and wrongly signed tasks, and the server cannot
+// observe which side an implant took.
 message TaskRequest {
   string task_id = 1;
   string verb = 2;
