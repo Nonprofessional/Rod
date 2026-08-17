@@ -9,7 +9,7 @@ using Rod.Operators.Presence;
 namespace Rod.Operators;
 
 /// <summary>
-/// Composition-root hooks for the operator layer (). The transport
+/// Composition-root hooks for the operator layer. The transport
 /// layer terminates the operator API but is constrained by the architecture
 /// tests to core state / protocol / audit only -- it cannot reference
 /// <c>Rod.Operators</c>. So the operator layer exposes its own service and

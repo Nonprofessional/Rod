@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.Audit;
 
 /// <summary>
-/// In-memory <see cref="IArtifactStore"/> for the walking skeleton
+/// In-memory <see cref="IArtifactStore"/> by default.
 /// -- no Postgres/object store yet. Artifacts live in a process-local dictionary
 /// keyed by <see cref="Artifact.ArtifactId"/>; task- and engagement-scoped
 /// queries filter that dictionary, oldest first. No lock is needed: saving is a

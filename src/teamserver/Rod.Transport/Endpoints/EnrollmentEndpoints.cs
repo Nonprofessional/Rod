@@ -11,7 +11,7 @@ using Rod.V1;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-side enrollment endpoint (): a stager redeems its
+/// The implant-side enrollment endpoint: a stager redeems its
 /// token and receives a certificate bound to <c>(implant_id, engagement_id)</c>
 /// plus the CA chain. The engagement is resolved from the redeemed token -- a
 /// real stager carries the secret and the endpoint, not the engagement id.
@@ -88,7 +88,7 @@ public static class EnrollmentEndpoints
                 new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey, parentImplantId),
                 cancellationToken);
 
-            // The enrollment is recorded (architecture.md Sec 11, ).
+            // The enrollment is recorded (architecture.md Sec 11).
             // Enrollment is implant-initiated, so it is attributed to the operator
             // who deployed the implant -- the one who minted the redeemed token,
             // carried on the implant as DeployedBy. The payload carries the class

@@ -8,7 +8,7 @@ using Rod.CoreState.Live;
 namespace Rod.Operators.Live;
 
 /// <summary>
-/// In-memory <see cref="ILiveEventBus"/> for the walking skeleton
+/// In-memory <see cref="ILiveEventBus"/> by default.
 /// -- no Postgres / no out-of-process bus yet. Each engagement owns a set of
 /// subscriber channels; <see cref="PublishAsync"/> fans an event out to every
 /// current subscriber on that engagement, and <see cref="SubscribeAsync"/>

@@ -21,7 +21,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: a listener accepts an implant connection end-to-end.
+/// Acceptance: a listener accepts an implant connection end-to-end.
 /// Drives the full slice through real Kestrel sockets configured via
 /// <see cref="TransportHost.UseRodListeners"/> -- the listener abstraction (HTTP(S)
 /// and mTLS) that fronts the same  endpoints, with the bind address decoupled

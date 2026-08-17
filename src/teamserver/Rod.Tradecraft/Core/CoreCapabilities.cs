@@ -5,8 +5,8 @@ namespace Rod.Tradecraft.Core;
 /// <summary>
 /// The core capability verbs (architecture.md Sec 10.1, the "core" category):
 /// the mandatory-to-useful baseline every implant is expected to carry. These
-/// are the verbs the skeleton loads through the registry to prove core verbs
-/// flow through the tradecraft layer's contract ().
+/// are the verbs the registry loads to prove core verbs
+/// flow through the tradecraft layer's contract.
 /// </summary>
 /// <remarks>
 /// Concrete behavior for these verbs is not part of this repository -- it lives

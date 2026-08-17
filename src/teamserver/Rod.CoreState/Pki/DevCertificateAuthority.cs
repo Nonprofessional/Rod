@@ -5,8 +5,8 @@ using Rod.CoreState.Engagements;
 namespace Rod.CoreState.Pki;
 
 /// <summary>
-/// Self-signed development <see cref="IImplantCertificateAuthority"/> for the
-/// walking skeleton. Generates a throwaway CA root once at construction and signs
+/// Self-signed development <see cref="IImplantCertificateAuthority"/> for dev
+/// runs and tests. Generates a throwaway CA root once at construction and signs
 /// each implant leaf with it, binding <c>(implant_id, engagement_id)</c>: the
 /// leaf subject's common name is the implant id, and a Rod custom extension
 /// carries the engagement id. Not for production: the CA key lives in process
@@ -15,7 +15,7 @@ namespace Rod.CoreState.Pki;
 /// </summary>
 public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 {
-    // RSA key sizes for the skeleton; production values are an ops concern.
+    // RSA key sizes; production values are an ops concern.
     private const int CaKeySize = 2048;
     private const int LeafKeySize = 2048;
     private static readonly TimeSpan CaLifetime = TimeSpan.FromDays(365);

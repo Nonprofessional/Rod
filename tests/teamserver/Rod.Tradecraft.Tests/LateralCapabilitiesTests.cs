@@ -10,7 +10,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  acceptance at the contract layer: the lateral-movement verbs
+/// Contract-layer acceptance: the lateral-movement verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core and recon sets, are listed in the Lateral category, register as placeholders (their concrete behavior is out-of-tree, like
 /// the non-shell core verbs and the recon verbs), carry their OPSEC attributes,

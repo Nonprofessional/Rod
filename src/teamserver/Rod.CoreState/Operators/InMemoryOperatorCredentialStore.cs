@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.CoreState.Operators;
 
 /// <summary>
-/// In-memory <see cref="IOperatorCredentialStore"/> for the walking skeleton and
+/// In-memory <see cref="IOperatorCredentialStore"/> by default. and
 /// tests. Holds the hash strings in process and is lost on restart; the port
 /// keeps callers agnostic to that. See <see cref="IOperatorCredentialStore"/> for
 /// the hash-only contract.

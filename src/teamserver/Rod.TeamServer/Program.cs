@@ -5,9 +5,9 @@ using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
 
-// The teamserver composition root (architecture.md Sec 4, ). This is
+// The teamserver composition root (architecture.md Sec 4). This is
 // the single runnable .NET process: it wires the transport layer's services and
-// operator/implant endpoints, binds the configured listeners (), serves
+// operator/implant endpoints, binds the configured listeners, serves
 // the built operator UI (Vite output under wwwroot), and falls any non-file,
 // non-API request back to index.html so the client-side router owns deep links. UI
 // <-> data goes over the HTTP API; the host itself adds no domain logic.
@@ -18,7 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 //  -- the engagement trail outlives a restart and infrastructure teardown.
 // Absent, the in-memory adapters stay in place.
 builder.Services.AddRodTransport(builder.Configuration);
-// Layer in the operator layer (): the live-event bus that fans task
+// Layer in the operator layer: the live-event bus that fans task
 // and presence events out to connected operator sessions, plus the presence
 // roster. Transport cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here.
@@ -110,7 +110,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRodEndpoints();
-// The operator layer's SSE event stream (): mapped alongside the
+// The operator layer's SSE event stream: mapped alongside the
 // transport endpoints from the composition root for the same layer-separation
 // reason as AddRodOperators above.
 app.MapOperatorEndpoints();
@@ -118,7 +118,7 @@ app.MapOperatorEndpoints();
 // operator-layer endpoints from the composition root for the same layer-
 // separation reason as AddRodOperators above.
 app.MapOperatorAuthEndpoints();
-// The tradecraft layer's capability catalog (): mapped from the
+// The tradecraft layer's capability catalog: mapped from the
 // composition root for the same layer-separation reason as AddRodTradecraft --
 // transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
 // from the layer that owns the registry. Lets the operator UI surface every

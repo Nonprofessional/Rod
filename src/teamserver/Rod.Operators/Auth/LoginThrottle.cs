@@ -6,8 +6,8 @@ namespace Rod.Operators.Auth;
 /// whole teamserver, so the login endpoint slows brute force instead of letting
 /// it run unbounded: five failures within the window put the handle into a
 /// cooldown that refuses further attempts until the window passes. A successful
-/// login resets the counter. In-memory by design -- the cooldown is a
-/// walking-skeleton control, and a restart clearing it is acceptable; the
+/// login resets the counter. In-memory by design: the cooldown is a
+/// best-effort control and a restart clearing it is acceptable; the
 /// credential store itself is the durable boundary.
 /// </summary>
 public sealed class LoginThrottle

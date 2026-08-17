@@ -10,7 +10,7 @@ using Rod.CoreState.Operators;
 namespace Rod.Build.Tests;
 
 /// <summary>
-/// Unit tests for the real .NET build unit (): the contract's .NET
+/// Unit tests for the real .NET build unit: the contract's .NET
 /// producer. Proves the unit compiles a non-empty, fingerprinted artifact for the
 /// configured target, that two builds of the same params never share a
 /// fingerprint (per-implant material is generated at request time), and that the
@@ -91,7 +91,7 @@ public class DotNetBuildUnitTests
     [Fact]
     public void RenderBakedProfile_BakesTheConfiguredTransportProfile()
     {
-        // The malleable transport profile (architecture.md Sec 7, ) must land
+        // The malleable transport profile (architecture.md Sec 7) must land
         // in the .NET unit's baked profile the same way it lands in the Go unit's
         // -- the cross-unit encoding test already proves byte-identity, this
         // asserts the decoded values directly so a .NET-only regression is caught.

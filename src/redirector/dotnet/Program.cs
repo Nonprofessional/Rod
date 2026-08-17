@@ -7,8 +7,8 @@
 // end -- the redirector never terminates transport, so it cannot break the
 // client-certificate authentication the beacon depends on.
 //
-// This is benign plumbing: a standard TCP relay (socat/rinetd semantics),
-// ADR-0004-mainstream, with no evasion and no payload awareness. A burned
+// This is benign plumbing: a standard TCP relay (socat/rinetd semantics) on the
+// mainstream-technique side of the boundary (architecture.md Sec 13): no evasion, no payload awareness. A burned
 // redirector is swapped by deploying a fresh one and repointing the listener
 // (POST /listeners/{id}:repoint); this binary is the missing half of that
 // rotation, the teamserver-side repoint being the other.

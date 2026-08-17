@@ -9,7 +9,7 @@ namespace Rod.Audit;
 /// test host and any host that does not opt in -- the in-memory adapters stay in
 /// place, unchanged.
 ///
-/// The durable adapters are the walking-skeleton stand-in for the eventual
+/// The durable adapters stand in for the eventual
 /// Postgres-backed audit store (architecture.md Sec 12): JSON Lines on a local
 /// directory instead of a managed database, behind the same ports. Like the
 /// other adapters, the layer stays a zero-package classlib -- <c>System.Text.Json</c>

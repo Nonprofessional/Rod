@@ -1,4 +1,4 @@
-// Rod.Implant is the reference .NET stage-2 implant (). It enrolls
+// Rod.Implant is the reference .NET stage-2 implant. It enrolls
 // into an engagement, opens the mTLS beacon stream, and runs the standard-
 // category capability verbs the teamserver dispatches (architecture.md Sec 5,
 // Sec 10.1). It is a benign reference: no evasion, no obfuscation, and no
@@ -58,7 +58,7 @@ internal static class ImplantApp
 
         var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
 
-        // The malleable transport profile (architecture.md Sec 7, ) shapes the
+        // The malleable transport profile (architecture.md Sec 7) shapes the
         // enroll request: a profiled enroll path, User-Agent, custom headers, a
         // per-request timeout, and an optional base64 body envelope. The enroll URL
         // carries the profile's path; the profile carries the rest.

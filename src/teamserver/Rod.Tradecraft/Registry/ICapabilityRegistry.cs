@@ -6,7 +6,7 @@ namespace Rod.Tradecraft.Registry;
 /// <summary>
 /// The capability-module registry port (architecture.md Sec 4.1 layer 6, Sec 10).
 /// Modules register themselves by their descriptor's verb; the dispatcher looks a
-/// verb up to route an invocation. The walking skeleton ships an in-memory
+/// verb up to route an invocation. The default is an in-memory
 /// implementation; the port keeps callers agnostic to that.
 /// </summary>
 /// <remarks>

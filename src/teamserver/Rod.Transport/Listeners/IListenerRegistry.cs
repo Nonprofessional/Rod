@@ -8,7 +8,7 @@ namespace Rod.Transport.Listeners;
 /// reflects what is actually listening rather than what was merely configured. At
 /// runtime an operator can repoint a listener's public endpoint
 /// (<c>POST /listeners/{id}:repoint</c>) to swap a burned redirector without
-/// touching the backend (); the bind address never changes.
+/// touching the backend; the bind address never changes.
 ///
 /// Listeners are global infrastructure, so this registry is not engagement-scoped.
 /// </summary>
@@ -30,7 +30,7 @@ public interface IListenerRegistry
     /// <summary>
     /// Repoints the listener's public endpoint -- the redirector or host-header
     /// implants dial -- without touching its bound socket (architecture.md
-    /// Sec 7/8, ). The registry is repopulated at startup from configuration,
+    /// Sec 7/8). The registry is repopulated at startup from configuration,
     /// so the mapping is fixed once the host binds; a repoint swaps the public
     /// endpoint the listener reports (severing a burned redirector). Returns null
     /// when the listener is unknown.

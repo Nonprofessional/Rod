@@ -3,7 +3,7 @@ namespace Rod.Audit;
 /// <summary>
 /// Payload store port: the engagement-scoped repository of built implant
 /// payloads the operator retrieves after a build (architecture.md Sec 6). The
-/// walking skeleton ships an in-memory implementation; the durable file-backed
+/// default is an in-memory implementation; the durable file-backed
 /// adapter mirrors <see cref="FileArtifactStore"/> under the same
 /// <c>Audit:DataDirectory</c> opt-in. Engagement scoping is the caller's
 /// discipline: <see cref="FindAsync"/> filters on the engagement id, so

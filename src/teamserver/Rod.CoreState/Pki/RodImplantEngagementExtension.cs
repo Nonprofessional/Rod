@@ -14,7 +14,7 @@ namespace Rod.CoreState.Pki;
 /// than a free-form name string.
 ///
 /// The extension value is the engagement id as UTF-8 bytes. This is an internal
-/// Rod convention shared by the dev CA, the test harness, and () the mTLS
+/// Rod convention shared by the dev CA, the test harness, and the mTLS
 /// identity check; the value is integrity-protected by the certificate
 /// signature regardless of its inner encoding.
 /// </summary>

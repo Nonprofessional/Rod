@@ -22,7 +22,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: recon through exploit are issuable from the
+/// Acceptance: recon through exploit are issuable from the
 /// operator surface, and the evidence views (audit, artifacts, timeline,
 /// report) are reachable, and the OPSEC controls (implant retire, redirector
 /// repoint) are exposed. Drives the operator-facing HTTP API through the
@@ -42,8 +42,8 @@ namespace Rod.Integration.Tests;
 /// </remarks>
 public class OperatorSurfaceCoverageTests
 {
-    // A host that layers the tradecraft layer (), the operator + auth layers,
-    // and the capability-catalog endpoint () onto the transport core -- the
+    // A host that layers the tradecraft layer, the operator + auth layers,
+    // and the capability-catalog endpoint onto the transport core -- the
     // same composition the teamserver host performs. Mirrors the fixture in
     // TradecraftTaskPathTests; the additions over the authenticated host are
     // AddRodTradecraft and MapCapabilityEndpoints.
@@ -159,8 +159,8 @@ public class OperatorSurfaceCoverageTests
     public async Task EngagementWideTaskList_AuditTrail_TimelineAndReport_AreReachable()
     {
         // The evidence half of the AC: after tasking, the engagement-wide task
-        // list (), the audit trail (), and the timeline/report exports
-        // () all carry the issued task over HTTP.
+        // list, the audit trail, and the timeline/report exports
+        // all carry the issued task over HTTP.
         var (client, host) = CreateClient();
         using (client)
         using (host)

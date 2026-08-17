@@ -22,7 +22,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: export a reproducible engagement timeline and report
+/// Acceptance: export a reproducible engagement timeline and report
 /// (architecture.md Sec 11). Drives the full operational lifecycle -- engagement
 /// created, stager token minted, implant enrolled, session opened, a task's
 /// issued/dispatched/completed arc, an artifact attached -- and reads it back as

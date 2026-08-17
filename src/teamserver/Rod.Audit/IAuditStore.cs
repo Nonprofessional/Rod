@@ -3,7 +3,7 @@ namespace Rod.Audit;
 /// <summary>
 /// Append-only audit trail port (architecture.md Sec 11). Every privileged
 /// action appends one <see cref="AuditEvent"/>; the trail is per-engagement and
-/// never deletable mid-operation (chain-of-custody). The walking skeleton ships
+/// never deletable mid-operation (chain-of-custody). The default is
 /// an in-memory implementation; the port keeps callers agnostic to that.
 ///
 /// The audit layer is the innermost ring (architecture.md Sec 4.1): it depends

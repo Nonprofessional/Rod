@@ -24,7 +24,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  durability: core state survives a teamserver restart when the
+/// Durability: core state survives a teamserver restart when the
 /// Postgres-backed adapters are wired. Each test covers a slice of the durable
 /// stores over a live PostgreSQL container; the final test is the full
 /// acceptance criterion -- every engagement, operator, implant, session, task,
@@ -172,7 +172,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             await sessions.CloseAsync(reconnect.Id, at: DateTimeOffset.UtcNow);
 
             // Open a session on the child and leave it active -- the online implant
-            // after restart. Then retire the parent (): the entity records
+            // after restart. Then retire the parent: the entity records
             // RetiredAt; the session is left to history.
             activeSessionId = (await sessions.OpenAsync(child, capabilities: new[] { "tunnel.open" }, at: DateTimeOffset.UtcNow)).Id;
             var storedParent = await implants.FindAsync(parentId);

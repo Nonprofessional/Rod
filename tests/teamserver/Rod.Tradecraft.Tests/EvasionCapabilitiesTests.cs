@@ -14,7 +14,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  acceptance at the contract layer: the evasion verbs
+/// Contract-layer acceptance: the evasion verbs
 /// (architecture.md Sec 10.1, Sec 10.2) load through the tradecraft registry
 /// alongside the core, recon, lateral, persist, collect, and exfil sets, are
 /// listed in the Evasion category, register as placeholders

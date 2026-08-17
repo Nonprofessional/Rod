@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
-/// In-memory <see cref="IBuildUnitRegistry"/> for the walking skeleton. Build
+/// In-memory <see cref="IBuildUnitRegistry"/> by default. Build
 /// units live in a process-local dictionary keyed by language; one unit per
 /// language, last registration wins. No lock is needed: registration happens at
 /// startup before any build request, and the dictionary is read-mostly

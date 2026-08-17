@@ -22,9 +22,9 @@ namespace Rod.Transport.Endpoints;
 /// for an implant's task history. Scoped by engagement so implant identity never
 /// leaks across engagements (architecture.md Sec 3).
 ///
-/// An implant is online exactly when it has an active session (); the
+/// An implant is online exactly when it has an active session; the
 /// listing projects that onto the enrolled implants. Retiring an implant
-/// () takes it out of operation: it is marked retired, its active
+/// takes it out of operation: it is marked retired, its active
 /// session is closed, and the retire is recorded in the engagement audit trail.
 /// </summary>
 public static class ImplantEndpoints

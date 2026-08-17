@@ -106,7 +106,7 @@ public class TaskServiceGatingTests
     public async Task IssueAsync_RejectsRetiredImplant()
     {
         // A retired implant is out of operation and untaskable (architecture.md
-        // Sec 7, ). The refusal happens before the verb gate, so even a verb
+        // Sec 7). The refusal happens before the verb gate, so even a verb
         // in the implant's class set is refused once the implant is retired.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();

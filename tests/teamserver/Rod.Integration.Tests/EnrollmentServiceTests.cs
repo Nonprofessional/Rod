@@ -10,7 +10,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="EnrollmentService"/> -- the use case that redeems
-/// a stager token and binds a new implant to its engagement (),
+/// a stager token and binds a new implant to its engagement,
 /// complementing the HTTP slice in <see cref="EnrollmentTests"/>. Without
 /// spinning up a server: focuses on the per-implant material the service
 /// generates (architecture.md Sec 7), which the HTTP test reads back only

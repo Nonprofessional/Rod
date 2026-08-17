@@ -5,7 +5,7 @@ using Rod.Tradecraft.Modules;
 namespace Rod.Tradecraft.Registry;
 
 /// <summary>
-/// The walking-skeleton in-memory <see cref="ICapabilityRegistry"/>
+/// The default in-memory <see cref="ICapabilityRegistry"/>
 /// (architecture.md Sec 4.1 layer 6). Backed by a concurrent dictionary keyed by
 /// verb (case-insensitive); insertion order is preserved separately so
 /// <see cref="ListAsync"/> reflects registration order despite the dictionary's

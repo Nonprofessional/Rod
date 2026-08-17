@@ -5,7 +5,7 @@ using Rod.CoreState.Staging;
 namespace Rod.CoreState.Application;
 
 /// <summary>
-/// The first engagement use cases (): create an engagement, and mint
+/// The first engagement use cases: create an engagement, and mint
 /// a stager token for it. Orchestrates the core-state ports; holds no state of
 /// its own. The owner is the authenticated operator the transport layer resolved
 /// off the session principal  (operator auth); the

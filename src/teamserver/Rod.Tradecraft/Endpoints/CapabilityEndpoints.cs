@@ -6,7 +6,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Endpoints;
 
 /// <summary>
-/// The operator-facing capability-catalog endpoint (): lists every
+/// The operator-facing capability-catalog endpoint: lists every
 /// registered capability verb so the operator UI can surface the full capability
 /// set as tasking from the registry rather than a hardcoded verb table. The
 /// catalog carries each verb's category and OPSEC attributes (architecture.md

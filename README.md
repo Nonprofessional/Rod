@@ -75,7 +75,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
   acted), and a complete, tamper-evident audit trail that is the source for the
   final report.
 
-## Non-goals (initial)
+## Non-goals
 
 - Rod commands authorized targets; it is not a general-purpose PaaS or
   orchestration platform.
@@ -90,7 +90,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 | Component | Stack | Notes |
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
-| Data store | PostgreSQL (opt-in) | Authoritative state and per-engagement audit when `ConnectionStrings:Postgres` is set; in-memory and file-backed walking-skeleton stores are the defaults. |
+| Data store | PostgreSQL (opt-in) | Authoritative state and per-engagement audit when `ConnectionStrings:Postgres` is set; in-memory and file-backed stores are the defaults. |
 | Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (architecture.md Sec 12.2). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (architecture.md Sec 8). |
 | Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable, per-implant keys. |

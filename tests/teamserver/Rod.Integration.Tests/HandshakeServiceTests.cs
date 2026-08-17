@@ -177,7 +177,7 @@ public class HandshakeServiceTests
         var sessions = new InMemorySessionRegistry();
         var engagement = EngagementId.New();
 
-        // A retired implant (architecture.md Sec 7, ). The kill date is in
+        // A retired implant (architecture.md Sec 7). The kill date is in
         // the future and the engagement matches, so the refusal is specifically
         // the retirement -- a retired implant never gets a session again.
         var implant = Implant.Enroll(

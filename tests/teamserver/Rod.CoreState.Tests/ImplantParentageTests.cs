@@ -5,7 +5,7 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Direct checks of the <see cref="Implant"/> parentage model (architecture.md
-/// Sec 5.2, ). A top-level implant enrolled from a stager token has
+/// Sec 5.2). A top-level implant enrolled from a stager token has
 /// no parent; a child derived from a parent records the parent's id. The shared
 /// key/kill-date validation applies to both factories. The engagement-scope
 /// check (parent and child in the same engagement) lives in the enrollment use

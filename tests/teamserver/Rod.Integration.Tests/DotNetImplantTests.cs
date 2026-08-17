@@ -11,11 +11,11 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: the reference .NET implant checks in and tasks
+/// Acceptance: the reference .NET implant checks in and tasks
 /// end-to-end. A real teamserver (Kestrel mTLS beacon endpoint + plain-HTTP
 /// operator/enroll API) is stood up, the reference .NET implant is published to a
 /// temp dir and launched against it as a real subprocess (dotnet Rod.Implant.dll),
-/// and the test drives the full slice the AC names: the implant enrolls over HTTP,
+/// and the test drives the full slice the acceptance criteria name: the implant enrolls over HTTP,
 /// beacons over mTLS, completes the handshake, runs a dispatched shell.exec task,
 /// and the operator sees the captured output plus the TaskCompleted audit event.
 /// This is the same round-trip HandshakePresenceTests/TaskRoundTripTests prove
@@ -24,13 +24,13 @@ namespace Rod.Integration.Tests;
 public class DotNetImplantTests
 {
     /// <summary>
-    /// Roadmap  acceptance: a parent implant derives a child on lateral.move
+    /// Acceptance: a parent implant derives a child on lateral.move
     /// that enrolls back, and the child's parentage is recorded server-side. The
     /// parent runs as a real subprocess; the operator tasks it lateral.move with a
     /// second (child) stager token in the arguments; the handler generates a fresh
     /// child keypair and enrolls a child naming the parent. The operator implant
     /// listing must then show the child with its ParentImplantId set to the parent.
-    /// This is the implant-driven round-trip the AC names -- the in-process
+    /// This is the implant-driven round-trip the acceptance criteria name -- the in-process
     /// ChildEnrollmentHttpTests already prove the server-side parentage model.
     /// </summary>
     [DotNetFact]
@@ -133,7 +133,7 @@ public class DotNetImplantTests
             {
                 // Wait for the implant to enroll, then beacon: it appears online in
                 // its engagement once the mTLS handshake completes. Presence is the
-                // active-sessions projection ().
+                // active-sessions projection.
                 var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
 
                 // Operator tasks the implant over HTTP (shell.exec). A unique marker
@@ -160,7 +160,7 @@ public class DotNetImplantTests
 
                 // The audit trail carries the TaskCompleted event for this task
                 // (architecture.md Sec 11). A task now produces a three-event arc
-                // (): issued, dispatched, then completed.
+                //: issued, dispatched, then completed.
                 var fetchedFull = await env.Http.GetFromJsonAsync<TaskBody>(
                     $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
                 Assert.NotNull(fetchedFull);
@@ -263,7 +263,7 @@ public class DotNetImplantTests
     // The implant enrolls over HTTP and beacons over mTLS against the test server.
     // env.CACertFile is the dev CA PEM the implant trusts as the mTLS server
     // identity (the dev CA doubles as the server cert). stdout/stderr are captured
-    // for diagnostics on failure but are not asserted -- the AC is the
+    // for diagnostics on failure but are not asserted -- the acceptance criterion is the
     // teamserver-side outcome.
     private static Process StartImplant(string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter)
     {
@@ -368,7 +368,8 @@ public class DotNetImplantTests
     /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
     /// plain-HTTP operator/enroll API. The dev CA is exported to a temp PEM file
     /// the implant trusts as the mTLS server identity. Disposed to tear down.
-    /// Mirrors the Go implant test's TestEnv.
+    /// Standalone twin of the
+    /// integration suite's TestEnv, reduced to what the subprocess tests need.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {

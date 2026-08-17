@@ -13,7 +13,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  acceptance at the contract layer: the exfiltration verbs
+/// Contract-layer acceptance: the exfiltration verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, lateral, persist, and collect sets, are listed in the Exfil
 /// category, register as placeholders (their concrete behavior

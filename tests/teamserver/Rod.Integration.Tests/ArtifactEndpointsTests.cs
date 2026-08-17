@@ -14,7 +14,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: artifacts are first-class objects linked to tasks
+/// Acceptance: artifacts are first-class objects linked to tasks
 /// (architecture.md Sec 11). An operator attaches an artifact to a task, lists a
 /// task's artifacts, and retrieves one back, all scoped by engagement, and each
 /// attachment is recorded as an attributed, hash-chained event on the

@@ -16,7 +16,7 @@ namespace Rod.Implant.Internal;
 // Beacon.CheckIn stream, completes the handshake, and then loops reading
 // downstream tasking and writing upstream results (architecture.md Sec 5/8,
 // Sec 10.3). The stream is bidirectional frames whose payloads are the rod.v1
-// handshake/task/result messages. Mirrors the Go implant's beacon package.
+// handshake/task/result messages.
 
 /// <summary>
 /// Runs the implant's check-in lifecycle against the teamserver: dial the mTLS

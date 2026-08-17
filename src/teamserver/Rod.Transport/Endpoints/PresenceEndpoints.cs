@@ -7,13 +7,13 @@ using Rod.CoreState.Sessions;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing presence query (): which implants are online
+/// The operator-facing presence query: which implants are online
 /// in an engagement, and is a given implant online. Lets an operator observe
 /// that a connecting implant appeared in its engagement -- the acceptance
 /// point -- and is scoped by engagement so presence never leaks across
 /// engagements (architecture.md Sec 3).
 ///
-/// Presence is the active-sessions projection (): an implant is
+/// Presence is the active-sessions projection: an implant is
 /// online exactly when it has an Active session. Backed by
 /// <see cref="ISessionRegistry"/>; the response carries the session id alongside
 /// the implant id.

@@ -16,7 +16,7 @@ namespace Rod.Operators.Endpoints;
 /// hardening follow-on): <c>POST /operators/login</c> establishes a cookie
 /// session from a handle and password, <c>POST /operators/logout</c> clears it,
 /// and <c>GET /operators/me</c> returns the authenticated operator. This replaces
-/// the walking skeleton's browser self-assigned identity with a server-issued
+/// an anonymous self-assigned identity with a server-issued
 /// session bound to verified credentials.
 /// </summary>
 public static class OperatorAuthEndpoints

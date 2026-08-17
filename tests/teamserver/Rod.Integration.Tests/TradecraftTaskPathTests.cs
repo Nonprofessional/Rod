@@ -25,7 +25,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: a registered capability module is reached from the
+/// Acceptance: a registered capability module is reached from the
 /// live task path, and an evasion/exploit verb is no longer refused before
 /// dispatch. Drives the operator-facing task endpoint through the in-memory
 /// TestServer with the tradecraft layer layered onto the transport core -- the
@@ -36,7 +36,7 @@ namespace Rod.Integration.Tests;
 /// </summary>
 public class TradecraftTaskPathTests
 {
-    // A host that layers the tradecraft layer () and the operator + auth
+    // A host that layers the tradecraft layer and the operator + auth
     // layers onto the transport core, so the capability registry is wired into
     // the live task path and the operator API requires a cookie session -- the
     // same composition the teamserver host performs.

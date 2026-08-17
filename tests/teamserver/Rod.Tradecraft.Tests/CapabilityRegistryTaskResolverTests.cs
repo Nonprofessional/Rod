@@ -10,7 +10,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  at the resolver level: the capability-registry-backed
+/// Resolver-level acceptance: the capability-registry-backed
 /// <see cref="ITaskCapabilityResolver"/> admits a verb the per-class reduced set
 /// does not when a module is registered for it (architecture.md Sec 10.2/10.3).
 /// The class table stays the primary authority; the registry opens the

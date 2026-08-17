@@ -4,7 +4,7 @@ using Rod.V1;
 namespace Rod.Protocol.Tests;
 
 /// <summary>
-/// Roadmap  smoke test: a Frame survives a serialize/parse round trip with
+/// Smoke test: a Frame survives a serialize/parse round trip with
 /// every field intact, and the envelope's application-layer identifiers travel
 /// with it. This proves the generated bindings are usable end to end.
 /// </summary>
@@ -56,7 +56,7 @@ public class FrameRoundTrip
         Assert.Equal(bytes, restored.Payload.Span.ToArray());
     }
 
-    // Handshake messages (): the first payload exchanged on a
+    // Handshake messages: the first payload exchanged on a
     // CheckIn stream must round-trip with version, identity, and capabilities
     // intact -- these are what the server gates presence on.
 

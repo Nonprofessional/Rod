@@ -4,7 +4,7 @@ namespace Rod.CoreState.Staging;
 /// An engagement-scoped, short-lived, bounded-use secret used only during
 /// initial enrollment/deployment (glossary). The plaintext <see cref="Secret"/>
 /// is returned to the caller exactly once, at mint time; the server keeps only a
-/// hash so a later verify/redeem step () can check it without storing it.
+/// hash so a later verify/redeem step can check it without storing it.
 /// </summary>
 public sealed record StagerToken
 {

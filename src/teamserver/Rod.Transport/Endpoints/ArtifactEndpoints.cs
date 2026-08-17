@@ -11,12 +11,12 @@ using Rod.CoreState.Tasks;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing artifact endpoints (): artifacts -- files,
+/// The operator-facing artifact endpoints: artifacts -- files,
 /// screenshots, captured command output -- are first-class evidence objects
 /// linked to the task that gathered them, not loose files (architecture.md Sec 11).
 /// Lets an operator attach an artifact to a task, list a task's artifacts, and
 /// retrieve one back -- the acceptance point. The evidence and the tasking
-/// that gathered it stay bound, so the report consumers () read artifacts
+/// that gathered it stay bound, so the report consumers read artifacts
 /// through the same task scoping as the audit trail.
 ///
 /// Scoped by engagement (architecture.md Sec 3): the engagement id in the path
@@ -99,7 +99,7 @@ public static class ArtifactEndpoints
 
         await artifacts.SaveAsync(artifact, cancellationToken);
 
-        // The attachment is recorded (architecture.md Sec 11, ): an
+        // The attachment is recorded (architecture.md Sec 11): an
         // ArtifactAttached audit event carrying the name and content type, with
         // the new artifact id as its outcome. Attributed to the attaching
         // operator, bound to the task that gathered the evidence -- the same

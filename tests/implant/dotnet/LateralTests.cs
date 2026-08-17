@@ -81,8 +81,7 @@ public class LateralTests
 
     // The class field is null when the single-token form is used or when parse
     // fails (the .NET handler leaves the out null until a second field is
-    // present); the table below reflects that .NET semantics, the equivalent of
-    // the Go implant's empty-string class.
+    // present); the table below reflects that .NET semantics.
     [Theory]
     [InlineData("", "", null, false)]
     [InlineData("   ", "", null, false)]

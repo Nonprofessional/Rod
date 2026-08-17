@@ -49,7 +49,7 @@ internal static class Core
 {
     // Per-port dial timeout for the network-touching recon verbs. Short so a
     // wide port range finishes promptly; long enough that a reachable port on a
-    // quiet host completes its handshake. Mirrors the Go implant's dial timeout.
+    // quiet host completes its handshake.
     private static readonly TimeSpan DialTimeout = TimeSpan.FromMilliseconds(300);
 
     // How long a service-probe waits for a banner after connecting.
@@ -114,7 +114,7 @@ internal static class Core
     // recon.portscan dials each TCP port in "start-end" on the host and reports
     // one line per open port ("<host>:<port> open"). Arguments are
     // "<host> <start-end>". Malformed arguments yield Failed; a closed range
-    // yields Succeeded with empty output, the same convention as the Go implant.
+    // yields Succeeded with empty output.
     public static (TaskOutcome, string) PortScan(string arguments)
     {
         if (!TryParseScanArgs(arguments, out var host, out var startPort, out var endPort))
@@ -187,8 +187,7 @@ internal static class Core
     }
 
     // The shell and its command flag for shell.exec on the current OS. Linux/macOS
-    // use sh -c; Windows uses cmd /c -- the same split as the Go implant's
-    // platformShell.
+    // use sh -c; Windows uses cmd /c.
     private static (string Shell, string Flag) PlatformShell()
         => OperatingSystem.IsWindows() ? ("cmd.exe", "/c") : ("sh", "-c");
 

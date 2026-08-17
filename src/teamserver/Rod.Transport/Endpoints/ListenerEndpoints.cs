@@ -12,7 +12,7 @@ namespace Rod.Transport.Endpoints;
 /// a redirector, decoupled from the bind address per architecture.md Sec 8).
 /// Listeners are bound at startup; at runtime an operator can repoint a
 /// listener's public endpoint to swap a burned redirector without touching the
-/// backend (architecture.md Sec 7/8, ).
+/// backend (architecture.md Sec 7/8).
 /// </summary>
 public static class ListenerEndpoints
 {
@@ -65,7 +65,7 @@ public static class ListenerEndpoints
             return Results.BadRequest(new Problem("Public endpoint is required."));
 
         // Repoint swaps the public endpoint -- the redirector implants dial --
-        // without touching the bound socket (architecture.md Sec 7/8, ). The
+        // without touching the bound socket (architecture.md Sec 7/8). The
         // bind address stays put, so a live listener keeps serving; the registry's
         // public-endpoint lookup now resolves the new endpoint and no longer
         // resolves the old one (a burned redirector is severed).

@@ -9,7 +9,7 @@ using Rod.CoreState.Operators;
 namespace Rod.Build.Tests;
 
 /// <summary>
-/// Unit tests for the stub build unit (): the build contract's
+/// Unit tests for the stub build unit: the build contract's
 /// benign producer. Proves the stub is deterministic, non-empty, correctly
 /// fingerprinted, and that the per-implant key never appears in the artifact --
 /// only its fingerprint does. Keeps build-layer coverage in the Build.Tests
@@ -76,7 +76,7 @@ public class StubBuildUnitTests
     [Fact]
     public async Task Build_BakesTheConfiguredTransportProfile_IntoTheManifest()
     {
-        // The malleable transport profile (architecture.md Sec 7, ) is surfaced
+        // The malleable transport profile (architecture.md Sec 7) is surfaced
         // in the stub manifest the same way the baked JSON surfaces it, so the stub
         // artifact is self-describing about its wire shape. Values differ from the
         // defaults so a regression to a default is caught.

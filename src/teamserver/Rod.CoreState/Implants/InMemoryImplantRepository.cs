@@ -4,7 +4,7 @@ using Rod.CoreState.Engagements;
 namespace Rod.CoreState.Implants;
 
 /// <summary>
-/// In-memory <see cref="IImplantRepository"/> for the walking skeleton
+/// In-memory <see cref="IImplantRepository"/> by default.
 /// ( -- no Postgres yet). State lives in process and is lost on
 /// restart; the port keeps callers agnostic to that.
 /// </summary>

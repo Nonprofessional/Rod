@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.Audit;
 
 /// <summary>
-/// Walking-skeleton <see cref="IPayloadStore"/> (architecture.md Sec 6): payloads
+/// Default <see cref="IPayloadStore"/> (architecture.md Sec 6): payloads
 /// live for the process lifetime, keyed by id. The durable file-backed adapter
 /// replaces it when <c>Audit:DataDirectory</c> is configured.
 /// </summary>

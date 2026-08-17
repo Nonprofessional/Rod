@@ -5,7 +5,7 @@ namespace Rod.Audit;
 
 /// <summary>
 /// The per-engagement hash chain over <see cref="AuditEvent"/>s (architecture.md
-/// Sec 11; storage &amp; audit layer, ). Each event's hash is taken
+/// Sec 11; storage &amp; audit layer). Each event's hash is taken
 /// over its own contents plus the previous event's hash, so every event commits
 /// to its predecessor: altering any stored event changes its hash, which breaks
 /// the link its successor carries -- the chain is the tamper-evident binding

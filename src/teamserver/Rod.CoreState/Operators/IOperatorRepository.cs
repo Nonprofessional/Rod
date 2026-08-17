@@ -1,8 +1,8 @@
 namespace Rod.CoreState.Operators;
 
 /// <summary>
-/// Persistence port for <see cref="Operator"/> aggregates. The walking skeleton
-/// () ships an in-memory implementation; a PostgreSQL-backed adapter
+/// Persistence port for <see cref="Operator"/> aggregates. The default
+/// is an in-memory implementation; a PostgreSQL-backed adapter
 /// arrives later without changing this contract.
 /// </summary>
 public interface IOperatorRepository

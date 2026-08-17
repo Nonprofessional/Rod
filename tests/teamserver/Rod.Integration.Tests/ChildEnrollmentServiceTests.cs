@@ -10,7 +10,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="EnrollmentService"/>'s child-enrollment path
-/// (architecture.md Sec 5.2, ) -- the acceptance point: a child
+/// (architecture.md Sec 5.2) -- the acceptance point: a child
 /// implant enrols from a parent within scope, with parentage linkage recorded.
 /// Complements the top-level enroll checks in <see cref="EnrollmentServiceTests"/>
 /// and the HTTP slice that follows. Drives the service against the in-memory ports
@@ -125,7 +125,7 @@ public class ChildEnrollmentServiceTests
     [Fact]
     public async Task EnrolChild_RefusesRetiredParent()
     {
-        // A retired implant is out of operation (architecture.md Sec 7, ) and
+        // A retired implant is out of operation (architecture.md Sec 7) and
         // cannot derive children; the enroll is refused before the child is
         // recorded.
         var (service, tokens, engagements, implants) = NewService();

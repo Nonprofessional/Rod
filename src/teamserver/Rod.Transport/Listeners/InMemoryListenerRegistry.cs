@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.Transport.Listeners;
 
 /// <summary>
-/// In-memory <see cref="IListenerRegistry"/> for the walking skeleton. Listeners
+/// In-memory <see cref="IListenerRegistry"/> by default. Listeners
 /// live in a process-local map keyed by id. State is lost on restart, which is
 /// correct for disposable infrastructure (architecture.md Sec 8). The port keeps
 /// callers agnostic to that.

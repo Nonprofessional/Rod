@@ -7,7 +7,7 @@ namespace Rod.CoreState.Application;
 
 /// <summary>
 /// The implant lifecycle use case beyond enrollment: retiring an implant
-/// (architecture.md Sec 7, ). Taking an implant out of operation marks it
+/// (architecture.md Sec 7). Taking an implant out of operation marks it
 /// retired -- so it is refused at handshake and untaskable thereafter (the
 /// gates live in <see cref="HandshakeService"/> and <see cref="TaskService"/>)
 /// -- and closes its active session, so a connected implant is dropped from the
@@ -44,7 +44,7 @@ public sealed class ImplantService
 
     /// <summary>
     /// Constructs the service with a live-event bus. The composition root wires
-    /// the bus (); the three-argument constructor above keeps the
+    /// the bus; the three-argument constructor above keeps the
     /// core-state unit tests bus-free.
     /// </summary>
     public ImplantService(

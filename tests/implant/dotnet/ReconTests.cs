@@ -59,8 +59,7 @@ public class ReconTests
         var (outcome, output, _) = registry.Dispatch("recon.hostenum", "");
         Assert.Equal(TaskOutcome.Succeeded, outcome);
         // hostenum is local introspection; it surfaces the hostname and the
-        // os/arch the handler documents. (.NET reports os=/arch= labels, the
-        // equivalent of the Go implant's goos=/goarch=.)
+        // os/arch the handler documents, labeled os=/arch=.
         Assert.Contains("hostname=", output);
         Assert.Contains("os=", output);
         Assert.Contains("arch=", output);

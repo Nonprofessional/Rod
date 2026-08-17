@@ -10,7 +10,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: two operators connected to one engagement see each
+/// Acceptance: two operators connected to one engagement see each
 /// other's actions live over the SSE event stream. Drives the in-memory
 /// TestServer end to end: each operator opens <c>/engagements/{id}/events</c>
 /// under their own cookie session, and the live bus fans task-issued and

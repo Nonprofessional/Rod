@@ -7,8 +7,7 @@ using System.Threading;
 namespace Rod.Audit;
 
 /// <summary>
-/// Durable <see cref="IAuditStore"/> for the walking skeleton (architecture.md
-/// Sec 11; ). Each appended event is stamped onto its engagement's
+/// Durable <see cref="IAuditStore"/> by default. Each appended event is stamped onto its engagement's
 /// hash chain and written as one JSON Lines record to <c>audit.jsonl</c> under
 /// the data directory, so the trail outlives a teamserver restart and
 /// infrastructure teardown -- the acceptance point. This is the file-backed

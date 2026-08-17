@@ -28,7 +28,7 @@ public static class ProtocolVersions
 }
 
 /// <summary>
-/// The handshake use case (): an implant that just opened a beacon
+/// The handshake use case: an implant that just opened a beacon
 /// stream advertises its protocol version, identity, and capabilities. The
 /// service confirms the implant is enrolled, verifies the certificate binding
 /// matches the enrolled engagement (the mTLS identity check, architecture.md
@@ -109,7 +109,7 @@ public sealed class HandshakeService
                 $"Implant {implant.Id} kill date {implant.KillDate:O} has passed.");
         }
 
-        // 5. Retirement (architecture.md Sec 7, ). An implant taken out of
+        // 5. Retirement (architecture.md Sec 7). An implant taken out of
         //    operation never gets a session again. Retirement is an explicit
         //    operator action (distinct from the time-based kill date above), so it
         //    sits between the kill-date check and session open: a retired implant
@@ -122,7 +122,7 @@ public sealed class HandshakeService
         }
 
         // 6. Open a session. The capabilities advertised here gate tasking
-        //    dispatch in later milestones (architecture.md Sec 10). Opening a new
+        //    dispatch (architecture.md Sec 10). Opening a new
         //    session closes any prior active session for the implant first, so a
         //    reconnect does not leave a phantom live connection.
         var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);

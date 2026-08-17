@@ -4,7 +4,7 @@ namespace Rod.CoreState.Pki;
 /// The on-disk location of the externally provisioned implant CA, bound from the
 /// <c>Pki</c> configuration section by the transport composition root. Production
 /// substitutes an engagement CA provisioned out-of-band by the operator's PKI for
-/// the walking skeleton's self-signed <see cref="DevCertificateAuthority"/>
+/// the default self-signed <see cref="DevCertificateAuthority"/>
 /// (architecture.md Sec 9); this is the shape that swap reads.
 /// </summary>
 /// <remarks>

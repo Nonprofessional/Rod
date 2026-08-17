@@ -15,7 +15,7 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing tasking endpoints (): issue a task against an
+/// The operator-facing tasking endpoints: issue a task against an
 /// implant in an engagement, read a task back with its captured result and audit
 /// trail, and list every task in an engagement ( -- the operator UI
 /// shows the engagement's whole task history, not one implant's). Lets an
@@ -131,7 +131,7 @@ public static class TaskEndpoints
             issued.Arguments,
             issued.CreatedAt);
 
-        // The task's issuance is recorded (architecture.md Sec 11, ):
+        // The task's issuance is recorded (architecture.md Sec 11):
         // attributed to the issuing operator, the payload the verb and arguments,
         // the outcome the new task id. This is the operator's intent; the
         // TaskDispatched event records the server handing it to the implant and

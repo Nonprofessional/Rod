@@ -78,7 +78,7 @@ public class LayerDependencyTests
     // leaks into core state. Audit is the innermost ring alongside core state
     // (architecture.md Sec 4.1/11): when a task result arrives, transport composes
     // the audit write itself, so it depends inward on the audit port. Build
-    // pipeline (): the operator-facing build endpoint drives the build
+    // pipeline: the operator-facing build endpoint drives the build
     // orchestrator and composes the PayloadBuilt audit write, the same way the
     // beacon stream composes the task-completion write, so transport depends inward
     // on the build contract. All dependencies point inward; transport never
@@ -102,7 +102,7 @@ public class LayerDependencyTests
     public void Tradecraft_Dependencies_PointInwardOnly()
         => AssertOnlyDependsOn(Tradecraft, nameof(Tradecraft), "Rod.Tradecraft", "Rod.CoreState", "Rod.Audit");
 
-    // Persistence (ADR 0003, ) implements the Rod.CoreState and
+    // Persistence (ADR 0003) implements the Rod.CoreState and
     // Rod.Audit persistence ports against Postgres, so it may depend inward on
     // those two layers only. It is wired at the composition root, never by
     // transport, so -- like operators and tradecraft -- it never touches the

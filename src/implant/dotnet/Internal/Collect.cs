@@ -295,8 +295,7 @@ internal static class Collect
         => Path.Combine(HomeDir(), ".aws", "credentials");
 
     // Resolves the current user's home directory. On Linux/macOS $HOME is
-    // authoritative (matching os.UserHomeDir in the wire-protocol contract and
-    // standard Unix tooling); on Windows %USERPROFILE% is. Falls back to
+    // authoritative (matching standard Unix tooling); on Windows %USERPROFILE% is. Falls back to
     // Environment.GetFolderPath when the variable is unset.
     private static string HomeDir()
     {

@@ -8,7 +8,7 @@ namespace Rod.Build.Tests;
 
 /// <summary>
 /// Direct checks of <see cref="PayloadBuildService"/> -- the teamserver-side
-/// orchestrator that drives build units (). Focuses on the
+/// orchestrator that drives build units. Focuses on the
 /// per-implant material the service generates at request time (architecture.md
 /// Sec 6/Sec 5.1), which the build-unit tests read back only indirectly through
 /// the baked profile.

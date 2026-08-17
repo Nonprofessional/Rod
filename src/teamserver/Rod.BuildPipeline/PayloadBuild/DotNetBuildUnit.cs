@@ -7,7 +7,7 @@ using Rod.CoreState.Implants;
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
-/// The real .NET build unit (). Drives the reference .NET implant's
+/// The real .NET build unit. Drives the reference .NET implant's
 /// toolchain to compile a self-contained, per-implant artifact through the build
 /// contract (architecture.md Sec 6). It runs <c>dotnet publish</c> against the
 /// implant source tree, baking the per-implant profile into a generated

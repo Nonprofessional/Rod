@@ -17,7 +17,7 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing timeline and report export endpoints (): the
+/// The operator-facing timeline and report export endpoints: the
 /// built-in consumers of the event + task + artifact store (architecture.md Sec 11).
 /// A red-team operation ends in a deliverable -- a timeline, findings, and evidence
 /// -- and Rod treats the audit trail as the <em>source for report generation</em>,

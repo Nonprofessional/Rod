@@ -22,7 +22,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: the engagement trail survives infrastructure
+/// Acceptance: the engagement trail survives infrastructure
 /// teardown. Drives the full operational lifecycle on a teamserver bound to a
 /// durable audit/artifact store, then tears that teamserver down (stops the host
 /// -- the in-memory core state, the listeners, the live bus all vanish) and
@@ -187,7 +187,7 @@ public class AuditRetentionTests
 
         await call.RequestStream.CompleteAsync();
 
-        // Retire the implant (): the ImplantRetired event joins the trail.
+        // Retire the implant: the ImplantRetired event joins the trail.
         var retire = await env.Http.PostAsync(
             $"/engagements/{engagementId}/implants/{implantId}:retire",
             content: null);
@@ -311,7 +311,7 @@ public class AuditRetentionTests
             env.HttpPort = GetFreeTcpPort();
 
             // The Audit:DataDirectory section selects the file-backed stores
-            // (), layered on top of the seeded-operator config so
+            //, layered on top of the seeded-operator config so
             // every TestEnv comes up authenticated the same way as the suite.
             var config = AuthenticatedHost.BuildConfig(
                 extend: dict => dict["Audit:DataDirectory"] = dataDirectory);

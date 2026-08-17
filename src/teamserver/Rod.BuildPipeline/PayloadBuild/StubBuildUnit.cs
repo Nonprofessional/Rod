@@ -5,7 +5,7 @@ using Rod.CoreState.Implants;
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
-/// The stub build unit (): proves the build contract round-trip
+/// The stub build unit: proves the build contract round-trip
 /// without any real toolchain. The real in-tree reference build unit is .NET
 /// (ADR 0009); community build units for other languages (Go/C/Nim) live
 /// out-of-tree. The stub occupies the <see cref="Language.Go"/> slot so the

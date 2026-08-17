@@ -13,7 +13,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  acceptance at the contract layer: the collection verbs
+/// Contract-layer acceptance: the collection verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, lateral, persist, and exfil sets, are listed in the Collect
 /// category, register as placeholders (their concrete behavior

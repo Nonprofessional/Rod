@@ -24,7 +24,7 @@ using Rod.Transport.Listeners;
 namespace Rod.Transport;
 
 /// <summary>
-/// Assembles the teamserver HTTP host for the walking skeleton ():
+/// Assembles the teamserver HTTP host:
 /// wires the core-state ports to their in-memory adapters, registers the
 /// engagement and enrollment use cases, and maps the operator- and implant-facing
 /// endpoints.
@@ -37,7 +37,7 @@ public static class TransportHost
 
     /// <summary>
     /// Registers core-state ports, adapters, and use cases, and selects the audit
-    /// and artifact store by configuration (). When the
+    /// and artifact store by configuration. When the
     /// <c>Audit:DataDirectory</c> section is present, the file-backed
     /// <see cref="FileAuditStore"/>/<see cref="FileArtifactStore"/> replace the
     /// in-memory adapters so the engagement trail and its artifacts survive a
@@ -55,7 +55,7 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
-        // gRPC server: the beacon stream terminates here (). The
+        // gRPC server: the beacon stream terminates here. The
         // message caps enforce the rod.proto sizing contract (a single frame
         // stays well under 1 MiB; bulk data is chunked): 2 MiB leaves headroom
         // for the envelope and protobuf overhead above the 1 MiB payload budget,
@@ -67,9 +67,9 @@ public static class TransportHost
             options.MaxSendMessageSize = 2 * 1024 * 1024;
         });
 
-        // Core-state ports -> walking-skeleton in-memory adapters ().
+        // Core-state ports -> default in-memory adapters.
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();
-        // Operator password verifier -> walking-skeleton in-memory adapter. The
+        // Operator password verifier -> default in-memory adapter. The
         // durable Postgres adapter replaces this from Rod.Persistence (ADR 0003)
         // the same way it replaces the repository above; the port is stable either
         // way. Operator authentication itself (cookie sessions, login) is wired in
@@ -79,7 +79,7 @@ public static class TransportHost
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
         // Implant CA (architecture.md Sec 9): the self-signed DevCertificateAuthority
-        // is the walking-skeleton default; an externally provisioned engagement CA,
+        // is the default; an externally provisioned engagement CA,
         // supplied as PEM files via the Pki section, replaces it for production
         // (FileBackedCertificateAuthority). Mirrors the Audit:DataDirectory opt-in
         // below: presence selects the production adapter, absence keeps the dev
@@ -104,7 +104,7 @@ public static class TransportHost
         services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
 
-        // Listener registry (): the bound C2 ingress the teamserver is
+        // Listener registry: the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
@@ -115,7 +115,7 @@ public static class TransportHost
         // artifacts, and built payloads survive a teamserver restart and
         // infrastructure teardown, the acceptance point. The ports are stable
         // either way; only the adapter is swapped. The durable trio is the
-        // Postgres stand-in for the walking skeleton, behind the same
+        // Postgres stand-in by default., behind the same
         // ports.
         var dataDirectory = configuration?["Audit:DataDirectory"];
         if (!string.IsNullOrWhiteSpace(dataDirectory))
@@ -128,16 +128,16 @@ public static class TransportHost
         }
         else
         {
-            // Audit port -> walking-skeleton in-memory adapter. The store is
-            // hash-chained per engagement (): tampering with a stored
+            // Audit port -> default in-memory adapter. The store is
+            // hash-chained per engagement: tampering with a stored
             // event breaks the chain at the next link.
             services.AddSingleton<IAuditStore, InMemoryAuditStore>();
 
-            // Artifact store port -> walking-skeleton in-memory adapter. First-class evidence objects attached to tasks; consumed by
-            // the operator layer () and beacon ingest later.
+            // Artifact store port -> default in-memory adapter. First-class evidence objects attached to tasks; consumed by
+            // the operator layer and beacon ingest later.
             services.AddSingleton<IArtifactStore, InMemoryArtifactStore>();
 
-            // Payload store port -> walking-skeleton in-memory adapter. Built
+            // Payload store port -> default in-memory adapter. Built
             // payloads await retrieval; the file-backed adapter replaces it when
             // Audit:DataDirectory is set.
             services.AddSingleton<IPayloadStore, InMemoryPayloadStore>();
@@ -175,7 +175,7 @@ public static class TransportHost
             services.AddHostedService(sp => sp.GetRequiredService<SessionStalenessSweeper>());
         }
 
-        // Build pipeline (/, ADR 0009): the build-unit registry and
+        // Build pipeline (architecture.md Sec 6, ADR 0009): the build-unit registry and
         // the orchestrator that drives it. The .NET slot holds the real in-tree
         // reference build unit (compiles the .NET reference implant via dotnet
         // publish); the stub unit is the contract reference and is exercised by its
@@ -195,7 +195,7 @@ public static class TransportHost
     /// <summary>
     /// Configures Kestrel to terminate mTLS using the configured implant CA
     /// (architecture.md Sec 9): the server presents a TLS certificate (the dev
-    /// CA's own cert in the walking skeleton) and requires a client certificate
+    /// CA's own cert by default) and requires a client certificate
     /// that chains to the CA. Implant leaves are accepted; anything else is
     /// refused at the TLS layer, before any beacon handler runs.
     /// </summary>
@@ -269,7 +269,7 @@ public static class TransportHost
     {
         listen.UseHttps(https =>
         {
-            // The dev CA doubles as the server identity in the skeleton; a real
+            // The dev CA doubles as the server identity by default; a real
             // deployment presents a proper server certificate. The implant client
             // trusts the CA (see test client validation).
             https.ServerCertificateSelector = (_, _) =>
@@ -376,17 +376,17 @@ public static class TransportHost
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         app.MapPayloadEndpoints();
-        // The per-engagement operational event log (): the durable,
+        // The per-engagement operational event log: the durable,
         // hash-chained audit trail read view. Distinct from the operators-layer
         // live SSE route (the transient fan-out).
         app.MapAuditEndpoints();
-        // First-class evidence objects linked to tasks (): attach,
+        // First-class evidence objects linked to tasks: attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         app.MapArtifactEndpoints();
         // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
         // reproducibility-stamped. Read-only projections of the evidence trail.
         app.MapReportEndpoints();
-        // The implant-initiated beacon stream (): gRPC over the
+        // The implant-initiated beacon stream: gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
         // A trivial health probe so the listener is observably up.
@@ -404,10 +404,10 @@ public static class TransportHost
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
-        // The per-engagement operational event log (): the durable,
+        // The per-engagement operational event log: the durable,
         // hash-chained audit trail read view.
         endpoints.MapAuditEndpoints();
-        // First-class evidence objects linked to tasks (): attach,
+        // First-class evidence objects linked to tasks: attach,
         // list, and retrieve artifacts per task, scoped by engagement.
         endpoints.MapArtifactEndpoints();
         // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
@@ -448,7 +448,7 @@ public static class TransportHost
     /// <param name="configuration">
     /// Optional configuration forwarded to <see cref="AddRodTransport(IServiceCollection, IConfiguration?)"/>
     /// so a test host can select the durable audit/artifact stores via the
-    /// <c>Audit:DataDirectory</c> section (). Null keeps the in-memory
+    /// <c>Audit:DataDirectory</c> section. Null keeps the in-memory
     /// adapters, matching every existing caller.
     /// </param>
     public static IHostBuilder CreateHostBuilder(

@@ -8,7 +8,7 @@ namespace Rod.CoreState.Tests;
 /// <summary>
 /// Direct checks of the production implant CA
 /// (<see cref="FileBackedCertificateAuthority"/>, architecture.md Sec 9). The
-/// walking skeleton's self-signed <see cref="DevCertificateAuthority"/> issues
+/// default self-signed <see cref="DevCertificateAuthority"/> issues
 /// leaves off an in-memory CA; the file-backed authority consumes an externally
 /// provisioned CA (PEM cert + RSA key on disk) and must produce leaves that bind
 /// <c>(implant_id, engagement_id)</c> the same way and chain to that CA. These

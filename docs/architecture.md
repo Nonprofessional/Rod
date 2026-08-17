@@ -716,8 +716,8 @@ arbitrary plugin path -- a module reaches the process exactly when an operator
 built it, placed it next to the binary, and listed it, so adding one never
 edits the composition root; a misconfigured entry fails startup loudly. The
 capability contract is registration-only: `ICapabilityModule` carries its
-`Descriptor` and nothing else, and the server-side dispatcher surface the
-skeleton once sketched is retired. The server only gates and forwards on the
+`Descriptor` and nothing else -- there is no server-side
+dispatcher surface to retire. The server only gates and forwards on the
 live task path -- it never invokes a capability module server-side -- so
 execution and dispatch stay on the implant (Sec 5.3), where the target's
 filesystem, network, and credentials actually live.
@@ -789,16 +789,15 @@ scrape.
   teamserver restart and infrastructure teardown. Each append writes and flushes
   one hash-chained record, and the store recovers each engagement's chain head on
   startup, so a restarted teamserver continues each engagement's trail off its
-  last stored event and the reloaded chain still verifies. This is the Postgres
-  stand-in for the skeleton, behind the same ports; the eventual managed store
-  slots in the same way.
+  last stored event and the reloaded chain still verifies. This stands in for Postgres
+  behind the same ports; a managed store slots in the same way.
 
 ## 12. Technology stack and language boundaries
 
 | Concern | Choice | Why |
 |---------|--------|-----|
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core, gRPC | Strong async networking, first-class gRPC, strong typing, mature web UI. LTS to ~2028. |
-| Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and skeleton deployments (see Sec 12.1). |
+| Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and dev deployments (see Sec 12.1). |
 | Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
 | Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). |
 | Implants | .NET (reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One .NET reference implant; community implants slot in by contract for targets .NET does not fit. |

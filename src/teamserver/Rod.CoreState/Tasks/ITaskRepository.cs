@@ -9,13 +9,13 @@ namespace Rod.CoreState.Tasks;
 
 /// <summary>
 /// Persistence port for <see cref="Task"/> aggregates. The core-state layer
-/// () shapes this as a first-class task queue and history: per-implant
+/// shapes this as a first-class task queue and history: per-implant
 /// FIFO dequeue for dispatch, plus implant- and engagement-scoped history. Every
 /// query is rooted in an implant or engagement (which themselves belong to one
 /// engagement), so cross-engagement access stays impossible by construction
 /// (architecture.md Sec 3).
 ///
-/// The walking skeleton ships an in-memory implementation; the port keeps callers
+/// The default is an in-memory implementation; the port keeps callers
 /// agnostic to that.
 /// </summary>
 public interface ITaskRepository
@@ -40,7 +40,7 @@ public interface ITaskRepository
     /// <summary>
     /// All tasks in an engagement, oldest first -- the engagement's task history.
     /// Scoped by engagement so cross-engagement access never reaches this with
-    /// another engagement's id ().
+    /// another engagement's id.
     /// </summary>
     System.Threading.Tasks.Task<IReadOnlyList<Task>> ListByEngagementAsync(
         EngagementId engagement,

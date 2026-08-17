@@ -11,7 +11,7 @@ using Rod.Tradecraft.Registry;
 namespace Rod.Tradecraft.Tests;
 
 /// <summary>
-/// Roadmap  acceptance at the contract layer: the persistence verbs
+/// Contract-layer acceptance: the persistence verbs
 /// (architecture.md Sec 10.1) load through the tradecraft registry alongside the
 /// core, recon, and lateral sets, are listed in the Persist category, register as placeholders (their concrete behavior is out-of-tree, like
 /// the non-shell core verbs and the recon and lateral verbs), carry their OPSEC

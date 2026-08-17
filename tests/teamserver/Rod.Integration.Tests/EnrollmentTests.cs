@@ -10,7 +10,7 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: enroll a fake implant and receive a certificate
+/// Acceptance: enroll a fake implant and receive a certificate
 /// bound to <c>(implant_id, engagement_id)</c> plus the CA chain -- end to end
 /// through the in-memory TestServer. This drives the full enrollment slice
 /// (stager redeem, implant creation, CA issue) via the implant-side endpoint and

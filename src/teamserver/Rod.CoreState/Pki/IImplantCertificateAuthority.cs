@@ -6,7 +6,7 @@ namespace Rod.CoreState.Pki;
 /// <summary>
 /// Issues the client certificate that binds an implant to its engagement
 /// (architecture.md Sec 9 -- mTLS; an implant certificate binds
-/// <c>(implant_id, engagement_id)</c>). The walking skeleton ships a self-signed
+/// <c>(implant_id, engagement_id)</c>). The default is a self-signed
 /// dev CA; production rotates to an externally provisioned engagement CA without
 /// changing this contract.
 /// </summary>

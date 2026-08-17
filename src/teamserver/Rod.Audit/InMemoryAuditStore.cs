@@ -4,15 +4,15 @@ using System.Threading;
 namespace Rod.Audit;
 
 /// <summary>
-/// In-memory <see cref="IAuditStore"/> for the walking skeleton (/
-/// -- no Postgres yet). Events live in a process-local append-only store keyed by
+/// In-memory <see cref="IAuditStore"/> by default -- the durable Postgres
+/// pair replaces it when configured. Events live in a process-local append-only store keyed by
 /// <see cref="AuditEvent.EventId"/>; engagement- and task-scoped queries filter
 /// that store. Append-only is honored by contract: the only mutation is
 /// <see cref="AppendAsync"/>, and nothing here removes or rewrites an event --
 /// appending the same <see cref="AuditEvent.EventId"/> twice throws. State is
 /// lost on restart; the port keeps callers agnostic to that.
 ///
-/// Hash-chained per engagement (storage &amp; audit layer, ): each
+/// Hash-chained per engagement (storage &amp; audit layer): each
 /// appended event is stamped with the hash of the previous event in its
 /// engagement (the genesis all-zero hash for the first) and a hash over itself,
 /// via <see cref="AuditChain"/>. Tampering with a stored event therefore breaks

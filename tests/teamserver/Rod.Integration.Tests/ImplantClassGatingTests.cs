@@ -15,7 +15,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: each implant class enrolls and is gated to its
+/// Acceptance: each implant class enrolls and is gated to its
 /// reduced verb set. Drives the operator-facing task endpoint against an implant
 /// of each class through the in-memory TestServer -- a verb inside the class's
 /// set is accepted (201), a verb outside it is refused (422) before the task is

@@ -15,7 +15,7 @@ namespace Rod.CoreState.Sessions;
 /// live-state store -- the registry is the single source for both "is it online"
 /// and the per-implant connection history.
 ///
-/// The walking skeleton ships an in-memory implementation; the port keeps callers
+/// The default is an in-memory implementation; the port keeps callers
 /// agnostic to that.
 /// </summary>
 public interface ISessionRegistry

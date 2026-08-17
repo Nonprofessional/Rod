@@ -3,8 +3,7 @@
 //   materializes obj/BakedProfile.g.cs into the per-build source tree with the
 //   baked profile embedded as the Json constant (architecture.md Sec 5.1).
 //   This checked-in stub lets the implant compile and run on its own (dev runs)
-//   with an empty baked profile -- flag/env drive everything then, the same way
-//   the Go implant's main.bakedJSON is empty without ldflags.
+//   with an empty baked profile -- flag/env drive everything then.
 // </auto-generated>
 namespace Rod.Implant;
 

@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace Rod.CoreState.Operators;
 
 /// <summary>
-/// In-memory <see cref="IOperatorRepository"/> for the walking skeleton
+/// In-memory <see cref="IOperatorRepository"/> by default.
 /// ( -- no Postgres yet). State lives in process and is lost on
 /// restart; the port keeps callers agnostic to that.
 /// </summary>

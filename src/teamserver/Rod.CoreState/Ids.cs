@@ -3,7 +3,7 @@ namespace Rod.CoreState;
 // Strongly typed identifiers for the engagement core (architecture.md Sec 3).
 // Wrapping the underlying Guid in a distinct type stops an OperatorId being
 // passed where an EngagementId is expected, and keeps the idiom uniform across
-// entities added in later milestones.
+// every entity.
 
 /// <summary>Identifies a global operator identity (one human user).</summary>
 public readonly record struct OperatorId(Guid Value)

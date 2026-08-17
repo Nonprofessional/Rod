@@ -6,7 +6,7 @@ using Rod.CoreState.Engagements;
 namespace Rod.CoreState.Staging;
 
 /// <summary>
-/// In-memory <see cref="IStagerTokenService"/> for the walking skeleton. Mints a
+/// In-memory <see cref="IStagerTokenService"/> by default. Mints a
 /// 32-byte crypto-random secret, returns the base64url plaintext once, and keeps
 /// only its SHA-256 hash so redeem can verify without ever storing the clear
 /// secret. Redeem checks the hash, refuses expired or spent tokens, and consumes
@@ -18,7 +18,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
     private readonly ConcurrentDictionary<StagerTokenId, StoredToken> _stored = new();
     private readonly Lock _redeemLock = new();
 
-    // Sensible defaults for the skeleton; these become per-request inputs later.
+    // Defaults that suit tests and dev runs; production mints scoped values per request.
     private static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(1);
     private const int DefaultMaxUses = 1;
 

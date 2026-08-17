@@ -8,7 +8,7 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Roadmap  acceptance: requesting a payload invokes a build unit and returns
+/// Acceptance: requesting a payload invokes a build unit and returns
 /// an artifact, fingerprinted and recorded. Drives the full slice end-to-end
 /// through the in-memory TestServer -- the operator POSTs a build request, the
 /// build pipeline invokes the in-tree .NET build unit (ADR 0009; the real

@@ -14,7 +14,7 @@ namespace Rod.Audit;
 public enum AuditEventKind
 {
     /// <summary>
-    /// An operator created an engagement (architecture.md Sec 3, ).
+    /// An operator created an engagement (architecture.md Sec 3).
     /// The first event in any engagement's trail. The event carries the
     /// engagement name in its payload and the new engagement id as its outcome;
     /// it is attributed to the creating owner. The chain's genesis link.
@@ -83,7 +83,7 @@ public enum AuditEventKind
     PayloadBuilt,
 
     /// <summary>
-    /// An implant was retired (architecture.md Sec 7, ). The event carries
+    /// An implant was retired (architecture.md Sec 7). The event carries
     /// the implant id and the retiring operator; the outcome is the recorded
     /// retirement timestamp. A retired implant is refused at handshake and
     /// untaskable thereafter. The event has no task -- retirement is an
@@ -93,7 +93,7 @@ public enum AuditEventKind
 
     /// <summary>
     /// An operator attached an evidence artifact to a task (architecture.md
-    /// Sec 11, ). Artifacts -- files, screenshots, captured command
+    /// Sec 11). Artifacts -- files, screenshots, captured command
     /// output -- are first-class objects linked to the task that gathered them,
     /// not loose files; this event records the binding. The payload carries the
     /// artifact's name and content type, and the outcome is the new artifact id.

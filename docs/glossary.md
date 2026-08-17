@@ -41,7 +41,7 @@ sections.
 | **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), mTLS, DNS, SMB, TCP). Decoupled from the public endpoint. |
 | **Redirector** | A near-stateless .NET Native AOT forwarder (a single static binary) that fronts a listener for OPSEC and infra flexibility, splicing the byte stream without inspecting it. Burned redirectors are swappable at runtime by repointing the listener. No engagement state, no business logic. |
 | **Repoint** | Repointing a listener swaps its public endpoint at runtime (`POST /listeners/{id}:repoint`) without touching the Kestrel bind; the old endpoint stops resolving, which severs it. |
-| **Build unit** | A per-language compilation service (C#/.NET, Go, C/C++, Nim) driven by the teamserver through the build contract. |
+| **Build unit** | A per-language compilation service driven by the teamserver through the build contract (.NET in-tree; Go, C/C++, and Nim as out-of-tree community units). |
 | **Build contract** | The uniform message schema coupling the teamserver to build units; the language-neutrality boundary for generation. |
 
 ## Tasking and capabilities
@@ -49,7 +49,7 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Capability** | A verb an implant advertises and the teamserver may dispatch; namespaced (`namespace.action`). |
-| **Capability module** | A distributable, signed bundle adding capability verbs (core or offensive). Evasion/exploit behavior is delivered as out-of-tree modules. |
+| **Capability module** | An out-of-tree assembly that registers capability verbs through `ICapabilityModule` (config-listed, last registration wins). Evasion/exploit behavior is delivered only this way. |
 | **Recon** | The `recon.portscan`, `recon.hostenum`, and `recon.service` verbs (category `Recon`); target and network reconnaissance, gated to Stage-2 at task issuance (Sec 5.2). Like the non-shell core verbs their concrete behavior runs on the implants and is captured as task output -- the descriptors and dispatch live in the tradecraft layer. |
 | **Lateral** | The `lateral.move`, `lateral.token`, and `lateral.exec_remote` verbs (category `Lateral`); lateral movement within an authorized engagement, gated to Stage-2 at task issuance (Sec 5.2). `lateral.move` is the deployment verb that derives a child implant: the child enrols through the standard enrollment route naming its parent, and the recorded `ParentImplantId` is the parentage linkage. The reference implant implements the standard handlers (child derivation, token context inspection, remote exec over admin channels); the descriptors and dispatch live in the tradecraft layer. |
 | **Persist** | The `persist.install`, `persist.remove`, and `persist.list` verbs (category `Persist`); installing, enumerating, and tearing down footholds within an authorized engagement, gated to Stage-2 at task issuance (Sec 5.2). The reference implant implements the standard documented mechanisms (Run key / scheduled tasks / services / cron / systemd); the descriptors and dispatch live in the tradecraft layer. |
@@ -66,4 +66,4 @@ sections.
 | **Artifact** | A first-class object (file, screenshot, command output) linked to a task; part of the evidence store. |
 | **Retire** | Marking an implant retired from the operator API; a retired implant is refused at handshake (`HANDSHAKE_STATUS_IMPLANT_RETIRED`), untaskable, and its active session is closed. Idempotent; recorded as an `ImplantRetired` audit event.
 | **Burn handling** | The recovery flow when an implant or endpoint is compromised: retire the implant, repoint (swap) the burned endpoint, and rebuild a fresh artifact with a fresh key. |
-| **ROE guardrails** | Rules-of-engagement controls that warn or block high-risk actions against out-of-scope targets, reading from the audit store. |
+| **ROE guardrails** | The engagement's rules-of-engagement profile (`PermittedVerbs`, `PermittedImplants`); the server blocks task issuance outside it at queue time and records the refusal. |

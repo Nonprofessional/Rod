@@ -9,12 +9,12 @@ namespace Rod.CoreState.Implants;
 /// disposable with it; an implant certificate binds
 /// <c>(implant_id, engagement_id)</c> (architecture.md Sec 9).
 ///
-/// The kill date is enforced on both sides of the wire (); per-implant keys
-/// are server-generated at enrollment and build time. Retirement () marks an
+/// The kill date is enforced on both sides of the wire; per-implant keys
+/// are server-generated at enrollment and build time. Retirement marks an
 /// implant taken out of operation: a retired implant is refused at handshake and
 /// untaskable, and its active session is closed when it is retired.
 ///
-/// Parentage (): a capable implant can deploy another class on the same host
+/// Parentage: a capable implant can deploy another class on the same host
 /// via a deployment verb, and the child enrols into the same engagement and
 /// records its parent (architecture.md Sec 5.2). A top-level implant (one
 /// enrolled from a stager token) has a null <see cref="ParentImplantId"/>; a
@@ -98,7 +98,7 @@ public sealed class Implant
 
     /// <summary>
     /// Factory for a child implant derived from <paramref name="parentImplantId"/>
-    /// (architecture.md Sec 5.2, ). The child enrols into the parent's
+    /// (architecture.md Sec 5.2). The child enrols into the parent's
     /// engagement and records its parent; the same key/kill-date shape as a
     /// top-level implant applies. A null <paramref name="parentImplantId"/> yields
     /// a top-level implant, so <see cref="Enroll"/> delegates here. The caller (the
@@ -130,7 +130,7 @@ public sealed class Implant
     }
 
     /// <summary>
-    /// Takes the implant out of operation (architecture.md Sec 7, ). Sets
+    /// Takes the implant out of operation (architecture.md Sec 7). Sets
     /// <see cref="RetiredAt"/>; a retired implant is refused at handshake and
     /// untaskable thereafter. Idempotent: a second call on an already-retired
     /// implant returns false and changes nothing, so the retire use case can

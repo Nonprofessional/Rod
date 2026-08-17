@@ -2,12 +2,6 @@ syntax = "proto3";
 
 package rod.v1;
 
-// Go import path for the generated bindings (architecture.md Sec 12). The wire
-// protocol is the language-neutral contract implants build against; this option
-// lets the per-language bindings (Go here) be generated without per-invocation
-// -M flags while leaving the C# generation unaffected.
-option go_package = "github.com/cw/rod/implant/rodpb;rodpb";
-
 // Rod wire protocol, frame layer only.
 //
 // Transport-agnostic (architecture.md Sec.8): HTTP(S), mTLS, DNS, SMB, TCP all
@@ -200,7 +194,7 @@ message TaskResult {
 
 // Implant-initiated beacon channel (architecture.md Sec.5/8). The implant opens
 // a long-lived reverse connection; the first exchange is the handshake, then
-// the stream carries tasking and results in later milestones.
+// the stream carries tasking and results for the life of the stream.
 service Beacon {
   rpc CheckIn(stream Frame) returns (stream Frame);
 }

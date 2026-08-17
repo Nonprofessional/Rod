@@ -112,7 +112,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
         var implant = ResolveImplantId(handshakeRequest, httpContext);
 
-        // The session opening is recorded (architecture.md Sec 11, ).
+        // The session opening is recorded (architecture.md Sec 11).
         // A handshake is implant-initiated, so the event is attributed to the
         // operator who deployed the implant (handshake.DeployedBy); the payload
         // carries the negotiated protocol version and the outcome the session id.
@@ -153,7 +153,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // The tasking session (): a reader draining result frames and a
+    // The tasking session: a reader draining result frames and a
     // writer pushing queued tasks downstream, run concurrently. Concurrency is
     // required because tasks enter the queue out-of-band -- an operator POSTs
     // them over HTTP, not over this stream -- so the writer must keep polling the
@@ -289,7 +289,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             throw;
         }
 
-        // The dispatch is recorded (architecture.md Sec 11, ). Dispatch
+        // The dispatch is recorded (architecture.md Sec 11). Dispatch
         // is server-driven (the implant pulls the queue), so the event is
         // attributed to the operator whose tasking it carries out. The payload is
         // the verb/arguments and the outcome the dispatched task id -- a task's
@@ -396,7 +396,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 at: completed.CompletedAt),
             cancellationToken);
 
-        // Fan the completion out to connected operator sessions ().
+        // Fan the completion out to connected operator sessions.
         // The audit write above is the durable record; this live event is the
         // transient projection operators read while connected, so they see the
         // outcome without re-polling the task endpoint.
@@ -519,7 +519,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             // compose the SessionOpened audit write from it -- a handshake is
             // implant-initiated, so the event is attributed to the implant's
             // DeployedBy and needs the engagement/implant/session ids the result
-            // carries (architecture.md Sec 11, ).
+            // carries (architecture.md Sec 11).
             return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result);
         }
         catch (HandshakeException ex)

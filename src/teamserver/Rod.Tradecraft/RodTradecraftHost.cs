@@ -18,7 +18,7 @@ namespace Rod.Tradecraft;
 
 /// <summary>
 /// Composition-root hooks for the pluggable tradecraft layer (architecture.md
-/// Sec 4.1 layer 6, ). The layer holds the capability-module
+/// Sec 4.1 layer 6). The layer holds the capability-module
 /// contract (a registration, not an execution surface -- the server only gates
 /// and forwards, architecture.md Sec 10.2/10.3) and the registry; concrete
 /// tradecraft is supplied as separate, opt-in, out-of-tree modules
@@ -112,7 +112,7 @@ public static class RodTradecraftHost
     /// Maps the tradecraft layer's endpoints: the capability catalog
     /// (<c>GET /capabilities</c>) that lets the operator UI surface every
     /// capability category as tasking from the registry rather than a hardcoded
-    /// verb table (). Call alongside <c>MapRodEndpoints</c>; the
+    /// verb table. Call alongside <c>MapRodEndpoints</c>; the
     /// composition root calls it after <c>MapOperatorEndpoints</c>.
     /// </summary>
     /// <remarks>
@@ -130,7 +130,7 @@ public static class RodTradecraftHost
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
     /// (core plus recon plus lateral plus persist plus collect plus exfil plus
-    /// evasion plus exploit). The walking-skeleton convenience for tests and for a
+    /// evasion plus exploit). Convenience for tests and for a
     /// process that does not run the full ASP.NET Core host: it owns one registry
     /// and loads the verbs into it.
     /// </summary>

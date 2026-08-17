@@ -7,8 +7,7 @@ using System.Threading;
 namespace Rod.Audit;
 
 /// <summary>
-/// Durable <see cref="IArtifactStore"/> for the walking skeleton (architecture.md
-/// Sec 11; ). Each artifact's raw bytes are written to
+/// Durable <see cref="IArtifactStore"/> by default. Each artifact's raw bytes are written to
 /// <c>blobs/{artifactId}</c> under the data directory, and a metadata record (no
 /// bytes) is appended to <c>artifacts.jsonl</c>, so evidence linked to a task
 /// survives a teamserver restart and infrastructure teardown alongside the audit
