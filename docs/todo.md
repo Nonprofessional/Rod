@@ -61,6 +61,27 @@ handlers); the kit makes them effortless. See
       so the roster reflects reality. _AC:_ an artifact built with an
       out-of-tree evasion handler advertises the verb at handshake.
 
+## Implant reach (architecture.md Sec 8, implant-contract.md)
+
+The protocol is the product; the bar is that a from-scratch implant can be
+written against `docs/implant-contract.md` alone.
+
+- [ ] **Plain-HTTP envelope listener.** The recorded escape hatch, now
+      scheduled for reach: the same rod.v1 Frames carried as
+      varint-length-delimited sequences in ordinary HTTPS request/response
+      bodies over the same client certificates -- one POST is one poll
+      check-in (request body: handshake + results + exfil chunks; response
+      body: handshake response + tasking). Drops the gRPC/HTTP-2 requirement
+      so Tier 0 is reachable from any language with an HTTP and a protobuf
+      codec. _AC:_ a from-scratch implant written from the contract doc
+      alone, using no gRPC library, enrolls, checks in, and completes a task.
+- [ ] **Tier 0 conformance harness.** A rig that drives a candidate implant
+      against a live teamserver and reports pass/fail per contract clause
+      (enroll shapes, handshake order, result/chunk discipline, signature
+      verification, kill-date refusal). _AC:_ pointing the harness at the
+      reference implant passes, and at a deliberately broken one fails with
+      the violated clause named.
+
 ## Security (architecture.md Sec 9)
 
 - [ ] **Tasking replay nonces.** Command signing binds tasking to its implant

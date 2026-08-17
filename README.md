@@ -137,6 +137,8 @@ Start here:
 - **[docs/glossary.md](docs/glossary.md)** -- terminology.
 - **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
   redirector build/deploy/rotate runbook.
+- **[docs/implant-contract.md](docs/implant-contract.md)** -- the wire
+  reference and tier ladder a from-scratch implant builds against.
 - **[docs/extending/tradecraft.md](docs/extending/tradecraft.md)** -- writing
   out-of-tree capability modules (the sensitive categories are contracts only;
   this is the seam guide).

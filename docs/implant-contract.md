@@ -1,73 +1,217 @@
 # Rod -- Implant contract
 
-The compliance ladder for a from-scratch implant. The wire protocol is the
-product (architecture.md Sec 4.2, Sec 12.2): any language that can speak it
-can be a Rod implant. This file defines what "speak it" minimally means, what
-is optional hardening, and the rules that keep the minimum small while the
-platform grows. The reference .NET implant (`src/implant/dotnet/`) implements
-every tier; it is the worked example, not the obligation.
+The compliance ladder and wire reference for a from-scratch implant. The wire
+protocol is the product (architecture.md Sec 4.2, Sec 12.2): any language that
+can speak it can be a Rod implant. This file defines what "speak it" minimally
+means, every byte-level shape an implant author needs, what is optional
+hardening, and the rules that keep the minimum small while the platform grows.
+The reference .NET implant (`src/implant/dotnet/`) implements every tier; it
+is the worked example, not the obligation.
 
 The contract sources are `src/teamserver/Rod.Protocol/protos/rod.proto` (the
-wire messages), the HTTP enrollment route, and the baked build profile. A
-community implant compiles the proto with its own toolchain and provides
-everything else itself.
+authoritative wire messages -- compile it with your own toolchain), this wire
+reference, and the baked build profile a build unit emits. Everything here is
+verified against the teamserver code; where behavior differs, rod.proto and
+the code win and this file is a bug.
+
+## Wire reference
+
+### Endpoints
+
+A deployment exposes two implant-facing endpoints (listener configuration,
+architecture.md Sec 8):
+
+| Purpose | Transport | Route |
+|---------|-----------|-------|
+| Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
+| Beacon / tasking | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
+
+The enroll listener accepts plain JSON with no client certificate -- the
+implant authenticates with the one-use stager token, not a cert it does not
+have yet. The beacon listener requires a client certificate that chains to
+the engagement CA; enrollment is what mints it.
+
+### TLS shape
+
+- **Beacon client certificate:** the leaf issued at enroll, paired with the
+  implant's own private key. It binds `(implant_id, engagement_id)` -- the
+  server's authoritative identity check is "the cert's engagement equals the
+  enrolled implant's engagement" (architecture.md Sec 9).
+- **Server identity:** the teamserver presents the engagement CA certificate
+  itself as its server identity (it carries no SANs). Pin **chain-to-CA**, not
+  DNS names: build the chain with the enrolled CA chain in the trust store,
+  allow the unknown-CA error, then require the chain root's fingerprint to
+  equal one of the enrolled CA certificates. This mirrors what the reference
+  client does (`C2.PinServerChain`).
+
+### Enrollment
+
+`POST /implants/enroll`, `Content-Type: application/json`, camelCase JSON:
+
+```json
+{
+  "stagerTokenSecret": "<the one-use secret the operator minted>",
+  "publicKey": "<base64 DER SubjectPublicKeyInfo of your RSA-2048 public key>",
+  "class": "Stage2",
+  "parentImplantId": null
+}
+```
+
+`publicKey` is what makes the implant own its identity: submit the public
+half, keep the private half, and the returned leaf is signed over your key.
+`class` is optional (defaults `Stage2`); `parentImplantId` is set only by a
+child derivation (`lateral.move`). A malleable profile may wrap the whole JSON
+body as a single base64 JSON string (the profile's base64 envelope) -- the
+teamserver accepts both shapes.
+
+Response `200 OK`:
+
+```json
+{
+  "status": 1,
+  "implantId": "<guid>",
+  "engagementId": "<guid>",
+  "leafCertificate": "<base64 DER leaf, signed over your public key>",
+  "caChain": ["<base64 DER CA cert>"],
+  "parentImplantId": null
+}
+```
+
+`status` is the proto `EnrollStatus`: `1` OK, `2` bad token, `3` expired,
+`4` spent. A token failure answers `401` with the status set and no
+certificate material; a malformed body answers `400`. Bad/expired/spent are
+**definitive** -- do not retry them. Transport failures (connection refused,
+timeout) are worth retrying with exponential backoff.
+
+### The CheckIn stream
+
+One bidirectional gRPC stream, method `/rod.v1.Beacon/CheckIn`, protobuf
+messages defined in rod.proto. The unit that crosses the stream is `Frame`:
+an opaque `payload` plus, upstream only, a `kind` discriminator. The server's
+message cap is 2 MiB per frame; keep a single payload near or under 1 MiB and
+chunk anything larger.
+
+**Frame order:**
+
+1. The implant speaks first: one `Frame` whose payload is a `HandshakeRequest`
+   (protocol version `1.0`, the implant id, the advertised verb list).
+2. The server answers with one `Frame` whose payload is a `HandshakeResponse`.
+   `status` must be `1` (`OK`); anything else is **permanent for this
+   artifact** -- terminate rather than retry:
+   `2` version mismatch, `3` unknown implant, `4` identity mismatch,
+   `5` kill date expired, `6` implant retired.
+3. Thereafter the stream carries tasking downstream (`TaskRequest` payloads,
+   no kind set -- discriminate positionally after the handshake) and results
+   upstream (`TaskResult` with `kind = FRAME_KIND_TASK_RESULT`, `ExfilChunk`
+   with `kind = FRAME_KIND_EXFIL_CHUNK`). An upstream frame with `kind`
+   unset is tolerated as a `TaskResult` (legacy shape).
+
+**Using the stream:** hold it open for the session (stream mode -- the
+interactive shape, server pushes tasking the moment it is queued) or run
+check-in cycles (poll mode -- drain queued tasking, half-close, wait for the
+server to end the stream, sleep the baked interval with jitter, reconnect and
+re-handshake). Both are Tier 0; the server treats them identically and reuses
+the implant's session across reconnects.
+
+### Task results and bulk data
+
+A `TaskResult` echoes the task id with an outcome (`1` succeeded, `2` failed)
+and an output string. Bulk data (file contents, large captures) does **not**
+ride the output string: emit `ExfilChunk` frames after the `TaskResult`, each
+carrying the task id, an artifact name, a MIME content type, a 0-origin
+sequence, and a terminal flag on the last one. The teamserver reassembles
+strictly by sequence into the engagement artifact store. Keep chunks at or
+under 512 KiB.
+
+### Tasking signature verification (Tier 1, recommended)
+
+Every dispatched `TaskRequest` carries an RSASSA-PSS/SHA-256 signature made by
+the tasking CA -- the same CA whose chain the implant holds from enrollment.
+Verify before executing; report a failure as a `Failed` task rather than
+running anything. The signed bytes are a fixed canonical encoding (NOT the
+serialized message), so every language verifies identically:
+
+```
+canonical = ""
+for value in [my_own_implant_id, task.task_id, task.verb, task.arguments]:
+    bytes   = utf8(value)
+    canonical += uint32_little_endian(len(bytes)) + bytes
+verify RSASSA-PSS(SHA-256) over canonical with each RSA-bearing CA public key
+```
+
+The implant id in the tuple is the **verifier's own** id, not a wire field:
+tasking signed for another implant fails verification on yours, so captured
+tasking cannot be replayed cross-implant.
 
 ## Tier 0 -- Interop (required)
 
 The smallest implant that enrolls, checks in, and executes tasking:
 
 1. **Enroll.** Generate an RSA-2048 key pair. POST the public key with the
-   stager token to the enroll endpoint (HTTP, JSON; the route and body shape
-   follow the reference implant's enroll client). Receive the implant id, the
-   engagement id, a DER leaf certificate over the submitted public key, and
-   the CA chain. Keep the private key; never transmit it.
-2. **Beacon.** Open the `Beacon.CheckIn` bidirectional stream over mTLS,
-   presenting the leaf certificate (gRPC over HTTP/2; the transport profile
-   names the endpoint). Holding the stream open (stream mode) and
-   drain-then-close-sleep cycles (poll mode) are both Tier 0 -- the server
-   treats them identically.
-3. **Handshake.** Send `HandshakeRequest` (protocol version 1.0, the implant
-   id, the advertised verb list) as the first frame; require
-   `HANDSHAKE_STATUS_OK`. Treat every other status as permanent: log it and
-   terminate rather than retry.
+   stager token. Receive the ids, the leaf, and the CA chain. Keep the private
+   key; never transmit it.
+2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf.
+3. **Handshake.** Send the `HandshakeRequest` first; require OK; treat every
+   other status as permanent.
 4. **Task loop.** Parse each downstream `TaskRequest`, execute its verb
    against its opaque argument string, and write a `TaskResult` echoing the
-   task id with the outcome and output. The verb grammar belongs to the
-   implant's own handlers; the server gates verbs, it does not parse
-   arguments.
+   task id. The verb grammar belongs to the implant's own handlers; the server
+   gates verbs, it does not parse arguments.
 
-That is the whole obligation. An implant that stops here interoperates fully:
-it appears on the roster, is taskable, and its results and audit trail are
-indistinguishable from the reference implant's.
+In pseudocode, the whole obligation:
+
+```
+key    = rsa_2048()
+enroll = post_json("https://teamserver/implants/enroll",
+                   {"stagerTokenSecret": token,
+                    "publicKey": b64(key.spki_der)})
+leaf   = cert(enroll.leafCertificate) paired with key
+cas    = [cert(b) for b in enroll.caChain]
+
+forever:
+    stream = grpc_connect("teamserver:port", mTLS(leaf, trust = chain_to(cas)))
+    send Frame(payload = HandshakeRequest{1, 0, enroll.implantId, my_verbs})
+    if HandshakeResponse.parse(recv()).status != OK: exit
+
+    while task = TaskRequest.parse(next_downstream_frame()):
+        if not verify_tasking(cas, task, my_id = enroll.implantId):
+            send Frame(TASK_RESULT, TaskResult{task.id, Failed, "rejected"}); continue
+        outcome, output, chunks = my_handlers[task.verb](task.arguments)
+        send Frame(TASK_RESULT, TaskResult{task.id, outcome, output})
+        for c in chunks: send Frame(EXFIL_CHUNK, c)
+
+    # stream mode: the while loop blocks on the next downstream frame.
+    # poll mode: after a short idle with no frame, close the stream,
+    # sleep(baked_sleep +/- baked_jitter/2), and reconnect.
+```
+
+An implant that stops here interoperates fully: it appears on the roster, is
+taskable, and its results and audit trail are indistinguishable from the
+reference implant's.
 
 ## Tier 1 -- Hardening (the implant author's choice)
 
 Each item hardens the implant with no server-side counterpart requirement --
 the server cannot observe whether an implant adopted any of them:
 
-- **Tasking signature verification.** Verify the `TaskRequest` signature
-  (RSASSA-PSS over SHA-256 on the canonical tuple documented on the proto
-  message) against the CA certificate from enrollment before executing, and
-  report a failure as a `Failed` task rather than executing. The reference
-  implant verifies; skipping verification leaves the implant trusting the
-  channel, which is the pre-signing posture (architecture.md Sec 9).
+- **Tasking signature verification.** As specified above. Skipping it leaves
+  the implant trusting the channel (the pre-signing posture,
+  architecture.md Sec 9).
 - **Kill date.** Refuse to start past the baked kill date and re-check it
-  each beacon cycle. The teamserver refuses handshakes past it regardless;
-  the local check bounds a lost implant that can no longer reach any server.
-- **Beacon discipline.** The baked sleep with jitter, and exponential
-  backoff on consecutive failures, so a down teamserver is not polled at
-  beacon rate. The check-in mode is the implant's choice on the same stream
-  contract: hold the connection open (stream) or drain-then-close-sleep
-  (poll, the low-and-slow shape).
+  each cycle. The teamserver refuses handshakes past it regardless; the local
+  check bounds a lost implant that can no longer reach any server.
+- **Beacon discipline.** The baked sleep with jitter, and exponential backoff
+  on consecutive failures, so a down teamserver is not polled at beacon rate.
+  The check-in mode is the implant's choice on the same stream contract.
 
 ## Tier 2 -- Optional features
 
 Adopt per deployment need; absence degrades the feature, not interop:
 
-- **Exfil chunking** -- `ExfilChunk` frames after a `TaskResult` stream bulk
-  data into the artifact store.
+- **Exfil chunking** -- `ExfilChunk` frames stream bulk data into the
+  artifact store.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
-  headers, timeout, and body envelope shape the enroll request.
+  headers, timeout, and base64 body envelope shape the enroll request.
 - **Child derivation** -- the parent-naming enroll flow behind
   `lateral.move` (architecture.md Sec 5.2).
 
@@ -92,9 +236,11 @@ from quietly growing:
 
 ## Calibration note
 
-Tier 0's heaviest piece is the gRPC/HTTP-2 channel, not the crypto or the
-messages. For a target language with a weak gRPC story, the recorded escape
-hatch is a plain-HTTP-envelope listener (architecture.md Sec 8): the same
-proto payloads carried as opaque HTTP bodies over the same client
+Tier 0's heaviest piece today is the gRPC/HTTP-2 channel, not the crypto or
+the messages. The recorded escape hatch is a plain-HTTP-envelope listener
+(architecture.md Sec 8): the same rod.v1 frames carried as delimited
+sequences in ordinary HTTP request/response bodies over the same client
 certificates, dropping the gRPC requirement without changing the protocol
-semantics.
+semantics -- one POST becomes one poll check-in. It is scheduled on the todo
+list; until it ships, an implant needs a gRPC stack (or hand-rolled HTTP/2,
+which the framing above makes mechanical).
