@@ -129,6 +129,34 @@ public class DotNetBuildUnitTests
         Assert.Equal("application/json", root.GetProperty("headers").GetProperty("Accept").GetString());
     }
 
+    [Theory]
+    [InlineData("linux", "amd64", "linux-x64")]
+    [InlineData("linux", "x86_64", "linux-x64")]
+    [InlineData("linux", "arm64", "linux-arm64")]
+    [InlineData("windows", "amd64", "win-x64")]
+    [InlineData("win", "386", "win-x86")]
+    [InlineData("osx", "aarch64", "osx-arm64")]
+    [InlineData("darwin", "x64", "osx-x64")]
+    public void MapRid_MapsContractTargetsOntoRuntimeIdentifiers(
+        string os, string arch, string rid)
+    {
+        // The build contract speaks Go-style os/arch pairs; the publish step
+        // speaks RIDs. Every spelling an operator sends must land on one.
+        Assert.Equal(rid, DotNetBuildUnit.MapRid(new TargetProfile(os, arch)));
+    }
+
+    [Theory]
+    [InlineData("plan9", "amd64")]
+    [InlineData("linux", "riscv")]
+    public void MapRid_RejectsAnUnmappableTarget_WithTheSupportedSetNamed(string os, string arch)
+    {
+        // An unmappable target fails at build time with a fixable message, not
+        // a silent fallback to the build host's platform.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => DotNetBuildUnit.MapRid(new TargetProfile(os, arch)));
+        Assert.Contains("supported", ex.Message);
+    }
+
     // RFC 4648 base64url without padding, matching DotNetBuildUnit.Base64Url.
     private static byte[] Base64UrlDecode(string value)
     {

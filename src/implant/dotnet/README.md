@@ -38,9 +38,11 @@ generated code is committed, `rod.proto` is the single source of truth.
 
 ## Build
 
-The implant is built by `DotNetBuildUnit`, which runs `dotnet publish` over
-this tree and bakes the per-implant profile into a generated source file. To
-build it directly for development:
+The implant is built by `DotNetBuildUnit`, which runs a self-contained
+single-file `dotnet publish` for the requested target OS/arch over this tree
+and bakes the per-implant profile into a generated source file -- the produced
+binary runs on a stock target with no .NET installed. To build it directly for
+development (framework-dependent, from the source tree):
 
 ```
 dotnet build Rod.Implant.csproj

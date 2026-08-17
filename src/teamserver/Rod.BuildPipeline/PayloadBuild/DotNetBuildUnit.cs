@@ -52,6 +52,14 @@ public sealed class DotNetBuildUnit : IBuildUnit
             throw new InvalidOperationException(
                 $".NET implant source tree not found at '{_implantSourceDir}'.");
 
+        // The artifact must run on the target, not on the build host: map the
+        // requested OS/arch onto a runtime identifier and publish self-contained
+        // so no .NET has to be installed on the target (the practical deployment
+        // shape -- a target with a shared .NET 10 on it is a rarity, not the
+        // rule). Single-file bundles the runtime; compression trades a slower
+        // cold start for a much smaller artifact worth transferring.
+        var rid = MapRid(@params.Target);
+
         var now = DateTimeOffset.UtcNow;
         var baked = RenderBakedProfile(@params);
 
@@ -84,16 +92,19 @@ public sealed class DotNetBuildUnit : IBuildUnit
             await File.WriteAllTextAsync(bakedPath, RenderBakedSource(baked), cancellationToken);
 
             // dotnet publish compiles the implant (including its proto client
-            // bindings) and emits a framework-dependent assembly the operator's
-            // build target can run via `dotnet Rod.Implant.dll`.
+            // bindings) into a self-contained single-file executable for the
+            // requested runtime identifier: one native entrypoint, runtime
+            // bundled, no target-side install.
             var result = await RunDotNetAsync(
                 new[]
                 {
                     "publish",
                     "-c", "Release",
+                    "-r", rid,
+                    "--self-contained", "true",
+                    "-p:PublishSingleFile=true",
+                    "-p:EnableCompressionInSingleFile=true",
                     "-o", outputDir,
-                    "-p:PublishSingleFile=false",
-                    "--self-contained", "false",
                     "--nologo",
                     "/clp:NoSummary",
                 },
@@ -112,17 +123,17 @@ public sealed class DotNetBuildUnit : IBuildUnit
                     $"dotnet publish failed (exit {result.ExitCode}):\n{diag}");
             }
 
-            // The published Rod.Implant.dll is the artifact: the compiled implant
-            // assembly plus its bundled dependencies. The whole output dir is what
-            // a stager fetches; the dll is the entrypoint a `dotnet` invocation
-            // loads. Returning the dll bytes keeps the fingerprint stable and the
-            // artifact a single, recognizable blob.
-            var dllPath = Path.Combine(outputDir, "Rod.Implant.dll");
-            if (!File.Exists(dllPath))
+            // The single-file executable is the artifact: the compiled implant
+            // with the runtime bundled, ready to drop on the target and run. A
+            // Windows target gets an .exe; everything else gets the extensionless
+            // native binary.
+            var exeName = rid.StartsWith("win", StringComparison.Ordinal) ? "Rod.Implant.exe" : "Rod.Implant";
+            var exePath = Path.Combine(outputDir, exeName);
+            if (!File.Exists(exePath))
                 throw new InvalidOperationException(
-                    "dotnet publish reported success but produced no Rod.Implant.dll.");
+                    $"dotnet publish reported success but produced no {exeName}.");
 
-            var content = await File.ReadAllBytesAsync(dllPath, cancellationToken);
+            var content = await File.ReadAllBytesAsync(exePath, cancellationToken);
             return BuildArtifact.Of(
                 Language,
                 artifactId: Guid.NewGuid(),
@@ -135,6 +146,34 @@ public sealed class DotNetBuildUnit : IBuildUnit
         {
             TryCleanup(workDir);
         }
+    }
+
+    // Maps a build target onto a .NET runtime identifier. The contract speaks
+    // Go-style os/arch pairs (linux/amd64); dotnet speaks RIDs (linux-x64). The
+    // accepted arch aliases cover the spellings operators actually send; anything
+    // else fails with the supported set named so the request is fixable.
+    public static string MapRid(TargetProfile target)
+    {
+        var os = target.OperatingSystem.Trim().ToLowerInvariant();
+        var arch = target.Architecture.Trim().ToLowerInvariant();
+        var ridArch = arch switch
+        {
+            "amd64" or "x64" or "x86_64" => "x64",
+            "x86" or "386" => "x86",
+            "arm64" or "aarch64" => "arm64",
+            _ => throw new InvalidOperationException(
+                $"Unsupported target architecture '{target.Architecture}' for the .NET build unit " +
+                "(supported: amd64/x64, x86/386, arm64/aarch64)."),
+        };
+        return os switch
+        {
+            "linux" => $"linux-{ridArch}",
+            "windows" or "win" => $"win-{ridArch}",
+            "osx" or "darwin" or "macos" => $"osx-{ridArch}",
+            _ => throw new InvalidOperationException(
+                $"Unsupported target OS '{target.OperatingSystem}' for the .NET build unit " +
+                "(supported: linux, windows, osx)."),
+        };
     }
 
     // Renders the baked profile as a compact JSON map, base64-url-encoded without

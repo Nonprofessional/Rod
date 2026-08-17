@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -115,17 +117,30 @@ internal static class Core
     // one line per open port ("<host>:<port> open"). Arguments are
     // "<host> <start-end>". Malformed arguments yield Failed; a closed range
     // yields Succeeded with empty output.
+    //
+    // Dials run with bounded parallelism: a sequential 300ms-timeout sweep of a
+    // 65k range would take hours, while a few hundred concurrent connects keep
+    // it in the minutes without exhausting the socket pool. The degree is a
+    // deliberately conservative ceiling, not a tuning knob.
+    private const int ScanParallelism = 256;
+
     public static (TaskOutcome, string) PortScan(string arguments)
     {
         if (!TryParseScanArgs(arguments, out var host, out var startPort, out var endPort))
             return (TaskOutcome.Failed, "recon.portscan expects '<host> <start-end>'");
 
-        var lines = new List<string>();
-        for (var port = startPort; port <= endPort; port++)
-        {
-            if (IsPortOpen(host, port))
-                lines.Add($"{host}:{port} open");
-        }
+        var open = new ConcurrentQueue<int>();
+        Parallel.For(
+            startPort,
+            endPort + 1,
+            new ParallelOptions { MaxDegreeOfParallelism = ScanParallelism },
+            port =>
+            {
+                if (IsPortOpen(host, port))
+                    open.Enqueue(port);
+            });
+
+        var lines = open.OrderBy(port => port).Select(port => $"{host}:{port} open");
         return (TaskOutcome.Succeeded, string.Join("\n", lines));
     }
 
