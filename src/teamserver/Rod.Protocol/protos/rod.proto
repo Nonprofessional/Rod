@@ -24,7 +24,7 @@ message ProtocolVersion {
 // architecture.md Sec.9) and in the payload messages themselves, so the frame
 // carries no envelope of its own. Field number 1 is retired: it held an
 // envelope message nothing ever set, removed before any release shipped; it
-// must not be reused (the evolution rules in implant-contract.md).
+// must not be reused (the evolution rules in extending/implants.md).
 //
 // kind disambiguates the payload shape on the upstream (implant-to-server)
 // half of the CheckIn stream. It defaults to UNSPECIFIED for backward

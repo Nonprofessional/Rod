@@ -127,22 +127,25 @@ Configuration is opt-in sections of `appsettings.json`:
 
 ## Documentation
 
-Start here:
+The doc tree, by what you came for:
 
-- **[docs/architecture.md](docs/architecture.md)** -- the system blueprint:
-  operational lifecycle, the engagement model, the monolithic-kernel layers,
-  implants and profiles, the build pipeline, OPSEC, transports, security, and the
-  sensitive-capability boundary.
-- **[docs/todo.md](docs/todo.md)** -- open work.
-- **[docs/glossary.md](docs/glossary.md)** -- terminology.
-- **[docs/operations/redirectors.md](docs/operations/redirectors.md)** -- the
-  redirector build/deploy/rotate runbook.
-- **[docs/implant-contract.md](docs/implant-contract.md)** -- the wire
-  reference and tier ladder a from-scratch implant builds against.
-- **[docs/extending/tradecraft.md](docs/extending/tradecraft.md)** -- writing
-  out-of-tree capability modules (the sensitive categories are contracts only;
-  this is the seam guide).
-- **[SECURITY.md](SECURITY.md)** -- vulnerability reporting and scope.
+- **The design** -- **[docs/architecture.md](docs/architecture.md)** is the
+  blueprint: operational lifecycle, the engagement model, the
+  monolithic-kernel layers, implants and profiles, the build pipeline, OPSEC,
+  transports, security, and the sensitive-capability boundary.
+- **Building against Rod** (`docs/extending/`) --
+  **[implants.md](docs/extending/implants.md)** is the wire reference and tier
+  ladder a from-scratch implant builds against;
+  **[tradecraft.md](docs/extending/tradecraft.md)** is how out-of-tree
+  capability modules plug in (the sensitive categories are contracts only).
+- **Running Rod** (`docs/operations/`) --
+  **[teamserver.md](docs/operations/teamserver.md)** is the stand-up,
+  configuration, and first-login runbook;
+  **[redirectors.md](docs/operations/redirectors.md)** is the redirector
+  build/deploy/rotate runbook.
+- **Project state** -- [docs/todo.md](docs/todo.md) tracks open work;
+  [docs/glossary.md](docs/glossary.md) holds terminology;
+  [SECURITY.md](SECURITY.md) covers vulnerability reporting and scope.
 
 ## License
 

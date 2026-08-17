@@ -10,7 +10,7 @@ namespace Rod.CoreState.Engagements;
 /// which implants may be tasked (exact implant id). Enforcement is at task
 /// issuance, before the task is queued; the refusal is audited naming the
 /// violated rule. Pure server-side scope -- the implant contract carries
-/// nothing for it (implant-contract.md, evolution rule 4).
+/// nothing for it (extending/implants.md, evolution rule 4).
 /// </summary>
 public sealed record RoeProfile
 {

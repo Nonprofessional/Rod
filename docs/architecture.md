@@ -218,7 +218,7 @@ default** and generates its own keypair at first run -- there is no global
 shared secret, and no key material in the artifact at all.
 What a from-scratch implant must implement to interoperate -- and what is
 optional hardening or optional features -- is specified as a tier ladder in
-[implant-contract.md](implant-contract.md); that ladder is the contract's
+[extending/implants.md](extending/implants.md); that ladder is the contract's
 complexity budget, and its evolution rules bind every future protocol change.
 
 ### 5.1 Profiles are baked in at generation
@@ -447,7 +447,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   requirement for target languages with a weak gRPC story. It changes the
   framing, not the protocol semantics; transport choice is already a
   listener/profile concern, so nothing else moves. It exists as the escape
-  hatch for implant reach ([implant-contract.md](implant-contract.md)) and is
+  hatch for implant reach ([extending/implants.md](extending/implants.md)) and is
   built only when a community implant actually needs it.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
@@ -526,7 +526,7 @@ fleet-wide code execution. Security is a first-class concern.
   task path (against the implant contract's evolution rules). If it is ever
   built -- for TLS-terminating edges such as domain fronting -- it must be
   handshake-negotiated with a plaintext fallback, so Tier 0 implants keep
-  interoperating (see [implant-contract.md](implant-contract.md)).
+  interoperating (see [extending/implants.md](extending/implants.md)).
 - **Per-implant identity and rotation.** Each implant owns a keypair it
   generated itself; the server binds it with a CA-signed leaf at enroll and
   never sees the private half (Sec 7, Sec 9). Artifacts carry no key material.
@@ -575,7 +575,7 @@ fleet-wide code execution. Security is a first-class concern.
   applying an empty profile reopens the engagement. The scope is pure
   server-side state on the engagement (JSON column in the durable store, the
   unrestricted default for records that predate it) -- the implant contract
-  carries nothing for it (implant-contract.md, evolution rule 4). Warn-only
+  carries nothing for it (extending/implants.md, evolution rule 4). Warn-only
   modes and audit-history-driven rule suggestions stay future concerns; the
   shipped gate blocks, because a warning an operator can click through is
   not a rule of engagement.
@@ -962,4 +962,4 @@ may never cross: it applies to the teamserver substrate and the contract's
 quality, never to the implant-side minimum. Capability reach grows in the
 server, the tradecraft modules, and the build pipeline -- an addition that
 would put mandatory new work on every implant's task path fails this bar
-outright, whatever it adds (see [implant-contract.md](implant-contract.md)).
+outright, whatever it adds (see [extending/implants.md](extending/implants.md)).

@@ -83,10 +83,10 @@ handlers); the kit makes them effortless. See
       so the roster reflects reality. _AC:_ an artifact built with an
       out-of-tree evasion handler advertises the verb at handshake.
 
-## Implant reach (architecture.md Sec 8, implant-contract.md)
+## Implant reach (architecture.md Sec 8, extending/implants.md)
 
 The protocol is the product; the bar is that a from-scratch implant can be
-written against `docs/implant-contract.md` alone.
+written against `docs/extending/implants.md` alone.
 
 - [ ] **Plain-HTTP envelope listener.** The recorded escape hatch, now
       scheduled for reach: the same rod.v1 Frames carried as
