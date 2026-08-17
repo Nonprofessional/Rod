@@ -5,6 +5,7 @@ using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Live;
+using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 using Rod.V1;
@@ -53,6 +54,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly IArtifactStore _artifacts;
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
+    private readonly IImplantCertificateAuthority _ca;
 
     public BeaconEndpoint(
         HandshakeService handshake,
@@ -62,7 +64,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         IAuditStore audit,
         IArtifactStore artifacts,
         ILiveEventBus bus,
-        TimeProvider clock)
+        TimeProvider clock,
+        IImplantCertificateAuthority ca)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -72,6 +75,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         _artifacts = artifacts;
         _bus = bus;
         _clock = clock;
+        _ca = ca;
     }
 
     public override async Task CheckIn(
@@ -260,6 +264,15 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             Verb = dispatched.Verb,
             Arguments = dispatched.Arguments,
         };
+        // Command signing (architecture.md Sec 9): the CA key signs the task's
+        // canonical (implant_id, task_id, verb, arguments) tuple -- the implant
+        // id binds the task to its intended executor -- and the implant
+        // verifies against the CA it already trusts before executing, so a
+        // compromised transport or stager cannot inject, alter, or replay
+        // tasking across implants even where the mTLS channel does not reach
+        // (a redirector's inner hop).
+        request.Signature = ByteString.CopyFrom(
+            _ca.SignTasking(dispatched.ImplantId.ToString(), request.TaskId, request.Verb, request.Arguments));
         var frame = new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
 
         // Write downstream first: the dispatch audit records a task the implant

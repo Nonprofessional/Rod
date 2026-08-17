@@ -68,6 +68,11 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     /// </summary>
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
+    public byte[] SignTasking(string implantId, string taskId, string verb, string arguments)
+        => _caKey.SignData(
+            TaskingCanonical.Bytes(implantId, taskId, verb, arguments),
+            HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+
     // Builds and signs an implant leaf over the supplied key material, binding
     // (implant_id, engagement_id). The CA key signs; the leaf's public key is
     // whatever the supplied RSA carries -- a full key pair (IssueAsync/

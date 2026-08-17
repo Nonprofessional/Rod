@@ -463,11 +463,32 @@ fleet-wide code execution. Security is a first-class concern.
   and bundling a proper TLS server leaf + SAN (scope creep -- the
   CA-as-trusted-root satisfies enrollment binding; a real server leaf with SAN
   stays a separable hardening).
-- **Command signing** _(future)_. Dispatched tasks are intended to be signed so
-  an implant only acts on teamserver-authorized tasking. Designed for, not
-  implemented initially; until it lands, task integrity rests on the mTLS
-  channel binding (`implant_id`, `engagement_id`), which authenticates the
-  implant but not individual tasks.
+- **Command signing.** Dispatched tasks are signed so an implant only acts on
+  teamserver-authorized tasking. The beacon endpoint signs each dispatched
+  `TaskRequest` with the tasking CA's RSA key (RSASSA-PSS over SHA-256, on a
+  canonical length-prefixed encoding of `implant_id`, `task_id`, `verb`,
+  `arguments` documented on the proto message -- not on the serialized
+  message, so every implant language verifies identically without depending
+  on protobuf field ordering). The implant id in the signed tuple is the
+  target implant's own identity, binding tasking to its intended executor: a
+  captured signed frame fails verification on any other implant under the
+  same CA. The signing key is the same CA that issues implant leaves,
+  reached through `SignTasking` on the CA port: the implant already holds
+  that CA certificate from enrollment or its pinned bundle, so tasking trust
+  rides enrollment trust and no new key distribution exists to protect. The
+  implant verifies before any handler runs; an unsigned or wrongly signed
+  task is reported `Failed` with the cause on the task itself, so the
+  rejection is visible on the operator console and nothing executes.
+  Replay of an old task to the same implant by a mid-stream attacker remains
+  possible (the teamserver ignores the retransmitted result); per-session
+  anti-replay nonces were left out as a separate hardening. Deployment
+  order matters: this implant rejects unsigned tasking, so the teamserver
+  signs -- upgrade it before deploying implants built from this contract.
+  Rejected: a dedicated task-signing key pair (a second teamserver-held
+  secret to provision, rotate, and bake into artifacts, for no isolation
+  gain while the CA key is already the server's signing identity); signing
+  the serialized `TaskRequest` bytes (couples verification to one protobuf
+  runtime's serialization behavior).
 - **Sealing** _(future)_. End-to-end protection of task payloads so untrusted
   redirectors cannot read or alter them. Designed for, not implemented initially.
 - **Per-implant keys and rotation.** Unique keys per implant, generated

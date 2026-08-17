@@ -17,11 +17,16 @@ The designed-but-deferred items, promoted here now that the functional and
 test groundwork has shipped. Order matters: signing before sealing, sealing
 before ROE, revocation last since it builds on the cert story both depend on.
 
-- [ ] **Command signing.** Operators sign tasked commands and the implant
-      verifies the signature before execution, so a compromised transport or
-      stager cannot inject tasks (architecture.md Sec 9).
-      _AC:_ an unsigned or wrongly signed command is rejected by the implant
-      and the rejection is visible on the operator console.
+- [x] **Command signing.** Shipped: the beacon endpoint signs each dispatched
+      `TaskRequest` with the tasking CA's RSA key (RSASSA-PSS/SHA-256 over the
+      canonical length-prefixed implant/task tuple documented in rod.proto --
+      the implant id binds the task to its executor, so captured tasking does
+      not verify on another implant), and the implant verifies against the CA
+      certificate it already holds from enrollment before any handler runs; a
+      rejected task reports `Failed` with the cause, so the operator sees it
+      on the task (architecture.md Sec 9). _AC:_ an unsigned or wrongly
+      signed command is rejected by the implant and the rejection is visible
+      on the operator console.
 - [ ] **Sealing.** Tasked payloads are sealed to the target session key so
       artifacts in the stager and audit trail carry no plaintext command
       material (architecture.md Sec 9).

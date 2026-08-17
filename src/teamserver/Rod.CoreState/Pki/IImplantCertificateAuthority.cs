@@ -62,6 +62,19 @@ public interface IImplantCertificateAuthority
     /// client certificate is accepted only when it chains to this root.
     /// </summary>
     X509Certificate2 GetCaCertificate();
+
+    /// <summary>
+    /// Signs dispatched tasking with the CA's RSA key so an implant acts only
+    /// on teamserver-authorized tasks (architecture.md Sec 9 -- command
+    /// signing). The signature is RSASSA-PSS over SHA-256 of the canonical
+    /// encoding of <c>(implantId, taskId, verb, arguments)</c> (see
+    /// <see cref="TaskingCanonical"/>) -- the implant id binds the task to its
+    /// intended executor, so a signed frame does not verify on any other
+    /// implant. The implant verifies against the CA certificate it already
+    /// holds from enrollment or its pinned bundle, so tasking trust rides the
+    /// same key as enrollment trust and no new key distribution is needed.
+    /// </summary>
+    byte[] SignTasking(string implantId, string taskId, string verb, string arguments);
 }
 
 /// <summary>The identity to bind into an issued implant certificate.</summary>

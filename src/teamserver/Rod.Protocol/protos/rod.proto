@@ -157,11 +157,28 @@ message HandshakeResponse {
 // milestones.
 
 // A task handed to the implant: its id (echoed back on the result so the server
-// can correlate), the capability verb, and its argument string.
+// can correlate), the capability verb, and its argument string, and the
+// teamserver's signature over the tasking tuple (architecture.md Sec 9 --
+// command signing). The signature is RSASSA-PSS over SHA-256 with the tasking
+// CA's RSA key -- the same CA that signs implant leaves, so the verifying public
+// key is the CA the implant already holds from enrollment or its pinned bundle.
+//
+// The signed bytes are a fixed canonical encoding, not the serialized message,
+// so every implant language verifies the same way without a proto runtime
+// guaranteeing field order: for each of implant_id, task_id, verb, arguments
+// in that order, the little-endian uint32 byte length of its UTF-8 encoding
+// followed by those bytes. implant_id is the target implant's own id (the
+// verifier's identity, authoritative via mTLS and the handshake, not a field
+// on this message): binding it into the signature makes a frame signed for one
+// implant fail verification on any other, so captured tasking cannot be
+// replayed cross-implant within a CA. An empty signature means unsigned and
+// must be rejected by the implant: acting only on teamserver-authorized
+// tasking is the point of the field.
 message TaskRequest {
   string task_id = 1;
   string verb = 2;
   string arguments = 3;
+  bytes signature = 4;
 }
 
 // How a task turned out, as reported by the implant.
