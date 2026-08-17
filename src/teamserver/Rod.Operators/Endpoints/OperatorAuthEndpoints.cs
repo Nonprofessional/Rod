@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
+using Rod.CoreState;
 using Rod.CoreState.Operators;
 using Rod.Operators.Auth;
 
@@ -22,12 +23,38 @@ public static class OperatorAuthEndpoints
 {
     public static IEndpointRouteBuilder Map(this IEndpointRouteBuilder endpoints)
     {
-        // Login is anonymous (it is how a session is established); logout and the
-        // current-operator read require an existing session.
+        // Login is anonymous (it is how a session is established); logout, the
+        // current-operator read, and credential revocation require an existing
+        // session.
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
         endpoints.MapPost("/logout", LogoutAsync).RequireAuthorization();
         endpoints.MapGet("/me", MeAsync).RequireAuthorization();
+        endpoints.MapPost("/{operatorId}/credentials:revoke", RevokeCredentialAsync).RequireAuthorization();
         return endpoints;
+    }
+
+    // Revocation is the operator half of certificate revocation
+    // (architecture.md Sec 9): deleting the stored verifier makes the next
+    // login fail -- the hash is read fresh per attempt, so no restart is
+    // involved. Any authenticated operator may revoke (the trusted-operators
+    // model); the action is idempotent. Active cookie sessions outlive the
+    // credential they were issued from (cookies are self-contained); ending
+    // live sessions on revoke is a separate hardening.
+    private static async Task<IResult> RevokeCredentialAsync(
+        string operatorId,
+        IOperatorRepository operators,
+        IOperatorCredentialStore credentials,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new { message = "Operator id is not a valid identifier." });
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new { message = $"Operator {operatorId} does not exist." });
+
+        await credentials.RevokeAsync(target.Id, cancellationToken);
+        return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 
     private static async Task<IResult> LoginAsync(

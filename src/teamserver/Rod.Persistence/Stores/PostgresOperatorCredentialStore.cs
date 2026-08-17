@@ -57,4 +57,18 @@ internal sealed class PostgresOperatorCredentialStore : IOperatorCredentialStore
 
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task RevokeAsync(OperatorId operatorId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        // Deletes the verifier row; login reads the hash fresh per attempt, so
+        // the revocation takes effect on the next login with no restart.
+        var credential = await db.OperatorCredentials.FindAsync(new object?[] { operatorId }, cancellationToken);
+        if (credential is not null)
+        {
+            db.OperatorCredentials.Remove(credential);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
 }

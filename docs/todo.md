@@ -39,11 +39,16 @@ gate shape ROE establishes.
       (architecture.md Sec 9). _AC:_ a task outside the engagement's ROE
       profile is refused at queue time with an audit entry naming the
       violated rule.
-- [ ] **Certificate revocation.** Operator and implant credentials gained a
-      revocation path: a revoked credential fails authentication on its next
-      use rather than living out its natural expiry (architecture.md Sec 9).
-      _AC:_ revoking an operator credential or implant identity takes effect
-      on the next authentication attempt without a server restart.
+- [x] **Certificate revocation.** Shipped application-layer, both halves:
+      the implant half is retirement itself (next handshake refused, pinned
+      by HandshakeServiceTests), and the operator half is
+      `POST /operators/{id}/credentials:revoke`, which deletes the stored
+      password verifier so the next login fails -- login reads the verifier
+      fresh per attempt, so no restart is involved; re-provisioning restores
+      login (architecture.md Sec 9). CRL/OCSP was rejected as heavier than
+      the threat. _AC:_ revoking an operator credential or implant identity
+      takes effect on the next authentication attempt without a server
+      restart.
 
 ## Tests
 

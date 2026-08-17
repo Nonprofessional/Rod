@@ -522,7 +522,22 @@ fleet-wide code execution. Security is a first-class concern.
   opens), is untaskable (`422`), and its active session is closed. Retirement is
   idempotent and recorded as an `ImplantRetired` audit event in the engagement
   trail; any queued tasks for it are left inert (no dispatch, no cancellation).
-  Cert revocation stays a future concern (application-layer, like the kill date).
+- **Certificate revocation.** Both credential halves revocate at the
+  application layer and take effect on the next authentication attempt with no
+  restart -- no CRL/OCSP plumbing, which would be heavier than the threat
+  (neither mTLS peer consults one, so a real CRL would be unenforced
+  ceremony). The implant half is retirement itself: the refusal at the next
+  handshake is the revocation, pinned by
+  `HandshakeServiceTests.Handshake_RefusesRetiredImplant`. The operator half
+  is `POST /operators/{operatorId}/credentials:revoke`: it deletes the stored
+  password verifier (any authenticated operator may call it; the action is
+  idempotent), and login -- which reads the verifier fresh on every attempt --
+  fails from then on. Re-provisioning the operator with a new password
+  restores login; active cookie sessions outlive the credential they were
+  issued from (cookies are self-contained), and ending live sessions on
+  revoke is a separate hardening. Revocation is not recorded in the audit
+  trail: the trail is engagement-scoped and an operator credential is global
+  state, so it has no engagement to live in.
 - **Kill-date enforcement.** The teamserver refuses to open a session for an
   implant past its baked-in kill date (the handshake returns
   `HANDSHAKE_STATUS_KILL_DATE_EXPIRED`), and the implant self-terminates past it

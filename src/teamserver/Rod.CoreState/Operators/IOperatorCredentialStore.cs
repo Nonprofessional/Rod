@@ -31,4 +31,14 @@ public interface IOperatorCredentialStore
     /// idempotent on repeat calls.
     /// </summary>
     Task SetHashAsync(OperatorId operatorId, string passwordHash, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revokes an operator's credential (architecture.md Sec 9 -- certificate
+    /// revocation, operator half): deletes the stored verifier, so the next
+    /// login attempt fails -- it reads the hash fresh on every attempt, so the
+    /// revocation is effective immediately, without a restart. Idempotent;
+    /// revoking an operator with no stored verifier succeeds. Re-provisioning
+    /// the operator with a new password restores login (<see cref="SetHashAsync"/>).
+    /// </summary>
+    Task RevokeAsync(OperatorId operatorId, CancellationToken cancellationToken = default);
 }

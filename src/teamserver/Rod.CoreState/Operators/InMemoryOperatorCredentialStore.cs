@@ -20,4 +20,10 @@ public sealed class InMemoryOperatorCredentialStore : IOperatorCredentialStore
         _hashes[operatorId] = passwordHash;
         return Task.CompletedTask;
     }
+
+    public Task RevokeAsync(OperatorId operatorId, CancellationToken cancellationToken = default)
+    {
+        _hashes.TryRemove(operatorId, out _);
+        return Task.CompletedTask;
+    }
 }
