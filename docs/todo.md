@@ -13,11 +13,6 @@ historical milestone id, from commit bodies.
 
 ## Tasking and sessions (architecture.md Sec 10.3)
 
-- [ ] **Dispatch without polling.** The beacon writer polls each implant's
-      queue every 25 ms; replace the poll with a per-queue channel wake so a
-      queued task is pushed immediately and an idle fleet costs nothing.
-      _AC:_ a queued task is dispatched on push, with no poll loop in the
-      writer path.
 - [ ] **Staged uploads.** `file.push` carries its payload inline in the task
       arguments (1 MiB cap). Add the per-verb typed-arm path (Sec 10's escape
       hatch) so a larger upload streams down in chunks the way `file.pull`

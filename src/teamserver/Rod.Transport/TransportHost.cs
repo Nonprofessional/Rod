@@ -103,6 +103,11 @@ public static class TransportHost
         }
         services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
+        // Task-queue wake (architecture.md Sec 10.3): TaskService releases it
+        // on every accepted enqueue and the beacon writer parks on it, so a
+        // queued task is pushed downstream immediately and an idle fleet
+        // costs nothing -- no poll loop in the writer path.
+        services.AddSingleton<ITaskDispatchWake, InMemoryTaskDispatchWake>();
 
         // Listener registry: the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the
@@ -150,6 +155,14 @@ public static class TransportHost
         // no-op keeps the core transport host self-sufficient and its unit tests
         // operator-free.
         services.AddSingleton<ILiveEventBus, NullLiveEventBus>();
+
+        // Task-verb gate -> the class-table default. The tradecraft layer
+        // replaces this with the registry-backed resolver via AddRodTradecraft
+        // (the same replace-the-default shape as the bus above). Registering
+        // the default also lets the container construct TaskService through
+        // its fullest constructor -- the one that carries the dispatch wake --
+        // in hosts that never opt into the tradecraft layer.
+        services.AddSingleton<ITaskCapabilityResolver, ClassTableCapabilityResolver>();
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();

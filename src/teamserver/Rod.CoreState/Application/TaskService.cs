@@ -51,13 +51,14 @@ public sealed class TaskService
     private readonly TimeProvider _clock;
     private readonly ILiveEventBus? _bus;
     private readonly ITaskCapabilityResolver _capabilities;
+    private readonly ITaskDispatchWake? _wake;
 
     public TaskService(
         ITaskRepository tasks,
         IImplantRepository implants,
         IEngagementRepository engagements,
         TimeProvider clock)
-        : this(tasks, implants, engagements, clock, bus: null, capabilities: new ClassTableCapabilityResolver())
+        : this(tasks, implants, engagements, clock, bus: null, capabilities: new ClassTableCapabilityResolver(), wake: null)
     {
     }
 
@@ -72,7 +73,7 @@ public sealed class TaskService
         IEngagementRepository engagements,
         TimeProvider clock,
         ILiveEventBus? bus)
-        : this(tasks, implants, engagements, clock, bus, capabilities: new ClassTableCapabilityResolver())
+        : this(tasks, implants, engagements, clock, bus, capabilities: new ClassTableCapabilityResolver(), wake: null)
     {
     }
 
@@ -87,13 +88,24 @@ public sealed class TaskService
     /// core-state unit tests and any host that does not opt into the tradecraft
     /// layer keep exactly the behavior they had.
     /// </summary>
+    /// <param name="wake">
+    /// The per-implant dispatch wake (architecture.md Sec 10.3): released on
+    /// every accepted enqueue so the beacon stream's writer pushes the task
+    /// downstream instead of waiting for a poll. A real parameter, not an
+    /// optional one: the container selects the longest constructor whose
+    /// parameters all resolve, so the wake reaches the host only when the
+    /// composition root registers it (and the capability-resolver default)
+    /// alongside this service. The chaining constructors pass null, which
+    /// simply skips the release.
+    /// </param>
     public TaskService(
         ITaskRepository tasks,
         IImplantRepository implants,
         IEngagementRepository engagements,
         TimeProvider clock,
         ILiveEventBus? bus,
-        ITaskCapabilityResolver capabilities)
+        ITaskCapabilityResolver capabilities,
+        ITaskDispatchWake? wake)
     {
         _tasks = tasks;
         _implants = implants;
@@ -101,6 +113,7 @@ public sealed class TaskService
         _clock = clock;
         _bus = bus;
         _capabilities = capabilities;
+        _wake = wake;
     }
 
     /// <summary>
@@ -191,6 +204,12 @@ public sealed class TaskService
             now);
         await _tasks.SaveAsync(task, cancellationToken);
 
+        // The queue accepted the task: wake the beacon writer so it is pushed
+        // downstream the moment it is queued, not on the next poll
+        // (architecture.md Sec 10.3). A permit with no open stream simply
+        // accumulates for the next connect.
+        _wake?.Release(task.ImplantId);
+
         if (_bus is not null)
         {
             await _bus.PublishAsync(
@@ -254,6 +273,11 @@ public sealed class TaskService
 
         task.Requeue();
         await _tasks.SaveAsync(task, cancellationToken);
+
+        // A requeue is an enqueue too: a live overlapping stream for the
+        // implant picks the task back up immediately instead of waiting for
+        // the reconnect (architecture.md Sec 10.3).
+        _wake?.Release(task.ImplantId);
     }
 
     /// <summary>

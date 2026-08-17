@@ -778,6 +778,15 @@ the registry is refused before the task is queued. Verb execution itself stays
 on the implant: the teamserver resolves the gate, hands the verb to the beacon
 stream, and captures the result.
 
+Dispatch onto the stream is push-based. Every accepted enqueue -- an issuance,
+or a dispatch returned to the queue by a failed write -- releases a per-implant
+wake that the stream's dispatch writer parks on, so a queued task is pushed
+downstream the moment it is queued and an idle stream costs nothing: no poll
+loop in the writer path. The wake is a hint, not a ledger: the writer claims
+before it parks, so tasks queued while no stream was open are picked up on
+connect without relying on the wake, and a stale permit costs one empty claim,
+never a lost task.
+
 ## 11. Evidence and reporting -- a first-class output
 
 A red-team operation ends in a deliverable: timeline, findings, and evidence. Rod

@@ -156,7 +156,8 @@ public class TaskServiceGatingTests
             new InMemoryEngagementRepository(),
             TimeProvider.System,
             bus: null,
-            capabilities: new AllowingResolver("evasion.avoid"));
+            capabilities: new AllowingResolver("evasion.avoid"),
+            wake: null);
 
         var issued = await service.IssueAsync(
             new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "evasion.avoid", "arg"));
