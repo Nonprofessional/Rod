@@ -52,7 +52,8 @@ public sealed class PayloadBuildService
             request.Class,
             request.Target,
             request.Transport,
-            new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode));
+            new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
+            request.Stage2);
 
         return await unit.BuildAsync(@params, cancellationToken);
     }
@@ -74,6 +75,8 @@ public sealed class PayloadBuildService
 /// Request to build a payload. <see cref="EngagementId"/> scopes and
 /// <see cref="RequestedBy"/> attributes the build; <see cref="Language"/> routes
 /// to the build unit; <see cref="Class"/> is the implant class to generate.
+/// <see cref="Stage2"/> carries the stage-2 payload reference a stager-class
+/// build bakes in; it is required for the stager class and ignored elsewhere.
 /// </summary>
 public sealed record BuildRequest(
     EngagementId EngagementId,
@@ -85,4 +88,5 @@ public sealed record BuildRequest(
     TimeSpan Sleep,
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
-    string Mode = "stream");
+    string Mode = "stream",
+    Stage2Payload? Stage2 = null);

@@ -5,7 +5,10 @@ namespace Rod.CoreState.Staging;
 /// exactly once; only a hash is retained server-side so a stolen store cannot
 /// replay tokens. Redeem is the entry point of enrollment: a presenting
 /// stager is verified against the stored hash, checked for expiry and remaining
-/// uses, and consumed on success.
+/// uses, and consumed on success. <see cref="VerifyAsync"/> is the same check
+/// without the consume -- the pre-enrollment read a stage-1 stager's payload
+/// fetch performs (architecture.md Sec 6): the fetch may not spend the
+/// deployment credential, because the stage-2 it launches spends it at enroll.
 /// </summary>
 public interface IStagerTokenService
 {
@@ -28,6 +31,18 @@ public interface IStagerTokenService
     /// to a wire status code.
     /// </summary>
     Task<RedeemedStagerToken> RedeemAsync(
+        string secret,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Verifies a stager token by its plaintext <paramref name="secret"/> at
+    /// <paramref name="now"/> without consuming a use: the same hash, expiry,
+    /// and remaining-uses checks as <see cref="RedeemAsync"/>, the same refusal
+    /// exceptions, but the token's state is untouched so the enrollment that
+    /// follows can still spend it.
+    /// </summary>
+    Task<RedeemedStagerToken> VerifyAsync(
         string secret,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);

@@ -6,6 +6,7 @@ using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Staging;
 using Rod.V1;
 
 namespace Rod.Transport.Endpoints;
@@ -24,6 +25,11 @@ namespace Rod.Transport.Endpoints;
 ///architecture.md Sec 5.2: the request carries the parent implant id,
 /// the service resolves and validates it against the redeemed token's
 /// engagement, and the recorded linkage is echoed on the response.
+///
+/// The stage-2 fetch route below is the stage-1 half of staging
+/// (architecture.md Sec 6): a stager presents the same deployment credential
+/// enroll takes, verified without being spent, and receives the stage-2 bytes
+/// it then runs.
 /// </summary>
 public static class EnrollmentEndpoints
 {
@@ -33,8 +39,54 @@ public static class EnrollmentEndpoints
 
         group.MapPost("/enroll", EnrollAsync)
             .WithName(nameof(EnrollAsync));
+        group.MapGet("/stage2/{payloadId}", FetchStage2Async)
+            .WithName(nameof(FetchStage2Async));
 
         return endpoints;
+    }
+
+    // Serves a built stage-2 payload to a presenting stage-1 stager. The
+    // stager token in the X-Stager-Token header resolves the engagement; the
+    // payload must exist in that engagement, so a token for one engagement
+    // never reaches another engagement's payloads (architecture.md Sec 3).
+    // The token is verified, not redeemed: the fetch is pre-identity
+    // transport, and the enrollment that follows is the audited record.
+    private static async Task<IResult> FetchStage2Async(
+        string payloadId,
+        HttpRequest http,
+        IStagerTokenService tokens,
+        TimeProvider clock,
+        IPayloadStore payloads,
+        CancellationToken cancellationToken)
+    {
+        var secret = http.Headers["X-Stager-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(secret))
+            return Results.Json(
+                new Problem("X-Stager-Token header is required."),
+                statusCode: StatusCodes.Status401Unauthorized);
+        if (!Guid.TryParse(payloadId, out var payloadValue))
+            return Results.BadRequest(new Problem("Payload id is not a valid identifier."));
+
+        try
+        {
+            var token = await tokens.VerifyAsync(secret, clock.GetUtcNow(), cancellationToken);
+
+            // Scoped by the token's engagement: a payload id from another
+            // engagement is indistinguishable from a nonexistent one.
+            var payload = await payloads.FindAsync(payloadValue, token.EngagementId.Value, cancellationToken);
+            if (payload is null)
+                return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+
+            return Results.File(payload.Content, payload.ContentType, $"rod-stage2-{payloadValue:N}.bin");
+        }
+        catch (StagerTokenRedeemException)
+        {
+            // The same refusal shape enroll gives: no distinction between
+            // unknown, expired, and spent on the wire.
+            return Results.Json(
+                new Problem("Stager token was not accepted."),
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
     }
 
     private static async Task<IResult> EnrollAsync(

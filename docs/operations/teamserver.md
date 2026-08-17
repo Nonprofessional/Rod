@@ -59,6 +59,15 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    for the low-and-slow cadence. It appears on the engagement roster, takes
    tasking, and its results land in the audit trail.
 
+For staged deployment, build the stage-2 first, then build a second payload
+with class `stager` naming it (`stage2PayloadId`). The stager is a small
+loader: run it with the deployment credential
+(`./Rod.Stager -token <secret>`; `-beacon-url`/`-ca-cert` when the beacon sits
+behind a different frontend) and it fetches the stage-2 from the teamserver,
+verifies the fingerprint baked at build time, runs it, and hands the credential
+over -- the stage-2 enrols and appears on the roster. The fetch verifies the
+token without spending it; the stage-2's enroll spends it.
+
 ## Configuration reference
 
 Opt-in sections of `appsettings.json` (environment variables work through the

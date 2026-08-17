@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The reference .NET stage-1 stager (architecture.md Sec 6): a minimal loader
+    that fetches a built stage-2 payload from the teamserver over the anonymous
+    enroll listener (presenting the same stager token enroll takes, verified
+    without being spent), verifies its sha256 against the fingerprint baked at
+    build time, and runs it. The stage-2 spends the token at its own enroll.
+
+    Like the reference implant, this project is an EXTERNAL component, coupled
+    to the teamserver only by HTTP: it is intentionally NOT part of Rod.slnx.
+    The .NET build unit (DotNetBuildUnit) compiles it per stager-class build
+    request. It carries no protocol bindings and no packages at all: plain
+    BCL HTTP, the smallest honest footprint a loader can have.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--
+      Directory.Build.props at the repo root sets the shared build settings
+      repo-wide and applies to this tree (it walks up from the project dir).
+    -->
+    <AssemblyName>Rod.Stager</AssemblyName>
+    <RootNamespace>Rod.Stager</RootNamespace>
+  </PropertyGroup>
+
+</Project>

@@ -356,8 +356,17 @@ recorded.**
   profile, and beacon parameters (mode, sleep, jitter, kill date). They are
   produced at request time so each artifact is unique -- this is essential for
   OPSEC. No key material crosses the build contract (Sec 5.1).
-- **Staging** is a separate output: a stage-1 stager that fetches stage-2 has its
-  own generation path.
+- **Staging** is a separate output class with its own generation path: a
+  stager-class build compiles the minimal stage-1 loader, not the implant, and
+  bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
+  -- alongside the listener and kill date. The loader runs with the deployment
+  credential (never baked; no key material crosses the build contract), fetches
+  the stage-2 over the anonymous implant listener (`GET /implants/stage2/{id}`,
+  the stager token verified without being spent), refuses bytes that do not
+  hash to the baked fingerprint, executes the fetched artifact, and hands the
+  credential to it: the stage-2 spends the token at its own enroll and appears
+  on the roster as a top-level implant. The .NET reference loader lives in
+  `src/stager/dotnet/`; the fetch route is engagement-scoped by the token.
 - **Artifact tracking.** Every generated artifact is fingerprinted and recorded
   (who, when, config) into the audit trail.
 

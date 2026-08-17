@@ -151,6 +151,44 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             : new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
     }
 
+    public async Task<RedeemedStagerToken> VerifyAsync(
+        string secret,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        // The same checks redeem runs, minus the consume: a stage-1 stager's
+        // payload fetch must leave the token whole for the stage-2's enroll
+        // (architecture.md Sec 6). A plain read suffices -- nothing mutates, so
+        // no transaction and no conditional UPDATE are needed.
+        byte[] presentedHash;
+        try
+        {
+            presentedHash = SHA256.HashData(FromBase64Url(secret));
+        }
+        catch (FormatException)
+        {
+            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is malformed.");
+        }
+
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var entry = await db.StagerTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Hash == presentedHash, cancellationToken);
+        if (entry is null)
+            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
+        if (now > entry.ExpiresAt)
+            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Expired, "Stager token has expired.");
+        if (entry.RemainingUses <= 0)
+            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
+
+        return new RedeemedStagerToken
+        {
+            Id = entry.Id,
+            EngagementId = entry.EngagementId,
+            IssuedBy = entry.IssuedBy,
+        };
+    }
+
     // RFC 4648 base64url without padding -- URL-safe for transport.
     private static string Base64Url(byte[] bytes)
         => Convert.ToBase64String(bytes)

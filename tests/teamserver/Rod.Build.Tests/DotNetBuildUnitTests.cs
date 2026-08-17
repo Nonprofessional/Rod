@@ -147,6 +147,61 @@ public class DotNetBuildUnitTests
         return Convert.FromBase64String(padded);
     }
 
+    [Fact]
+    public void RenderStagerProfile_BakesTheFetchReference()
+    {
+        // The stager's profile is the fetch contract (architecture.md Sec 6):
+        // the listener to fetch from, the payload id, and the sha256 the loader
+        // verifies the fetched bytes against -- the fingerprint the operator
+        // saw at stage-2 build time, so a tampered fetch is refused.
+        var payloadId = Guid.NewGuid();
+        var @params = Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(payloadId, "abc123"),
+        };
+
+        var baked = DotNetBuildUnit.RenderStagerProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        var root = doc.RootElement;
+        Assert.Equal("http://c2.example.test/implants/enroll", root.GetProperty("enrollURL").GetString());
+        Assert.Equal(payloadId.ToString(), root.GetProperty("stage2PayloadId").GetString());
+        Assert.Equal("abc123", root.GetProperty("stage2Sha256").GetString());
+        Assert.Equal(@params.Beacon.KillDate.ToString("O"), root.GetProperty("killDate").GetString());
+    }
+
+    [Fact]
+    public void RenderStagerProfile_RefusesANonStagerClassOrMissingReference()
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => DotNetBuildUnit.RenderStagerProfile(Params(ImplantClass.Stage2)));
+
+        var missing = Params(ImplantClass.Stager);
+        Assert.Throws<InvalidOperationException>(
+            () => DotNetBuildUnit.RenderStagerProfile(missing));
+    }
+
+    [DotNetFact]
+    public async Task StagerBuild_ReturnsNonEmptyArtifact()
+    {
+        // The stager output class compiles the loader tree, not the implant
+        // tree (architecture.md Sec 6): the artifact is a real, fingerprinted
+        // stage-1 executable with the fetch reference baked in.
+        var unit = new DotNetBuildUnit();
+        var @params = Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123"),
+        };
+
+        var artifact = await unit.BuildAsync(@params);
+
+        Assert.Equal(Language.DotNet, artifact.Language);
+        Assert.Equal(ImplantClass.Stager, artifact.Params.Class);
+        Assert.NotEmpty(artifact.Content);
+        var expected = Convert.ToHexString(SHA256.HashData(artifact.Content)).ToLowerInvariant();
+        Assert.Equal(expected, artifact.Fingerprint);
+    }
+
     [DotNetFact]
     public async Task Build_ReturnsNonEmptyArtifact_WithDotNetLanguage()
     {

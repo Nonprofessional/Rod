@@ -83,6 +83,29 @@ public static class PayloadEndpoints
         if (mode is not ("stream" or "poll"))
             return Results.BadRequest(new Problem("Mode must be 'stream' or 'poll'."));
 
+        // The stager output class (architecture.md Sec 6) references the
+        // stage-2 payload it fetches at run time: resolve it here so the build
+        // contract carries a verified reference -- the payload's id and
+        // fingerprint -- rather than a raw operator string.
+        Stage2Payload? stage2 = null;
+        if (@class == ImplantClass.Stager)
+        {
+            if (body.Stage2PayloadId is not { } stage2Id)
+                return Results.BadRequest(new Problem(
+                    "A stager build requires stage2PayloadId: the built stage-2 payload the stager fetches."));
+            if (!Guid.TryParse(stage2Id, out var stage2Value))
+                return Results.BadRequest(new Problem("Stage2PayloadId is not a valid identifier."));
+            var payload = await payloads.FindAsync(stage2Value, engagementValue, cancellationToken);
+            if (payload is null)
+                return Results.NotFound(new Problem(
+                    "Stage2PayloadId does not name a payload in this engagement; build the stage-2 first."));
+            stage2 = new Stage2Payload(stage2Value, payload.Fingerprint);
+        }
+        else if (body.Stage2PayloadId is not null)
+        {
+            return Results.BadRequest(new Problem("stage2PayloadId is only valid on a stager-class build."));
+        }
+
         BuildArtifact artifact;
         try
         {
@@ -97,7 +120,8 @@ public static class PayloadEndpoints
                 ParseDuration(body.SleepSeconds, DefaultSleep),
                 ParseDuration(body.JitterSeconds, DefaultJitter),
                 body.KillDate,
-                mode),
+                mode,
+                stage2),
             cancellationToken);
         }
         catch (OperationCanceledException)
@@ -278,7 +302,8 @@ public static class PayloadEndpoints
         string? UserAgent = null,
         Dictionary<string, string>? Headers = null,
         double? RequestTimeoutSeconds = null,
-        string? Envelope = null);
+        string? Envelope = null,
+        string? Stage2PayloadId = null);
 
     public sealed record BuildPayloadResponse(
         string ArtifactId,

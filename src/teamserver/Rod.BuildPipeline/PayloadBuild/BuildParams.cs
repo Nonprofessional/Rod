@@ -20,10 +20,28 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// the language-neutrality boundary, so a build unit consumes these params
 /// without any teamserver-language coupling.
 /// </summary>
+/// <param name="Stage2">
+/// The stage-2 payload a stager-class build fetches at run time
+/// (architecture.md Sec 6): its id names the fetch path and its sha256 is the
+/// integrity anchor the stager verifies the fetched bytes against. Null for
+/// every other class -- only the stager output consumes it.
+/// </param>
 public sealed record BuildParams(
     EngagementId EngagementId,
     OperatorId RequestedBy,
     ImplantClass Class,
     TargetProfile Target,
     TransportProfile Transport,
-    BeaconProfile Beacon);
+    BeaconProfile Beacon,
+    Stage2Payload? Stage2 = null);
+
+/// <summary>
+/// The stage-2 payload a stage-1 stager build references: the built-payload id
+/// the stager fetches over the enroll listener, plus the payload's sha256
+/// fingerprint baked in as the fetch's integrity check. The bytes themselves
+/// stay server-side in the payload store -- only the reference crosses the
+/// build contract.
+/// </summary>
+public sealed record Stage2Payload(
+    Guid PayloadId,
+    string Sha256);

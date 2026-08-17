@@ -18,14 +18,6 @@ historical milestone id, from commit bodies.
       over the existing stream contract. _AC:_ an operator types into a live
       shell on a connected implant.
 
-## Payload generation (architecture.md Sec 6)
-
-- [ ] **Stage-1 stager artifact.** The stager class exists in the taxonomy and
-      the class gate (`file.pull` only) but no build path emits a stager. Add
-      the stager output class to the .NET build unit: a minimal loader that
-      fetches and runs a stage-2 artifact. _AC:_ building a stager yields a
-      runnable stage-1 that pulls its stage-2 and enrols.
-
 ## Transports (architecture.md Sec 8)
 
 - [ ] **DNS listener.** The listener abstraction is in place; add the DNS
