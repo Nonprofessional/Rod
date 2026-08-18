@@ -392,6 +392,11 @@ internal sealed class TaskingProbe
     private readonly IImplantCertificateAuthority _ca;
     private readonly object _gate = new();
     private readonly Dictionary<string, Rod.V1.TaskOutcome> _results = new();
+    // Whether the probed candidate negotiated the replay-nonce arm: the
+    // replay case's expectation depends on it (refusal when negotiated;
+    // the duplicate simply runs again in the pre-arm posture, which the tier
+    // ladder makes the implant author's choice, not a failure).
+    private bool _negotiated;
 
     internal TaskingProbe(IImplantCertificateAuthority ca)
     {
@@ -402,7 +407,10 @@ internal sealed class TaskingProbe
     public void Reset()
     {
         lock (_gate)
+        {
             _results.Clear();
+            _negotiated = false;
+        }
     }
 
     /// <summary>
@@ -416,7 +424,7 @@ internal sealed class TaskingProbe
         {
             lock (_gate)
             {
-                if (_results.Count == 4)
+                if (_results.Count == 5)
                     return Verdict();
             }
             await Task.Delay(250);
@@ -433,6 +441,10 @@ internal sealed class TaskingProbe
             ("wrongly signed tasking", Rod.V1.TaskOutcome.Failed),
             ("tasking signed for another implant", Rod.V1.TaskOutcome.Failed),
             ("correctly signed control", Rod.V1.TaskOutcome.Succeeded),
+            // Refusing the duplicate is only demanded of a candidate that
+            // negotiated the replay-nonce arm; without it the duplicate is the
+            // pre-arm posture the ladder leaves optional.
+            ("replayed tasking", _negotiated ? Rod.V1.TaskOutcome.Failed : Rod.V1.TaskOutcome.Succeeded),
         };
         foreach (var (kind, expected) in cases)
         {
@@ -444,8 +456,9 @@ internal sealed class TaskingProbe
                         ? $"executed the {kind}: it reported {outcome} instead of refusing it"
                         : $"refused the {kind}: it reported {outcome} instead of running it");
         }
-        return new SignatureVerdict(true,
-            "refused unsigned, wrongly signed, and cross-implant tasking; ran the signed control");
+        return new SignatureVerdict(true, _negotiated
+            ? "refused unsigned, wrongly signed, cross-implant, and replayed tasking; ran the signed control"
+            : "refused unsigned, wrongly signed, and cross-implant tasking; ran the signed control (no replay-nonce arm negotiated)");
     }
 
     /// <summary>
@@ -458,7 +471,9 @@ internal sealed class TaskingProbe
         Func<Frame, Task> writeFrame,
         CancellationToken cancellationToken)
     {
-        // Handshake: the implant speaks first; echo OK whatever it advertised.
+        // Handshake: the implant speaks first; echo OK whatever it advertised,
+        // and mirror the server's replay-nonce echo so a negotiating candidate
+        // switches to its strict posture against the probe too.
         var first = await readFrame();
         if (first is null)
             return;
@@ -471,6 +486,7 @@ internal sealed class TaskingProbe
         {
             return; // Not a handshake: the missing results are the outcome.
         }
+        _negotiated = handshake.ReplayNonces;
 
         await writeFrame(new Frame
         {
@@ -479,33 +495,56 @@ internal sealed class TaskingProbe
                 Status = HandshakeStatus.Ok,
                 Version = new ProtocolVersion { Major = 1, Minor = 0 },
                 EngagementId = string.Empty,
+                ReplayNonces = _negotiated,
             }.ToByteArray()),
         });
 
-        foreach (var kind in new[] { "unsigned tasking", "wrongly signed tasking",
-                                     "tasking signed for another implant", "correctly signed control" })
+        // The probe's own nonce floor: high enough to sit above whatever the
+        // live server already dispatched to this candidate in phase 1.
+        ulong probeNonce = 1000;
+        var control = (TaskRequest?)null;
+        var cases = new[] { "unsigned tasking", "wrongly signed tasking",
+                            "tasking signed for another implant", "correctly signed control",
+                            "replayed tasking" };
+        foreach (var kind in cases)
         {
-            var request = new TaskRequest
+            // The replay case re-delivers the control frame verbatim: same
+            // bytes, same signature, same nonce -- everything a captured frame
+            // carries on the wire.
+            TaskRequest request;
+            if (kind == "replayed tasking")
             {
-                TaskId = Guid.NewGuid().ToString(),
-                Verb = "shell.exec",
-                Arguments = "echo probe-" + Guid.NewGuid().ToString("N")[..8],
-            };
-            switch (kind)
+                request = control!;
+            }
+            else
             {
-                case "wrongly signed tasking":
-                    request.Signature = ByteString.CopyFrom(RandomNumberGenerator.GetBytes(256));
-                    break;
-                case "tasking signed for another implant":
-                    // Validly signed by the real CA, but over a tuple naming a
-                    // different implant: the verifier's own id must reject it.
-                    request.Signature = ByteString.CopyFrom(_ca.SignTasking(
-                        Guid.NewGuid().ToString(), request.TaskId, request.Verb, request.Arguments));
-                    break;
-                case "correctly signed control":
-                    request.Signature = ByteString.CopyFrom(_ca.SignTasking(
-                        handshake.ImplantId, request.TaskId, request.Verb, request.Arguments));
-                    break;
+                request = new TaskRequest
+                {
+                    TaskId = Guid.NewGuid().ToString(),
+                    Verb = "shell.exec",
+                    Arguments = "echo probe-" + Guid.NewGuid().ToString("N")[..8],
+                };
+                if (_negotiated)
+                    request.TaskNonce = ++probeNonce;
+                switch (kind)
+                {
+                    case "wrongly signed tasking":
+                        request.Signature = ByteString.CopyFrom(RandomNumberGenerator.GetBytes(256));
+                        break;
+                    case "tasking signed for another implant":
+                        // Validly signed by the real CA, but over a tuple naming a
+                        // different implant: the verifier's own id must reject it.
+                        request.Signature = ByteString.CopyFrom(_ca.SignTasking(
+                            Guid.NewGuid().ToString(), request.TaskId, request.Verb, request.Arguments,
+                            _negotiated ? request.TaskNonce : null));
+                        break;
+                    case "correctly signed control":
+                        request.Signature = ByteString.CopyFrom(_ca.SignTasking(
+                            handshake.ImplantId, request.TaskId, request.Verb, request.Arguments,
+                            _negotiated ? request.TaskNonce : null));
+                        control = request;
+                        break;
+                }
             }
 
             await writeFrame(new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) });

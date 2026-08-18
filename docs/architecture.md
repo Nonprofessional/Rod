@@ -573,9 +573,7 @@ fleet-wide code execution. Security is a first-class concern.
   implant verifies before any handler runs; an unsigned or wrongly signed
   task is reported `Failed` with the cause on the task itself, so the
   rejection is visible on the operator console and nothing executes.
-  Replay of an old task to the same implant by a mid-stream attacker remains
-  possible (the teamserver ignores the retransmitted result); per-session
-  anti-replay nonces were left out as a separate hardening. Deployment
+  Deployment
   order matters: this implant rejects unsigned tasking, so the teamserver
   signs -- upgrade it before deploying implants built from this contract.
   Rejected: a dedicated task-signing key pair (a second teamserver-held
@@ -583,6 +581,30 @@ fleet-wide code execution. Security is a first-class concern.
   gain while the CA key is already the server's signing identity); signing
   the serialized `TaskRequest` bytes (couples verification to one protobuf
   runtime's serialization behavior).
+- **Tasking replay nonces.** Command signing binds tasking to its implant,
+  but a captured signed frame used to verify on replay to the same implant.
+  The arm is negotiated at handshake: an implant that sets
+  `replay_nonces` on its `HandshakeRequest` gets every dispatched
+  `TaskRequest` stamped with `task_nonce` -- a per-implant monotonic counter,
+  increasing across dispatches, sessions, and transports -- and the tasking
+  signature covers the five-element tuple (the original four plus the nonce's
+  decimal string in the same length-prefixed form), so the nonce cannot be
+  altered any more than the arguments can. The negotiation is sticky on the
+  implant: once advertised, later handshakes cannot downgrade tasking back to
+  the nonce-less shape. The implant tracks the highest nonce it accepted --
+  for its whole run, not per connection -- and refuses any at or below it,
+  reporting the refusal as the task's `Failed` result so a replayed frame
+  surfaces on the task instead of silently re-executing; once negotiated, a
+  nonce-less task is refused too. An implant that never advertises keeps the
+  original four-element tuple byte-for-byte: the addition is negotiated, never
+  imposed (the evolution rules, extending/implants.md). The nonce floor is
+  per-process server-side -- a restarted teamserver restarts the count, which
+  the signing posture already tolerates (the threat is an untrusted transport
+  hop, not a compromised teamserver, and the task queue is equally
+  per-process in the in-memory adapters); a durable floor arrives with durable
+  task state. The reference implant advertises the arm, and the conformance
+  harness's hostile probe replays a genuinely signed control frame to pin the
+  refusal.
 - **Sealing** _(future, deferred)_. End-to-end protection of task payloads so
   untrusted redirectors cannot read or alter them. Deferred because the
   concrete adversary is absent today: the reference redirector is an opaque L4

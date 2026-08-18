@@ -1,9 +1,8 @@
 # Rod -- Todo
 
 Open work only: completed items are checked off and trimmed, and their detail
-lives in the commit history and [architecture.md](architecture.md). The
-designed-but-deferred security items (sealing, replay nonces) stay in
-architecture.md Sec 9.
+lives in the commit history, [architecture.md](architecture.md). The one
+designed-but-deferred security item (sealing) stays in architecture.md Sec 9.
 
 Add items freely; check them off as they ship. Each item carries a one-line
 acceptance criterion. Keep the [repository conventions](../AGENTS.md): small
@@ -42,8 +41,14 @@ fails with the violated clause named.
 
 ## Security (architecture.md Sec 9)
 
-- [ ] **Tasking replay nonces.** Command signing binds tasking to its implant
-      but a captured signed frame still verifies on replay to the same
-      implant. Add per-session nonces to the signed tuple. _AC:_ a replayed
-      task frame is rejected by the implant and the rejection surfaces on the
-      task.
+None open: the tasking replay nonces shipped. The arm is negotiated at
+handshake (`replay_nonces` advertised, echoed by the server, sticky on the
+implant so a later handshake cannot downgrade it); every dispatched task for
+a negotiating implant carries a per-implant monotonic `task_nonce` covered by
+the tasking signature (the five-element canonical tuple), the implant refuses
+any nonce at or below its accepted floor, and the refusal is reported as the
+task's `Failed` result -- a replayed frame surfaces on the task. Non-advertising
+implants keep the original four-element tuple unchanged (the evolution rules'
+negotiated-addition shape); the reference implant advertises, and the
+conformance harness's hostile probe replays a genuinely signed control frame
+to pin the refusal.

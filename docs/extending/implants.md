@@ -98,7 +98,8 @@ chunk anything larger.
 **Frame order:**
 
 1. The implant speaks first: one `Frame` whose payload is a `HandshakeRequest`
-   (protocol version `1.0`, the implant id, the advertised verb list).
+   (protocol version `1.0`, the implant id, the advertised verb list, and
+   optionally the replay-nonce advertisement -- see the signature section).
 2. The server answers with one `Frame` whose payload is a `HandshakeResponse`.
    `status` must be `1` (`OK`); anything else is **permanent for this
    artifact** -- terminate rather than retry:
@@ -260,6 +261,28 @@ The implant id in the tuple is the **verifier's own** id, not a wire field:
 tasking signed for another implant fails verification on yours, so captured
 tasking cannot be replayed cross-implant.
 
+**Replay nonces (Tier 1, the negotiated arm).** The tuple above still
+verifies a captured frame replayed to the *same* implant. Close that by
+negotiating the replay-nonce arm: set `replay_nonces` on your
+`HandshakeRequest`; a server that supports it echoes `replay_nonces` on the
+`HandshakeResponse`, and from then on every dispatched task carries
+`task_nonce` -- a per-implant monotonic counter -- and the signed tuple grows
+a fifth element:
+
+```
+tuple = [my_own_implant_id, task.task_id, task.verb, task.arguments]
+if task has task_nonce:  # always, once negotiated
+    tuple += [decimal_string(task.task_nonce)]
+```
+
+Track the highest nonce you accepted (for your whole run, not per connection)
+and refuse any task whose nonce is at or below it -- the signature is still
+genuine, but the frame is a replay. Once negotiated, refuse nonce-less
+tasking too: it is not the shape you agreed to. Report each refusal as the
+task's `Failed` result so the attack surfaces on the task. A server that does
+not echo the arm keeps the four-element shape, and an implant that never
+advertises keeps receiving it -- the addition is negotiated, never imposed.
+
 ## Tier 0 -- Interop (required)
 
 The smallest implant that enrolls, checks in, and executes tasking:
@@ -318,6 +341,11 @@ the server cannot observe whether an implant adopted any of them:
 - **Tasking signature verification.** As specified above. Skipping it leaves
   the implant trusting the channel (the pre-signing posture,
   architecture.md Sec 9).
+- **Replay nonces.** The negotiated arm above: advertise at the handshake,
+  verify the five-element tuple, and refuse any nonce at or below your
+  accepted floor, so a captured frame replayed to this implant is refused and
+  the refusal surfaces on the task. The reference implant always advertises;
+  skipping the arm leaves replay protection to the channel.
 - **Kill date.** Refuse to start past the baked kill date and re-check it
   each cycle. The teamserver refuses handshakes past it regardless; the local
   check bounds a lost implant that can no longer reach any server.
