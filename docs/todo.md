@@ -30,19 +30,15 @@ for the authoring shape and the seams' current limits.
 
 ## Implant reach (architecture.md Sec 8, extending/implants.md)
 
-The protocol is the product; the bar is that a from-scratch implant can be
-written against `docs/extending/implants.md` alone. The plain-HTTP envelope
-listener shipped: one POST is one poll check-in over the same client
-certificates, dropping the gRPC/HTTP-2 requirement -- the acceptance test is
-a from-scratch implant, no gRPC library, that enrolls, checks in, and
-completes a task against it.
-
-- [ ] **Tier 0 conformance harness.** A rig that drives a candidate implant
-      against a live teamserver and reports pass/fail per contract clause
-      (enroll shapes, handshake order, result/chunk discipline, signature
-      verification, kill-date refusal). _AC:_ pointing the harness at the
-      reference implant passes, and at a deliberately broken one fails with
-      the violated clause named.
+None open: the reach work shipped. The plain-HTTP envelope listener carries
+the same rod.v1 frames as varint-length-delimited HTTPS bodies -- one POST is
+one poll check-in over the same client certificates, dropping the gRPC/HTTP-2
+requirement (its acceptance test is a from-scratch implant, no gRPC library,
+that enrolls, checks in, and completes a task) -- and the Tier 0 conformance
+harness (`tests/teamserver/Rod.Conformance.Tests/`) drives a candidate
+implant against a live teamserver and reports pass/fail per contract clause:
+the reference implant passes every clause, and a deliberately broken one
+fails with the violated clause named.
 
 ## Security (architecture.md Sec 9)
 

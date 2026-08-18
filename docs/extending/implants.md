@@ -373,6 +373,21 @@ from quietly growing:
    the tradecraft modules, and the build pipeline -- not in the minimum an
    implant must carry (architecture.md Sec 14).
 
+## Conformance harness
+
+The Tier 0 contract is executable, not just documented: the conformance
+harness (`tests/teamserver/Rod.Conformance.Tests/`) drives a candidate
+implant against a live teamserver and reports pass/fail per clause --
+`enroll.public-key-and-token`, `handshake.first-frame-ok`, `task.round-trip`,
+`chunk.discipline`, `signature.verification` (against a hostile tasking probe
+that feeds unsigned, wrongly signed, cross-implant, and correctly signed
+control tasks), and `kill-date.refusal`. Pointing it at the reference implant
+passes every clause; pointing it at a deliberately broken one fails with the
+violated clause named. A community implant author reproduces the shape:
+implement `IImplantCandidate` (a process or an in-process loop) and hand it
+to `ConformanceRig.RunAsync` -- the rig's own `MinimalImplant` is a worked
+Tier 0/Tier 1 example with switchable defects.
+
 ## Calibration note
 
 Tier 0's heaviest piece used to be the gRPC/HTTP-2 channel, not the crypto or
