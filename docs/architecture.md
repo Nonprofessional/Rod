@@ -452,11 +452,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 8. Transports, listeners, and redirectors
 
-- Supported listener transports: **HTTP(S)**, **mTLS**, and **DNS** are
-  implemented; **SMB** and **TCP** are planned (the listener abstraction is in
-  place, so adding them is a milestone concern, not an architectural one).
-  Transport choice is a profile/deployment concern; the protocol semantics are
-  transport-independent.
+- Supported listener transports: **HTTP(S)**, **mTLS**, the **plain-HTTP
+  envelope** over mTLS, and **DNS** are implemented; **SMB** and **TCP** are
+  planned (the listener abstraction is in place, so adding them is a milestone
+  concern, not an architectural one). Transport choice is a profile/deployment
+  concern; the protocol semantics are transport-independent.
 - **DNS is the egress-restricted check-in transport.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
@@ -495,14 +495,26 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   at `/implants/enroll`; URI and header routing at the public endpoint is a
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
-- **A plain-HTTP-envelope listener is a recorded design option, not scheduled
-  work.** The same rod.v1 payloads carried as opaque HTTP request/response
-  bodies over the same client certificates, dropping the gRPC/HTTP-2
-  requirement for target languages with a weak gRPC story. It changes the
-  framing, not the protocol semantics; transport choice is already a
-  listener/profile concern, so nothing else moves. It exists as the escape
-  hatch for implant reach ([extending/implants.md](extending/implants.md)) and is
-  built only when a community implant actually needs it.
+- **The plain-HTTP envelope check-in is the implant-reach transport.** The
+  same rod.v1 frames the gRPC stream carries, marshaled as
+  varint-length-delimited sequences in ordinary HTTPS request/response bodies
+  over the same client certificates -- one POST (`/implants/beacon`) is one
+  poll check-in: the request body carries the handshake first plus any
+  results, exfil chunks, and staged pulls; the response carries the handshake
+  response, the staged chunk runs answering the request's demands, and queued
+  tasking while a 4 MiB dispatch budget lasts (what does not fit is requeued
+  for the next check-in). It changes the framing, not the protocol semantics:
+  the route is mapped on every listener but demands the mTLS client
+  certificate, the frame paths are the beacon compositions every transport
+  shares, and an `HttpsEnvelope` listener entry binds the same mTLS socket
+  the gRPC listener binds so a deployment can name an envelope-only endpoint.
+  Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable
+  from any language with an HTTP client and a protobuf codec
+  ([extending/implants.md](extending/implants.md)). A channel task is never
+  claimed over the envelope (its input half needs a live stream, the same
+  rule the DNS transport applies), and an artifact's exfil chunk run must
+  complete within one request body -- the poll-transport bounds, documented
+  with the wire grammar.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
   channel and the HTTPS enroll request carry through end to end. It is L4, not

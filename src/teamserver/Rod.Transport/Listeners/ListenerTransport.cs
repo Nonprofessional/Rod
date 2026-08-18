@@ -2,9 +2,9 @@ namespace Rod.Transport.Listeners;
 
 /// <summary>
 /// The C2 transport a <see cref="Listener"/> terminates (architecture.md Sec 8).
-///  ships <see cref="Http"/>, <see cref="Mtls"/>, and <see cref="Dns"/>; SMB
-/// and TCP are the remaining transports the architecture calls out, added when
-/// a transport needs them.
+///  ships <see cref="Http"/>, <see cref="Mtls"/>, <see cref="HttpsEnvelope"/>,
+/// and <see cref="Dns"/>; SMB and TCP are the remaining transports the
+/// architecture calls out, added when a transport needs them.
 /// </summary>
 public enum ListenerTransport
 {
@@ -21,6 +21,20 @@ public enum ListenerTransport
     /// terminates here (architecture.md Sec 9).
     /// </summary>
     Mtls,
+
+    /// <summary>
+    /// The plain-HTTP envelope (architecture.md Sec 8, the implant-reach
+    /// escape hatch): the same rod.v1 frames the gRPC stream carries, as
+    /// varint-length-delimited sequences in ordinary HTTPS request/response
+    /// bodies over the same client certificates. One POST is one poll
+    /// check-in. The bind and the mTLS termination are identical to
+    /// <see cref="Mtls"/> -- the difference is purely which check-in shape an
+    /// implant uses against it, and both are served on either; the listener
+    /// entry exists so a deployment can name an endpoint whose purpose is
+    /// envelope-only reach (a target language with an HTTP client and a
+    /// protobuf codec but no gRPC stack).
+    /// </summary>
+    HttpsEnvelope,
 
     /// <summary>
     /// DNS over UDP: TXT-record check-ins for egress-restricted targets

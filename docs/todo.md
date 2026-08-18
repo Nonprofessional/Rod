@@ -31,17 +31,12 @@ for the authoring shape and the seams' current limits.
 ## Implant reach (architecture.md Sec 8, extending/implants.md)
 
 The protocol is the product; the bar is that a from-scratch implant can be
-written against `docs/extending/implants.md` alone.
+written against `docs/extending/implants.md` alone. The plain-HTTP envelope
+listener shipped: one POST is one poll check-in over the same client
+certificates, dropping the gRPC/HTTP-2 requirement -- the acceptance test is
+a from-scratch implant, no gRPC library, that enrolls, checks in, and
+completes a task against it.
 
-- [ ] **Plain-HTTP envelope listener.** The recorded escape hatch, now
-      scheduled for reach: the same rod.v1 Frames carried as
-      varint-length-delimited sequences in ordinary HTTPS request/response
-      bodies over the same client certificates -- one POST is one poll
-      check-in (request body: handshake + results + exfil chunks; response
-      body: handshake response + tasking). Drops the gRPC/HTTP-2 requirement
-      so Tier 0 is reachable from any language with an HTTP and a protobuf
-      codec. _AC:_ a from-scratch implant written from the contract doc
-      alone, using no gRPC library, enrolls, checks in, and completes a task.
 - [ ] **Tier 0 conformance harness.** A rig that drives a candidate implant
       against a live teamserver and reports pass/fail per contract clause
       (enroll shapes, handshake order, result/chunk discipline, signature

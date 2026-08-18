@@ -187,6 +187,10 @@ public static class TransportHost
         // identically regardless of which transport carried it.
         services.AddSingleton<Endpoints.BeaconIngest>();
         services.AddSingleton<Endpoints.BeaconTasking>();
+        // The plain-HTTP envelope check-in handler (architecture.md Sec 8):
+        // one POST is one poll check-in, the same frames the gRPC stream
+        // carries as delimited sequences in ordinary request/response bodies.
+        services.AddSingleton<Endpoints.EnvelopeBeaconCheckIn>();
 
         // Session staleness sweep (architecture.md Sec 10.3): registered only
         // when a configuration is supplied -- the composition root always has
@@ -331,7 +335,11 @@ public static class TransportHost
                 // listener's State moves to Running inside RegisterAsync.
                 kestrel.Listen(host, port, listen =>
                 {
-                    if (config.Transport == ListenerTransport.Mtls)
+                    // The envelope listener terminates mTLS exactly like the
+                    // gRPC listener: same client-certificate requirement, same
+                    // chain-to-CA validation -- only the check-in shape its
+                    // implants use differs (architecture.md Sec 8).
+                    if (config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
                         ConfigureMtlsHttps(listen, kestrel);
                 });
 
@@ -469,6 +477,12 @@ public static class TransportHost
         // The implant-initiated beacon stream: gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
+        // The plain-HTTP envelope check-in (architecture.md Sec 8): the same
+        // frames as delimited sequences in ordinary request/response bodies,
+        // for implants with an HTTP client and a protobuf codec but no
+        // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,
+        // so only an mTLS-terminated listener ever serves it.
+        app.MapEnvelopeBeaconEndpoints();
         // A trivial health probe so the listener is observably up.
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
         return app;
@@ -496,6 +510,7 @@ public static class TransportHost
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
+        endpoints.MapEnvelopeBeaconEndpoints();
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
     }
 
