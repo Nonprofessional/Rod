@@ -28,7 +28,7 @@ public class DotNetBuildUnitTests
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.Pivot, "")]
     public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
