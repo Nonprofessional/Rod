@@ -206,7 +206,20 @@ public static class TransportHost
         // PayloadBuilt audit write, the same way the beacon stream composes the
         // task-completion write.
         var buildUnits = new InMemoryBuildUnitRegistry();
-        buildUnits.Register(new DotNetBuildUnit());
+        // The tradecraft extension kit's implant half (extending/tradecraft.md):
+        // a configured extension directory whose handler sources overlay onto
+        // every implant-class build, so out-of-tree handlers compile in without a
+        // fork of the implant tree. The same explicit-config shape as
+        // Tradecraft:Modules and Build:Transforms -- a missing section keeps the
+        // reference tree as-is, and a configured-but-missing directory fails
+        // startup loudly rather than building artifacts that silently lack the
+        // handlers the operator believes they carry.
+        var implantExtensionDirectory = configuration?["Build:ImplantExtensionDirectory"];
+        if (!string.IsNullOrWhiteSpace(implantExtensionDirectory)
+            && !Directory.Exists(implantExtensionDirectory))
+            throw new InvalidOperationException(
+                $"The configured implant extension directory '{implantExtensionDirectory}' does not exist.");
+        buildUnits.Register(new DotNetBuildUnit(extensionDir: implantExtensionDirectory));
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         // The post-build transform chain (architecture.md Sec 6, the transform
         // seam): config-listed out-of-tree transforms under Build:Transforms,

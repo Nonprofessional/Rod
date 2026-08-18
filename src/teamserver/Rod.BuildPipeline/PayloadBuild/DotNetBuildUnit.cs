@@ -35,6 +35,16 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // (architecture.md Sec 6): <repo>/src/stager/dotnet, the minimal
     // fetch-and-run loader. Same override story as the implant tree.
     private readonly string _stagerSourceDir;
+
+    // The optional out-of-tree extension directory the tradecraft extension kit
+    // overlays onto the per-build staging copy (architecture.md Sec 5.3,
+    // extending/tradecraft.md): its .cs sources and the generated
+    // registrations compile into every implant-class build. Null -- the default
+    // and every host that does not configure Build:ImplantExtensionDirectory --
+    // means the checked-in empty ExtensionRegistrations stub rides along
+    // unchanged. The stager tree is never overlaid: a stage-1 loader carries no
+    // tradecraft handlers.
+    private readonly string? _extensionDir;
     private readonly string _dotnetBinary;
 
     public Language Language => Language.DotNet;
@@ -46,15 +56,20 @@ public sealed class DotNetBuildUnit : IBuildUnit
     /// the stage-1 loader tree stager-class builds compile; defaults to
     /// <c>&lt;repo&gt;/src/stager/dotnet</c>. <paramref name="dotnetBinary"/> is the
     /// dotnet executable, defaulting to PATH resolution of <c>dotnet</c>.
+    /// <paramref name="extensionDir"/> is the out-of-tree extension directory whose
+    /// handler sources overlay onto every implant-class build; null keeps the
+    /// reference tree as-is.
     /// </summary>
     public DotNetBuildUnit(
         string? implantSourceDir = null,
         string? stagerSourceDir = null,
-        string? dotnetBinary = null)
+        string? dotnetBinary = null,
+        string? extensionDir = null)
     {
         _implantSourceDir = implantSourceDir ?? ResolveDefaultImplantSourceDir();
         _stagerSourceDir = stagerSourceDir ?? ResolveDefaultStagerSourceDir();
         _dotnetBinary = dotnetBinary ?? "dotnet";
+        _extensionDir = extensionDir;
     }
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
@@ -115,6 +130,17 @@ public sealed class DotNetBuildUnit : IBuildUnit
                 bakedPath,
                 RenderBakedSource(baked, isStager ? "Rod.Stager" : "Rod.Implant"),
                 cancellationToken);
+
+            // The extension overlay (the implant half of the tradecraft extension
+            // kit, extending/tradecraft.md): a configured directory's handler
+            // sources drop onto the staging copy and the generated registrations
+            // replace the checked-in empty ExtensionRegistrations stub, so every
+            // implant-class build carries the out-of-tree handlers without a fork
+            // of the implant tree. Implant builds only -- the stager is a minimal
+            // loader that carries no tradecraft handlers. A missing directory or
+            // one with no handler fails the build loudly here.
+            if (!isStager && _extensionDir is not null)
+                ImplantExtensionOverlay.Apply(_extensionDir, stagingDir);
 
             // dotnet publish compiles the component into a self-contained
             // single-file executable for the requested runtime identifier: one

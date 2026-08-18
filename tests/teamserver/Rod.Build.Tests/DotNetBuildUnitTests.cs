@@ -219,6 +219,59 @@ public class DotNetBuildUnitTests
         Assert.Equal("application/octet-stream", artifact.ContentType);
     }
 
+    [Fact]
+    public async Task Build_AMissingExtensionDirectoryFailsLoudly()
+    {
+        // The loud-failure rule: a configured-but-missing directory aborts the
+        // build before any compile, so an operator never receives an artifact
+        // that silently lacks the handlers they believe it carries.
+        var unit = new DotNetBuildUnit(
+            extensionDir: Path.Combine(Path.GetTempPath(), "rod-ext-missing-" + Guid.NewGuid().ToString("N")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(Params()));
+    }
+
+    [DotNetFact]
+    public async Task Build_WithExtensionDirectory_CompilesTheOverlayIn()
+    {
+        // The extension kit's acceptance, compile leg: a handler source dropped
+        // into the configured directory builds into the artifact -- the overlay
+        // copies the sources, the generated registrations compile against the
+        // implant tree, and dotnet publish produces the artifact. The run leg --
+        // the artifact advertising and running the verb at handshake -- lives in
+        // the integration suite (ExtensionKitEndToEndTests).
+        var extensionDir = Path.Combine(Path.GetTempPath(), "rod-ext-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extensionDir);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(extensionDir, "DemoPingHandler.cs"), """
+                using Rod.Implant.Internal;
+                using Rod.V1;
+
+                namespace MyTradecraft.Demo;
+
+                internal sealed class DemoPingHandler : ICapabilityHandler
+                {
+                    public string Verb => "demo.ping";
+
+                    public HandlerResult Handle(string arguments)
+                        => (TaskOutcome.Succeeded, "pong");
+                }
+                """);
+
+            var unit = new DotNetBuildUnit(extensionDir: extensionDir);
+
+            var artifact = await unit.BuildAsync(Params());
+
+            Assert.Equal(Language.DotNet, artifact.Language);
+            Assert.NotEmpty(artifact.Content);
+        }
+        finally
+        {
+            try { Directory.Delete(extensionDir, recursive: true); } catch { }
+        }
+    }
+
     [DotNetFact]
     public async Task Build_Fingerprint_MatchesSha256OfContent()
     {
