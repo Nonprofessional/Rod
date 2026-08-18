@@ -30,11 +30,16 @@ message ProtocolVersion {
 // half of the CheckIn stream. It defaults to UNSPECIFIED for backward
 // compatibility: existing TaskResult writers leave it unset and the server
 // treats UNSPECIFIED as "try-parse as TaskResult". New upstream payload types
-// (exfil chunks, staged pulls, later streaming shapes) set their kind so the
+// (exfil chunks, staged pulls, channel output) set their kind so the
 // server branches without nested try-parse. Downstream (server-to-implant)
-// frames do not set kind; the implant discriminates them positionally
-// (handshake first, then TaskRequests -- with a StagedChunk run, demanded by
-// the implant itself, interleaved when a staged task's payload is pulled).
+// frames were originally positional only (handshake first, then TaskRequests,
+// with a StagedChunk run interleaved when a staged task's payload is pulled);
+// the interactive channel broke that: a ChannelInput can arrive between any
+// two TaskRequests, so downstream channel frames DO set their kind and the
+// implant discriminates kind first, falling back to the positional
+// TaskRequest parse for kindless frames. A server only routes ChannelInput to
+// an implant whose handshake advertised the channel verb, so an implant that
+// never opted in never receives a kind-bearing downstream frame.
 enum FrameKind {
   FRAME_KIND_UNSPECIFIED = 0;
   FRAME_KIND_TASK_RESULT = 1;
@@ -44,6 +49,14 @@ enum FrameKind {
   // set, before the task's result. The server answers with a run of
   // StagedChunk frames on the same stream.
   FRAME_KIND_STAGED_PULL = 3;
+  // One chunk of a live task channel's output, implant to server
+  // (architecture.md Sec 10.3, the streaming task shape). The channel's final
+  // TaskResult closes the task -- ChannelOutput carries no terminal marker of
+  // its own.
+  FRAME_KIND_CHANNEL_OUTPUT = 4;
+  // Operator input for a live task channel, server to implant: the downstream
+  // half of the streaming task shape. The only kind-bearing downstream frame.
+  FRAME_KIND_CHANNEL_INPUT = 5;
 }
 
 message Frame {
@@ -97,6 +110,39 @@ message StagedChunk {
   uint64 sequence = 2;
   bool terminal = 3;
   bytes data = 4;
+}
+
+// One chunk of a live task channel's output, sent upstream as kind
+// FRAME_KIND_CHANNEL_OUTPUT (architecture.md Sec 10.3, the streaming task
+// shape). A streaming task -- the reference verb is shell.interact -- runs
+// past the one-shot TaskResult grammar: the implant starts it on the
+// TaskRequest, streams whatever the task produces as these chunks, and closes
+// the task with an ordinary TaskResult when the channel ends. task_id ties
+// each chunk to its task; the chunk order on the stream is the transcript
+// order. Chunks are opaque bytes -- the frame-layer sizing contract above
+// applies -- and the server accumulates them into the task's transcript, so
+// an operator reads a live shell the same way it reads a captured one. The
+// channel is session-scoped: it lives on the beacon stream that carried its
+// TaskRequest, and a stream drop ends it (the shell is killed and the task's
+// result never comes -- the task stays dispatched; liveness is last-seen
+// based, Sec 10.3).
+message ChannelOutput {
+  string task_id = 1;
+  bytes data = 2;
+}
+
+// Operator input for a live task channel, sent downstream as kind
+// FRAME_KIND_CHANNEL_INPUT: the other direction of the streaming task shape.
+// task_id names the running channel; data is what the operator typed (opaque
+// bytes, typically UTF-8); eof marks the operator closing the channel's stdin
+// -- the implant closes the shell's input, the shell exits, and the task
+// completes through its final TaskResult. Input is not signed: like
+// StagedChunk runs it rides the mTLS beacon stream the signed TaskRequest
+// opened, and only a channel the implant itself started accepts it.
+message ChannelInput {
+  string task_id = 1;
+  bytes data = 2;
+  bool eof = 3;
 }
 
 // Enrollment outcome, mapped from the stager-token redeem result
@@ -172,9 +218,9 @@ message HandshakeResponse {
 // Tasking over the CheckIn stream. After the handshake the stream
 // carries tasking downstream and results upstream, each as an opaque Frame
 // payload. The one-shot shape here -- a single verb with a single argument
-// string and a single result -- is the minimum that proves the round-trip;
-// streaming/interactive verbs and structured arguments arrive in later
-// milestones.
+// string and a single result -- covers most verbs; the streaming task shape
+// (ChannelOutput/ChannelInput around the same TaskRequest/TaskResult pair)
+// covers the verbs that run interactively.
 
 // A task handed to the implant: its id (echoed back on the result so the server
 // can correlate), the capability verb, and its argument string, and the
