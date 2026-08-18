@@ -281,8 +281,12 @@ Admission is not execution: a verb may be class-admissible (the class gate
 does not refuse it) yet ship no built-in handler, running only when an
 operator supplies an out-of-tree module. The contract-only verbs
 (`collect.keylog`, and the `evasion` and `exploit` categories in their
-entirety) follow this shape (Sec 10.2); they are listed in the
-class set and in the capability catalog but carry no in-repo handler.
+entirety) follow this shape (Sec 10.2); they are listed in the capability
+catalog but carry no in-repo handler -- `collect.keylog` inside the stage-2
+class set, the evasion and exploit verbs outside every class set as ungated
+contract verbs the bake carries alongside the class set (Sec 5.3), so an
+artifact compiled with an out-of-tree handler for one advertises it at
+handshake.
 
 A capable implant can deploy another class on the same host (e.g. a web-shell
 deriving a stage-2 implant) via a deployment verb; the child enrols into the same
@@ -302,15 +306,18 @@ The class verb set (Sec 5.2) is the server's authority; the implant's advertised
 set is its own, and the two must agree. A reference implant advertises exactly
 the verbs its build permits and its compiled handlers implement -- never a verb
 it cannot run. The advertised beacon capability set is the intersection of the
-baked class verbs with the compiled handler set, and dispatch routes through an
+baked verbs (the class set plus the ungated contract-only verbs) with the
+compiled handler set, and dispatch routes through an
 implant-side handler registry (the implant analog of the server's
 `ICapabilityModule`) rather than a hard-coded `switch`, so adding a verb is a
 handler plus a registration, not an edit to the runner. Registration is
 compile-time -- no runtime assembly loading (that would break Native AOT, enlarge
 the artifact, and introduce on-disk plugin files), and the capability set is
 decided per class at build time, so runtime discovery buys nothing. Out-of-tree
-handlers for contract-only verbs (e.g. `collect.keylog`) compile into a separate
-per-engagement artifact; the reference implant ships no Sec 13 boundary verb.
+handlers compile in through the build unit's extension overlay (Sec 6) -- a
+configured extension directory whose sources overlay onto the per-build staging
+tree, with generated registrations feeding the registry's `additional` seam; the
+reference implant ships no Sec 13 boundary verb.
 
 Rejected alternatives: runtime dynamic assembly loading for plugins (breaks
 Native AOT and the lean artifact, and is unnecessary since the set is fixed at
@@ -325,7 +332,7 @@ is what makes the design durable).
 The reference .NET implant implements this end to end. `HandlerRegistry`
 holds one compiled handler per verb and is the implant's only dispatch path:
 the beacon loop calls it directly and advertises `AdvertisedVerbs` -- the
-registry verbs filtered by the baked class set -- at handshake. The build
+registry verbs filtered by the baked verb set -- at handshake. The build
 unit's baked `verbs` key reaches the implant through the profile (mapped onto
 `ROD_VERBS`, parsed into `Config.ClassVerbs`); an un-baked dev binary (empty
 class set) advertises its full compiled handler set, so the checked-in stub
@@ -356,6 +363,15 @@ recorded.**
   profile, and beacon parameters (mode, sleep, jitter, kill date). They are
   produced at request time so each artifact is unique -- this is essential for
   OPSEC. No key material crosses the build contract (Sec 5.1).
+- **The extension overlay is the implant-side out-of-tree seam.**
+  `Build:ImplantExtensionDirectory` names a directory of handler sources; the
+  unit copies its `.cs` files onto the per-build staging tree and generates the
+  registrations that feed the implant registry's `additional` seam (Sec 5.3),
+  so an operator drops a handler in as a source file and every implant-class
+  build carries it -- no fork of the implant tree
+  ([extending/tradecraft.md](extending/tradecraft.md)). A configured directory
+  that is missing or yields no handler fails loudly, the same rule the
+  server-side module loader applies; the stager tree is never overlaid.
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint

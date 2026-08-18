@@ -18,22 +18,15 @@ None open: the streaming task shape (interactive shells) shipped as
 
 ## Tradecraft extension kit (architecture.md Sec 10.2, Sec 13)
 
-The out-of-tree seams exist (config-listed server modules, compile-time implant
-handlers); the kit makes them effortless. See
-[extending/tradecraft.md](extending/tradecraft.md) for the current seams.
-
-- [ ] **Out-of-tree implant handlers without a fork.** A configured extension
-      directory whose sources the .NET build unit overlays onto the per-build
-      staging tree, with a generated registrations file feeding
-      `HandlerRegistry.Default`'s `additional` seam. _AC:_ dropping a handler
-      source into the directory and building yields an artifact that runs it --
-      no fork of the implant tree to maintain.
-- [ ] **Advertise contract-only verbs on baked artifacts.** The handshake
-      advertisement intersects compiled handlers with the baked class set, so
-      `evasion.*`/`exploit.*` handlers never appear there (dispatch is
-      unaffected). Bake the class set plus the registered contract-only verbs
-      so the roster reflects reality. _AC:_ an artifact built with an
-      out-of-tree evasion handler advertises the verb at handshake.
+None open: the kit shipped. A configured extension directory
+(`Build:ImplantExtensionDirectory`) overlays out-of-tree handler sources onto
+every implant-class build, with generated registrations feeding
+`HandlerRegistry.Default`'s `additional` seam -- dropping a handler source in
+and building yields an artifact that runs it, no fork to maintain -- and the
+bake carries the class set plus the ungated contract-only verbs, so an
+artifact compiled with an out-of-tree evasion or exploit handler advertises
+the verb at handshake. See [extending/tradecraft.md](extending/tradecraft.md)
+for the authoring shape and the seams' current limits.
 
 ## Implant reach (architecture.md Sec 8, extending/implants.md)
 

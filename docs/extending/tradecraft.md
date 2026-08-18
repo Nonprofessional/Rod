@@ -103,33 +103,81 @@ and unparsed by anyone upstream (architecture.md Sec 10). Return a result and,
 for bulk data, `ExfilChunk` frames; the beacon loop writes them to the
 engagement artifact store on your behalf.
 
-The handshake advertisement is the baked class verb set intersected with the
-compiled handlers, so the implant never advertises a verb it cannot run. Two
-consequences for extension authors:
+The handshake advertisement is the baked verb set -- the class set plus the
+contract-only verbs no class gates -- intersected with the compiled handlers,
+so the implant never advertises a verb it cannot run. Two consequences for
+extension authors:
 
-- A verb inside the baked class set (adding a new `recon.*` handler, say)
-  is advertised automatically.
-- A contract-only verb (`evasion.*`, `exploit.*`) is not in any class set, so
-  it does not appear in the handshake advertisement today. Dispatch does not
-  depend on the advertisement -- a registered module's verb is issuable and
-  delivered regardless -- but the roster shows the narrower set. Closing that
-  cosmetic gap is on the todo list (bake the class set plus the registered
-  contract-only verbs).
+- A verb inside the baked set (adding a new `recon.*` handler, say) is
+  advertised automatically.
+- A contract-only verb (`evasion.*`, `exploit.*`) rides along in every bake,
+  so a handler you compile in for one advertises at handshake -- and an
+  artifact without the handler still claims nothing.
 
 ## Building an artifact that carries your handler
 
-Today: maintain the handler registrations in an overlay or fork of
-`src/implant/dotnet` (adding the registrations alongside the reference set in
-`HandlerRegistry.Default`) and point `DotNetBuildUnit` at your tree, or build
-the fork directly -- it is an independent, disposable component coupled to the
-teamserver only by the proto. The build unit bakes the per-artifact profile
-(mode, endpoint, sleep/jitter/kill date, class verbs) into whatever tree it
-compiles, and publishes a self-contained single-file executable for the
-requested OS/arch with no target-side runtime.
+Point the build unit at an extension directory: a folder of handler sources
+you maintain outside the repository, named as a path under
+`Build:ImplantExtensionDirectory` in `appsettings.json`:
 
-Planned (todo): a configured extension directory the build unit overlays onto
-the staging tree, so a handler drops in as a source file and every build
-carries it -- no fork to maintain.
+```json
+{
+  "Build": {
+    "ImplantExtensionDirectory": "/opt/rod/extensions"
+  }
+}
+```
+
+Every implant-class build then overlays the directory onto the per-build
+staging tree: the `.cs` files compile in, and the build unit generates the
+`ExtensionRegistrations` file that feeds `HandlerRegistry.Default`'s
+`additional` seam -- dropping a handler source into the directory and building
+yields an artifact that runs it. No fork of the implant tree to maintain. The
+build unit still bakes the per-artifact profile (mode, endpoint,
+sleep/jitter/kill date, verb set) into whatever tree it compiles, and
+publishes a self-contained single-file executable for the requested OS/arch
+with no target-side runtime.
+
+A handler source follows one authoring shape: a top-level concrete class with
+a parameterless constructor whose base list names `ICapabilityHandler`. Any
+namespace works -- the generated registrations qualify each class fully:
+
+```csharp
+using Rod.Implant.Internal;
+using Rod.V1;
+
+namespace MyTradecraft.Evasion;
+
+internal sealed class MyAvoidHandler : ICapabilityHandler
+{
+    public string Verb => "evasion.avoid";
+
+    public HandlerResult Handle(string arguments)
+        => (TaskOutcome.Succeeded, "ack");
+}
+```
+
+Helper classes, extra files, and subdirectories are fine -- only discovered
+handlers register. Sources under `bin/`/`obj/` are skipped, so an extension
+built standalone does not compile its output in twice.
+
+Failures are loud on both ends, the same rule as `Tradecraft:Modules`:
+
+- A configured directory that is missing, or that contains no handler class,
+  aborts the build -- and a missing directory aborts teamserver startup. An
+  operator must never get an artifact that silently lacks the handlers they
+  believe it carries.
+- A discovered class the compiler cannot instantiate (abstract, nested, or
+  without a parameterless constructor) fails the publish with the type named
+  in the diagnostic.
+
+Current limits, deliberate: the overlay feeds the one-shot `additional` seam
+only -- a staged or channel verb still needs the fork -- and stager-class
+builds are never overlaid (a stage-1 loader carries no tradecraft handlers).
+The fork itself remains available: `src/implant/dotnet` is an independent,
+disposable component coupled to the teamserver only by the proto, and pointing
+the build unit at your own tree (or building it directly) is the escape hatch
+for anything the overlay does not cover.
 
 ## OPSEC metadata and ROE
 
