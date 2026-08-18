@@ -82,9 +82,35 @@ public sealed class InMemoryAuditStore : IAuditStore
         {
             var matches = _events.Values
                 .Where(e => e.EngagementId == engagementId)
-                .OrderBy(e => e.At)
                 .ToArray();
-            return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+
+            // Order by the chain itself, the way the file-backed and Postgres
+            // adapters do: the hash uses millisecond precision, so two appends
+            // can share an instant, and a ConcurrentDictionary enumerates in
+            // no guaranteed order -- an At-sorted listing may then present
+            // same-instant events out of append order, and a verification
+            // walking that listing reports a break that is not there. The
+            // PreviousHash links are a total append order (appends serialize
+            // under this lock), so walking them from genesis restores it. A
+            // walk that somehow comes up short falls back to At-order rather
+            // than dropping events.
+            var successorByLink = new Dictionary<string, AuditEvent>(matches.Length, StringComparer.Ordinal);
+            foreach (var @event in matches)
+                successorByLink[@event.PreviousHash] = @event;
+
+            var ordered = new List<AuditEvent>(matches.Length);
+            var link = AuditChain.GenesisHash;
+            while (successorByLink.TryGetValue(link, out var next))
+            {
+                ordered.Add(next);
+                link = next.Hash;
+            }
+
+            if (ordered.Count == matches.Length)
+                return Task.FromResult<IReadOnlyList<AuditEvent>>(ordered);
+
+            return Task.FromResult<IReadOnlyList<AuditEvent>>(
+                matches.OrderBy(e => e.At).ThenBy(e => e.EventId).ToArray());
         }
     }
 

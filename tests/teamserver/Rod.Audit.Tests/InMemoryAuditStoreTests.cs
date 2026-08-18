@@ -68,6 +68,42 @@ public class InMemoryAuditStoreTests
     }
 
     [Fact]
+    public async Task List_SameInstantEvents_ListInAppendOrder_AndVerify()
+    {
+        // The hash uses millisecond precision, so a busy engagement appends
+        // events that share an instant; the listing must still present them in
+        // append order or a chain verification walking it reports a break
+        // that is not there. The chain links are the order: the listing walks
+        // them, the way the file-backed and Postgres adapters do.
+        var store = new InMemoryAuditStore();
+        var engagement = Guid.NewGuid();
+        var task = Guid.NewGuid();
+
+        var facts = Enumerable.Range(0, 16)
+            .Select(seed => AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagement,
+                operatorId: Guid.NewGuid(),
+                implantId: Guid.NewGuid(),
+                taskId: task,
+                verb: "shell.exec",
+                kind: AuditEventKind.TaskCompleted,
+                payload: $"arg-{seed}",
+                output: "out",
+                outcome: "Succeeded",
+                at: T0))
+            .ToArray();
+        foreach (var fact in facts)
+            await store.AppendAsync(fact);
+
+        var stored = await store.ListAsync(engagement);
+
+        Assert.Equal(facts.Length, stored.Count);
+        Assert.Equal(facts.Select(f => f.EventId), stored.Select(s => s.EventId));
+        Assert.Null(AuditChain.VerifyTrail(stored));
+    }
+
+    [Fact]
     public async Task Append_KeepsEachEngagement_AsAnIndependentChain()
     {
         var store = new InMemoryAuditStore();
@@ -166,8 +202,12 @@ public class InMemoryAuditStoreTests
         var engagementOnly = await store.ListAsync(engagementA);
         Assert.Equal(3, engagementOnly.Count);
         Assert.All(engagementOnly, e => Assert.Equal(engagementA, e.EngagementId));
-        Assert.True(engagementOnly[0].At < engagementOnly[1].At);
-        Assert.True(engagementOnly[1].At < engagementOnly[2].At);
+        // The listing is in append order -- the chain-link order the
+        // file-backed and Postgres adapters list in too, and the order a
+        // verification walks. At stamps are advisory (concurrent appends can
+        // carry slightly out-of-order clocks); the links are the causal order.
+        Assert.Equal(new[] { T0, T0.AddSeconds(2), T0.AddSeconds(1) },
+            engagementOnly.Select(e => e.At));
 
         // Engagement B is invisible from engagement A.
         Assert.Single(await store.ListAsync(engagementB));
