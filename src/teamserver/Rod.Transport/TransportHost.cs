@@ -111,6 +111,11 @@ public static class TransportHost
         // queued task is pushed downstream immediately and an idle fleet
         // costs nothing -- no poll loop in the writer path.
         services.AddSingleton<ITaskDispatchWake, InMemoryTaskDispatchWake>();
+        // Live channel hub (architecture.md Sec 10.3, the streaming task
+        // shape): the rendezvous between the operator input route and the
+        // beacon stream's dispatch writer, keyed by implant. A stream
+        // attaches its sink on handshake and detaches on stream end.
+        services.AddSingleton<Channels.LiveChannelHub>();
 
         // Listener registry: the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the

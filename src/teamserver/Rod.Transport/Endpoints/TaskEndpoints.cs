@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -7,6 +8,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
+using Rod.Transport.Channels;
 // The domain entity shares its name with System.Threading.Tasks.Task. Pin it
 // here so the endpoint's Task references resolve to the entity; the BCL type is
 // not used by name in this file (handlers return IResult).
@@ -39,6 +41,9 @@ public static class TaskEndpoints
         // resolves to GetAsync. Ordered this way for readability.
         group.MapGet("/", ListAsync).WithName("ListEngagementTasks");
         group.MapGet("/{taskId}", GetAsync).WithName("GetTask");
+        // The streaming task shape's other half (architecture.md Sec 10.3):
+        // operator input into a live channel task.
+        group.MapPost("/{taskId}/input", SendInputAsync).WithName("SendTaskInput");
 
         return endpoints;
     }
@@ -288,6 +293,89 @@ public static class TaskEndpoints
         return Results.Ok(TaskResponse.Of(task, events));
     }
 
+    // The per-post input ceiling: input is keystrokes and pastes, not file
+    // transfer -- anything larger belongs in a staged task (the typed arm), and
+    // a single post must stay small enough to frame and audit sanely.
+    private const int MaxChannelInputBytes = 64 * 1024;
+
+    // Operator input into a live channel task (architecture.md Sec 10.3, the
+    // streaming task shape): the body carries the bytes (base64, the same
+    // shape staged content rides) and optionally eof -- the operator closing
+    // the channel's stdin, which the implant turns into the shell's exit. The
+    // task must be a dispatched channel task on an implant with a live beacon
+    // stream; input for anything else is a well-formed refusal, and every
+    // accepted post is audited as the operator action it is.
+    private static async Task<IResult> SendInputAsync(
+        string engagementId,
+        string taskId,
+        TaskInputRequest body,
+        ClaimsPrincipal user,
+        ITaskRepository tasks,
+        LiveChannelHub channels,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(taskId, out var taskValue))
+            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+
+        var data = body.Data ?? Array.Empty<byte>();
+        if (data.Length == 0 && !body.Eof)
+            return Results.BadRequest(new Problem("Channel input requires data or eof."));
+        if (data.Length > MaxChannelInputBytes)
+            return Results.Json(
+                new Problem($"Channel input exceeds {MaxChannelInputBytes} bytes."),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+
+        var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
+        if (task is null || task.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+
+        // A one-shot task takes no live input; a channel task that is not
+        // Dispatched has no channel to carry it. Both are the client's state
+        // problem to see clearly, not routing failures.
+        if (!ChannelVerbs.IsChannelVerb(task.Verb))
+            return Results.Json(
+                new Problem($"'{task.Verb}' is not a channel task; it takes no live input."),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        if (task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched)
+            return Results.Conflict(
+                new Problem("The task's channel is not live: it is queued or already completed."));
+
+        // The hub reaches the implant's live beacon stream. No sink (or a full
+        // one) means the channel cannot take this input right now -- report it
+        // rather than queueing bytes no stream will drain.
+        if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
+            return Results.Conflict(
+                new Problem("The implant's beacon stream is not accepting channel input."));
+
+        // The input is the operator's action on the engagement (architecture.md
+        // Sec 11): attributed to the sender, bound to the channel's task, the
+        // payload the decoded input and the outcome whether it closed stdin.
+        // What the channel streamed back rides the task's TaskCompleted event.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: operatorId.Value.Value,
+                implantId: task.ImplantId.Value,
+                taskId: taskValue,
+                verb: task.Verb,
+                kind: AuditEventKind.ChannelInput,
+                payload: data.Length > 0 ? Encoding.UTF8.GetString(data) : "<eof>",
+                output: null,
+                outcome: body.Eof ? "eof" : "sent",
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Ok(new TaskInputResponse(taskValue.ToString(), body.Eof));
+    }
+
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The issuing operator is the authenticated operator; the request carries
@@ -302,6 +390,18 @@ public static class TaskEndpoints
         string Verb,
         string? Arguments,
         byte[]? Content = null);
+
+    // Operator input for a live channel task (architecture.md Sec 10.3): the
+    // bytes (base64 in JSON, the same shape staged content rides; the channel
+    // itself is byte-transparent, so text encodes UTF-8 client-side) and eof --
+    // the operator closing the channel's stdin.
+    public sealed record TaskInputRequest(
+        byte[]? Data = null,
+        bool Eof = false);
+
+    // Acknowledgement for accepted input: the task it was routed to and
+    // whether the post carried eof.
+    public sealed record TaskInputResponse(string TaskId, bool Eof);
 
     public sealed record TaskIssuedResponse(
         string TaskId,

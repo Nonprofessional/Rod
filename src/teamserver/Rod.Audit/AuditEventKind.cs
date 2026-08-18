@@ -134,4 +134,14 @@ public enum AuditEventKind
     /// task never exists, so it carries no task id.
     /// </summary>
     TaskRoeRefused,
+
+    /// <summary>
+    /// An operator sent input to a live task channel (architecture.md Sec
+    /// 10.3, the streaming task shape). The payload carries the decoded input
+    /// (or the eof marker when the operator closed the channel's stdin); the
+    /// event is attributed to the sending operator and bound to the channel's
+    /// task. What the channel streamed back rides the task's
+    /// <see cref="TaskCompleted"/> event as its transcript.
+    /// </summary>
+    ChannelInput,
 }
