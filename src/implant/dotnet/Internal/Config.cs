@@ -78,8 +78,10 @@ internal sealed class Config
     public string Mode { get; set; } = BeaconModes.Stream;
 
     /// <summary>
-    /// The class verb set baked in at build time (the profile's "verbs" key,
-    /// architecture.md Sec 5.2/5.3). The beacon advertises the intersection of
+    /// The verb set baked in at build time (the profile's "verbs" key,
+    /// architecture.md Sec 5.2/5.3): the class's reduced set plus the
+    /// contract-only verbs no class gates, so an out-of-tree handler compiled in
+    /// for one of them can advertise. The beacon advertises the intersection of
     /// this set with the compiled handler registry, so a baked implant never
     /// claims a verb its class forbids or it cannot run. Empty for a dev binary
     /// built without a bake: it advertises its full compiled handler set.

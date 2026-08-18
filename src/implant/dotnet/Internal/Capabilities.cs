@@ -8,18 +8,20 @@ namespace Rod.Implant.Internal;
 // the registry is the only dispatch path -- the beacon loop calls Dispatch
 // directly, there is no hard-coded switch in the runner. The handshake
 // capability set derives from this registry too: the advertised verbs are the
-// baked class verb set intersected with the compiled handlers, so the implant
-// never advertises a verb it cannot run (and never ships one outside its
-// class's build-time permit set).
+// baked verb set (the class set plus the ungated contract-only verbs)
+// intersected with the compiled handlers, so the implant never advertises a
+// verb it cannot run (and never ships one outside its build-time permit set).
 //
 // Registration is compile-time by design: no runtime assembly loading (that
 // would break Native AOT, enlarge the artifact, and introduce on-disk plugin
 // files), and the capability set is decided per class at build time, so
 // runtime discovery buys nothing. Adding a verb is a handler plus one
 // registration in Default -- never an edit to the beacon loop. Out-of-tree
-// handlers for contract-only verbs (e.g. collect.keylog) compile into a
-// separate per-engagement artifact by adding their registrations alongside the
-// reference set; the reference registry carries no Sec 13 boundary verb.
+// handlers compile in through the extension kit's generated
+// Extensions/ExtensionRegistrations (the build unit overlays the configured
+// extension directory onto the staging tree and generates the registrations
+// feeding the additional seam, extending/tradecraft.md); the reference
+// registry carries no Sec 13 boundary verb.
 
 /// <summary>
 /// What one handler invocation produced: the wire outcome, the captured output,
