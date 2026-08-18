@@ -126,9 +126,16 @@ public sealed class TaskService
     /// mismatch, or an unsupported verb) for the transport to map to a wire
     /// status -- the class's reduced set is the authority for what the implant
     /// may run.
+    /// <paramref name="onIssued" /> composes the issuance's durable record (the
+    /// transport's audit write) before the dispatch wake releases: the push
+    /// dispatch it releases audits <c>TaskDispatched</c> on the stream thread,
+    /// and without this hook that append can beat the issuance's own
+    /// <c>TaskIssued</c> to the trail, reading the attributed arc backwards
+    /// (architecture.md Sec 11).
     /// </summary>
     public async System.Threading.Tasks.Task<TaskIssued> IssueAsync(
         IssueTaskCommand command,
+        Func<TaskIssued, CancellationToken, System.Threading.Tasks.Task>? onIssued = null,
         CancellationToken cancellationToken = default)
     {
         var now = _clock.GetUtcNow();
@@ -205,6 +212,21 @@ public sealed class TaskService
             command.StagedBytes);
         await _tasks.SaveAsync(task, cancellationToken);
 
+        var issued = new TaskIssued(
+            task.Id,
+            task.EngagementId,
+            task.ImplantId,
+            task.IssuedBy,
+            task.Verb,
+            task.Arguments,
+            task.CreatedAt);
+
+        // The issuance's durable record composes before the wake: the push
+        // dispatch it releases audits TaskDispatched on the stream thread, and
+        // that append must not beat the TaskIssued it follows to the trail.
+        if (onIssued is not null)
+            await onIssued(issued, cancellationToken);
+
         // The queue accepted the task: wake the beacon writer so it is pushed
         // downstream the moment it is queued, not on the next poll
         // (architecture.md Sec 10.3). A permit with no open stream simply
@@ -224,14 +246,7 @@ public sealed class TaskService
                 cancellationToken);
         }
 
-        return new TaskIssued(
-            task.Id,
-            task.EngagementId,
-            task.ImplantId,
-            task.IssuedBy,
-            task.Verb,
-            task.Arguments,
-            task.CreatedAt);
+        return issued;
     }
 
     /// <summary>

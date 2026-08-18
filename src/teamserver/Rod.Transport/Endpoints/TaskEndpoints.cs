@@ -114,7 +114,8 @@ public static class TaskEndpoints
                     body.Verb,
                     arguments,
                     body.Content?.Length ?? null),
-                cancellationToken);
+                onIssued: (taskIssued, ct) => AppendIssuedAuditAsync(taskIssued, audit, ct),
+                cancellationToken: cancellationToken);
         }
         catch (TaskRejectedException ex)
         {
@@ -164,25 +165,11 @@ public static class TaskEndpoints
             issued.Arguments,
             issued.CreatedAt);
 
-        // The task's issuance is recorded (architecture.md Sec 11):
-        // attributed to the issuing operator, the payload the verb and arguments,
-        // the outcome the new task id. This is the operator's intent; the
-        // TaskDispatched event records the server handing it to the implant and
-        // TaskCompleted the result.
-        await audit.AppendAsync(
-            AuditEvent.Fact(
-                eventId: Guid.NewGuid(),
-                engagementId: issued.EngagementId.Value,
-                operatorId: issued.IssuedBy.Value,
-                implantId: issued.ImplantId.Value,
-                taskId: issued.TaskId.Value,
-                verb: issued.Verb,
-                kind: AuditEventKind.TaskIssued,
-                payload: issued.Arguments,
-                output: null,
-                outcome: issued.TaskId.ToString(),
-                at: issued.CreatedAt),
-            cancellationToken);
+        // The task's issuance audit write ran inside IssueAsync (the onIssued
+        // hook, above the dispatch wake release): the push dispatch the wake
+        // releases audits TaskDispatched on the stream thread, and the arc
+        // must read TaskIssued -> TaskDispatched -> TaskCompleted in the
+        // trail, not the other way (architecture.md Sec 11).
 
         // A staged payload is bound to its task as an artifact -- the same
         // first-class object an evidence attach produces (architecture.md Sec
@@ -223,6 +210,31 @@ public static class TaskEndpoints
 
         return Results.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
     }
+
+    // The task's issuance record (architecture.md Sec 11): attributed to the
+    // issuing operator, the payload the verb and arguments, the outcome the
+    // new task id. This is the operator's intent; the TaskDispatched event
+    // records the server handing it to the implant and TaskCompleted the
+    // result. Runs as IssueAsync's onIssued hook so it lands in the trail
+    // before the dispatch the wake release pushes.
+    private static async System.Threading.Tasks.Task AppendIssuedAuditAsync(
+        TaskIssued issued,
+        IAuditStore audit,
+        CancellationToken cancellationToken)
+        => await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: issued.EngagementId.Value,
+                operatorId: issued.IssuedBy.Value,
+                implantId: issued.ImplantId.Value,
+                taskId: issued.TaskId.Value,
+                verb: issued.Verb,
+                kind: AuditEventKind.TaskIssued,
+                payload: issued.Arguments,
+                output: null,
+                outcome: issued.TaskId.ToString(),
+                at: issued.CreatedAt),
+            cancellationToken);
 
     private static async Task<IResult> ListAsync(
         string engagementId,

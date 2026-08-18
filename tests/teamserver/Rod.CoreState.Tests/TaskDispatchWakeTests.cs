@@ -79,6 +79,30 @@ public class TaskDispatchWakeTests
     }
 
     [Fact]
+    public async Task IssuedTask_RunsTheIssuedRecord_BeforeTheWakeReleases()
+    {
+        var h = await HarnessAsync();
+        var waiting = h.Wake.WaitAsync(h.Implant.Id);
+        Assert.False(waiting.IsCompleted);
+
+        var recordRanBeforeTheRelease = false;
+        await h.Service.IssueAsync(
+            TaskFor(h, "shell.exec"),
+            onIssued: (_, _) =>
+            {
+                // The issuance's durable record composes before the release:
+                // the push dispatch the wake starts audits TaskDispatched on
+                // the stream thread, and it must not beat the TaskIssued it
+                // follows into the trail (architecture.md Sec 11).
+                recordRanBeforeTheRelease = !waiting.IsCompleted;
+                return Task.CompletedTask;
+            });
+
+        Assert.True(recordRanBeforeTheRelease);
+        await waiting;
+    }
+
+    [Fact]
     public async Task RequeuedDispatch_ReleasesTheWake()
     {
         var h = await HarnessAsync();
