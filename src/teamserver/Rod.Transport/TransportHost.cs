@@ -178,6 +178,15 @@ public static class TransportHost
         services.AddSingleton<HandshakeService>();
         services.AddSingleton<TaskService>();
         services.AddSingleton<ImplantService>();
+        // The beacon compositions every transport shares (architecture.md
+        // Sec 8): the upstream frame ingest (results, exfil, staged pulls,
+        // channel output) and the downstream tasking marshal (signed
+        // TaskRequests, dispatch audit, staged chunk runs). The gRPC stream,
+        // the DNS bridge, and the plain-HTTP envelope check-in all route
+        // through this pair, so a frame is captured and a task delivered
+        // identically regardless of which transport carried it.
+        services.AddSingleton<Endpoints.BeaconIngest>();
+        services.AddSingleton<Endpoints.BeaconTasking>();
 
         // Session staleness sweep (architecture.md Sec 10.3): registered only
         // when a configuration is supplied -- the composition root always has

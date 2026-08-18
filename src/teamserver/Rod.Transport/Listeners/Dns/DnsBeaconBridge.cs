@@ -4,10 +4,9 @@ using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Live;
-using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
-using Rod.V1;
+using Rod.Transport.Endpoints;
 // The domain entity shares its name with the BCL Task; this file uses the
 // Rod.CoreState.Tasks types (TaskId, TaskOutcome, TaskCompleted) but never the
 // entity by name, so pin Task to the BCL type the signatures need.
@@ -46,7 +45,7 @@ internal sealed class DnsBeaconBridge
     private readonly IAuditStore _audit;
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
-    private readonly IImplantCertificateAuthority _ca;
+    private readonly BeaconTasking _tasking;
     private readonly DnsCheckInNames.ResultReassembler _results = new();
 
     public DnsBeaconBridge(
@@ -55,14 +54,14 @@ internal sealed class DnsBeaconBridge
         IAuditStore audit,
         ILiveEventBus bus,
         TimeProvider clock,
-        IImplantCertificateAuthority ca)
+        BeaconTasking tasking)
     {
         _sessions = sessions;
         _tasks = tasks;
         _audit = audit;
         _bus = bus;
         _clock = clock;
-        _ca = ca;
+        _tasking = tasking;
     }
 
     /// <summary>
@@ -101,16 +100,7 @@ internal sealed class DnsBeaconBridge
             return null;
         }
 
-        var request = new TaskRequest
-        {
-            TaskId = dispatched.TaskId.ToString(),
-            Verb = dispatched.Verb,
-            Arguments = dispatched.Arguments,
-        };
-        request.Signature = ByteString.CopyFrom(
-            _ca.SignTasking(dispatched.ImplantId.ToString(), request.TaskId, request.Verb, request.Arguments));
-
-        var marshaled = request.ToByteArray();
+        var marshaled = _tasking.BuildSignedRequest(dispatched).ToByteArray();
         if (marshaled.Length > MaxTaskRequestBytes)
         {
             // Too big for a datagram answer: hand it back to the queue so a
@@ -119,23 +109,10 @@ internal sealed class DnsBeaconBridge
             return null;
         }
 
-        // The dispatch is recorded with the same shape the beacon stream
+        // The dispatch is recorded with the same shape every beacon transport
         // writes (architecture.md Sec 11): attributed to the operator whose
         // tasking it carries out, the outcome the dispatched task id.
-        await _audit.AppendAsync(
-            AuditEvent.Fact(
-                eventId: Guid.NewGuid(),
-                engagementId: dispatched.EngagementId.Value,
-                operatorId: dispatched.IssuedBy.Value,
-                implantId: dispatched.ImplantId.Value,
-                taskId: dispatched.TaskId.Value,
-                verb: dispatched.Verb,
-                kind: AuditEventKind.TaskDispatched,
-                payload: dispatched.Arguments,
-                output: null,
-                outcome: dispatched.TaskId.ToString(),
-                at: dispatched.DispatchedAt),
-            cancellationToken);
+        await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
         return marshaled;
     }
 
