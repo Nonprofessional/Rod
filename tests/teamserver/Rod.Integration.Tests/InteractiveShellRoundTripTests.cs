@@ -189,6 +189,10 @@ public class InteractiveShellRoundTripTests
         await call.RequestStream.CompleteAsync();
     }
 
+    // The deadline every downstream read waits under: a frame that never
+    // arrives must fail the test, not park it forever.
+    private static readonly TimeSpan ReadDeadline = TimeSpan.FromSeconds(30);
+
     // Reads downstream frames until the TaskRequest for taskId arrives. The
     // handshake precedes tasking; other kind-bearing downstream frames are
     // skipped (a channel input racing the dispatch, never before it).
@@ -197,7 +201,7 @@ public class InteractiveShellRoundTripTests
     {
         while (true)
         {
-            Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None), "stream ended early");
+            Assert.True(await MoveNextAsync(call, "task request"), "stream ended early");
             var frame = call.ResponseStream.Current;
             if (frame.Kind != FrameKind.Unspecified)
                 continue;
@@ -214,13 +218,34 @@ public class InteractiveShellRoundTripTests
     {
         while (true)
         {
-            Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None), "stream ended early");
+            Assert.True(await MoveNextAsync(call, "channel input"), "stream ended early");
             var frame = call.ResponseStream.Current;
             if (frame.Kind != FrameKind.ChannelInput)
                 continue;
             var input = ChannelInput.Parser.ParseFrom(frame.Payload);
             if (input.TaskId == taskId)
                 return input;
+        }
+    }
+
+    // One bounded downstream read: the raw gRPC wait carries no deadline of
+    // its own, and a hung suite costs an hour -- a missing frame fails the
+    // test with what it was waiting for instead.
+    private static async Task<bool> MoveNextAsync(
+        AsyncDuplexStreamingCall<Frame, Frame> call, string awaiting)
+    {
+        using var deadline = new CancellationTokenSource(ReadDeadline);
+        try
+        {
+            return await call.ResponseStream.MoveNext(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
+        }
+        catch (RpcException) when (deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
         }
     }
 

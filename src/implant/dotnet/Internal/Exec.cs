@@ -201,9 +201,12 @@ internal static class Core
         return (TaskOutcome.Succeeded, string.Join("\n", lines));
     }
 
-    // The shell and its command flag for shell.exec on the current OS. Linux/macOS
-    // use sh -c; Windows uses cmd /c.
-    private static (string Shell, string Flag) PlatformShell()
+    // The shell and its command flag for shell tasking on the current OS.
+    // Linux/macOS use sh; Windows uses cmd. Shared by shell.exec (which runs
+    // one command through -c/-c-style flags) and shell.interact (which holds
+    // the shell open on a channel); the interactive caller does not pass the
+    // flag -- it talks to the shell, not to one command.
+    internal static (string Shell, string Flag) PlatformShell()
         => OperatingSystem.IsWindows() ? ("cmd.exe", "/c") : ("sh", "-c");
 
     // Joins stdout and stderr on a newline so a Failed outcome shows both, and a

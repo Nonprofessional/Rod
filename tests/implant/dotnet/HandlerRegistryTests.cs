@@ -17,6 +17,7 @@ public class HandlerRegistryTests
     private static readonly string[] ReferenceVerbs =
     {
         "shell.exec",
+        "shell.interact",
         "file.push",
         "file.pull",
         "recon.portscan",
@@ -39,7 +40,7 @@ public class HandlerRegistryTests
     // point of the intersection.
     private static readonly string[] Stage2ClassVerbs =
     {
-        "shell.exec", "file.push", "file.pull",
+        "shell.exec", "shell.interact", "file.push", "file.pull",
         "recon.portscan", "recon.hostenum", "recon.service",
         "lateral.move", "lateral.token", "lateral.exec_remote",
         "persist.install", "persist.remove", "persist.list",
@@ -105,6 +106,30 @@ public class HandlerRegistryTests
         // what a stager bake advertises.
         var registry = HandlerRegistry.Default(enroll: null);
         Assert.Equal(new[] { "file.pull" }, registry.AdvertisedVerbs(new[] { "file.pull" }));
+    }
+
+    [Fact]
+    public void ChannelFor_ResolvesTheChannelArm_AndNullsEverythingElse()
+    {
+        // The streaming task shape's registrations (architecture.md Sec 10.3):
+        // shell.interact is a channel verb, every one-shot verb is not.
+        var registry = HandlerRegistry.Default(enroll: null);
+        Assert.NotNull(registry.ChannelFor("shell.interact"));
+        Assert.Null(registry.ChannelFor("shell.exec"));
+        Assert.Null(registry.ChannelFor("file.push"));
+    }
+
+    [Fact]
+    public void Dispatch_ChannelVerbOnTheOneShotPath_FailsCleanly()
+    {
+        // A dispatch path with no channel to carry it (a poll cycle, a future
+        // stream-less transport) must refuse the verb at the registry rather
+        // than losing it -- the fallback registration keeps the verb
+        // dispatchable everywhere the registry is used.
+        var registry = HandlerRegistry.Default(enroll: null);
+        var (outcome, output, _) = registry.Dispatch("shell.interact", "");
+        Assert.Equal(TaskOutcome.Failed, outcome);
+        Assert.Contains("live channel", output);
     }
 
     [Fact]

