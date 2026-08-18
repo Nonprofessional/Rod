@@ -14,6 +14,7 @@ public class ImplantClassCapabilitiesTests
 {
     [Theory]
     [InlineData(ImplantClass.Stage2, "shell.exec")]
+    [InlineData(ImplantClass.Stage2, "shell.interact")]
     [InlineData(ImplantClass.Stage2, "file.push")]
     [InlineData(ImplantClass.Stage2, "file.pull")]
     [InlineData(ImplantClass.Stage2, "recon.portscan")]
@@ -86,7 +87,7 @@ public class ImplantClassCapabilitiesTests
         Assert.Equal(
             new[]
             {
-                "shell.exec", "file.push", "file.pull",
+                "shell.exec", "shell.interact", "file.push", "file.pull",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",

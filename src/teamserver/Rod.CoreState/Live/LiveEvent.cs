@@ -66,6 +66,22 @@ public sealed record LiveEvent(
         => new(engagement, LiveEventKind.TaskCompleted, operatorId, implantId, taskId, payload, at);
 
     /// <summary>
+    /// Builds a channel-output event (architecture.md Sec 10.3): one streamed
+    /// chunk of a live task channel, attributed to the operator whose task the
+    /// channel runs. The payload is the chunk itself so a connected operator
+    /// appends it to the live view; the task's accumulating transcript is the
+    /// durable record.
+    /// </summary>
+    public static LiveEvent ChannelOutput(
+        EngagementId engagement,
+        OperatorId operatorId,
+        ImplantId implantId,
+        TaskId taskId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.ChannelOutput, operatorId, implantId, taskId, payload, at);
+
+    /// <summary>
     /// Builds an implant-retired event (architecture.md Sec 7). Carries
     /// the implant id and the retiring operator; no task is involved, so the
     /// task id is null. <paramref name="payload"/> is a short description peers

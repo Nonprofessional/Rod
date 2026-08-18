@@ -32,6 +32,14 @@ public enum LiveEventKind
     TaskCompleted,
 
     /// <summary>
+    /// A streaming task's channel produced output (architecture.md Sec 10.3,
+    /// the streaming task shape). The chunk reaches every connected operator
+    /// session as it streams, so a live channel reads like a terminal; the
+    /// task's accumulating transcript remains the durable record.
+    /// </summary>
+    ChannelOutput,
+
+    /// <summary>
     /// An implant was retired (architecture.md Sec 7). Lets connected
     /// operators see an implant leave the live fleet the moment it is taken out
     /// of operation, rather than waiting for it to drop off presence on its

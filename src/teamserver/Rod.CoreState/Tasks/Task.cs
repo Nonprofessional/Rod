@@ -13,7 +13,9 @@ namespace Rod.CoreState.Tasks;
 /// The verb is a namespaced capability (architecture.md Sec 10), e.g.
 /// <c>shell.exec</c>; <see cref="Arguments"/> is its input (one-shot verbs carry
 /// a single argument string). <see cref="Output"/> and <see cref="Outcome"/> are
-/// set when the implant returns a result. Entity shape only: this type holds the
+/// set when the implant returns a result; a streaming task's
+/// <see cref="Output"/> accumulates its channel transcript as it streams
+/// (architecture.md Sec 10.3). Entity shape only: this type holds the
 /// lifecycle and the captured result, nothing more.
 ///
 /// <see cref="StagedBytes"/> is the per-verb typed arm (architecture.md Sec 10):
@@ -37,6 +39,15 @@ public sealed class Task
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? DispatchedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
+
+    // The transcript ceiling for a streaming task: a channel that produces
+    // without bound must not pin server memory, so appends past the cap stop
+    // and the transcript carries a one-time marker instead. Public because
+    // callers that marshal a transcript (the operator listings, the report)
+    // size against the same bound the entity enforces.
+    public const int MaxTranscriptChars = 1024 * 1024;
+    private const string TruncationMarker = "\n...[transcript truncated]";
+    private bool _transcriptTruncated;
 
     private Task(
         TaskId id,
@@ -105,16 +116,46 @@ public sealed class Task
     }
 
     /// <summary>
+    /// Appends one chunk of streamed output to the task's transcript
+    /// (architecture.md Sec 10.3, the streaming task shape). Only legal from
+    /// Dispatched -- a channel streams while its task runs. The transcript is
+    /// capped: a channel that produces without bound must not pin server
+    /// memory, so once the cap is reached the append becomes a no-op and the
+    /// transcript keeps a one-time truncation marker.
+    /// </summary>
+    public void AppendOutput(string chunk)
+    {
+        if (Status != TaskStatus.Dispatched)
+            throw new InvalidOperationException($"Task {Id} cannot receive streamed output in {Status}.");
+
+        if (_transcriptTruncated)
+            return;
+
+        var total = (Output?.Length ?? 0) + chunk.Length;
+        if (total > MaxTranscriptChars)
+        {
+            Output = (Output ?? string.Empty)[..Math.Max(0, MaxTranscriptChars - TruncationMarker.Length)]
+                + TruncationMarker;
+            _transcriptTruncated = true;
+            return;
+        }
+
+        Output += chunk;
+    }
+
+    /// <summary>
     /// Records the implant's result and completes the task. Only legal from
     /// Dispatched. <paramref name="output"/> is the captured stdout/stderr (or
-    /// equivalent); <paramref name="outcome"/> is success vs. failure.
+    /// equivalent); <paramref name="outcome"/> is success vs. failure. A task
+    /// that streamed a transcript keeps it: the final output is appended, not
+    /// substituted, so a streaming task's record is the whole session.
     /// </summary>
     public void Complete(string output, TaskOutcome outcome, DateTimeOffset at)
     {
         if (Status != TaskStatus.Dispatched)
             throw new InvalidOperationException($"Task {Id} cannot be completed from {Status}.");
 
-        Output = output;
+        Output = _transcriptTruncated ? Output : Output + output;
         Outcome = outcome;
         Status = TaskStatus.Completed;
         CompletedAt = at;

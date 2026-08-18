@@ -22,6 +22,14 @@ public static class CoreCapabilities
     /// <summary>One-shot shell command execution.</summary>
     public const string ShellExec = "shell.exec";
 
+    /// <summary>
+    /// The interactive shell: shell.exec's streaming shape
+    /// (architecture.md Sec 10.3). The task opens a session-scoped channel;
+    /// the operator's input flows down it and the shell's output streams back
+    /// until the operator closes stdin or the shell exits.
+    /// </summary>
+    public const string ShellInteract = "shell.interact";
+
     /// <summary>Upload a file onto the target.</summary>
     public const string FilePush = "file.push";
 
@@ -49,6 +57,7 @@ public static class CoreCapabilities
     public static readonly CapabilityDescriptor[] All =
     {
         CapabilityDescriptor.Of(ShellExec, CapabilityCategory.Core, "1.0"),
+        CapabilityDescriptor.Of(ShellInteract, CapabilityCategory.Core, "1.0"),
         CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk),
         CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
     };
@@ -56,6 +65,6 @@ public static class CoreCapabilities
     /// <summary>Every core verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        ShellExec, FilePush, FilePull,
+        ShellExec, ShellInteract, FilePush, FilePull,
     };
 }

