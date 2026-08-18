@@ -185,6 +185,14 @@ message HandshakeRequest {
   ProtocolVersion version = 1;
   string implant_id = 2;
   repeated string capabilities = 3;
+  // The implant's opt-in to the tasking replay-nonce arm (architecture.md
+  // Sec 9 -- tasking replay nonces), the negotiated addition the evolution
+  // rules require: absent or false, every dispatched TaskRequest for this
+  // implant keeps the nonce-less shape and the four-element signed tuple, so
+  // a Tier 0 implant interoperates unchanged. Set once, the server answers
+  // replay_nonces on the HandshakeResponse and stamps each dispatched task
+  // with a per-implant monotonic task_nonce covered by the signature.
+  optional bool replay_nonces = 4;
 }
 
 // Outcome of the handshake. OK means presence is recorded and the stream is
@@ -213,6 +221,14 @@ message HandshakeResponse {
   HandshakeStatus status = 1;
   ProtocolVersion version = 2;
   string engagement_id = 3;
+  // Echoed true when the server accepted the implant's replay_nonces
+  // advertisement (HandshakeRequest.replay_nonces): from this handshake on,
+  // every dispatched TaskRequest for this implant carries task_nonce and its
+  // signature covers the five-element tuple, and a nonce-negotiating implant
+  // refuses nonce-less tasking. Absent on a server serving the implant's
+  // request without the arm -- the fallback that keeps older pairs
+  // interoperating.
+  optional bool replay_nonces = 4;
 }
 
 // Tasking over the CheckIn stream. After the handshake the stream
@@ -251,12 +267,27 @@ message HandshakeResponse {
 // An implant that does not implement the arm ignores the unknown field and
 // fails the verb on its own grammar -- the fallback the evolution rules
 // require, with no new mandatory work on the task path.
+//
+// task_nonce is the replay-nonce arm (architecture.md Sec 9 -- tasking replay
+// nonces), negotiated at handshake: present only on tasking for an implant
+// whose handshake set HandshakeRequest.replay_nonces, and then on every
+// dispatched task. The value is per-implant monotonic -- strictly increasing
+// across dispatches, sessions, and transports -- and a nonce-bearing task's
+// signature covers the five-element canonical tuple (implant_id, task_id,
+// verb, arguments, nonce-as-decimal-string), the nonce appended in the same
+// length-prefixed form as the other four. An implant that negotiated the arm
+// tracks the highest nonce it accepted and refuses any at or below it, so a
+// captured frame replayed to the same implant fails there; the refusal is
+// reported as the task's Failed result, surfacing the attack on the task.
+// An implant that never advertised keeps receiving nonce-less tasking with
+// the original four-element tuple, unchanged.
 message TaskRequest {
   string task_id = 1;
   string verb = 2;
   string arguments = 3;
   bytes signature = 4;
   optional uint64 staged_bytes = 5;
+  optional uint64 task_nonce = 6;
 }
 
 // How a task turned out, as reported by the implant.

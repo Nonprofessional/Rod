@@ -122,19 +122,35 @@ public sealed class HandshakeService
         }
 
         // 6. Open (or reuse) the session. The capabilities advertised here gate
-        //    tasking dispatch (architecture.md Sec 10). A session is the
-        //    implant's live channel, not one TCP connection: the registry reuses
-        //    the active session on a reconnect (a poll check-in or a flapped
-        //    stream) and only opens a new entity after the prior one closed.
-        //    Whether this handshake reused one is returned so the transport
-        //    writes the SessionOpened audit record only for a genuinely new
-        //    session -- a poll cadence must not flood the engagement trail.
+        // tasking dispatch (architecture.md Sec 10). A session is the
+        // implant's live channel, not one TCP connection: the registry reuses
+        // the active session on a reconnect (a poll check-in or a flapped
+        // stream) and only opens a new entity after the prior one closed.
+        // Whether this handshake reused one is returned so the transport
+        // writes the SessionOpened audit record only for a genuinely new
+        // session -- a poll cadence must not flood the engagement trail.
         var priorActive = await _sessions.GetActiveAsync(command.ImplantId, cancellationToken);
         var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);
 
+        // 7. Replay-nonce negotiation (architecture.md Sec 9 -- tasking replay
+        //    nonces). An implant that advertises the arm gets it for life: the
+        //    flag is sticky on the implant, so every later dispatch -- any
+        //    session, any transport -- carries the nonce shape, and a handshake
+        //    that stops advertising cannot downgrade tasking back to the
+        //    nonce-less form. The result carries the effective state so the
+        //    transport echoes it on the wire and the implant knows which
+        //    verification posture to enforce.
+        var replayNonces = implant.ReplayNonces || command.ReplayNonces;
+        if (command.ReplayNonces && !implant.ReplayNonces)
+        {
+            implant.EnableReplayNonces();
+            await _implants.SaveAsync(implant, cancellationToken);
+        }
+
         return new HandshakeResult(
             session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now,
-            ReusedSession: priorActive is not null);
+            ReusedSession: priorActive is not null,
+            ReplayNonces: replayNonces);
     }
 }
 
@@ -147,13 +163,17 @@ public sealed class HandshakeService
 /// presenting client certificate (read by the transport from the Rod engagement
 /// extension, architecture.md Sec 9). The service compares it against the
 /// implant's enrolled engagement for the mTLS identity check.
+/// <see cref="ReplayNonces"/> is the implant's advertisement of the tasking
+/// replay-nonce arm (architecture.md Sec 9); the service makes it sticky on the
+/// implant and reports the effective state back on the result.
 /// </summary>
 public sealed record HandshakeCommand(
     ImplantId ImplantId,
     int MajorVersion,
     int MinorVersion,
     IReadOnlyCollection<string> Capabilities,
-    EngagementId? CertificateEngagementId);
+    EngagementId? CertificateEngagementId,
+    bool ReplayNonces = false);
 
 /// <summary>
 /// Result of a successful handshake: the session the implant holds (freshly
@@ -163,7 +183,9 @@ public sealed record HandshakeCommand(
 /// of the handshake. <see cref="ReusedSession"/> tells the transport this
 /// handshake refreshed an existing session, so the SessionOpened audit record is
 /// written only for a new one. The transport echoes the engagement id back so
-/// the implant can confirm its binding.
+/// the implant can confirm its binding. <see cref="ReplayNonces"/> is the
+/// effective replay-nonce state for this implant (sticky once advertised), for
+/// the transport to echo on the handshake response.
 /// </summary>
 public sealed record HandshakeResult(
     SessionId SessionId,
@@ -171,4 +193,5 @@ public sealed record HandshakeResult(
     EngagementId EngagementId,
     OperatorId DeployedBy,
     DateTimeOffset At,
-    bool ReusedSession = false);
+    bool ReusedSession = false,
+    bool ReplayNonces = false);

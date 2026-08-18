@@ -130,7 +130,7 @@ internal sealed class EnvelopeBeaconCheckIn
         // The implant speaks first here too: the first frame is the handshake.
         HandshakeRequest handshakeRequest;
         if (frames.Count == 0 || !TryParseHandshake(frames[0], out handshakeRequest))
-            return EnvelopeResponse(Response(HandshakeStatus.Unspecified, engagementId: null));
+            return EnvelopeResponse(Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
 
         var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
@@ -251,9 +251,10 @@ internal sealed class EnvelopeBeaconCheckIn
                     MajorVersion: request.Version?.Major ?? -1,
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
-                    CertificateEngagementId: identity.EngagementId),
+                    CertificateEngagementId: identity.EngagementId,
+                    ReplayNonces: request.ReplayNonces),
                 CancellationToken.None);
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result);
+            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
         }
         catch (HandshakeException ex)
         {
@@ -266,16 +267,17 @@ internal sealed class EnvelopeBeaconCheckIn
                 HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
                 _ => HandshakeStatus.Unspecified,
             };
-            return (Response(status, engagementId: null), Handshake: null);
+            return (Response(status, engagementId: null, replayNonces: false), Handshake: null);
         }
     }
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId)
+    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
+            ReplayNonces = replayNonces,
         };
 
     private static Frame HandshakeFrame(HandshakeResponse response)

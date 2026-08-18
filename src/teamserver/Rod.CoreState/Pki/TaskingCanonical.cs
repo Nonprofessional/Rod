@@ -26,16 +26,36 @@ public static class TaskingCanonical
     /// characters of any simpler scheme) cannot collide.
     /// </summary>
     public static byte[] Bytes(string implantId, string taskId, string verb, string arguments)
+        => Bytes(implantId, taskId, verb, arguments, nonce: null);
+
+    /// <summary>
+    /// Builds the canonical bytes for a task's signed tuple, extended with the
+    /// replay nonce when the dispatch carries one (architecture.md Sec 9 --
+    /// tasking replay nonces). The nonce is the fifth element in the same
+    /// length-prefixed form, its value the nonce's unsigned decimal string, so
+    /// every implant language encodes it identically from the wire field.
+    /// Nonce-less tasking keeps the original four-element tuple byte-for-byte:
+    /// the extension is negotiated, never imposed (extending/implants.md,
+    /// evolution rule 2).
+    /// </summary>
+    public static byte[] Bytes(string implantId, string taskId, string verb, string arguments, ulong? nonce)
     {
         var id = Encoding.UTF8.GetBytes(implantId);
         var task = Encoding.UTF8.GetBytes(taskId);
         var v = Encoding.UTF8.GetBytes(verb);
         var args = Encoding.UTF8.GetBytes(arguments);
-        var buffer = new byte[16 + id.Length + task.Length + v.Length + args.Length];
+        var n = nonce is { } value
+            ? Encoding.UTF8.GetBytes(value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            : null;
+
+        var buffer = new byte[16 + id.Length + task.Length + v.Length + args.Length
+                              + (n is null ? 0 : 4 + n.Length)];
         var offset = WriteField(buffer, 0, id);
         offset = WriteField(buffer, offset, task);
         offset = WriteField(buffer, offset, v);
-        WriteField(buffer, offset, args);
+        offset = WriteField(buffer, offset, args);
+        if (n is not null)
+            WriteField(buffer, offset, n);
         return buffer;
     }
 

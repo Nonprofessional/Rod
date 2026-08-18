@@ -53,6 +53,17 @@ public sealed class TaskService
     private readonly ITaskCapabilityResolver _capabilities;
     private readonly ITaskDispatchWake? _wake;
 
+    // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking
+    // replay nonces). Monotonic for the implant's life in this process, across
+    // sessions and transports, so a negotiating implant never sees the same
+    // nonce twice and a captured frame replayed after a reconnect still falls
+    // at or below the floor it already accepted. The floor is per-process:
+    // a restarted teamserver restarts the count, which the signing posture
+    // already tolerates -- the threat model is an untrusted transport hop, not
+    // a compromised teamserver, and the task queue itself is equally
+    // per-process in the in-memory adapters.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ImplantId, ulong> _nonces = new();
+
     public TaskService(
         ITaskRepository tasks,
         IImplantRepository implants,
@@ -254,6 +265,10 @@ public sealed class TaskService
     /// or returns null when nothing is queued. What the beacon stream drains on
     /// each check-in. The claim is atomic inside the repository adapter, so a
     /// reconnect overlap for one implant cannot dispatch the same task twice.
+    /// A claimed task for an implant that negotiated the replay-nonce arm
+    /// (architecture.md Sec 9) is stamped with the next per-implant nonce --
+    /// every claim, including a requeue's re-claim, gets a fresh value, so the
+    /// transport signs and delivers the five-element tuple.
     /// </summary>
     public async System.Threading.Tasks.Task<TaskDispatched?> DispatchNextAsync(
         ImplantId implant,
@@ -263,6 +278,11 @@ public sealed class TaskService
         if (task is null)
             return null;
 
+        ulong? nonce = null;
+        var record = await _implants.FindAsync(implant, cancellationToken);
+        if (record is { ReplayNonces: true })
+            nonce = _nonces.AddOrUpdate(implant, 1, (_, last) => last + 1);
+
         return new TaskDispatched(
             task.Id,
             task.EngagementId,
@@ -271,7 +291,8 @@ public sealed class TaskService
             task.Verb,
             task.Arguments,
             task.StagedBytes,
-            task.DispatchedAt!.Value);
+            task.DispatchedAt!.Value,
+            Nonce: nonce);
     }
 
     /// <summary>
@@ -413,7 +434,8 @@ public sealed record TaskDispatched(
     string Verb,
     string Arguments,
     long? StagedBytes,
-    DateTimeOffset DispatchedAt);
+    DateTimeOffset DispatchedAt,
+    ulong? Nonce = null);
 
 /// <summary>
 /// Result of capturing a task's outcome: the full attributed, scoped record,

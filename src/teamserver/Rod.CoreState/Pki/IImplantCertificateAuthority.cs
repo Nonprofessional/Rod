@@ -73,8 +73,11 @@ public interface IImplantCertificateAuthority
     /// implant. The implant verifies against the CA certificate it already
     /// holds from enrollment or its pinned bundle, so tasking trust rides the
     /// same key as enrollment trust and no new key distribution is needed.
+    /// A non-null <paramref name="nonce"/> (the replay-nonce arm,
+    /// architecture.md Sec 9) appends the nonce to the canonical tuple, so the
+    /// signature covers it exactly as the negotiating implant verifies.
     /// </summary>
-    byte[] SignTasking(string implantId, string taskId, string verb, string arguments);
+    byte[] SignTasking(string implantId, string taskId, string verb, string arguments, ulong? nonce = null);
 }
 
 /// <summary>The identity to bind into an issued implant certificate.</summary>

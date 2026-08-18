@@ -42,9 +42,11 @@ internal sealed class BeaconTasking
 
     /// <summary>
     /// Builds the signed <see cref="TaskRequest"/> for a dispatched task: the
-    /// typed arm's staged marker when the task carries server-side payload, and
-    /// the CA's command signature over the canonical
-    /// (implant_id, task_id, verb, arguments) tuple (architecture.md Sec 9) --
+    /// typed arm's staged marker when the task carries server-side payload, the
+    /// replay nonce when the implant negotiated that arm (architecture.md
+    /// Sec 9 -- the nonce rides the field and the signature together, so the
+    /// five-element tuple the negotiating implant verifies is exactly what was
+    /// signed), and the CA's command signature over the canonical tuple --
     /// the implant id binds the task to its intended executor, and the implant
     /// verifies against the CA it already trusts before executing.
     /// </summary>
@@ -62,8 +64,10 @@ internal sealed class BeaconTasking
         // authority; the marker only switches the implant's grammar.
         if (dispatched.StagedBytes is { } stagedBytes)
             request.StagedBytes = (ulong)stagedBytes;
+        if (dispatched.Nonce is { } nonce)
+            request.TaskNonce = nonce;
         request.Signature = ByteString.CopyFrom(
-            _ca.SignTasking(dispatched.ImplantId.ToString(), request.TaskId, request.Verb, request.Arguments));
+            _ca.SignTasking(dispatched.ImplantId.ToString(), request.TaskId, request.Verb, request.Arguments, dispatched.Nonce));
         return request;
     }
 

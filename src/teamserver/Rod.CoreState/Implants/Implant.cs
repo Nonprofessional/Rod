@@ -53,6 +53,16 @@ public sealed class Implant
     /// <summary>True once the implant has been taken out of operation.</summary>
     public bool IsRetired => RetiredAt is not null;
 
+    /// <summary>
+    /// True once this implant negotiated the tasking replay-nonce arm
+    /// (architecture.md Sec 9). Sticky: set at the first handshake whose
+    /// request advertised <c>replay_nonces</c> and never cleared, so tasking
+    /// for this implant keeps the nonce shape from then on -- a later
+    /// handshake cannot downgrade it back to nonce-less tasking. An implant
+    /// that never advertises keeps the original shape and this stays false.
+    /// </summary>
+    public bool ReplayNonces { get; private set; }
+
     private Implant(
         ImplantId id,
         EngagementId engagementId,
@@ -137,6 +147,23 @@ public sealed class Implant
             return false;
 
         RetiredAt = at;
+        return true;
+    }
+
+    /// <summary>
+    /// Marks the implant as replay-nonce negotiating (architecture.md Sec 9 --
+    /// tasking replay nonces). Idempotent and one-way: returns whether this
+    /// call flipped it, so the handshake use case persists only on a change.
+    /// Once set, dispatched tasking for this implant carries a per-implant
+    /// monotonic nonce covered by the tasking signature for the rest of the
+    /// implant's life.
+    /// </summary>
+    public bool EnableReplayNonces()
+    {
+        if (ReplayNonces)
+            return false;
+
+        ReplayNonces = true;
         return true;
     }
 }

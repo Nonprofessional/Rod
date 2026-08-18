@@ -35,6 +35,9 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
             .HasConversion(IdConverters.ImplantId)
             .HasColumnName("parent_implant_id");
         builder.Property(i => i.RetiredAt).HasColumnName("retired_at");
+        // The sticky replay-nonce negotiation flag (architecture.md Sec 9);
+        // false for implants that predate the arm, which never advertised it.
+        builder.Property(i => i.ReplayNonces).HasColumnName("replay_nonces");
         // IsRetired is a computed expression; never mapped.
 
         // Engagement scoping is structural: index the engagement column so

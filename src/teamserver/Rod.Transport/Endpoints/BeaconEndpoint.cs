@@ -99,7 +99,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         catch (InvalidProtocolBufferException)
         {
             // The first payload was not a recognizable handshake request.
-            await WriteHandshakeAsync(responseStream, Response(HandshakeStatus.Unspecified, engagementId: null));
+            await WriteHandshakeAsync(responseStream,
+                Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
             return;
         }
 
@@ -373,15 +374,17 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     MajorVersion: request.Version?.Major ?? -1,
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
-                    CertificateEngagementId: certIdentity?.EngagementId),
+                    CertificateEngagementId: certIdentity?.EngagementId,
+                    ReplayNonces: request.ReplayNonces),
                 CancellationToken.None);
 
             // The full result is returned (not just the session id) so CheckIn can
             // compose the SessionOpened audit write from it -- a handshake is
             // implant-initiated, so the event is attributed to the implant's
             // DeployedBy and needs the engagement/implant/session ids the result
-            // carries (architecture.md Sec 11).
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString()), result);
+            // carries (architecture.md Sec 11). The replay-nonce state rides
+            // the response echo so the implant knows its verification posture.
+            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
         }
         catch (HandshakeException ex)
         {
@@ -394,7 +397,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
                 _ => HandshakeStatus.Unspecified,
             };
-            return (Response(status, engagementId: null), Handshake: null);
+            return (Response(status, engagementId: null, replayNonces: false), Handshake: null);
         }
     }
 
@@ -409,12 +412,13 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private static ImplantId? ParseImplantId(string? text)
         => ImplantId.TryParse(text, out var id) ? id : null;
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId)
+    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
+            ReplayNonces = replayNonces,
         };
 
     private static Task WriteHandshakeAsync(IServerStreamWriter<Frame> stream, HandshakeResponse response)

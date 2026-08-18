@@ -111,7 +111,7 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     /// </summary>
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
-    public byte[] SignTasking(string implantId, string taskId, string verb, string arguments)
+    public byte[] SignTasking(string implantId, string taskId, string verb, string arguments, ulong? nonce = null)
     {
         // The ctor attached the loaded CA private key to the retained copy, so
         // the same key that signs implant leaves signs dispatched tasking
@@ -119,7 +119,7 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
         using var key = _caCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("The CA certificate does not carry an RSA private key.");
         return key.SignData(
-            TaskingCanonical.Bytes(implantId, taskId, verb, arguments),
+            TaskingCanonical.Bytes(implantId, taskId, verb, arguments, nonce),
             HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
     }
 
