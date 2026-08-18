@@ -140,19 +140,58 @@ work in `PermittedVerbs`). An engagement whose ROE profile omits your verb
 refuses it at queue time with an audit record naming the violated rule --
 build the metadata as if the operator's report depends on it, because it does.
 
-## Build-time transforms (planned)
+## Build-time transforms
 
 Build-time artifact transformation -- the slot where Metasploit put its
 encoders and payload encryption -- follows the same pattern as a capability
-module, one layer down: a post-build `IPayloadTransform` chain,
-config-listed under `Build:Transforms`, each transform owning its key
-material and its decode stub end to end. Nothing ships in-tree; the chain is
-the seam, and the fingerprint and `PayloadBuilt` audit record always describe
-the bytes actually stored (so the engagement report never lies about what a
-transform produced). See the todo list for the acceptance criteria; until it
-ships, a transform author wraps the built artifact outside the pipeline with
-the same guarantees to keep (record what you produced, never lose
-attribution).
+module, one layer down ([architecture.md Sec 6](../architecture.md)). The
+platform ships only the seam; no transform ships in-tree, because concrete
+transforms sit on the sensitive side of the Sec 13 boundary and each one owns
+its key material and its decode contract end to end -- the teamserver
+generates none, stores none, and knows nothing about how the bytes unwrap on
+the target.
+
+Implement `IPayloadTransform`: name yourself (the name lands on the artifact
+and in the audit trail, so make it find the code), take the built bytes plus
+the build context (class, target, transport and beacon profiles), and return
+the transformed bytes plus a short metadata note:
+
+```csharp
+using Rod.BuildPipeline.PayloadBuild;
+
+public sealed class MyWrapTransform : IPayloadTransform
+{
+    public string Name => "my-wrap";
+
+    public Task<PayloadTransformOutput> ApplyAsync(
+        PayloadTransformInput input, CancellationToken cancellationToken = default)
+    {
+        var wrapped = MyCodec.Wrap(input.Artifact, key: /* yours, not the server's */);
+        return Task.FromResult(new PayloadTransformOutput(wrapped, Metadata: "v1"));
+    }
+}
+```
+
+Drop the assembly next to the teamserver binary and list it under
+`Build:Transforms`; the listed order is the application order, each
+transform's output feeding the next:
+
+```json
+{
+  "Build": {
+    "Transforms": [ "MyTransforms.MyWrapTransform, MyTransforms" ]
+  }
+}
+```
+
+The loader resolves assemblies only by that explicit list -- the same bounded
+shape as `Tradecraft:Modules` -- and a wrong entry fails startup loudly. The
+chain runs after the build unit and before anything is recorded, so the
+stored fingerprint covers exactly the transformed bytes and the
+`PayloadBuilt` audit event names every applied transform (with its metadata
+note): the engagement report never lies about what a transform produced.
+Remember the implant side is still yours -- nothing in-tree unwraps your
+bytes, so your decode stub travels with whatever artifact you ship.
 
 ## What stays out of the core, and why
 

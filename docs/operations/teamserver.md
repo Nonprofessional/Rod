@@ -75,12 +75,13 @@ standard `Section__Key` mapping):
 
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
-| `Listeners` | C2 ingress: one entry per socket -- `Name`, `Transport` (`Http` or `Mtls`), `BindAddress` (what Kestrel opens), `PublicEndpoint` (what implants dial; typically a redirector). mTLS entries terminate mutual TLS against the implant CA. | One loopback HTTP listener on `127.0.0.1:5080`. |
+| `Listeners` | C2 ingress: one entry per socket -- `Name`, `Transport` (`Http`, `Mtls`, or `Dns`), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS entries terminate mutual TLS against the implant CA; DNS entries bind a UDP socket. | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
 | `Pki` | An externally provisioned engagement CA as PEM files (`CaCertificatePath`, `CaPrivateKeyPath`, optional `CaPrivateKeyPassphrase`) -- production leaf issuance. Unparseable or mismatched material fails at startup, not at the first enrollment. RSA only. | The self-signed dev CA (key lives in process -- not for production). |
 | `Sessions:Staleness` | `Threshold` and `SweepInterval` for the session sweeper -- the close path for streams that die silently and for poll-mode check-in cadences. | 15-minute threshold, 1-minute sweep. |
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
+| `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
 
 ## Production posture
 

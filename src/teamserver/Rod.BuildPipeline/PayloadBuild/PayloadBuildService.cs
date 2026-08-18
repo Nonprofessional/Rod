@@ -10,8 +10,11 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// Sec 6). On a payload request it resolves the language's build unit, generates
 /// the per-implant material at request time (the key and the kill date are made
 /// here so each artifact is unique -- Sec 6/Sec 5.1), assembles the
-/// <see cref="BuildParams"/>, and asks the unit to build. Returns the
-/// fingerprinted artifact for the transport layer to record.
+/// <see cref="BuildParams"/>, asks the unit to build, and runs the post-build
+/// <see cref="PayloadTransformChain"/> over the result -- the transform seam
+/// (Sec 6): the stored bytes are the transformed bytes, the fingerprint covers
+/// them, and the applied transform names ride the artifact into the audit
+/// trail. Returns the fingerprinted artifact for the transport layer to record.
 ///
 /// Like <see cref="Rod.CoreState.Application.TaskService"/>, this service is
 /// audit-agnostic by design: it produces the build, and the transport endpoint
@@ -22,11 +25,28 @@ public sealed class PayloadBuildService
 {
     private readonly IBuildUnitRegistry _buildUnits;
     private readonly TimeProvider _clock;
+    private readonly PayloadTransformChain _transforms;
 
     public PayloadBuildService(IBuildUnitRegistry buildUnits, TimeProvider clock)
+        : this(buildUnits, clock, PayloadTransformChain.Empty)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the service with a post-build transform chain (architecture.md
+    /// Sec 6, the transform seam): the composition root passes the config-loaded
+    /// chain; the simpler constructor keeps the empty default so direct
+    /// constructions (the unit tests, bare hosts) see bytes exactly as the build
+    /// unit produced them.
+    /// </summary>
+    public PayloadBuildService(
+        IBuildUnitRegistry buildUnits,
+        TimeProvider clock,
+        PayloadTransformChain transforms)
     {
         _buildUnits = buildUnits;
         _clock = clock;
+        _transforms = transforms;
     }
 
     /// <summary>
@@ -55,7 +75,21 @@ public sealed class PayloadBuildService
             new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
             request.Stage2);
 
-        return await unit.BuildAsync(@params, cancellationToken);
+        var built = await unit.BuildAsync(@params, cancellationToken);
+
+        // The transform seam (architecture.md Sec 6): the chain runs over the
+        // unit's output before the artifact is recorded, so the fingerprint
+        // the operator sees and the trail stores cover exactly the bytes the
+        // target will run. An empty chain passes the bytes through untouched.
+        var (content, applied) = await _transforms.ApplyAsync(@params, built.Content, cancellationToken);
+        if (applied.Count == 0)
+            return built;
+
+        return BuildArtifact.Of(unit.Language, built.ArtifactId, @params, content, built.ContentType, built.BuiltAt)
+            with
+        {
+            Transforms = applied
+        };
     }
 
     // The kill date defaults to a window from build time when the caller does not

@@ -13,6 +13,12 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// fingerprint (architecture.md Sec 11). <see cref="Language"/> records which
 /// build unit compiled it -- the contract input is language-neutral, so the unit
 /// stamps the language on the result.
+///
+/// <see cref="Transforms"/> names every post-build transform that produced
+/// <see cref="Content"/> (architecture.md Sec 6, the transform seam), in
+/// application order -- empty when the chain was empty and the bytes are the
+/// unit's raw output. The fingerprint covers the transformed bytes, so this
+/// list is what answers "which transforms produced the stored bytes".
 /// </summary>
 public sealed record BuildArtifact(
     Guid ArtifactId,
@@ -26,6 +32,9 @@ public sealed record BuildArtifact(
     DateTimeOffset BuiltAt,
     BuildParams Params)
 {
+    /// <summary>The applied transform names in application order; empty when none.</summary>
+    public IReadOnlyList<PayloadTransformApplied> Transforms { get; init; } = Array.Empty<PayloadTransformApplied>();
+
     /// <summary>
     /// Builds a result from compiled <paramref name="content"/>, computing the
     /// fingerprint and size. Build units call this rather than hand-filling the

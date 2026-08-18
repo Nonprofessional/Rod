@@ -367,6 +367,19 @@ recorded.**
   credential to it: the stage-2 spends the token at its own enroll and appears
   on the roster as a top-level implant. The .NET reference loader lives in
   `src/stager/dotnet/`; the fetch route is engagement-scoped by the token.
+- **The transform seam is post-build and out-of-tree.** Build-time artifact
+  transformation -- where MSF put its encoders and payload encryption -- is a
+  config-listed `IPayloadTransform` chain (Sec 13 keeps concrete transforms
+  out-of-tree; against modern EDR they are legacy anyway). Each transform
+  names itself, receives the built bytes plus the build context, and returns
+  transformed bytes plus metadata; the chain runs after the build unit and
+  before anything is recorded, so the stored fingerprint covers exactly the
+  transformed bytes and the `PayloadBuilt` audit event names every applied
+  transform. Each transform owns its key material and decode contract end to
+  end -- the service generates none. No in-tree transform ships: the empty
+  chain is the seam, exactly like the capability placeholders, and transforms
+  arrive through the explicit `Build:Transforms` list (the same loading shape
+  as `Tradecraft:Modules`, [extending/tradecraft.md](extending/tradecraft.md)).
 - **Artifact tracking.** Every generated artifact is fingerprinted and recorded
   (who, when, config) into the audit trail.
 

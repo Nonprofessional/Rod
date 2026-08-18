@@ -148,9 +148,17 @@ public static class PayloadEndpoints
 
         // The built bytes are stored for retrieval, then the build is recorded
         // (architecture.md Sec 6/11): a PayloadBuilt audit event carrying the
-        // class/config and the artifact fingerprint. No implant or task is bound
-        // yet, so those ids are unused. The store stamps the chain hashes on
-        // append; the call site supplies only the facts.
+        // class/config, the artifact fingerprint, and -- when the transform
+        // chain ran -- the name of every applied transform (Sec 6, the
+        // transform seam), so the trail proves which transforms produced the
+        // stored bytes. No implant or task is bound yet, so those ids are
+        // unused. The store stamps the chain hashes on append; the call site
+        // supplies only the facts.
+        var transformTrail = artifact.Transforms.Count == 0
+            ? ""
+            : " transforms=" + string.Join(
+                ">",
+                artifact.Transforms.Select(t => t.Metadata is null ? t.Name : $"{t.Name}({t.Metadata})"));
         await payloads.SaveAsync(
             new PayloadRecord(
                 artifact.ArtifactId,
@@ -172,7 +180,7 @@ public static class PayloadEndpoints
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}",
+                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{transformTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),
@@ -186,7 +194,8 @@ public static class PayloadEndpoints
             artifact.ContentType,
             artifact.Size,
             artifact.Fingerprint,
-            artifact.BuiltAt);
+            artifact.BuiltAt,
+            artifact.Transforms.Select(t => t.Name).ToArray());
 
         return Results.Created(
             $"/engagements/{response.EngagementId}/payloads/{response.ArtifactId}",
@@ -313,7 +322,8 @@ public static class PayloadEndpoints
         string ContentType,
         long Size,
         string Fingerprint,
-        DateTimeOffset BuiltAt);
+        DateTimeOffset BuiltAt,
+        string[]? Transforms = null);
 
     public sealed record Problem(string Error);
 }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -202,6 +203,16 @@ public static class TransportHost
         var buildUnits = new InMemoryBuildUnitRegistry();
         buildUnits.Register(new DotNetBuildUnit());
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
+        // The post-build transform chain (architecture.md Sec 6, the transform
+        // seam): config-listed out-of-tree transforms under Build:Transforms,
+        // the same explicit-list loading shape as Tradecraft:Modules. A
+        // missing section is the empty chain -- no in-tree transform ships,
+        // the empty chain is the seam. A bad entry fails startup loudly: an
+        // operator must never believe wrapped bytes are stored when the raw
+        // build output is.
+        var transformEntries = configuration?.GetSection(PayloadTransformLoader.TransformsSectionKey)
+            .Get<string[]?>() ?? Array.Empty<string?>();
+        services.AddSingleton(new PayloadTransformChain(PayloadTransformLoader.Load(transformEntries)));
         services.AddSingleton<PayloadBuildService>();
 
         return services;
