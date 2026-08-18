@@ -78,6 +78,22 @@ public static class ImplantClassCapabilities
         => ByClass[@class];
 
     /// <summary>
+    /// The contract-only verbs no class gates (architecture.md Sec 5.2, Sec
+    /// 10.2): the evasion and exploit categories in their entirety. Which class
+    /// runs one is decided when an operator deploys the out-of-tree module, not
+    /// by a baked-in class rule, so they sit outside the per-class table. The
+    /// build pipeline bakes them alongside the class set so an artifact that
+    /// carries an out-of-tree handler advertises the verb at handshake; the
+    /// advertised set is still the baked verbs intersected with the compiled
+    /// handlers (architecture.md Sec 5.3), so an artifact without the handler
+    /// never claims the verb.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Ungated = new[]
+    {
+        "evasion.avoid", "evasion.unload", "exploit.invoke", "exploit.module",
+    };
+
+    /// <summary>
     /// Whether <paramref name="class"/> may run <paramref name="verb"/>. Verb
     /// matching is case-insensitive: capability verbs are namespaced strings
     /// (<c>namespace.action</c>) and the registry already resolves them that way.

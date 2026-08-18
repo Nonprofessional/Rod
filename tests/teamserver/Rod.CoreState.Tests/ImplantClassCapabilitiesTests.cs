@@ -108,6 +108,31 @@ public class ImplantClassCapabilitiesTests
     }
 
     [Fact]
+    public void Ungated_IsExactlyTheEvasionAndExploitContractVerbs()
+    {
+        // The contract-only verbs no class gates (architecture.md Sec 5.2,
+        // Sec 10.2): the evasion and exploit categories in their entirety,
+        // decided per deployment rather than per class.
+        Assert.Equal(
+            new[] { "evasion.avoid", "evasion.unload", "exploit.invoke", "exploit.module" },
+            ImplantClassCapabilities.Ungated);
+    }
+
+    [Fact]
+    public void Ungated_VerbsAppearInNoClassSet()
+    {
+        // The whole point of the ungated list: no class table entry carries any
+        // of these verbs, so the only way a baked artifact may run one is the
+        // ungated contract list riding along in the bake (the task gate admits
+        // them through the registry-backed resolver instead, Sec 10.3).
+        foreach (ImplantClass @class in Enum.GetValues(typeof(ImplantClass)))
+        {
+            foreach (var verb in ImplantClassCapabilities.Ungated)
+                Assert.False(ImplantClassCapabilities.Allows(@class, verb));
+        }
+    }
+
+    [Fact]
     public void For_EveryImplementedClassReturnsVerbs_PivotIsReservedEmpty()
     {
         // Every class with a shipped artifact carries at least one verb. Pivot

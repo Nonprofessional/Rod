@@ -150,6 +150,34 @@ public class HandlerRegistryTests
     }
 
     [Fact]
+    public void AdvertisedVerbs_ContractOnlyHandler_AdvertisesUnderTheBakedContractVerbs()
+    {
+        // The bake carries the class set plus the ungated contract-only verbs
+        // (architecture.md Sec 5.2/10.2), so an out-of-tree evasion handler
+        // compiled into the artifact advertises its verb at handshake. The
+        // intersection stays the authority: a contract verb with no compiled
+        // handler (evasion.unload here) still never appears.
+        var registry = HandlerRegistry.Default(
+            enroll: null,
+            additional: new[]
+            {
+                new CapabilityHandler("evasion.avoid",
+                    _ => new HandlerResult(TaskOutcome.Succeeded, "avoided", Array.Empty<ExfilChunk>())),
+            });
+        var baked = Stage2ClassVerbs.Concat(new[]
+        {
+            "evasion.avoid", "evasion.unload", "exploit.invoke", "exploit.module",
+        }).ToArray();
+
+        var advertised = registry.AdvertisedVerbs(baked);
+
+        Assert.Contains("evasion.avoid", advertised);
+        Assert.DoesNotContain("evasion.unload", advertised);
+        Assert.DoesNotContain("exploit.invoke", advertised);
+        Assert.DoesNotContain("exploit.module", advertised);
+    }
+
+    [Fact]
     public void AdvertisedVerbs_MatchingIsCaseInsensitive()
     {
         // The server's class table matches verbs case-insensitively; the

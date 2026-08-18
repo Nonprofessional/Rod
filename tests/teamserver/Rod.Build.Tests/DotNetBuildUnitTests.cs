@@ -28,13 +28,17 @@ public class DotNetBuildUnitTests
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
-    [InlineData(ImplantClass.Stager, "file.pull")]
-    [InlineData(ImplantClass.Pivot, "")]
-    public void RenderBakedProfile_BakesTheClassReducedVerbSet(ImplantClass @class, string expectedVerbs)
+    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
+    [InlineData(ImplantClass.Stager, "file.pull,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
+    [InlineData(ImplantClass.Pivot, "evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
+    public void RenderBakedProfile_BakesClassVerbsPlusTheUngatedContractVerbs(ImplantClass @class, string expectedVerbs)
     {
-        // The class's reduced verb set (architecture.md Sec 5.2) is baked into
-        // the profile, so the generated implant carries the verbs it may run.
+        // The class's reduced verb set (architecture.md Sec 5.2) plus the
+        // contract-only verbs no class gates (Sec 5.2/10.2) is baked into the
+        // profile, so the generated implant carries the verbs it may run and an
+        // out-of-tree evasion/exploit handler can advertise its verb. The
+        // advertised set is still intersected with the compiled handlers, so the
+        // extra verbs claim nothing on an artifact without the handler.
         var baked = DotNetBuildUnit.RenderBakedProfile(Params(@class));
 
         var json = Encoding.UTF8.GetString(Base64UrlDecode(baked));

