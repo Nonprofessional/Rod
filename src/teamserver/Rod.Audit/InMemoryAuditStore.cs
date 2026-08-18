@@ -61,20 +61,31 @@ public sealed class InMemoryAuditStore : IAuditStore
 
     public Task<IReadOnlyList<AuditEvent>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
-        var matches = _events.Values
-            .Where(e => e.TaskId == taskId)
-            .OrderBy(e => e.At)
-            .ToArray();
-        return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+        // The listing reads snapshot under the append lock: an unlocked
+        // enumeration racing an append can observe a newer event while
+        // missing its predecessor, and a chain verification over that torn
+        // snapshot reports a break that is not there. The lock the appends
+        // already share makes the snapshot whole.
+        lock (_appendLock)
+        {
+            var matches = _events.Values
+                .Where(e => e.TaskId == taskId)
+                .OrderBy(e => e.At)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+        }
     }
 
     public Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
-        var matches = _events.Values
-            .Where(e => e.EngagementId == engagementId)
-            .OrderBy(e => e.At)
-            .ToArray();
-        return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+        lock (_appendLock)
+        {
+            var matches = _events.Values
+                .Where(e => e.EngagementId == engagementId)
+                .OrderBy(e => e.At)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+        }
     }
 
     public Task<AuditPage> ListPageAsync(
@@ -85,13 +96,16 @@ public sealed class InMemoryAuditStore : IAuditStore
     {
         // The event id breaks timestamp ties so a page boundary is stable even
         // when several events share one instant.
-        var ordered = _events.Values
-            .Where(e => e.EngagementId == engagementId)
-            .OrderBy(e => e.At)
-            .ThenBy(e => e.EventId)
-            .ToArray();
-        var (items, next) = ListPageWindow.TakeNewest(
-            ordered, limit, cursor, e => e.At, e => e.EventId);
-        return Task.FromResult(new AuditPage(items, next));
+        lock (_appendLock)
+        {
+            var ordered = _events.Values
+                .Where(e => e.EngagementId == engagementId)
+                .OrderBy(e => e.At)
+                .ThenBy(e => e.EventId)
+                .ToArray();
+            var (items, next) = ListPageWindow.TakeNewest(
+                ordered, limit, cursor, e => e.At, e => e.EventId);
+            return Task.FromResult(new AuditPage(items, next));
+        }
     }
 }
