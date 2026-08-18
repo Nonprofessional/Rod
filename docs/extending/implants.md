@@ -104,8 +104,15 @@ chunk anything larger.
    no kind set -- discriminate positionally after the handshake) and results
    upstream (`TaskResult` with `kind = FRAME_KIND_TASK_RESULT`, `ExfilChunk`
    with `kind = FRAME_KIND_EXFIL_CHUNK`, `StagedPull` with
-   `kind = FRAME_KIND_STAGED_PULL`). An upstream frame with `kind`
-   unset is tolerated as a `TaskResult` (legacy shape).
+   `kind = FRAME_KIND_STAGED_PULL`, `ChannelOutput` with
+   `kind = FRAME_KIND_CHANNEL_OUTPUT`). An upstream frame with `kind`
+   unset is tolerated as a `TaskResult` (legacy shape). One downstream frame
+   does set its kind: `ChannelInput` (`kind = FRAME_KIND_CHANNEL_INPUT`), the
+   operator input half of an interactive channel -- discriminate downstream
+   frames on kind first and fall back to the positional `TaskRequest` parse
+   for kindless frames. The server routes a `ChannelInput` only to an implant
+   whose handshake advertised the channel verb, so an implant that never
+   opted in never receives a kind-bearing downstream frame.
 
 **Using the stream:** hold it open for the session (stream mode -- the
 interactive shape, server pushes tasking the moment it is queued) or run
@@ -136,6 +143,35 @@ a run of `StagedChunk` frames (`task_id` echo, 0-origin sequence, terminal on
 the last, 512 KiB data slices). Reassemble, verify the sha256 against the
 arguments token, then run the verb against the reassembled bytes and report the
 `TaskResult` as usual. Nothing bulk ever flows downstream unasked.
+
+### Interactive channels (the streaming task shape)
+
+`shell.interact` is `shell.exec`'s live shape: the `TaskRequest` opens a
+channel instead of a one-shot round trip, and the task does not complete
+until the channel ends. Flow:
+
+1. Receive the `TaskRequest` like any other and verify its signature. Its
+   `arguments` are an optional initial command (run once, then the session
+   holds open).
+2. Stream whatever the task produces as `ChannelOutput` frames
+   (`kind = FRAME_KIND_CHANNEL_OUTPUT`, payload `ChannelOutput{task_id,
+   data}`), in order, as it is produced. The teamserver decodes and
+   accumulates the chunks onto the task's transcript live -- an operator
+   reads the channel while it runs.
+3. Receive the operator's typing as `ChannelInput` frames downstream
+   (`kind = FRAME_KIND_CHANNEL_INPUT`, payload `ChannelInput{task_id, data,
+   eof}`), which may interleave with anything else on the stream; route them
+   by `task_id`. `eof` means the operator closed the channel's stdin.
+4. End the channel with an ordinary `TaskResult` for the task -- the shell
+   exited (naturally, or because `eof` closed its stdin) or the channel
+   failed. The server appends the final output to the transcript and
+   completes the task with it as the record.
+
+The channel is session-scoped: it lives on the CheckIn stream that carried
+its `TaskRequest`, and a stream drop ends it (kill the shell; the task stays
+dispatched server-side). Input is not signed -- like a `StagedChunk` run it
+rides the mTLS stream the signed `TaskRequest` opened. Keep output chunks at
+or under 16 KiB.
 
 ### DNS check-ins (Tier 2, the egress-restricted transport)
 
@@ -256,6 +292,12 @@ Adopt per deployment need; absence degrades the feature, not interop:
   per-verb typed arm). An implant without it still receives staged tasks;
   it ignores the unknown `staged_bytes` field and fails the verb on its own
   argument grammar, and no chunk frame ever arrives unasked.
+- **Interactive channels** -- the `shell.interact` streaming shape above
+  (architecture.md Sec 10.3): `ChannelOutput` upstream, `ChannelInput`
+  downstream, one final `TaskResult`. An implant without it reports
+  `shell.interact` Failed on its own grammar ("unknown verb" or a one-shot
+  refusal), and the server never routes a `ChannelInput` to an implant that
+  did not advertise the verb.
 - **DNS check-ins** -- the TXT-query grammar above, for egress-restricted
   targets where only DNS leaves the network. Absence is graceful: an implant
   without it simply beacons over the stream transports.

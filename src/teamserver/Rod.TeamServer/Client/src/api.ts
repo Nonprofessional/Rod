@@ -167,6 +167,52 @@ export async function issueTask(
   return jsonOrThrow(response)
 }
 
+// --- Streaming task input (architecture.md Sec 10.3) ------------------------
+//
+// A live channel task (shell.interact) takes operator input through its own
+// route: one post is one line of typing, and eof closes the channel's stdin
+// (the shell exits and the task completes with the transcript as its record).
+// The transcript itself is the task's own output -- read it back with getTask
+// while the channel runs.
+
+export interface TaskDetail {
+  taskId: string
+  verb: string
+  arguments: string
+  status: string
+  output: string | null
+  outcome: string | null
+}
+
+export async function getTask(engagementId: string, taskId: string): Promise<TaskDetail> {
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}`)
+  return jsonOrThrow(response)
+}
+
+export async function sendTaskInput(
+  engagementId: string,
+  taskId: string,
+  text: string,
+  eof = false,
+): Promise<void> {
+  const data = text.length > 0 ? toBase64Utf8(text) : undefined
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}/input`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ data, eof }),
+  })
+  await jsonOrThrow<unknown>(response)
+}
+
+// Base64 of the UTF-8 encoding: the route binds byte[] from base64, so the
+// round-trip preserves arbitrary text exactly.
+function toBase64Utf8(text: string): string {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary)
+}
+
 // --- Live event stream  ---------------------------------------
 //
 // Server-Sent Events keep each connected operator session live on an engagement.
@@ -181,6 +227,7 @@ export type LiveEventName =
   | 'OperatorLeft'
   | 'TaskIssued'
   | 'TaskCompleted'
+  | 'ChannelOutput'
   | 'SessionClosed'
 
 export interface LiveOperator {
@@ -206,6 +253,7 @@ export interface EngagementStreamHandlers {
   onOperatorLeft?: (operatorId: string, handle: string) => void
   onTaskIssued?: (taskId: string, payload: string) => void
   onTaskCompleted?: (taskId: string, payload: string) => void
+  onChannelOutput?: (taskId: string, chunk: string) => void
   onSessionClosed?: (implantId: string, payload: string) => void
   onError?: (event: Event) => void
 }
@@ -247,6 +295,10 @@ export function subscribeToEngagement(
   source.addEventListener('TaskCompleted', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onTaskCompleted?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('ChannelOutput', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onChannelOutput?.(payload?.taskId ?? '', payload?.payload ?? '')
   })
   source.addEventListener('SessionClosed', (e) => {
     const payload = parse((e as MessageEvent).data)

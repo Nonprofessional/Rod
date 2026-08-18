@@ -13,10 +13,8 @@ historical milestone id, from commit bodies.
 
 ## Tasking and sessions (architecture.md Sec 10.3)
 
-- [ ] **Interactive shells.** Shell tasking is one-shot today. Add the
-      streaming task shape (a session-scoped PTY channel for `shell.exec`)
-      over the existing stream contract. _AC:_ an operator types into a live
-      shell on a connected implant.
+None open: the streaming task shape (interactive shells) shipped as
+`shell.interact`.
 
 ## Tradecraft extension kit (architecture.md Sec 10.2, Sec 13)
 

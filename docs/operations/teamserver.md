@@ -58,6 +58,14 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    http://127.0.0.1:5080/implants/enroll -token <secret>`, or add `-mode poll`
    for the low-and-slow cadence. It appears on the engagement roster, takes
    tasking, and its results land in the audit trail.
+5. For a live shell, issue `shell.interact` against it (Tasking tab, or
+   `POST /engagements/{id}/tasks`) and open the Interact pane: type into the
+   input line and watch the transcript stream. Over the API the same loop is
+   `POST /engagements/{id}/tasks/{taskId}/input` with `{"data": "<base64>"}`
+   per line and `{"eof": true}` to close stdin -- the task completes with the
+   whole session as its output (architecture.md Sec 10.3). Interactive
+   channels need a stream-mode check-in; a poll-mode implant reports the task
+   Failed with the reason.
 
 For staged deployment, build the stage-2 first, then build a second payload
 with class `stager` naming it (`stage2PayloadId`). The stager is a small

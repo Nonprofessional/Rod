@@ -449,8 +449,9 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   report outcomes, reassembled server-side. The wire grammar is the DNS
   check-in contract ([extending/implants.md](extending/implants.md)); the
   responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
-  too large for the budget is not claimed over DNS -- it stays queued for a
-  stream transport. The transport's tradeoff is deliberate and documented: no
+  too large for the budget -- or a streaming task, whose channel needs the
+  stream a datagram poll cannot carry (Sec 10.3) -- is not claimed over DNS:
+  it stays queued for a stream transport. The transport's tradeoff is deliberate and documented: no
   handshake and no mTLS ride DNS, an implant is identified by its id alone,
   and a session must have been opened on a handshake-capable transport before
   DNS can refresh it. Downstream tasking keeps the full Sec 9 posture -- the
@@ -835,6 +836,27 @@ loop in the writer path. The wake is a hint, not a ledger: the writer claims
 before it parks, so tasks queued while no stream was open are picked up on
 connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
+
+**The streaming task shape.** Not every verb is a one-shot round trip:
+`shell.interact` -- `shell.exec`'s interactive shape -- runs as a live
+channel. Its TaskRequest dispatches like any other (same signature, same
+queue), but on the implant it opens a channel instead of completing inline:
+output streams back as ChannelOutput chunks that land on the task's transcript
+while it is still Dispatched (an operator reads the shell live, over the same
+task read), and the operator's typing flows down as ChannelInput frames --
+routed from the operator input route through a per-implant live-channel hub
+into the stream's dispatch writer, so the stream's single-writer discipline
+holds. A final ordinary TaskResult closes the task with the whole session as
+its record; the operator's eof closes the shell's stdin, which is the natural
+end of the session. The channel is session-scoped by construction: it lives on
+the beacon stream that carried its TaskRequest, so a dropped stream kills the
+shell (the implant's write gate and channel lifetime see to that) and the task
+stays dispatched -- and DNS never claims a channel task at all, because a
+datagram poll has no stream to carry the input half. The reference implant's
+channel wires the platform shell's stdio pipes -- the documented, mainstream
+mechanism, no pseudo-terminal allocation: without a tty the shell runs without
+prompt or line editing, and a PTY-backed handler is a drop-in over the same
+byte-transparent channel contract.
 
 ## 11. Evidence and reporting -- a first-class output
 

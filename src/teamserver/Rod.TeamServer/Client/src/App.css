@@ -228,6 +228,33 @@ code {
   overflow: auto;
 }
 
+/* --- Interactive shell pane (streaming task shape, architecture.md Sec 10.3) - */
+
+.interact-pane {
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 6px;
+}
+
+.interact-pane h4 {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The live transcript: fixed height, auto-scrolled to the newest output by
+   the pane so a long session reads like a terminal tail. */
+.interact-transcript {
+  max-width: none;
+  height: 280px;
+  overflow: auto;
+  background: rgba(128, 128, 128, 0.06);
+  padding: 8px;
+  border-radius: 4px;
+}
+
 /* --- Additions: tabs, OPSEC badges, build form, report columns ------- */
 
 .app-header .crumb-sep {
