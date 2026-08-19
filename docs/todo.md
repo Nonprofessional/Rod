@@ -11,9 +11,3 @@ acceptance criterion (_AC:_), so "done" stays testable. Keep the
 only, the offensive-tradecraft boundary (architecture.md Sec 13), and cite
 the architecture section, never a historical milestone id, from commit
 bodies.
-
-## Security follow-ups (architecture.md Sec 9)
-
-None open: ending live sessions on credential revoke, the durable
-replay-nonce floor, and operator API tokens have shipped. The one
-designed-but-deferred item (sealing) stays in Sec 9.
