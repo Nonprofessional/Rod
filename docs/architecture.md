@@ -563,8 +563,15 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 Rod is remote-code-execution infrastructure: a compromised teamserver is
 fleet-wide code execution. Security is a first-class concern.
 
-- **Identity.** Operator identities (credentials, MFA, API tokens); implant
-  identities bound to their engagement via client certificates.
+- **Identity.** Operator identities (credentials and API tokens) verified at
+  login and per request; implant identities bound to their engagement via
+  client certificates. API tokens are bearer credentials minted per operator
+  through the operator API (shown once, stored as a digest), honored alongside
+  cookie sessions through a front scheme that authenticates by what the
+  request presents, and revocable by their own route with the same
+  immediate-effect, no-restart shape. A token is independent of the password:
+  each credential revokes through its own route, so rotating one never
+  silently invalidates the other.
 - **mTLS.** The mTLS transport is mutually authenticated; an implant's certificate
   binds `(implant_id, engagement_id)`.
 - **Production implant CA.** The teamserver consumes an externally provisioned

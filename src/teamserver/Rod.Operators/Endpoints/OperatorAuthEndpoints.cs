@@ -24,13 +24,85 @@ public static class OperatorAuthEndpoints
     public static IEndpointRouteBuilder Map(this IEndpointRouteBuilder endpoints)
     {
         // Login is anonymous (it is how a session is established); logout, the
-        // current-operator read, and credential revocation require an existing
-        // session.
+        // current-operator read, credential revocation, and API-token
+        // management require an existing session.
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
         endpoints.MapPost("/logout", LogoutAsync).RequireAuthorization();
         endpoints.MapGet("/me", MeAsync).RequireAuthorization();
         endpoints.MapPost("/{operatorId}/credentials:revoke", RevokeCredentialAsync).RequireAuthorization();
+        endpoints.MapPost("/{operatorId}/tokens", MintTokenAsync).RequireAuthorization();
+        endpoints.MapGet("/{operatorId}/tokens", ListTokensAsync).RequireAuthorization();
+        endpoints.MapPost("/{operatorId}/tokens/{tokenId}:revoke", RevokeTokenAsync).RequireAuthorization();
         return endpoints;
+    }
+
+    // API-token management (architecture.md Sec 9 -- the identity model's API
+    // tokens): a bearer credential minted per operator, honored by the
+    // operator API alongside cookie sessions, and revocable like credentials.
+    // The plaintext secret is shown exactly once, at mint; only its digest is
+    // stored. Any authenticated operator may manage tokens (the
+    // trusted-operators model); revocation is idempotent. A token is
+    // independent of the password credential -- each revokes through its own
+    // route -- so rotating one never silently invalidates the other.
+    private static async Task<IResult> MintTokenAsync(
+        string operatorId,
+        IOperatorRepository operators,
+        IOperatorApiTokenStore tokens,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new { message = "Operator id is not a valid identifier." });
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new { message = $"Operator {operatorId} does not exist." });
+
+        var minted = await tokens.MintAsync(target.Id, clock.GetUtcNow(), cancellationToken);
+        return Results.Ok(new MintedTokenResponse(
+            minted.TokenId.ToString(),
+            minted.Secret,
+            minted.CreatedAt));
+    }
+
+    private static async Task<IResult> ListTokensAsync(
+        string operatorId,
+        IOperatorRepository operators,
+        IOperatorApiTokenStore tokens,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new { message = "Operator id is not a valid identifier." });
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new { message = $"Operator {operatorId} does not exist." });
+
+        var rows = await tokens.ListAsync(target.Id, cancellationToken);
+        return Results.Ok(rows.Select(r => new TokenResponse(r.TokenId.ToString(), r.CreatedAt)));
+    }
+
+    private static async Task<IResult> RevokeTokenAsync(
+        string operatorId,
+        string tokenId,
+        IOperatorRepository operators,
+        IOperatorApiTokenStore tokens,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new { message = "Operator id is not a valid identifier." });
+        if (!Guid.TryParse(tokenId, out var tokenValue))
+            return Results.BadRequest(new { message = "Token id is not a valid identifier." });
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new { message = $"Operator {operatorId} does not exist." });
+
+        // Idempotent: revoking an unknown token succeeds, like credential
+        // revocation. The next request presenting it fails -- the digest is
+        // read fresh on every attempt.
+        await tokens.RevokeAsync(target.Id, new OperatorApiTokenId(tokenValue), cancellationToken);
+        return Results.Ok(new { operatorId = target.Id.ToString(), tokenId });
     }
 
     // Revocation is the operator half of certificate revocation
@@ -132,3 +204,12 @@ public sealed record LoginRequest(string Handle, string Password);
 
 /// <summary>The authenticated operator returned by login and <c>GET /operators/me</c>.</summary>
 public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName);
+
+/// <summary>
+/// A freshly minted API token: the secret is shown exactly once, here -- only
+/// its digest is stored afterwards.
+/// </summary>
+public sealed record MintedTokenResponse(string TokenId, string Token, DateTimeOffset CreatedAt);
+
+/// <summary>A minted API token as a listing row (identity and lifetime, never the secret).</summary>
+public sealed record TokenResponse(string TokenId, DateTimeOffset CreatedAt);

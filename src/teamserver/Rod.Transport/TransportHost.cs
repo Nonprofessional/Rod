@@ -79,6 +79,9 @@ public static class TransportHost
         // way. Operator authentication itself (cookie sessions, login) is wired in
         // Rod.Operators via AddRodOperatorAuth.
         services.AddSingleton<IOperatorCredentialStore, InMemoryOperatorCredentialStore>();
+        // Operator API tokens (architecture.md Sec 9): the same default /
+        // durable swap shape as the credential store above.
+        services.AddSingleton<IOperatorApiTokenStore, InMemoryOperatorApiTokenStore>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
         services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();

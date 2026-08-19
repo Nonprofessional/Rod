@@ -41,11 +41,9 @@ and the fronting executor for unplantable hosts.
 
 ## Security follow-ups (architecture.md Sec 9)
 
-- [ ] **Operator API tokens.** The Sec 9 identity model lists API tokens;
-      only password logins with cookie sessions ship. Tokens minted per
-      operator, honored by the operator API alongside cookies, and revocable
-      like credentials. _AC:_ an operator-API call authenticated by a minted
-      token (no cookie) succeeds, and a revoked token is refused.
+None open: ending live sessions on credential revoke, the durable
+replay-nonce floor, and operator API tokens have shipped. The one
+designed-but-deferred item (sealing) stays in Sec 9.
 
 ## Polish
 

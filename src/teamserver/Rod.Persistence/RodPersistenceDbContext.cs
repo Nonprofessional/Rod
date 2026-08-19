@@ -30,6 +30,7 @@ public sealed class RodPersistenceDbContext : DbContext
 
     public DbSet<Operator> Operators => Set<Operator>();
     internal DbSet<StoredOperatorCredential> OperatorCredentials => Set<StoredOperatorCredential>();
+    internal DbSet<StoredOperatorApiToken> OperatorApiTokens => Set<StoredOperatorApiToken>();
     public DbSet<Engagement> Engagements => Set<Engagement>();
     public DbSet<Implant> Implants => Set<Implant>();
     public DbSet<Session> Sessions => Set<Session>();

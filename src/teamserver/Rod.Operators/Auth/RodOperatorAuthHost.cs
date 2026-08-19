@@ -23,9 +23,10 @@ namespace Rod.Operators.Auth;
 public static class RodOperatorAuthHost
 {
     /// <summary>
-    /// Registers operator authentication: the cookie session scheme, the password
-    /// hasher, the login service, the bootstrap account seed, and the bound
-    /// options. Endpoints opt into the session with
+    /// Registers operator authentication: the cookie session scheme, the
+    /// API-token bearer scheme, the policy scheme that fronts both, the
+    /// password hasher, the login service, the bootstrap account seed, and the
+    /// bound options. Endpoints opt into the session with
     /// <c>RequireAuthorization()</c>; the cookie is same-origin so the React SPA
     /// and its Server-Sent Events stream ride the same session without a token.
     /// </summary>
@@ -37,7 +38,14 @@ public static class RodOperatorAuthHost
 
         services
             .AddAuthentication(OperatorAuthConstants.AuthenticationScheme)
-            .AddCookie(OperatorAuthConstants.AuthenticationScheme, options =>
+            // The front scheme: authenticate through the API-token scheme when
+            // a bearer token is presented, the cookie scheme otherwise; every
+            // other operation (challenge, sign-in, sign-out) stays on the
+            // cookie scheme, so the login flow and the 401/403 shapes are
+            // unchanged.
+            .AddScheme<AuthenticationSchemeOptions, OperatorSessionAuthHandler>(
+                OperatorAuthConstants.AuthenticationScheme, _ => { })
+            .AddCookie(OperatorAuthConstants.CookieScheme, options =>
             {
                 options.Cookie.Name = "Rod.Operator.Auth";
                 options.Cookie.HttpOnly = true;
@@ -68,7 +76,9 @@ public static class RodOperatorAuthHost
                     },
                     OnValidatePrincipal = ValidateSessionAsync,
                 };
-            });
+            })
+            .AddScheme<AuthenticationSchemeOptions, OperatorTokenAuthHandler>(
+                OperatorAuthConstants.TokenScheme, _ => { });
 
         services.AddAuthorization();
 
