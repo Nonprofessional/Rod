@@ -54,6 +54,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly TimeProvider _clock;
     private readonly ITaskDispatchWake _wake;
     private readonly LiveChannelHub _channels;
+    private readonly TaskRelayHub _relays;
     private readonly BeaconIngest _ingest;
     private readonly BeaconTasking _tasking;
 
@@ -65,6 +66,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         TimeProvider clock,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
+        TaskRelayHub relays,
         BeaconIngest ingest,
         BeaconTasking tasking)
     {
@@ -75,6 +77,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         _clock = clock;
         _wake = wake;
         _channels = channels;
+        _relays = relays;
         _ingest = ingest;
         _tasking = tasking;
     }
@@ -211,6 +214,12 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         {
             // Expected: the cancelled loop unwinds through the wake wait.
         }
+
+        // The stream is gone, and a channel is session-scoped (architecture.md
+        // Sec 10.3): any relay bridged onto this implant's channels dies with
+        // it, so the operator-side tool's connection ends instead of staring
+        // at a listener nothing more will cross.
+        _relays.CloseImplant(session.Implant, "the implant's beacon stream ended");
     }
 
     // Reader: await each upstream frame, capture it into the task and append the

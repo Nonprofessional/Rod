@@ -144,4 +144,26 @@ public enum AuditEventKind
     /// <see cref="TaskCompleted"/> event as its transcript.
     /// </summary>
     ChannelInput,
+
+    /// <summary>
+    /// An operator bound a relay port onto a live tunnel channel
+    /// (architecture.md Sec 10.1 tunnel, Sec 10.3): a teamserver-side TCP
+    /// listener whose accepted connection bridges into the channel, so
+    /// unmodified operator tooling rides the tunnel without per-byte input
+    /// posts. The payload carries the listen endpoint; the event is attributed
+    /// to the binding operator and bound to the tunnel's task.
+    /// <see cref="RelayClosed"/> records how the relay ended.
+    /// </summary>
+    RelayBound,
+
+    /// <summary>
+    /// A relay port bound onto a live tunnel channel ended
+    /// (architecture.md Sec 10.1 tunnel, Sec 10.3): the task completed, the
+    /// beacon stream died, the operator unbound it, or the bridged connection
+    /// ended. The payload names the cause and the relayed byte tallies; the
+    /// event is attributed to the operator who bound the relay. The relayed
+    /// traffic itself rides the task's transcript -- the same no-per-chunk
+    /// discipline the channel's own output follows.
+    /// </summary>
+    RelayClosed,
 }

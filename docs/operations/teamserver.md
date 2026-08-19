@@ -71,6 +71,17 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    input posts are relayed to the peer and its answers land on the transcript,
    `eof` half-closes the send side, and the task ends when the peer closes,
    with the relay summary as its final output (architecture.md Sec 10.1).
+7. To let an unmodified tool ride that tunnel, bind a relay port onto the
+   dispatched task: `POST /engagements/{id}/tasks/{taskId}/relay` (body
+   `{"bindAddress": "loopback", "port": 0}` -- loopback and an ephemeral port
+   are the defaults) and point the tool at the returned endpoint. Its bytes
+   cross the channel without a single API call per byte, the answers come
+   back raw, and the bind and its close (with byte tallies) land in the
+   engagement trail. One relay bridges one connection and dies with the task;
+   `DELETE /engagements/{id}/tasks/{taskId}/relay` ends it early
+   (architecture.md Sec 10.1). Binding off-loopback (`any` or an IP literal)
+   exposes the tunnel to every host that can reach the port -- name the
+   address only when the operator path needs it.
 
 For staged deployment, build the stage-2 first, then build a second payload
 with class `stager` naming it (`stage2PayloadId`). The stager is a small

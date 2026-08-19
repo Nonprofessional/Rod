@@ -758,7 +758,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
 | **collect** | `collect.cred`, `collect.keylog` | Credential and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
-| **tunnel** | `tunnel.forward` | Network tunneling through an implant (Sec 14, core operations): the port-forward verb bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it. Runs as a live channel (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). |
+| **tunnel** | `tunnel.forward` | Network tunneling through an implant (Sec 14, core operations): the port-forward verb bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it. Runs as a live channel (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes the channel as a teamserver-side TCP listener, so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 
@@ -841,7 +841,20 @@ vantage and bridges the channel to the socket until the peer closes, with the
 relay summary as the task's final output. The traffic's attribution is end to
 end: every byte crossed the channel the signed TaskRequest opened, the input
 posts land as `ChannelInput` audit events, and the transcript plus summary is
-the operator's record.
+the operator's record. Input posts are the manual shape: a **relay bind**
+(`POST /engagements/{id}/tasks/{taskId}/relay`, tunnel-only, loopback by
+default and an ephemeral port unless the operator names one) starts a
+teamserver-side TCP listener bridged onto the dispatched channel -- the
+accepted socket's reads enter the same channel-input enqueue the route uses,
+and the channel's output chunks are handed back raw, before the transcript's
+UTF-8 decode, so the tool's bytes are the channel's bytes. One relay bridges
+one connection (the channel is one TCP connection on the implant's side), and
+it dies with the task: the final result, the stream ending, or the operator
+unbinding each close it and write the `RelayClosed` event with the relayed
+tallies, next to the `RelayBound` event the bind wrote. The relayed traffic
+itself keeps the channel's no-per-chunk discipline -- it rides the task's
+transcript, so an unmodified tool reaches a third host with zero operator API
+calls per byte and the whole flow stays attributed to the task.
 
 The evasion verbs are registered the same way
 (`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both
@@ -970,7 +983,12 @@ allocation: without a tty the shell runs without prompt or line editing, and
 a PTY-backed handler is a drop-in over the same byte-transparent channel
 contract. Its tunnel channel bridges the same contract to a TCP connection
 of the implant's own -- the byte transparency is what lets one channel shape
-carry stdio and sockets alike.
+carry stdio and sockets alike. The same transparency carries the tunnel's
+machine half: a relay bind (Sec 10.1) bridges a teamserver-side TCP listener
+onto the channel, so the byte-transparent contract serves an unmodified tool
+exactly as it serves an operator's keystrokes -- the input route and the
+relay are two producers of the same channel-input queue, and the transcript
+plus the relay's own audit pair are the attributed record either way.
 
 ## 11. Evidence and reporting -- a first-class output
 

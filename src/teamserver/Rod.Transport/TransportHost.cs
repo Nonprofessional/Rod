@@ -120,6 +120,12 @@ public static class TransportHost
         // beacon stream's dispatch writer, keyed by implant. A stream
         // attaches its sink on handshake and detaches on stream end.
         services.AddSingleton<Channels.LiveChannelHub>();
+        // Task relay hub (architecture.md Sec 10.1 tunnel, Sec 10.3): the
+        // operator-side relay binds -- a teamserver-bound TCP listener
+        // bridged onto a live tunnel channel, so unmodified tooling rides the
+        // tunnel without per-byte input posts. Fed by the beacon ingest's
+        // channel output path and the live channel hub's input path.
+        services.AddSingleton<Channels.TaskRelayHub>();
 
         // Listener registry: the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the

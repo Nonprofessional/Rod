@@ -17,18 +17,21 @@ bodies.
 `tunnel.forward` ships as the first tunnel verb -- a live channel bridging
 operator traffic to a TCP connection the implant opens from its own vantage,
 admitted to the Stage-2 and Pivot class sets, with the reference handler and
-end-to-end attribution (Sec 5.2, Sec 10.1, Sec 10.3). The pivot class admits
-the tunnel set and stops admitting nothing; what stays open is the second arm
-and the fronting executor for unplantable hosts.
+end-to-end attribution (Sec 5.2, Sec 10.1, Sec 10.3). The operator-side relay
+bind has shipped with it: a teamserver-bound TCP listener bridged onto the
+dispatched channel, so unmodified tooling rides the tunnel without per-byte
+API posts, its bind and close audited alongside the task's transcript
+(Sec 10.1). What stays open is the SOCKS arm and the fronting executor for
+unplantable hosts.
 
-- [ ] **SOCKS arm and an operator-side relay bind.** `tunnel.socks` (a SOCKS
-      listener the implant bridges, so unmodified tooling routes through the
-      pivot without per-connection tasking) and/or a teamserver-bound relay
-      port that bridges a local TCP listener into a live channel, so an
-      operator's browser or proxy chains onto the tunnel instead of driving
-      it by input posts. _AC:_ an unmodified operator-side tool reaches a
-      third host through a stage-2 implant's tunnel without a per-byte API
-      call, and the flow is attributed (task, audit trail, operator view).
+- [ ] **SOCKS arm.** `tunnel.socks`: a SOCKS listener the implant bridges
+      over one channel -- connection-id framing inside the tunnel channel's
+      own byte grammar, so unmodified tooling routes through the pivot to
+      arbitrary destinations without per-connection tasking. Extends the
+      relay bind's single fixed destination into a proper proxy surface.
+      _AC:_ an operator's SOCKS-configured browser reaches arbitrary third
+      hosts through one stage-2 tunnel task, every connection and its bytes
+      attributed (task, audit trail, operator view).
 - [ ] **Pivot fronting executor.** A pivot session enrolled by a parent
       (lateral.move, class Pivot) has no process of its own: its tasking must
       be claimed and executed by the parent's beacon stream. The wire needs a

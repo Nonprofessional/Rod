@@ -44,6 +44,11 @@ public static class TaskEndpoints
         // The streaming task shape's other half (architecture.md Sec 10.3):
         // operator input into a live channel task.
         group.MapPost("/{taskId}/input", SendInputAsync).WithName("SendTaskInput");
+        // The operator-side relay bind (architecture.md Sec 10.1 tunnel,
+        // Sec 10.3): bridge a local TCP listener onto a live tunnel channel,
+        // so unmodified tooling rides the tunnel without per-byte input posts.
+        group.MapPost("/{taskId}/relay", BindRelayAsync).WithName("BindTaskRelay");
+        group.MapDelete("/{taskId}/relay", UnbindRelayAsync).WithName("UnbindTaskRelay");
 
         return endpoints;
     }
@@ -388,6 +393,149 @@ public static class TaskEndpoints
         return Results.Ok(new TaskInputResponse(taskValue.ToString(), body.Eof));
     }
 
+    // The operator-side relay bind (architecture.md Sec 10.1 tunnel, Sec 10.3):
+    // start a teamserver-bound TCP listener bridged onto a dispatched
+    // tunnel.forward channel, so an operator's unmodified tool rides the tunnel
+    // by connecting a socket instead of driving the channel by input posts. The
+    // relay is tunnel-only -- a shell channel's grammar is a terminal, and a
+    // TCP bridge onto it would hand the tool a stream the shell cannot speak.
+    // Loopback by default; an operator reaching the relay from elsewhere names
+    // the address explicitly and owns that exposure.
+    private static async Task<IResult> BindRelayAsync(
+        string engagementId,
+        string taskId,
+        RelayBindRequest? body,
+        ClaimsPrincipal user,
+        ITaskRepository tasks,
+        TaskRelayHub relays,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(taskId, out var taskValue))
+            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+
+        if (!TryParseRelayAddress(body?.BindAddress, out var address, out var addressError))
+            return Results.BadRequest(new Problem(addressError));
+        var port = body?.Port ?? 0;
+        if (port is < 0 or > 65535)
+            return Results.BadRequest(new Problem("Relay port must be 0 (ephemeral) through 65535."));
+
+        var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
+        if (task is null || task.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+
+        if (!string.Equals(task.Verb, ChannelVerbs.TunnelForward, StringComparison.OrdinalIgnoreCase))
+            return Results.Json(
+                new Problem($"'{task.Verb}' is not a tunnel task; a relay bridges only tunnel.forward."),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        if (task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched)
+            return Results.Conflict(
+                new Problem("The task's channel is not live: it is queued or already completed."));
+        if (relays.IsBound(taskValue))
+            return Results.Conflict(new Problem("A relay is already bound for this task."));
+
+        var bound = await relays.OpenAsync(
+            new TaskRelayHub.RelayBind(
+                new EngagementId(engagementValue),
+                task.ImplantId,
+                new TaskId(taskValue),
+                operatorId.Value,
+                task.Verb,
+                address,
+                port),
+            cancellationToken);
+        if (bound is null)
+            return Results.Conflict(new Problem("A relay is already bound for this task."));
+
+        // The bind is the operator's action on the engagement (architecture.md
+        // Sec 11): attributed to the binder, bound to the tunnel's task, the
+        // payload the listen endpoint the tool connects to. How the relay ended
+        // rides the RelayClosed event the hub writes on close.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: operatorId.Value.Value,
+                implantId: task.ImplantId.Value,
+                taskId: taskValue,
+                verb: task.Verb,
+                kind: AuditEventKind.RelayBound,
+                payload: $"{address}:{bound.Value.Port}",
+                output: null,
+                outcome: "bound",
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Created(
+            $"/engagements/{engagementId}/tasks/{taskValue}/relay",
+            new RelayBindResponse(new TaskId(taskValue).ToString(), bound.Value.Host, bound.Value.Port));
+    }
+
+    // Ends a relay bind early. The tunnel itself stays up -- the relay is one
+    // bridge onto the channel, not the channel; the operator can bind again or
+    // keep driving the tunnel by input posts.
+    private static async Task<IResult> UnbindRelayAsync(
+        string engagementId,
+        string taskId,
+        ClaimsPrincipal user,
+        ITaskRepository tasks,
+        TaskRelayHub relays,
+        CancellationToken cancellationToken)
+    {
+        if (user.TryGetOperatorId() is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(taskId, out var taskValue))
+            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+
+        var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
+        if (task is null || task.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+        if (!relays.IsBound(taskValue))
+            return Results.NotFound(new Problem("No relay is bound for this task."));
+
+        relays.CloseTask(taskValue, "the operator unbound the relay");
+        return Results.NoContent();
+    }
+
+    // The relay listen address grammar: "loopback" (the default), "any", or an
+    // IP literal. Names are refused -- a typo'd hostname must not silently
+    // bind loopback, and DNS at bind time is a dependency a relay does not
+    // need.
+    private static bool TryParseRelayAddress(string? text, out System.Net.IPAddress address, out string error)
+    {
+        const string loopback = "loopback";
+        const string any = "any";
+        if (string.IsNullOrWhiteSpace(text) || string.Equals(text.Trim(), loopback, StringComparison.OrdinalIgnoreCase))
+        {
+            address = System.Net.IPAddress.Loopback;
+            error = string.Empty;
+            return true;
+        }
+        if (string.Equals(text.Trim(), any, StringComparison.OrdinalIgnoreCase))
+        {
+            address = System.Net.IPAddress.Any;
+            error = string.Empty;
+            return true;
+        }
+        if (System.Net.IPAddress.TryParse(text.Trim(), out var parsed))
+        {
+            address = parsed;
+            error = string.Empty;
+            return true;
+        }
+        error = "Relay bind address must be 'loopback' (default), 'any', or an IP literal.";
+        address = System.Net.IPAddress.Loopback;
+        return false;
+    }
+
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The issuing operator is the authenticated operator; the request carries
@@ -410,6 +558,20 @@ public static class TaskEndpoints
     public sealed record TaskInputRequest(
         byte[]? Data = null,
         bool Eof = false);
+
+    // A relay bind request (architecture.md Sec 10.1 tunnel, Sec 10.3): the
+    // listen address ("loopback" by default, "any", or an IP literal) and the
+    // port (0 for an ephemeral one).
+    public sealed record RelayBindRequest(
+        string? BindAddress = null,
+        int? Port = null);
+
+    // The bound relay: the task it bridges and the endpoint the operator's
+    // tool connects to.
+    public sealed record RelayBindResponse(
+        string TaskId,
+        string Host,
+        int Port);
 
     // Acknowledgement for accepted input: the task it was routed to and
     // whether the post carried eof.
