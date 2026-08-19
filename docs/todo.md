@@ -44,10 +44,3 @@ and the fronting executor for unplantable hosts.
 None open: ending live sessions on credential revoke, the durable
 replay-nonce floor, and operator API tokens have shipped. The one
 designed-but-deferred item (sealing) stays in Sec 9.
-
-## Polish
-
-- [ ] **Listener transport labels.** The envelope transport stringifies as
-      `httpsenvelope` in the listener listing (`ListenerTransport.ToString()`
-      lower-cased); give listings and the UI a stable kebab-case name.
-      _AC:_ the listener listing and the operator UI render `https-envelope`.

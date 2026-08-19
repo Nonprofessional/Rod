@@ -100,7 +100,9 @@ public static class ListenerEndpoints
             => new(
                 l.Id.ToString(),
                 l.Name,
-                l.Transport.ToString().ToLowerInvariant(),
+                // The stable kebab-case wire name (HttpsEnvelope -> "https-envelope"),
+                // which the listing and the operator UI render verbatim.
+                l.Transport.WireName(),
                 l.BindAddress,
                 l.PublicEndpoint,
                 l.State.ToString().ToLowerInvariant(),

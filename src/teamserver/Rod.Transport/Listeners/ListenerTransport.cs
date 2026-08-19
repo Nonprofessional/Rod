@@ -70,3 +70,27 @@ public enum ListenerTransport
     /// </summary>
     Tcp,
 }
+
+/// <summary>
+/// The stable wire name of a listener transport: the enum name in kebab case
+/// (<c>HttpsEnvelope</c> -&gt; <c>https-envelope</c>). The listener listing and
+/// the operator UI render this name, so a multi-word transport never
+/// stringifies as one mashed word; the plain lower-casing the listing once
+/// applied produced <c>httpsenvelope</c>, which reads as nothing.
+/// </summary>
+public static class ListenerTransportNames
+{
+    /// <summary>Returns the transport's kebab-case wire name.</summary>
+    public static string WireName(this ListenerTransport transport)
+    {
+        var name = transport.ToString();
+        var builder = new System.Text.StringBuilder(name.Length + 4);
+        foreach (var letter in name)
+        {
+            if (char.IsUpper(letter) && builder.Length > 0)
+                builder.Append('-');
+            builder.Append(char.ToLowerInvariant(letter));
+        }
+        return builder.ToString();
+    }
+}

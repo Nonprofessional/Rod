@@ -110,6 +110,34 @@ public class ListenerTests
     }
 
     [Fact]
+    public async Task ListenerListing_RendersKebabCaseTransportNames()
+    {
+        // The stable label contract: multi-word transports render kebab-cased
+        // (https-envelope), never as one mashed lower-cased word, and the
+        // single-word transports keep their plain names. The operator UI
+        // renders the listing's string verbatim, so this is the UI's name too.
+        await using var env = await TestEnv.StartAsync(
+            new ListenerConfig(
+                Name: "envelope-1",
+                Transport: ListenerTransport.HttpsEnvelope,
+                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                PublicEndpoint: "https://c2.example.test"),
+            new ListenerConfig(
+                Name: "http-1",
+                Transport: ListenerTransport.Http,
+                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                PublicEndpoint: "http://c2.example.test"));
+
+        await AuthenticatedHost.LoginAsync(env.Http);
+
+        var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
+        Assert.NotNull(listeners);
+        var transports = listeners!.ToDictionary(l => l.Name, l => l.Transport);
+        Assert.Equal("https-envelope", transports["envelope-1"]);
+        Assert.Equal("http", transports["http-1"]);
+    }
+
+    [Fact]
     public async Task Listener_BindAddress_IsDecoupled_FromPublicEndpoint()
     {
         // architecture.md Sec 8: the listener and the public endpoint are decoupled
@@ -233,6 +261,18 @@ public class ListenerTests
             {
                 env.MtlsBind = $"127.0.0.1:{GetFreeTcpPort()}";
                 rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
+            }
+
+            // Any other transport rides along with its bind rewritten the same
+            // way when it is host:port shaped (envelope, DNS, raw TCP); a pipe
+            // name is kept as configured.
+            foreach (var other in listeners.Where(
+                l => l.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls)))
+            {
+                var bind = other.BindAddress.Contains(':', StringComparison.Ordinal)
+                    ? $"127.0.0.1:{GetFreeTcpPort()}"
+                    : other.BindAddress;
+                rewritten.Add(other with { BindAddress = bind });
             }
 
             var config = AuthenticatedHost.BuildConfig();
