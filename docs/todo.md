@@ -41,12 +41,6 @@ and the fronting executor for unplantable hosts.
 
 ## Security follow-ups (architecture.md Sec 9)
 
-- [ ] **Durable replay-nonce floor.** The per-implant nonce counter lives in
-      the TaskService process (Sec 9, tasking replay nonces); move it behind
-      the task repository so a durable (Postgres) deployment keeps the floor
-      across a restart. _AC:_ with the durable store configured, a restarted
-      teamserver's next dispatch for a negotiating implant continues past
-      the pre-restart count -- the floor does not reset.
 - [ ] **Operator API tokens.** The Sec 9 identity model lists API tokens;
       only password logins with cookie sessions ship. Tokens minted per
       operator, honored by the operator API alongside cookies, and revocable

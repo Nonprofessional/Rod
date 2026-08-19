@@ -156,6 +156,10 @@ public class DispatchPushTests
         public System.Threading.Tasks.Task<Rod.CoreState.Tasks.Task?> NextPendingAsync(
             ImplantId implant, CancellationToken cancellationToken = default)
             => _inner.NextPendingAsync(implant, cancellationToken);
+
+        public System.Threading.Tasks.Task<ulong> NextNonceAsync(
+            ImplantId implant, CancellationToken cancellationToken = default)
+            => _inner.NextNonceAsync(implant, cancellationToken);
     }
 
     /// <summary>

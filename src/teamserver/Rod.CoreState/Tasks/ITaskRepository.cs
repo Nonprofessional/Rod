@@ -88,4 +88,19 @@ public interface ITaskRepository
         ImplantId implant,
         DateTimeOffset at,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically reserves and persists the next per-implant replay nonce
+    /// (architecture.md Sec 9 -- tasking replay nonces): returns 1 the first
+    /// time and monotonically increases after, so a negotiating implant never
+    /// sees the same nonce twice and a captured frame replayed after a
+    /// reconnect still falls at or below the floor it already accepted. The
+    /// floor lives behind the repository so a durable store keeps it across a
+    /// restart: the in-memory adapter's counter is per-process (which the
+    /// signing posture tolerates -- the task queue itself is equally
+    /// per-process there), while the durable adapter persists the count.
+    /// </summary>
+    System.Threading.Tasks.Task<ulong> NextNonceAsync(
+        ImplantId implant,
+        CancellationToken cancellationToken = default);
 }

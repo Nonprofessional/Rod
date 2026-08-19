@@ -170,9 +170,10 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         // can never select the same task. The outer query turns the lock into a
         // plain id; the entity is then loaded and transitioned inside the same
         // transaction so the Dispatched mark commits with the lock released
-        // only after SaveChanges.
+        // only after SaveChanges. The scalar column must alias AS "Value":
+        // SqlQuery composes the raw SQL as a subquery selecting s."Value".
         var claimedId = await db.Database.SqlQuery<Guid>($"""
-            SELECT task_id
+            SELECT task_id AS "Value"
             FROM tasks
             WHERE task_id = (
                 SELECT task_id
@@ -195,6 +196,46 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return task;
+    }
+
+    public async System.Threading.Tasks.Task<ulong> NextNonceAsync(
+        ImplantId implant,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        // The floor is durable and the reservation atomic: the upsert inserts
+        // the first row (floor 1) or increments the existing one, and RETURNING
+        // hands back the reserved value in the same statement -- concurrent
+        // beacons for one implant never reserve the same nonce, and a restarted
+        // teamserver reads the persisted floor instead of restarting the count
+        // (architecture.md Sec 9). Raw ADO on the context's connection because
+        // the reservation is an INSERT whose RETURNING value must come back
+        // from the same statement -- nothing in EF's composable SqlQuery shape
+        // can wrap that.
+        var connection = db.Database.GetDbConnection();
+        await db.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO implant_task_nonces (implant_id, nonce_floor)
+                VALUES (@implant, 1)
+                ON CONFLICT (implant_id) DO UPDATE SET nonce_floor = implant_task_nonces.nonce_floor + 1
+                RETURNING nonce_floor
+                """;
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@implant";
+            parameter.Value = implant.Value;
+            command.Parameters.Add(parameter);
+
+            var reserved = await command.ExecuteScalarAsync(cancellationToken);
+            return (ulong)(long)reserved!;
+        }
+        finally
+        {
+            db.Database.CloseConnection();
+        }
     }
 }
 

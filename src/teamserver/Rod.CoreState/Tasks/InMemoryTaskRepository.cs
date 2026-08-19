@@ -167,5 +167,18 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         }
     }
 
+    // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking
+    // replay nonces). Monotonic for the implant's life in this process, across
+    // sessions and transports. Per-process by design here: the in-memory
+    // adapters lose the task queue on restart too, and the signing posture
+    // tolerates it -- the durable adapter keeps the floor across a restart.
+    private readonly ConcurrentDictionary<ImplantId, ulong> _nonces = new();
+
+    public System.Threading.Tasks.Task<ulong> NextNonceAsync(
+        ImplantId implant,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromResult(
+            _nonces.AddOrUpdate(implant, 1, (_, last) => last + 1));
+
     private readonly Lock _claimLock = new();
 }

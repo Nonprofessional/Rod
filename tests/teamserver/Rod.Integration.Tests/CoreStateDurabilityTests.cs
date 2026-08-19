@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
 using Rod.CoreState;
+using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
@@ -343,6 +344,81 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Completed, secondCompleted!.Status);
         Assert.Equal("two", secondCompleted.Output);
         Assert.Equal(TaskOutcome.Succeeded, secondCompleted.Outcome);
+    }
+
+    [Fact]
+    public async Task ReplayNonceFloor_SurvivesRestart_WhenPostgresWired()
+    {
+        // The Sec 9 follow-up: the per-implant replay-nonce floor lives behind
+        // the task repository, so a durable deployment keeps it across a
+        // restart -- the restarted teamserver's next dispatch for a
+        // negotiating implant continues past the pre-restart count instead of
+        // resetting the floor a captured pre-restart frame could replay under.
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        var connectionString = _postgres.ConnectionString;
+
+        // --- Host A: enroll an implant that negotiated the replay-nonce arm,
+        //     then dispatch several tasks through the live TaskService -- each
+        //     claim reserves and persists the next nonce. ---
+        EngagementId engagementId;
+        ImplantId implantId;
+        const int dispatchedBefore = 3;
+        ulong floorBefore;
+
+        await using (var envA = await TestEnv.StartAsync(connectionString))
+        {
+            await EnsureSchemaAsync(envA.Host);
+
+            var created = await envA.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
+                Name: "Operation Smokeshow"));
+            created.EnsureSuccessStatusCode();
+            var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+            Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
+
+            var implants = envA.Host.Services.GetRequiredService<IImplantRepository>();
+            var implant = Implant.Enroll(
+                ImplantId.New(),
+                engagementId,
+                killDate: DateTimeOffset.UtcNow.AddHours(1),
+                @class: ImplantClass.Stage2,
+                createdAt: DateTimeOffset.UtcNow,
+                deployedBy: envA.OperatorId);
+            implant.EnableReplayNonces();
+            implantId = implant.Id;
+            await implants.SaveAsync(implant);
+
+            var repository = envA.Host.Services.GetRequiredService<ITaskRepository>();
+            var service = envA.Host.Services.GetRequiredService<TaskService>();
+            ulong last = 0;
+            for (var i = 0; i < dispatchedBefore; i++)
+            {
+                await EnqueueAsync(repository, engagementId, implantId, envA.OperatorId, "shell.exec", $"echo {i}");
+                var dispatched = await service.DispatchNextAsync(implantId);
+                Assert.NotNull(dispatched);
+                Assert.Equal(last + 1, dispatched!.Nonce);
+                last = dispatched.Nonce!.Value;
+            }
+            floorBefore = last;
+        }
+
+        // --- Host B: a fresh teamserver over the same Postgres. The sticky
+        //     ReplayNonces flag survived with the implant row, and the floor
+        //     survived with the task store: the next dispatch continues past
+        //     the pre-restart count. ---
+        await using var envB = await TestEnv.StartAsync(connectionString);
+
+        var repositoryB = envB.Host.Services.GetRequiredService<ITaskRepository>();
+        var serviceB = envB.Host.Services.GetRequiredService<TaskService>();
+
+        await EnqueueAsync(repositoryB, engagementId, implantId, envB.OperatorId, "shell.exec", "echo after");
+        var afterRestart = await serviceB.DispatchNextAsync(implantId);
+        Assert.NotNull(afterRestart);
+        Assert.Equal(floorBefore + 1, afterRestart!.Nonce);
     }
 
     [Fact]

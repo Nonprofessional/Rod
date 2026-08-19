@@ -625,14 +625,17 @@ fleet-wide code execution. Security is a first-class concern.
   surfaces on the task instead of silently re-executing; once negotiated, a
   nonce-less task is refused too. An implant that never advertises keeps the
   original four-element tuple byte-for-byte: the addition is negotiated, never
-  imposed (the evolution rules, extending/implants.md). The nonce floor is
-  per-process server-side -- a restarted teamserver restarts the count, which
-  the signing posture already tolerates (the threat is an untrusted transport
-  hop, not a compromised teamserver, and the task queue is equally
-  per-process in the in-memory adapters); a durable floor arrives with durable
-  task state. The reference implant advertises the arm, and the conformance
-  harness's hostile probe replays a genuinely signed control frame to pin the
-  refusal.
+  imposed (the evolution rules, extending/implants.md). The nonce floor lives
+  behind the task repository: the in-memory adapter's counter is per-process
+  (a restarted teamserver restarts the count, which the signing posture
+  already tolerates -- the threat is an untrusted transport hop, not a
+  compromised teamserver, and the task queue is equally per-process in the
+  in-memory adapters), while the durable adapter reserves each nonce with an
+  atomic upsert-and-return on a persisted floor row, so a restarted
+  teamserver's next dispatch for a negotiating implant continues past the
+  pre-restart count. The reference implant advertises the arm, and the
+  conformance harness's hostile probe replays a genuinely signed control frame
+  to pin the refusal.
 - **Sealing** _(future, deferred)_. End-to-end protection of task payloads so
   untrusted redirectors cannot read or alter them. Deferred because the
   concrete adversary is absent today: the reference redirector is an opaque L4

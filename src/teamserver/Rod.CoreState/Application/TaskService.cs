@@ -53,17 +53,6 @@ public sealed class TaskService
     private readonly ITaskCapabilityResolver _capabilities;
     private readonly ITaskDispatchWake? _wake;
 
-    // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking
-    // replay nonces). Monotonic for the implant's life in this process, across
-    // sessions and transports, so a negotiating implant never sees the same
-    // nonce twice and a captured frame replayed after a reconnect still falls
-    // at or below the floor it already accepted. The floor is per-process:
-    // a restarted teamserver restarts the count, which the signing posture
-    // already tolerates -- the threat model is an untrusted transport hop, not
-    // a compromised teamserver, and the task queue itself is equally
-    // per-process in the in-memory adapters.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<ImplantId, ulong> _nonces = new();
-
     public TaskService(
         ITaskRepository tasks,
         IImplantRepository implants,
@@ -281,7 +270,7 @@ public sealed class TaskService
         ulong? nonce = null;
         var record = await _implants.FindAsync(implant, cancellationToken);
         if (record is { ReplayNonces: true })
-            nonce = _nonces.AddOrUpdate(implant, 1, (_, last) => last + 1);
+            nonce = await _tasks.NextNonceAsync(implant, cancellationToken);
 
         return new TaskDispatched(
             task.Id,
