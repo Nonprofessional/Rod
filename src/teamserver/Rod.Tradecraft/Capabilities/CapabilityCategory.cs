@@ -33,6 +33,14 @@ public enum CapabilityCategory
     Exfil,
 
     /// <summary>
+    /// Network tunneling through an implant (architecture.md Sec 5.2, Sec 14):
+    /// bridging operator traffic to hosts reachable only from the implant's
+    /// vantage. The tunnel verbs run as live channels (architecture.md Sec
+    /// 10.3); the pivot class admits exactly this category.
+    /// </summary>
+    Tunnel,
+
+    /// <summary>
     /// Detection-evasion hooks. Contract and dispatch only; concrete behavior
     /// is out-of-tree (architecture.md Sec 13).
     /// </summary>

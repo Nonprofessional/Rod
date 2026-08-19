@@ -24,7 +24,16 @@ import type { SessionOperator } from '../api'
 // Interactive shell tasks (shell.interact, architecture.md Sec 10.3) get an
 // Interact row action that opens the live channel pane: the transcript is the
 // task's own output, polled while the pane is open; typing posts through the
-// input route and Close stdin ends the channel.
+// input route and Close stdin ends the channel. Every channel verb gets the
+// same pane -- tunnel.forward's channel carries the tunnel's bytes the same
+// way the shell's carries its stdio.
+
+// The verbs whose tasks run as live channels (the server's ChannelVerbs is the
+// authority; the operator UI keeps this mirror so a channel task can offer its
+// input pane). The input route refuses anything else server-side.
+const CHANNEL_VERBS: readonly string[] = ['shell.interact', 'tunnel.forward']
+
+const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
 export function TaskingView({
   engagementId,
@@ -207,7 +216,12 @@ export function TaskingView({
 
       <h3>Task history &mdash; engagement-wide</h3>
       {interactTask && (
-        <InteractPane engagementId={engagementId} taskId={interactTask} onClose={() => setInteractTask(null)} />
+        <InteractPane
+          engagementId={engagementId}
+          taskId={interactTask}
+          verb={tasks.find((t) => t.taskId === interactTask)?.verb ?? 'channel'}
+          onClose={() => setInteractTask(null)}
+        />
       )}
       {tasks.length === 0 ? (
         <p className="muted">No tasks yet.</p>
@@ -248,7 +262,7 @@ export function TaskingView({
                     : new Date(t.createdAt).toLocaleTimeString()}
                 </td>
                 <td>
-                  {t.verb === 'shell.interact' && (
+                  {isChannelVerb(t.verb) && (
                     <button
                       onClick={() => setInteractTask(interactTask === t.taskId ? null : t.taskId)}
                     >
@@ -272,18 +286,21 @@ export function TaskingView({
   )
 }
 
-// The interactive shell pane: a live channel task's transcript with an input
-// line and stdin close. The transcript is the task's own output server-side
-// (the record of the session is the session), so the pane polls it while the
-// channel runs instead of holding a second event stream; typing posts through
-// the input route and Close stdin sends the eof that ends the channel.
+// The channel pane: a live channel task's transcript with an input line and
+// stdin close. The transcript is the task's own output server-side (the record
+// of the session is the session), so the pane polls it while the channel runs
+// instead of holding a second event stream; typing posts through the input
+// route and Close stdin sends the eof that ends (or half-closes, for a tunnel)
+// the channel.
 function InteractPane({
   engagementId,
   taskId,
+  verb,
   onClose,
 }: {
   engagementId: string
   taskId: string
+  verb: string
   onClose: () => void
 }) {
   const [transcript, setTranscript] = useState('')
@@ -356,7 +373,7 @@ function InteractPane({
   return (
     <div className="interact-pane">
       <h4>
-        shell.interact &mdash; <code>{taskId.slice(0, 8)}</code> <StatusBadge status={status} />
+        {verb} &mdash; <code>{taskId.slice(0, 8)}</code> <StatusBadge status={status} />
       </h4>
       <pre className="output interact-transcript" ref={transcriptRef}>
         {transcript || '\u2014'}

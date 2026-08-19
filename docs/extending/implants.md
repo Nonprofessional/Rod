@@ -187,32 +187,45 @@ arguments token, then run the verb against the reassembled bytes and report the
 
 ### Interactive channels (the streaming task shape)
 
-`shell.interact` is `shell.exec`'s live shape: the `TaskRequest` opens a
-channel instead of a one-shot round trip, and the task does not complete
-until the channel ends. Flow:
+`shell.interact` is `shell.exec`'s live shape, and `tunnel.forward` is the
+port-forward bridge (architecture.md Sec 5.2, Sec 14): each `TaskRequest`
+opens a channel instead of a one-shot round trip, and the task does not
+complete until the channel ends. Flow:
 
 1. Receive the `TaskRequest` like any other and verify its signature. Its
-   `arguments` are an optional initial command (run once, then the session
-   holds open).
+   `arguments` are an optional initial command (the shell) or `<host> <port>`
+   (the tunnel: connect from the implant's own vantage).
 2. Stream whatever the task produces as `ChannelOutput` frames
    (`kind = FRAME_KIND_CHANNEL_OUTPUT`, payload `ChannelOutput{task_id,
    data}`), in order, as it is produced. The teamserver decodes and
    accumulates the chunks onto the task's transcript live -- an operator
    reads the channel while it runs.
-3. Receive the operator's typing as `ChannelInput` frames downstream
+3. Receive the operator's bytes as `ChannelInput` frames downstream
    (`kind = FRAME_KIND_CHANNEL_INPUT`, payload `ChannelInput{task_id, data,
    eof}`), which may interleave with anything else on the stream; route them
-   by `task_id`. `eof` means the operator closed the channel's stdin.
+   by `task_id`. `eof` means the operator closed the channel's stdin -- for
+   the shell that ends the session; for the tunnel it half-closes the TCP
+   send side, and answers already in flight still land.
 4. End the channel with an ordinary `TaskResult` for the task -- the shell
-   exited (naturally, or because `eof` closed its stdin) or the channel
-   failed. The server appends the final output to the transcript and
-   completes the task with it as the record.
+   exited, the tunneled peer closed its side, or the channel failed. The
+   server appends the final output to the transcript and completes the task
+   with it as the record.
 
 The channel is session-scoped: it lives on the CheckIn stream that carried
-its `TaskRequest`, and a stream drop ends it (kill the shell; the task stays
-dispatched server-side). Input is not signed -- like a `StagedChunk` run it
-rides the mTLS stream the signed `TaskRequest` opened. Keep output chunks at
-or under 16 KiB.
+its `TaskRequest`, and a stream drop ends it (kill the shell or close the
+tunnel; the task stays dispatched server-side). Input is not signed -- like a
+`StagedChunk` run it rides the mTLS stream the signed `TaskRequest` opened.
+Keep output chunks at or under 16 KiB. The server routes `ChannelInput` only
+for a task whose verb is one of these channel verbs (`shell.interact`,
+`tunnel.forward`); a channel task is never claimed over the envelope or DNS
+poll transports, which carry no stream to run the input half on.
+
+For a tunnel the channel is byte-transparent: the relayed protocol is none
+of the wire contract's business, and the task's final output is the relay
+summary (`tunnel to host:port closed: relayed N bytes up, M bytes down`).
+The transcript accumulates as UTF-8 text, so binary tunnel traffic renders
+with replacement characters -- the traffic's attribution is the task record
+and the summary, not byte fidelity in the transcript.
 
 ### DNS check-ins (Tier 2, the egress-restricted transport)
 

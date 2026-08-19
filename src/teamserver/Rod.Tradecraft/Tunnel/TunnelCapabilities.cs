@@ -1,0 +1,52 @@
+using Rod.Tradecraft.Capabilities;
+
+namespace Rod.Tradecraft.Tunnel;
+
+/// <summary>
+/// The tunnel capability verbs (architecture.md Sec 5.2, Sec 14): bridging
+/// operator traffic through an implant to hosts reachable only from the
+/// implant's vantage -- the reach a pivot exists to provide. These verbs run
+/// as live channels (architecture.md Sec 10.3, the streaming task shape): the
+/// task's channel carries the tunnel's bytes both ways, so the traffic rides
+/// the beacon stream the signed TaskRequest opened and is attributed to the
+/// task end to end.
+/// </summary>
+/// <remarks>
+/// Concrete behavior for these verbs is not part of this repository -- it lives
+/// in the implant and is captured as task output over the beacon stream
+/// (architecture.md Sec 10.3). Here they are descriptors only: enough for the
+/// registry to know the verb exists and for the task-issuance gate to resolve
+/// it. The tunnel verbs carry a <c>touches-network</c> OPSEC attribute
+/// (architecture.md Sec 7) since each opens a network connection from the
+/// target.
+/// </remarks>
+public static class TunnelCapabilities
+{
+    /// <summary>
+    /// Forward a TCP connection: the arguments are <c>&lt;host&gt;
+    /// &lt;port&gt;</c>; the implant connects from its own vantage and the
+    /// task's channel bridges the operator's bytes to the peer.
+    /// </summary>
+    public const string Forward = "tunnel.forward";
+
+    private static readonly IReadOnlyDictionary<string, string> TouchesNetwork =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["touches-network"] = "true",
+        };
+
+    /// <summary>
+    /// Descriptors for every tunnel verb, in declared order. The composition
+    /// root registers these so the registry lists the full tunnel set.
+    /// </summary>
+    public static readonly CapabilityDescriptor[] All =
+    {
+        CapabilityDescriptor.Of(Forward, CapabilityCategory.Tunnel, "1.0", TouchesNetwork),
+    };
+
+    /// <summary>Every tunnel verb string, in declared order.</summary>
+    public static readonly string[] Verbs =
+    {
+        Forward,
+    };
+}

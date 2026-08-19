@@ -14,18 +14,30 @@ bodies.
 
 ## Tunneling and the pivot class (architecture.md Sec 5.2, Sec 14)
 
-The capability bar demands tunneling on par with the best available
-(Sec 14), and the pivot class exists only as a reserved empty verb set
-(Sec 5.2) -- the one capability area the bar names with nothing shipped.
+`tunnel.forward` ships as the first tunnel verb -- a live channel bridging
+operator traffic to a TCP connection the implant opens from its own vantage,
+admitted to the Stage-2 and Pivot class sets, with the reference handler and
+end-to-end attribution (Sec 5.2, Sec 10.1, Sec 10.3). The pivot class admits
+the tunnel set and stops admitting nothing; what stays open is the second arm
+and the fronting executor for unplantable hosts.
 
-- [ ] **Tunnel verbs on the wire contract.** Design the tunnel verb set
-      (port forward and/or SOCKS), its frame shape (new frame kinds or the
-      interactive-channel machinery), and how a pivot enrols and forwards
-      for hosts that cannot run their own implant; admit the verbs into the
-      pivot class set so the class stops admitting nothing. _AC:_ a task on
-      a stage-2 implant reaches a third host through a pivot's tunnel, and
-      the traffic is attributed end to end (task, audit trail, operator
-      view).
+- [ ] **SOCKS arm and an operator-side relay bind.** `tunnel.socks` (a SOCKS
+      listener the implant bridges, so unmodified tooling routes through the
+      pivot without per-connection tasking) and/or a teamserver-bound relay
+      port that bridges a local TCP listener into a live channel, so an
+      operator's browser or proxy chains onto the tunnel instead of driving
+      it by input posts. _AC:_ an unmodified operator-side tool reaches a
+      third host through a stage-2 implant's tunnel without a per-byte API
+      call, and the flow is attributed (task, audit trail, operator view).
+- [ ] **Pivot fronting executor.** A pivot session enrolled by a parent
+      (lateral.move, class Pivot) has no process of its own: its tasking must
+      be claimed and executed by the parent's beacon stream. The wire needs a
+      target-implant marking on forwarded tasking (the signature already
+      binds the target id, Sec 9; the frame does not carry it), the dispatch
+      claim widens to the fronted pivots, and channel input routes through
+      the fronting stream's sink. _AC:_ a `tunnel.forward` task issued to a
+      pivot-child session executes on its parent and reaches the third host,
+      attributed to the pivot session end to end.
 
 ## Transports (architecture.md Sec 8)
 

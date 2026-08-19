@@ -169,11 +169,12 @@ export async function issueTask(
 
 // --- Streaming task input (architecture.md Sec 10.3) ------------------------
 //
-// A live channel task (shell.interact) takes operator input through its own
-// route: one post is one line of typing, and eof closes the channel's stdin
-// (the shell exits and the task completes with the transcript as its record).
-// The transcript itself is the task's own output -- read it back with getTask
-// while the channel runs.
+// A live channel task (shell.interact, tunnel.forward) takes operator input
+// through its own route: one post is one line of typing or one chunk of
+// tunnel traffic, and eof closes the channel's stdin (the shell exits and the
+// task completes with the transcript as its record; the tunnel half-closes
+// its send side). The transcript itself is the task's own output -- read it
+// back with getTask while the channel runs.
 
 export interface TaskDetail {
   taskId: string

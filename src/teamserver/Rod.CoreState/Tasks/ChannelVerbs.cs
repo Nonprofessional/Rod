@@ -29,7 +29,18 @@ public static class ChannelVerbs
     /// </summary>
     public const string ShellInteract = "shell.interact";
 
-    private static readonly string[] All = { ShellInteract };
+    /// <summary>
+    /// The port-forward tunnel (architecture.md Sec 5.2, Sec 14): the
+    /// arguments string is <c>&lt;host&gt; &lt;port&gt;</c>; the channel then
+    /// bridges the operator's bytes to a TCP connection the implant opens from
+    /// its own vantage and streams the peer's answers back, until the peer
+    /// closes or the beacon stream ends. The same shape the shell rides -- the
+    /// channel is byte-transparent, so the traffic's protocol is none of the
+    /// wire contract's business.
+    /// </summary>
+    public const string TunnelForward = "tunnel.forward";
+
+    private static readonly string[] All = { ShellInteract, TunnelForward };
 
     /// <summary>
     /// Whether <paramref name="verb"/>'s tasks run as live channels. Verb

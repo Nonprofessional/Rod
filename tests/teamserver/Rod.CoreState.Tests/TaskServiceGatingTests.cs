@@ -39,8 +39,10 @@ public class TaskServiceGatingTests
     [Theory]
     [InlineData(ImplantClass.Stage2, "shell.exec")]
     [InlineData(ImplantClass.Stage2, "file.pull")]
+    [InlineData(ImplantClass.Stage2, "tunnel.forward")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
+    [InlineData(ImplantClass.Pivot, "tunnel.forward")]
     public async Task IssueAsync_AcceptsAVerbInFromClassSet(ImplantClass @class, string verb)
     {
         var implants = new InMemoryImplantRepository();

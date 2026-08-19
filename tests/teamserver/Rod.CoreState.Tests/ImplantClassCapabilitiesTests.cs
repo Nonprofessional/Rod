@@ -6,9 +6,10 @@ namespace Rod.CoreState.Tests;
 /// Checks of <see cref="ImplantClassCapabilities"/> -- the per-class reduced
 /// verb set the teamserver gates tasking on (architecture.md Sec 5.2). Each
 /// class advertises the verbs its operational purpose justifies; a stage-2
-/// implant carries the full core set plus the recon set, the lateral set, the
-/// persist set, the collect set, and the exfil set, every other class a subset
-/// (and no recon, lateral, persist, collect, or exfil verbs).
+/// implant carries the full core set plus the tunnel set, the recon set, the
+/// lateral set, the persist set, the collect set, and the exfil set, every
+/// other class a subset (and no recon, lateral, persist, collect, or exfil
+/// verbs) -- the pivot class carries exactly the tunnel set.
 /// </summary>
 public class ImplantClassCapabilitiesTests
 {
@@ -17,6 +18,7 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "shell.interact")]
     [InlineData(ImplantClass.Stage2, "file.push")]
     [InlineData(ImplantClass.Stage2, "file.pull")]
+    [InlineData(ImplantClass.Stage2, "tunnel.forward")]
     [InlineData(ImplantClass.Stage2, "recon.portscan")]
     [InlineData(ImplantClass.Stage2, "recon.hostenum")]
     [InlineData(ImplantClass.Stage2, "recon.service")]
@@ -33,6 +35,7 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
+    [InlineData(ImplantClass.Pivot, "tunnel.forward")]
     public void Allows_AdmitsTheReducedVerbSetForTheClass(ImplantClass @class, string verb)
         => Assert.True(ImplantClassCapabilities.Allows(@class, verb));
 
@@ -42,16 +45,19 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stager, "lateral.move", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Stager, "persist.install", "persistence is a stage-2 activity")]
     [InlineData(ImplantClass.Stager, "collect.cred", "collection and exfiltration are stage-2 long-haul activities")]
+    [InlineData(ImplantClass.Stager, "tunnel.forward", "tunneling joins stage-2's core operations and the pivot set")]
     [InlineData(ImplantClass.WebShell, "file.push", "a web-shell does not push")]
     [InlineData(ImplantClass.WebShell, "recon.hostenum", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.WebShell, "lateral.token", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.WebShell, "persist.list", "persistence is a stage-2 activity")]
     [InlineData(ImplantClass.WebShell, "exfil.push", "collection and exfiltration are stage-2 long-haul activities")]
+    [InlineData(ImplantClass.WebShell, "tunnel.forward", "tunneling joins stage-2's core operations and the pivot set")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
     [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Ephemeral, "lateral.exec_remote", "lateral movement is a stage-2 activity")]
     [InlineData(ImplantClass.Ephemeral, "persist.remove", "persistence is a stage-2 activity")]
     [InlineData(ImplantClass.Ephemeral, "collect.cred", "collection and exfiltration are stage-2 long-haul activities")]
+    [InlineData(ImplantClass.Ephemeral, "tunnel.forward", "tunneling joins stage-2's core operations and the pivot set")]
     [InlineData(ImplantClass.Pivot, "shell.exec", "a pivot forwards, it does not shell")]
     [InlineData(ImplantClass.Pivot, "recon.portscan", "recon is a stage-2 long-haul activity")]
     [InlineData(ImplantClass.Pivot, "lateral.move", "lateral movement is a stage-2 activity")]
@@ -75,19 +81,21 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Stage2, verb));
 
     [Fact]
-    public void For_Stage2_ReturnsTheFullCoreReconLateralPersistCollectAndExfilSet()
+    public void For_Stage2_ReturnsTheFullCoreTunnelReconLateralPersistCollectAndExfilSet()
     {
         // Stage-2 is the primary long-haul implant: it carries the full core set
-        // plus the recon set, the lateral set, the persist set, the collect set,
-        // and the exfil set, since recon, lateral movement, persistence,
-        // collection, and exfiltration are long-haul activities
+        // plus the tunnel set, the recon set, the lateral set, the persist set,
+        // the collect set, and the exfil set, since tunneling is a core
+        // operation (architecture.md Sec 14) and recon, lateral movement,
+        // persistence, collection, and exfiltration are long-haul activities
         // (architecture.md Sec 5.2, Sec 10.1). Every other class carries a subset
-        // for its purpose and no recon, lateral, persist, collect, or exfil verbs.
+        // for its purpose.
         var verbs = ImplantClassCapabilities.For(ImplantClass.Stage2);
         Assert.Equal(
             new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull",
+                "tunnel.forward",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
@@ -133,17 +141,14 @@ public class ImplantClassCapabilitiesTests
     }
 
     [Fact]
-    public void For_EveryImplementedClassReturnsVerbs_PivotIsReservedEmpty()
+    public void For_EveryClassReturnsVerbs_PivotCarriesExactlyTheTunnelSet()
     {
-        // Every class with a shipped artifact carries at least one verb. Pivot
-        // is reserved for tunneling artifacts: nothing ships for it yet, so its
-        // set is empty and it admits nothing (architecture.md Sec 5.2).
+        // Every class carries at least one verb. Pivot is the tunneling class
+        // (architecture.md Sec 5.2): exactly the tunnel set -- enough to forward
+        // traffic for hosts that cannot run their own implant, and nothing a
+        // long-haul stage-2 footprint justifies.
         foreach (ImplantClass @class in Enum.GetValues(typeof(ImplantClass)))
-        {
-            if (@class == ImplantClass.Pivot)
-                Assert.Empty(ImplantClassCapabilities.For(@class));
-            else
-                Assert.NotEmpty(ImplantClassCapabilities.For(@class));
-        }
+            Assert.NotEmpty(ImplantClassCapabilities.For(@class));
+        Assert.Equal(new[] { "tunnel.forward" }, ImplantClassCapabilities.For(ImplantClass.Pivot));
     }
 }

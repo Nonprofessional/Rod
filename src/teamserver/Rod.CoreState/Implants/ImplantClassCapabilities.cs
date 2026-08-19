@@ -6,10 +6,11 @@ namespace Rod.CoreState.Implants;
 /// The reduced capability verb set each <see cref="ImplantClass"/> may run
 /// (architecture.md Sec 5.2). Implants differ by operational purpose, not by a
 /// "device flavor": a stager only fetches, a web-shell executes over HTTP but
-/// holds no tunnel, an ephemeral is one-shot, and a pivot forwards tasking for
+/// holds no tunnel, an ephemeral is one-shot, and a pivot forwards traffic for
 /// hosts that cannot run their own implant. A stage-2 implant carries the full
-/// core set plus the recon set, the lateral set, the persist set, the collect
-/// set, and the exfil set; recon, lateral movement, persistence, collection,
+/// core set plus the tunnel set, the recon set, the lateral set, the persist
+/// set, the collect set, and the exfil set; tunneling joins stage-2's core
+/// operations, and recon, lateral movement, persistence, collection,
 /// and exfiltration are long-haul activities. These sets are
 /// the server's authority for what a class is allowed
 /// to do: task issuance gates on them (architecture.md Sec 10.3), and the build
@@ -37,13 +38,15 @@ public static class ImplantClassCapabilities
         new Dictionary<ImplantClass, IReadOnlyList<string>>
         {
             // The primary long-haul implant: the whole core baseline plus the
-            // recon set, the lateral set, the persist set, the collect set, and
-            // the exfil set (architecture.md Sec 10.1). Recon, lateral movement,
+            // tunnel set, the recon set, the lateral set, the persist set, the
+            // collect set, and the exfil set (architecture.md Sec 10.1, Sec 14).
+            // Tunneling is a core operation, and recon, lateral movement,
             // persistence, collection, and exfiltration are all long-haul
             // activities that justify a stage-2 footprint and no other class.
             [ImplantClass.Stage2] = new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull",
+                "tunnel.forward",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
@@ -63,11 +66,12 @@ public static class ImplantClassCapabilities
             // one-off execution and nothing more.
             [ImplantClass.Ephemeral] = new[] { "shell.exec" },
 
-            // Reserved for tunneling artifacts (a host that cannot run its own
-            // implant). No tunnel verb has shipped, so the set is empty: the
-            // class admits nothing until the artifact that owns it defines what
-            // it runs (architecture.md Sec 5.2).
-            [ImplantClass.Pivot] = Array.Empty<string>(),
+            // The tunneling class: an artifact that represents hosts which
+            // cannot run their own implant (network/OT gear) and forwards their
+            // traffic (architecture.md Sec 5.2). It carries exactly the tunnel
+            // set -- a pivot forwards, it does not shell -- so a Pivot-class
+            // build is the minimal tunneling artifact and nothing else.
+            [ImplantClass.Pivot] = new[] { "tunnel.forward" },
         };
 
     /// <summary>

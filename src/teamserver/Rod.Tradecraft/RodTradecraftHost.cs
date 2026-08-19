@@ -13,6 +13,7 @@ using Rod.Tradecraft.Modules;
 using Rod.Tradecraft.Persist;
 using Rod.Tradecraft.Recon;
 using Rod.Tradecraft.Registry;
+using Rod.Tradecraft.Tunnel;
 
 namespace Rod.Tradecraft;
 
@@ -27,11 +28,11 @@ namespace Rod.Tradecraft;
 /// <remarks>
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers a placeholder per core verb, per recon verb, per lateral verb, per
-/// persist verb, per collect verb, per exfil verb, per evasion verb, and per
-/// exploit verb, so the registry lists the full core, recon, lateral, persist,
-/// collect, exfil, evasion, and exploit sets. A real module registered later for
-/// the same verb replaces the placeholder (the last registration wins -- see
-/// <see cref="ICapabilityRegistry"/>).
+/// persist verb, per collect verb, per exfil verb, per tunnel verb, per evasion
+/// verb, and per exploit verb, so the registry lists the full core, recon,
+/// lateral, persist, collect, exfil, tunnel, evasion, and exploit sets. A real
+/// module registered later for the same verb replaces the placeholder (the
+/// last registration wins -- see <see cref="ICapabilityRegistry"/>).
 ///
 /// The layer wires onto the live task path through <see cref="AddRodTradecraft"/>:
 /// it registers the in-memory capability registry (loaded with every built-in
@@ -130,7 +131,7 @@ public static class RodTradecraftHost
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
     /// (core plus recon plus lateral plus persist plus collect plus exfil plus
-    /// evasion plus exploit). Convenience for tests and for a
+    /// tunnel plus evasion plus exploit). Convenience for tests and for a
     /// process that does not run the full ASP.NET Core host: it owns one registry
     /// and loads the verbs into it.
     /// </summary>
@@ -145,9 +146,9 @@ public static class RodTradecraftHost
     /// <summary>
     /// Registers every built-in capability module into <paramref name="registry"/>:
     /// a placeholder per core verb, per recon verb, per lateral verb, per persist
-    /// verb, per collect verb, per exfil verb, per evasion verb, and per exploit
-    /// verb so the registry lists all eight full sets. Idempotent: each verb is
-    /// registered at most once by deduplicating against what
+    /// verb, per collect verb, per exfil verb, per tunnel verb, per evasion verb,
+    /// and per exploit verb so the registry lists all nine full sets. Idempotent:
+    /// each verb is registered at most once by deduplicating against what
     /// <paramref name="registry"/> already holds.
     /// </summary>
     public static async Task LoadCapabilitiesAsync(
@@ -209,6 +210,16 @@ public static class RodTradecraftHost
         // place. Concrete exfiltration behavior is out-of-tree (architecture.md
         // Sec 13); the reference implants ship none.
         foreach (var descriptor in ExfilCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
+
+        // Tunnel verbs load the same way: a placeholder per verb so the registry
+        // lists the full tunnel set, leaving any caller-supplied override in
+        // place. Concrete tunneling behavior runs on the implant as a live
+        // channel (architecture.md Sec 10.3); the server gates and forwards
+        // only.
+        foreach (var descriptor in TunnelCapabilities.All)
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }

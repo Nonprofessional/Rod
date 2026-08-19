@@ -66,6 +66,11 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    whole session as its output (architecture.md Sec 10.3). Interactive
    channels need a stream-mode check-in; a poll-mode implant reports the task
    Failed with the reason.
+6. To reach a host only the implant can see, issue `tunnel.forward` with
+   arguments `<host> <port>`: the same Interact pane carries the tunnel --
+   input posts are relayed to the peer and its answers land on the transcript,
+   `eof` half-closes the send side, and the task ends when the peer closes,
+   with the relay summary as its final output (architecture.md Sec 10.1).
 
 For staged deployment, build the stage-2 first, then build a second payload
 with class `stager` naming it (`stage2PayloadId`). The stager is a small

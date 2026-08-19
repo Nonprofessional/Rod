@@ -258,24 +258,27 @@ Implants differ by purpose, not by a "managed device flavor":
   one-off execution and temporary access.
 - **Pivot** -- an implant that represents hosts which cannot run their own
   implant (network/OT gear), enrolling each as its own session and forwarding
-  tasking.
+  tasking. Its class set is the tunnel set (Sec 10.1): a Pivot-class build is
+  the minimal tunneling artifact, and the parent-fronting shape for
+  unplantable hosts rides the same set.
 
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
 inner ring both the build pipeline and the tradecraft layer read). Stage-2
 carries the full core set (shell plus both-direction file transfer) plus the
-recon set, the lateral set, the persist set, the collect set, and the exfil set
-(recon, lateral movement, persistence, collection, and exfiltration are
-long-haul activities that justify a stage-2 footprint); a stager only
-`file.pull`s the stage-2 it loads; a web-shell and an ephemeral run `shell.exec`
-over their short-lived channels; a pivot is reserved for tunneling artifacts --
-no tunnel verb has shipped, so it carries an empty set and admits nothing until
-the artifact that owns it defines what it runs. No class but Stage-2 carries a
-recon, lateral, persist, collect, or exfil verb. The set is the server's
-authority for what a class may do: task issuance gates on it in core state (a
-verb outside the set is refused before it is queued, Sec 10.3), and the build
-pipeline bakes it into each artifact so a generated payload is
-self-describing.
+tunnel set, the recon set, the lateral set, the persist set, the collect set,
+and the exfil set (tunneling joins stage-2's core operations, and recon,
+lateral movement, persistence, collection, and exfiltration are long-haul
+activities that justify a stage-2 footprint); a stager only `file.pull`s the
+stage-2 it loads; a web-shell and an ephemeral run `shell.exec` over their
+short-lived channels; a pivot carries exactly the tunnel set --
+`tunnel.forward`, the port-forward verb (Sec 10.3) -- enough to forward
+traffic for hosts that cannot run their own implant and nothing a long-haul
+footprint justifies. No class but Stage-2 carries a recon, lateral, persist,
+collect, or exfil verb. The set is the server's authority for what a class
+may do: task issuance gates on it in core state (a verb outside the set is
+refused before it is queued, Sec 10.3), and the build pipeline bakes it into
+each artifact so a generated payload is self-describing.
 
 Admission is not execution: a verb may be class-admissible (the class gate
 does not refuse it) yet ship no built-in handler, running only when an
@@ -715,6 +718,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
 | **collect** | `collect.cred`, `collect.keylog` | Credential and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
+| **tunnel** | `tunnel.forward` | Network tunneling through an implant (Sec 14, core operations): the port-forward verb bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it. Runs as a live channel (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 
@@ -783,6 +787,21 @@ artifact storage, Sec 11). Two collection surfaces stay out-of-tree as
 pluggable contracts: LSASS memory dumping (no benign-system-tool side, tightly
 coupled to active credential theft) and `collect.keylog` input capture. Each of
 those runs only when an operator supplies an out-of-tree module for the verb.
+
+The tunnel verbs are registered the same way
+(`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
+`tunnel.forward` carries a `touches-network` attribute, since it opens a
+network connection from the target. Unlike the categories above it is gated
+to two classes: Stage-2 (tunneling is a core operation, Sec 14) and Pivot
+(Sec 5.2 -- the tunneling class). Its task runs as a live channel (Sec 10.3)
+-- the channel carries the tunnel's bytes both ways -- so the poll transports
+never claim it, and the reference implant ships the channel handler: it
+connects to the `<host> <port>` named in the arguments from the implant's own
+vantage and bridges the channel to the socket until the peer closes, with the
+relay summary as the task's final output. The traffic's attribution is end to
+end: every byte crossed the channel the signed TaskRequest opened, the input
+posts land as `ChannelInput` audit events, and the transcript plus summary is
+the operator's record.
 
 The evasion verbs are registered the same way
 (`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both
@@ -888,25 +907,30 @@ connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
 
 **The streaming task shape.** Not every verb is a one-shot round trip:
-`shell.interact` -- `shell.exec`'s interactive shape -- runs as a live
-channel. Its TaskRequest dispatches like any other (same signature, same
-queue), but on the implant it opens a channel instead of completing inline:
-output streams back as ChannelOutput chunks that land on the task's transcript
-while it is still Dispatched (an operator reads the shell live, over the same
-task read), and the operator's typing flows down as ChannelInput frames --
-routed from the operator input route through a per-implant live-channel hub
-into the stream's dispatch writer, so the stream's single-writer discipline
-holds. A final ordinary TaskResult closes the task with the whole session as
-its record; the operator's eof closes the shell's stdin, which is the natural
-end of the session. The channel is session-scoped by construction: it lives on
-the beacon stream that carried its TaskRequest, so a dropped stream kills the
-shell (the implant's write gate and channel lifetime see to that) and the task
-stays dispatched -- and DNS never claims a channel task at all, because a
-datagram poll has no stream to carry the input half. The reference implant's
-channel wires the platform shell's stdio pipes -- the documented, mainstream
-mechanism, no pseudo-terminal allocation: without a tty the shell runs without
-prompt or line editing, and a PTY-backed handler is a drop-in over the same
-byte-transparent channel contract.
+`shell.interact` -- `shell.exec`'s interactive shape -- and `tunnel.forward`
+-- the port-forward bridge (Sec 5.2, Sec 14) -- run as live channels. A
+TaskRequest dispatches like any other (same signature, same queue), but on
+the implant it opens a channel instead of completing inline: output streams
+back as ChannelOutput chunks that land on the task's transcript while it is
+still Dispatched (an operator reads the shell live, over the same task read),
+and the operator's typing flows down as ChannelInput frames -- routed from
+the operator input route through a per-implant live-channel hub into the
+stream's dispatch writer, so the stream's single-writer discipline holds. A
+final ordinary TaskResult closes the task with the whole session as its
+record; the operator's eof closes the shell's stdin, which is the natural end
+of the session -- and for the tunnel it half-closes the TCP send side, the
+channel ends when the tunneled peer closes. The channel is session-scoped by
+construction: it lives on the beacon stream that carried its TaskRequest, so
+a dropped stream kills the shell or the tunnel (the implant's write gate and
+channel lifetime see to that) and the task stays dispatched -- and DNS never
+claims a channel task at all, because a datagram poll has no stream to carry
+the input half. The reference implant's shell channel wires the platform
+shell's stdio pipes -- the documented, mainstream mechanism, no pseudo-terminal
+allocation: without a tty the shell runs without prompt or line editing, and
+a PTY-backed handler is a drop-in over the same byte-transparent channel
+contract. Its tunnel channel bridges the same contract to a TCP connection
+of the implant's own -- the byte transparency is what lets one channel shape
+carry stdio and sockets alike.
 
 ## 11. Evidence and reporting -- a first-class output
 
