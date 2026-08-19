@@ -230,8 +230,13 @@ public sealed class TaskService
         // The queue accepted the task: wake the beacon writer so it is pushed
         // downstream the moment it is queued, not on the next poll
         // (architecture.md Sec 10.3). A permit with no open stream simply
-        // accumulates for the next connect.
+        // accumulates for the next connect. A pivot child's task wakes its
+        // fronting parent too (Sec 5.2): the child has no stream of its own
+        // to park on the child's wake -- the parent's writer is the one that
+        // claims and executes it.
         _wake?.Release(task.ImplantId);
+        if (implant.Class == ImplantClass.Pivot && implant.ParentImplantId is { } fronting)
+            _wake?.Release(fronting);
 
         if (_bus is not null)
         {
@@ -259,18 +264,57 @@ public sealed class TaskService
     /// every claim, including a requeue's re-claim, gets a fresh value, so the
     /// transport signs and delivers the five-element tuple.
     /// </summary>
+    /// <param name="cancellationToken">
+    /// Passed through to the repository claims and implant lookups.
+    /// </param>
+    /// <param name="includeFronted">
+    /// Widens the claim to the Pivot children this implant fronts
+    /// (architecture.md Sec 5.2): their tasking is claimed here and executed by
+    /// this implant's stream, because a pivot child has no process of its own
+    /// to claim with. Opt-in -- a poll transport (DNS, an envelope check-in)
+    /// cannot carry a fronted channel's input half, so it keeps the narrow
+    /// claim and fronted tasks park for a stream to claim.
+    /// </param>
     public async System.Threading.Tasks.Task<TaskDispatched?> DispatchNextAsync(
         ImplantId implant,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool includeFronted = false)
     {
-        var task = await _tasks.ClaimNextPendingAsync(implant, _clock.GetUtcNow(), cancellationToken);
+        var at = _clock.GetUtcNow();
+        Rod.CoreState.Tasks.Task? task;
+        if (!includeFronted)
+        {
+            task = await _tasks.ClaimNextPendingAsync(implant, at, cancellationToken);
+        }
+        else
+        {
+            // The fronting set resolves per claim, so a pivot child enrolled
+            // mid-stream is fronted from the next claim onward. An empty
+            // fronted set falls back to the single-implant claim.
+            var fronted = await _implants.ListFrontedPivotsAsync(implant, cancellationToken);
+            if (fronted.Count == 0)
+            {
+                task = await _tasks.ClaimNextPendingAsync(implant, at, cancellationToken);
+            }
+            else
+            {
+                var targets = new List<ImplantId>(fronted.Count + 1) { implant };
+                foreach (var pivot in fronted)
+                    targets.Add(pivot.Id);
+                task = await _tasks.ClaimNextPendingForAsync(targets, at, cancellationToken);
+            }
+        }
+
         if (task is null)
             return null;
 
+        // The nonce arm follows the claimed task's own implant: fronted
+        // tasking belongs to the pivot child, which never handshakes and so
+        // never negotiated the arm -- it keeps the nonce-less tuple.
         ulong? nonce = null;
-        var record = await _implants.FindAsync(implant, cancellationToken);
+        var record = await _implants.FindAsync(task.ImplantId, cancellationToken);
         if (record is { ReplayNonces: true })
-            nonce = await _tasks.NextNonceAsync(implant, cancellationToken);
+            nonce = await _tasks.NextNonceAsync(task.ImplantId, cancellationToken);
 
         return new TaskDispatched(
             task.Id,
@@ -303,8 +347,13 @@ public sealed class TaskService
 
         // A requeue is an enqueue too: a live overlapping stream for the
         // implant picks the task back up immediately instead of waiting for
-        // the reconnect (architecture.md Sec 10.3).
+        // the reconnect (architecture.md Sec 10.3). A fronted task's requeue
+        // wakes the fronting parent as well -- its writer is the claimer
+        // (Sec 5.2).
         _wake?.Release(task.ImplantId);
+        var target = await _implants.FindAsync(task.ImplantId, cancellationToken);
+        if (target is { Class: ImplantClass.Pivot, ParentImplantId: { } fronting })
+            _wake?.Release(fronting);
     }
 
     /// <summary>

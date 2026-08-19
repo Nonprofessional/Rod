@@ -281,6 +281,19 @@ message HandshakeResponse {
 // reported as the task's Failed result, surfacing the attack on the task.
 // An implant that never advertised keeps receiving nonce-less tasking with
 // the original four-element tuple, unchanged.
+//
+// target_implant_id marks fronted tasking (architecture.md Sec 5.2 -- the
+// Pivot class, Sec 10.3): set only on a TaskRequest for a pivot child that
+// the receiving stream's implant fronts -- the parent claims and executes
+// the child's tasking on the child's behalf, because the child has no
+// process of its own to check in with. It names the tuple's executor for
+// routing; the signature's implant_id element is and stays the authority
+// (the tuple signs the target's own id, Sec 9), so a fronting parent
+// verifies against this field, not its own id. Absent, the frame is the
+// receiver's own tasking -- the only shape a Tier 0 implant ever sees, so
+// the arm costs it nothing (extending/implants.md evolution rule 3: Tier 2,
+// present only when the server fronts a task, ignored as an unknown field
+// otherwise).
 message TaskRequest {
   string task_id = 1;
   string verb = 2;
@@ -288,6 +301,7 @@ message TaskRequest {
   bytes signature = 4;
   optional uint64 staged_bytes = 5;
   optional uint64 task_nonce = 6;
+  optional string target_implant_id = 7;
 }
 
 // How a task turned out, as reported by the implant.

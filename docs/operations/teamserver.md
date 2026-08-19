@@ -82,6 +82,12 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    (architecture.md Sec 10.1). Binding off-loopback (`any` or an IP literal)
    exposes the tunnel to every host that can reach the port -- name the
    address only when the operator path needs it.
+8. To represent a host that cannot run an implant at all, derive a Pivot
+   child from a stage-2 parent (`lateral.move` with arguments
+   `<token> Pivot`) and task the child directly: its tasking executes on the
+   parent's beacon stream, marked with the child's id and attributed to the
+   child end to end (architecture.md Sec 5.2). The child never appears in
+   presence -- it has no process -- so its liveness is the parent's.
 
 For staged deployment, build the stage-2 first, then build a second payload
 with class `stager` naming it (`stage2PayloadId`). The stager is a small

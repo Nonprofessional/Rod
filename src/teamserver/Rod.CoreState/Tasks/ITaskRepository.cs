@@ -90,6 +90,21 @@ public interface ITaskRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The fronting claim (architecture.md Sec 5.2, the Pivot class):
+    /// atomically claims the oldest queued task across a set of implant
+    /// targets -- a fronting parent and the Pivot children its stream
+    /// executes for -- with the same claim-once guarantee
+    /// <see cref="ClaimNextPendingAsync"/> gives one implant. FIFO across the
+    /// whole set by enqueue order, so a task queued for the parent and one
+    /// queued for a fronted child dispatch in the order they were issued.
+    /// Null when no target holds a queued task.
+    /// </summary>
+    System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
+        IReadOnlyCollection<ImplantId> implants,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically reserves and persists the next per-implant replay nonce
     /// (architecture.md Sec 9 -- tasking replay nonces): returns 1 the first
     /// time and monotonically increases after, so a negotiating implant never

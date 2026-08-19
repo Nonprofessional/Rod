@@ -260,7 +260,17 @@ Implants differ by purpose, not by a "managed device flavor":
   implant (network/OT gear), enrolling each as its own session and forwarding
   tasking. Its class set is the tunnel set (Sec 10.1): a Pivot-class build is
   the minimal tunneling artifact, and the parent-fronting shape for
-  unplantable hosts rides the same set.
+  unplantable hosts rides the same set. Fronting ships: a Pivot child
+  enrolled by a parent (`lateral.move`, this section) has no process of its
+  own and never handshakes -- no session, no stream -- so its tasking is
+  claimed by the parent's beacon stream (the fronting claim, Sec 10.3),
+  arrives marked with the child's id, and executes in the parent with every
+  record attributed to the child (Sec 9's signature already binds the
+  target's id into the tuple; the frame's `target_implant_id` marking carries
+  the routing). The reference implant fronts what it enrolled: its
+  `lateral.move` handler records each Pivot child in a fronted ledger, and
+  the beacon loop refuses fronted tasking for an implant not in it -- the
+  enrollment this implant performed is the voucher.
 
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
@@ -958,6 +968,28 @@ loop in the writer path. The wake is a hint, not a ledger: the writer claims
 before it parks, so tasks queued while no stream was open are picked up on
 connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
+
+**The fronting claim.** A beacon stream's writer claims for its own implant
+first and, in widening order, for the Pivot children that implant fronts
+(Sec 5.2): the claim spans the fronting set -- parent plus fronted children --
+and hands out the oldest queued task across the set by issue order, with the
+same claim-once guarantee a single-implant claim carries. Issuing to a pivot
+child releases the fronting parent's wake too (the child has no writer of its
+own to wake), and a fronted task returned by a failed write requeues the same
+way. The claim is the stream transports' alone: DNS and the plain-HTTP
+envelope keep the narrow claim, because a fronted channel's input half needs
+the stream the fronting executor holds. A claimed fronted task is marshaled
+with `target_implant_id` naming the child -- the signature still signs the
+child's own id in the tuple (Sec 9), so verification on the parent binds
+exactly what the server authorized -- and nonce-less, because the child never
+handshakes and so never negotiated the replay-nonce arm. Upstream, a fronted
+task's frames (channel output, staged pulls, results) are accepted on the
+parent's stream when the task belongs to a fronted child, and the operator
+input route reaches a fronted channel through the parent's sink; every record
+-- issued, dispatched, each input post, completed -- attributes to the child.
+The evolution rules hold: an implant that never implements fronting ignores
+the unknown field, and a server never fronts tasking to one that does not
+(enough: the field is absent on all its frames, the Tier 0 shape unchanged).
 
 **The streaming task shape.** Not every verb is a one-shot round trip:
 `shell.interact` -- `shell.exec`'s interactive shape -- and `tunnel.forward`

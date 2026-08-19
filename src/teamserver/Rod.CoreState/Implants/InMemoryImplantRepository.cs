@@ -26,6 +26,19 @@ public sealed class InMemoryImplantRepository : IImplantRepository
         return Task.FromResult<IReadOnlyList<Implant>>(matches);
     }
 
+    public Task<IReadOnlyList<Implant>> ListFrontedPivotsAsync(
+        ImplantId parent,
+        CancellationToken cancellationToken = default)
+    {
+        // The fronted set (architecture.md Sec 5.2): Pivot-class children of
+        // the parent, whatever their enrollment order -- the fronting claim
+        // merges across targets by task-queue order, not by this listing.
+        var fronted = _implants.Values
+            .Where(i => i.ParentImplantId == parent && i.Class == ImplantClass.Pivot)
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<Implant>>(fronted);
+    }
+
     public Task SaveAsync(Implant implant, CancellationToken cancellationToken = default)
     {
         _implants[implant.Id] = implant;

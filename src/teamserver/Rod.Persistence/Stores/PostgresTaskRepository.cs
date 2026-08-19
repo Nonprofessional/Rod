@@ -198,6 +198,49 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         return task;
     }
 
+    public async System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
+        IReadOnlyCollection<ImplantId> implants,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        if (implants.Count == 0)
+            return null;
+
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // The fronting claim (architecture.md Sec 5.2): the same locked
+        // peek-and-mark as ClaimNextPendingAsync, widened across the fronting
+        // set with an ANY over the target ids -- the oldest queued row any
+        // target holds, so parent and fronted children dispatch in issue
+        // order under the same claim-once guarantee.
+        var targets = implants.Select(i => i.Value).ToArray();
+        var frontedId = await db.Database.SqlQuery<Guid>($"""
+            SELECT task_id AS "Value"
+            FROM tasks
+            WHERE task_id = (
+                SELECT task_id
+                FROM tasks
+                WHERE implant_id = ANY({targets}) AND status = {(int)Rod.CoreState.Tasks.TaskStatus.Queued}
+                ORDER BY enqueue_seq
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            """).FirstOrDefaultAsync(cancellationToken);
+
+        if (frontedId == Guid.Empty)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var fronted = await db.Tasks.FirstAsync(t => t.Id == new TaskId(frontedId), cancellationToken);
+        fronted.MarkDispatched(at);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return fronted;
+    }
+
     public async System.Threading.Tasks.Task<ulong> NextNonceAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default)

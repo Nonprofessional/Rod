@@ -129,6 +129,13 @@ public class DispatchPushTests
             return await _inner.ClaimNextPendingAsync(implant, at, cancellationToken);
         }
 
+        public async System.Threading.Tasks.Task<Rod.CoreState.Tasks.Task?> ClaimNextPendingForAsync(
+            IReadOnlyCollection<ImplantId> implants, DateTimeOffset at, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _claims);
+            return await _inner.ClaimNextPendingForAsync(implants, at, cancellationToken);
+        }
+
         public System.Threading.Tasks.Task SaveAsync(
             Rod.CoreState.Tasks.Task task, CancellationToken cancellationToken = default)
             => _inner.SaveAsync(task, cancellationToken);

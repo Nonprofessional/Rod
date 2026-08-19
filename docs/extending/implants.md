@@ -298,6 +298,20 @@ The implant id in the tuple is the **verifier's own** id, not a wire field:
 tasking signed for another implant fails verification on yours, so captured
 tasking cannot be replayed cross-implant.
 
+**Fronted tasking (Tier 2, the fronting arm).** The one exception to "the
+verifier's own id": a frame whose `target_implant_id` is set names a Pivot
+child the server directed to your stream (architecture.md Sec 5.2, Sec 10.3)
+-- a host that cannot run an implant of its own, fronted by yours. Verify the
+tuple against `target_implant_id`, not your own id; the signature was made
+for the child, and that is exactly what binds the task to its executor. An
+implant that derives children should front only what it enrolled (keep the
+child ids from your enroll responses and refuse frames naming anything else),
+and nonce rules follow the target: a fronted frame is nonce-less, because the
+child never handshakes. An implant that does not implement fronting ignores
+the unknown field and fails the verb on its own terms; a server never fronts
+tasking to one that does not, so the field is absent on every frame a
+non-fronting implant receives.
+
 **Replay nonces (Tier 1, the negotiated arm).** The tuple above still
 verifies a captured frame replayed to the *same* implant. Close that by
 negotiating the replay-nonce arm: set `replay_nonces` on your
@@ -433,7 +447,10 @@ from quietly growing:
    (`TaskRequest.staged_bytes`, `StagedPull`, `StagedChunk`) is the worked
    example: Tier 2, negotiated implicitly by demand -- a Tier 0 implant
    ignores the unknown field, never receives a chunk frame, and fails the
-   verb on its own grammar.
+   verb on its own grammar. The fronting arm
+   (`TaskRequest.target_implant_id`) follows the same rule: Tier 2, present
+   only on frames a server fronts to a fronting-capable implant -- every
+   other implant never sees the field at all.
 4. **Weight stays server-side.** Capability reach grows in the teamserver,
    the tradecraft modules, and the build pipeline -- not in the minimum an
    implant must carry (architecture.md Sec 14).

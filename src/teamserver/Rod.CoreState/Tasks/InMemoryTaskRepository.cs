@@ -158,13 +158,39 @@ public sealed class InMemoryTaskRepository : ITaskRepository
                 .Where(t => t.ImplantId == implant && t.Status == TaskStatus.Queued)
                 .OrderBy(t => _order.GetValueOrDefault(t.Id))
                 .FirstOrDefault();
-            if (next is null)
-                return System.Threading.Tasks.Task.FromResult<Task?>(null);
-
-            next.MarkDispatched(at);
-            _tasks[next.Id] = next;
-            return System.Threading.Tasks.Task.FromResult<Task?>(next);
+            return System.Threading.Tasks.Task.FromResult(Claimed(next, at));
         }
+    }
+
+    public System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
+        IReadOnlyCollection<ImplantId> implants,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        // The fronting claim (architecture.md Sec 5.2): the same locked
+        // peek-and-mark, widened across the fronting set -- the oldest queued
+        // task any target holds, so parent and fronted children dispatch in
+        // issue order under the same claim-once guarantee.
+        lock (_claimLock)
+        {
+            var next = _tasks.Values
+                .Where(t => t.Status == TaskStatus.Queued && implants.Contains(t.ImplantId))
+                .OrderBy(t => _order.GetValueOrDefault(t.Id))
+                .FirstOrDefault();
+            return System.Threading.Tasks.Task.FromResult(Claimed(next, at));
+        }
+    }
+
+    // Marks the claimed task Dispatched and re-persists it, or passes a null
+    // claim through. Inside the claim lock.
+    private Task? Claimed(Task? next, DateTimeOffset at)
+    {
+        if (next is null)
+            return null;
+
+        next.MarkDispatched(at);
+        _tasks[next.Id] = next;
+        return next;
     }
 
     // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking

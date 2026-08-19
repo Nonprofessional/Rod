@@ -320,18 +320,21 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // Pulls the next queued task for the implant and writes it as a TaskRequest
-    // downstream. A no-op write when nothing is queued.
+    // Pulls the next queued task for the implant -- widened to the Pivot
+    // children it fronts (architecture.md Sec 5.2): a fronted child's task is
+    // claimed here, marked with the child's id on the frame, and executed by
+    // this stream on the child's behalf. A no-op write when nothing is queued.
     private async Task DispatchNextAsync(
         ImplantId implant,
         IServerStreamWriter<Frame> responseStream,
         CancellationToken cancellationToken)
     {
-        var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken);
+        var dispatched = await _tasks.DispatchNextAsync(
+            implant, cancellationToken, includeFronted: true);
         if (dispatched is null)
             return;
 
-        var frame = _tasking.MarshalFrame(dispatched);
+        var frame = _tasking.MarshalFrame(dispatched, implant);
 
         // Write downstream first: the dispatch audit records a task the implant
         // actually received. When the write fails, the task returns to the queue

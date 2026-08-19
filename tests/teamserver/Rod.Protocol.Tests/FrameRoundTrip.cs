@@ -76,6 +76,29 @@ public class FrameRoundTrip
     }
 
     [Fact]
+    public void TaskRequest_TargetImplantId_MarksFrontedTasking()
+    {
+        // The fronting arm (architecture.md Sec 5.2): set only on a frame a
+        // server fronts to a fronting-capable implant; absent on every frame
+        // any other implant receives, which is what keeps the arm additive.
+        var fronted = new TaskRequest
+        {
+            TaskId = "t-1",
+            Verb = "tunnel.forward",
+            Arguments = "host.example 443",
+            TargetImplantId = "child",
+        };
+
+        var restoredFronted = TaskRequest.Parser.ParseFrom(fronted.ToByteArray());
+        Assert.True(restoredFronted.HasTargetImplantId);
+        Assert.Equal("child", restoredFronted.TargetImplantId);
+
+        var own = new TaskRequest { TaskId = "t-2", Verb = "shell.exec", Arguments = "id" };
+        var restoredOwn = TaskRequest.Parser.ParseFrom(own.ToByteArray());
+        Assert.False(restoredOwn.HasTargetImplantId);
+    }
+
+    [Fact]
     public void StagedPullAndChunk_RoundTrip()
     {
         var pull = new StagedPull { TaskId = "t-1" };

@@ -40,6 +40,21 @@ internal sealed class PostgresImplantRepository : IImplantRepository
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Implant>> ListFrontedPivotsAsync(
+        ImplantId parent,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        // The fronted set (architecture.md Sec 5.2): Pivot-class children of
+        // the parent. A fleet's implants table is engagement-sized, so the
+        // unindexed parentage scan the fronting claim runs when the parent's
+        // own queue is empty stays cheap.
+        return await db.Implants
+            .AsNoTracking()
+            .Where(i => i.ParentImplantId == parent && i.Class == ImplantClass.Pivot)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task SaveAsync(Implant implant, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);

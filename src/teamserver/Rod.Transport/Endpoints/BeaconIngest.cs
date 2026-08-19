@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
@@ -49,6 +50,7 @@ internal sealed class BeaconIngest
 {
     private readonly TaskService _tasks;
     private readonly ITaskRepository _taskRecords;
+    private readonly IImplantRepository _implants;
     private readonly IAuditStore _audit;
     private readonly IArtifactStore _artifacts;
     private readonly ILiveEventBus _bus;
@@ -58,6 +60,7 @@ internal sealed class BeaconIngest
     public BeaconIngest(
         TaskService tasks,
         ITaskRepository taskRecords,
+        IImplantRepository implants,
         IAuditStore audit,
         IArtifactStore artifacts,
         ILiveEventBus bus,
@@ -66,6 +69,7 @@ internal sealed class BeaconIngest
     {
         _tasks = tasks;
         _taskRecords = taskRecords;
+        _implants = implants;
         _audit = audit;
         _artifacts = artifacts;
         _bus = bus;
@@ -78,7 +82,7 @@ internal sealed class BeaconIngest
     /// reassembler and channel decoders scoped to one transport connection.
     /// </summary>
     public BeaconConnectionIngest OpenConnection()
-        => new(_tasks, _taskRecords, _audit, _artifacts, _bus, _clock, _relays);
+        => new(_tasks, _taskRecords, _implants, _audit, _artifacts, _bus, _clock, _relays);
 }
 
 /// <summary>
@@ -92,6 +96,7 @@ internal sealed class BeaconConnectionIngest
 {
     private readonly TaskService _tasks;
     private readonly ITaskRepository _taskRecords;
+    private readonly IImplantRepository _implants;
     private readonly IAuditStore _audit;
     private readonly IArtifactStore _artifacts;
     private readonly ILiveEventBus _bus;
@@ -107,6 +112,7 @@ internal sealed class BeaconConnectionIngest
     public BeaconConnectionIngest(
         TaskService tasks,
         ITaskRepository taskRecords,
+        IImplantRepository implants,
         IAuditStore audit,
         IArtifactStore artifacts,
         ILiveEventBus bus,
@@ -115,11 +121,36 @@ internal sealed class BeaconConnectionIngest
     {
         _tasks = tasks;
         _taskRecords = taskRecords;
+        _implants = implants;
         _audit = audit;
         _artifacts = artifacts;
         _bus = bus;
         _clock = clock;
         _relays = relays;
+    }
+
+    /// <summary>
+    /// Whether a task belongs on this session's stream: its own implant's
+    /// tasking, or -- the fronting half (architecture.md Sec 5.2) -- the
+    /// tasking of a Pivot child this session's implant fronts, which executes
+    /// on this stream because the child has no process of its own. The
+    /// engagement binding holds either way: a fronted child enrols into its
+    /// parent's engagement, so a foreign engagement never reaches the fronted
+    /// branch.
+    /// </summary>
+    private async Task<bool> BelongsToSessionAsync(
+        Rod.CoreState.Tasks.Task task,
+        BeaconSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (task.EngagementId != session.EngagementId)
+            return false;
+        if (task.ImplantId == session.Implant)
+            return true;
+
+        var target = await _implants.FindAsync(task.ImplantId, cancellationToken);
+        return target is { Class: ImplantClass.Pivot, ParentImplantId: { } parent }
+               && parent == session.Implant;
     }
 
     /// <summary>
@@ -270,11 +301,12 @@ internal sealed class BeaconConnectionIngest
             return;
 
         // The terminal chunk closes the stream. Before materializing an artifact,
-        // verify the task the implant stamped really belongs to this session's
-        // implant and engagement -- otherwise an implant could attach evidence to
-        // another engagement's task ids.
+        // verify the task the implant stamped really belongs on this session's
+        // stream -- its own tasking, or a fronted Pivot child's (Sec 5.2) --
+        // otherwise an implant could attach evidence to another engagement's
+        // task ids.
         var task = await _taskRecords.FindAsync(new TaskId(taskId), cancellationToken);
-        if (task is null || task.ImplantId != session.Implant || task.EngagementId != session.EngagementId)
+        if (task is null || !await BelongsToSessionAsync(task, session, cancellationToken))
             return;
 
         // Build the artifact from the reassembled bytes, save it scoped to the
@@ -349,20 +381,21 @@ internal sealed class BeaconConnectionIngest
             return;
 
         var task = await _taskRecords.FindAsync(taskId, cancellationToken);
-        if (task is null || task.ImplantId != session.Implant || task.StagedBytes is null)
+        if (task is null || task.StagedBytes is null || !await BelongsToSessionAsync(task, session, cancellationToken))
             return;
 
         stagedPullSink(task.Id);
     }
 
     // A ChannelOutput frame (architecture.md Sec 10.3, the streaming task
-    // shape): one chunk of a live channel's output. The task must belong to
-    // this connection's implant and engagement -- an implant cannot stream onto
-    // another's tasks -- and must still be Dispatched; a straggler after the
-    // final TaskResult (a retransmission, a race at close) carries nothing
-    // new and is ignored rather than tearing the session down. The decoded
-    // chunk lands on the task's transcript and fans out live so a connected
-    // operator reads the channel as it prints.
+    // shape): one chunk of a live channel's output. The task must belong on
+    // this connection's stream -- its own tasking or a fronted Pivot child's
+    // (Sec 5.2) -- an implant cannot stream onto another's tasks -- and must
+    // still be Dispatched; a straggler after the final TaskResult (a
+    // retransmission, a race at close) carries nothing new and is ignored
+    // rather than tearing the stream down. The decoded chunk lands on the
+    // task's transcript and fans out live so a connected operator reads the
+    // channel as it prints.
     private async Task HandleChannelOutputAsync(
         BeaconSessionContext session,
         Frame frame,
@@ -382,7 +415,7 @@ internal sealed class BeaconConnectionIngest
             return;
 
         var task = await _taskRecords.FindAsync(taskId, cancellationToken);
-        if (task is null || task.ImplantId != session.Implant || task.EngagementId != session.EngagementId)
+        if (task is null || !await BelongsToSessionAsync(task, session, cancellationToken))
             return;
 
         // An empty chunk is a legal heartbeat on some channel implementations;

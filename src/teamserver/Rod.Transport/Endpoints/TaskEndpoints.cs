@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
 using Rod.Transport.Channels;
@@ -328,6 +329,7 @@ public static class TaskEndpoints
         TaskInputRequest body,
         ClaimsPrincipal user,
         ITaskRepository tasks,
+        IImplantRepository implants,
         LiveChannelHub channels,
         IAuditStore audit,
         TimeProvider clock,
@@ -366,10 +368,20 @@ public static class TaskEndpoints
 
         // The hub reaches the implant's live beacon stream. No sink (or a full
         // one) means the channel cannot take this input right now -- report it
-        // rather than queueing bytes no stream will drain.
+        // rather than queueing bytes no stream will drain. A pivot child's
+        // channel has no sink of its own (Sec 5.2): its input rides the
+        // fronting parent's stream, so a child that holds no sink routes
+        // through its parent.
         if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
-            return Results.Conflict(
-                new Problem("The implant's beacon stream is not accepting channel input."));
+        {
+            var target = await implants.FindAsync(task.ImplantId, cancellationToken);
+            if (target is not { Class: ImplantClass.Pivot, ParentImplantId: { } fronting }
+                || !channels.TryEnqueue(fronting, taskValue, data, body.Eof))
+            {
+                return Results.Conflict(
+                    new Problem("The implant's beacon stream is not accepting channel input."));
+            }
+        }
 
         // The input is the operator's action on the engagement (architecture.md
         // Sec 11): attributed to the sender, bound to the channel's task, the

