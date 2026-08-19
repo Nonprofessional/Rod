@@ -456,10 +456,9 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 ## 8. Transports, listeners, and redirectors
 
 - Supported listener transports: **HTTP(S)**, **mTLS**, the **plain-HTTP
-  envelope** over mTLS, and **DNS** are implemented; **SMB** and **TCP** are
-  planned (the listener abstraction is in place, so adding them is a milestone
-  concern, not an architectural one). Transport choice is a profile/deployment
-  concern; the protocol semantics are transport-independent.
+  envelope** over mTLS, **DNS**, **SMB** (named pipe), and **raw TCP** are
+  implemented. Transport choice is a profile/deployment concern; the protocol
+  semantics are transport-independent.
 - **DNS is the egress-restricted check-in transport.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
@@ -518,6 +517,32 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   rule the DNS transport applies), and an artifact's exfil chunk run must
   complete within one request body -- the poll-transport bounds, documented
   with the wire grammar.
+- **The stream listeners (named pipe and raw TCP) are the no-egress-segment
+  transports.** SMB serves Windows segments where neither HTTP nor DNS egress
+  exists (the pipe is the shape such a segment still allows); raw TCP serves
+  segment networks that permit arbitrary sockets but no HTTP shape. Both carry
+  the same rod.v1 frames the envelope carries -- one self-delimited message
+  per direction (a varint byte length, then the envelope's delimited frame
+  sequence), because a raw stream lacks the request boundary an HTTP body
+  provides for free -- through the shared frame paths (`BeaconIngest`,
+  `BeaconTasking`): a result captured over a pipe or socket is
+  indistinguishable in core state, the audit trail, and the live bus from one
+  captured over the gRPC stream. One connection is one poll check-in, the
+  envelope's cadence on the envelope's budget, and a channel task is never
+  claimed for the same reason (its input half needs a live stream). The
+  identity posture is the certificate-less one: no client certificate rides a
+  pipe or a raw socket, so the implant is identified by the id in its
+  handshake -- the DNS tradeoff extended to a handshake-capable transport,
+  with the enrolled, kill-date, and retired gates applying in full (on a
+  Windows host the SMB session layer authenticates the peer before the pipe
+  is reachable; a raw socket rides whatever segmentation protects it).
+  Dispatched tasking keeps the full Sec 9 posture: the TaskRequest carries
+  the same command signature, and a stream-delivered task verifies exactly
+  like any other. Each entry is a hosted service owning its pipe or socket,
+  registered into the listener registry the same bind-then-register way every
+  transport follows (`StreamBeaconBridge` is the transport-blind check-in
+  flow both share); the wire grammar is the stream check-in contract
+  ([extending/implants.md](extending/implants.md)).
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
   channel and the HTTPS enroll request carry through end to end. It is L4, not

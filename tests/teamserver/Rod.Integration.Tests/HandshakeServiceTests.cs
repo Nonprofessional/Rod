@@ -110,16 +110,21 @@ public class HandshakeServiceTests
     }
 
     [Fact]
-    public async Task Handshake_RefusesMissingCertificateBinding()
+    public async Task Handshake_AcceptsTheCertificatelessPosture()
     {
         var implants = new InMemoryImplantRepository();
         var service = NewService(implants);
         var implant = await EnrollAsync(implants);
 
-        // No certificate binding at all (null) is also an identity mismatch.
-        var ex = await Assert.ThrowsAsync<HandshakeException>(() => service.HandshakeAsync(
-            new HandshakeCommand(implant.Id, 1, 0, Array.Empty<string>(), CertificateEngagementId: null)));
-        Assert.Equal(HandshakeReason.IdentityMismatch, ex.Reason);
+        // No certificate binding (null) is the certificate-less transport
+        // posture (architecture.md Sec 8) the named-pipe and raw-TCP listeners
+        // use: the implant is identified by its id alone -- the DNS tradeoff
+        // extended to a handshake-capable transport. The enrolled, kill-date,
+        // and retired gates still apply; only the binding check does not.
+        var result = await service.HandshakeAsync(
+            new HandshakeCommand(implant.Id, 1, 0, Array.Empty<string>(), CertificateEngagementId: null));
+        Assert.Equal(implant.Id, result.ImplantId);
+        Assert.Equal(implant.EngagementId, result.EngagementId);
     }
 
     [Fact]

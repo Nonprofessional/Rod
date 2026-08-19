@@ -3,8 +3,7 @@ namespace Rod.Transport.Listeners;
 /// <summary>
 /// The C2 transport a <see cref="Listener"/> terminates (architecture.md Sec 8).
 ///  ships <see cref="Http"/>, <see cref="Mtls"/>, <see cref="HttpsEnvelope"/>,
-/// and <see cref="Dns"/>; SMB and TCP are the remaining transports the
-/// architecture calls out, added when a transport needs them.
+/// <see cref="Dns"/>, <see cref="Smb"/>, and <see cref="Tcp"/>.
 /// </summary>
 public enum ListenerTransport
 {
@@ -47,4 +46,27 @@ public enum ListenerTransport
     /// implant is identified by its id alone.
     /// </summary>
     Dns,
+
+    /// <summary>
+    /// SMB named pipe (architecture.md Sec 8): check-ins over a named pipe for
+    /// Windows segments where neither HTTP nor DNS egress exists, carrying the
+    /// same rod.v1 frames as the envelope in one self-delimited message. The
+    /// bind address is the bare pipe name; the public endpoint is the pipe path
+    /// implants dial (<c>\\host\pipe\name</c>). One connection is one poll
+    /// check-in. No client certificate rides the pipe (on a Windows host the
+    /// SMB session layer authenticates the peer before the pipe is reachable):
+    /// the implant is identified by its id alone -- the DNS posture extended
+    /// to a handshake-capable transport.
+    /// </summary>
+    Smb,
+
+    /// <summary>
+    /// Raw TCP (architecture.md Sec 8): check-ins over an arbitrary socket for
+    /// segment networks that allow sockets but no HTTP shape, carrying the same
+    /// self-delimited rod.v1 frame messages as the named pipe. The bind address
+    /// is the TCP endpoint; the public endpoint is what implants dial. One
+    /// connection is one poll check-in and, like the pipe, no client
+    /// certificate rides it: the implant is identified by its id alone.
+    /// </summary>
+    Tcp,
 }

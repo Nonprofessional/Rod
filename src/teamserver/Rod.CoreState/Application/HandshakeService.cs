@@ -85,12 +85,17 @@ public sealed class HandshakeService
                 $"Implant {command.ImplantId} is not enrolled.");
         }
 
-        // 3. mTLS identity check (architecture.md Sec 9): the engagement bound
-        //    into the certificate must equal the implant's enrolled engagement.
-        //    The certificate already chained to the CA at the transport layer;
-        //    this is the application-layer binding that complements it.
-        if (command.CertificateEngagementId is null
-            || command.CertificateEngagementId != implant.EngagementId)
+        // 3. mTLS identity check (architecture.md Sec 9): when the transport
+        //    carried a client certificate, the engagement bound into it must
+        //    equal the implant's enrolled engagement -- the certificate already
+        //    chained to the CA at the transport layer, and this is the
+        //    application-layer binding that complements it. A null binding is
+        //    the certificate-less transport posture (Sec 8): the named-pipe
+        //    and raw-TCP listeners carry no mTLS, so the implant is identified
+        //    by its id alone -- the same tradeoff DNS documents, extended to a
+        //    handshake-capable transport. The enrolled, kill-date, and retired
+        //    gates still apply in full.
+        if (command.CertificateEngagementId is { } bound && bound != implant.EngagementId)
         {
             throw new HandshakeException(
                 HandshakeReason.IdentityMismatch,
@@ -161,7 +166,10 @@ public sealed class HandshakeService
 /// <see cref="Capabilities"/> are the verbs it advertises;
 /// <see cref="CertificateEngagementId"/> is the engagement id bound into the
 /// presenting client certificate (read by the transport from the Rod engagement
-/// extension, architecture.md Sec 9). The service compares it against the
+/// extension, architecture.md Sec 9), or null when the transport carries no
+/// client certificate -- the certificate-less posture the stream listeners use
+/// (Sec 8), where the implant is identified by its id alone and the binding
+/// check does not apply. The service compares a present binding against the
 /// implant's enrolled engagement for the mTLS identity check.
 /// <see cref="ReplayNonces"/> is the implant's advertisement of the tasking
 /// replay-nonce arm (architecture.md Sec 9); the service makes it sticky on the

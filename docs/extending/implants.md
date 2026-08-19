@@ -227,6 +227,30 @@ The transcript accumulates as UTF-8 text, so binary tunnel traffic renders
 with replacement characters -- the traffic's attribution is the task record
 and the summary, not byte fidelity in the transcript.
 
+### Stream check-ins (named pipe / raw TCP, the no-egress transports)
+
+The SMB and TCP listeners carry the envelope's frames over a raw duplex
+stream -- a named pipe (`\\host\pipe\name`) for Windows segments without
+HTTP or DNS egress, or a plain TCP socket for segment networks that allow
+sockets but no HTTP shape. One connection is one poll check-in:
+
+1. Connect to the entry's public endpoint (the pipe path, or `host:port`).
+2. Write one request message: a varint byte length, then exactly that many
+   bytes of the envelope's delimited frame sequence (the handshake frame
+   first, then any results, exfil chunks, staged pulls, channel output).
+3. Read one response message: the same shape -- a varint byte length, then
+   the handshake response, staged chunk runs answering the request's
+   demands, and queued tasking while the 4 MiB dispatch budget lasts.
+4. Close; sleep the baked interval; reconnect for the next check-in.
+
+No client certificate rides these transports: the implant is identified by
+the id in its handshake (the DNS posture, extended to a handshake-capable
+transport), and a refused handshake answers a bare `Unspecified`. Dispatched
+tasking keeps the full signature posture -- verify it exactly like a
+stream-delivered task. A channel task is never dispatched over a stream
+check-in (its input half needs the long-lived gRPC stream); oversized or
+malformed messages drop the connection without an answer.
+
 ### DNS check-ins (Tier 2, the egress-restricted transport)
 
 A DNS listener entry answers TXT queries over UDP under its zone (the entry's

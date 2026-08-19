@@ -39,21 +39,6 @@ and the fronting executor for unplantable hosts.
       pivot-child session executes on its parent and reaches the third host,
       attributed to the pivot session end to end.
 
-## Transports (architecture.md Sec 8)
-
-SMB and TCP are the remaining planned listener transports; the listener
-abstraction is in place, so each is a milestone concern, not an
-architectural one (Sec 8).
-
-- [ ] **SMB listener.** Named-pipe check-ins for Windows segments where
-  neither HTTP nor DNS egress is available, carrying the same rod.v1
-  frames. _AC:_ an implant written from the contract doc completes a
-  check-in and a task over a named pipe through the shared frame paths.
-- [ ] **TCP listener.** A raw-TCP check-in transport for segment networks
-  that allow arbitrary sockets but no HTTP shape, again carrying the same
-  frames. _AC:_ an implant written from the contract doc completes a
-  check-in and a task over the raw listener.
-
 ## Security follow-ups (architecture.md Sec 9)
 
 - [ ] **End live operator sessions on credential revoke.** A revoked

@@ -23,6 +23,7 @@ using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.Dns;
+using Rod.Transport.Listeners.Streams;
 
 namespace Rod.Transport;
 
@@ -315,6 +316,36 @@ public static class TransportHost
             });
         }
 
+        // The named-pipe and raw-TCP entries ride Kestrel no more than DNS
+        // does: they are duplex-stream services, one hosted service per entry
+        // sharing one StreamBeaconBridge (the transport-blind check-in flow
+        // both carry). Each entry's service binds its pipe or socket and
+        // registers itself into the listener registry, the same
+        // bind-then-register shape every transport follows.
+        var smbEntries = listeners.Where(l => l.Transport == ListenerTransport.Smb).ToArray();
+        var tcpEntries = listeners.Where(l => l.Transport == ListenerTransport.Tcp).ToArray();
+        if (smbEntries.Length > 0 || tcpEntries.Length > 0)
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddSingleton<StreamBeaconBridge>();
+                foreach (var entry in smbEntries)
+                    services.AddHostedService(sp => new SmbListenerService(
+                        entry,
+                        sp.GetRequiredService<StreamBeaconBridge>(),
+                        sp.GetRequiredService<IListenerRegistry>(),
+                        sp.GetRequiredService<TimeProvider>(),
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>()));
+                foreach (var entry in tcpEntries)
+                    services.AddHostedService(sp => new TcpListenerService(
+                        entry,
+                        sp.GetRequiredService<StreamBeaconBridge>(),
+                        sp.GetRequiredService<IListenerRegistry>(),
+                        sp.GetRequiredService<TimeProvider>(),
+                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>()));
+            });
+        }
+
         builder.ConfigureKestrel(kestrel =>
         {
             var registry = kestrel.ApplicationServices.GetRequiredService<IListenerRegistry>();
@@ -322,9 +353,12 @@ public static class TransportHost
 
             foreach (var config in listeners)
             {
-                // The DNS listener owns its UDP socket in the hosted service;
-                // Kestrel sees only the stream transports.
-                if (config.Transport == ListenerTransport.Dns)
+                // The DNS, named-pipe, and raw-TCP listeners own their sockets
+                // in their hosted services; Kestrel sees only the HTTP-shaped
+                // transports.
+                if (config.Transport is ListenerTransport.Dns
+                    or ListenerTransport.Smb
+                    or ListenerTransport.Tcp)
                     continue;
 
                 var (host, port) = ParseBindAddress(config.BindAddress);
