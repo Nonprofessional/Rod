@@ -21,6 +21,7 @@ public class HandlerRegistryTests
         "file.push",
         "file.pull",
         "tunnel.forward",
+        "tunnel.socks",
         "recon.portscan",
         "recon.hostenum",
         "recon.service",
@@ -41,7 +42,7 @@ public class HandlerRegistryTests
     // point of the intersection.
     private static readonly string[] Stage2ClassVerbs =
     {
-        "shell.exec", "shell.interact", "file.push", "file.pull", "tunnel.forward",
+        "shell.exec", "shell.interact", "file.push", "file.pull", "tunnel.forward", "tunnel.socks",
         "recon.portscan", "recon.hostenum", "recon.service",
         "lateral.move", "lateral.token", "lateral.exec_remote",
         "persist.install", "persist.remove", "persist.list",

@@ -108,6 +108,110 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Acceptance: an operator's SOCKS-configured tool reaches arbitrary third
+    /// hosts through one stage-2 tunnel task, every connection and its bytes
+    /// attributed (architecture.md Sec 10.1 tunnel, Sec 14). The reference
+    /// implant (a real subprocess) runs tunnel.socks; the operator binds the
+    /// SOCKS relay onto it; two SOCKS clients CONNECT to two different third
+    /// hosts through the one channel, exchange bytes, and the task's final
+    /// summary records both destinations and the byte tallies -- the proxy's
+    /// attributed record, next to the bind and close in the trail.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_SocksProxy_ReachesArbitraryHostsThroughOneTask_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                // Two third hosts, each reachable only from the implant's
+                // vantage: the proxy's destinations are per connection, not
+                // baked at task time.
+                await using var thirdOne = EchoHost.Start();
+                await using var thirdTwo = EchoHost.Start();
+
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "tunnel.socks" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                    (await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}"))!.Status == "Dispatched",
+                    deadline: TimeSpan.FromSeconds(30));
+
+                var bound = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/relay",
+                    new { });
+                bound.EnsureSuccessStatusCode();
+                var relay = await bound.Content.ReadFromJsonAsync<RelayBody>();
+                Assert.NotNull(relay);
+                Assert.True(relay!.Port > 0);
+
+                // The unmodified-tool shape: a SOCKS client (what a browser or
+                // proxychains speaks) CONNECTs each destination through the
+                // one proxy port and exchanges bytes.
+                var one = await SocksClient.ConnectAsync(relay.Port, "127.0.0.1", thirdOne.Port);
+                await using (one)
+                {
+                    await one.SendAsync("ping");
+                    Assert.Equal("ping", await one.ReceiveAsync());
+                }
+                var two = await SocksClient.ConnectAsync(relay.Port, "127.0.0.1", thirdTwo.Port);
+                await using (two)
+                {
+                    await two.SendAsync("pong");
+                    Assert.Equal("pong", await two.ReceiveAsync());
+                }
+
+                // eof closes the proxy with the task; the summary is the
+                // record of what the proxy dialed and moved.
+                var closed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}/input",
+                    new { Eof = true });
+                closed.EnsureSuccessStatusCode();
+
+                TaskBody? completed = null;
+                await WaitUntilAsync(async () =>
+                {
+                    completed = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}");
+                    return completed is { Status: "Completed", Outcome: "Succeeded" };
+                }, deadline: TimeSpan.FromSeconds(30));
+
+                Assert.Contains("2 connections (0 refused)", completed!.Output);
+                Assert.Contains("8 bytes up, 8 bytes down", completed.Output);
+                Assert.Contains($"127.0.0.1:{thirdOne.Port}", completed.Output);
+                Assert.Contains($"127.0.0.1:{thirdTwo.Port}", completed.Output);
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
     /// Acceptance: a <c>tunnel.forward</c> task issued to a pivot-child session
     /// executes on its parent and reaches the third host, attributed to the
     /// pivot session end to end (architecture.md Sec 5.2, Sec 14). The parent
@@ -715,6 +819,87 @@ public class DotNetImplantTests
         public string? Output { get; set; }
         public string? Outcome { get; set; }
         public AuditBody[] Audit { get; set; } = Array.Empty<AuditBody>();
+    }
+
+    private sealed class RelayBody
+    {
+        public string TaskId { get; set; } = "";
+        public string Host { get; set; } = "";
+        public int Port { get; set; }
+    }
+
+    /// <summary>
+    /// The minimal SOCKS5 client a browser implements: no-auth greeting,
+    /// CONNECT with a domain-shaped address, then a byte stream. Standing in
+    /// for the operator's SOCKS-configured tooling.
+    /// </summary>
+    private sealed class SocksClient : IAsyncDisposable
+    {
+        private readonly TcpClient _client;
+        private readonly NetworkStream _stream;
+
+        private SocksClient(TcpClient client, NetworkStream stream)
+        {
+            _client = client;
+            _stream = stream;
+        }
+
+        public static async Task<SocksClient> ConnectAsync(int proxyPort, string host, int port)
+        {
+            var tool = new TcpClient();
+            await tool.ConnectAsync(IPAddress.Loopback, proxyPort);
+            var stream = tool.GetStream();
+
+            await stream.WriteAsync(new byte[] { 5, 1, 0 });
+            var method = await ReadExactlyAsync(stream, 2);
+            Assert.Equal(5, method[0]);
+            Assert.Equal(0, method[1]);
+
+            var name = Encoding.ASCII.GetBytes(host);
+            var request = new List<byte> { 5, 1, 0, 3, (byte)name.Length };
+            request.AddRange(name);
+            request.Add((byte)(port >> 8));
+            request.Add((byte)port);
+            await stream.WriteAsync(request.ToArray());
+
+            var reply = await ReadExactlyAsync(stream, 10);
+            Assert.Equal(5, reply[0]);
+            Assert.Equal(0, reply[1]); // the implant's dial result
+            return new SocksClient(tool, stream);
+        }
+
+        public Task SendAsync(string text)
+            => _stream.WriteAsync(Encoding.UTF8.GetBytes(text)).AsTask();
+
+        public async Task<string> ReceiveAsync()
+        {
+            var buffer = new byte[16 * 1024];
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var read = await _stream.ReadAsync(buffer, deadline.Token);
+            return Encoding.UTF8.GetString(buffer, 0, read);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _stream.Dispose();
+            _client.Dispose();
+            await ValueTask.CompletedTask;
+        }
+
+        private static async Task<byte[]> ReadExactlyAsync(NetworkStream stream, int count)
+        {
+            var buffer = new byte[count];
+            var offset = 0;
+            while (offset < count)
+            {
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var read = await stream.ReadAsync(buffer.AsMemory(offset), deadline.Token);
+                if (read <= 0)
+                    throw new IOException("the SOCKS peer closed early");
+                offset += read;
+            }
+            return buffer;
+        }
     }
 
     /// <summary>

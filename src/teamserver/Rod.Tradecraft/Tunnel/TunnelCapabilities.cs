@@ -29,6 +29,16 @@ public static class TunnelCapabilities
     /// </summary>
     public const string Forward = "tunnel.forward";
 
+    /// <summary>
+    /// Run a SOCKS proxy over the channel: the arguments are empty (each
+    /// proxied connection's destination arrives in the channel's own
+    /// connection-multiplexed grammar, one open packet per connection); the
+    /// implant dials each destination from its own vantage and the channel
+    /// carries every connection under its id, so unmodified tooling reaches
+    /// arbitrary hosts through the one task (Sec 14).
+    /// </summary>
+    public const string Socks = "tunnel.socks";
+
     private static readonly IReadOnlyDictionary<string, string> TouchesNetwork =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -42,11 +52,13 @@ public static class TunnelCapabilities
     public static readonly CapabilityDescriptor[] All =
     {
         CapabilityDescriptor.Of(Forward, CapabilityCategory.Tunnel, "1.0", TouchesNetwork),
+        CapabilityDescriptor.Of(Socks, CapabilityCategory.Tunnel, "1.0", TouchesNetwork),
     };
 
     /// <summary>Every tunnel verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
         Forward,
+        Socks,
     };
 }

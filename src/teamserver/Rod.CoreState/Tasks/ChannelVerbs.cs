@@ -40,7 +40,18 @@ public static class ChannelVerbs
     /// </summary>
     public const string TunnelForward = "tunnel.forward";
 
-    private static readonly string[] All = { ShellInteract, TunnelForward };
+    /// <summary>
+    /// The SOCKS proxy tunnel (architecture.md Sec 5.2, Sec 14): the channel's
+    /// byte stream is the proxy's own connection-multiplexed grammar -- each
+    /// proxied connection rides the one channel under a connection id, with
+    /// each SOCKS CONNECT's destination carried in an open packet -- so
+    /// unmodified tooling reaches arbitrary hosts through a single task. The
+    /// operator side is a SOCKS listener bound onto the dispatched channel
+    /// (the relay bind's proxy shape, Sec 10.1).
+    /// </summary>
+    public const string TunnelSocks = "tunnel.socks";
+
+    private static readonly string[] All = { ShellInteract, TunnelForward, TunnelSocks };
 
     /// <summary>
     /// Whether <paramref name="verb"/>'s tasks run as live channels. Verb

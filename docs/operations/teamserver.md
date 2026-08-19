@@ -77,12 +77,20 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    are the defaults) and point the tool at the returned endpoint. Its bytes
    cross the channel without a single API call per byte, the answers come
    back raw, and the bind and its close (with byte tallies) land in the
-   engagement trail. One relay bridges one connection and dies with the task;
-   `DELETE /engagements/{id}/tasks/{taskId}/relay` ends it early
-   (architecture.md Sec 10.1). Binding off-loopback (`any` or an IP literal)
-   exposes the tunnel to every host that can reach the port -- name the
-   address only when the operator path needs it.
-8. To represent a host that cannot run an implant at all, derive a Pivot
+   engagement trail. On `tunnel.forward` the relay bridges one connection to
+   the task's fixed destination; `DELETE /engagements/{id}/tasks/{taskId}/relay`
+   ends it early (architecture.md Sec 10.1). Binding off-loopback (`any` or an
+   IP literal) exposes the tunnel to every host that can reach the port --
+   name the address only when the operator path needs it.
+8. For arbitrary destinations through one task, issue `tunnel.socks` (no
+   arguments) and bind the same relay route: the endpoint speaks SOCKS5
+   (no auth, CONNECT only), so a browser pointed at it as its proxy -- or
+   proxychains, or any SOCKS-configured client -- reaches whatever the
+   implant can reach, each connection under its own id on the one channel.
+   The task's final output is the proxy's record: the destinations dialed
+   and the bytes moved (architecture.md Sec 10.1). Close it with an eof
+   input post; the bind dies with the task.
+9. To represent a host that cannot run an implant at all, derive a Pivot
    child from a stage-2 parent (`lateral.move` with arguments
    `<token> Pivot`) and task the child directly: its tasking executes on the
    parent's beacon stream, marked with the child's id and attributed to the

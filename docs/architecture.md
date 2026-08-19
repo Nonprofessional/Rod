@@ -282,10 +282,11 @@ lateral movement, persistence, collection, and exfiltration are long-haul
 activities that justify a stage-2 footprint); a stager only `file.pull`s the
 stage-2 it loads; a web-shell and an ephemeral run `shell.exec` over their
 short-lived channels; a pivot carries exactly the tunnel set --
-`tunnel.forward`, the port-forward verb (Sec 10.3) -- enough to forward
-traffic for hosts that cannot run their own implant and nothing a long-haul
-footprint justifies. No class but Stage-2 carries a recon, lateral, persist,
-collect, or exfil verb. The set is the server's authority for what a class
+`tunnel.forward`, the port-forward verb, and `tunnel.socks`, the
+multiplexed proxy (Sec 10.3) -- enough to forward traffic for hosts that
+cannot run their own implant and nothing a long-haul footprint justifies.
+No class but Stage-2 carries a recon, lateral, persist, collect, or exfil
+verb. The set is the server's authority for what a class
 may do: task issuance gates on it in core state (a verb outside the set is
 refused before it is queued, Sec 10.3), and the build pipeline bakes it into
 each artifact so a generated payload is self-describing.
@@ -768,7 +769,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
 | **collect** | `collect.cred`, `collect.keylog` | Credential and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
-| **tunnel** | `tunnel.forward` | Network tunneling through an implant (Sec 14, core operations): the port-forward verb bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it. Runs as a live channel (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes the channel as a teamserver-side TCP listener, so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
+| **tunnel** | `tunnel.forward`, `tunnel.socks` | Network tunneling through an implant (Sec 14, core operations): `tunnel.forward` bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it; `tunnel.socks` is the multiplexed arm -- the channel's byte stream is a connection-multiplexed grammar, so every proxied connection rides the one task and each destination arrives per connection. Both run as live channels (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes either channel as a teamserver-side listener -- the raw one-connection bridge for `tunnel.forward`, a SOCKS5 listener for `tunnel.socks` -- so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 
@@ -840,31 +841,43 @@ those runs only when an operator supplies an out-of-tree module for the verb.
 
 The tunnel verbs are registered the same way
 (`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
-`tunnel.forward` carries a `touches-network` attribute, since it opens a
-network connection from the target. Unlike the categories above it is gated
-to two classes: Stage-2 (tunneling is a core operation, Sec 14) and Pivot
-(Sec 5.2 -- the tunneling class). Its task runs as a live channel (Sec 10.3)
--- the channel carries the tunnel's bytes both ways -- so the poll transports
-never claim it, and the reference implant ships the channel handler: it
-connects to the `<host> <port>` named in the arguments from the implant's own
-vantage and bridges the channel to the socket until the peer closes, with the
-relay summary as the task's final output. The traffic's attribution is end to
-end: every byte crossed the channel the signed TaskRequest opened, the input
-posts land as `ChannelInput` audit events, and the transcript plus summary is
-the operator's record. Input posts are the manual shape: a **relay bind**
-(`POST /engagements/{id}/tasks/{taskId}/relay`, tunnel-only, loopback by
-default and an ephemeral port unless the operator names one) starts a
-teamserver-side TCP listener bridged onto the dispatched channel -- the
-accepted socket's reads enter the same channel-input enqueue the route uses,
-and the channel's output chunks are handed back raw, before the transcript's
-UTF-8 decode, so the tool's bytes are the channel's bytes. One relay bridges
-one connection (the channel is one TCP connection on the implant's side), and
-it dies with the task: the final result, the stream ending, or the operator
-unbinding each close it and write the `RelayClosed` event with the relayed
-tallies, next to the `RelayBound` event the bind wrote. The relayed traffic
-itself keeps the channel's no-per-chunk discipline -- it rides the task's
-transcript, so an unmodified tool reaches a third host with zero operator API
-calls per byte and the whole flow stays attributed to the task.
+`tunnel.forward` and `tunnel.socks` each carry a `touches-network` attribute,
+since each opens network connections from the target. Unlike the categories
+above they are gated to two classes: Stage-2 (tunneling is a core operation,
+Sec 14) and Pivot (Sec 5.2 -- the tunneling class). Their tasks run as live
+channels (Sec 10.3) -- the channel carries the tunnel's bytes both ways -- so
+the poll transports never claim them, and the reference implant ships both
+channel handlers: `tunnel.forward` connects to the `<host> <port>` named in
+the arguments from the implant's own vantage and bridges the channel to the
+socket until the peer closes, with the relay summary as the task's final
+output; `tunnel.socks` takes no arguments at all -- its channel's byte stream
+is the proxy's own connection-multiplexed grammar (one `open` packet per
+connection naming that connection's destination, `data` packets under each
+connection id, `close` to end one, `opened` to answer a dial), the
+verb-local escape hatch Sec 10 licenses, so every proxied connection rides
+the one task and the implant dials each destination from its own vantage
+until the operator's eof ends the proxy, with the destinations dialed and
+the bytes moved as the task's final output. The traffic's attribution is end
+to end: every byte crossed the channel the signed TaskRequest opened, the
+input posts land as `ChannelInput` audit events, and the transcript plus
+summary is the operator's record. Input posts are the manual shape: a
+**relay bind** (`POST /engagements/{id}/tasks/{taskId}/relay`, tunnel-only,
+loopback by default and an ephemeral port unless the operator names one)
+starts a teamserver-side listener bridged onto the dispatched channel -- the
+raw relay for `tunnel.forward` (one connection: the channel is one TCP
+connection on the implant's side) or a SOCKS5 listener for `tunnel.socks`
+(no auth, CONNECT only -- the surface a browser or proxychains speaks),
+where each accepted SOCKS connection joins the channel under its id and
+each CONNECT's destination travels as an open packet. Either listener's
+reads enter the same channel-input enqueue the route uses, and the
+channel's output chunks are handed back raw, before the transcript's UTF-8
+decode, so the tool's bytes are the channel's bytes. The bind dies with the
+task: the final result, the stream ending, or the operator unbinding each
+close it and write the `RelayClosed` event with the relayed tallies, next
+to the `RelayBound` event the bind wrote. The relayed traffic itself keeps
+the channel's no-per-chunk discipline -- it rides the task's transcript,
+so an unmodified tool reaches third hosts with zero operator API calls per
+byte and the whole flow stays attributed to the task.
 
 The evasion verbs are registered the same way
 (`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both

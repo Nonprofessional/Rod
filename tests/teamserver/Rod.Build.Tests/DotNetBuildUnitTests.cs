@@ -28,9 +28,9 @@ public class DotNetBuildUnitTests
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,tunnel.forward,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,tunnel.forward,tunnel.socks,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
     [InlineData(ImplantClass.Stager, "file.pull,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
-    [InlineData(ImplantClass.Pivot, "tunnel.forward,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
+    [InlineData(ImplantClass.Pivot, "tunnel.forward,tunnel.socks,evasion.avoid,evasion.unload,exploit.invoke,exploit.module")]
     public void RenderBakedProfile_BakesClassVerbsPlusTheUngatedContractVerbs(ImplantClass @class, string expectedVerbs)
     {
         // The class's reduced verb set (architecture.md Sec 5.2) plus the

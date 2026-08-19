@@ -56,6 +56,7 @@ internal sealed class BeaconIngest
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
     private readonly Channels.TaskRelayHub _relays;
+    private readonly Channels.SocksProxyHub _socks;
 
     public BeaconIngest(
         TaskService tasks,
@@ -65,7 +66,8 @@ internal sealed class BeaconIngest
         IArtifactStore artifacts,
         ILiveEventBus bus,
         TimeProvider clock,
-        Channels.TaskRelayHub relays)
+        Channels.TaskRelayHub relays,
+        Channels.SocksProxyHub socks)
     {
         _tasks = tasks;
         _taskRecords = taskRecords;
@@ -75,6 +77,7 @@ internal sealed class BeaconIngest
         _bus = bus;
         _clock = clock;
         _relays = relays;
+        _socks = socks;
     }
 
     /// <summary>
@@ -82,7 +85,7 @@ internal sealed class BeaconIngest
     /// reassembler and channel decoders scoped to one transport connection.
     /// </summary>
     public BeaconConnectionIngest OpenConnection()
-        => new(_tasks, _taskRecords, _implants, _audit, _artifacts, _bus, _clock, _relays);
+        => new(_tasks, _taskRecords, _implants, _audit, _artifacts, _bus, _clock, _relays, _socks);
 }
 
 /// <summary>
@@ -102,6 +105,7 @@ internal sealed class BeaconConnectionIngest
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
     private readonly Channels.TaskRelayHub _relays;
+    private readonly Channels.SocksProxyHub _socks;
     // Per-connection chunk reassembly buffer; the owning transport loop is the
     // sole writer, so a plain dictionary is safe without locking.
     private readonly ExfilReassembler _exfil = new();
@@ -117,7 +121,8 @@ internal sealed class BeaconConnectionIngest
         IArtifactStore artifacts,
         ILiveEventBus bus,
         TimeProvider clock,
-        Channels.TaskRelayHub relays)
+        Channels.TaskRelayHub relays,
+        Channels.SocksProxyHub socks)
     {
         _tasks = tasks;
         _taskRecords = taskRecords;
@@ -127,6 +132,7 @@ internal sealed class BeaconConnectionIngest
         _bus = bus;
         _clock = clock;
         _relays = relays;
+        _socks = socks;
     }
 
     /// <summary>
@@ -240,6 +246,7 @@ internal sealed class BeaconConnectionIngest
         // over, so the operator-side tool's connection ends rather than
         // stalls on a listener nothing more will cross.
         _relays.CloseTask(completed.TaskId.Value, "the tunnel task completed");
+        _socks.CloseTask(completed.TaskId.Value, "the tunnel task completed");
 
         // The store stamps the chain hashes on append; the call site supplies only
         // the audited facts (AuditEvent.Fact leaves PreviousHash/Hash empty).
@@ -427,8 +434,10 @@ internal sealed class BeaconConnectionIngest
         // Sec 10.1 tunnel, Sec 10.3): the operator-side tool's socket must
         // carry what the channel carried, not the lossy UTF-8 projection the
         // transcript decodes below. A task with no relay bound -- the common
-        // case on every channel -- costs one dictionary lookup.
+        // case on every channel -- costs one dictionary lookup; a SOCKS proxy
+        // re-frames the same bytes into its connections.
         _relays.TryDeliver(taskId.Value, output.Data.Memory);
+        _socks.TryDeliver(taskId.Value, output.Data.Memory);
 
         var text = _decoders.Decode(taskId.Value, output.Data.Span);
 

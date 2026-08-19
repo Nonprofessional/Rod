@@ -406,10 +406,12 @@ public static class TaskEndpoints
     }
 
     // The operator-side relay bind (architecture.md Sec 10.1 tunnel, Sec 10.3):
-    // start a teamserver-bound TCP listener bridged onto a dispatched
-    // tunnel.forward channel, so an operator's unmodified tool rides the tunnel
-    // by connecting a socket instead of driving the channel by input posts. The
-    // relay is tunnel-only -- a shell channel's grammar is a terminal, and a
+    // start a teamserver-bound listener bridged onto a dispatched tunnel
+    // channel, so an operator's unmodified tool rides the tunnel by connecting
+    // a socket instead of driving the channel by input posts. The verb picks
+    // the shape -- tunnel.forward gets the raw one-connection relay,
+    // tunnel.socks the SOCKS proxy that multiplexes every connection onto the
+    // one task. Tunnel-only: a shell channel's grammar is a terminal, and a
     // TCP bridge onto it would hand the tool a stream the shell cannot speak.
     // Loopback by default; an operator reaching the relay from elsewhere names
     // the address explicitly and owns that exposure.
@@ -420,6 +422,7 @@ public static class TaskEndpoints
         ClaimsPrincipal user,
         ITaskRepository tasks,
         TaskRelayHub relays,
+        SocksProxyHub socks,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -442,26 +445,29 @@ public static class TaskEndpoints
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
             return Results.NotFound(new Problem("Task does not exist in this engagement."));
 
-        if (!string.Equals(task.Verb, ChannelVerbs.TunnelForward, StringComparison.OrdinalIgnoreCase))
+        var forward = string.Equals(task.Verb, ChannelVerbs.TunnelForward, StringComparison.OrdinalIgnoreCase);
+        var proxy = string.Equals(task.Verb, ChannelVerbs.TunnelSocks, StringComparison.OrdinalIgnoreCase);
+        if (!forward && !proxy)
             return Results.Json(
-                new Problem($"'{task.Verb}' is not a tunnel task; a relay bridges only tunnel.forward."),
+                new Problem($"'{task.Verb}' is not a tunnel task; a relay bridges tunnel.forward, a SOCKS proxy bridges tunnel.socks."),
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         if (task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched)
             return Results.Conflict(
                 new Problem("The task's channel is not live: it is queued or already completed."));
-        if (relays.IsBound(taskValue))
+        if (relays.IsBound(taskValue) || socks.IsBound(taskValue))
             return Results.Conflict(new Problem("A relay is already bound for this task."));
 
-        var bound = await relays.OpenAsync(
-            new TaskRelayHub.RelayBind(
-                new EngagementId(engagementValue),
-                task.ImplantId,
-                new TaskId(taskValue),
-                operatorId.Value,
-                task.Verb,
-                address,
-                port),
-            cancellationToken);
+        var bind = new TaskRelayHub.RelayBind(
+            new EngagementId(engagementValue),
+            task.ImplantId,
+            new TaskId(taskValue),
+            operatorId.Value,
+            task.Verb,
+            address,
+            port);
+        var bound = forward
+            ? await relays.OpenAsync(bind, cancellationToken)
+            : await socks.OpenAsync(bind, cancellationToken);
         if (bound is null)
             return Results.Conflict(new Problem("A relay is already bound for this task."));
 
@@ -498,6 +504,7 @@ public static class TaskEndpoints
         ClaimsPrincipal user,
         ITaskRepository tasks,
         TaskRelayHub relays,
+        SocksProxyHub socks,
         CancellationToken cancellationToken)
     {
         if (user.TryGetOperatorId() is null)
@@ -510,10 +517,11 @@ public static class TaskEndpoints
         var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
             return Results.NotFound(new Problem("Task does not exist in this engagement."));
-        if (!relays.IsBound(taskValue))
+        if (!relays.IsBound(taskValue) && !socks.IsBound(taskValue))
             return Results.NotFound(new Problem("No relay is bound for this task."));
 
         relays.CloseTask(taskValue, "the operator unbound the relay");
+        socks.CloseTask(taskValue, "the operator unbound the relay");
         return Results.NoContent();
     }
 

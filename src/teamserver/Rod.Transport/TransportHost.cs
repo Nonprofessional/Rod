@@ -126,6 +126,10 @@ public static class TransportHost
         // tunnel without per-byte input posts. Fed by the beacon ingest's
         // channel output path and the live channel hub's input path.
         services.AddSingleton<Channels.TaskRelayHub>();
+        // SOCKS proxy hub (architecture.md Sec 10.1 tunnel, Sec 14): the
+        // multiplexed relay -- a SOCKS5 listener bridged onto a tunnel.socks
+        // channel, every connection under its id on the one task.
+        services.AddSingleton<Channels.SocksProxyHub>();
 
         // Listener registry: the bound C2 ingress the teamserver is
         // terminating. Populated at startup by UseRodListeners; read-only from the

@@ -19,6 +19,7 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Stage2, "file.push")]
     [InlineData(ImplantClass.Stage2, "file.pull")]
     [InlineData(ImplantClass.Stage2, "tunnel.forward")]
+    [InlineData(ImplantClass.Stage2, "tunnel.socks")]
     [InlineData(ImplantClass.Stage2, "recon.portscan")]
     [InlineData(ImplantClass.Stage2, "recon.hostenum")]
     [InlineData(ImplantClass.Stage2, "recon.service")]
@@ -36,6 +37,7 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
     [InlineData(ImplantClass.Pivot, "tunnel.forward")]
+    [InlineData(ImplantClass.Pivot, "tunnel.socks")]
     public void Allows_AdmitsTheReducedVerbSetForTheClass(ImplantClass @class, string verb)
         => Assert.True(ImplantClassCapabilities.Allows(@class, verb));
 
@@ -95,7 +97,7 @@ public class ImplantClassCapabilitiesTests
             new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull",
-                "tunnel.forward",
+                "tunnel.forward", "tunnel.socks",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
@@ -149,6 +151,8 @@ public class ImplantClassCapabilitiesTests
         // long-haul stage-2 footprint justifies.
         foreach (ImplantClass @class in Enum.GetValues(typeof(ImplantClass)))
             Assert.NotEmpty(ImplantClassCapabilities.For(@class));
-        Assert.Equal(new[] { "tunnel.forward" }, ImplantClassCapabilities.For(ImplantClass.Pivot));
+        Assert.Equal(
+            new[] { "tunnel.forward", "tunnel.socks" },
+            ImplantClassCapabilities.For(ImplantClass.Pivot));
     }
 }

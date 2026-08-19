@@ -55,6 +55,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private readonly ITaskDispatchWake _wake;
     private readonly LiveChannelHub _channels;
     private readonly TaskRelayHub _relays;
+    private readonly SocksProxyHub _socks;
     private readonly BeaconIngest _ingest;
     private readonly BeaconTasking _tasking;
 
@@ -67,6 +68,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         ITaskDispatchWake wake,
         LiveChannelHub channels,
         TaskRelayHub relays,
+        SocksProxyHub socks,
         BeaconIngest ingest,
         BeaconTasking tasking)
     {
@@ -78,6 +80,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         _wake = wake;
         _channels = channels;
         _relays = relays;
+        _socks = socks;
         _ingest = ingest;
         _tasking = tasking;
     }
@@ -220,6 +223,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // it, so the operator-side tool's connection ends instead of staring
         // at a listener nothing more will cross.
         _relays.CloseImplant(session.Implant, "the implant's beacon stream ended");
+        _socks.CloseImplant(session.Implant, "the implant's beacon stream ended");
     }
 
     // Reader: await each upstream frame, capture it into the task and append the

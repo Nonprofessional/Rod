@@ -46,7 +46,7 @@ public static class ImplantClassCapabilities
             [ImplantClass.Stage2] = new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull",
-                "tunnel.forward",
+                "tunnel.forward", "tunnel.socks",
                 "recon.portscan", "recon.hostenum", "recon.service",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
@@ -71,7 +71,7 @@ public static class ImplantClassCapabilities
             // traffic (architecture.md Sec 5.2). It carries exactly the tunnel
             // set -- a pivot forwards, it does not shell -- so a Pivot-class
             // build is the minimal tunneling artifact and nothing else.
-            [ImplantClass.Pivot] = new[] { "tunnel.forward" },
+            [ImplantClass.Pivot] = new[] { "tunnel.forward", "tunnel.socks" },
         };
 
     /// <summary>
