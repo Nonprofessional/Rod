@@ -17,38 +17,19 @@ None open: the streaming task shape (interactive shells) shipped as
 
 ## Tradecraft extension kit (architecture.md Sec 10.2, Sec 13)
 
-None open: the kit shipped. A configured extension directory
+None open: the kit shipped -- a configured extension directory
 (`Build:ImplantExtensionDirectory`) overlays out-of-tree handler sources onto
-every implant-class build, with generated registrations feeding
-`HandlerRegistry.Default`'s `additional` seam -- dropping a handler source in
-and building yields an artifact that runs it, no fork to maintain -- and the
-bake carries the class set plus the ungated contract-only verbs, so an
-artifact compiled with an out-of-tree evasion or exploit handler advertises
-the verb at handshake. See [extending/tradecraft.md](extending/tradecraft.md)
-for the authoring shape and the seams' current limits.
+every implant-class build. See [extending/tradecraft.md](extending/tradecraft.md).
 
 ## Implant reach (architecture.md Sec 8, extending/implants.md)
 
-None open: the reach work shipped. The plain-HTTP envelope listener carries
-the same rod.v1 frames as varint-length-delimited HTTPS bodies -- one POST is
-one poll check-in over the same client certificates, dropping the gRPC/HTTP-2
-requirement (its acceptance test is a from-scratch implant, no gRPC library,
-that enrolls, checks in, and completes a task) -- and the Tier 0 conformance
-harness (`tests/teamserver/Rod.Conformance.Tests/`) drives a candidate
-implant against a live teamserver and reports pass/fail per contract clause:
-the reference implant passes every clause, and a deliberately broken one
-fails with the violated clause named.
+None open: the plain-HTTP envelope check-in shipped (one POST is one poll
+check-in, no gRPC requirement), and the Tier 0 conformance harness drives a
+candidate against a live teamserver per contract clause
+(`tests/teamserver/Rod.Conformance.Tests/`).
 
 ## Security (architecture.md Sec 9)
 
-None open: the tasking replay nonces shipped. The arm is negotiated at
-handshake (`replay_nonces` advertised, echoed by the server, sticky on the
-implant so a later handshake cannot downgrade it); every dispatched task for
-a negotiating implant carries a per-implant monotonic `task_nonce` covered by
-the tasking signature (the five-element canonical tuple), the implant refuses
-any nonce at or below its accepted floor, and the refusal is reported as the
-task's `Failed` result -- a replayed frame surfaces on the task. Non-advertising
-implants keep the original four-element tuple unchanged (the evolution rules'
-negotiated-addition shape); the reference implant advertises, and the
-conformance harness's hostile probe replays a genuinely signed control frame
-to pin the refusal.
+None open: the tasking replay nonces shipped -- negotiated at handshake,
+per-implant monotonic, covered by the tasking signature, with the refusal
+surfacing on the task.
