@@ -36,10 +36,12 @@ public static class OperatorAuthEndpoints
     // Revocation is the operator half of certificate revocation
     // (architecture.md Sec 9): deleting the stored verifier makes the next
     // login fail -- the hash is read fresh per attempt, so no restart is
-    // involved. Any authenticated operator may revoke (the trusted-operators
-    // model); the action is idempotent. Active cookie sessions outlive the
-    // credential they were issued from (cookies are self-contained); ending
-    // live sessions on revoke is a separate hardening.
+    // involved. It ends the credential's live cookie sessions too: each
+    // authenticated request revalidates the session stamp the login baked
+    // into the cookie, and with the verifier gone the stamp no longer
+    // matches, so the next request on that cookie is refused. Any
+    // authenticated operator may revoke (the trusted-operators model); the
+    // action is idempotent.
     private static async Task<IResult> RevokeCredentialAsync(
         string operatorId,
         IOperatorRepository operators,

@@ -664,10 +664,15 @@ fleet-wide code execution. Security is a first-class concern.
   is `POST /operators/{operatorId}/credentials:revoke`: it deletes the stored
   password verifier (any authenticated operator may call it; the action is
   idempotent), and login -- which reads the verifier fresh on every attempt --
-  fails from then on. Re-provisioning the operator with a new password
-  restores login; active cookie sessions outlive the credential they were
-  issued from (cookies are self-contained), and ending live sessions on
-  revoke is a separate hardening. Revocation is not recorded in the audit
+  fails from then on. It ends the credential's live cookie sessions too: a
+  cookie is self-contained, so every authenticated request revalidates the
+  session stamp its login baked into the principal -- a digest of the stored
+  verifier -- against the verifier the store holds now. A revoked credential
+  (no verifier) or a re-provisioned one (a new password is a new generation)
+  fails the comparison at the very request that presented the cookie; the
+  stamp is a digest, so the cookie carries nothing usable. Re-provisioning
+  the operator with a new password restores login without resurrecting the
+  revoked generation's sessions. Revocation is not recorded in the audit
   trail: the trail is engagement-scoped and an operator credential is global
   state, so it has no engagement to live in.
 - **Kill-date enforcement.** The teamserver refuses to open a session for an

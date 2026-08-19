@@ -59,7 +59,10 @@ public sealed class OperatorAuthService
 
         // SuccessRehash is accepted as a valid login; rehashing on every login is
         // a later hardening step and not required for the session to be trusted.
-        return OperatorLoginResult.Succeeded(op, CreatePrincipal(op));
+        // The principal carries the session stamp of the verifier that issued
+        // it, so the cookie is bounded against this credential generation and
+        // revocation ends the session at its next request (Sec 9).
+        return OperatorLoginResult.Succeeded(op, CreatePrincipal(op, hash));
     }
 
     /// <summary>
@@ -68,8 +71,10 @@ public sealed class OperatorAuthService
     /// display name under their claims (so transport can resolve the full
     /// operator identity off the principal without referencing this layer), the
     /// handle as the name, and the authentication scheme as the identity label.
+    /// With <paramref name="verifierHash"/> it also carries the session stamp
+    /// that binds the session to that credential generation.
     /// </summary>
-    public static ClaimsPrincipal CreatePrincipal(Operator op)
+    public static ClaimsPrincipal CreatePrincipal(Operator op, string? verifierHash = null)
     {
         var identity = new ClaimsIdentity(
             OperatorAuthConstants.AuthenticationScheme,
@@ -79,6 +84,8 @@ public sealed class OperatorAuthService
         identity.AddClaim(new Claim(OperatorClaims.OperatorHandleClaimType, op.Handle));
         identity.AddClaim(new Claim(OperatorClaims.OperatorDisplayNameClaimType, op.DisplayName));
         identity.AddClaim(new Claim(ClaimTypes.Name, op.Handle));
+        if (verifierHash is not null)
+            identity.AddClaim(SessionStamp.Claim(verifierHash));
         return new ClaimsPrincipal(identity);
     }
 }

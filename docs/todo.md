@@ -41,12 +41,6 @@ and the fronting executor for unplantable hosts.
 
 ## Security follow-ups (architecture.md Sec 9)
 
-- [ ] **End live operator sessions on credential revoke.** A revoked
-      credential stops new logins, but active cookie sessions outlive the
-      credential they were issued from (Sec 9, certificate revocation) --
-      ending them on revoke is the recorded separate hardening. _AC:_
-      revoking an operator's credential ends its live cookie sessions; the
-      next request on that cookie is refused.
 - [ ] **Durable replay-nonce floor.** The per-implant nonce counter lives in
       the TaskService process (Sec 9, tasking replay nonces); move it behind
       the task repository so a durable (Postgres) deployment keeps the floor

@@ -52,7 +52,8 @@ public static class RodOperatorAuthHost
                 // The API is consumed by the SPA over fetch; a 302 to a login
                 // page is the wrong response for an unauthenticated XHR. Turn the
                 // cookie middleware's redirects into bare 401/403 so the client
-                // can route to the login view itself.
+                // can route to the login view itself. Validation bounds every
+                // session against the credential generation that issued it.
                 options.Events = new CookieAuthenticationEvents
                 {
                     OnRedirectToLogin = ctx =>
@@ -65,6 +66,7 @@ public static class RodOperatorAuthHost
                         ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return Task.CompletedTask;
                     },
+                    OnValidatePrincipal = ValidateSessionAsync,
                 };
             });
 
@@ -90,5 +92,32 @@ public static class RodOperatorAuthHost
         var group = endpoints.MapGroup("/operators");
         OperatorAuthEndpoints.Map(group);
         return endpoints;
+    }
+
+    // The per-request session validation (architecture.md Sec 9): a cookie is
+    // self-contained, so its lifetime is bounded against the credential
+    // generation that issued it. The stamp the login baked into the principal
+    // must match the stamp of the verifier the store holds now -- a revoked
+    // credential (no verifier) or a re-provisioned one (a new verifier) fails
+    // the comparison, and the principal is rejected at the request that
+    // presented the cookie. Reading the verifier per attempt is the same
+    // fresh-read discipline login applies.
+    private static async Task ValidateSessionAsync(CookieValidatePrincipalContext context)
+    {
+        var operatorId = context.Principal?.TryGetOperatorId();
+        if (operatorId is null)
+        {
+            context.RejectPrincipal();
+            return;
+        }
+
+        var credentials = context.HttpContext.RequestServices
+            .GetRequiredService<IOperatorCredentialStore>();
+        var hash = await credentials.FindHashAsync(
+            operatorId.Value, context.HttpContext.RequestAborted);
+
+        var stamp = context.Principal!.FindFirst(SessionStamp.ClaimType)?.Value;
+        if (hash is null || stamp is null || stamp != SessionStamp.Compute(hash))
+            context.RejectPrincipal();
     }
 }

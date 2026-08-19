@@ -73,6 +73,47 @@ public class OperatorCredentialRevocationTests
     }
 
     [Fact]
+    public async Task RevokedCredential_EndsItsLiveCookieSessions()
+    {
+        // The separate hardening Sec 9 recorded: revoking ends not just future
+        // logins but the live cookie sessions the credential issued -- every
+        // authenticated request revalidates the session's stamp against the
+        // stored verifier, so the next request on a revoked operator's cookie
+        // is refused, and a re-provisioned credential does not resurrect it.
+        await using var env = await TestEnv.StartAsync();
+        var credentials = env.Host.Services.GetRequiredService<IOperatorCredentialStore>();
+        var revokedId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Revoked Op", Password);
+        await AuthenticatedHost.LoginAsync(env.Http);
+
+        // The revoked operator holds a working session first.
+        using var live = env.NewClient();
+        await AuthenticatedHost.LoginAsync(live, Handle, Password);
+        var before = await live.GetAsync("/operators/me");
+        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+
+        // An authenticated operator revokes it.
+        var revoked = await env.Http.PostAsync($"/operators/{revokedId}/credentials:revoke", content: null);
+        Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
+
+        // The live session ends: the next request on that same cookie is
+        // refused, no restart, no re-login.
+        var after = await live.GetAsync("/operators/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, after.StatusCode);
+
+        // Re-provisioning with a new password is a new credential generation:
+        // the old session stays dead (its stamp names the deleted verifier),
+        // while a fresh login on the new password works.
+        var hasher = env.Host.Services.GetRequiredService<Microsoft.AspNetCore.Identity.IPasswordHasher<Operator>>();
+        var operators = env.Host.Services.GetRequiredService<IOperatorRepository>();
+        var op = await operators.FindAsync(revokedId, CancellationToken.None);
+        await credentials.SetHashAsync(revokedId, hasher.HashPassword(op!, "new-p@ss"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await live.GetAsync("/operators/me")).StatusCode);
+        using var fresh = env.NewClient();
+        await AuthenticatedHost.LoginAsync(fresh, Handle, "new-p@ss");
+        Assert.Equal(HttpStatusCode.OK, (await fresh.GetAsync("/operators/me")).StatusCode);
+    }
+
+    [Fact]
     public async Task RevokingAnUnknownOperator_Is404()
     {
         await using var env = await TestEnv.StartAsync();
