@@ -20,6 +20,7 @@ public class HandlerRegistryTests
         "shell.interact",
         "file.push",
         "file.pull",
+        "tunnel.forward",
         "recon.portscan",
         "recon.hostenum",
         "recon.service",
@@ -40,7 +41,7 @@ public class HandlerRegistryTests
     // point of the intersection.
     private static readonly string[] Stage2ClassVerbs =
     {
-        "shell.exec", "shell.interact", "file.push", "file.pull",
+        "shell.exec", "shell.interact", "file.push", "file.pull", "tunnel.forward",
         "recon.portscan", "recon.hostenum", "recon.service",
         "lateral.move", "lateral.token", "lateral.exec_remote",
         "persist.install", "persist.remove", "persist.list",
@@ -112,9 +113,11 @@ public class HandlerRegistryTests
     public void ChannelFor_ResolvesTheChannelArm_AndNullsEverythingElse()
     {
         // The streaming task shape's registrations (architecture.md Sec 10.3):
-        // shell.interact is a channel verb, every one-shot verb is not.
+        // shell.interact and tunnel.forward are channel verbs, every one-shot
+        // verb is not.
         var registry = HandlerRegistry.Default(enroll: null);
         Assert.NotNull(registry.ChannelFor("shell.interact"));
+        Assert.NotNull(registry.ChannelFor("tunnel.forward"));
         Assert.Null(registry.ChannelFor("shell.exec"));
         Assert.Null(registry.ChannelFor("file.push"));
     }
@@ -127,9 +130,23 @@ public class HandlerRegistryTests
         // than losing it -- the fallback registration keeps the verb
         // dispatchable everywhere the registry is used.
         var registry = HandlerRegistry.Default(enroll: null);
-        var (outcome, output, _) = registry.Dispatch("shell.interact", "");
-        Assert.Equal(TaskOutcome.Failed, outcome);
-        Assert.Contains("live channel", output);
+        var (shellOutcome, shellOutput, _) = registry.Dispatch("shell.interact", "");
+        Assert.Equal(TaskOutcome.Failed, shellOutcome);
+        Assert.Contains("live channel", shellOutput);
+        var (tunnelOutcome, tunnelOutput, _) = registry.Dispatch("tunnel.forward", "");
+        Assert.Equal(TaskOutcome.Failed, tunnelOutcome);
+        Assert.Contains("live channel", tunnelOutput);
+    }
+
+    [Fact]
+    public void AdvertisedVerbs_PivotBake_IsExactlyTheTunnelSet()
+    {
+        // The pivot class carries exactly the tunnel set (architecture.md Sec
+        // 5.2), and the reference implant compiles the handler for it, so a
+        // Pivot-class build advertises tunnel.forward and nothing else -- the
+        // minimal tunneling artifact.
+        var registry = HandlerRegistry.Default(enroll: null);
+        Assert.Equal(new[] { "tunnel.forward" }, registry.AdvertisedVerbs(new[] { "tunnel.forward" }));
     }
 
     [Fact]

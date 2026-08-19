@@ -314,7 +314,7 @@ internal sealed class Beacon
                         await WriteFrameAsync(
                             call, writeGate,
                             ResultFrame(task, TaskOutcome.Failed,
-                                "shell.interact requires a stream-mode check-in; a poll cycle carries no channel"),
+                                $"{task.Verb} requires a stream-mode check-in; a poll cycle carries no channel"),
                             cancellationToken);
                     }
                     else
