@@ -341,7 +341,11 @@ internal sealed class BeaconConnectionIngest
                 operatorId: session.OperatorId.Value,
                 implantId: session.Implant.Value,
                 taskId: taskId,
-                verb: "exfil.push",
+                // The chunk stream is the task's own evidence arm, not an
+                // exfil.push exclusive: a screenshot verb (and any future
+                // artifact-producing verb) flows the same frames, so the
+                // capture records the verb that actually produced it.
+                verb: task.Verb,
                 kind: AuditEventKind.ExfilCaptured,
                 payload: $"{artifact.Name};{artifact.ContentType}",
                 output: null,
@@ -357,7 +361,7 @@ internal sealed class BeaconConnectionIngest
                 session.OperatorId,
                 session.Implant,
                 new TaskId(taskId),
-                payload: $"exfil: {artifact.Name};{artifact.ContentType}",
+                payload: $"{task.Verb}: {artifact.Name};{artifact.ContentType}",
                 now),
             cancellationToken);
     }
