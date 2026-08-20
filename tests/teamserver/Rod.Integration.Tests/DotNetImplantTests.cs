@@ -429,6 +429,185 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Core-operations acceptance for the process verbs (architecture.md
+    /// Sec 10.1, Sec 14): a stage-2 implant lists the live processes with pid,
+    /// ppid, user, and image, then terminates one by pid through proc.kill,
+    /// and both actions land in the audit trail with their output attached.
+    /// The sacrificial process is a uniquely named sleep the implant's own
+    /// shell starts, so the pid comes out of recon.ps's listing exactly the
+    /// way an operator would read it. The marker arc drives sh, so the test
+    /// runs its full body on Unix hosts; the Windows listing path is pinned
+    /// by the implant unit tests instead.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_ProcessListingAndTermination_EndToEnd()
+    {
+        if (OperatingSystem.IsWindows())
+            return; // the sh-driven marker arc below is Unix-only
+
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                // The listing reports the implant's own subprocess with all
+                // four fields, and the TaskCompleted audit event carries the
+                // listing as its output -- the action audited with its output
+                // attached.
+                var listed = await IssueAndWaitAsync(env.Http, engagementId, implantId, "recon.ps", "");
+                Assert.Contains($"pid={implantProc.Id} ", listed.Output ?? string.Empty);
+                Assert.Equal("recon.ps", listed.Audit[2].Verb);
+                Assert.Contains($"pid={implantProc.Id} ", listed.Audit[2].Output ?? string.Empty);
+                var ownRow = Assert.Single(
+                    (listed.Output ?? string.Empty).Split('\n'),
+                    line => line.StartsWith($"pid={implantProc.Id} ", StringComparison.Ordinal));
+                Assert.Contains("ppid=", ownRow);
+                Assert.Contains("user=", ownRow);
+                Assert.Contains("image=", ownRow);
+
+                // Start a uniquely named sacrificial process through the
+                // implant's shell; the name is short enough to survive the
+                // 15-byte comm limit and unique enough to own its recon.ps row.
+                // The whole background job detaches its output -- the group
+                // redirect, or the spawned subshell would inherit the shell's
+                // drained pipes and hold the task open for the sleep's whole
+                // lifetime.
+                var marker = "rodps" + Guid.NewGuid().ToString("N")[..8];
+                await IssueAndWaitAsync(env.Http, engagementId, implantId, "shell.exec",
+                    $"{{ cp /bin/sleep /tmp/{marker} && /tmp/{marker} 300; }} >/dev/null 2>&1 & echo started {marker}");
+
+                // Find the sacrificial pid in a fresh listing.
+                var found = await IssueAndWaitAsync(env.Http, engagementId, implantId, "recon.ps", "");
+                var row = Assert.Single(
+                    (found.Output ?? string.Empty).Split('\n'),
+                    line => line.Contains("/tmp/" + marker, StringComparison.Ordinal));
+                var victimPid = int.Parse(row["pid=".Length..row.IndexOf(' ')]);
+
+                // Terminate it by pid, then confirm a third listing no longer
+                // carries it; the kill's own audit event names the pid it ended.
+                var killed = await IssueAndWaitAsync(env.Http, engagementId, implantId, "proc.kill", victimPid.ToString());
+                Assert.Contains(victimPid.ToString(), killed.Output ?? string.Empty);
+                Assert.Equal("proc.kill", killed.Audit[2].Verb);
+
+                var after = await IssueAndWaitAsync(env.Http, engagementId, implantId, "recon.ps", "");
+                Assert.DoesNotContain("/tmp/" + marker, after.Output ?? string.Empty);
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Screenshot acceptance (architecture.md Sec 10.1 collect, Sec 11): the
+    /// collect.screenshot verb returns a PNG artifact joined to its task,
+    /// listed under the task and fetched whole through the engagement-scoped
+    /// artifact endpoint. A host with no readable display takes the same path
+    /// a headless target would -- a Failed task naming the missing display --
+    /// so both halves of the verb's contract are asserted on whatever host
+    /// runs the suite.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_Screenshot_RoundTripsAsPngArtifact_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "collect.screenshot", Arguments = "" });
+                issued.EnsureSuccessStatusCode();
+                var shot = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(shot);
+
+                TaskBody? fetched = null;
+                await WaitUntilAsync(async () =>
+                {
+                    fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{shot!.TaskId}");
+                    return fetched is { Status: "Completed" };
+                }, deadline: TimeSpan.FromSeconds(60));
+
+                var hasDisplay = OperatingSystem.IsWindows()
+                                 || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"));
+                if (!hasDisplay)
+                {
+                    // The headless refusal: a Failed task carrying the cause,
+                    // no artifact, and no capture event -- the honest answer
+                    // for a target with nothing to read.
+                    Assert.Equal("Failed", fetched!.Outcome);
+                    Assert.Contains("display", fetched.Output, StringComparison.OrdinalIgnoreCase);
+                    return;
+                }
+
+                Assert.Equal("Succeeded", fetched!.Outcome);
+                Assert.Contains("captured ", fetched.Output ?? string.Empty);
+
+                // The PNG artifact is joined to its task and listed there.
+                var artifacts = await env.Http.GetFromJsonAsync<ArtifactListBody>(
+                    $"/engagements/{engagementId}/tasks/{shot!.TaskId}/artifacts");
+                var artifact = Assert.Single(artifacts!.Items);
+                Assert.Equal("image/png", artifact.ContentType);
+                Assert.EndsWith(".png", artifact.Name);
+                Assert.True(artifact.Size > 0);
+
+                // The client fetch returns the PNG bytes whole.
+                var content = await env.Http.GetByteArrayAsync(
+                    $"/engagements/{engagementId}/artifacts/{artifact.ArtifactId}");
+                Assert.Equal(
+                    new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A },
+                    content[..8]);
+
+                // The capture event on the engagement trail names the verb
+                // that produced the artifact.
+                var audit = await env.Http.GetFromJsonAsync<AuditPageBody>(
+                    $"/engagements/{engagementId}/audit?limit=50");
+                var captured = Assert.Single(audit!.Items, e => e.Kind == "ExfilCaptured");
+                Assert.Equal("collect.screenshot", captured.Verb);
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
     /// Poll-mode end to end: the reference implant runs with -mode poll, so each
     /// check-in drains queued tasking, closes the stream, and sleeps the beacon
     /// interval instead of holding a line open. The task must still round-trip,
@@ -792,6 +971,29 @@ public class DotNetImplantTests
         throw new TimeoutException("Condition was not met within the deadline.");
     }
 
+    // Issues a task over the operator HTTP API and waits for its completed,
+    // Succeeded body. The round trips the process-verb tests repeat per step;
+    // every failure surfaces as the task's own output rather than a throw.
+    private static async Task<TaskBody> IssueAndWaitAsync(
+        HttpClient http, string engagementId, string implantId, string verb, string arguments)
+    {
+        var issued = await http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/tasks",
+            new { ImplantId = implantId, Verb = verb, Arguments = arguments });
+        issued.EnsureSuccessStatusCode();
+        var body = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+        Assert.NotNull(body);
+
+        TaskBody? fetched = null;
+        await WaitUntilAsync(async () =>
+        {
+            fetched = await http.GetFromJsonAsync<TaskBody>(
+                $"/engagements/{engagementId}/tasks/{body!.TaskId}");
+            return fetched is { Status: "Completed", Outcome: "Succeeded" };
+        }, deadline: TimeSpan.FromSeconds(60));
+        return fetched!;
+    }
+
     // Minimal DTOs for the JSON round-trip; the transport owns the wire shape.
 
     private sealed class AuditPageBody
@@ -803,6 +1005,7 @@ public class DotNetImplantTests
     private sealed class AuditEventBody
     {
         public string Kind { get; set; } = string.Empty;
+        public string Verb { get; set; } = string.Empty;
     }
 
     private sealed class TaskIssuedBody
@@ -819,6 +1022,21 @@ public class DotNetImplantTests
         public string? Output { get; set; }
         public string? Outcome { get; set; }
         public AuditBody[] Audit { get; set; } = Array.Empty<AuditBody>();
+    }
+
+    private sealed class ArtifactListBody
+    {
+        public ArtifactBody[] Items { get; set; } = Array.Empty<ArtifactBody>();
+        public string? NextCursor { get; set; }
+    }
+
+    private sealed class ArtifactBody
+    {
+        public string ArtifactId { get; set; } = "";
+        public string TaskId { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string ContentType { get; set; } = "";
+        public long Size { get; set; }
     }
 
     private sealed class RelayBody
