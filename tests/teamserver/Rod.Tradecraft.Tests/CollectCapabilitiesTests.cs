@@ -43,9 +43,10 @@ public class CollectCapabilitiesTests
     public async Task DefaultRegistry_FlagsCollectVerbs_InAttributes()
     {
         // Each collect verb carries the OPSEC attribute for what it reads
-        // (architecture.md Sec 7): collect.cred reads a credential, and
-        // collect.keylog installs a resident input-capture hook so it both reads
-        // input and persists on the target.
+        // (architecture.md Sec 7): collect.cred reads a credential,
+        // collect.keylog installs a resident input-capture hook so it both
+        // reads input and persists on the target, and collect.screenshot
+        // reads what the target's display shows.
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
         var descriptors = (await registry.ListAsync())
             .ToDictionary(d => d.Verb, StringComparer.OrdinalIgnoreCase);
@@ -56,6 +57,8 @@ public class CollectCapabilitiesTests
         Assert.Equal("true", keylogInput);
         Assert.True(descriptors[CollectCapabilities.Keylog].Attributes.TryGetValue("persists", out var keylogPersists));
         Assert.Equal("true", keylogPersists);
+        Assert.True(descriptors[CollectCapabilities.Screenshot].Attributes.TryGetValue("reads-screen", out var shotScreen));
+        Assert.Equal("true", shotScreen);
         // A credential listing installs no resident hook (keylog is the one that persists).
         Assert.False(descriptors[CollectCapabilities.Cred].Attributes.ContainsKey("persists"));
     }

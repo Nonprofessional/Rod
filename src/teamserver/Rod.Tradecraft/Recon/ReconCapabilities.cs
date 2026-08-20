@@ -4,8 +4,8 @@ namespace Rod.Tradecraft.Recon;
 
 /// <summary>
 /// The recon capability verbs (architecture.md Sec 10.1, the "recon" category):
-/// target and network reconnaissance -- port scanning, host enumeration, and
-/// service probing. These are the verbs  loads through the registry
+/// target and network reconnaissance -- port scanning, host enumeration,
+/// service probing, and live-process listing. These are the verbs  loads through the registry
 /// alongside the core set, so the registry lists them and a future task-issuance
 /// path can resolve them.
 /// </summary>
@@ -17,8 +17,8 @@ namespace Rod.Tradecraft.Recon;
 /// descriptors only -- enough for the registry to know each verb exists. Each
 /// network-touching verb carries a <c>touches-network</c> OPSEC attribute so
 /// operators and tradecraft filters can avoid risky actions (architecture.md
-/// Sec 7); <see cref="HostEnum"/> introspects the local host and does not touch
-/// the network, so it carries no such flag.
+/// Sec 7); <see cref="HostEnum"/> and <see cref="Ps"/> introspect the local
+/// host and do not touch the network, so neither carries such a flag.
 /// </remarks>
 public static class ReconCapabilities
 {
@@ -30,6 +30,12 @@ public static class ReconCapabilities
 
     /// <summary>Probe one or more ports for a service banner.</summary>
     public const string Service = "recon.service";
+
+    /// <summary>
+    /// List the live processes on the local host -- one row per process with
+    /// its pid, parent pid, owning user, and image.
+    /// </summary>
+    public const string Ps = "recon.ps";
 
     // The OPSEC attribute flagging a verb as touching the network, so a future
     // tradecraft filter can surface or suppress it (architecture.md Sec 7).
@@ -48,11 +54,12 @@ public static class ReconCapabilities
         CapabilityDescriptor.Of(PortScan, CapabilityCategory.Recon, "1.0", TouchesNetwork),
         CapabilityDescriptor.Of(HostEnum, CapabilityCategory.Recon, "1.0"),
         CapabilityDescriptor.Of(Service, CapabilityCategory.Recon, "1.0", TouchesNetwork),
+        CapabilityDescriptor.Of(Ps, CapabilityCategory.Recon, "1.0"),
     };
 
     /// <summary>Every recon verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        PortScan, HostEnum, Service,
+        PortScan, HostEnum, Service, Ps,
     };
 }

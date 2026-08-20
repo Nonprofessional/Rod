@@ -45,12 +45,12 @@ public static class ImplantClassCapabilities
             // activities that justify a stage-2 footprint and no other class.
             [ImplantClass.Stage2] = new[]
             {
-                "shell.exec", "shell.interact", "file.push", "file.pull",
+                "shell.exec", "shell.interact", "file.push", "file.pull", "proc.kill",
                 "tunnel.forward", "tunnel.socks",
-                "recon.portscan", "recon.hostenum", "recon.service",
+                "recon.portscan", "recon.hostenum", "recon.service", "recon.ps",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
-                "collect.cred", "collect.keylog",
+                "collect.cred", "collect.keylog", "collect.screenshot",
                 "exfil.push", "exfil.stage",
             },
 

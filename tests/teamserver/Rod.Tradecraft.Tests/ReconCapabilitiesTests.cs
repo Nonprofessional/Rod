@@ -38,8 +38,8 @@ public class ReconCapabilitiesTests
     {
         // The network-touching recon verbs carry a touches-network OPSEC
         // attribute so operators and tradecraft filters can surface them
-        // (architecture.md Sec 7); hostenum introspects the local host and
-        // omits it.
+        // (architecture.md Sec 7); hostenum and ps introspect the local host
+        // and omit it.
         var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
         var descriptors = (await registry.ListAsync())
             .ToDictionary(d => d.Verb, StringComparer.OrdinalIgnoreCase);
@@ -49,6 +49,8 @@ public class ReconCapabilitiesTests
         Assert.True(descriptors[ReconCapabilities.Service].Attributes.TryGetValue("touches-network", out var sv));
         Assert.Equal("true", sv);
         Assert.False(descriptors[ReconCapabilities.HostEnum].Attributes.ContainsKey("touches-network"));
+        // ps reads the local process table, not the network.
+        Assert.False(descriptors[ReconCapabilities.Ps].Attributes.ContainsKey("touches-network"));
     }
 
     [Fact]

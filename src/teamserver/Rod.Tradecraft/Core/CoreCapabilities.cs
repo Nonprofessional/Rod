@@ -5,7 +5,8 @@ namespace Rod.Tradecraft.Core;
 /// <summary>
 /// The core capability verbs (architecture.md Sec 10.1, the "core" category):
 /// the mandatory-to-useful baseline every implant is expected to carry --
-/// command execution and file transfer in both directions. These
+/// command execution, file transfer in both directions, and process
+/// termination. These
 /// are the verbs the registry loads through the tradecraft layer's contract.
 /// </summary>
 /// <remarks>
@@ -15,7 +16,8 @@ namespace Rod.Tradecraft.Core;
 /// registry to know the verb exists and for the task-issuance gate to resolve
 /// it. The file verbs carry OPSEC attributes (architecture.md Sec 7) so the
 /// picker can badge them: a push writes to the target's disk, a pull reads its
-/// filesystem.
+/// filesystem; <see cref="ProcKill"/> ends a process the target was running,
+/// an observable and irreversible action an operator should take deliberately.
 /// </remarks>
 public static class CoreCapabilities
 {
@@ -36,6 +38,9 @@ public static class CoreCapabilities
     /// <summary>Download a file off the target.</summary>
     public const string FilePull = "file.pull";
 
+    /// <summary>Terminate one process on the target by its pid.</summary>
+    public const string ProcKill = "proc.kill";
+
     // The OPSEC attributes for the file verbs (architecture.md Sec 7): a push
     // lands bytes on the target's disk, a pull reads its filesystem.
     private static readonly IReadOnlyDictionary<string, string> WritesToDisk =
@@ -50,6 +55,14 @@ public static class CoreCapabilities
             ["reads-filesystem"] = "true",
         };
 
+    // The OPSEC attribute flagging the terminate verb: killing a pid is an
+    // observable, irreversible action on the target (architecture.md Sec 7).
+    private static readonly IReadOnlyDictionary<string, string> KillsProcess =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["kills-process"] = "true",
+        };
+
     /// <summary>
     /// Descriptors for every core verb, in declared order. The composition root
     /// registers these so the registry lists the full core set.
@@ -60,11 +73,12 @@ public static class CoreCapabilities
         CapabilityDescriptor.Of(ShellInteract, CapabilityCategory.Core, "1.0"),
         CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk),
         CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
+        CapabilityDescriptor.Of(ProcKill, CapabilityCategory.Core, "1.0", KillsProcess),
     };
 
     /// <summary>Every core verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        ShellExec, ShellInteract, FilePush, FilePull,
+        ShellExec, ShellInteract, FilePush, FilePull, ProcKill,
     };
 }
