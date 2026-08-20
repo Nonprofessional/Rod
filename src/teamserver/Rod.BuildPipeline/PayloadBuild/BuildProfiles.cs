@@ -61,6 +61,16 @@ public sealed record TransportProfile(
     public TransportEnvelope Envelope { get; init; } = Defaults.Envelope;
 
     /// <summary>
+    /// The ordered fallback egress endpoints baked in behind
+    /// <see cref="Endpoint"/> (architecture.md Sec 8): when the primary burns
+    /// mid-engagement, the implant walks this list on failed check-ins instead of
+    /// going silent. The list is a property of the transport profile because each
+    /// entry is another front to the same teamserver. Empty -- the default --
+    /// bakes the single-endpoint shape.
+    /// </summary>
+    public IReadOnlyList<string> FallbackEndpoints { get; init; } = Defaults.FallbackEndpoints;
+
+    /// <summary>
     /// The shared default values for the malleable knobs. Centralized so the
     /// transport endpoint, the build service, and the tests agree on what a
     /// "minimal" profile fills in.
@@ -73,6 +83,7 @@ public sealed record TransportProfile(
             = new Dictionary<string, string>(StringComparer.Ordinal);
         public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
         public const TransportEnvelope Envelope = TransportEnvelope.None;
+        public static readonly IReadOnlyList<string> FallbackEndpoints = Array.Empty<string>();
     }
 }
 

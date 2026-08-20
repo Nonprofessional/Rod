@@ -115,6 +115,42 @@ public class DotNetBuildUnitTests
         Assert.Equal("application/json", root.GetProperty("headers").GetProperty("Accept").GetString());
     }
 
+    [Fact]
+    public void RenderBakedProfile_BakesTheOrderedFallbackEndpoints()
+    {
+        // The fallback egress list (architecture.md Sec 8) rides as a JSON array
+        // in walk order behind the primary enrollURL, and the key is always
+        // present -- [] when the build names none -- so every build unit emits
+        // the same key set and an implant of any language decodes the same walk.
+        var transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+        {
+            FallbackEndpoints = new[]
+            {
+                "https://alt1.example.test/implants/enroll",
+                "https://alt2.example.test/implants/enroll",
+            },
+        };
+        var @params = new BuildParams(
+            EngagementId.New(),
+            OperatorId.New(),
+            ImplantClass.Stage2,
+            new TargetProfile("linux", "amd64"),
+            transport,
+            new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(@params)));
+        var fallbacks = doc.RootElement.GetProperty("fallbackEnrollURLs");
+        Assert.Equal(JsonValueKind.Array, fallbacks.ValueKind);
+        Assert.Equal(2, fallbacks.GetArrayLength());
+        Assert.Equal("https://alt1.example.test/implants/enroll", fallbacks[0].GetString());
+        Assert.Equal("https://alt2.example.test/implants/enroll", fallbacks[1].GetString());
+
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        var empty = plain.RootElement.GetProperty("fallbackEnrollURLs");
+        Assert.Equal(JsonValueKind.Array, empty.ValueKind);
+        Assert.Equal(0, empty.GetArrayLength());
+    }
+
     [Theory]
     [InlineData("linux", "amd64", "linux-x64")]
     [InlineData("linux", "x86_64", "linux-x64")]

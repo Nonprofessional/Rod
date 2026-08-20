@@ -403,6 +403,14 @@ the server cannot observe whether an implant adopted any of them:
 - **Beacon discipline.** The baked sleep with jitter, and exponential backoff
   on consecutive failures, so a down teamserver is not polled at beacon rate.
   The check-in mode is the implant's choice on the same stream contract.
+- **Egress fallback walk.** The baked profile may carry an ordered endpoint
+  list -- a primary plus fallbacks (`fallbackEnrollURLs` in the baked JSON,
+  `[]` when the build names none). Walk it on failure: advance to the next
+  entry when an enroll attempt or a check-in cycle fails without a handshake,
+  and wrap to the primary so a front that returns is picked up again. The walk
+  is client-side only -- the frame grammar never changes -- and the leaf stays
+  the same whichever entry answers, so the server sees one identity
+  (architecture.md Sec 8).
 
 ## Tier 2 -- Optional features
 

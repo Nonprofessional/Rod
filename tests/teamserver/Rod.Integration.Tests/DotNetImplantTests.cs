@@ -108,6 +108,69 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Acceptance: an implant whose primary endpoint is dead keeps checking in
+    /// via the fallback entry, and its listener-side identity is unchanged
+    /// (architecture.md Sec 8 -- the baked fallback egress walk). The implant's
+    /// primary enroll endpoint is a port nothing answers; the fallback entry is
+    /// the live enroll route. Enroll walks to the fallback and redeems the token
+    /// there; the beacon cycle then starts on the fallback's derived beacon host
+    /// (not an mTLS gRPC endpoint in the dev topology), fails, and walks on --
+    /// proving both halves of the walk, at enroll and at check-in, in one run.
+    /// The identity criterion: exactly one implant is enrolled and online -- the
+    /// leaf issued at the fallback enroll is the leaf every check-in presents --
+    /// and a task round-trips against it.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_WalksFallbackEndpoints_WhenThePrimaryIsDead_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+        var deadPort = GetFreeTcpPort();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero,
+            enrollUrl: $"http://127.0.0.1:{deadPort}/implants/enroll",
+            fallbackEnrollUrls: $"http://127.0.0.1:{env.HttpPort}/implants/enroll");
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                // The walk landed somewhere live: the implant enrolled and its
+                // check-ins are answered. Exactly one identity exists -- the
+                // enrollment happened once, over the fallback, and every
+                // check-in presents that same leaf.
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                var listed = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
+                    $"/engagements/{engagementId}/implants");
+                Assert.NotNull(listed);
+                Assert.Single(listed!, i => i.ImplantId == implantId);
+
+                // Tasking proves the check-in path end to end: dispatch rides a
+                // live check-in, the result rides one back.
+                var task = await IssueAndWaitAsync(env.Http, engagementId, implantId, "recon.hostenum", "");
+                Assert.Equal("Succeeded", task.Outcome);
+                Assert.False(string.IsNullOrWhiteSpace(task.Output));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
     /// Acceptance: an operator's SOCKS-configured tool reaches arbitrary third
     /// hosts through one stage-2 tunnel task, every connection and its bytes
     /// attributed (architecture.md Sec 10.1 tunnel, Sec 14). The reference
@@ -897,9 +960,11 @@ public class DotNetImplantTests
     // env.CACertFile is the dev CA PEM the implant trusts as the mTLS server
     // identity (the dev CA doubles as the server cert). stdout/stderr are captured
     // for diagnostics on failure but are not asserted -- the acceptance criterion is the
-    // teamserver-side outcome.
+    // teamserver-side outcome. The optional overrides exist for the egress-walk
+    // acceptance test: a dead primary endpoint plus a fallback list.
     private static Process StartImplant(
-        string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream")
+        string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream",
+        string? enrollUrl = null, string? beaconUrl = null, string? fallbackEnrollUrls = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -910,9 +975,14 @@ public class DotNetImplantTests
         };
         psi.ArgumentList.Add(implantDll);
         psi.ArgumentList.Add("-enroll-url");
-        psi.ArgumentList.Add($"http://127.0.0.1:{env.HttpPort}/implants/enroll");
+        psi.ArgumentList.Add(enrollUrl ?? $"http://127.0.0.1:{env.HttpPort}/implants/enroll");
         psi.ArgumentList.Add("-beacon-url");
-        psi.ArgumentList.Add($"127.0.0.1:{env.MtlsPort}");
+        psi.ArgumentList.Add(beaconUrl ?? $"127.0.0.1:{env.MtlsPort}");
+        if (fallbackEnrollUrls is not null)
+        {
+            psi.ArgumentList.Add("-fallback-enroll-urls");
+            psi.ArgumentList.Add(fallbackEnrollUrls);
+        }
         psi.ArgumentList.Add("-token");
         psi.ArgumentList.Add(token);
         psi.ArgumentList.Add("-ca-cert");

@@ -135,7 +135,7 @@ internal static class C2
     /// (architecture.md Sec 7): the profile's User-Agent and headers are set
     /// on the request, RequestTimeout bounds the call, and Envelope wraps the JSON
     /// body as a single base64 string when set to "base64". The enroll path is the
-    /// caller's responsibility (use Config.ResolvedEnrollURL) so the profile's path
+    /// caller's responsibility (use Config.ResolveEnrollUrl) so the profile's path
     /// lands on the URL itself. A null/empty profile leaves the request identical
     /// to the un-profiled shape.
     /// </summary>

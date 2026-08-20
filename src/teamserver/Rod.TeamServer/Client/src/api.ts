@@ -604,10 +604,10 @@ export async function repointListener(listenerId: string, publicEndpoint: string
 // --- Payload build with OPSEC profile (//) --------------
 //
 // Builds an implant artifact, baking in the beacon profile (mode, sleep,
-// jitter), the kill date, and the malleable transport profile (endpoint, URIs,
-// headers, timing, envelope). These are baked at generation; a live implant's
-// profile is read-only after enrollment, so OPSEC changes go through a rebuild
-// + redeploy.
+// jitter), the kill date, and the malleable transport profile (endpoint,
+// fallbacks, URIs, headers, timing, envelope). These are baked at generation;
+// a live implant's profile is read-only after enrollment, so OPSEC changes go
+// through a rebuild + redeploy.
 
 export interface BuildPayloadInput {
   language: string | null
@@ -615,6 +615,7 @@ export interface BuildPayloadInput {
   targetOs: string | null
   targetArch: string | null
   endpoint: string | null
+  fallbackEndpoints: string[] | null
   uriPath: string | null
   enrollPath: string | null
   userAgent: string | null

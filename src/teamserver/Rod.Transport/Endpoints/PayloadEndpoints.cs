@@ -264,6 +264,19 @@ public static class PayloadEndpoints
         {
             profile = profile with { Envelope = parsed };
         }
+        if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
+        {
+            // The fallback list is the egress walk order (architecture.md Sec 8):
+            // blanks are dropped rather than rejected so a trailing separator in
+            // an operator's list is not a 400, and the surviving order is baked
+            // verbatim.
+            var cleaned = fallbacks
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Select(f => f.Trim())
+                .ToArray();
+            if (cleaned.Length > 0)
+                profile = profile with { FallbackEndpoints = cleaned };
+        }
 
         return profile;
     }
@@ -293,9 +306,10 @@ public static class PayloadEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // The malleable transport knobs are all optional: EnrollPath,
-    // UserAgent, Headers, RequestTimeoutSeconds, Envelope. An operator who omits
-    // them gets a profile with the unchanged wire shape. Defaulted so a minimal
-    // positional construction (as in the integration tests) stays valid.
+    // UserAgent, Headers, RequestTimeoutSeconds, Envelope, FallbackEndpoints.
+    // An operator who omits them gets a profile with the unchanged wire shape.
+    // Defaulted so a minimal positional construction (as in the integration
+    // tests) stays valid.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,
@@ -312,7 +326,8 @@ public static class PayloadEndpoints
         Dictionary<string, string>? Headers = null,
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
-        string? Stage2PayloadId = null);
+        string? Stage2PayloadId = null,
+        List<string>? FallbackEndpoints = null);
 
     public sealed record BuildPayloadResponse(
         string ArtifactId,

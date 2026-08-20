@@ -224,13 +224,16 @@ complexity budget, and its evolution rules bind every future protocol change.
 ### 5.1 Profiles are baked in at generation
 
 A **profile** -- the check-in mode, beacon parameters (sleep, jitter, kill
-date), the transport profile, and the C2 endpoint -- is embedded into the
+date), the transport profile, and the C2 endpoint list -- is embedded into the
 artifact at build time, so each implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
 lost implant self-terminates at its kill date. No key material is baked: the
 implant's cryptographic identity is the keypair it generates itself at first
 run, bound to its engagement by the CA-signed leaf issued at enroll (Sec 9) --
 a captured artifact carries nothing reusable.
+
+The endpoint list is ordered: a primary callback endpoint plus optional
+fallbacks, walked client-side when an entry burns (Sec 8).
 
 The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
 land in the decoded artifact across the .NET and stub build units, so a
@@ -499,6 +502,19 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   reference redirector -- an opaque L4 TCP forwarder published as a Native AOT
   binary -- ships this rotation end to end; see
   the deploy/rotate runbook ([operations/redirectors.md](operations/redirectors.md)).
+- **Fallback egress endpoints are baked in and walked client-side.** A build
+  may carry an ordered endpoint list -- the primary plus fallbacks (Sec 5.1) --
+  and the implant walks it on failed check-ins: enroll retries and beacon
+  cycles that never reach a handshake advance to the next entry, wrapping to
+  the primary so a front that returns is picked up again. The walk is entirely
+  client-side -- the Tier 0 frame grammar is untouched -- and it never touches
+  identity: the implant presents the same enrolled leaf whichever entry it
+  lands on, so its listener-side identity is unchanged and a listener cannot
+  tell which front an implant arrived through. This is the implant-side answer
+  to a burned front, complementing the server-side repoint above: repoint
+  swaps the front for future builds, the baked walk keeps the already-deployed
+  implant talking. Verified end to end by the implant subprocess tests (a dead
+  primary, a live fallback, one identity).
 - **Message sizing and flow control.** A single frame stays well under 1 MiB and
   never exceeds the negotiated maximum. Bulk data (files, output) is chunked.
 - **Malleable transport profile (per implant).** Each implant carries a transport

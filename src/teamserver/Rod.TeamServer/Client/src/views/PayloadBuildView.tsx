@@ -3,8 +3,8 @@ import { type BuildPayloadResult, buildPayload } from '../api'
 
 // The payload-build panel (//): builds an implant artifact,
 // baking in the beacon profile (mode, sleep/jitter), the kill date
-// (self-termination), and the malleable transport profile (endpoint, URIs,
-// headers, timing, envelope).
+// (self-termination), and the malleable transport profile (endpoint, fallback
+// endpoints walked when the primary burns, URIs, headers, timing, envelope).
 // These are baked at generation -- a live implant's profile is read-only after
 // enrollment -- so OPSEC changes go through a rebuild and redeploy.
 
@@ -18,6 +18,7 @@ export function PayloadBuildView({
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [endpoint, setEndpoint] = useState('')
+  const [fallbackEndpoints, setFallbackEndpoints] = useState('')
   const [uriPath, setUriPath] = useState('')
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
@@ -38,6 +39,12 @@ export function PayloadBuildView({
     return Number.isFinite(parsed) ? parsed : null
   }
 
+  // The fallback list is entered comma-separated, in walk order.
+  const fallbacks = (value: string): string[] | null => {
+    const list = value.split(',').map((f) => f.trim()).filter((f) => f !== '')
+    return list.length > 0 ? list : null
+  }
+
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusy(true)
@@ -48,6 +55,7 @@ export function PayloadBuildView({
         targetOs: targetOs || null,
         targetArch: targetArch || null,
         endpoint: endpoint || null,
+        fallbackEndpoints: fallbacks(fallbackEndpoints),
         uriPath: uriPath || null,
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
@@ -132,6 +140,14 @@ export function PayloadBuildView({
           <label>
             Endpoint
             <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://redirect.example.test" />
+          </label>
+          <label>
+            Fallback endpoints
+            <input
+              value={fallbackEndpoints}
+              onChange={(e) => setFallbackEndpoints(e.target.value)}
+              placeholder="https://alt1.example.test, https://alt2.example.test"
+            />
           </label>
           <label>
             URI path
