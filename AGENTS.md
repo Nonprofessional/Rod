@@ -113,10 +113,12 @@ authoritative rule; this section summarizes it.
   implants implement these directly so the framework is useful for learning,
   research, and authorized red-team work out of the box. Current in-repo surface:
   shell execution, file transfer in both directions (`file.push`/`file.pull`),
-  host/port recon, child-implant derivation, Windows access tokens, remote
+  host/port recon, process enumeration and termination (`recon.ps`/`proc.kill`),
+  child-implant derivation, Windows access tokens, remote
   execution, persistence (Run key / scheduled tasks / services / cron / systemd),
-  standard-store credential collection, and C2 exfiltration into engagement-scoped
-  artifact storage.
+  standard-store credential collection, screen capture over the standard
+  desktop-capture APIs (`collect.screenshot`), and C2 exfiltration into
+  engagement-scoped artifact storage.
 - **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days, weaponized
   proof-of-concepts, novel or unpublished detection-evasion and bypass
   techniques, LSASS memory dumping for credential theft, and input capture

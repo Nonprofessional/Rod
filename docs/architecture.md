@@ -275,9 +275,11 @@ Implants differ by purpose, not by a "managed device flavor":
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
 inner ring both the build pipeline and the tradecraft layer read). Stage-2
-carries the full core set (shell plus both-direction file transfer) plus the
+carries the full core set (shell, both-direction file transfer, and process
+termination) plus the
 tunnel set, the recon set, the lateral set, the persist set, the collect set,
-and the exfil set (tunneling joins stage-2's core operations, and recon,
+and the exfil set (tunneling and process control join stage-2's core
+operations, and recon,
 lateral movement, persistence, collection, and exfiltration are long-haul
 activities that justify a stage-2 footprint); a stager only `file.pull`s the
 stage-2 it loads; a web-shell and an ephemeral run `shell.exec` over their
@@ -763,11 +765,11 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 
 | Category | Example verbs | Summary |
 |----------|---------------|---------|
-| **core** | `shell.exec`, `file.push`, `file.pull` | The mandatory-to-useful baseline: command execution and file transfer in both directions. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm). |
-| **recon** | `recon.portscan`, `recon.hostenum`, `recon.service` | Target and network reconnaissance. |
+| **core** | `shell.exec`, `file.push`, `file.pull`, `proc.kill` | The mandatory-to-useful baseline: command execution, file transfer in both directions, and process termination. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm); `proc.kill` ends one process by pid, carrying a `kills-process` OPSEC flag for the picker to badge. |
+| **recon** | `recon.portscan`, `recon.hostenum`, `recon.service`, `recon.ps` | Target and network reconnaissance. `recon.ps` lists the local host's live processes -- pid, ppid, user, image. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
-| **collect** | `collect.cred`, `collect.keylog` | Credential and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. |
+| **collect** | `collect.cred`, `collect.keylog`, `collect.screenshot` | Credential, screen, and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. `collect.screenshot` captures the display as a PNG artifact joined to its task (Sec 11). |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
 | **tunnel** | `tunnel.forward`, `tunnel.socks` | Network tunneling through an implant (Sec 14, core operations): `tunnel.forward` bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it; `tunnel.socks` is the multiplexed arm -- the channel's byte stream is a connection-multiplexed grammar, so every proxied connection rides the one task and each destination arrives per connection. Both run as live channels (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes either channel as a teamserver-side listener -- the raw one-connection bridge for `tunnel.forward`, a SOCKS5 listener for `tunnel.socks` -- so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
@@ -776,9 +778,18 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 The recon verbs are registered through the tradecraft layer as first-class
 descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
 concrete behavior runs on the reference implants and is captured as task output
-over the beacon stream (Sec 10.3). Recon is a long-haul activity, so the three
+over the beacon stream (Sec 10.3). Recon is a long-haul activity, so the four
 verbs are gated to Stage-2 at task issuance -- a non-Stage-2 class is refused
 before the task is queued (Sec 5.2).
+
+The process verbs close the same operational gap from both ends
+(`Rod.Tradecraft.Core.CoreCapabilities` carries `proc.kill`; `recon.ps` rides
+the recon set above): the reference implant lists live processes over the
+documented OS process APIs -- the `/proc` filesystem on Linux, the Win32
+toolhelp snapshot plus process-token owner query on Windows -- and terminates
+one by pid through the standard kill path, so an operator can see what runs on
+a target and end one of it, the pair every mainstream client carries. Both are
+Stage-2 gated like their recon kin.
 
 The lateral verbs are registered the same way
 (`Rod.Tradecraft.Lateral.LateralCapabilities`, category `Lateral`):
@@ -819,8 +830,10 @@ techniques remain out-of-tree.
 The collection and exfiltration verbs are registered the same way
 (`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
 `Rod.Tradecraft.Exfil.ExfilCapabilities`, category `Exfil`): `collect.cred`
-carries a `reads-credential` attribute, and `collect.keylog` carries
-`reads-input` and `persists` (it installs a resident input-capture hook);
+carries a `reads-credential` attribute, `collect.keylog` carries
+`reads-input` and `persists` (it installs a resident input-capture hook), and
+`collect.screenshot` carries `reads-screen` (it captures what the target's
+display shows);
 `exfil.push` carries a `touches-network` attribute (it transfers over the C2
 channel), and `exfil.stage` is a read that carries no such flag, like
 `persist.list` and the host-local `recon.hostenum` (it stages already-collected
@@ -832,7 +845,12 @@ filesystem -- small files return inline, large ones chunk into the exfil
 channel -- and `file.push` lands an operator-supplied payload on disk),
 `collect.cred` (standard credential-store *listings* -- SSH key presence with
 fingerprints, AWS profile names, Windows saved-credential names via
-`cmdkey /list` -- without dumping secret material), and `exfil.push` /
+`cmdkey /list` -- without dumping secret material), `collect.screenshot`
+(the display read over the standard desktop-capture APIs -- GDI `BitBlt` on
+Windows, `XGetImage` on X11 -- PNG-encoded in-process and chunked into the
+exfil channel, so the capture lands as an artifact joined to its task with no
+new server-side path; a headless target refuses cleanly naming the missing
+display), and `exfil.push` /
 `exfil.stage` (data transferred over the C2 channel into engagement-scoped
 artifact storage, Sec 11). Two collection surfaces stay out-of-tree as
 pluggable contracts: LSASS memory dumping (no benign-system-tool side, tightly
@@ -1188,7 +1206,8 @@ built so that its reach, flexibility, and OPSEC qualities are at least on par
 with -- and aim to surpass -- what established platforms offer in that area.
 
 - **Core operations** -- shell execution (interactive and one-shot), file
-  transfer, tunneling, host enumeration: as capable and as OPSEC-tunable as the
+  transfer, tunneling, host enumeration, process enumeration and termination:
+  as capable and as OPSEC-tunable as the
   best available, with per-implant profiles baked in at generation.
 - **Reconnaissance** -- port and service discovery, host and network
   enumeration: comprehensive, fast, and audited.
@@ -1196,8 +1215,9 @@ with -- and aim to surpass -- what established platforms offer in that area.
   implant derivation and pivoting: full coverage with parentage tracking.
 - **Persistence** -- a broad, cross-platform set of mechanisms, installable and
   removable, all recorded.
-- **Collection and exfiltration** -- file, credential, and input collection,
-  staged and transferred over the C2 channel, every byte attributed.
+- **Collection and exfiltration** -- file, credential, screen, and input
+  collection, staged and transferred over the C2 channel, every byte
+  attributed.
 - **Evasion** -- the platform must provide the contracts, hooks, and per-implant
   tuning (profiles, jitter, kill dates, malleable transports, per-command OPSEC
   metadata) that let operators keep a low profile; concrete tradecraft is
