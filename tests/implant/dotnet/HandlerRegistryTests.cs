@@ -34,6 +34,7 @@ public class HandlerRegistryTests
         "persist.remove",
         "persist.list",
         "collect.cred",
+        "collect.screenshot",
         "exfil.push",
         "exfil.stage",
     };
@@ -48,7 +49,7 @@ public class HandlerRegistryTests
         "recon.portscan", "recon.hostenum", "recon.service", "recon.ps",
         "lateral.move", "lateral.token", "lateral.exec_remote",
         "persist.install", "persist.remove", "persist.list",
-        "collect.cred", "collect.keylog",
+        "collect.cred", "collect.keylog", "collect.screenshot",
         "exfil.push", "exfil.stage",
     };
 

