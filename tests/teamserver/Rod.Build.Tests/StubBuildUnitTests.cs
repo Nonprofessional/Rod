@@ -27,7 +27,7 @@ public class StubBuildUnitTests
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,tunnel.forward,tunnel.socks,recon.portscan,recon.hostenum,recon.service,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,exfil.push,exfil.stage")]
+    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,proc.kill,tunnel.forward,tunnel.socks,recon.portscan,recon.hostenum,recon.service,recon.ps,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,collect.screenshot,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.Stager, "file.pull")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
