@@ -19,16 +19,6 @@ RBAC -- are the house style). An addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features.
 
-## Transports and infrastructure (architecture.md Sec 8)
-
-- [ ] **Document external-proxy fronting in the redirector runbook.**
-      Sharing 443 between a cover domain and the forwarder is standard
-      frontline proxy work (SNI/Host routing, mismatch refusal) that nginx
-      or an edge CDN already does well; the in-tree forwarder stays a
-      minimal mover and gains no routing code for it. _AC:_ the runbook
-      shows a working fronting configuration in front of the redirector,
-      with no redirector code changes.
-
 ## Operator experience (architecture.md Sec 3, Sec 10)
 
 - [ ] **Operator notes on implants.** Free-text, attributed notes per

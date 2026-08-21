@@ -168,7 +168,116 @@ redirector is swapped **end to end**, not just in the registry. The flow:
 No teamserver restart, no backend bind change, no service interruption: the only
 thing that moved is the public endpoint implants dial.
 
-## 6. Security notes
+## 6. Share 443 with a cover domain (external-proxy fronting)
+
+One public address, one port that matters -- 443 -- and the engagement wants it
+to serve a real site for a cover domain while the beacon channel rides the same
+port under its own name. That is standard frontline proxy work -- SNI routing
+with mismatch refusal -- and it belongs to a proxy in front of the forwarder,
+not to the forwarder: the in-tree redirector stays a minimal mover and gains no
+routing code for it (architecture.md Sec 8). Any L4 SNI switcher works; nginx's
+`stream` module with `ssl_preread` is the worked example here.
+
+One constraint shapes the whole setup: the front must not terminate TLS for the
+beacon path. The client-certificate handshake is the identity the security
+model runs on, and a TLS-terminating front cannot re-present the implant's
+certificate upstream (Sec 7). `ssl_preread` peeks at the ClientHello's SNI
+extension and switches at L4 -- the TLS records, the ALPN h2 negotiation, and
+the client certificate all carry through untouched, exactly as they do through
+the redirector. The cover name is the one that terminates: it lands on an
+ordinary HTTPS server holding the cover certificate, the only termination in
+the picture.
+
+With the front and the forwarder on the same host, the chain is:
+
+```
+implant (SNI c2.example.com)    --> front :443 --> rod-redirector 127.0.0.1:8443 --> teamserver listener
+visitor (SNI cover.example.com) --> front :443 --> cover site 127.0.0.1:8080 (terminates, serves)
+anything else (no/unknown SNI)  --> refused
+```
+
+Deploy the forwarder on a loopback port instead of 443 -- nothing about the
+binary changes, only the `-listen` value (the systemd unit's `ExecStart` line
+follows it):
+
+```
+rod-redirector -listen 127.0.0.1:8443 -upstream 10.0.0.5:8443
+```
+
+The front, nginx `stream` tier (`/etc/nginx/nginx.conf`; Fedora/RHEL ship the
+module as `nginx-mod-stream` -- put `load_module modules/ngx_stream_module.so;`
+at the top of the file -- Debian bundles it):
+
+```nginx
+stream {
+    map $ssl_preread_server_name $backend {
+        cover.example.com   127.0.0.1:8080;   # cover site's HTTPS server
+        c2.example.com      127.0.0.1:8443;   # rod-redirector
+        default             127.0.0.1:9;      # nothing listens there: mismatch refused
+    }
+
+    server {
+        listen 443;
+        ssl_preread on;        # peek SNI, never terminate
+        proxy_pass $backend;   # IP:port values only, so no runtime resolver is needed
+    }
+}
+```
+
+And the cover site itself, the same nginx `http` tier:
+
+```nginx
+http {
+    server {
+        listen 127.0.0.1:8080 ssl;
+        server_name cover.example.com;
+        ssl_certificate     /etc/nginx/certs/cover.crt;
+        ssl_certificate_key /etc/nginx/certs/cover.key;
+        root /var/www/cover;
+    }
+}
+```
+
+Pointing `default` at a dead port is the refusal: nginx cannot connect
+upstream and drops the client, so a probe with no SNI, a wrong name, or a
+domain-fronting-shaped guess gets nothing. (Sending `default` to the cover
+backend instead is the other stance -- an unnamed probe then sees the site,
+not a reset; pick one deliberately.)
+
+Because the front now owns the public port, three consequences:
+
+- **The listener's public endpoint must be the C2 hostname on 443**
+  (`c2.example.com:443`), not a bare IP: the implant's TLS stack sends SNI
+  from the host it dials, and that is what the front routes on. The reference
+  implant does this by construction -- both the enroll client and the beacon
+  channel derive SNI from the URL host -- so no profile or build change is
+  needed.
+- **Source filtering moves to the front.** The forwarder's `-allow` now sees
+  the front's address (loopback here), not the implant's real source; leave it
+  empty and filter at the front (nginx `allow`/`deny` on the stream `server`)
+  or the host firewall, as before.
+- **Rotation is untouched.** The front is just another hop in front of the
+  forwarder: swap the whole front by repointing the listener to the new host's
+  endpoint (Sec 5), or swap only the forwarder by editing the front's map
+  entry. A burned *name* is severed by repointing exactly the way a burned
+  host is.
+
+Verification is Sec 4's probe with the SNI spelled out:
+
+```
+openssl s_client -connect 203.0.113.10:443 -servername c2.example.com
+# Expect the teamserver listener's handshake (front -> forwarder -> listener);
+# -servername cover.example.com returns the cover site's certificate, and a
+# bogus or absent SNI drops the connection.
+```
+
+HAProxy's `tcp` mode with SNI content rules or an edge CDN's TCP pass-through
+tier are drop-in equivalents. What never works is a front that terminates TLS
+for the C2 name: it cannot carry the implant's client certificate to the
+listener, and relaxing mTLS to accommodate one moves trust to the wrong layer
+(Sec 7, architecture.md Sec 9).
+
+## 7. Security notes
 
 - **The redirector is an untrusted edge.** It has no teamserver credentials, no
   engagement keys, and no access to the payload beyond the opaque bytes it
@@ -187,10 +296,12 @@ thing that moved is the public endpoint implants dial.
   burned port takes down only that process; the others keep serving.
 - **No payload awareness, by design.** This forwarder cannot do malleable
   `User-Agent`/URI routing or serve a cover site, because all of that lives
-  inside TLS and is invisible at L4. A deployment that needs L7 routing or a
-  cover site terminates TLS at its own edge, in front of (or instead of) this
-  forwarder. That is an operator deployment concern, not an in-tree capability
-  (architecture.md Sec 8).
+  inside TLS and is invisible at L4. A deployment that needs L7 routing
+  terminates TLS at its own edge, in front of (or instead of) this forwarder --
+  an operator deployment concern, not an in-tree capability (architecture.md
+  Sec 8). Sharing 443 with a cover domain stays within the L4 discipline: the
+  SNI fronting pattern (Sec 6) switches on the ClientHello's name and
+  terminates nothing on the beacon path.
 
 ## See also
 
