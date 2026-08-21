@@ -18,12 +18,3 @@ platforms earn their reach with a small surface, and Rod does the same
 RBAC -- are the house style). An addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features.
-
-## Lean surface (architecture.md Sec 4, Sec 14)
-
-- [ ] **Audit the shipped surface for deletions.** Walk the verb catalog,
-      the operator API endpoints, and the configuration keys against the
-      tests and the docs; anything nothing exercises or documents gets
-      deleted rather than carried. _AC:_ every verb, endpoint, and config
-      key either has an exercising test or a documented consumer, or it is
-      removed.
