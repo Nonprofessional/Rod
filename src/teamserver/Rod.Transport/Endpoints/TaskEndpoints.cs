@@ -20,8 +20,9 @@ namespace Rod.Transport.Endpoints;
 /// <summary>
 /// The operator-facing tasking endpoints: issue a task against an
 /// implant in an engagement, read a task back with its captured result and audit
-/// trail, and list every task in an engagement ( -- the operator UI
-/// shows the engagement's whole task history, not one implant's). Lets an
+/// trail, retract a queued task before the implant wakes, and list every task
+/// in an engagement -- the operator UI
+/// shows the engagement's whole task history, not one implant's. Lets an
 /// operator task an implant and see output plus an audit event -- the
 /// acceptance point -- and survey all tasking across the engagement. Scoped by
 /// engagement so tasking never crosses engagement boundaries (architecture.md
@@ -42,6 +43,9 @@ public static class TaskEndpoints
         // resolves to GetAsync. Ordered this way for readability.
         group.MapGet("/", ListAsync).WithName("ListEngagementTasks");
         group.MapGet("/{taskId}", GetAsync).WithName("GetTask");
+        // The queued tasking's way back (architecture.md Sec 10.3): retract a
+        // task before the implant wakes.
+        group.MapPost("/{taskId}:cancel", CancelAsync).WithName("CancelTask");
         // The streaming task shape's other half (architecture.md Sec 10.3):
         // operator input into a live channel task.
         group.MapPost("/{taskId}/input", SendInputAsync).WithName("SendTaskInput");
@@ -309,6 +313,82 @@ public static class TaskEndpoints
         var events = await audit.ForTaskAsync(task.Id.Value, cancellationToken);
 
         return Results.Ok(TaskResponse.Of(task, events));
+    }
+
+    // Retract a queued task before the implant wakes (architecture.md Sec
+    // 10.3): the operator's own tasking, taken back. Only a queued task can be
+    // cancelled -- once the beacon stream has claimed it, the implant owns the
+    // execution and the server cannot call it back. The cancelling operator is
+    // the authenticated operator; the retraction is recorded in the engagement
+    // trail as a TaskCancelled event attributed to them.
+    private static async Task<IResult> CancelAsync(
+        string engagementId,
+        string taskId,
+        ClaimsPrincipal user,
+        TaskService service,
+        ITaskRepository tasks,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var cancelledBy = user.TryGetOperatorId();
+        if (cancelledBy is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(taskId, out var taskValue))
+            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+
+        // Resolve the task against the engagement first: an unknown or foreign
+        // task is a routing failure -> 404, the same shape GetAsync returns.
+        var existing = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
+        if (existing is null || existing.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+
+        Rod.CoreState.Application.TaskCancelled cancelled;
+        try
+        {
+            cancelled = await service.CancelAsync(
+                new EngagementId(engagementValue),
+                new TaskId(taskValue),
+                cancelledBy.Value,
+                cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            // The task left the queue between the read above and the atomic
+            // retraction -- a dispatch claimed it, it completed, or another
+            // operator cancelled it first. The client's state problem, not a
+            // routing failure.
+            return Results.Conflict(
+                new Problem("The task is no longer queued: it was dispatched, completed, or already cancelled."));
+        }
+
+        // The retraction is the operator's action on the engagement
+        // (architecture.md Sec 11): attributed to the cancelling operator, bound
+        // to the retracted task, the payload the verb's arguments and the
+        // outcome the recorded cancellation timestamp. A cancelled task's audit
+        // arc ends here -- no TaskDispatched follows it.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: cancelledBy.Value.Value,
+                implantId: cancelled.ImplantId.Value,
+                taskId: taskValue,
+                verb: cancelled.Verb,
+                kind: AuditEventKind.TaskCancelled,
+                payload: cancelled.Arguments,
+                output: null,
+                outcome: cancelled.CancelledAt.ToString("O"),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Ok(new TaskCancelledResponse(
+            cancelled.TaskId.ToString(),
+            cancelled.EngagementId.ToString(),
+            cancelled.CancelledBy.ToString(),
+            cancelled.CancelledAt));
     }
 
     // The per-post input ceiling: input is keystrokes and pastes, not file
@@ -628,6 +708,7 @@ public static class TaskEndpoints
         DateTimeOffset CreatedAt,
         DateTimeOffset? DispatchedAt,
         DateTimeOffset? CompletedAt,
+        DateTimeOffset? CancelledAt,
         AuditEventResponse[] Audit)
     {
         public static TaskResponse Of(Task task, IReadOnlyList<AuditEvent> events)
@@ -644,8 +725,17 @@ public static class TaskEndpoints
                 task.CreatedAt,
                 task.DispatchedAt,
                 task.CompletedAt,
+                task.CancelledAt,
                 events.Select(AuditEventResponse.Of).ToArray());
     }
+
+    // A successful retraction: the task, the operator who took it back, and
+    // when. The task's read-back (GetAsync) carries the Cancelled status.
+    public sealed record TaskCancelledResponse(
+        string TaskId,
+        string EngagementId,
+        string CancelledBy,
+        DateTimeOffset CancelledAt);
 
     public sealed record AuditEventResponse(
         Guid EventId,

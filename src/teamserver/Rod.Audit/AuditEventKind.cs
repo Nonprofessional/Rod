@@ -74,6 +74,17 @@ public enum AuditEventKind
     TaskCompleted,
 
     /// <summary>
+    /// An operator retracted a queued task before the implant woke
+    /// (architecture.md Sec 10.3). The event carries the retracted verb and
+    /// arguments in its payload; the outcome is the recorded cancellation
+    /// timestamp. Attributed to the cancelling operator and bound to the task
+    /// it retracts. A cancelled task's arc ends here: no
+    /// <see cref="TaskDispatched"/> follows, because the retraction is
+    /// claim-proof against the dispatch queue.
+    /// </summary>
+    TaskCancelled,
+
+    /// <summary>
     /// A payload was built; the event carries the build's class and config and,
     /// as its outcome, the artifact's SHA-256 fingerprint (architecture.md Sec 6
     /// -- every generated artifact is fingerprinted and recorded). Emitted on
