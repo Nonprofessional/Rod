@@ -32,6 +32,13 @@ public enum LiveEventKind
     TaskCompleted,
 
     /// <summary>
+    /// A queued task was retracted before dispatch (architecture.md Sec 10.3).
+    /// Lets every connected operator see the tasking leave the queue the moment
+    /// it is cancelled, so a peer's queued view does not linger.
+    /// </summary>
+    TaskCancelled,
+
+    /// <summary>
     /// A streaming task's channel produced output (architecture.md Sec 10.3,
     /// the streaming task shape). The chunk reaches every connected operator
     /// session as it streams, so a live channel reads like a terminal; the

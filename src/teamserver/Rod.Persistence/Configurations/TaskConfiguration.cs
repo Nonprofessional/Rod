@@ -48,6 +48,7 @@ internal sealed class TaskConfiguration : IEntityTypeConfiguration<Task>
         builder.Property(t => t.CreatedAt).HasColumnName("created_at");
         builder.Property(t => t.DispatchedAt).HasColumnName("dispatched_at");
         builder.Property(t => t.CompletedAt).HasColumnName("completed_at");
+        builder.Property(t => t.CancelledAt).HasColumnName("cancelled_at");
 
         // FIFO dispatch (NextPendingAsync) and history ordering (ListByImplant/
         // ListByEngagement) follow a monotonic enqueue sequence the in-memory

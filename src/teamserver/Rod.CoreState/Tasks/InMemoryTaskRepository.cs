@@ -193,6 +193,30 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         return next;
     }
 
+    public System.Threading.Tasks.Task<Task?> CancelAsync(
+        TaskId id,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        // The retraction runs under the claim lock so a cancel racing a dispatch
+        // claim resolves one way: whichever enters first transitions the task,
+        // and the loser sees the new status and stands down (a cancelled task is
+        // never selected by a claim; a dispatched task is not cancelled here).
+        lock (_claimLock)
+        {
+            if (!_tasks.TryGetValue(id, out var task))
+                return System.Threading.Tasks.Task.FromResult<Task?>(null);
+
+            if (task.Status == TaskStatus.Queued)
+            {
+                task.Cancel(at);
+                _tasks[id] = task;
+            }
+
+            return System.Threading.Tasks.Task.FromResult<Task?>(task);
+        }
+    }
+
     // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking
     // replay nonces). Monotonic for the implant's life in this process, across
     // sessions and transports. Per-process by design here: the in-memory

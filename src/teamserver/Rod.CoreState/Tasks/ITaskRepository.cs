@@ -105,6 +105,21 @@ public interface ITaskRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically retracts a queued task (architecture.md Sec 10.3): marks it
+    /// Cancelled at <paramref name="at"/> and persists the transition, with the
+    /// same claim-once serialization <see cref="ClaimNextPendingAsync"/> gives a
+    /// dispatch -- a cancel racing a claim resolves one way, never both. Returns
+    /// the task as it stands after the attempt: Cancelled on success, the
+    /// untouched task when it is no longer queued (a dispatch or a completion
+    /// already won the race), null when the task is unknown. The caller refuses
+    /// anything that did not come back Cancelled.
+    /// </summary>
+    System.Threading.Tasks.Task<Task?> CancelAsync(
+        TaskId id,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically reserves and persists the next per-implant replay nonce
     /// (architecture.md Sec 9 -- tasking replay nonces): returns 1 the first
     /// time and monotonically increases after, so a negotiating implant never

@@ -66,6 +66,21 @@ public sealed record LiveEvent(
         => new(engagement, LiveEventKind.TaskCompleted, operatorId, implantId, taskId, payload, at);
 
     /// <summary>
+    /// Builds a task-cancelled event (architecture.md Sec 10.3): a queued task
+    /// retracted before dispatch, attributed to the cancelling operator.
+    /// <paramref name="payload"/> carries the verb and arguments so peers see
+    /// which tasking left the queue.
+    /// </summary>
+    public static LiveEvent TaskCancelled(
+        EngagementId engagement,
+        OperatorId operatorId,
+        ImplantId implantId,
+        TaskId taskId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.TaskCancelled, operatorId, implantId, taskId, payload, at);
+
+    /// <summary>
     /// Builds a channel-output event (architecture.md Sec 10.3): one streamed
     /// chunk of a live task channel, attributed to the operator whose task the
     /// channel runs. The payload is the chunk itself so a connected operator

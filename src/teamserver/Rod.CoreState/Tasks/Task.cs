@@ -8,7 +8,8 @@ namespace Rod.CoreState.Tasks;
 /// A task -- a single verb an operator directs at one implant, scoped to an
 /// engagement (architecture.md Sec 10.3). Every task is attributed from creation
 /// (<see cref="EngagementId"/>, <see cref="ImplantId"/>, <see cref="IssuedBy"/>)
-/// and walks <see cref="TaskStatus"/> Queued -&gt; Dispatched -&gt; Completed.
+/// and walks <see cref="TaskStatus"/> Queued -&gt; Dispatched -&gt; Completed,
+/// or Queued -&gt; Cancelled when an operator retracts it before dispatch.
 ///
 /// The verb is a namespaced capability (architecture.md Sec 10), e.g.
 /// <c>shell.exec</c>; <see cref="Arguments"/> is its input (one-shot verbs carry
@@ -39,6 +40,7 @@ public sealed class Task
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? DispatchedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
+    public DateTimeOffset? CancelledAt { get; private set; }
 
     // The transcript ceiling for a streaming task: a channel that produces
     // without bound must not pin server memory, so appends past the cap stop
@@ -113,6 +115,22 @@ public sealed class Task
 
         Status = TaskStatus.Dispatched;
         DispatchedAt = at;
+    }
+
+    /// <summary>
+    /// Retracts a queued task before the implant wakes (architecture.md Sec
+    /// 10.3): the operator's retraction, not the implant's answer. Only legal
+    /// from Queued -- a task already on the implant stream is no longer the
+    /// server's to take back, and a completed one is history. Terminal: a
+    /// cancelled task is never claimed by a dispatch.
+    /// </summary>
+    public void Cancel(DateTimeOffset at)
+    {
+        if (Status != TaskStatus.Queued)
+            throw new InvalidOperationException($"Task {Id} cannot be cancelled from {Status}.");
+
+        Status = TaskStatus.Cancelled;
+        CancelledAt = at;
     }
 
     /// <summary>

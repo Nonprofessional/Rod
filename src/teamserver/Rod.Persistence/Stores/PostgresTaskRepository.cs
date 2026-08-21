@@ -241,6 +241,48 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         return fronted;
     }
 
+    public async System.Threading.Tasks.Task<Task?> CancelAsync(
+        TaskId id,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // The retraction takes the row lock the claim takes, but by task id and
+        // without SKIP LOCKED: a cancel racing a dispatch claim serializes here
+        // -- whichever commits first transitions the task, and the loser reads
+        // the new status and stands down. A plain FOR UPDATE (wait, not skip) is
+        // the correct posture: the cancel wants this exact row, not any other.
+        var cancelledId = await db.Database.SqlQuery<Guid>($"""
+            SELECT task_id AS "Value"
+            FROM tasks
+            WHERE task_id = {id.Value}
+            FOR UPDATE
+            """).FirstOrDefaultAsync(cancellationToken);
+
+        if (cancelledId == Guid.Empty)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var task = await db.Tasks.FirstAsync(t => t.Id == id, cancellationToken);
+        if (task.Status == Rod.CoreState.Tasks.TaskStatus.Queued)
+        {
+            task.Cancel(at);
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return task;
+        }
+
+        // Not queued -- the task already left the queue (dispatched, completed,
+        // or already cancelled). Hand it back untouched so the caller can refuse
+        // with the state it is in.
+        await transaction.RollbackAsync(cancellationToken);
+        return task;
+    }
+
     public async System.Threading.Tasks.Task<ulong> NextNonceAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default)

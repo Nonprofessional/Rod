@@ -357,6 +357,66 @@ public sealed class TaskService
     }
 
     /// <summary>
+    /// Retracts a queued task before the implant wakes (architecture.md Sec
+    /// 10.3): the operator's own tasking, taken back before dispatch. The
+    /// repository performs the transition atomically against a racing claim, so
+    /// a task already handed to the implant stream is not cancellable -- the
+    /// implant owns it now. Resolves the task's engagement binding first
+    /// (architecture.md Sec 3) and throws <see cref="InvalidOperationException"/>
+    /// for an unknown task or a task that is no longer queued; returns the
+    /// cancelled view so the caller can compose the audit record. No wake is
+    /// released: there is nothing left to push downstream.
+    /// </summary>
+    public async System.Threading.Tasks.Task<TaskCancelled> CancelAsync(
+        EngagementId engagement,
+        TaskId id,
+        OperatorId cancelledBy,
+        CancellationToken cancellationToken = default)
+    {
+        // Resolve the engagement binding before the retraction: a task outside
+        // this engagement does not exist as far as the caller is concerned
+        // (architecture.md Sec 3).
+        var existing = await _tasks.FindAsync(id, cancellationToken)
+            ?? throw new InvalidOperationException($"Task {id} is not known.");
+        if (existing.EngagementId != engagement)
+            throw new InvalidOperationException($"Task {id} does not exist in engagement {engagement}.");
+
+        var task = await _tasks.CancelAsync(id, _clock.GetUtcNow(), cancellationToken)
+            ?? throw new InvalidOperationException($"Task {id} is not known.");
+        if (task.Status != Rod.CoreState.Tasks.TaskStatus.Cancelled)
+            throw new InvalidOperationException(
+                $"Task {id} cannot be cancelled from {task.Status}: only a queued task can be retracted.");
+
+        var cancelled = new TaskCancelled(
+            task.Id,
+            task.EngagementId,
+            task.ImplantId,
+            task.IssuedBy,
+            cancelledBy,
+            task.Verb,
+            task.Arguments,
+            task.CancelledAt!.Value);
+
+        // The retraction reaches connected operators the same moment the queue
+        // drops it, so a peer's queued view does not linger. Like issuance this
+        // is the transient fan-out; the audit event is the durable record.
+        if (_bus is not null)
+        {
+            await _bus.PublishAsync(
+                LiveEvent.TaskCancelled(
+                    task.EngagementId,
+                    cancelledBy,
+                    task.ImplantId,
+                    task.Id,
+                    payload: $"{task.Verb} {task.Arguments}".TrimEnd(),
+                    task.CancelledAt!.Value),
+                cancellationToken);
+        }
+
+        return cancelled;
+    }
+
+    /// <summary>
     /// Appends one chunk of a streaming task's channel output to its
     /// transcript (architecture.md Sec 10.3, the streaming task shape). The
     /// chunk lands on the task's Output while it is Dispatched, so an operator
@@ -444,6 +504,23 @@ public sealed record TaskIssued(
     string Verb,
     string Arguments,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Result of retracting a queued task (architecture.md Sec 10.3):
+/// <see cref="IssuedBy"/> is the operator whose tasking it was;
+/// <see cref="CancelledBy"/> is the operator who retracted it -- the same
+/// operator in the common case, but the retraction is its own attributed
+/// action, so it carries its own actor and stamp for the audit record.
+/// </summary>
+public sealed record TaskCancelled(
+    TaskId TaskId,
+    EngagementId EngagementId,
+    ImplantId ImplantId,
+    OperatorId IssuedBy,
+    OperatorId CancelledBy,
+    string Verb,
+    string Arguments,
+    DateTimeOffset CancelledAt);
 
 /// <summary>
 /// Result of appending a streamed chunk to a task's transcript: the identity,

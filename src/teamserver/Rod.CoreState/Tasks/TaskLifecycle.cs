@@ -7,6 +7,8 @@ namespace Rod.CoreState.Tasks;
 /// - <see cref="Queued"/>: an operator issued it; it awaits the next dispatch.
 /// - <see cref="Dispatched"/>: the teamserver handed it to the implant stream.
 /// - <see cref="Completed"/>: the implant returned a result, success or failure.
+/// - <see cref="Cancelled"/>: an operator retracted it while queued; it is
+///   terminal and never dispatched.
 /// </summary>
 public enum TaskStatus
 {
@@ -18,6 +20,12 @@ public enum TaskStatus
 
     /// <summary>The implant returned a result (see <see cref="TaskOutcome"/>).</summary>
     Completed,
+
+    /// <summary>
+    /// Retracted by an operator before dispatch. Terminal: a cancelled task is
+    /// never claimed by a dispatch and never runs on the implant.
+    /// </summary>
+    Cancelled,
 }
 
 /// <summary>
