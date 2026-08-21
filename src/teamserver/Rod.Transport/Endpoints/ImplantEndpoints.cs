@@ -26,6 +26,9 @@ namespace Rod.Transport.Endpoints;
 /// listing projects that onto the enrolled implants. Retiring an implant
 /// takes it out of operation: it is marked retired, its active
 /// session is closed, and the retire is recorded in the engagement audit trail.
+/// Operators can also write free-text, attributed notes on an implant -- the
+/// "whose beacon is this" memory -- recorded as audit events and read back
+/// from the same trail, so they survive a restart like every engagement fact.
 /// </summary>
 public static class ImplantEndpoints
 {
@@ -37,6 +40,8 @@ public static class ImplantEndpoints
         group.MapGet("/", ListImplantsAsync).WithName(nameof(ListImplantsAsync));
         group.MapGet("/{implantId}/tasks", ListImplantTasksAsync)
             .WithName(nameof(ListImplantTasksAsync));
+        group.MapGet("/{implantId}/notes", ListNotesAsync).WithName(nameof(ListNotesAsync));
+        group.MapPost("/{implantId}/notes", AddNoteAsync).WithName(nameof(AddNoteAsync));
         group.MapPost("/{implantId}:retire", RetireAsync).WithName(nameof(RetireAsync));
         return endpoints;
     }
@@ -116,6 +121,108 @@ public static class ImplantEndpoints
             page.NextCursor);
 
         return Results.Ok(body);
+    }
+
+    // A note is a sentence or three -- "web server, HVXC-web-03, JBS's box" --
+    // not a paste target; anything larger belongs in an artifact attached to a
+    // task. Bounded so one post cannot pin the trail's JSON lines.
+    private const int MaxNoteChars = 8 * 1024;
+
+    // Operator notes on implants: the free-text, attributed "whose beacon is
+    // this" memory. Notes are recorded as ImplantNoteAdded audit events and
+    // read back from the same trail (architecture.md Sec 11), so they ride the
+    // hash chain -- attributed, immutable, and durable exactly like every other
+    // engagement fact -- with no separate note store to keep consistent.
+    private static async Task<IResult> ListNotesAsync(
+        string engagementId,
+        string implantId,
+        IImplantRepository implants,
+        IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+
+        // Confirm the implant belongs to this engagement before reading its
+        // notes; a foreign implant id yields no rows here (architecture.md Sec 3).
+        var implant = await implants.FindAsync(new ImplantId(implantValue), cancellationToken);
+        if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Implant does not exist in this engagement."));
+
+        var notes = (await audit.ForImplantAsync(implantValue, cancellationToken))
+            .Where(e => e.Kind == AuditEventKind.ImplantNoteAdded)
+            .Select(e => new ImplantNoteResponse(
+                e.EventId.ToString(),
+                new ImplantId(e.ImplantId).ToString(),
+                new OperatorId(e.OperatorId).ToString(),
+                e.Payload,
+                e.At))
+            .ToArray();
+
+        return Results.Ok(notes);
+    }
+
+    private static async Task<IResult> AddNoteAsync(
+        string engagementId,
+        string implantId,
+        AddNoteRequest body,
+        ClaimsPrincipal user,
+        IImplantRepository implants,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        // The writing operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth).
+        var author = user.TryGetOperatorId();
+        if (author is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+        if (string.IsNullOrWhiteSpace(body.Text))
+            return Results.BadRequest(new Problem("Note text is required."));
+        if (body.Text.Length > MaxNoteChars)
+            return Results.Json(
+                new Problem($"Note text exceeds {MaxNoteChars} characters."),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+
+        var implant = await implants.FindAsync(new ImplantId(implantValue), cancellationToken);
+        if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Implant does not exist in this engagement."));
+
+        // The note is the operator's action on the engagement (architecture.md
+        // Sec 11): attributed to the writer, bound to the implant it describes,
+        // the payload the note text itself. Reading it back is a query over the
+        // same trail, so the note's only storage is the chain.
+        var at = clock.GetUtcNow();
+        var noteId = Guid.NewGuid();
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: noteId,
+                engagementId: engagementValue,
+                operatorId: author.Value.Value,
+                implantId: implantValue,
+                taskId: Guid.Empty,
+                verb: "note",
+                kind: AuditEventKind.ImplantNoteAdded,
+                payload: body.Text,
+                output: null,
+                outcome: "added",
+                at: at),
+            cancellationToken);
+
+        return Results.Created(
+            $"/engagements/{engagementId}/implants/{implantId}/notes",
+            new ImplantNoteResponse(
+                noteId.ToString(),
+                implantId,
+                author.Value.ToString(),
+                body.Text,
+                at));
     }
 
     private static async Task<IResult> RetireAsync(
@@ -207,6 +314,20 @@ public static class ImplantEndpoints
         string? Outcome,
         DateTimeOffset CreatedAt,
         DateTimeOffset? CompletedAt);
+
+    // A note's request body: the free-form text. The author is the
+    // authenticated operator, never a body field.
+    public sealed record AddNoteRequest(string Text);
+
+    // One note on an implant: the audit event's id (a note is its event -- the
+    // two are one object), the implant it describes, the writing operator, the
+    // text, and when.
+    public sealed record ImplantNoteResponse(
+        string NoteId,
+        string ImplantId,
+        string Author,
+        string Text,
+        DateTimeOffset At);
 
     public sealed record RetireImplantResponse(
         string ImplantId,

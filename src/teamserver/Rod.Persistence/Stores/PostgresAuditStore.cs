@@ -107,6 +107,16 @@ internal sealed class PostgresAuditStore : IAuditStore
             .ToArrayAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AuditEvent>> ForImplantAsync(Guid implantId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        return await db.AuditEvents
+            .AsNoTracking()
+            .Where(e => e.ImplantId == implantId)
+            .OrderBy(e => EF.Property<long>(e, AppendSequenceShadow))
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);

@@ -33,6 +33,15 @@ public interface IAuditStore
     Task<IReadOnlyList<AuditEvent>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Events for an implant, oldest first -- the attributed record of what
+    /// happened to one implant across its life: enrollment, sessions, tasking,
+    /// retirement, and the notes operators wrote on it. Scoped by the implant
+    /// id every event already carries; an implant belongs to exactly one
+    /// engagement, so the events returned are that engagement's.
+    /// </summary>
+    Task<IReadOnlyList<AuditEvent>> ForImplantAsync(Guid implantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The engagement's event trail, oldest first. Per-engagement by
     /// construction; cross-engagement access never reaches this with another
     /// engagement's id.

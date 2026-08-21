@@ -214,6 +214,38 @@ public class InMemoryAuditStoreTests
     }
 
     [Fact]
+    public async Task ForImplant_ReturnsTheImplantsEvents_OldestFirst()
+    {
+        var store = new InMemoryAuditStore();
+        var engagement = Guid.NewGuid();
+        var implant = Guid.NewGuid();
+
+        AuditEvent Note(int seed, Guid implantId) => AuditEvent.Fact(
+            eventId: Guid.NewGuid(),
+            engagementId: engagement,
+            operatorId: Guid.NewGuid(),
+            implantId: implantId,
+            taskId: Guid.Empty,
+            verb: "note",
+            kind: AuditEventKind.ImplantNoteAdded,
+            payload: $"note-{seed}",
+            output: null,
+            outcome: "added",
+            at: T0.AddSeconds(seed));
+
+        await store.AppendAsync(Note(0, implant));
+        await store.AppendAsync(Note(1, Guid.NewGuid()));
+        await store.AppendAsync(Note(2, implant));
+
+        var forImplant = await store.ForImplantAsync(implant);
+        Assert.Equal(2, forImplant.Count);
+        Assert.All(forImplant, e => Assert.Equal(implant, e.ImplantId));
+        Assert.Equal("note-0", forImplant[0].Payload);
+        Assert.Equal("note-2", forImplant[1].Payload);
+        Assert.Empty(await store.ForImplantAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
     public async Task Find_ReturnsTheChainedEvent_ByExactId()
     {
         var store = new InMemoryAuditStore();

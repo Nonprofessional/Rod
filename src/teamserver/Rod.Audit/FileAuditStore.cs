@@ -131,6 +131,19 @@ public sealed class FileAuditStore : IAuditStore
         return matches;
     }
 
+    public async Task<IReadOnlyList<AuditEvent>> ForImplantAsync(Guid implantId, CancellationToken cancellationToken = default)
+    {
+        var matches = new List<AuditEvent>();
+        await foreach (var @event in ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (@event.ImplantId == implantId)
+                matches.Add(@event);
+        }
+
+        matches.Sort(static (a, b) => a.At.CompareTo(b.At));
+        return matches;
+    }
+
     public async Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         EnsureRecovered();

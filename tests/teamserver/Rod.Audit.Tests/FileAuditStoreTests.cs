@@ -113,6 +113,41 @@ public class FileAuditStoreTests
     }
 
     [Fact]
+    public async Task ForImplant_FiltersByImplant_AfterARestart()
+    {
+        using var dir = new TempDir();
+        var store = new FileAuditStore(Options(dir.Path));
+        var engagement = Guid.NewGuid();
+        var implant = Guid.NewGuid();
+
+        AuditEvent Note(int seed, Guid implantId) => AuditEvent.Fact(
+            eventId: Guid.NewGuid(),
+            engagementId: engagement,
+            operatorId: Guid.NewGuid(),
+            implantId: implantId,
+            taskId: Guid.Empty,
+            verb: "note",
+            kind: AuditEventKind.ImplantNoteAdded,
+            payload: $"note-{seed}",
+            output: null,
+            outcome: "added",
+            at: T0.AddSeconds(seed));
+
+        await store.AppendAsync(Note(0, implant));
+        await store.AppendAsync(Note(1, Guid.NewGuid()));
+
+        // A fresh store over the same directory is a restarted teamserver: the
+        // per-implant read must serve the recovered trail, not process state.
+        var restarted = new FileAuditStore(Options(dir.Path));
+        var forImplant = await restarted.ForImplantAsync(implant);
+
+        var note = Assert.Single(forImplant);
+        Assert.Equal(implant, note.ImplantId);
+        Assert.Equal("note-0", note.Payload);
+        Assert.Empty(await restarted.ForImplantAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
     public async Task Tamper_BreaksTheChain_AtTheNextLink()
     {
         using var dir = new TempDir();

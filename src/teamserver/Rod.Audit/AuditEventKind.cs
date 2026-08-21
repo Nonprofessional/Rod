@@ -103,6 +103,17 @@ public enum AuditEventKind
     ImplantRetired,
 
     /// <summary>
+    /// An operator wrote a free-text note on an implant -- the "whose beacon
+    /// is this" memory. The note is recorded as this event (the payload is the
+    /// note text, the outcome "added"), attributed to the writing operator and
+    /// bound to the implant it describes; notes read back from the trail, so
+    /// they survive a teamserver restart the same way every engagement fact
+    /// does, with no separate note store to keep consistent. The event has no
+    /// task -- a note annotates the implant, it does not task it.
+    /// </summary>
+    ImplantNoteAdded,
+
+    /// <summary>
     /// An operator attached an evidence artifact to a task (architecture.md
     /// Sec 11). Artifacts -- files, screenshots, captured command
     /// output -- are first-class objects linked to the task that gathered them,

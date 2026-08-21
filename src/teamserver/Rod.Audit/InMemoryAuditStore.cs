@@ -76,6 +76,19 @@ public sealed class InMemoryAuditStore : IAuditStore
         }
     }
 
+    public Task<IReadOnlyList<AuditEvent>> ForImplantAsync(Guid implantId, CancellationToken cancellationToken = default)
+    {
+        // Same locked snapshot discipline as ForTaskAsync.
+        lock (_appendLock)
+        {
+            var matches = _events.Values
+                .Where(e => e.ImplantId == implantId)
+                .OrderBy(e => e.At)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<AuditEvent>>(matches);
+        }
+    }
+
     public Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         lock (_appendLock)
