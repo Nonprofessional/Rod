@@ -167,6 +167,29 @@ export async function issueTask(
   return jsonOrThrow(response)
 }
 
+// --- Cancel queued tasking ------------------------------------
+//
+// Takes a queued task back before the implant wakes: the operator's own
+// tasking, retracted. Only a queued task can be cancelled -- one already
+// claimed by a beacon stream belongs to the implant and answers with 409.
+
+export interface CancelledTask {
+  taskId: string
+  engagementId: string
+  cancelledBy: string
+  cancelledAt: string
+}
+
+export async function cancelTask(
+  engagementId: string,
+  taskId: string,
+): Promise<CancelledTask> {
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}:cancel`, {
+    method: 'POST',
+  })
+  return jsonOrThrow(response)
+}
+
 // --- Streaming task input (architecture.md Sec 10.3) ------------------------
 //
 // A live channel task (shell.interact, tunnel.forward) takes operator input
@@ -228,6 +251,7 @@ export type LiveEventName =
   | 'OperatorLeft'
   | 'TaskIssued'
   | 'TaskCompleted'
+  | 'TaskCancelled'
   | 'ChannelOutput'
   | 'SessionClosed'
 
@@ -254,6 +278,7 @@ export interface EngagementStreamHandlers {
   onOperatorLeft?: (operatorId: string, handle: string) => void
   onTaskIssued?: (taskId: string, payload: string) => void
   onTaskCompleted?: (taskId: string, payload: string) => void
+  onTaskCancelled?: (taskId: string, payload: string) => void
   onChannelOutput?: (taskId: string, chunk: string) => void
   onSessionClosed?: (implantId: string, payload: string) => void
   onError?: (event: Event) => void
@@ -296,6 +321,10 @@ export function subscribeToEngagement(
   source.addEventListener('TaskCompleted', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onTaskCompleted?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('TaskCancelled', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onTaskCancelled?.(payload?.taskId ?? '', payload?.payload ?? '')
   })
   source.addEventListener('ChannelOutput', (e) => {
     const payload = parse((e as MessageEvent).data)
@@ -567,6 +596,43 @@ export async function retireImplant(
       method: 'POST',
     }),
   )
+}
+
+// --- Implant notes --------------------------------------------
+//
+// The "whose beacon is this" memory: free-text, attributed notes on an
+// implant. A note's only storage is the audit trail (ImplantNoteAdded events),
+// so it survives a teamserver restart with the trail itself and reads back
+// here on the implant view, oldest first.
+
+export interface ImplantNote {
+  noteId: string
+  implantId: string
+  author: string
+  text: string
+  at: string
+}
+
+export async function listImplantNotes(
+  engagementId: string,
+  implantId: string,
+): Promise<ImplantNote[]> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/implants/${implantId}/notes`),
+  )
+}
+
+export async function addImplantNote(
+  engagementId: string,
+  implantId: string,
+  text: string,
+): Promise<ImplantNote> {
+  const response = await fetch(`engagements/${engagementId}/implants/${implantId}/notes`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  return jsonOrThrow(response)
 }
 
 // --- Listeners and redirector repoint  -----------------------

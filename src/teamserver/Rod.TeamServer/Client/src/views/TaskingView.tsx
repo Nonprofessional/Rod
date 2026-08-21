@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type EngagementTask,
   type Implant,
+  cancelTask,
   getTask,
   issueTask,
   listEngagementTasks,
@@ -20,6 +21,10 @@ import type { SessionOperator } from '../api'
 // the registry (GET /capabilities) so the verb table is never hardcoded here.
 // Sensitive categories (evasion, exploit) are surfaced as issuable verbs too;
 // this surface holds only the contract, never concrete tradecraft.
+//
+// A queued task that should not run is retracted with its row's Cancel action:
+// the server drops it from the dispatch queue before the implant wakes and
+// records the retraction in the audit trail (architecture.md Sec 10.3).
 //
 // Interactive shell tasks (shell.interact, architecture.md Sec 10.3) get an
 // Interact row action that opens the live channel pane: the transcript is the
@@ -149,6 +154,23 @@ export function TaskingView({
     }
   }
 
+  // Take a queued task back before the implant wakes. Only offered on Queued
+  // rows: a dispatched task belongs to the implant, and the server would
+  // refuse the cancel with a 409 anyway.
+  const onCancel = async (taskId: string, verb: string) => {
+    if (!window.confirm(`Cancel queued ${verb} task ${taskId.slice(0, 8)}? It will never be dispatched.`)) {
+      return
+    }
+    try {
+      await cancelTask(engagementId, taskId)
+      await refresh()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+      await refresh()
+    }
+  }
+
   if (loading) {
     return (
       <div className="card">
@@ -262,6 +284,11 @@ export function TaskingView({
                     : new Date(t.createdAt).toLocaleTimeString()}
                 </td>
                 <td>
+                  {t.status === 'Queued' && (
+                    <button className="danger" onClick={() => void onCancel(t.taskId, t.verb)}>
+                      Cancel
+                    </button>
+                  )}{' '}
                   {isChannelVerb(t.verb) && (
                     <button
                       onClick={() => setInteractTask(interactTask === t.taskId ? null : t.taskId)}

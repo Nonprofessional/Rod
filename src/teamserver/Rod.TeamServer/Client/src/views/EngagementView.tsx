@@ -75,6 +75,7 @@ export function EngagementView({
       onOperatorLeft: (id) => setOnline((current) => current.filter((o) => o.id !== id)),
       onTaskIssued: () => setTick((t) => t + 1),
       onTaskCompleted: () => setTick((t) => t + 1),
+      onTaskCancelled: () => setTick((t) => t + 1),
       onSessionClosed: () => setTick((t) => t + 1),
     })
     return close

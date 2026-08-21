@@ -204,8 +204,37 @@ code {
   background: rgba(46, 204, 113, 0.2);
 }
 
+.status.cancelled {
+  background: rgba(128, 128, 128, 0.3);
+}
+
 .status.failed {
   background: rgba(192, 57, 43, 0.2);
+}
+
+/* --- Implant notes (operator memory) ------------------------------------- */
+
+.notes-panel {
+  padding: 8px 12px;
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.notes-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.notes-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  font-size: 13px;
+}
+
+.notes-meta {
+  color: rgba(128, 128, 128, 0.9);
+  font-size: 12px;
+  margin-right: 8px;
 }
 
 .output {
