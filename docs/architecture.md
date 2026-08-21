@@ -168,7 +168,7 @@ under, and a note on its current state are listed.
 | `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`, `ImplantService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented. In-memory adapters behind every port; the durable pair lives in `Rod.Persistence`. Task issuance gates each verb on the implant's class reduced set, enforces the kill date and retirement at handshake, and claims tasks atomically from the queue (Sec 5.2, Sec 10.3). |
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
-| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S) and mTLS listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants and retirement, tasks, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
+| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S) and mTLS listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `DotNetBuildUnit` -- the sole in-tree unit -- publishes the reference implant in a per-build staging copy as a self-contained single-file executable for the requested OS/arch (runtime identifier mapped from the build target; no target-side .NET install), baking the profile (transport shape, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
@@ -1016,6 +1016,18 @@ before it parks, so tasks queued while no stream was open are picked up on
 connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
 
+A queued task can be retracted before the implant wakes:
+`POST /engagements/{engagementId}/tasks/{taskId}:cancel` takes the operator's
+own tasking back (the shell command issued in error, the target that went
+quiet), terminal and claim-proof -- the retransition is atomic against the
+dispatch claim, so a cancel racing a claim resolves one way, never both, and a
+cancelled task is never handed to a stream. A task already dispatched is the
+implant's to run: the cancel is a `409`, not a rewrite of history. The
+retraction lands in the engagement trail as a `TaskCancelled` event attributed
+to the cancelling operator, ending the task's audit arc with no dispatch
+behind it, and a `TaskCancelled` live event drops it from every connected
+operator's queue view the moment it is retracted.
+
 **The fronting claim.** A beacon stream's writer claims for its own implant
 first and, in widening order, for the Pivot children that implant fronts
 (Sec 5.2): the claim spans the fronting set -- parent plus fronted children --
@@ -1080,8 +1092,13 @@ scrape.
   parameters, and output/result. Linked artifacts are recorded as separate
   `ArtifactAttached` (operator attach) or `ExfilCaptured` (implant-side exfil)
   events whose outcome carries the artifact id -- artifacts live in the artifact
-  store, joined by `task_id`, not as a field on every event. This is the
-  engagement timeline by construction.
+  store, joined by `task_id`, not as a field on every event. Operator notes on
+  implants -- the free-text "whose beacon is this" memory -- are events too
+  (`ImplantNoteAdded`, written through the implant's notes routes and read back
+  as a query over the trail), so the note's only storage is the chain: it rides
+  the same durability and chain-of-custody as every engagement fact, with no
+  separate note store to keep consistent. This is the engagement timeline by
+  construction.
 - **The event log is append-only and per-engagement**; it is never deletable
   mid-operation (chain-of-custody).
 - **Artifacts** (files, screenshots, command output) are first-class objects
