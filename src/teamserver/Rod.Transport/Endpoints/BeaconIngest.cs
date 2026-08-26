@@ -194,7 +194,7 @@ internal sealed class BeaconConnectionIngest
             case FrameKind.TaskResult:
             case FrameKind.Unspecified:
             default:
-                await HandleTaskResultAsync(frame, cancellationToken);
+                await HandleTaskResultAsync(session, frame, cancellationToken);
                 return;
         }
     }
@@ -202,8 +202,15 @@ internal sealed class BeaconConnectionIngest
     // A TaskResult frame: capture the outcome into the task and append the audit
     // event, then fan the completion out to connected operators. Pre-dates the
     // FrameKind discriminator: UNSPECIFIED frames fall through here too so older
-    // implants keep working.
-    private async Task HandleTaskResultAsync(Frame frame, CancellationToken cancellationToken)
+    // implants keep working. The task must belong on this session's stream --
+    // its own tasking, or a fronted Pivot child's (Sec 5.2), the same
+    // ownership rule the exfil, staged-pull, and channel-output paths hold --
+    // otherwise a session could forge a result onto another implant's (or
+    // another engagement's) dispatched task and poison its record.
+    private async Task HandleTaskResultAsync(
+        BeaconSessionContext session,
+        Frame frame,
+        CancellationToken cancellationToken)
     {
         TaskResult result;
         try
@@ -216,6 +223,10 @@ internal sealed class BeaconConnectionIngest
         }
 
         if (!TaskId.TryParse(result.TaskId, out var taskId))
+            return;
+
+        var owned = await _taskRecords.FindAsync(taskId, cancellationToken);
+        if (owned is null || !await BelongsToSessionAsync(owned, session, cancellationToken))
             return;
 
         // Map the wire outcome onto the core-state enum (RecordResultAsync takes

@@ -173,6 +173,82 @@ public class TaskRoundTripTests
         await call.RequestStream.CompleteAsync();
     }
 
+    [Fact]
+    public async Task ForeignImplantResult_ForAnotherEngagementsTask_IsIgnored()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
+        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
+        var audit = env.Host.Services.GetRequiredService<IAuditStore>();
+        var clock = env.Host.Services.GetRequiredService<TimeProvider>();
+
+        // Two implants in two engagements. The victim holds the task; the
+        // impostor is a fully authenticated session of its own -- the strongest
+        // position a forged result can come from short of a stolen certificate.
+        var (victim, victimCert, victimKey) = await EnrollImplantAsync(implants, ca, clock);
+        var (impostor, impostorCert, impostorKey) = await EnrollImplantAsync(implants, ca, clock);
+
+        using var victimChannel = env.ConnectBeacon(victimCert, victimKey);
+        var victimCall = new Beacon.BeaconClient(victimChannel).CheckIn();
+        await victimCall.RequestStream.WriteAsync(HandshakeFrame(victim.Id, 1, 0));
+        Assert.True(await victimCall.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.Equal(HandshakeStatus.Ok, ParseResponse(victimCall.ResponseStream.Current).Status);
+
+        using var impostorChannel = env.ConnectBeacon(impostorCert, impostorKey);
+        var impostorCall = new Beacon.BeaconClient(impostorChannel).CheckIn();
+        await impostorCall.RequestStream.WriteAsync(HandshakeFrame(impostor.Id, 1, 0));
+        Assert.True(await impostorCall.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.Equal(HandshakeStatus.Ok, ParseResponse(impostorCall.ResponseStream.Current).Status);
+
+        // The operator tasks the victim; the victim's stream claims the task
+        // (it is now Dispatched to the victim).
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{victim.EngagementId}/tasks",
+            new { ImplantId = victim.Id.ToString(), Verb = "shell.exec", Arguments = "whoami" });
+        issued.EnsureSuccessStatusCode();
+        var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        Assert.True(await victimCall.ResponseStream.MoveNext(CancellationToken.None));
+        var request = TaskRequest.Parser.ParseFrom(victimCall.ResponseStream.Current.Payload);
+        Assert.Equal(issuedBody!.TaskId, request.TaskId);
+
+        // The impostor answers first with a forged result for the victim's task
+        // id. Ownership must hold on the result path the way it already holds
+        // on exfil, staged-pull, and channel output: a session can only
+        // complete its own (or a fronted Pivot child's) task, never another
+        // engagement's.
+        await impostorCall.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        {
+            TaskId = request.TaskId,
+            Outcome = TaskOutcome.Succeeded,
+            Output = "forged",
+        }));
+
+        // The victim's real answer follows immediately: whichever frame the
+        // server processes first, only the victim's may complete the task, so
+        // the final record discriminates the guard without racing the stream.
+        await victimCall.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        {
+            TaskId = request.TaskId,
+            Outcome = TaskOutcome.Succeeded,
+            Output = "uid=0",
+        }));
+
+        await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
+
+        var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{victim.EngagementId}/tasks/{request.TaskId}");
+        Assert.NotNull(fetched);
+        Assert.Equal("Completed", fetched!.Status);
+        Assert.Equal("uid=0", fetched.Output);
+        Assert.Equal(1, fetched.Audit.Count(e => e.Kind == "TaskCompleted"));
+        Assert.Equal("uid=0", fetched.Audit.Single(e => e.Kind == "TaskCompleted").Output);
+
+        await victimCall.RequestStream.CompleteAsync();
+        await impostorCall.RequestStream.CompleteAsync();
+    }
+
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
         IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
     {
