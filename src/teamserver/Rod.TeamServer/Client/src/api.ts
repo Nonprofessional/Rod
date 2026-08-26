@@ -667,6 +667,26 @@ export async function repointListener(listenerId: string, publicEndpoint: string
   )
 }
 
+// --- Online implant roster (presence) -------------------------
+//
+// The per-engagement online roster: an implant is online exactly while it
+// holds an active session, so this is the live-channel projection -- session,
+// capabilities, last seen -- beside the enrolled-implant record the implants
+// tab holds. This is the crew's live situational-awareness view.
+
+export interface PresenceRecord {
+  sessionId: string
+  implantId: string
+  engagementId: string
+  capabilities: string[]
+  onlineAt: string
+  lastSeenAt: string
+}
+
+export async function listOnline(engagementId: string): Promise<PresenceRecord[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/presence`))
+}
+
 // --- Payload build with OPSEC profile (//) --------------
 //
 // Builds an implant artifact, baking in the beacon profile (mode, sleep,

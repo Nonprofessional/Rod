@@ -41,14 +41,3 @@ instead of code are first-class items here, equal to features.
       model -- auth bypass, engagement-scope escape, payload tampering.
       _AC:_ findings are triaged and no high-severity finding is open on
       either surface.
-
-## Operator UI live-ops views (architecture.md Sec 4.1)
-
-- [ ] **Surface the online roster and listener state in the UI.** Presence
-      and the listener list are API-only today: both endpoints exist and
-      are tested, but the UI walks neither, so a multiplayer crew tracks
-      live implants and listener health by curl -- which breaks the shared
-      situational awareness the operator layer exists for (Sec 4.1).
-      _AC:_ the UI renders the per-engagement online roster and the
-      listener list from the existing presence and listener endpoints,
-      with no new API surface.
