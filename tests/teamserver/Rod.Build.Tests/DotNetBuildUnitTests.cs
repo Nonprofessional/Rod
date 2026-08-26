@@ -268,6 +268,22 @@ public class DotNetBuildUnitTests
     }
 
     [DotNetFact]
+    public async Task Build_AnEmptyExtensionDirectoryIsTheUnsetShape()
+    {
+        // The shipped appsettings carries Build:ImplantExtensionDirectory as an
+        // empty string, which is the unset shape everywhere else on the config
+        // surface. The unit must read it the same way, not as a configured
+        // directory: surfaced by the rehearsal walk, where every implant-class
+        // build against the shipped configuration failed on the empty value.
+        var unit = new DotNetBuildUnit(extensionDir: "");
+
+        var artifact = await unit.BuildAsync(Params());
+
+        Assert.Equal(Language.DotNet, artifact.Language);
+        Assert.NotEmpty(artifact.Content);
+    }
+
+    [DotNetFact]
     public async Task Build_WithExtensionDirectory_CompilesTheOverlayIn()
     {
         // The extension kit's acceptance, compile leg: a handler source dropped

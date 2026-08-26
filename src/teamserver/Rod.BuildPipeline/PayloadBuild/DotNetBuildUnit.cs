@@ -69,7 +69,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
         _implantSourceDir = implantSourceDir ?? ResolveDefaultImplantSourceDir();
         _stagerSourceDir = stagerSourceDir ?? ResolveDefaultStagerSourceDir();
         _dotnetBinary = dotnetBinary ?? "dotnet";
-        _extensionDir = extensionDir;
+        // A present-but-empty extension directory is the unset shape (the
+        // shipped appsettings carries Build:ImplantExtensionDirectory as ""),
+        // the same whitespace-is-absent rule the host applies when it guards
+        // startup; normalizing here keeps every caller from having to.
+        _extensionDir = string.IsNullOrWhiteSpace(extensionDir) ? null : extensionDir;
     }
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
