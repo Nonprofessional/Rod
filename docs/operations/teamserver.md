@@ -133,3 +133,6 @@ standard `Section__Key` mapping):
   trail regardless of configuration -- keep `Audit:DataDirectory` (or
   Postgres) on durable storage, since the trail is the report source and
   outlives the operation (architecture.md Sec 11).
+- Before pointing the stack at a client network, walk the full lifecycle on
+  the production shape once -- the procedure and its acceptance evidence
+  live in [rehearsal.md](rehearsal.md).

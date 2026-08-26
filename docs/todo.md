@@ -19,17 +19,7 @@ RBAC -- are the house style). An addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features.
 
-## Operational readiness (architecture.md Sec 8, Sec 9, Sec 12.1)
-
-- [ ] **Walk a rehearsal engagement on production-shaped infrastructure.**
-      Every green test today runs against TestServer and loopback binds, so
-      nothing verifies the platform on the shape it will run in: an
-      externally provisioned CA (Sec 9), Postgres persistence (Sec 12.1), a
-      redirector front with a listener repoint (Sec 8), and evidence
-      recovery. Walk one full lifecycle -- enroll, task, collect, restart
-      the teamserver mid-engagement, repoint behind a burned redirector,
-      tear down, export the report -- and record the procedure as an
-      operations runbook rather than new code where possible.
-      _AC:_ the lifecycle completes on that infrastructure, the audit chain
-      verifies after the restart, and the walked procedure lives in
-      docs/operations/.
+Nothing is open. The three items this file last carried -- the rehearsal
+engagement, the adversarial surface review, and the live-ops UI views --
+shipped; their records are the commits and
+[operations/rehearsal.md](operations/rehearsal.md).
