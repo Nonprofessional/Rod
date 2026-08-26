@@ -375,6 +375,26 @@ public static class TransportHost
                     continue;
 
                 var (host, port) = ParseBindAddress(config.BindAddress);
+
+                // A plain-HTTP bind is the loopback dev posture: no TLS and no
+                // client certificates, so the gRPC beacon on it identifies
+                // implants by their handshake id alone and the operator API
+                // rides the same socket in the clear (architecture.md Sec 8).
+                // A non-loopback bind is a deliberate TLS-terminating-edge
+                // deployment at best; name the tradeoff at startup so the
+                // choice is visible, not silent.
+                if (config.Transport == ListenerTransport.Http && !IPAddress.IsLoopback(host))
+                {
+                    kestrel.ApplicationServices.GetRequiredService<ILoggerFactory>()
+                        .CreateLogger("Rod.Transport.TransportHost")
+                        .LogWarning(
+                            "Listener '{ListenerName}' binds plain HTTP on non-loopback {BindAddress}: "
+                            + "the beacon identifies implants by their handshake id alone and the operator API "
+                            + "rides the same socket in the clear. Keep plain HTTP on loopback unless a "
+                            + "TLS-terminating edge fronts this host (architecture.md Sec 8).",
+                            config.Name, config.BindAddress);
+                }
+
                 var listener = Listener.Define(
                     ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint, now);
 

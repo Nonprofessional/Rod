@@ -475,6 +475,19 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   envelope** over mTLS, **DNS**, **SMB** (named pipe), and **raw TCP** are
   implemented. Transport choice is a profile/deployment concern; the protocol
   semantics are transport-independent.
+- **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
+  socket with no TLS and no client certificates, and every mapped route rides
+  it: the operator API and UI in the clear, and the gRPC beacon identifying an
+  implant by the id in its handshake alone -- the DNS/SMB/TCP tradeoff, but on
+  a socket anything with reach can present. The dev fallback binds loopback
+  for exactly that reason, and a non-loopback plain-HTTP bind logs a startup
+  warning naming this posture. The envelope check-in route refuses a
+  certificate-less connection outright (only an mTLS-terminated listener ever
+  serves it); the gRPC stream cannot make the same refusal without breaking
+  the loopback dev host and the test harness, so its boundary is the listener
+  itself. A deployment that fronts the teamserver with its own TLS-terminating
+  edge accepts the certificate-less beacon knowingly; without such an edge,
+  real binds are `Mtls` or `HttpsEnvelope`.
 - **DNS is the egress-restricted check-in transport.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns

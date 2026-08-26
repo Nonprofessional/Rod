@@ -33,11 +33,3 @@ instead of code are first-class items here, equal to features.
       _AC:_ the lifecycle completes on that infrastructure, the audit chain
       verifies after the restart, and the walked procedure lives in
       docs/operations/.
-- [ ] **Review the exposed surface adversarially.** The platform is
-      remote-code-execution infrastructure; an operator cannot responsibly
-      point it at a client network on the strength of functional tests
-      alone. The operator API and the implant-facing endpoints (enroll,
-      handshake, beacon) need an adversarial pass against the Sec 9 threat
-      model -- auth bypass, engagement-scope escape, payload tampering.
-      _AC:_ findings are triaged and no high-severity finding is open on
-      either surface.
