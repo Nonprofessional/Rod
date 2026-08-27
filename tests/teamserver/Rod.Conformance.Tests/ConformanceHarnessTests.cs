@@ -3,8 +3,9 @@ using System.Diagnostics;
 namespace Rod.Conformance.Tests;
 
 /// <summary>
-/// Acceptance for the Tier 0 conformance harness (todo.md, implant reach).
-/// The harness drives a candidate implant against a live teamserver and
+/// Acceptance for the Tier 0 conformance harness (architecture.md Sec 8,
+/// the implant-reach contract). The harness drives a candidate implant against
+/// a live teamserver and
 /// reports pass/fail per contract clause; the acceptance criterion is
 /// two-sided: pointing it at the reference implant passes every clause, and
 /// pointing it at a deliberately broken one fails with the violated clause

@@ -23,12 +23,13 @@ using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Conformance.Tests;
 
-// The Tier 0 conformance harness (todo.md, implant reach): a rig that drives
-// a candidate implant against a live teamserver and reports pass/fail per
-// contract clause -- enroll shapes, handshake order, result/chunk discipline,
-// signature verification, kill-date refusal (extending/implants.md). Pointing
-// it at the reference implant passes; pointing it at a deliberately broken
-// one fails with the violated clause named.
+// The Tier 0 conformance harness (architecture.md Sec 8, the implant-reach
+// contract): a rig that drives a candidate implant against a live teamserver
+// and reports pass/fail per contract clause -- enroll shapes, handshake order,
+// result/chunk discipline, signature verification, kill-date refusal
+// (extending/implants.md). Pointing it at the reference implant passes;
+// pointing it at a deliberately broken one fails with the violated clause
+// named.
 
 /// <summary>The check-in shape a candidate speaks.</summary>
 public enum CandidateTransport
