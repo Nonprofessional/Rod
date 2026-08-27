@@ -29,21 +29,6 @@ infrastructure, procedure, and defaults.
 
 ## Pre-production (architecture.md Sec 7, Sec 8, Sec 12.1, Sec 13)
 
-- [ ] **Walk the rehearsal again on the real deployment shape.** The
-      executed rehearsal ran on one host with two stand-ins: loopback
-      plain HTTP where the operator's TLS-terminating edge belongs, and a
-      same-host redirector. Neither is the shape that faces a target
-      network (Sec 7/8). Compose the stack once on real infrastructure --
-      the enroll ingress and the operator API behind an actual
-      terminating edge, the reference redirector on a separate host
-      fronting the mTLS listener across a network hop, and a win-x64
-      implant built from the pipeline checking in from a real Windows
-      machine. Enroll, task, collect, burn-and-repoint, retire; write the
-      multi-host shape back into docs/operations/rehearsal.md alongside
-      the single-host walk, which stays the fast pre-engagement baseline.
-      _AC:_ the full lifecycle completes with a TLS-terminating edge
-      inline and a remote redirector carrying the beacon, and the Windows
-      implant round-trips a task and a chunked exfil end to end.
 - [ ] **Record the production install and recovery basics.** An operator
       deploying for real hits these in minute zero, and all of them are
       today implicit (Sec 12.1): a service-unit definition supervising
