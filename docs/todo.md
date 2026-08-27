@@ -29,22 +29,6 @@ infrastructure, procedure, and defaults.
 
 ## Pre-production (architecture.md Sec 7, Sec 8, Sec 12.1, Sec 13)
 
-- [ ] **Record the production install and recovery basics.** An operator
-      deploying for real hits these in minute zero, and all of them are
-      today implicit (Sec 12.1): a service-unit definition supervising
-      the teamserver (crash-restart is tested behavior; the installed,
-      supervised shape is unwritten), the upgrade procedure (sessions
-      survive a restart -- name stop, replace, start), the restore trio
-      that must move together (Postgres dump, evidence data directory,
-      DataProtection keys -- restoring any one alone yields broken
-      logins), and the secret-store path for
-      `Operators__Initial__Password` and the Pki key passphrase (Sec 9).
-      Answer with docs and a unit-file example; no new code path unless a
-      gap shows itself.
-      _AC:_ a fresh host reaches a supervised running teamserver by
-      following the recorded procedure alone, and a restore from the
-      recorded backup set accepts a pre-backup operator cookie on the
-      request after restore.
 - [ ] **Pin the per-engagement readiness gate.** Facing a client network
       raises decisions the framework deliberately leaves to the crew --
       credential custody, evidence retention, who authorizes -- and the

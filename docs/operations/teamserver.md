@@ -121,6 +121,170 @@ standard `Section__Key` mapping):
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
 
+## Production install and recovery
+
+The installed shape: a self-contained publish under `/opt/rod`, a dedicated
+service user, secrets in a root-only environment file, and a systemd unit
+supervising the process. Everything below is the executed install path --
+each step was walked on a clean tree, then crash-restarted, upgraded, and
+restored from backup before being written down.
+
+### Install
+
+The build host needs the pinned SDK; the deploy host needs neither SDK nor
+runtime, only PostgreSQL reachability:
+
+```
+dotnet publish src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj \
+  -c Release -r linux-x64 --self-contained true -o /tmp/rod-publish
+```
+
+Lay the host out (the service user's home is where the DataProtection key
+ring lands -- see the backup trio):
+
+```
+sudo useradd -r -d /var/lib/rod -M -s /usr/sbin/nologin rod
+sudo mkdir -p /var/lib/rod/data /etc/rod/pki /opt/rod
+sudo chown rod:rod /var/lib/rod /var/lib/rod/data
+sudo cp -a /tmp/rod-publish /opt/rod/teamserver          # + appsettings.Production.json below
+sudo cp ca.crt ca.key /etc/rod/pki/ && sudo chown root:rod /etc/rod/pki/* \
+  && sudo chmod 640 /etc/rod/pki/ca.crt /etc/rod/pki/ca.key
+```
+
+Non-secret configuration rides `appsettings.Production.json` next to the
+binary (the Pki paths, `Audit:DataDirectory`, and the listener shape);
+apply the schema once per deployment from a checkout, not the install
+tree:
+
+```
+dotnet ef database update -p src/teamserver/Rod.Persistence \
+  -s src/teamserver/Rod.TeamServer --connection "<rod connection string>"
+```
+
+The unit (`/etc/systemd/system/rod-teamserver.service`):
+
+```ini
+[Unit]
+Description=Rod teamserver (C2 kernel)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=rod
+Group=rod
+Environment=ASPNETCORE_ENVIRONMENT=Production
+EnvironmentFile=/etc/rod/teamserver.env
+ExecStart=/opt/rod/teamserver/Rod.TeamServer
+WorkingDirectory=/opt/rod/teamserver
+StateDirectory=rod
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/rod
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`sudo systemctl daemon-reload && sudo systemctl enable --now
+rod-teamserver`, then accept: `systemctl is-active` reports active and
+`POST /operators/login` on the operator listener answers 200. After
+debugging a crash-looping start, clear the rate limit with `systemctl
+reset-failed rod-teamserver` before starting again.
+
+One install-shape fact to know: payload builds inside the installed
+service spawn `dotnet` from PATH and restore into the service user's
+NuGet cache. A clean deploy host has neither -- either install the SDK
+and warm the cache, or accept that payload builds happen on a staging
+checkout and the deploy host only runs them.
+
+### Secrets
+
+`Operators__Initial__Password` and `Pki__CaPrivateKeyPassphrase`
+([architecture.md](../architecture.md) Sec 9) never live in the
+world-readable appsettings. They ride the root-only environment file the
+unit injects (`/etc/rod/teamserver.env`, mode 0600):
+
+```
+Operators__Initial__Handle=lead
+Operators__Initial__DisplayName=Engagement Lead
+Operators__Initial__Password=<from the secret store>
+ConnectionStrings__Postgres=<rod connection string>
+```
+
+The **whole** `Operators__Initial` section must be present: outside
+Development there is no fallback account, and an incomplete section
+provisions no operator -- the first symptom is a 401 on login. The
+section is read once at first boot and never re-read; rotate credentials
+through the operator API, not by editing the file.
+
+### Upgrade
+
+Stop, replace, start:
+
+```
+sudo systemctl stop rod-teamserver
+sudo rm -rf /opt/rod/teamserver && sudo cp -a /tmp/rod-publish /opt/rod/teamserver
+sudo cp appsettings.Production.json /opt/rod/teamserver/
+sudo systemctl start rod-teamserver
+```
+
+Sessions survive: the operator cookie is sealed by the DataProtection
+key ring and stamp-checked against the credential store, and both are
+durable state outside the process. The same is true of a crash --
+`Restart=on-failure` brings the process back (verified with `kill -9`:
+new pid, cookie still accepted) while the fronts keep splicing and
+implants retry.
+
+### Backup and restore: the trio that moves together
+
+Three pieces of durable state must move as a set. Restoring any one
+alone yields broken logins or lost evidence:
+
+1. **The Postgres dump** -- operators, engagements, tasks: everything
+   the durable core-state pair owns (`ConnectionStrings:Postgres`).
+2. **The evidence data directory** (`Audit:DataDirectory`) -- the
+   hash-chained audit trail, artifacts, and the payload store.
+3. **The DataProtection key ring** --
+   `/var/lib/rod/.aspnet/DataProtection-Keys` under the service user's
+   home (the teamserver pins no path, so the ASP.NET Core default
+   applies). It seals operator cookies and API tokens; a fresh ring
+   silently invalidates every issued cookie.
+
+Take the set with the service stopped, so the three members agree:
+
+```
+sudo systemctl stop rod-teamserver
+pg_dump -h <host> -U rod rod > rod.sql
+sudo tar -C /var/lib/rod -czf data.tgz data
+sudo cp -a /var/lib/rod/.aspnet aspnet-keys
+```
+
+Restore onto the wiped host (drop and recreate the empty database
+first; the dump carries the schema):
+
+```
+sudo systemctl stop rod-teamserver
+sudo -u postgres psql -c "DROP DATABASE rod;" -c "CREATE DATABASE rod OWNER rod;"
+psql -h <host> -U rod -d rod -f rod.sql
+sudo rm -rf /var/lib/rod/data /var/lib/rod/.aspnet
+sudo tar -C /var/lib/rod -xzf data.tgz
+sudo cp -a aspnet-keys /var/lib/rod/.aspnet
+sudo chown -R rod:rod /var/lib/rod/data /var/lib/rod/.aspnet
+sudo systemctl start rod-teamserver
+```
+
+Accept: a pre-backup operator cookie authenticates the first request
+after the restore, and the engagement roster reads back. The failure
+modes are structural, not flaky: the dump without the key ring leaves
+the old cookie unreadable (401), the key ring without the dump fails
+the per-request stamp check against the credential store (401), and the
+data directory without the database orphans the audit chain the report
+reads.
+
 ## Production posture
 
 - Terminate the beacon on an **mTLS listener** and front it with a redirector;
