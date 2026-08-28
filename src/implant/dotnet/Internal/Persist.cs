@@ -162,16 +162,23 @@ internal static class Persist
                     return (TaskOutcome.Failed, $"install runkey {name}: {ex.Message}");
                 }
             case "schtasks":
+                // The /tn and /tr values are quoted: schtasks splits unquoted
+                // arguments on spaces, so a task name or payload with a space
+                // would parse as unknown schtasks switches. Embedded quotes in
+                // the payload are doubled, the escape CommandLineToArgvW
+                // consumes inside a quoted argument.
                 var (scOutcome, scOut) = RunCaptured(
-                    "schtasks", $"/create /tn {name} /tr {payload} /sc onlogon /f");
+                    "schtasks", $"/create /tn {Quote(name)} /tr {Quote(payload)} /sc onlogon /f");
                 if (scOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install schtasks {name}: {scOut}");
                 return (TaskOutcome.Succeeded, $"installed schtasks {name} -> {payload}");
             case "service":
                 // sc create registers the service; binPath= is the payload. Note
-                // the space after the flag name is required by sc's argv quirk.
+                // the space after the flag name is required by sc's argv quirk,
+                // and the path is quoted so a payload with spaces stays one
+                // argument.
                 var (svcOutcome, svcOut) = RunCaptured(
-                    "sc", $"create {name} binPath= {payload} start= auto");
+                    "sc", $"create {Quote(name)} binPath= {Quote(payload)} start= auto");
                 if (svcOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install service {name}: {svcOut}");
                 return (TaskOutcome.Succeeded, $"installed service {name} -> {payload}");
@@ -202,7 +209,7 @@ internal static class Persist
                     return (TaskOutcome.Failed, $"remove runkey {name}: {ex.Message}");
                 }
             case "schtasks":
-                var (scOutcome, scOut) = RunCaptured("schtasks", $"/delete /tn {name} /f");
+                var (scOutcome, scOut) = RunCaptured("schtasks", $"/delete /tn {Quote(name)} /f");
                 if (scOutcome == TaskOutcome.Failed
                     && scOut.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
                     return (TaskOutcome.Succeeded, $"removed schtasks {name} (already absent)");
@@ -210,7 +217,7 @@ internal static class Persist
                     return (TaskOutcome.Failed, $"remove schtasks {name}: {scOut}");
                 return (TaskOutcome.Succeeded, $"removed schtasks {name}");
             case "service":
-                var (svcOutcome, svcOut) = RunCaptured("sc", $"delete {name}");
+                var (svcOutcome, svcOut) = RunCaptured("sc", $"delete {Quote(name)}");
                 if (svcOutcome == TaskOutcome.Failed
                     && svcOut.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
                     return (TaskOutcome.Succeeded, $"removed service {name} (already absent)");
@@ -522,6 +529,12 @@ internal static class Persist
 
     private static bool IsKnownMechanism(string m)
         => Array.Exists(Mechanisms, known => known == m);
+
+    // Quotes one native-tool argument value: wrapped in double quotes with any
+    // embedded quote doubled, the form CommandLineToArgvW decodes back to the
+    // original string.
+    private static string Quote(string value)
+        => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
     // --- Process helpers ----------------------------------------------------
 

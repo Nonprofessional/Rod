@@ -142,8 +142,12 @@ internal static class Lateral
     {
         var taskName = "RodRemoteExec" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        // The /tr payload is quoted: schtasks splits unquoted arguments on
+        // spaces, so a multi-word command would parse as unknown schtasks
+        // switches. Embedded quotes are doubled, the escape CommandLineToArgvW
+        // consumes inside a quoted argument.
         var (createOutcome, createOutput) = RunCaptured(
-            "schtasks", $"/create /s {host} /tn {taskName} /tr {command} /sc once /st 00:00 /f");
+            "schtasks", $"/create /s {host} /tn {taskName} /tr {Quote(command)} /sc once /st 00:00 /f");
         if (createOutcome == TaskOutcome.Failed)
             return (TaskOutcome.Failed, $"create remote task {taskName} on {host}: {createOutput}");
 
@@ -157,6 +161,12 @@ internal static class Lateral
         _ = RunCaptured("schtasks", $"/delete /s {host} /tn {taskName} /f");
         return (TaskOutcome.Succeeded, $"ran {command} on {host} via task {taskName}");
     }
+
+    // Quotes one schtasks argument value: wrapped in double quotes with any
+    // embedded quote doubled, the form CommandLineToArgvW decodes back to the
+    // original string.
+    private static string Quote(string value)
+        => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 
     // Runs a platform command, capturing combined stdout/stderr. A non-zero exit
     // is Failed with the output captured so the operator sees the cause.
