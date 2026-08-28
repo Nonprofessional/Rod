@@ -33,6 +33,16 @@ If you run Rod, you are responsible for:
   execution. Protect operator credentials, per-implant keys, and the teamserver
   host. Use disposable infrastructure per engagement.
 
+## Before an engagement
+
+Pointing Rod at a client network adds a standing rule: walk the
+pre-engagement readiness gate in
+[docs/operations/readiness.md](docs/operations/readiness.md) before the
+first check-in -- authorization on file, the capability plan against the
+sensitive-capability boundary (docs/architecture.md Sec 13), the
+rehearsal walk green on the deployment shape, and custody decided for
+credentials and evidence. The gate is this policy's operational form.
+
 ## What Rod is not
 
 - Rod is **not** a tool for unauthorized access, theft, harassment, surveillance

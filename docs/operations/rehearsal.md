@@ -15,7 +15,9 @@ shape -- a TLS-terminating edge in front of the certificate-less ingress,
 the redirector on its own host carrying the mTLS beacon across a network
 hop, and a pipeline-built win-x64 implant checking in from a real Windows
 machine -- and it was executed the same way. Scale the addresses to the
-engagement's real infrastructure; the lifecycle steps do not change.
+engagement's real infrastructure; the lifecycle steps do not change. The
+pre-engagement readiness gate ([readiness.md](readiness.md)) anchors on
+this walk as its compressed form.
 
 ## 1. Provision the infrastructure
 

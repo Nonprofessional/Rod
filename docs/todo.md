@@ -19,25 +19,12 @@ RBAC -- are the house style). An addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features.
 
-Production use is the driver now: the three items this file last carried
--- the rehearsal engagement, the adversarial surface review, and the
-live-ops UI views -- shipped, their records are the commits and
-[operations/rehearsal.md](operations/rehearsal.md), and what remains is
-what stands between that single-host rehearsal and pointing Rod at a
-client network. Nothing below grows framework surface; they answer with
-infrastructure, procedure, and defaults.
-
-## Pre-production (architecture.md Sec 7, Sec 8, Sec 12.1, Sec 13)
-
-- [ ] **Pin the per-engagement readiness gate.** Facing a client network
-      raises decisions the framework deliberately leaves to the crew --
-      credential custody, evidence retention, who authorizes -- and the
-      compressed rehearsal needs a standing rule attached to it
-      (RESPONSIBLE-USE.md, Sec 13's boundary). Record the defaults and a
-      short checklist in RESPONSIBLE-USE.md or a brief operations page:
-      the gate an engagement lead walks before first check-in, anchored
-      on the rehearsal doc's lifecycle walk as the compressed form.
-      _AC:_ the gate exists as a checked-in checklist tied to the
-      rehearsal walk, takes under thirty minutes, and every default it
-      names agrees with the Sec 13 boundary and RESPONSIBLE-USE.md.
-
+Production use is the driver now: the gap between the single-host
+rehearsal and pointing Rod at a client network closed the same way --
+the multi-host rehearsal walk, the install and recovery record, and the
+pre-engagement readiness gate all shipped, and their records are the
+commits, [operations/rehearsal.md](operations/rehearsal.md),
+[operations/teamserver.md](operations/teamserver.md), and
+[operations/readiness.md](operations/readiness.md). The gate is the
+standing pre-engagement form; new work here starts from a gap it
+surfaces.
