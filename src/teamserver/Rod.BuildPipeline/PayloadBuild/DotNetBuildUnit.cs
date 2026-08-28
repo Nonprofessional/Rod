@@ -66,8 +66,16 @@ public sealed class DotNetBuildUnit : IBuildUnit
         string? dotnetBinary = null,
         string? extensionDir = null)
     {
-        _implantSourceDir = implantSourceDir ?? ResolveDefaultImplantSourceDir();
-        _stagerSourceDir = stagerSourceDir ?? ResolveDefaultStagerSourceDir();
+        // Whitespace-is-absent on both source dirs, the same rule as the
+        // extension dir: a configured-but-empty string is the unset shape, so
+        // an installed teamserver naming only one tree still resolves the
+        // other from the repo walk-up.
+        _implantSourceDir = string.IsNullOrWhiteSpace(implantSourceDir)
+            ? ResolveDefaultImplantSourceDir()
+            : implantSourceDir;
+        _stagerSourceDir = string.IsNullOrWhiteSpace(stagerSourceDir)
+            ? ResolveDefaultStagerSourceDir()
+            : stagerSourceDir;
         _dotnetBinary = dotnetBinary ?? "dotnet";
         // A present-but-empty extension directory is the unset shape (the
         // shipped appsettings carries Build:ImplantExtensionDirectory as ""),

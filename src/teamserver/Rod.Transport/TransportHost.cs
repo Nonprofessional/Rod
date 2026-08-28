@@ -246,7 +246,26 @@ public static class TransportHost
             && !Directory.Exists(implantExtensionDirectory))
             throw new InvalidOperationException(
                 $"The configured implant extension directory '{implantExtensionDirectory}' does not exist.");
-        buildUnits.Register(new DotNetBuildUnit(extensionDir: implantExtensionDirectory));
+        // The build unit compiles the reference implant and stager trees at
+        // build-request time, so an installed teamserver -- a publish under
+        // /opt/rod with no repo above it -- names its build source trees with
+        // the same explicit-config shape: unset keeps the walk-up default a
+        // repo checkout relies on, and a configured-but-missing directory
+        // fails startup loudly rather than failing every payload build later.
+        var implantSourceDirectory = configuration?["Build:ImplantSourceDirectory"];
+        if (!string.IsNullOrWhiteSpace(implantSourceDirectory)
+            && !Directory.Exists(implantSourceDirectory))
+            throw new InvalidOperationException(
+                $"The configured implant source directory '{implantSourceDirectory}' does not exist.");
+        var stagerSourceDirectory = configuration?["Build:StagerSourceDirectory"];
+        if (!string.IsNullOrWhiteSpace(stagerSourceDirectory)
+            && !Directory.Exists(stagerSourceDirectory))
+            throw new InvalidOperationException(
+                $"The configured stager source directory '{stagerSourceDirectory}' does not exist.");
+        buildUnits.Register(new DotNetBuildUnit(
+            implantSourceDir: implantSourceDirectory,
+            stagerSourceDir: stagerSourceDirectory,
+            extensionDir: implantExtensionDirectory));
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         // The post-build transform chain (architecture.md Sec 6, the transform
         // seam): config-listed out-of-tree transforms under Build:Transforms,

@@ -284,6 +284,22 @@ public class DotNetBuildUnitTests
     }
 
     [DotNetFact]
+    public async Task Build_AnEmptySourceDirectoryIsTheUnsetShape()
+    {
+        // Same whitespace-is-absent rule as the extension directory: an
+        // installed teamserver that names only one build source tree (or
+        // carries the empty strings a templated config can produce) still
+        // resolves both from the repo walk-up. Surfaced by walking payload
+        // builds through the installed, supervised shape.
+        var unit = new DotNetBuildUnit(implantSourceDir: "", stagerSourceDir: "");
+
+        var artifact = await unit.BuildAsync(Params());
+
+        Assert.Equal(Language.DotNet, artifact.Language);
+        Assert.NotEmpty(artifact.Content);
+    }
+
+    [DotNetFact]
     public async Task Build_WithExtensionDirectory_CompilesTheOverlayIn()
     {
         // The extension kit's acceptance, compile leg: a handler source dropped
