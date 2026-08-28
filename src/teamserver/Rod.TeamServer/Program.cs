@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Rod.Operators;
 using Rod.Operators.Auth;
 using Rod.Persistence;
@@ -66,6 +67,16 @@ if (listenerConfigs is null || listenerConfigs.Count == 0)
 builder.WebHost.UseRodListeners(listenerConfigs);
 
 var app = builder.Build();
+
+// The durable store's schema must match the model before any traffic is
+// served: a database restored without its constraints boots apparently healthy
+// and fails at the first task dispatch instead. The same fail-loudly posture
+// as the CA and listener validation, run once per boot (Rod.Persistence owns
+// the Postgres knowledge; the composition root just pulls the trigger).
+if (app.Services.GetService<IDbContextFactory<RodPersistenceDbContext>>() is { } persistenceFactory)
+{
+    await PostgresSchemaGuard.VerifyAsync(persistenceFactory);
+}
 
 // Defense-in-depth response headers (architecture.md Sec 9). The operator UI
 // renders implant-controlled strings (task output, audit payloads), so a strict
