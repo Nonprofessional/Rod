@@ -297,7 +297,10 @@ internal static class Core
     // Dials a port and, on success, reads a short banner. Returns the banner
     // (trimmed) and whether the port was open. A read that times out still
     // counts as open with no banner, since many services wait for the client to
-    // speak first.
+    // speak first. Openness is decided by the connect alone: Connected is not
+    // re-read after a failed read because a timed-out receive marks the socket
+    // not-connected on Windows while staying connected on Linux, which reported
+    // every client-speaks-first service closed on Windows.
     private static (string Banner, bool Open) ProbeService(string host, int port)
     {
         TcpClient? client = null;
@@ -307,18 +310,25 @@ internal static class Core
             if (!client.ConnectAsync(host, port).Wait(DialTimeout) || !client.Connected)
                 return (string.Empty, false);
 
-            client.ReceiveTimeout = (int)BannerTimeout.TotalMilliseconds;
-            using var stream = client.GetStream();
-            var buffer = new byte[256];
-            var read = stream.Read(buffer, 0, buffer.Length);
-            return (read > 0 ? Encoding.ASCII.GetString(buffer, 0, read).TrimEnd('\r', '\n') : string.Empty, true);
+            try
+            {
+                client.ReceiveTimeout = (int)BannerTimeout.TotalMilliseconds;
+                using var stream = client.GetStream();
+                var buffer = new byte[256];
+                var read = stream.Read(buffer, 0, buffer.Length);
+                return (read > 0
+                    ? Encoding.ASCII.GetString(buffer, 0, read).TrimEnd('\r', '\n')
+                    : string.Empty, true);
+            }
+            catch
+            {
+                // The dial answered; only the banner read failed.
+                return (string.Empty, true);
+            }
         }
         catch
         {
-            // A connect that refused/ timed out is closed; a read failure after
-            // a successful connect is treated as open with no banner, matching
-            // the documented behavior.
-            return client is { Connected: true } ? (string.Empty, true) : (string.Empty, false);
+            return (string.Empty, false);
         }
         finally
         {
