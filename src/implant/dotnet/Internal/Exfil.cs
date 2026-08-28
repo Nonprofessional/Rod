@@ -18,7 +18,7 @@ namespace Rod.Implant.Internal;
 //   exfil.stage  [<name>]         optional name filter; lists staged entries
 //
 // As with the other reference handlers, this performs no evasion, no
-// obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
+// obfuscation, and no destructive behavior (architecture.md
 // Sec 7). The operator is responsible for targeting only systems they are
 // authorized to test.
 

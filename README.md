@@ -24,8 +24,7 @@ implant-initiated connections.
 
 Rod is remote-code-execution infrastructure. It must **only** be used against
 systems and networks you own or are **expressly authorized** to test. Unauthorized
-use is illegal in most jurisdictions. Before you use any of this, read
-[RESPONSIBLE-USE.md](RESPONSIBLE-USE.md).
+use is illegal in most jurisdictions.
 
 ---
 

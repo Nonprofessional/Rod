@@ -12,8 +12,7 @@ over admin channels), persistence (Run key / scheduled tasks / services / cron
 store (architecture.md Sec 10.1).
 
 It performs **no evasion, no obfuscation, and no destructive behavior**
-([RESPONSIBLE-USE.md](../../../RESPONSIBLE-USE.md),
-[architecture.md Sec 7](../../../docs/architecture.md)); keyboard capture and
+([architecture.md Sec 7](../../../docs/architecture.md)); keyboard capture and
 LSASS dumping stay out-of-tree by the Sec 13 boundary. It exists to prove the
 end-to-end slice -- enroll, beacon, task -- against the real teamserver and to
 give the .NET build unit (`DotNetBuildUnit` in `Rod.BuildPipeline`)

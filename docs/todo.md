@@ -22,9 +22,8 @@ instead of code are first-class items here, equal to features.
 Production use is the driver now: the gap between the single-host
 rehearsal and pointing Rod at a client network closed the same way --
 the multi-host rehearsal walk, the install and recovery record, and the
-pre-engagement readiness gate all shipped, and their records are the
-commits, [operations/rehearsal.md](operations/rehearsal.md),
-[operations/teamserver.md](operations/teamserver.md), and
-[operations/readiness.md](operations/readiness.md). The gate is the
-standing pre-engagement form; new work here starts from a gap it
-surfaces.
+install and recovery record, and the engagement description field all
+shipped, and their records are the commits,
+[operations/rehearsal.md](operations/rehearsal.md) and
+[operations/teamserver.md](operations/teamserver.md); new work here
+starts from a gap an engagement surfaces.

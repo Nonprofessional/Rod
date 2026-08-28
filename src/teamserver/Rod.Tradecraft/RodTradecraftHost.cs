@@ -227,7 +227,7 @@ public static class RodTradecraftHost
         // Evasion verbs load the same way: a placeholder per verb so the registry
         // lists the full evasion set, leaving any caller-supplied override in
         // place. Evasion is a sensitive category (architecture.md Sec 10.2,
-        // Sec 13, RESPONSIBLE-USE.md): concrete behavior is out-of-tree, supplied
+        // Sec 13): concrete behavior is out-of-tree, supplied
         // as opt-in modules, and the reference implants ship none. Unlike the
         // recon, lateral, persist, collect, and exfil verbs these are not gated
         // to a class -- that decision belongs to the live task path, not to this
@@ -240,7 +240,7 @@ public static class RodTradecraftHost
         // Exploit verbs load the same way: a placeholder per verb so the registry
         // lists the full exploit set, leaving any caller-supplied override in
         // place. Exploit is a sensitive category (architecture.md Sec 10.2,
-        // Sec 13, RESPONSIBLE-USE.md): concrete behavior is out-of-tree, supplied
+        // Sec 13): concrete behavior is out-of-tree, supplied
         // as opt-in modules, and the reference implants ship none. Like the
         // evasion verbs these are not gated to a class -- that decision belongs to
         // the live task path, not to this contract milestone.

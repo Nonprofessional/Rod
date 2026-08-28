@@ -2,7 +2,7 @@
 // fetches a built stage-2 payload from the teamserver, verifies it against the
 // sha256 baked at build time, and runs it; the stage-2 then spends the stager
 // token at its own enroll. It is a benign reference: no evasion, no
-// obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
+// obfuscation, and no destructive behavior (architecture.md
 // Sec 7). The whole program is one fetch-and-exec -- the smallest footprint a
 // first-stage loader can honestly have: no protocol bindings, no packages, no
 // key material (the deployment credential arrives at run time, exactly as the

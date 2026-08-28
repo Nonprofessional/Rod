@@ -19,9 +19,9 @@ namespace Rod.Implant.Internal;
 // linkage -- and mirrors how the recon verbs take their target in arguments.
 //
 // As with the other reference handlers, this performs no evasion, no
-// obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
+// obfuscation, and no destructive behavior (architecture.md
 // Sec 7). The operator is responsible for targeting only systems they are
-// authorized to test (RESPONSIBLE-USE.md).
+// authorized to test.
 
 internal static class Lateral
 {

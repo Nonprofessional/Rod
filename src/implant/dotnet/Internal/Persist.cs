@@ -30,7 +30,7 @@ namespace Rod.Implant.Internal;
 //
 // As with the other reference handlers, this performs no evasion, no
 // obfuscation, and no destructive behavior beyond installing or removing the
-// requested entry (RESPONSIBLE-USE.md, architecture.md Sec 7). The operator is
+// requested entry (architecture.md Sec 7). The operator is
 // responsible for targeting only systems they are authorized to test.
 
 internal static class Persist

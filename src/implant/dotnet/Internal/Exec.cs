@@ -19,9 +19,9 @@ namespace Rod.Implant.Internal;
 //
 // These are benign reference handlers: they shell out to the platform shell
 // and documented administration tools only. They perform no evasion, no
-// obfuscation, and no destructive behavior (RESPONSIBLE-USE.md, architecture.md
+// obfuscation, and no destructive behavior (architecture.md
 // Sec 7); the operator is responsible for targeting only systems they are
-// authorized to test (RESPONSIBLE-USE.md).
+// authorized to test.
 
 /// <summary>
 /// Carries the inputs the lateral.move handler needs to derive a child implant

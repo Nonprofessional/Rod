@@ -21,7 +21,7 @@ namespace Rod.Implant.Internal;
 //
 // As with the other reference handlers, these perform no evasion, no
 // obfuscation, and no destructive behavior beyond the one process the
-// operator names (RESPONSIBLE-USE.md, architecture.md Sec 7). The operator
+// operator names (architecture.md Sec 7). The operator
 // is responsible for targeting only systems they are authorized to test.
 
 internal static class Proc

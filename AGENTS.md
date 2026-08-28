@@ -126,7 +126,7 @@ authoritative rule; this section summarizes it.
   contracts**: define their interface, registration, dispatch, and data model
   here; the concrete tradecraft lives in separate, opt-in, out-of-tree modules
   the operator supplies.
-- All work here assumes an authorized-use context; see RESPONSIBLE-USE.md. When
+- All work here assumes an authorized-use context. When
   in doubt about which side a technique falls on, default to out-of-tree and
   raise the question.
 

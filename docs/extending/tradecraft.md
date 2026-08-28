@@ -4,7 +4,7 @@ How a third party adds capabilities to Rod without touching the core tree --
 including the sensitive categories (evasion, exploit), which exist in the
 platform as **contracts only**: the core ships their interfaces, registration,
 dispatch, and data shapes, and supplies no concrete techniques
-([architecture.md Sec 13](../architecture.md), [RESPONSIBLE-USE.md](../../RESPONSIBLE-USE.md)).
+([architecture.md Sec 13](../architecture.md)).
 What a module does on the target is the module author's responsibility and
 must stay within the authorization the operator holds.
 
@@ -248,5 +248,4 @@ standard, documented, mainstream techniques ship in the reference implant;
 in-the-wild zero-days, weaponized PoCs, and novel detection-evasion live in
 modules like yours. When unsure which side a technique falls on, keep it
 out-of-tree -- tightening later is cheap; loosening under pressure is how the
-line erodes. All use assumes an authorized context
-([RESPONSIBLE-USE.md](../../RESPONSIBLE-USE.md)).
+line erodes.

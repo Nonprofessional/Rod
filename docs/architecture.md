@@ -139,7 +139,7 @@ in-house. The dependency rule is enforced by architecture tests.
   from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
   committed generated code), and `DotNetBuildUnit` bakes the per-implant
   profile in at compile time. It performs no evasion and no obfuscation
-  (RESPONSIBLE-USE.md, Sec. 7); the in-repo tradecraft it carries is bounded by
+  (Sec. 7); the in-repo tradecraft it carries is bounded by
   Sec 13. The wire protocol is the language-neutral product, so a community
   implant in Go, C, or Nim builds against the same contract without coupling
   the teamserver to its language (Sec 12.2).
@@ -934,7 +934,7 @@ the recon, lateral, persist, collect, and exfil verbs they are **not** gated to 
 class in `ImplantClassCapabilities` (Sec 5.2): evasion is contract and dispatch
 only -- which class an evasion module runs on is decided when an operator deploys
 the out-of-tree module, not by a baked-in class rule. Their concrete behavior is
-out-of-tree tradecraft (Sec 10.2, Sec 13, AGENTS.md Sec 7, RESPONSIBLE-USE.md):
+out-of-tree tradecraft (Sec 10.2, Sec 13, AGENTS.md Sec 7):
 the core ships no bypass techniques or weaponized code, so each verb runs only
 when an operator supplies an out-of-tree module for it.
 
@@ -946,7 +946,7 @@ evasion verbs they are **not** gated to a class in `ImplantClassCapabilities`
 (Sec 5.2): exploit is contract and dispatch only -- which class an exploit
 module runs on is decided when an operator deploys the out-of-tree module, not by
 a baked-in class rule. Their concrete behavior is out-of-tree tradecraft
-(Sec 10.2, Sec 13, AGENTS.md Sec 7, RESPONSIBLE-USE.md): the core ships no
+(Sec 10.2, Sec 13, AGENTS.md Sec 7): the core ships no
 weaponized exploit code or proof-of-concepts, so each verb runs only when an
 operator supplies an out-of-tree module for it.
 
@@ -1241,7 +1241,7 @@ pressure is how the line erodes.
   data models; the concrete tradecraft is supplied as separate, opt-in,
   out-of-tree modules the operator deploys. The core ships none of it.
 - All use assumes an authorized context; see
-  [RESPONSIBLE-USE.md](../RESPONSIBLE-USE.md).
+ .
 
 ## 14. Capability bar (design aspiration)
 

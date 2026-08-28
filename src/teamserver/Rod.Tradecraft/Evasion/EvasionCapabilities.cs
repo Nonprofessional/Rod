@@ -11,7 +11,7 @@ namespace Rod.Tradecraft.Evasion;
 /// </summary>
 /// <remarks>
 /// Evasion is a sensitive category (architecture.md Sec 10.2, Sec 13,
-/// RESPONSIBLE-USE.md, AGENTS.md Sec 7): the core repository defines the
+/// AGENTS.md Sec 7): the core repository defines the
 /// contract -- the interfaces, registration, dispatch, and data shapes -- and
 /// supplies no concrete bypass techniques, weaponized code, or in-the-wild
 /// proof-of-concepts. Concrete evasion behavior lives in separate, opt-in,

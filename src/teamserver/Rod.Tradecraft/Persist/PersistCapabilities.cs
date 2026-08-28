@@ -13,7 +13,7 @@ namespace Rod.Tradecraft.Persist;
 /// Concrete persistence behavior is not part of this repository (architecture.md
 /// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as an out-of-tree
 /// module that registers for one of these verbs. The reference implants ship no
-/// persistence (architecture.md Sec 5, RESPONSIBLE-USE.md). Here they are
+/// persistence (architecture.md Sec 5). Here they are
 /// descriptors only -- enough for the registry to know each verb exists. Each
 /// state-changing verb carries OPSEC attributes so operators and tradecraft
 /// filters can surface or suppress it (architecture.md Sec 7): <see cref="Install"/>

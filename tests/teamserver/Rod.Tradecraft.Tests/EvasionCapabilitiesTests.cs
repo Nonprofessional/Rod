@@ -26,7 +26,7 @@ namespace Rod.Tradecraft.Tests;
 /// These tests are the acceptance criteria in code: an out-of-tree module
 /// that registers for an evasion verb is the authority for it and is dispatched
 /// through the contract. Evasion is a sensitive category (architecture.md Sec 13,
-/// RESPONSIBLE-USE.md): the core ships no concrete behavior, only the contract,
+/// Sec 13): the core ships no concrete behavior, only the contract,
 /// registration, and dispatch exercised here.
 /// </remarks>
 public class EvasionCapabilitiesTests

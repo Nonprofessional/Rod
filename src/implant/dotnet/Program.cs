@@ -2,7 +2,7 @@
 // into an engagement, opens the mTLS beacon stream, and runs the standard-
 // category capability verbs the teamserver dispatches (architecture.md Sec 5,
 // Sec 10.1). It is a benign reference: no evasion, no obfuscation, and no
-// destructive behavior (RESPONSIBLE-USE.md, architecture.md Sec 7); keyboard
+// destructive behavior (architecture.md Sec 7); keyboard
 // capture and LSASS dumping stay out-of-tree by the Sec 13 boundary. It proves
 // the end-to-end slice -- enroll, beacon, task -- against the real teamserver
 // and gives the .NET build unit something real to compile.

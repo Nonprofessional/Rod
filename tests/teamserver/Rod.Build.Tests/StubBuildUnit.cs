@@ -13,7 +13,7 @@ namespace Rod.Build.Tests;
 ///
 /// It emits a deterministic, benign artifact: a UTF-8 manifest of the baked-in
 /// config followed by a fixed, clearly-fake marker byte sequence. There is no
-/// executable logic in the output -- by design (RESPONSIBLE-USE.md, AGENTS.md
+/// executable logic in the output -- by design (AGENTS.md
 /// Sec 7). The per-implant key never appears in the manifest; only its
 /// fingerprint does, so a captured artifact does not leak the key material it
 /// was built with.

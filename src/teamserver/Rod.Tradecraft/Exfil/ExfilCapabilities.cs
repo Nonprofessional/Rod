@@ -14,7 +14,7 @@ namespace Rod.Tradecraft.Exfil;
 /// Concrete exfiltration behavior is not part of this repository (architecture.md
 /// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as an out-of-tree
 /// module that registers for one of these verbs. The reference implants ship no
-/// exfiltration (architecture.md Sec 5, RESPONSIBLE-USE.md). Here they are
+/// exfiltration (architecture.md Sec 5). Here they are
 /// descriptors only -- enough for the registry to know each verb exists.
 /// <see cref="Push"/> carries a <c>touches-network</c> OPSEC attribute because it
 /// transfers data over the C2 channel (architecture.md Sec 7), like the
