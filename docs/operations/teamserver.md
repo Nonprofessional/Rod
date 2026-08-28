@@ -310,10 +310,21 @@ sudo systemctl start rod-teamserver
 Accept: a pre-backup operator cookie authenticates the first request
 after the restore, and the engagement roster reads back. The failure
 modes are structural, not flaky: the dump without the key ring leaves
-the old cookie unreadable (401), the key ring without the dump fails
-the per-request stamp check against the credential store (401), and the
+the old cookie unreadable (401), the key ring without the dump fails the
+per-request stamp check against the credential store (401), and the
 data directory without the database orphans the audit chain the report
 reads.
+
+The restore has its own health check: at startup the teamserver verifies
+the database against the persistence model -- every mapped table present
+and carrying its primary key -- and aborts the boot naming the offending
+tables otherwise. This closes a failure class the win-x64 surface walk
+caught live: a database carrying every table and row but none of its
+constraints boots apparently healthy and dies at the first task
+dispatch, where the replay-nonce reservation's ON CONFLICT meets its
+missing arbiter. Verify a restore the same way the install verifies a
+first boot: `systemctl is-active` plus one login, and the schema guard
+has already vouched for the store underneath.
 
 ## Production posture
 

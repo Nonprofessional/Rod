@@ -20,35 +20,16 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features.
 
 Production use is the driver now: the gap between the single-host
-rehearsal and pointing Rod at a client network closed the same way --
-the multi-host rehearsal walk, the install and recovery record, and the
-install and recovery record, and the engagement description field all
-shipped, and their records are the commits,
-[operations/rehearsal.md](operations/rehearsal.md) and
-[operations/teamserver.md](operations/teamserver.md); new work here
-starts from a gap an engagement surfaces.
+rehearsal and pointing Rod at a client network closed the same way -- the
+multi-host rehearsal walk, the install and recovery record, and the
+engagement description field all shipped, and their records are the
+commits, [operations/rehearsal.md](operations/rehearsal.md) and
+[operations/teamserver.md](operations/teamserver.md). The pre-production
+arc's two carry-overs closed with it: the win-x64 surface pass ran
+against a live implant on a real Windows host and shipped or recorded
+every finding (rehearsal.md Sec 5), and the engagement-CA rotation was
+drilled mid-engagement with its blast radius and re-entry path written
+into the runbook (rehearsal.md Sec 6). New work here starts from a gap an
+actual engagement surfaces.
 
-## Surface hardening (architecture.md Sec 9, Sec 13)
-
-- [ ] **Walk the win-x64 surface with an adversarial eye.** The
-      multi-host walk was the first real Windows round-trip and it
-      immediately caught the SChannel client-cert failure -- a class of
-      bug Linux runs never see. The platform-specific paths (filesystem
-      verbs on real NTFS, persistence surfaces, token and lateral verbs
-      against a real desktop) have one walk and no review; the earlier
-      adversarial surface review passed the Linux shape only. Pass the
-      win-x64 paths once the same way, and ship or file every finding.
-      _AC:_ every Windows-only path in the reference implant has been
-      exercised on a real Windows host, and each finding is a commit or a
-      filed issue -- not a note.
-- [ ] **Drill the engagement-CA rotation.** Rotation is documented as file
-      replacement plus restart, but what that does to a live engagement
-      has never been executed: leafs signed by the retired CA fail the
-      mTLS handshake mid-session, and re-enrollment needs a fresh stager
-      token because the original was spent. Walk one rotation on the
-      installed shape -- swap the CA under a live implant, watch its
-      egress walk, re-token and re-enroll it -- and write the true
-      procedure and its blast radius into the runbooks.
-      _AC:_ a mid-engagement CA swap is executed on the installed shape,
-      and the runbook records what survives, what breaks, and the
-      re-entry path for live implants.
+No open items.

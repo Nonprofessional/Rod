@@ -7,14 +7,17 @@ redirector front with a repoint, a mid-engagement teamserver restart with
 audit-chain recovery, and a teardown to report
 ([architecture.md](../architecture.md) Sec 8, Sec 9, Sec 12.1).
 
-Two walks live here. The single-host walk (Sec 1-3) is the fast
+Four procedures live here. The single-host walk (Sec 1-3) is the fast
 pre-engagement baseline: it was executed end to end on one Linux host
 (WSL), every command is real, and the acceptance evidence quoted is what
 the run produced. The multi-host walk (Sec 4) composes the production
 shape -- a TLS-terminating edge in front of the certificate-less ingress,
 the redirector on its own host carrying the mTLS beacon across a network
 hop, and a pipeline-built win-x64 implant checking in from a real Windows
-machine -- and it was executed the same way. Scale the addresses to the
+machine -- and it was executed the same way. The win-x64 surface pass
+(Sec 5) turns the same shape against every Windows-only implant path with
+an adversarial eye, and the CA rotation drill (Sec 6) swaps the engagement
+CA under live implants. Scale the addresses to the
 engagement's real infrastructure; the lifecycle steps do not change.
 
 ## 1. Provision the infrastructure
@@ -299,3 +302,97 @@ The stage-2 build names the edge in `Endpoint` and the fallback front in
   round-trip when the leaf is paired at enroll -- rides in the commit
   that records this walk. That is the standing argument for walking the
   composed system on the real shape before it faces a client network.
+
+## 5. Walk the win-x64 surface with an adversarial eye
+
+The multi-host walk proves the win-x64 round-trip; the surface pass turns
+the same shape against every Windows-only path the reference implant
+carries (architecture.md Sec 10.1): the cmd shell, NTFS file transfer in
+both directions, the toolhelp process listing and termination, the GDI
+screenshot, the whoami token context, schtasks remote execution, the
+runkey/schtasks/service persistence surfaces, and the cmdkey listing.
+Each verb ran as tasking against a live implant on a real Windows host,
+and each outcome was checked against the host's own view -- the registry
+after `persist.install runkey`, the process table after `recon.ps`, the
+sha256 of a 2 MiB `file.pull` artifact against its source.
+
+Executed on the installed shape against a pipeline-built win-x64 implant,
+the pass caught four defects -- each fixed in the commit that records the
+walk -- and one environmental landmine:
+
+- `recon.ps` listed nothing yet reported Succeeded. The inline szExeFile
+  buffer marshaled its `char` elements as one byte each (CharSet does not
+  reach InlineArray elements), sizing PROCESSENTRY32W at 304 instead of
+  568; `Process32FirstW` refused the undersized entry with
+  ERROR_BAD_LENGTH. The buffer element is now `ushort`. After the fix the
+  same host listed 342 processes with users and images.
+- `recon.service` reported every client-speaks-first service (the mTLS
+  beacon, plain HTTP, Postgres) closed on Windows. The handler judged
+  openness by `TcpClient.Connected` after a failed banner read; a timed-out
+  receive clears it on Windows and keeps it on Linux. Openness is now
+  decided by the connect alone. After the fix the beacon listener reports
+  open with no banner -- the documented silent-server case.
+- `lateral.exec_remote` and the schtasks/service persistence installs
+  passed multi-word payloads to schtasks and sc unquoted, so every real
+  command parsed as unknown switches (`invalid option '/c'`). The `/tr`,
+  `/tn`, and `binPath=` values are quoted now. Verified by the failure
+  moving to the access-denied an unelevated process genuinely owes.
+- The installed teamserver's database was missing every primary key,
+  foreign key, and index -- healthy at the console, dead at the first
+  task dispatch, because the replay-nonce reservation's ON CONFLICT needs
+  its arbiter (architecture.md Sec 9). Repaired live, and a startup schema
+  guard now aborts the boot naming the offending tables
+  ([teamserver.md](teamserver.md), backup and restore).
+- Platform facts to plan around, not defects: an onlogon-trigger schtasks
+  install and `schtasks /s` remote execution require an elevated implant;
+  runkey, the recon set, and the file/shell surface work per-user. The
+  service mechanism fails cleanly with access denied when unelevated.
+
+## 6. Rotate the engagement CA mid-engagement
+
+Rotation is file replacement plus restart (Sec 1) -- what that does to a
+live engagement only shows when executed against one. The drill runs on
+the installed shape with tasking current: implants beaconing, then the
+swap, then the re-entry (architecture.md Sec 9).
+
+1. Mint the successor CA with the Sec 1 command, with a fresh subject so
+   logs distinguish the two CAs.
+2. Swap and restart -- the successor lands under the installed paths
+   `appsettings.Production.json` already names, and the restart is the
+   cut point:
+
+   ```
+   sudo cp ca2.crt /etc/rod/pki/ca.crt
+   sudo cp ca2.key /etc/rod/pki/ca.key
+   sudo chown root:rod /etc/rod/pki/ca.crt /etc/rod/pki/ca.key
+   sudo chmod 640 /etc/rod/pki/ca.crt /etc/rod/pki/ca.key
+   sudo systemctl restart rod-teamserver
+   ```
+3. Re-enter the fleet: mint a fresh stager token per surviving implant
+   (the original was spent at its enroll), and redeploy through the
+   stager pinning the successor -- `./Rod.Stager.exe -token <new-secret>
+   ... -ca-cert ca2.crt`. Old stage-2 artifacts stay valid: their baked
+   enroll endpoint is the certificate-less ingress and the CA pin arrives
+   at run time through the stager, so no rebuild is needed.
+
+Blast radius, measured on the executed drill (two live implants, tasking
+current):
+
+- Every live implant died at its next handshake and never recovered: the
+  implant's pinned incumbent CA rejects the server's successor chain
+  (`RemoteCertificateValidationCallback`), and its incumbent-signed leaf
+  would be refused server-side even if the pin matched. The egress walk
+  cycles its baked endpoints forever -- rotation is not a front burn, and
+  no fallback survives it.
+- Sessions went stale and the sweeper closed them; the roster emptied
+  itself with no operator action.
+- Untouched: operator cookies (the DataProtection key ring is not CA
+  state), engagements, tasks, artifacts (byte-exact), the audit chain,
+  and the enroll ingress, which kept answering on plain HTTP.
+- Re-entry verified end to end: a fresh token plus the successor pin
+  enrolled a new implant whose beacon completed mTLS against the rotated
+  CA, and `shell.exec` round-tripped after the swap.
+
+Plan the cut accordingly: rotation is scheduled downtime for implant
+presence. Budget one fresh stager token per implant that must come back,
+and treat every pre-rotation leaf as dead the moment the service restarts.
