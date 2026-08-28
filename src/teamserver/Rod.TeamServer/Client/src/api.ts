@@ -6,6 +6,7 @@
 export interface Engagement {
   engagementId: string
   name: string
+  description: string | null
   ownerId: string
   ownerHandle: string
   createdAt: string
@@ -126,6 +127,7 @@ export async function getSessionOperator(): Promise<SessionOperator> {
 
 export interface CreateEngagementInput {
   name: string
+  description?: string
 }
 
 export async function listEngagements(): Promise<Engagement[]> {

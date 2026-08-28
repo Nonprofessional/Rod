@@ -22,6 +22,7 @@ internal sealed class EngagementConfiguration : IEntityTypeConfiguration<Engagem
             .HasColumnName("engagement_id");
 
         builder.Property(e => e.Name).HasColumnName("name").HasMaxLength(512).IsRequired();
+        builder.Property(e => e.Description).HasColumnName("description");
         builder.Property(e => e.OwnerId)
             .HasConversion(IdConverters.OperatorId)
             .HasColumnName("owner_id");

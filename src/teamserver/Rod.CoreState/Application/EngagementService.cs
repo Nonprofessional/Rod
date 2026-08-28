@@ -46,12 +46,14 @@ public sealed class EngagementService
         // exists, so this is a resolve-for-handle, not a get-or-create.
         var owner = await _operators.GetOrThrowAsync(command.OwnerId, cancellationToken);
 
-        var engagement = Engagement.Create(EngagementId.New(), command.Name, owner.Id, now);
+        var engagement = Engagement.Create(
+            EngagementId.New(), command.Name, owner.Id, now, command.Description);
         await _engagements.SaveAsync(engagement, cancellationToken);
 
         return new EngagementCreated(
             engagement.Id,
             engagement.Name,
+            engagement.Description,
             owner.Id,
             owner.Handle,
             engagement.CreatedAt);
@@ -105,12 +107,13 @@ public sealed class EngagementService
 /// Request to create an engagement. The owner is the authenticated operator;
 /// only the name is supplied by the caller.
 /// </summary>
-public sealed record CreateEngagementCommand(OperatorId OwnerId, string Name);
+public sealed record CreateEngagementCommand(OperatorId OwnerId, string Name, string? Description = null);
 
 /// <summary>Result of creating an engagement.</summary>
 public sealed record EngagementCreated(
     EngagementId EngagementId,
     string Name,
+    string? Description,
     OperatorId OwnerId,
     string OwnerHandle,
     DateTimeOffset CreatedAt);

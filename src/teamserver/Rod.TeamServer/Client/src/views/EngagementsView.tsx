@@ -13,6 +13,7 @@ export function EngagementsView() {
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -34,8 +35,9 @@ export function EngagementsView() {
   const onCreate = async (event: React.FormEvent) => {
     event.preventDefault()
     try {
-      await createEngagement({ name })
+      await createEngagement({ name, description: description || undefined })
       setName('')
+      setDescription('')
       await refresh()
     } catch (e) {
       setError(String(e))
@@ -53,6 +55,11 @@ export function EngagementsView() {
           onChange={(e) => setName(e.target.value)}
           required
         />
+        <input
+          placeholder="Description (optional)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
         <button type="submit" disabled={busy}>
           Create
         </button>
@@ -67,6 +74,7 @@ export function EngagementsView() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Description</th>
               <th>Owner</th>
               <th>Created</th>
             </tr>
@@ -77,6 +85,7 @@ export function EngagementsView() {
                 <td>
                   <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
                 </td>
+                <td className="muted">{e.description ?? ''}</td>
                 <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
                 <td>{new Date(e.createdAt).toLocaleString()}</td>
               </tr>

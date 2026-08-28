@@ -55,6 +55,7 @@ public static class EngagementEndpoints
             body.Add(new EngagementResponse(
                 e.Id.ToString(),
                 e.Name,
+                e.Description,
                 e.OwnerId.ToString(),
                 owner?.Handle ?? string.Empty,
                 e.CreatedAt,
@@ -81,12 +82,13 @@ public static class EngagementEndpoints
             return Results.BadRequest(new Problem("Engagement name is required."));
 
         var created = await service.CreateEngagementAsync(
-            new CreateEngagementCommand(ownerId.Value, body.Name),
+            new CreateEngagementCommand(ownerId.Value, body.Name, body.Description),
             cancellationToken);
 
         var response = new EngagementResponse(
             created.EngagementId.ToString(),
             created.Name,
+            created.Description,
             created.OwnerId.ToString(),
             created.OwnerHandle,
             created.CreatedAt,
@@ -236,11 +238,12 @@ public static class EngagementEndpoints
 
     // The owner is the authenticated operator; only the engagement name is
     // supplied by the caller.
-    public sealed record CreateEngagementRequest(string Name);
+    public sealed record CreateEngagementRequest(string Name, string? Description = null);
 
     public sealed record EngagementResponse(
         string EngagementId,
         string Name,
+        string? Description,
         string OwnerId,
         string OwnerHandle,
         DateTimeOffset CreatedAt,

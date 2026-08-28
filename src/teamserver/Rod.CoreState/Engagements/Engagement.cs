@@ -10,6 +10,14 @@ public sealed class Engagement
 {
     public EngagementId Id { get; }
     public string Name { get; }
+
+    /// <summary>
+    /// The engagement's free-text description: the working record the crew
+    /// starts the engagement with, set once at creation. Optional and never
+    /// interpreted by the framework.
+    /// </summary>
+    public string? Description { get; }
+
     public OperatorId OwnerId { get; }
     public DateTimeOffset CreatedAt { get; }
 
@@ -23,12 +31,14 @@ public sealed class Engagement
     private Engagement(
         EngagementId id,
         string name,
+        string? description,
         OperatorId ownerId,
         DateTimeOffset createdAt,
         RoeProfile? roe = null)
     {
         Id = id;
         Name = name;
+        Description = description;
         OwnerId = ownerId;
         CreatedAt = createdAt;
         Roe = roe ?? RoeProfile.Unrestricted;
@@ -43,12 +53,14 @@ public sealed class Engagement
         EngagementId id,
         string name,
         OperatorId ownerId,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        string? description = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Engagement name is required.", nameof(name));
 
-        return new Engagement(id, name.Trim(), ownerId, createdAt);
+        var trimmedDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        return new Engagement(id, name.Trim(), trimmedDescription, ownerId, createdAt);
     }
 
     /// <summary>
