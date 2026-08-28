@@ -195,11 +195,41 @@ rod-teamserver`, then accept: `systemctl is-active` reports active and
 debugging a crash-looping start, clear the rate limit with `systemctl
 reset-failed rod-teamserver` before starting again.
 
-One install-shape fact to know: payload builds inside the installed
-service spawn `dotnet` from PATH and restore into the service user's
-NuGet cache. A clean deploy host has neither -- either install the SDK
-and warm the cache, or accept that payload builds happen on a staging
-checkout and the deploy host only runs them.
+### Build sources and the operator UI
+
+Two more install-shape facts, both walked end to end on the supervised
+install:
+
+**Payload builds compile from source at request time**, and the install
+tree has no repo above it, so the deployment names its build source trees
+with `Build:ImplantSourceDirectory` / `Build:StagerSourceDirectory`
+(a configured-but-missing directory fails startup loudly). The minimal
+deployed tree both keys can point at:
+
+```
+/opt/rod/src/
+  Directory.Build.props  Directory.Packages.props  global.json
+  src/implant/dotnet/    src/stager/dotnet/        # build sources, no bin/obj
+  src/teamserver/Rod.Protocol/protos/              # the wire contract the implant compiles against
+  tests/                 # the repo-root marker the build unit walks up to
+```
+
+The service user also needs a `dotnet` on PATH and a warm NuGet cache
+(`/var/lib/rod/.nuget/packages`) -- the build spawns `dotnet publish`
+and restores into that cache. On a host without registry egress, copy
+the cache from the build host at install time.
+
+Acceptance from the executed walk: a stage-2 built through the
+supervised install returned its fingerprint, and the downloaded
+artifact's sha256 matched it exactly.
+
+**The operator UI is a build-time bundle**: with Node 22.12+ on the
+build host, `npm ci && npm run build` in
+`src/teamserver/Rod.TeamServer/Client` emits `wwwroot/`, and the
+publish carries it -- without Node the install runs API-only. The
+executed walk logged into the installed UI, listed the engagements,
+opened one, and saw the live presence channel mark its own operator
+session online.
 
 ### Secrets
 
