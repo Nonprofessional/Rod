@@ -305,7 +305,7 @@ internal static class Proc
             var sb = new StringBuilder(64);
             for (var i = 0; i < ExeFileChars; i++)
             {
-                var c = entry.ExeFile[i];
+                var c = (char)entry.ExeFile[i];
                 if (c == '\0')
                     break;
                 sb.Append(c);
@@ -329,11 +329,15 @@ internal static class Proc
             public uint Flags;
             public ExeFileBuffer ExeFile;
 
-            // MAX_PATH wide chars inline, the native szExeFile tail.
+            // MAX_PATH wide chars inline, the native szExeFile tail. The
+            // element is ushort, not char: a char element marshals as one byte
+            // even under CharSet.Unicode, which sizes the struct at 304 instead
+            // of 568 and makes Process32FirstW fail with ERROR_BAD_LENGTH --
+            // the listing then comes back empty yet reports Succeeded.
             [InlineArray(ExeFileChars)]
             internal struct ExeFileBuffer
             {
-                internal char C0;
+                internal ushort C0;
             }
         }
 
