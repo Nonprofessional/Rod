@@ -201,6 +201,20 @@ public sealed class TaskService
                 $"Task refused by the engagement's rules of engagement: {roeViolation}.");
         }
 
+        // A closed engagement (frozen for close-out or retired) accepts no new
+        // tasking (architecture.md Sec 2 step 10): the exported evidence
+        // package must be the final account of what was tasked. Checked after
+        // the ROE gate -- the same engagement object, resolved once -- but
+        // before the task is queued.
+        if (engagement?.IsClosed == true)
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.EngagementClosed,
+                $"Engagement {engagement.Id} is closed for close-out" +
+                (engagement.IsRetired ? " (retired)" : " (frozen)") +
+                $"; it accepts no new tasking.");
+        }
+
         var task = Task.Create(
             TaskId.New(),
             command.EngagementId,

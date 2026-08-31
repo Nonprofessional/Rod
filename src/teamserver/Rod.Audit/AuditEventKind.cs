@@ -188,4 +188,34 @@ public enum AuditEventKind
     /// discipline the channel's own output follows.
     /// </summary>
     RelayClosed,
+
+    /// <summary>
+    /// An operator froze the engagement for close-out (architecture.md Sec 2
+    /// step 10). From this event on, the engagement accepts no new tasking and
+    /// no new deployments; the payload carries the freeze timestamp, and the
+    /// outcome is the engagement id. The first event of the close-out arc that
+    /// ends with <see cref="EvidenceExported"/> and
+    /// <see cref="EngagementRetired"/>.
+    /// </summary>
+    EngagementFrozen,
+
+    /// <summary>
+    /// An operator exported the engagement's evidence package (architecture.md
+    /// Sec 11): the hash-chained audit trail, the artifacts, and the report as
+    /// one package that survives infrastructure teardown and re-verifies
+    /// offline. The payload carries the package's file counts; the outcome is
+    /// the exported trail's chain-head hash -- the digest that pins everything
+    /// the package carries. Written after the package is built, so it is not
+    /// part of the exported trail -- a later re-export carries it.
+    /// </summary>
+    EvidenceExported,
+
+    /// <summary>
+    /// An operator retired the engagement, completing its close-out
+    /// (architecture.md Sec 2 step 10): terminal. The payload carries the
+    /// retirement timestamp; the outcome is the engagement id. The trail --
+    /// including this event -- remains the durable, append-only account of the
+    /// engagement after its infrastructure is gone.
+    /// </summary>
+    EngagementRetired,
 }

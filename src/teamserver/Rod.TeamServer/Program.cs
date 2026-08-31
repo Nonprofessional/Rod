@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Rod.Audit;
 using Rod.Operators;
 using Rod.Operators.Auth;
 using Rod.Persistence;
@@ -6,6 +7,15 @@ using Rod.TeamServer;
 using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
+
+// The offline evidence verifier (architecture.md Sec 11): `--verify-evidence
+// <package.zip>` checks a closed engagement's exported package on a host with
+// no Rod infrastructure running. Handled before the host is built -- the
+// verifier needs no listeners, no stores, and no configuration.
+if (args is ["--verify-evidence", var packagePath])
+{
+    return await EvidenceVerifier.RunAsync(packagePath);
+}
 
 // The teamserver composition root (architecture.md Sec 4). This is
 // the single runnable .NET process: it wires the transport layer's services and
@@ -173,3 +183,4 @@ app.MapGet("/", async context =>
 });
 
 app.Run();
+return 0;

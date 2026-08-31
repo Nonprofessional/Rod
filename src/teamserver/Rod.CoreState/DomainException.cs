@@ -149,10 +149,18 @@ public enum TaskRejectionReason
     /// <summary>
     /// The task falls outside the engagement's rules-of-engagement scope
     /// (architecture.md Sec 9 -- ROE guardrails): the verb is not a permitted
-    /// verb or the implant is not a permitted target. Refused before the task
-    /// is queued; the transport records the refusal naming the violated rule.
+    /// verb or the implant is not a permitted target. Refused before the task is
+    /// queued; the transport records the refusal naming the violated rule.
     /// </summary>
     RoeViolation,
+
+    /// <summary>
+    /// The engagement has been frozen for close-out or retired (architecture.md
+    /// Sec 2 step 10). A closed engagement accepts no new tasking; the issuance
+    /// is refused before the task is queued so the exported evidence package is
+    /// the final account of what was tasked.
+    /// </summary>
+    EngagementClosed,
 }
 
 /// <summary>
@@ -216,5 +224,20 @@ public sealed class InvalidParentImplantException : DomainException
         : base(message)
     {
         Reason = reason;
+    }
+}
+
+/// <summary>
+/// The engagement is closed for close-out -- frozen or retired (architecture.md
+/// Sec 2 step 10). Thrown by the deployment paths (enrollment, stager-token
+/// mint) so a closed engagement accepts no new implants; the caller maps it to
+/// a wire status. Distinct from the aggregate's own transition guards, which
+/// reject an out-of-order freeze or retire.
+/// </summary>
+public sealed class EngagementClosedException : DomainException
+{
+    public EngagementClosedException(string message)
+        : base(message)
+    {
     }
 }

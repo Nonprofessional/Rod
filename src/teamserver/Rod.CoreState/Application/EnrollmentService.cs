@@ -74,8 +74,18 @@ public sealed class EnrollmentService
         //    Throws StagerTokenRedeemException on failure; let it propagate.
         var redeemed = await _stagerTokens.RedeemAsync(command.StagerTokenSecret, now, cancellationToken);
 
-        // 2. Confirm the engagement still exists (it may have been torn down).
-        await _engagements.GetOrThrowAsync(redeemed.EngagementId, cancellationToken);
+        // 2. Confirm the engagement still exists (it may have been torn down),
+        //    and that it is open: a closed engagement (frozen for close-out or
+        //    retired) accepts no new deployments (architecture.md Sec 2 step 10),
+        //    so the exported evidence is the final implant inventory.
+        var engagement = await _engagements.GetOrThrowAsync(redeemed.EngagementId, cancellationToken);
+        if (engagement.IsClosed)
+        {
+            throw new EngagementClosedException(
+                $"Engagement {engagement.Id} is closed for close-out" +
+                (engagement.IsRetired ? " (retired)" : " (frozen)") +
+                "; it accepts no new enrollments.");
+        }
 
         // 3. Resolve and scope-check the parent when this is a child enrollment
         //    (architecture.md Sec 5.2). The child enrols into the parent's

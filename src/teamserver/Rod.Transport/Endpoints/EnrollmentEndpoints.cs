@@ -211,6 +211,14 @@ public static class EnrollmentEndpoints
             // it as a malformed enroll: the token is intact, but the request is bad.
             return Results.BadRequest(new Problem("Public key is not a recognizable SubjectPublicKeyInfo."));
         }
+        catch (EngagementClosedException ex)
+        {
+            // The token redeemed but its engagement is frozen for close-out or
+            // retired (architecture.md Sec 2 step 10): no new deployments. A
+            // 409, not the 401/BadToken shape -- the token was valid, and the
+            // operator driving the deployment needs the real cause.
+            return Results.Conflict(new Problem(ex.Message));
+        }
         catch (InvalidOperationException)
         {
             // The token redeemed but its engagement was since torn down.

@@ -1135,6 +1135,25 @@ scrape.
   startup, so a restarted teamserver continues each engagement's trail off its
   last stored event and the reloaded chain still verifies. This stands in for Postgres
   behind the same ports; a managed store slots in the same way.
+- **The close-out exports the evidence as one package.** A finished engagement
+  leaves behind a deliverable that must survive teardown and re-verify with no
+  Rod infrastructure running: `POST /engagements/{id}:evidence-package` writes a
+  ZIP carrying the full hash-chained trail (`audit.jsonl`, the store encoding),
+  the artifacts (`artifacts.jsonl`), and the report (`report.json`/`report.md`),
+  pinned by a `manifest.json` that records every other file's size and SHA-256
+  plus the event/artifact counts. The close-out path is ordered:
+  **freeze** (`:freeze`) stops new tasking, enrollments, and token mints so the
+  trail is final -- in-flight results still land, and re-export before retire
+  carries them; **export** builds and verifies the package server-side before it
+  leaves; **retire** (`:retire`) completes the close-out, terminal, and is
+  refused on an open engagement so the export cannot be skipped. Each step is an
+  audited operator event (`EngagementFrozen`, `EvidenceExported`, whose outcome
+  is the exported chain-head hash, `EngagementRetired`). Offline, the
+  teamserver binary itself re-verifies a package --
+  `Rod.TeamServer --verify-evidence <package.zip>` -- recomputing every digest,
+  re-running the chain check, and validating the artifact records, with no
+  listeners and no stores: the acceptance bar is that a closed engagement's
+  package re-verifies byte-exact on a host with nothing Rod running on it.
 
 ## 12. Technology stack and language boundaries
 

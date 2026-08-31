@@ -59,7 +59,9 @@ public static class EngagementEndpoints
                 e.OwnerId.ToString(),
                 owner?.Handle ?? string.Empty,
                 e.CreatedAt,
-                RoeProfileResponse.From(e.Roe)));
+                RoeProfileResponse.From(e.Roe),
+                e.FrozenAt,
+                e.RetiredAt));
         }
 
         return Results.Ok(body);
@@ -92,7 +94,9 @@ public static class EngagementEndpoints
             created.OwnerId.ToString(),
             created.OwnerHandle,
             created.CreatedAt,
-            RoeProfileResponse.From(RoeProfile.Unrestricted));
+            RoeProfileResponse.From(RoeProfile.Unrestricted),
+            FrozenAt: null,
+            RetiredAt: null);
 
         // The engagement's own creation is the trail's genesis link (architecture.md
         // Sec 11): attributed to the creating owner, carrying the
@@ -160,6 +164,12 @@ public static class EngagementEndpoints
             cancellationToken);
 
             return Results.Ok(response);
+        }
+        catch (EngagementClosedException ex)
+        {
+            // The engagement is frozen for close-out or retired: it mints no
+            // deployment tokens (architecture.md Sec 2 step 10).
+            return Results.Conflict(new Problem(ex.Message));
         }
         catch (InvalidOperationException)
         {
@@ -247,7 +257,9 @@ public static class EngagementEndpoints
         string OwnerId,
         string OwnerHandle,
         DateTimeOffset CreatedAt,
-        RoeProfileResponse Roe);
+        RoeProfileResponse Roe,
+        DateTimeOffset? FrozenAt = null,
+        DateTimeOffset? RetiredAt = null);
 
     // The ROE scope request: two allow-lists, each empty (or omitted) meaning
     // unrestricted on that dimension.

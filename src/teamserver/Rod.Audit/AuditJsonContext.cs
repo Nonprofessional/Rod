@@ -26,4 +26,7 @@ namespace Rod.Audit;
 [JsonSerializable(typeof(AuditEvent))]
 [JsonSerializable(typeof(Artifact))]
 [JsonSerializable(typeof(PayloadRecord))]
+[JsonSerializable(typeof(EvidencePackageHeader))]
+[JsonSerializable(typeof(EvidencePackageFile))]
+[JsonSerializable(typeof(EvidencePackageManifest))]
 internal sealed partial class AuditJsonContext : JsonSerializerContext;

@@ -14,18 +14,6 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
-## Close-out and release (architecture.md Sec 2, Sec 11)
-
-- [ ] **Export and verify the engagement evidence package.** The report
-      endpoint verifies the live chain, but nothing exports the evidence a
-      finished engagement must leave behind: the hash-chained audit trail,
-      the artifacts, and the report, as one package that survives
-      infrastructure teardown (Sec 14) and re-verifies offline. Add the
-      close-out path: freeze the engagement, export the package, verify it
-      against the chain, then retire the engagement.
-      _AC:_ a closed engagement's exported package re-verifies byte-exact
-      on a host with no Rod infrastructure running.
-
 ## Operational quality (architecture.md Sec 4, Sec 5)
 
 - [ ] **Run the implant end-to-end suite on a Windows runner.** CI proves

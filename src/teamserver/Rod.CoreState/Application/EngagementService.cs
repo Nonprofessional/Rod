@@ -61,7 +61,8 @@ public sealed class EngagementService
 
     /// <summary>
     /// Mints a stager token for an engagement, issued by its owner. The secret is
-    /// returned once; only the caller sees it.
+    /// returned once; only the caller sees it. A closed engagement (frozen for
+    /// close-out or retired) mints nothing -- it accepts no new deployments.
     /// </summary>
     public async Task<StagerTokenMinted> MintStagerTokenForOwnerAsync(
         MintStagerTokenCommand command,
@@ -70,6 +71,14 @@ public sealed class EngagementService
         var now = _clock.GetUtcNow();
 
         var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        if (engagement.IsClosed)
+        {
+            throw new EngagementClosedException(
+                $"Engagement {engagement.Id} is closed for close-out" +
+                (engagement.IsRetired ? " (retired)" : " (frozen)") +
+                "; it mints no deployment tokens.");
+        }
+
         var token = await _stagerTokens.MintAsync(engagement.Id, engagement.OwnerId, now, cancellationToken);
 
         return new StagerTokenMinted(
@@ -101,6 +110,44 @@ public sealed class EngagementService
 
         return new RoeApplied(engagement.Id, engagement.Roe);
     }
+
+    /// <summary>
+    /// Freezes the engagement for close-out (architecture.md Sec 2 step 10):
+    /// the first half of the close-out path. From here the engagement accepts
+    /// no new tasking and no new deployments, so its trail can be exported as
+    /// final evidence; the caller records the freeze in the audit trail.
+    /// </summary>
+    public async Task<EngagementFrozen> FreezeAsync(
+        FreezeEngagementCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _clock.GetUtcNow();
+
+        var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        engagement.Freeze(now);
+        await _engagements.SaveAsync(engagement, cancellationToken);
+
+        return new EngagementFrozen(engagement.Id, engagement.FrozenAt!.Value);
+    }
+
+    /// <summary>
+    /// Retires the engagement, completing the close-out (architecture.md Sec 2
+    /// step 10): terminal, and only reachable from the frozen state -- the
+    /// aggregate rejects retiring an open engagement so the evidence export
+    /// cannot be skipped. The caller records the retirement in the audit trail.
+    /// </summary>
+    public async Task<EngagementRetired> RetireAsync(
+        RetireEngagementCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _clock.GetUtcNow();
+
+        var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        engagement.Retire(now);
+        await _engagements.SaveAsync(engagement, cancellationToken);
+
+        return new EngagementRetired(engagement.Id, engagement.RetiredAt!.Value);
+    }
 }
 
 /// <summary>
@@ -123,6 +170,18 @@ public sealed record MintStagerTokenCommand(EngagementId EngagementId);
 
 /// <summary>Request to apply an engagement's rules-of-engagement profile.</summary>
 public sealed record ApplyRoeCommand(EngagementId EngagementId, RoeProfile Profile);
+
+/// <summary>Request to freeze an engagement for close-out.</summary>
+public sealed record FreezeEngagementCommand(EngagementId EngagementId);
+
+/// <summary>Request to retire an engagement, completing its close-out.</summary>
+public sealed record RetireEngagementCommand(EngagementId EngagementId);
+
+/// <summary>Result of freezing an engagement for close-out.</summary>
+public sealed record EngagementFrozen(EngagementId EngagementId, DateTimeOffset FrozenAt);
+
+/// <summary>Result of retiring an engagement.</summary>
+public sealed record EngagementRetired(EngagementId EngagementId, DateTimeOffset RetiredAt);
 
 /// <summary>Result of applying an ROE profile: the engagement and its scope now in force.</summary>
 public sealed record RoeApplied(EngagementId EngagementId, RoeProfile Profile);

@@ -129,9 +129,10 @@ public static class TaskEndpoints
         }
         catch (TaskRejectedException ex)
         {
-            // An unsupported verb, a retired implant, and an ROE refusal are
-            // all well-formed requests the server refuses to act on -> 422; an
-            // unknown or foreign implant is a routing failure -> 404.
+            // An unsupported verb, a retired implant, an ROE refusal, and a
+            // closed engagement are all well-formed requests the server refuses
+            // to act on -> 422; an unknown or foreign implant is a routing
+            // failure -> 404.
             if (ex.Reason == TaskRejectionReason.RoeViolation)
             {
                 // The refusal is part of the engagement's story, so it lands in
@@ -161,6 +162,7 @@ public static class TaskEndpoints
             {
                 TaskRejectionReason.UnsupportedVerbForClass
                 or TaskRejectionReason.ImplantRetired
+                or TaskRejectionReason.EngagementClosed
                     => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
                 _ => Results.NotFound(new Problem(ex.Message)),
             };

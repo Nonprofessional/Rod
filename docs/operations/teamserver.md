@@ -355,6 +355,41 @@ missing arbiter. Verify a restore the same way the install verifies a
 first boot: `systemctl is-active` plus one login, and the schema guard
 has already vouched for the store underneath.
 
+## Closing out an engagement
+
+A finished engagement leaves through the close-out (architecture.md Sec 2
+step 10, Sec 11): freeze, export the evidence package, verify it, retire.
+All three are operator API actions over the operator listener, logged in the
+session cookie:
+
+```
+# 1. Freeze: the engagement stops accepting new tasking, enrollments, and
+#    token mints, so its trail is final. In-flight results still land.
+curl -s -b jar.txt -X POST http://<operator listener>/engagements/<id>:freeze
+
+# 2. Export: one ZIP with audit.jsonl (the full hash-chained trail),
+#    artifacts.jsonl, report.json + report.md, and the manifest that pins
+#    every file's bytes.
+curl -s -b jar.txt -X POST \
+  http://<operator listener>/engagements/<id>:evidence-package \
+  -o rod-evidence-<id>.zip
+
+# 3. Verify offline -- on any host, with nothing Rod running on it. The
+#    binary recomputes every digest, re-runs the chain check, and validates
+#    the artifact records; exit 0 is a verified package.
+dotnet Rod.TeamServer.dll --verify-evidence rod-evidence-<id>.zip
+
+# 4. Retire: terminal, and refused until the engagement is frozen.
+curl -s -b jar.txt -X POST http://<operator listener>/engagements/<id>:retire
+```
+
+Acceptance from the walk above: the exported package re-verifies byte-exact
+on a host with no Rod infrastructure running, and every step of the close-out
+(`EngagementFrozen`, `EvidenceExported`, `EngagementRetired`) is itself an
+audited, attributed event in the trail the package carries. The exported
+trail ends one event before the export's own record -- a later re-export
+(before retire) carries it, so late-landing results are not lost.
+
 ## Production posture
 
 - Terminate the beacon on an **mTLS listener** and front it with a redirector;

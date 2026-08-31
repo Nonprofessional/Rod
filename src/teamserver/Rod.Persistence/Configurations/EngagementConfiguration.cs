@@ -28,6 +28,13 @@ internal sealed class EngagementConfiguration : IEntityTypeConfiguration<Engagem
             .HasColumnName("owner_id");
         builder.Property(e => e.CreatedAt).HasColumnName("created_at");
 
+        // The close-out state (architecture.md Sec 2 step 10): null while the
+        // engagement is open; frozen_at set once the close-out starts (no new
+        // tasking or deployments), retired_at set when it completes, terminal.
+        // Nullable columns, so existing rows read as open engagements.
+        builder.Property(e => e.FrozenAt).HasColumnName("frozen_at");
+        builder.Property(e => e.RetiredAt).HasColumnName("retired_at");
+
         // The ROE scope is one JSON document column: the profile is a pair of
         // allow-lists the domain reads whole, never queries field-by-field, so
         // a value converter keeps the aggregate mapping scalar-simple. A null

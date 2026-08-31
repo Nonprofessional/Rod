@@ -560,6 +560,10 @@ public static class TransportHost
         // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
         // reproducibility-stamped. Read-only projections of the evidence trail.
         app.MapReportEndpoints();
+        // The engagement close-out (architecture.md Sec 2 step 10): freeze,
+        // export the evidence package, retire -- the path a finished
+        // engagement takes out of service.
+        app.MapCloseoutEndpoints();
         // The implant-initiated beacon stream: gRPC over the
         // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
         app.MapGrpcService<BeaconEndpoint>();
@@ -593,6 +597,10 @@ public static class TransportHost
         // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
         // reproducibility-stamped. Read-only projections of the evidence trail.
         endpoints.MapReportEndpoints();
+        // The engagement close-out (architecture.md Sec 2 step 10): freeze,
+        // export the evidence package, retire -- the path a finished
+        // engagement takes out of service.
+        endpoints.MapCloseoutEndpoints();
         // gRPC service binding is an IEndpointRouteBuilder extension; it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
