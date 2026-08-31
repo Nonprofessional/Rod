@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
+using Rod.CoreState;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
@@ -32,6 +34,7 @@ public static class AuditEndpoints
         int? limit,
         string? cursor,
         IAuditStore audit,
+        IOperatorRepository operators,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -47,8 +50,22 @@ public static class AuditEndpoints
         // One page per request: newest window first across pages, oldest first
         // within a page so the page itself still reads in causal order.
         var page = await audit.ListPageAsync(engagementValue, boundLimit, boundCursor, cancellationToken);
+
+        // Resolve the page's operator ids to handles once per request: an
+        // operator reading the trail sees who acted, not a bare guid they
+        // cannot map back to an account. The same tolerance the report
+        // applies -- system for the unattributed Guid.Empty, the bare id when
+        // the operator record no longer resolves (an event outliving its
+        // account).
+        var handles = new Dictionary<Guid, string>();
+        foreach (var id in page.Items.Select(e => e.OperatorId).Where(id => id != Guid.Empty).Distinct())
+        {
+            var op = await operators.FindAsync(new OperatorId(id), cancellationToken);
+            handles[id] = op?.Handle ?? id.ToString();
+        }
+
         var body = new AuditListResponse(
-            page.Items.Select(AuditEventEntry.Of).ToArray(),
+            page.Items.Select(e => AuditEventEntry.Of(e, handles.GetValueOrDefault(e.OperatorId))).ToArray(),
             page.NextCursor);
         return Results.Ok(body);
     }
@@ -58,16 +75,18 @@ public static class AuditEndpoints
     /// <summary>
     /// A single attributed event on the engagement trail. Carries the full
     /// attribution surface (operator/implant/task ids) so the timeline shows who
-    /// did what against which entity, plus the kind/verb/payload/outcome that
-    /// describe the action. The hash-chain fields are not surfaced here: the trail
-    /// is tamper-evident by construction and a report consumer reads the facts,
-    /// not the chain internals.
+    /// did what against which entity, plus the resolved <see cref="OperatorHandle"/>
+    /// an operator actually reads ("system" for unattributed events), and the
+    /// kind/verb/payload/outcome that describe the action. The hash-chain fields
+    /// are not surfaced here: the trail is tamper-evident by construction and a
+    /// report consumer reads the facts, not the chain internals.
     /// </summary>
     public sealed record AuditEventEntry(
         Guid EventId,
         string Kind,
         string Verb,
         Guid OperatorId,
+        string OperatorHandle,
         Guid ImplantId,
         Guid TaskId,
         string Payload,
@@ -75,12 +94,13 @@ public static class AuditEndpoints
         string Outcome,
         DateTimeOffset At)
     {
-        public static AuditEventEntry Of(AuditEvent e)
+        public static AuditEventEntry Of(AuditEvent e, string? operatorHandle = null)
             => new(
                 e.EventId,
                 e.Kind.ToString(),
                 e.Verb,
                 e.OperatorId,
+                operatorHandle ?? (e.OperatorId == Guid.Empty ? "system" : e.OperatorId.ToString()),
                 e.ImplantId,
                 e.TaskId,
                 e.Payload,

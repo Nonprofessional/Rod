@@ -121,7 +121,9 @@ export function AuditView({
                   <code>{e.verb}</code>
                 </td>
                 <td>
-                  <code>{shortId(e.operatorId)}</code>
+                  {/* The resolved handle, with the guid on hover for the rare
+                      event whose operator record no longer resolves. */}
+                  <code title={e.operatorId}>{e.operatorHandle}</code>
                 </td>
                 <td>
                   <code>{shortId(e.implantId)}</code>

@@ -209,6 +209,31 @@ public class OperationalEventLogTests
     private static HandshakeResponse ParseResponse(Frame frame)
         => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
+    [Fact]
+    public async Task AuditListing_ResolvesTheActingOperatorToAHandle()
+    {
+        // The operator reads the trail to see who acted; a bare guid cannot
+        // be mapped back to an account without another query. The listing
+        // resolves each event's operator to their handle ("system" for the
+        // unattributed events), the same enrichment the timeline applies.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var created = await client.PostAsJsonAsync("/engagements",
+                new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Handlebar"));
+            created.EnsureSuccessStatusCode();
+            var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+
+            var page = await client.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
+                $"/engagements/{engagement!.EngagementId}/audit");
+            Assert.NotNull(page);
+            var genesis = Assert.Single(page!.Items, e => e.Kind == nameof(AuditEventKind.EngagementCreated));
+            Assert.Equal(AuthenticatedHost.Handle, genesis.OperatorHandle);
+        }
+    }
+
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));

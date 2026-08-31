@@ -417,6 +417,9 @@ export interface AuditEventEntry {
   kind: string
   verb: string
   operatorId: string
+  // The resolved handle of the acting operator ("system" for unattributed
+  // events), so the trail reads as who acted rather than a guid.
+  operatorHandle: string
   implantId: string
   taskId: string
   payload: string
