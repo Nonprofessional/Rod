@@ -27,12 +27,14 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-# (size, filename): the PNG icon sizes index.html declares, plus the
-# apple-touch icon (180 px, iOS home-screen bookmark).
+# (size, filename): the PNG icon sizes index.html declares, the apple-touch
+# icon (180 px, iOS home-screen bookmark), and the in-app brand mark the
+# sidebar and login card render at ~28 px (96 px keeps it crisp on hi-dpi).
 ICONS = [
     (16, "favicon-16.png"),
     (32, "favicon-32.png"),
     (48, "favicon-48.png"),
+    (96, "brand-logo.png"),
     (180, "apple-touch-icon.png"),
 ]
 

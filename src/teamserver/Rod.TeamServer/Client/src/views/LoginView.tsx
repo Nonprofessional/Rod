@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { type LoginInput } from '../api'
-import { Icon } from '../components/Icons'
 
 // Operator sign-in (architecture.md Sec 4): a browser session is established by
 // a handle and password the teamserver verifies, which sets the auth cookie the
@@ -34,9 +33,7 @@ export function LoginView({
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <span className="brand-mark">
-            <Icon name="terminal" className="brand-glyph" />
-          </span>
+          <img className="brand-logo" src="brand-logo.png" alt="" width="30" height="30" />
           <span className="brand-text">
             <span className="brand-name">Rod</span>
             <span className="brand-sub">teamserver</span>

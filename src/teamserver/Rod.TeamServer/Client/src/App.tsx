@@ -172,9 +172,7 @@ function App() {
     <div className="shell">
       <aside className="sidebar">
         <a className="brand" href="#/engagements">
-          <span className="brand-mark">
-            <Icon name="terminal" className="brand-glyph" />
-          </span>
+          <img className="brand-logo" src="brand-logo.png" alt="" width="28" height="28" />
           <span className="brand-text">
             <span className="brand-name">Rod</span>
             <span className="brand-sub">teamserver</span>
