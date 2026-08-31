@@ -106,11 +106,23 @@ export function PayloadBuildView({
           </label>
           <label>
             OS
-            <input value={targetOs} onChange={(e) => setTargetOs(e.target.value)} />
+            {/* The build unit maps these onto a runtime identifier and
+                refuses anything outside the supported set, so the form
+                offers exactly that set instead of free text a typo can
+                waste a build on. */}
+            <select value={targetOs} onChange={(e) => setTargetOs(e.target.value)}>
+              <option value="linux">linux</option>
+              <option value="windows">windows</option>
+              <option value="osx">osx</option>
+            </select>
           </label>
           <label>
             Arch
-            <input value={targetArch} onChange={(e) => setTargetArch(e.target.value)} />
+            <select value={targetArch} onChange={(e) => setTargetArch(e.target.value)}>
+              <option value="amd64">amd64 / x64</option>
+              <option value="x86">x86</option>
+              <option value="arm64">arm64</option>
+            </select>
           </label>
         </fieldset>
         <fieldset>

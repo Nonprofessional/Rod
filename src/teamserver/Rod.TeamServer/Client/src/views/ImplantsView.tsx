@@ -115,8 +115,10 @@ export function ImplantsView({
     <div className="card">
       <h3>Stager token</h3>
       <p className="muted">
-        Mint a single-use token, then redeem it at <code>POST /implants/enroll</code> to enroll an
-        implant. The secret is shown once.
+        The deployment credential: a one-time secret you hand to a payload so it can enroll into
+        this engagement -- run the built implant (or its stager) with{' '}
+        <code>-enroll-url &lt;endpoint&gt; -token &lt;secret&gt;</code>. Nothing joins the
+        engagement without one, and the secret is shown exactly once at mint.
       </p>
       <button onClick={onMint} disabled={busy}>
         Mint stager token

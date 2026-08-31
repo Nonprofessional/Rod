@@ -46,8 +46,11 @@ export function ListenersView() {
     <div className="card">
       <h3>Listeners</h3>
       <p className="muted">
-        Each listener's public endpoint is the redirector implants dial, decoupled from the bind
-        socket. Repoint to swap a burned redirector without touching the backend.
+        C2 ingress. <strong>Name</strong> is the label you gave the entry in the{' '}
+        <code>Listeners</code> configuration. <strong>Bind</strong> is the socket this server
+        opens; <strong>public endpoint</strong> is the address baked payloads dial -- usually your
+        redirector. The two are decoupled on purpose: repoint swaps a burned front without
+        touching the backend.
       </p>
       <button onClick={() => void refresh()} disabled={busy}>
         Refresh
