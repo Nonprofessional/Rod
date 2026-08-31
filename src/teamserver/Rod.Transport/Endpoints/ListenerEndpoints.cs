@@ -64,6 +64,16 @@ public static class ListenerEndpoints
         if (string.IsNullOrWhiteSpace(body.PublicEndpoint))
             return Results.BadRequest(new Problem("Public endpoint is required."));
 
+        // The public endpoint is the address built implants dial and the
+        // roster shows: an absolute http(s) URL or a bare host:port (the
+        // redirector shape, e.g. 203.0.113.10:443). Anything else -- a number,
+        // a path -- would be copied into payload builds and silently strand
+        // them, so the repoint is refused naming the accepted shapes.
+        if (!IsPublicEndpoint(body.PublicEndpoint))
+            return Results.BadRequest(new Problem(
+                "Public endpoint must be an absolute http(s) URL or a host:port pair " +
+                $"(e.g. http://redirect.example.test or 203.0.113.10:443), got '{body.PublicEndpoint}'."));
+
         // Repoint swaps the public endpoint -- the redirector implants dial --
         // without touching the bound socket (architecture.md Sec 7/8). The
         // bind address stays put, so a live listener keeps serving; the registry's
@@ -74,6 +84,30 @@ public static class ListenerEndpoints
             return Results.NotFound(new Problem("Listener is not registered."));
 
         return Results.Ok(Response.Of(listener));
+    }
+
+    // A public endpoint is either an absolute http(s) URL or a bare
+    // host:port -- both shapes are documented deployments (the URL is what a
+    // payload build bakes, host:port is the redirector front). A DNS name or
+    // literal IP with a port is enough; no scheme-less bare host, because
+    // nothing downstream can guess a port.
+    private static bool IsPublicEndpoint(string text)
+    {
+        var value = text.Trim();
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            return true;
+        }
+
+        var colon = value.LastIndexOf(':');
+        if (colon <= 0 || colon == value.Length - 1)
+            return false;
+        if (!int.TryParse(value[(colon + 1)..], out var port) || port is < 1 or > 65535)
+            return false;
+        var host = value[..colon];
+        return host.Length > 0
+            && host.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_');
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---

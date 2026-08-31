@@ -86,6 +86,35 @@ public class ListenerRepointTests
     }
 
     [Fact]
+    public async Task Repoint_RefusesAnEndpointThatIsNeitherUrlNorHostPort()
+    {
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "http-default",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost"));
+
+        var list = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
+        var id = Assert.Single(list!).Id;
+
+        // A public endpoint is the address baked payloads dial: "666" is
+        // neither an absolute http(s) URL nor a host:port pair, and accepting
+        // it would strand every payload built against the listener. The
+        // repoint is refused naming the accepted shapes instead.
+        var garbage = await env.Http.PostAsJsonAsync(
+            $"/listeners/{id}:repoint",
+            new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "666"));
+        Assert.Equal(HttpStatusCode.BadRequest, garbage.StatusCode);
+
+        // The bare host:port redirector shape is the documented deployment
+        // form (redirectors.md) and is accepted.
+        var front = await env.Http.PostAsJsonAsync(
+            $"/listeners/{id}:repoint",
+            new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "203.0.113.10:443"));
+        Assert.Equal(HttpStatusCode.OK, front.StatusCode);
+    }
+
+    [Fact]
     public async Task Repoint_Returns400_ForBlankEndpoint()
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(

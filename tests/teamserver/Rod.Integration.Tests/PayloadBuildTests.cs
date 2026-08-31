@@ -71,6 +71,53 @@ public class PayloadBuildTests
         }
     }
 
+    [Fact]
+    public async Task BuildPayload_RefusesAnEndpointTheImplantCannotDial()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            // The endpoint list is what the baked implant dials: a malformed
+            // entry must fail the request, not the build -- a payload that
+            // phones nowhere is the silent failure an operator discovers on
+            // target.
+            var garbage = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "DotNet",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "not a url",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null));
+            Assert.Equal(HttpStatusCode.BadRequest, garbage.StatusCode);
+
+            // A malformed fallback entry is refused the same way, even when
+            // the primary endpoint is fine.
+            var garbageFallback = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "DotNet",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "http://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    FallbackEndpoints: new List<string> { "http://alt.example.test", "666" }));
+            Assert.Equal(HttpStatusCode.BadRequest, garbageFallback.StatusCode);
+        }
+    }
+
     [DotNetFact]
     public async Task BuiltPayload_IsRetrievableFromItsLocation()
     {

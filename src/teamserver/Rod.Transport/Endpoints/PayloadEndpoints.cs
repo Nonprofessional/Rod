@@ -73,6 +73,26 @@ public static class PayloadEndpoints
             return Results.BadRequest(new Problem("Language is not recognized."));
         if (!TryParseClass(body.Class, out var @class))
             return Results.BadRequest(new Problem("Implant class is not recognized."));
+
+        // The endpoint list is what the baked implant dials, so a malformed
+        // entry must not reach the build: it would not fail there -- it would
+        // produce a payload that phones nowhere, the silent kind of failure
+        // an operator discovers on target. Absolute http(s) URLs only.
+        if (body.Endpoint is { } endpoint && !IsDialableEndpoint(endpoint))
+            return Results.BadRequest(new Problem(
+                $"Endpoint must be an absolute http(s) URL the implant can dial, got '{endpoint}'."));
+        if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
+        {
+            foreach (var fallback in fallbacks)
+            {
+                if (string.IsNullOrWhiteSpace(fallback))
+                    continue;
+                if (!IsDialableEndpoint(fallback))
+                    return Results.BadRequest(new Problem(
+                        $"Each fallback endpoint must be an absolute http(s) URL, got '{fallback}'."));
+            }
+        }
+
         // The check-in mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow check-ins). A typo
         // must not silently build the interactive shape for an operator who
@@ -302,6 +322,14 @@ public static class PayloadEndpoints
         }
         return Enum.TryParse(text, ignoreCase: true, out @class);
     }
+
+    // An endpoint the implant can dial: an absolute http(s) URL. The implant's
+    // egress walk treats every entry as a URL (enroll over the scheme, beacon
+    // host from the authority), so a bare host or a typo'd scheme strands the
+    // payload on target.
+    private static bool IsDialableEndpoint(string text)
+        => Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
