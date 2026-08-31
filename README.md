@@ -115,11 +115,18 @@ dotnet build Rod.slnx     # builds the teamserver and the operator UI (wwwroot)
 dotnet run --project src/teamserver/Rod.TeamServer
 ```
 
-The teamserver starts on the default dev listener `http://127.0.0.1:5080`; the
-operator UI is served at the same origin. The first operator account is seeded
-from the `Operators` configuration section (see `appsettings.json`); log in at
-the UI and create an engagement, mint a stager token, and enroll the reference
-implant (`src/implant/dotnet`, run it with `-enroll-url ... -token ...`).
+1. Open `http://127.0.0.1:5080` (the default dev listener; the operator UI is
+   served at the same origin).
+2. Sign in with `operator` / `operator` -- the built-in Development account
+   that applies whenever the `Operators` configuration section supplies no
+   initial operator. Outside Development there is **no fallback**: production
+   provisions its first operator from configuration
+   (`Operators:Initial`, see `appsettings.json` and
+   [docs/operations/teamserver.md](docs/operations/teamserver.md)).
+3. Create an engagement in the UI, mint a stager token on it, and enroll the
+   reference implant (`src/implant/dotnet`, run it with
+   `-enroll-url ... -token ...`) -- the full walk, with acceptance evidence,
+   is [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
 
 Configuration is opt-in sections of `appsettings.json`:
 
