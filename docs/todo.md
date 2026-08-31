@@ -6,30 +6,12 @@ is the commit history, and the design it followed lives in
 (sealing) stays in Sec 9. Nothing here is an archive of the done.
 
 Each item names the architecture section it serves and carries a one-line
-acceptance criterion (_AC:_), so "done" stays testable. Keep the
-[repository conventions](../AGENTS.md): small focused commits, English
-only, the offensive-tradecraft boundary (architecture.md Sec 13), and cite
-the architecture section, never a historical milestone id, from commit
-bodies.
+acceptance criterion (_AC:_), so "done" stays testable. Follow the
+[repository conventions](../AGENTS.md).
 
-Lean is the standing default, not an afterthought: the established
-platforms earn their reach with a small surface, and Rod does the same
-(Sec 4's deliberate rejections -- no ASP.NET Identity, no per-engagement
-RBAC -- are the house style). An addition must say what an engagement
+Lean is the standing default: an addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
-instead of code are first-class items here, equal to features.
-
-Production use is the driver now: the gap between the single-host
-rehearsal and pointing Rod at a client network closed the same way -- the
-multi-host rehearsal walk, the install and recovery record, and the
-engagement description field all shipped, and their records are the
-commits, [operations/rehearsal.md](operations/rehearsal.md) and
-[operations/teamserver.md](operations/teamserver.md). The pre-production
-arc's two carry-overs closed with it: the win-x64 surface pass ran
-against a live implant on a real Windows host and shipped or recorded
-every finding (rehearsal.md Sec 5), and the engagement-CA rotation was
-drilled mid-engagement with its blast radius and re-entry path written
-into the runbook (rehearsal.md Sec 6). New work here starts from a gap an
-actual engagement surfaces.
+instead of code are first-class items here, equal to features. New work
+starts from a gap an actual engagement surfaces.
 
 No open items.
