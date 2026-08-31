@@ -2,10 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- The tab icon is the project logo. The copy in public/ exists because
-         the SPA bundle must carry its own assets; docs/assets/rod-logo.png is
-         the source of truth -- keep the two in sync. -->
-    <link rel="icon" type="image/png" href="/rod-logo.png" />
+    <!-- The tab icon is the project logo, pre-rendered at the exact sizes the
+         page declares (a browser downscaling the full-size logo itself samples
+         it into mush). docs/assets/rod-logo.png is the source of truth --
+         after changing it, re-run Client/scripts/regen-icons.py to refresh
+         these files. -->
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rod teamserver</title>
   </head>
