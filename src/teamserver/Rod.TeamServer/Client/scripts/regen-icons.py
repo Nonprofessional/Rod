@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """Regenerates the operator UI's icon set from the project logo.
 
-The browser tab icon is the project logo, but a browser scaling the
-full-size logo down to 16-32 px itself samples it into mush. This script
-pre-renders the exact sizes the page declares (Lanczos, so the flat
-geometry stays crisp) and writes them into Client/public/, which the Vite
-build copies into the served bundle.
+The logo is a dark-slate mark (~rgb(64,68,72)) on a transparent canvas.
+Rendered small on a browser tab that is close to invisible -- a dark mark
+over a dark tab bar, and mush wherever the browser does its own scaling.
+The icon set therefore gets two favicon-only treatments on top of the
+Lanczos resize the flat geometry needs anyway:
+
+  - a solid dark rounded tile behind the mark, so the icon owns its
+    contrast on both light and dark tab bars, and
+  - a luminance lift that moves the slate arms to a mid grey while the
+    white rod channels stay white.
+
+docs/assets/rod-logo.png stays the source of truth and is untouched; only
+the generated icon files carry the treatment.
 
 Run from anywhere; paths are resolved from this file's location:
 
     python3 Client/scripts/regen-icons.py
 
 Requires Pillow (a user-level `pip install --user pillow` is enough).
-The source of truth is docs/assets/rod-logo.png -- change the logo there,
-then re-run this.
+Change the logo there, then re-run this.
 """
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # (size, filename): the PNG icon sizes index.html declares, plus the
 # apple-touch icon (180 px, iOS home-screen bookmark).
@@ -28,6 +35,27 @@ ICONS = [
     (48, "favicon-48.png"),
     (180, "apple-touch-icon.png"),
 ]
+
+# The tile the mark sits on, and how far the mark's dark tones are lifted
+# toward white (0 = untouched, 1 = all white). Tuned so the hexagon reads
+# at 16 px without changing the logo's character.
+TILE = (24, 24, 27)
+LIFT = 0.42
+# Corner radius of the tile as a fraction of the icon size.
+CORNER = 0.22
+
+
+def treat(source: Image.Image) -> Image.Image:
+    """Applies the favicon treatment at full resolution, before resizing."""
+    size = source.width
+    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+    draw.rounded_rectangle(
+        (0, 0, size - 1, size - 1), radius=int(size * CORNER), fill=TILE + (255,)
+    )
+
+    lifted = source.point(lambda v: round(255 - (255 - v) * (1 - LIFT)))
+    return Image.alpha_composite(tile, lifted)
 
 
 def main() -> None:
@@ -47,11 +75,12 @@ def main() -> None:
         raise SystemExit(f"logo not found above {client}")
 
     source = Image.open(logo).convert("RGBA")
-    for size, name in ICONS:
-        icon = source.resize((size, size), Image.LANCZOS)
+    treated = treat(source)
+    for icon_size, name in ICONS:
+        icon = treated.resize((icon_size, icon_size), Image.LANCZOS)
         out = client / "public" / name
         icon.save(out, optimize=True)
-        print(f"{out.relative_to(client)}  {size}x{size}")
+        print(f"{out.relative_to(client)}  {icon_size}x{icon_size}")
 
 
 if __name__ == "__main__":
