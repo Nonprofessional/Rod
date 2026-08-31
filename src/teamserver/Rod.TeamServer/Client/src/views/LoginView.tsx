@@ -34,7 +34,7 @@ export function LoginView({
       <p className="muted">Authenticate to the Rod teamserver.</p>
       <form className="login-form" onSubmit={onSubmit}>
         <input
-          placeholder="Handle"
+          placeholder="Username"
           value={handle}
           onChange={(e) => setHandle(e.target.value)}
           required
