@@ -3,6 +3,11 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Runtime state the teamserver writes when Audit:DataDirectory points at a
+# local directory (a dev-loop shape): the file-backed trail and blobs are
+# per-install state, never source.
+src/teamserver/Rod.TeamServer/data/
+
 # dotenv files
 .env
 
