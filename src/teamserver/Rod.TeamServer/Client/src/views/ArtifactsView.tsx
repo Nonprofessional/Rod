@@ -7,6 +7,7 @@ import {
   listArtifacts,
   listEngagementTasks,
 } from '../api'
+import { Icon } from '../components/Icons'
 
 // First-class evidence objects: artifacts are attached to tasks.
 // This view lists the engagement's tasks, shows each task's artifacts, lets an
@@ -162,25 +163,37 @@ export function ArtifactsView({
         Evidence objects are attached to tasks. Pick a task to list, attach, and download its
         artifacts.
       </p>
-      <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
-        {tasks.length === 0 && <option value="">no tasks yet</option>}
-        {[...tasks].reverse().map((t) => (
-          <option key={t.taskId} value={t.taskId}>
-            {t.verb} ({t.taskId.slice(0, 8)})
-          </option>
-        ))}
-      </select>
-      {tasksCursor && (
-        <button onClick={() => void loadOlderTasks()} disabled={busy}>
-          {busy ? 'Loading…' : 'Load older tasks'}
-        </button>
-      )}
+      <div className="inline-form">
+        <select
+          value={taskId}
+          onChange={(e) => setTaskId(e.target.value)}
+          title="Task"
+          aria-label="Task"
+        >
+          {tasks.length === 0 && <option value="">no tasks yet</option>}
+          {[...tasks].reverse().map((t) => (
+            <option key={t.taskId} value={t.taskId}>
+              {t.verb} ({t.taskId.slice(0, 8)})
+            </option>
+          ))}
+        </select>
+        {tasksCursor && (
+          <button className="ghost sm" onClick={() => void loadOlderTasks()} disabled={busy}>
+            {busy ? 'Loading…' : 'Load older tasks'}
+          </button>
+        )}
+      </div>
 
       {taskId && (
         <form className="inline-form" onSubmit={onAttach}>
           <input type="file" onChange={onFile} required />
-          <input placeholder="name" value={fileName} onChange={(e) => setFileName(e.target.value)} required />
-          <button type="submit" disabled={busy || !fileBytes}>
+          <input
+            placeholder="name"
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            required
+          />
+          <button className="primary" type="submit" disabled={busy || !fileBytes}>
             Attach
           </button>
         </form>
@@ -189,39 +202,48 @@ export function ArtifactsView({
       {error && <p className="error">{error}</p>}
 
       {artifacts.length === 0 ? (
-        <p className="muted">No artifacts on this task.</p>
+        <div className="empty">
+          <Icon name="archive" />
+          No artifacts on this task.
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Content type</th>
-              <th>Size</th>
-              <th>Stored</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {artifacts.map((a) => (
-              <tr key={a.artifactId}>
-                <td>{a.name}</td>
-                <td>{a.contentType}</td>
-                <td>{a.size}</td>
-                <td>{new Date(a.storedAt).toLocaleString()}</td>
-                <td>
-                  <button onClick={() => void onDownload(a)}>Download</button>
-                </td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Content type</th>
+                <th>Size</th>
+                <th>Stored</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {artifacts.map((a) => (
+                <tr key={a.artifactId}>
+                  <td>{a.name}</td>
+                  <td>{a.contentType}</td>
+                  <td>{a.size}</td>
+                  <td>{new Date(a.storedAt).toLocaleString()}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="sm" onClick={() => void onDownload(a)}>
+                        Download
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {artifactsCursor && (
-        <p>
-          <button onClick={() => void loadOlderArtifacts()} disabled={busy}>
+        <div className="load-more">
+          <button className="ghost" onClick={() => void loadOlderArtifacts()} disabled={busy}>
             {busy ? 'Loading…' : 'Load older'}
           </button>
-        </p>
+        </div>
       )}
     </div>
   )

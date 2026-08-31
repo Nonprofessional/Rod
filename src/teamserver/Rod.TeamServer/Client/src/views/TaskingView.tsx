@@ -10,6 +10,7 @@ import {
   sendTaskInput,
 } from '../api'
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { Icon } from '../components/Icons'
 import { OpsecBadges } from '../components/OpsecBadges'
 import { StatusBadge } from '../components/StatusBadge'
 import type { SessionOperator } from '../api'
@@ -175,7 +176,10 @@ export function TaskingView({
     return (
       <div className="card">
         <h3>Tasking</h3>
-        <p className="muted">Loading tasking…</p>
+        <div className="empty">
+          <span className="spinner" />
+          Loading tasking…
+        </div>
       </div>
     )
   }
@@ -184,7 +188,10 @@ export function TaskingView({
     return (
       <div className="card">
         <h3>Tasking</h3>
-        <p className="muted">Enroll an implant first, then issue tasking against it here.</p>
+        <div className="empty">
+          <Icon name="cpu" />
+          Enroll an implant first, then issue tasking against it here.
+        </div>
         {error && <p className="error">{error}</p>}
       </div>
     )
@@ -198,14 +205,18 @@ export function TaskingView({
         category from the registry; badges flag OPSEC impact.
       </p>
       <form className="task-form" onSubmit={onIssue}>
-        <select value={selectedImplant} onChange={(e) => setSelectedImplant(e.target.value)}>
+        <select
+          value={selectedImplant}
+          onChange={(e) => setSelectedImplant(e.target.value)}
+          title="Target implant"
+        >
           {implants.map((i) => (
             <option key={i.implantId} value={i.implantId}>
               {i.implantId.slice(0, 8)} ({i.class}){i.retiredAt ? ' [retired]' : ''}
             </option>
           ))}
         </select>
-        <select value={verb} onChange={(e) => setVerb(e.target.value)}>
+        <select value={verb} onChange={(e) => setVerb(e.target.value)} title="Capability verb">
           {groups.map((group) => (
             <optgroup key={group.category} label={group.label}>
               {group.descriptors.map((d) => (
@@ -222,7 +233,7 @@ export function TaskingView({
           value={args}
           onChange={(e) => setArgs(e.target.value)}
         />
-        <button type="submit" disabled={busy || activeRetired}>
+        <button className="primary" type="submit" disabled={busy || activeRetired}>
           Issue
         </button>
       </form>
@@ -246,79 +257,90 @@ export function TaskingView({
         />
       )}
       {tasks.length === 0 ? (
-        <p className="muted">No tasks yet.</p>
+        <div className="empty">
+          <Icon name="inbox" />
+          No tasks yet.
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Verb</th>
-              <th>Implant</th>
-              <th>By</th>
-              <th>Status</th>
-              <th>Output</th>
-              <th>At</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...tasks].reverse().map((t) => (
-              <tr key={t.taskId}>
-                <td>
-                  <code>{t.verb}</code> {t.arguments}
-                </td>
-                <td>
-                  <code>{t.implantId.slice(0, 8)}</code>
-                </td>
-                <td>
-                  <code>{t.issuedBy === operator.operatorId ? 'you' : t.issuedBy.slice(0, 8)}</code>
-                </td>
-                <td>
-                  <StatusBadge status={t.status} />
-                </td>
-                <td>
-                  <pre className="output">{t.output ?? '\u2014'}</pre>
-                </td>
-                <td>
-                  {t.completedAt
-                    ? new Date(t.completedAt).toLocaleTimeString()
-                    : new Date(t.createdAt).toLocaleTimeString()}
-                </td>
-                <td>
-                  {t.status === 'Queued' && (
-                    <button className="danger" onClick={() => void onCancel(t.taskId, t.verb)}>
-                      Cancel
-                    </button>
-                  )}{' '}
-                  {isChannelVerb(t.verb) && (
-                    <button
-                      onClick={() => setInteractTask(interactTask === t.taskId ? null : t.taskId)}
-                    >
-                      {interactTask === t.taskId ? 'Hide' : 'Interact'}
-                    </button>
-                  )}
-                </td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Verb</th>
+                <th>Implant</th>
+                <th>By</th>
+                <th>Status</th>
+                <th>Output</th>
+                <th>At</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...tasks].reverse().map((t) => (
+                <tr key={t.taskId}>
+                  <td>
+                    <code>{t.verb}</code> {t.arguments}
+                  </td>
+                  <td>
+                    <code>{t.implantId.slice(0, 8)}</code>
+                  </td>
+                  <td>
+                    <code>{t.issuedBy === operator.operatorId ? 'you' : t.issuedBy.slice(0, 8)}</code>
+                  </td>
+                  <td>
+                    <StatusBadge status={t.status} />
+                  </td>
+                  <td>
+                    <pre className="output">{t.output ?? '\u2014'}</pre>
+                  </td>
+                  <td>
+                    {t.completedAt
+                      ? new Date(t.completedAt).toLocaleTimeString()
+                      : new Date(t.createdAt).toLocaleTimeString()}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      {t.status === 'Queued' && (
+                        <button
+                          className="danger sm"
+                          onClick={() => void onCancel(t.taskId, t.verb)}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      {isChannelVerb(t.verb) && (
+                        <button
+                          className="sm"
+                          onClick={() => setInteractTask(interactTask === t.taskId ? null : t.taskId)}
+                        >
+                          {interactTask === t.taskId ? 'Hide' : 'Interact'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {tasksCursor && (
-        <p>
-          <button onClick={() => void loadOlderTasks()} disabled={loadingMore}>
+        <div className="load-more">
+          <button className="ghost" onClick={() => void loadOlderTasks()} disabled={loadingMore}>
             {loadingMore ? 'Loading…' : 'Load older'}
           </button>
-        </p>
+        </div>
       )}
     </div>
   )
 }
 
-// The channel pane: a live channel task's transcript with an input line and
-// stdin close. The transcript is the task's own output server-side (the record
-// of the session is the session), so the pane polls it while the channel runs
-// instead of holding a second event stream; typing posts through the input
-// route and Close stdin sends the eof that ends (or half-closes, for a tunnel)
-// the channel.
+// The channel pane, styled as a terminal: a live channel task's transcript
+// with an input line and stdin close. The transcript is the task's own output
+// server-side (the record of the session is the session), so the pane polls it
+// while the channel runs instead of holding a second event stream; typing
+// posts through the input route and Close stdin sends the eof that ends (or
+// half-closes, for a tunnel) the channel.
 function InteractPane({
   engagementId,
   taskId,
@@ -398,14 +420,25 @@ function InteractPane({
   }
 
   return (
-    <div className="interact-pane">
-      <h4>
-        {verb} &mdash; <code>{taskId.slice(0, 8)}</code> <StatusBadge status={status} />
-      </h4>
-      <pre className="output interact-transcript" ref={transcriptRef}>
+    <div className="terminal">
+      <div className="terminal-header">
+        <code>{verb}</code>
+        <span>·</span>
+        <code>{taskId.slice(0, 8)}</code>
+        <StatusBadge status={status} />
+        <span className="spacer">
+          <button className="ghost sm" onClick={onClose}>
+            Hide
+          </button>
+        </span>
+      </div>
+      <pre className="interact-transcript" ref={transcriptRef}>
         {transcript || '\u2014'}
       </pre>
       <form className="task-form" onSubmit={onSend}>
+        <span className="prompt" aria-hidden="true">
+          ›
+        </span>
         <input
           className="wide"
           placeholder={done ? 'channel closed' : 'type a command'}
@@ -413,17 +446,14 @@ function InteractPane({
           disabled={done || busy}
           onChange={(e) => setLine(e.target.value)}
         />
-        <button type="submit" disabled={busy || done || !line}>
+        <button className="primary sm" type="submit" disabled={busy || done || !line}>
           Send
         </button>
-        <button type="button" onClick={() => void onCloseStdin()} disabled={busy || done}>
+        <button className="ghost sm" type="button" onClick={() => void onCloseStdin()} disabled={busy || done}>
           Close stdin
         </button>
-        <button type="button" onClick={onClose}>
-          Hide
-        </button>
       </form>
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error terminal-error">{error}</p>}
     </div>
   )
 }

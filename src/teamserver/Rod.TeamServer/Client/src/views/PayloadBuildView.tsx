@@ -185,8 +185,8 @@ export function PayloadBuildView({
             </select>
           </label>
         </fieldset>
-        <button type="submit" disabled={busy}>
-          Build
+        <button className="primary" type="submit" disabled={busy}>
+          Build payload
         </button>
       </form>
       {error && <p className="error">{error}</p>}
@@ -206,7 +206,11 @@ export function PayloadBuildView({
           <dd>{new Date(result.builtAt).toLocaleString()}</dd>
           <dt>Download</dt>
           <dd>
-            <a href={`engagements/${engagementId}/payloads/${result.artifactId}`} download>
+            <a
+              className="download-link"
+              href={`engagements/${engagementId}/payloads/${result.artifactId}`}
+              download
+            >
               Retrieve artifact
             </a>
           </dd>

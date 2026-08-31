@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { type LoginInput } from '../api'
+import { Icon } from '../components/Icons'
 
 // Operator sign-in (architecture.md Sec 4): a browser session is established by
 // a handle and password the teamserver verifies, which sets the auth cookie the
-// rest of the UI depends on. Replaces the walking skeleton's self-assigned
-// identity. Shown by the route guard whenever GET /operators/me is unauthorized.
+// rest of the UI depends on. Shown by the route guard whenever GET
+// /operators/me is unauthorized. Rendered outside the app shell as a centered
+// card -- the only screen an unauthenticated browser ever sees.
 
 export function LoginView({
   onLogin,
@@ -29,29 +31,48 @@ export function LoginView({
   }
 
   return (
-    <section className="card">
-      <h2>Sign in</h2>
-      <p className="muted">Authenticate to the Rod teamserver.</p>
-      <form className="login-form" onSubmit={onSubmit}>
-        <input
-          placeholder="Username"
-          value={handle}
-          onChange={(e) => setHandle(e.target.value)}
-          required
-          autoFocus
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button type="submit" disabled={busy}>
-          Sign in
-        </button>
-      </form>
-      {error && <p className="error">{error}</p>}
-    </section>
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-brand">
+          <span className="brand-mark">
+            <Icon name="terminal" className="brand-glyph" />
+          </span>
+          <span className="brand-text">
+            <span className="brand-name">Rod</span>
+            <span className="brand-sub">teamserver</span>
+          </span>
+        </div>
+        <h2 className="login-title">Sign in</h2>
+        <p className="login-sub">Authenticate to reach your engagements.</p>
+        <form className="login-form" onSubmit={onSubmit}>
+          <div className="login-field">
+            <label htmlFor="login-handle">Username</label>
+            <input
+              id="login-handle"
+              placeholder="Username"
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          <div className="login-field">
+            <label htmlFor="login-password">Password</label>
+            <input
+              id="login-password"
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+          <button className="primary" type="submit" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+        {error && <p className="alert">{error}</p>}
+      </div>
+    </div>
   )
 }

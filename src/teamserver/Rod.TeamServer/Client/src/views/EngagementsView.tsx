@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type Engagement, createEngagement, listEngagements } from '../api'
+import { Icon } from '../components/Icons'
 
 // The engagements list: enumerate every engagement the operator
 // can reach and create a new one. Drilling into an engagement hands off to the
-// engagement detail view, which carries the full capability surface .
+// engagement detail view, which carries the full capability surface.
 // The engagement's owner is the authenticated operator, resolved server-side,
 // so this view carries no identity of its own.
 
@@ -46,9 +47,12 @@ export function EngagementsView() {
 
   return (
     <section>
-      <h2>Engagements</h2>
+      <div className="page-head">
+        <h2>Engagements</h2>
+        <span className="muted">Scoped workspaces; everything else lives inside one.</span>
+      </div>
       {error && <p className="error">{error}</p>}
-      <form className="inline-form" onSubmit={onCreate}>
+      <form className="card inline-form" onSubmit={onCreate}>
         <input
           placeholder="Engagement name"
           value={name}
@@ -56,42 +60,51 @@ export function EngagementsView() {
           required
         />
         <input
+          className="wide"
           placeholder="Description (optional)"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <button type="submit" disabled={busy}>
+        <button className="primary" type="submit" disabled={busy}>
           Create
         </button>
       </form>
 
       {loading ? (
-        <p className="muted">Loading engagements…</p>
+        <div className="empty">
+          <span className="spinner" />
+          Loading engagements…
+        </div>
       ) : items.length === 0 ? (
-        <p className="muted">No engagements yet.</p>
+        <div className="empty">
+          <Icon name="globe" />
+          No engagements yet -- create one to begin.
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Owner</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((e) => (
-              <tr key={e.engagementId}>
-                <td>
-                  <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
-                </td>
-                <td className="muted">{e.description ?? ''}</td>
-                <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
-                <td>{new Date(e.createdAt).toLocaleString()}</td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Owner</th>
+                <th>Created</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((e) => (
+                <tr key={e.engagementId}>
+                  <td>
+                    <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
+                  </td>
+                  <td className="muted">{e.description ?? ''}</td>
+                  <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
+                  <td>{new Date(e.createdAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   )

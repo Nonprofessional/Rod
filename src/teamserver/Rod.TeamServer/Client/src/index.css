@@ -1,8 +1,99 @@
+/* Design tokens. Dark is the default (operator consoles run dark); light
+   overrides ride on prefers-color-scheme so the UI follows the system like
+   the rest of the desktop. Everything downstream styles these variables,
+   never raw colors, so both themes stay in lockstep. */
+
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+
+  /* Surfaces */
+  --bg: #0a0d12;
+  --surface: #10141b;
+  --surface-2: #151a23;
+  --surface-3: #1b212c;
+  --border: #212836;
+  --border-strong: #2c3546;
+
+  /* Text */
+  --text: #e7ecf3;
+  --muted: #98a3b3;
+
+  /* Accent (cyan) and semantic colors */
+  --accent: #2fc6e8;
+  --accent-strong: #1793b4;
+  --accent-contrast: #04222c;
+  --accent-soft: rgba(47, 198, 232, 0.13);
+  --success: #3dd68c;
+  --success-soft: rgba(61, 214, 140, 0.14);
+  --warn: #f0b34e;
+  --warn-soft: rgba(240, 179, 78, 0.14);
+  --danger: #f07178;
+  --danger-soft: rgba(240, 113, 120, 0.13);
+  --info: #6fa8f5;
+  --info-soft: rgba(111, 168, 245, 0.14);
+
+  /* Terminal panes stay near-black in both themes */
+  --terminal-bg: #07090d;
+  --terminal-border: #1d2430;
+  --terminal-text: #c9d7e4;
+
+  --ring: 0 0 0 3px rgba(47, 198, 232, 0.3);
+  --shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 32px -16px rgba(0, 0, 0, 0.55);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+
+  --font-mono:
+    ui-monospace,
+    'SF Mono',
+    'Cascadia Code',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #f7f9fb;
+    --surface-3: #eef2f6;
+    --border: #e1e7ee;
+    --border-strong: #cbd5e1;
+
+    --text: #1b2430;
+    --muted: #5b6675;
+
+    --accent: #0e8bb0;
+    --accent-strong: #0c7aa0;
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(14, 139, 176, 0.1);
+    --success: #178a50;
+    --success-soft: rgba(23, 138, 80, 0.12);
+    --warn: #a3690f;
+    --warn-soft: rgba(163, 105, 15, 0.12);
+    --danger: #c23744;
+    --danger-soft: rgba(194, 55, 68, 0.1);
+    --info: #2563eb;
+    --info-soft: rgba(37, 99, 235, 0.1);
+
+    --terminal-bg: #0d1117;
+    --terminal-border: #2a3240;
+    --terminal-text: #c9d7e4;
+
+    --ring: 0 0 0 3px rgba(14, 139, 176, 0.28);
+    --shadow:
+      0 1px 2px rgba(23, 32, 47, 0.06),
+      0 12px 32px -18px rgba(23, 32, 47, 0.25);
+  }
 }
 
 * {
@@ -21,16 +112,47 @@ body {
     -apple-system,
     'Segoe UI',
     Roboto,
+    'Helvetica Neue',
     sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #1b1b1f;
-  background: #f6f6f8;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    color: #e6e6ea;
-    background: #15151a;
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Quiet, theme-aware scrollbars for the panes that scroll (tables, terminal,
+   sidebar). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

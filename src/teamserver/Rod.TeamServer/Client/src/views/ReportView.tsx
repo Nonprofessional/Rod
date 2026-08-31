@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type EngagementReport, getReport, getReportMarkdown } from '../api'
+import { Icon } from '../components/Icons'
+import { StatusBadge } from '../components/StatusBadge'
 
 // The engagement report: the full evidence bundle -- engagement,
 // operators, implants, tasks, artifacts, and the timeline -- in one reproducible,
@@ -43,14 +45,17 @@ export function ReportView({ engagementId }: { engagementId: string }) {
     <div className="card">
       <h3>Engagement report</h3>
       <div className="inline-form">
-        <button onClick={() => void refresh()} disabled={busy}>
+        <div className="segmented" role="group" aria-label="Report format">
+          <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>
+            Summary
+          </button>
+          <button className={view === 'markdown' ? 'active' : ''} onClick={() => void showMarkdown()}>
+            Markdown
+          </button>
+        </div>
+        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+          <Icon name="refresh" />
           Refresh
-        </button>
-        <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>
-          Summary
-        </button>
-        <button className={view === 'markdown' ? 'active' : ''} onClick={() => void showMarkdown()}>
-          Markdown
         </button>
         {report && (
           <span className="muted">
@@ -102,63 +107,72 @@ export function ReportView({ engagementId }: { engagementId: string }) {
           {report.tasks.length === 0 ? (
             <p className="muted">No tasks.</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Verb</th>
-                  <th>By</th>
-                  <th>Status</th>
-                  <th>Implant</th>
-                  <th>Artifacts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.tasks.map((t) => (
-                  <tr key={t.taskId}>
-                    <td>
-                      <code>{t.verb}</code> {t.arguments}
-                    </td>
-                    <td>{t.issuedByHandle}</td>
-                    <td>{t.status}</td>
-                    <td>
-                      <code>{t.implantId.slice(0, 8)}</code>
-                    </td>
-                    <td>{t.artifacts.length}</td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Verb</th>
+                    <th>By</th>
+                    <th>Status</th>
+                    <th>Implant</th>
+                    <th>Artifacts</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {report.tasks.map((t) => (
+                    <tr key={t.taskId}>
+                      <td>
+                        <code>{t.verb}</code> {t.arguments}
+                      </td>
+                      <td>{t.issuedByHandle}</td>
+                      <td>
+                        <StatusBadge status={t.status} />
+                      </td>
+                      <td>
+                        <code>{t.implantId.slice(0, 8)}</code>
+                      </td>
+                      <td>{t.artifacts.length}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <h4>Artifacts ({report.artifacts.length})</h4>
           {report.artifacts.length === 0 ? (
             <p className="muted">No artifacts.</p>
           ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Task</th>
-                  <th>Content type</th>
-                  <th>Size</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.artifacts.map((a) => (
-                  <tr key={a.artifactId}>
-                    <td>{a.name}</td>
-                    <td>
-                      <code>{a.taskId.slice(0, 8)}</code>
-                    </td>
-                    <td>{a.contentType}</td>
-                    <td>{a.size}</td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Task</th>
+                    <th>Content type</th>
+                    <th>Size</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {report.artifacts.map((a) => (
+                    <tr key={a.artifactId}>
+                      <td>{a.name}</td>
+                      <td>
+                        <code>{a.taskId.slice(0, 8)}</code>
+                      </td>
+                      <td>{a.contentType}</td>
+                      <td>{a.size}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       ) : (
-        <p className="muted">Loading&hellip;</p>
+        <div className="empty">
+          <span className="spinner" />
+          Loading…
+        </div>
       )}
     </div>
   )

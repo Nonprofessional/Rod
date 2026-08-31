@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type TimelineReport, getTimeline, getTimelineMarkdown } from '../api'
+import { Icon } from '../components/Icons'
 
 // The engagement timeline: a reproducible, content-hashed
 // projection of the audit trail enriched with operator/implant/task context.
@@ -43,14 +44,17 @@ export function TimelineView({ engagementId }: { engagementId: string }) {
     <div className="card">
       <h3>Timeline</h3>
       <div className="inline-form">
-        <button onClick={() => void refresh()} disabled={busy}>
+        <div className="segmented" role="group" aria-label="Timeline format">
+          <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>
+            Table
+          </button>
+          <button className={view === 'markdown' ? 'active' : ''} onClick={() => void showMarkdown()}>
+            Markdown
+          </button>
+        </div>
+        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+          <Icon name="refresh" />
           Refresh
-        </button>
-        <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>
-          Table
-        </button>
-        <button className={view === 'markdown' ? 'active' : ''} onClick={() => void showMarkdown()}>
-          Markdown
         </button>
         {report && (
           <span className="muted">
@@ -63,36 +67,43 @@ export function TimelineView({ engagementId }: { engagementId: string }) {
       {view === 'markdown' ? (
         <pre className="output long">{markdown ?? 'loading\u2026'}</pre>
       ) : report && report.entries.length > 0 ? (
-        <table>
-          <thead>
-            <tr>
-              <th>At</th>
-              <th>Kind</th>
-              <th>Verb</th>
-              <th>Operator</th>
-              <th>Implant</th>
-              <th>Outcome</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...report.entries].reverse().map((e) => (
-              <tr key={e.eventId}>
-                <td>{new Date(e.at).toLocaleString()}</td>
-                <td>{e.kind}</td>
-                <td>
-                  <code>{e.verb}</code>
-                </td>
-                <td>{e.operator?.handle ?? '\u2014'}</td>
-                <td>
-                  {e.implant ? <code>{e.implant.implantId.slice(0, 8)}</code> : '\u2014'}
-                </td>
-                <td>{e.outcome}</td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>At</th>
+                <th>Kind</th>
+                <th>Verb</th>
+                <th>Operator</th>
+                <th>Implant</th>
+                <th>Outcome</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...report.entries].reverse().map((e) => (
+                <tr key={e.eventId}>
+                  <td>{new Date(e.at).toLocaleString()}</td>
+                  <td>
+                    <span className="status">{e.kind}</span>
+                  </td>
+                  <td>
+                    <code>{e.verb}</code>
+                  </td>
+                  <td>{e.operator?.handle ?? '\u2014'}</td>
+                  <td>
+                    {e.implant ? <code>{e.implant.implantId.slice(0, 8)}</code> : '\u2014'}
+                  </td>
+                  <td>{e.outcome}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <p className="muted">No timeline entries.</p>
+        <div className="empty">
+          <Icon name="clock" />
+          No timeline entries.
+        </div>
       )}
     </div>
   )

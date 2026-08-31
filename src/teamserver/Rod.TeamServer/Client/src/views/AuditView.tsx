@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { type AuditEventEntry, listAudit } from '../api'
+import { Icon } from '../components/Icons'
 
 // The operational event log: the per-engagement, append-only,
 // hash-chained audit trail, oldest-first in causal order. Every action that
@@ -78,71 +79,86 @@ export function AuditView({
     <div className="card">
       <h3>Audit trail</h3>
       <p className="muted">
-        The append-only, hash-chained event log for this engagement. Filter by kind to narrow the view.
+        The append-only, hash-chained event log for this engagement. Filter by kind to narrow the
+        view.
       </p>
       <div className="inline-form">
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
+          title="Event kind filter"
+          aria-label="Event kind filter"
+        >
           {kinds.map((k) => (
             <option key={k} value={k}>
               {k}
             </option>
           ))}
         </select>
-        <button onClick={() => void refresh()} disabled={busy}>
+        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+          <Icon name="refresh" />
           Refresh
         </button>
       </div>
       {error && <p className="error">{error}</p>}
       {loading ? (
-        <p className="muted">Loading audit trail…</p>
+        <div className="empty">
+          <span className="spinner" />
+          Loading audit trail…
+        </div>
       ) : filtered.length === 0 ? (
-        <p className="muted">No events recorded yet.</p>
+        <div className="empty">
+          <Icon name="list" />
+          No events recorded yet.
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>At</th>
-              <th>Kind</th>
-              <th>Verb</th>
-              <th>Operator</th>
-              <th>Implant</th>
-              <th>Payload</th>
-              <th>Outcome</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...filtered].reverse().map((e) => (
-              <tr key={e.eventId}>
-                <td>{new Date(e.at).toLocaleString()}</td>
-                <td>
-                  <span className="status">{e.kind}</span>
-                </td>
-                <td>
-                  <code>{e.verb}</code>
-                </td>
-                <td>
-                  {/* The resolved handle, with the guid on hover for the rare
-                      event whose operator record no longer resolves. */}
-                  <code title={e.operatorId}>{e.operatorHandle}</code>
-                </td>
-                <td>
-                  <code>{shortId(e.implantId)}</code>
-                </td>
-                <td>
-                  <pre className="output">{e.payload || '\u2014'}</pre>
-                </td>
-                <td>{e.outcome || '\u2014'}</td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>At</th>
+                <th>Kind</th>
+                <th>Verb</th>
+                <th>Operator</th>
+                <th>Implant</th>
+                <th>Payload</th>
+                <th>Outcome</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[...filtered].reverse().map((e) => (
+                <tr key={e.eventId}>
+                  <td>{new Date(e.at).toLocaleString()}</td>
+                  <td>
+                    <span className="status">{e.kind}</span>
+                  </td>
+                  <td>
+                    <code>{e.verb}</code>
+                  </td>
+                  <td>
+                    {/* The resolved handle, with the guid on hover for the rare
+                        event whose operator record no longer resolves. */}
+                    <code title={e.operatorId}>{e.operatorHandle}</code>
+                  </td>
+                  <td>
+                    <code>{shortId(e.implantId)}</code>
+                  </td>
+                  <td>
+                    <pre className="output">{e.payload || '\u2014'}</pre>
+                  </td>
+                  <td>{e.outcome || '\u2014'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {eventsCursor && (
-        <p>
-          <button onClick={() => void loadOlder()} disabled={busy}>
+        <div className="load-more">
+          <button className="ghost" onClick={() => void loadOlder()} disabled={busy}>
             {busy ? 'Loading…' : 'Load older'}
           </button>
-        </p>
+        </div>
       )}
     </div>
   )

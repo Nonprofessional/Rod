@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ListenerSummary, listListeners, repointListener } from '../api'
+import { Icon } from '../components/Icons'
+import { StatusBadge } from '../components/StatusBadge'
 
 // The listeners / redirector panel: the bound C2 ingress, each
 // with the socket it opens (bind) and the public endpoint implants dial
@@ -52,57 +54,69 @@ export function ListenersView() {
         redirector. The two are decoupled on purpose: repoint swaps a burned front without
         touching the backend.
       </p>
-      <button onClick={() => void refresh()} disabled={busy}>
-        Refresh
-      </button>
+      <div className="inline-form">
+        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+          <Icon name="refresh" />
+          Refresh
+        </button>
+      </div>
       {error && <p className="error">{error}</p>}
       {listeners.length === 0 ? (
-        <p className="muted">No listeners registered.</p>
+        <div className="empty">
+          <Icon name="radio" />
+          No listeners registered.
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Transport</th>
-              <th>Bind</th>
-              <th>Public endpoint</th>
-              <th>State</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {listeners.map((l) => (
-              <tr key={l.id}>
-                <td>{l.name}</td>
-                <td>{l.transport}</td>
-                <td>
-                  <code>{l.bindAddress}</code>
-                </td>
-                <td>
-                  <code>{l.publicEndpoint}</code>
-                  {l.repointedAt && <span className="muted"> (repointed)</span>}
-                </td>
-                <td>{l.state}</td>
-                <td>
-                  <form
-                    className="repoint-form"
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void onRepoint(l.id)
-                    }}
-                  >
-                    <input
-                      placeholder="new endpoint"
-                      value={newEndpoint[l.id] ?? ''}
-                      onChange={(e) => setNewEndpoint((m) => ({ ...m, [l.id]: e.target.value }))}
-                    />
-                    <button type="submit">Repoint</button>
-                  </form>
-                </td>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Transport</th>
+                <th>Bind</th>
+                <th>Public endpoint</th>
+                <th>State</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {listeners.map((l) => (
+                <tr key={l.id}>
+                  <td>{l.name}</td>
+                  <td>{l.transport}</td>
+                  <td>
+                    <code>{l.bindAddress}</code>
+                  </td>
+                  <td>
+                    <code>{l.publicEndpoint}</code>
+                    {l.repointedAt && <span className="muted"> (repointed)</span>}
+                  </td>
+                  <td>
+                    <StatusBadge status={l.state} />
+                  </td>
+                  <td>
+                    <form
+                      className="repoint-form"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void onRepoint(l.id)
+                      }}
+                    >
+                      <input
+                        placeholder="new endpoint"
+                        value={newEndpoint[l.id] ?? ''}
+                        onChange={(e) => setNewEndpoint((m) => ({ ...m, [l.id]: e.target.value }))}
+                      />
+                      <button className="sm" type="submit">
+                        Repoint
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
