@@ -53,17 +53,3 @@ starts from a gap an actual engagement surfaces.
       _AC:_ an operator sees an implant's check-in and its task result in
       the UI without a manual refresh and without waiting out a poll
       interval.
-
-## Documentation (architecture.md Sec 2)
-
-- [ ] **Complete the README.** The Documentation section never links
-      rehearsal.md, and describes teamserver.md as stand-up and
-      first-login while it also carries the production install, recovery,
-      and posture sections an operator in the field needs to find. The
-      component roster under "What it is" never names the stager either:
-      a reader meets "mint a stager token" in Getting started without the
-      stage-1 loader ever being introduced, though the design and the
-      runbooks cover it (Sec 5, Sec 6).
-      _AC:_ every file under docs/ is reachable from the README doc tree,
-      each operations doc's one-liner matches what it contains, and the
-      stager appears in the README component roster.

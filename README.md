@@ -46,6 +46,11 @@ final report.
   default: each generates its own keypair at first run (bound by a CA-signed
   leaf at enroll; no key material ships in the artifact) and carries a baked
   profile -- check-in mode, beacon parameters, kill date, transport shape.
+- **Stager** -- the tiny stage-1 loader that first contact runs when the
+  full implant must not touch delivery: it fetches a built stage-2 artifact,
+  verifies it against the sha256 baked at build time, and runs it; the
+  stage-2 spends the one-time stager token at its own enroll
+  (architecture.md Sec 5.2, Sec 6).
 - **Redirectors** -- near-stateless forwarders that front listeners for OPSEC and
   infrastructure flexibility; the in-tree direction is a .NET Native AOT single
   binary, and burned redirectors are swappable.
@@ -94,6 +99,7 @@ engagement-scoped. Cross-engagement access is impossible by construction.
 | Build units | .NET (in-tree); Go/C/C++/Nim out-of-tree | One in-tree toolchain; polyglot by contract, no teamserver-language coupling (architecture.md Sec 12.2). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint, no runtime install; burned redirectors swappable (architecture.md Sec 8). |
 | Implants | .NET (reference); Go/C/C++/Nim out-of-tree -- per target | Short-lived, disposable; implant-generated keys, no key material in artifacts. |
+| Stager | .NET (reference stage-1 loader) | Fetch-and-exec only; verifies the stage-2 against the sha256 baked at build time. |
 | Operator UI | Web (React) | Lives in the teamserver project; served same-origin. |
 
 See [docs/architecture.md](docs/architecture.md) for the rationale behind these
@@ -139,9 +145,13 @@ The doc tree, by what you came for:
   capability modules plug in (the sensitive categories are contracts only).
 - **Running Rod** (`docs/operations/`) --
   **[teamserver.md](docs/operations/teamserver.md)** is the stand-up,
-  configuration, and first-login runbook;
+  configuration, and first-login runbook, and carries the production
+  install, recovery, and posture sections an operator in the field needs;
   **[redirectors.md](docs/operations/redirectors.md)** is the redirector
-  build/deploy/rotate runbook.
+  build/deploy/rotate runbook;
+  **[rehearsal.md](docs/operations/rehearsal.md)** is the pre-deployment
+  rehearsal walk -- the single-host and multi-host lifecycle runs, the
+  win-x64 adversarial surface walk, and the engagement-CA rotation drill.
 - **Project state** -- [docs/todo.md](docs/todo.md) tracks open work;
   [docs/glossary.md](docs/glossary.md) holds terminology;
   [SECURITY.md](SECURITY.md) covers vulnerability reporting and scope.
