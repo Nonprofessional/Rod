@@ -105,6 +105,31 @@ jobs:
         # when dotnet is not on PATH.
         run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~DotNetImplantTests"
 
+  dotnet-implant-windows:
+    name: .NET implant (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: .NET implant unit tests (Windows)
+        # The same per-handler suite as the ubuntu lane, run where those
+        # handlers take their Windows paths: the toolhelp snapshot, the
+        # NTFS file transfer, the schtasks/sc argument construction. The
+        # win-x64 surface walk (rehearsal.md Sec 5) caught Windows-only
+        # defect classes -- the recon.ps snapshot marshaling, the
+        # native-tool payload quoting -- that an ubuntu-only CI lane
+        # structurally cannot see; this lane makes them fail a build.
+        run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
+      - name: .NET implant end-to-end (Windows)
+        # The same end-to-end slice as the ubuntu lane, on Windows: the
+        # implant's mTLS beacon rides SChannel there, so a leaf-presentation
+        # defect that Linux's OpenSSL tolerates fails the handshake here.
+        # The teamserver host builds API-only when the operator-UI bundle is
+        # absent (the npm probe in Rod.TeamServer.csproj), which is all this
+        # slice needs.
+        run: dotnet test Rod.slnx --configuration Release --filter "FullyQualifiedName~DotNetImplantTests"
+
   dotnet-redirector:
     name: .NET redirector (Native AOT)
     runs-on: ubuntu-latest

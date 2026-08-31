@@ -14,17 +14,6 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
-## Operational quality (architecture.md Sec 4, Sec 5)
-
-- [ ] **Run the implant end-to-end suite on a Windows runner.** CI proves
-      the .NET implant on ubuntu only; the win-x64 adversarial walk
-      (rehearsal.md Sec 5) caught a class of Windows-only defects --
-      SChannel leaf presentation, the recon.ps snapshot marshaling,
-      native-tool payload quoting -- that today's CI structurally cannot
-      catch. The DotNetImplantTests harness already exists; add a
-      windows-latest lane.
-      _AC:_ CI runs the implant end-to-end suite on Windows, and each
-      defect class the Sec 5 walk caught would have failed it.
 - [ ] **Push live updates to the operator UI.** The roster and tasking
       views refresh on polling intervals, so check-ins and task results
       surface only on the next tick during a live engagement. Stream
