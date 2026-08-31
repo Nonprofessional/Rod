@@ -8,7 +8,9 @@ The icon set therefore gets two favicon-only treatments on top of the
 Lanczos resize the flat geometry needs anyway:
 
   - a solid dark rounded tile behind the mark, so the icon owns its
-    contrast on both light and dark tab bars, and
+    contrast on both light and dark tab bars,
+  - the mark trimmed to its content bounds and centered to fill the tile
+    (the raw canvas is half padding), and
   - a luminance lift that moves the slate arms to a mid grey while the
     white rod channels stay white.
 
@@ -46,6 +48,22 @@ TILE = (24, 24, 27)
 LIFT = 0.42
 # Corner radius of the tile as a fraction of the icon size.
 CORNER = 0.22
+# How much of the tile the trimmed mark fills. Edge-to-edge would read
+# cramped at 16 px; a hexagon still wants a sliver of breathing room.
+FILL = 0.86
+
+
+def lift_rgb(source: Image.Image) -> Image.Image:
+    """Lifts RGB toward white while leaving alpha untouched.
+
+    Image.point() would lift the alpha channel too, turning fully
+    transparent pixels into visible fog -- over the favicon tile as a gray
+    film, and standalone in the brand mark.
+    """
+    r, g, b, a = source.split()
+    rgb = Image.merge("RGB", (r, g, b)).point(lambda v: round(255 - (255 - v) * (1 - LIFT)))
+    r, g, b = rgb.split()
+    return Image.merge("RGBA", (r, g, b, a))
 
 
 def treat(source: Image.Image) -> Image.Image:
@@ -57,7 +75,22 @@ def treat(source: Image.Image) -> Image.Image:
         (0, 0, size - 1, size - 1), radius=int(size * CORNER), fill=TILE + (255,)
     )
 
-    lifted = source.point(lambda v: round(255 - (255 - v) * (1 - LIFT)))
+    # Trim the source's transparent margins and re-center the mark so it
+    # fills the tile; the raw canvas is half padding, which at 16 px reads
+    # as a dark square with a speck in the middle.
+    cropped = source.crop(source.getbbox())
+    scale = (size * FILL) / max(cropped.size)
+    mark = cropped.resize(
+        (round(cropped.width * scale), round(cropped.height * scale)), Image.LANCZOS
+    )
+    centered = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    centered.paste(
+        mark, ((size - mark.width) // 2, (size - mark.height) // 2), mark
+    )
+
+    # lift_rgb, not a bare point(): the lift must leave alpha alone, or the
+    # transparent padding turns into a gray film over the whole tile.
+    lifted = lift_rgb(centered)
     return Image.alpha_composite(tile, lifted)
 
 
@@ -72,19 +105,6 @@ BRAND = [
     ("brand-logo.png", False),
     ("brand-logo-dark.png", True),
 ]
-
-
-def lift_rgb(source: Image.Image) -> Image.Image:
-    """Lifts RGB toward white while leaving alpha untouched.
-
-    Image.point() would lift the alpha channel too, turning fully
-    transparent pixels into visible fog once the tile no longer covers
-    them -- so only the color channels pass through the lift.
-    """
-    r, g, b, a = source.split()
-    rgb = Image.merge("RGB", (r, g, b)).point(lambda v: round(255 - (255 - v) * (1 - LIFT)))
-    r, g, b = rgb.split()
-    return Image.merge("RGBA", (r, g, b, a))
 
 
 def brand(source: Image.Image, lift: bool) -> Image.Image:
