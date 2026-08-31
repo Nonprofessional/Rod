@@ -14,4 +14,56 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
-No open items.
+## Close-out and release (architecture.md Sec 2, Sec 11)
+
+- [ ] **Export and verify the engagement evidence package.** The report
+      endpoint verifies the live chain, but nothing exports the evidence a
+      finished engagement must leave behind: the hash-chained audit trail,
+      the artifacts, and the report, as one package that survives
+      infrastructure teardown (Sec 14) and re-verifies offline. Add the
+      close-out path: freeze the engagement, export the package, verify it
+      against the chain, then retire the engagement.
+      _AC:_ a closed engagement's exported package re-verifies byte-exact
+      on a host with no Rod infrastructure running.
+- [ ] **Stamp the release artifacts with their source.** Provenance of an
+      installed teamserver is a hand-declared build source tree in
+      configuration, and no tag exists. Embed version and source commit in
+      the binaries (the Native AOT redirector included), surface them at
+      startup and on request, cut the first tagged release, and let the
+      runbook cite the stamp.
+      _AC:_ an installed teamserver and redirector binary self-report their
+      exact source commit, and teamserver.md references the stamp.
+
+## Operational quality (architecture.md Sec 4, Sec 5)
+
+- [ ] **Run the implant end-to-end suite on a Windows runner.** CI proves
+      the .NET implant on ubuntu only; the win-x64 adversarial walk
+      (rehearsal.md Sec 5) caught a class of Windows-only defects --
+      SChannel leaf presentation, the recon.ps snapshot marshaling,
+      native-tool payload quoting -- that today's CI structurally cannot
+      catch. The DotNetImplantTests harness already exists; add a
+      windows-latest lane.
+      _AC:_ CI runs the implant end-to-end suite on Windows, and each
+      defect class the Sec 5 walk caught would have failed it.
+- [ ] **Push live updates to the operator UI.** The roster and tasking
+      views refresh on polling intervals, so check-ins and task results
+      surface only on the next tick during a live engagement. Stream
+      roster and tasking deltas over SSE so operators watch the engagement
+      as it happens.
+      _AC:_ an operator sees an implant's check-in and its task result in
+      the UI without a manual refresh and without waiting out a poll
+      interval.
+
+## Documentation (architecture.md Sec 2)
+
+- [ ] **Complete the README.** The Documentation section never links
+      rehearsal.md, and describes teamserver.md as stand-up and
+      first-login while it also carries the production install, recovery,
+      and posture sections an operator in the field needs to find. The
+      component roster under "What it is" never names the stager either:
+      a reader meets "mint a stager token" in Getting started without the
+      stage-1 loader ever being introduced, though the design and the
+      runbooks cover it (Sec 5, Sec 6).
+      _AC:_ every file under docs/ is reachable from the README doc tree,
+      each operations doc's one-liner matches what it contains, and the
+      stager appears in the README component roster.
