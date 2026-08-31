@@ -13,7 +13,9 @@ Lanczos resize the flat geometry needs anyway:
     white rod channels stay white.
 
 docs/assets/rod-logo.png stays the source of truth and is untouched; only
-the generated icon files carry the treatment.
+the generated icon files carry the treatment. The in-app brand mark skips
+the tile (the UI slot is its own surface) and ships trimmed and transparent
+instead, in a plain and a dark-lifted variant.
 
 Run from anywhere; paths are resolved from this file's location:
 
@@ -27,14 +29,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-# (size, filename): the PNG icon sizes index.html declares, the apple-touch
-# icon (180 px, iOS home-screen bookmark), and the in-app brand mark the
-# sidebar and login card render at ~28 px (96 px keeps it crisp on hi-dpi).
+# (size, filename): the PNG icon sizes index.html declares, plus the
+# apple-touch icon (180 px, iOS home-screen bookmark). The in-app brand
+# mark is generated separately (see BRAND below).
 ICONS = [
     (16, "favicon-16.png"),
     (32, "favicon-32.png"),
     (48, "favicon-48.png"),
-    (96, "brand-logo.png"),
     (180, "apple-touch-icon.png"),
 ]
 
@@ -60,6 +61,43 @@ def treat(source: Image.Image) -> Image.Image:
     return Image.alpha_composite(tile, lifted)
 
 
+# The in-app brand mark (sidebar, login card). Unlike a favicon, the UI slot
+# gives the logo its own surface, so the mark ships transparent and trimmed
+# to the content bounds -- the favicon tile would read as a dark square with
+# a small mark floating inside. Two variants: the untouched mark for light
+# surfaces, and the same luminance lift as the favicons for dark ones; the
+# stylesheet picks per color scheme.
+BRAND_SIZE = 96
+BRAND = [
+    ("brand-logo.png", False),
+    ("brand-logo-dark.png", True),
+]
+
+
+def lift_rgb(source: Image.Image) -> Image.Image:
+    """Lifts RGB toward white while leaving alpha untouched.
+
+    Image.point() would lift the alpha channel too, turning fully
+    transparent pixels into visible fog once the tile no longer covers
+    them -- so only the color channels pass through the lift.
+    """
+    r, g, b, a = source.split()
+    rgb = Image.merge("RGB", (r, g, b)).point(lambda v: round(255 - (255 - v) * (1 - LIFT)))
+    r, g, b = rgb.split()
+    return Image.merge("RGBA", (r, g, b, a))
+
+
+def brand(source: Image.Image, lift: bool) -> Image.Image:
+    """Crops to the mark and centers it on a square, transparent canvas."""
+    cropped = source.crop(source.getbbox())
+    side = max(cropped.size)
+    square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    square.paste(cropped, ((side - cropped.width) // 2, (side - cropped.height) // 2), cropped)
+    if lift:
+        square = lift_rgb(square)
+    return square.resize((BRAND_SIZE, BRAND_SIZE), Image.LANCZOS)
+
+
 def main() -> None:
     here = Path(__file__).resolve()
     client = here.parent.parent
@@ -83,6 +121,10 @@ def main() -> None:
         out = client / "public" / name
         icon.save(out, optimize=True)
         print(f"{out.relative_to(client)}  {icon_size}x{icon_size}")
+    for name, lift in BRAND:
+        out = client / "public" / name
+        brand(source, lift).save(out, optimize=True)
+        print(f"{out.relative_to(client)}  {BRAND_SIZE}x{BRAND_SIZE} (brand)")
 
 
 if __name__ == "__main__":

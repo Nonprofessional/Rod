@@ -41,14 +41,21 @@
   text-decoration: none;
 }
 
-/* The project logo (docs/assets/rod-logo.png, given its dark tile and
-   luminance lift by regen-icons.py) -- the image carries its own rounded
-   tile, so it slots in as-is at brand size. */
+/* The project logo (docs/assets/rod-logo.png, trimmed to fill the slot and
+   kept transparent by regen-icons.py). The slate-and-orange mark reads as-is
+   on light surfaces; on dark surfaces the slate arms need the lifted variant,
+   swapped per color scheme. */
 .brand-logo {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   flex: none;
-  border-radius: 7px;
+  content: url('/brand-logo-dark.png');
+}
+
+@media (prefers-color-scheme: light) {
+  .brand-logo {
+    content: url('/brand-logo.png');
+  }
 }
 
 .brand-name {
