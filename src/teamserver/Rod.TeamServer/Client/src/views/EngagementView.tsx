@@ -23,8 +23,9 @@ import { TimelineView } from './TimelineView'
 // controls (listeners/redirectors, payload build). One SSE stream stays open so
 // every connected operator sees tasking, results, and presence live . The
 // roster card under the operators card is the presence query -- the online
-// implants for this engagement -- refreshed on the same live tick plus a slow
-// poll, because a session opening is not a live event (a close is).
+// implants for this engagement -- refreshed on the same live tick (a session
+// opening and a session closing are both live events), with a slow poll as
+// reconnect reconciliation.
 
 type TabId = 'tasking' | 'implants' | 'audit' | 'artifacts' | 'timeline' | 'report' | 'listeners' | 'build'
 
@@ -82,6 +83,7 @@ export function EngagementView({
       onTaskIssued: () => setTick((t) => t + 1),
       onTaskCompleted: () => setTick((t) => t + 1),
       onTaskCancelled: () => setTick((t) => t + 1),
+      onSessionOpened: () => setTick((t) => t + 1),
       onSessionClosed: () => setTick((t) => t + 1),
     })
     return close
@@ -94,10 +96,12 @@ export function EngagementView({
   }, [engagementId])
 
   // The online-implant roster is the presence query's projection: an implant
-  // is online exactly while its session is active. A session opening is not
-  // a live event (a close fires SessionClosed), so besides the live-event
-  // tick the roster refreshes on a slow poll -- without it a fresh implant
-  // stays invisible until someone acts.
+  // is online exactly while its session is active. Both directions are live
+  // events -- SessionOpened when an implant checks in, SessionClosed when its
+  // stream dies or is swept -- and both bump the tick this effect depends on,
+  // so the roster moves the moment the fleet changes. The slow poll stays as
+  // reconciliation only: after a dropped SSE connection the events a reconnect
+  // missed are gone, and the poll re-anchors the roster to the server's view.
   useEffect(() => {
     let cancelled = false
     const refresh = async () => {

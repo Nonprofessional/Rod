@@ -77,6 +77,16 @@ public static class OperatorEventsEndpoint
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers["X-Accel-Buffering"] = "no"; // disable proxy buffering (nginx)
 
+        // Subscribe before joining and before writing hello: starting the
+        // enumeration runs the bus's synchronous registration, so nothing
+        // published after this point can be missed. The pending first read
+        // parks until an event arrives -- the operator's own join, published
+        // right below, guarantees it resolves without waiting on anything.
+        await using var events = bus
+            .SubscribeAsync(engagement, cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
+        var first = events.MoveNextAsync();
+
         // Join before opening the stream so peers see the join, and seed the
         // late joiner with the current roster as the first event.
         await presence.JoinAsync(engagement, identity, cancellationToken);
@@ -89,20 +99,30 @@ public static class OperatorEventsEndpoint
                     .ToArray(),
             }, cancellationToken);
 
-            // The bus yields until the client disconnects (cancellation). Each
-            // published event on this engagement is framed and flushed.
-            await foreach (var @event in bus.SubscribeAsync(engagement, cancellationToken))
+            // The pump: the own join from above resolves the pending first
+            // read and is skipped -- the hello frame already seeded this
+            // operator into the roster, so a self-join frame would be noise.
+            // Everything else the bus yields until the client disconnects
+            // (cancellation) is framed and flushed as it arrives.
+            var hasCurrent = await first;
+            while (hasCurrent)
             {
-                await WriteEventAsync(context.Response, @event.Kind.ToString(), new
+                var @event = events.Current;
+                if (@event.Kind != LiveEventKind.OperatorJoined || @event.OperatorId != identity.Id)
                 {
-                    kind = @event.Kind.ToString(),
-                    engagementId = @event.EngagementId.ToString(),
-                    operatorId = @event.OperatorId.ToString(),
-                    implantId = @event.ImplantId?.ToString(),
-                    taskId = @event.TaskId?.ToString(),
-                    payload = @event.Payload,
-                    at = @event.At,
-                }, cancellationToken);
+                    await WriteEventAsync(context.Response, @event.Kind.ToString(), new
+                    {
+                        kind = @event.Kind.ToString(),
+                        engagementId = @event.EngagementId.ToString(),
+                        operatorId = @event.OperatorId.ToString(),
+                        implantId = @event.ImplantId?.ToString(),
+                        taskId = @event.TaskId?.ToString(),
+                        payload = @event.Payload,
+                        at = @event.At,
+                    }, cancellationToken);
+                }
+
+                hasCurrent = await events.MoveNextAsync();
             }
         }
         finally

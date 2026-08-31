@@ -122,4 +122,22 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.SessionClosed, OperatorId.Empty, implantId, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a session-opened event: an implant checked in and opened its live
+    /// channel. As with the transport's <c>SessionOpened</c> audit record, it is
+    /// published only for a genuinely new session -- the registry reuses the
+    /// active session on a poll cadence, and a check-in cadence must not flood
+    /// the stream. Implant-initiated, so it is attributed to the implant's
+    /// <paramref name="deployedBy"/> operator (the token issuer who authorized
+    /// the deployment), the same attribution the audit record carries; the
+    /// payload is the advertised protocol version.
+    /// </summary>
+    public static LiveEvent SessionOpened(
+        EngagementId engagement,
+        OperatorId deployedBy,
+        ImplantId implantId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.SessionOpened, deployedBy, implantId, TaskId: null, payload, at);
 }

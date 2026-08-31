@@ -282,6 +282,7 @@ export interface EngagementStreamHandlers {
   onTaskCompleted?: (taskId: string, payload: string) => void
   onTaskCancelled?: (taskId: string, payload: string) => void
   onChannelOutput?: (taskId: string, chunk: string) => void
+  onSessionOpened?: (implantId: string, payload: string) => void
   onSessionClosed?: (implantId: string, payload: string) => void
   onError?: (event: Event) => void
 }
@@ -331,6 +332,10 @@ export function subscribeToEngagement(
   source.addEventListener('ChannelOutput', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onChannelOutput?.(payload?.taskId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('SessionOpened', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onSessionOpened?.(payload?.implantId ?? '', payload?.payload ?? '')
   })
   source.addEventListener('SessionClosed', (e) => {
     const payload = parse((e as MessageEvent).data)

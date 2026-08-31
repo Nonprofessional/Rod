@@ -1,5 +1,6 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
 
 namespace Rod.CoreState.Application;
@@ -43,15 +44,31 @@ public sealed class HandshakeService
     private readonly IImplantRepository _implants;
     private readonly ISessionRegistry _sessions;
     private readonly TimeProvider _clock;
+    private readonly ILiveEventBus? _bus;
 
     public HandshakeService(
         IImplantRepository implants,
         ISessionRegistry sessions,
         TimeProvider clock)
+        : this(implants, sessions, clock, bus: null)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the service with the live-event bus. The composition root
+    /// wires the real bus; the three-argument constructor above keeps the
+    /// core-state unit tests bus-free.
+    /// </summary>
+    public HandshakeService(
+        IImplantRepository implants,
+        ISessionRegistry sessions,
+        TimeProvider clock,
+        ILiveEventBus? bus)
     {
         _implants = implants;
         _sessions = sessions;
         _clock = clock;
+        _bus = bus;
     }
 
     /// <summary>
@@ -136,6 +153,26 @@ public sealed class HandshakeService
         // session -- a poll cadence must not flood the engagement trail.
         var priorActive = await _sessions.GetActiveAsync(command.ImplantId, cancellationToken);
         var session = await _sessions.OpenAsync(implant, command.Capabilities, now, cancellationToken);
+
+        // 6b. Fan a genuinely-new session out to connected operator sessions
+        // (architecture.md Sec 10.3): the implant came online, and the online
+        // roster should show it the moment it checks in, not on the next poll.
+        // The same flood guard the transport's SessionOpened audit record
+        // applies -- a reused session (a poll check-in, a flapped stream) is
+        // silent, so a check-in cadence cannot flood the stream. The audit
+        // record itself stays the transport's write: it owns the trail's
+        // encoding and ordering relative to its own frames.
+        if (priorActive is null && _bus is not null)
+        {
+            await _bus.PublishAsync(
+                LiveEvent.SessionOpened(
+                    implant.EngagementId,
+                    implant.DeployedBy,
+                    implant.Id,
+                    $"{command.MajorVersion}.{command.MinorVersion}",
+                    now),
+                cancellationToken);
+        }
 
         // 7. Replay-nonce negotiation (architecture.md Sec 9 -- tasking replay
         //    nonces). An implant that advertises the arm gets it for life: the

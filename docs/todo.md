@@ -13,12 +13,3 @@ Lean is the standing default: an addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
-
-- [ ] **Push live updates to the operator UI.** The roster and tasking
-      views refresh on polling intervals, so check-ins and task results
-      surface only on the next tick during a live engagement. Stream
-      roster and tasking deltas over SSE so operators watch the engagement
-      as it happens.
-      _AC:_ an operator sees an implant's check-in and its task result in
-      the UI without a manual refresh and without waiting out a poll
-      interval.

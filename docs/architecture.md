@@ -1000,7 +1000,12 @@ connection drops without a clean close -- leaves its session Active until the
 hosted staleness sweeper closes every Active session whose last-seen stamp is
 older than the configured `Sessions:Staleness:Threshold` (checked every
 `Sessions:Staleness:SweepInterval`); retirement closes a session immediately.
-Closing the session is what drops the implant off the online roster; each swept
+The session's whole life is live on the operator event stream: opening a
+genuinely new session fans out a `SessionOpened` event (the same flood guard
+-- a poll check-in reuses the active session and publishes nothing), so
+connected operators watch an implant come online the moment it checks in
+rather than on the next roster poll, and closing the session is what drops
+it off the online roster; each swept
 close also fans out a `SessionClosed` live event so connected operators see it
 immediately, and the beacon stream's reader ends the connection on its next
 frame so a recovered implant reconnects and re-handshakes instead of refreshing

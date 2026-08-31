@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
+using Rod.CoreState.Application;
 using Rod.Operators.Live;
 using Rod.Transport.Endpoints;
 
@@ -144,6 +146,65 @@ public class OperatorLiveTests
         // The connecting operator is joined before hello is sent, so the roster
         // the hello carries already includes them.
         Assert.Contains("solo", hello.Data);
+    }
+
+    [Fact]
+    public async Task Operator_Sees_An_Implant_Check_In_Live()
+    {
+        // A session opening is a live event -- the roster's mirror of the sweep's
+        // SessionClosed -- so a connected operator watches an implant come online
+        // the moment it checks in, without waiting out a roster poll. The flood
+        // guard rides along: only a genuinely new session publishes, so a poll
+        // cadence (a reused session) stays silent.
+        using var host = CreateHost();
+        await RegisterAsync(host, "alpha", "Alpha Operator");
+        using var client = await OperatorClientAsync(host, "alpha");
+
+        var engagementId = await CreateEngagementAsync(client, "Operation check-in");
+        var implantId = await EnrollImplantAsync(client, engagementId);
+
+        await using var stream = await OpenStreamAsync(client, engagementId);
+        Assert.Equal("hello", (await stream.ReadAsync()).Event);
+
+        // The implant checks in: the handshake opens the session, and the
+        // SessionOpened event reaches the connected operator live -- the SSE
+        // endpoint subscribes to the bus before it writes hello, so an event
+        // published immediately after the stream opens cannot be missed.
+        var handshake = host.Services.GetRequiredService<HandshakeService>();
+        var result = await handshake.HandshakeAsync(new HandshakeCommand(
+            ImplantId: new ImplantId(implantId),
+            MajorVersion: 1,
+            MinorVersion: 0,
+            Capabilities: new[] { "shell.exec" },
+            CertificateEngagementId: new EngagementId(Guid.Parse(engagementId))));
+        Assert.False(result.ReusedSession);
+
+        var opened = await stream.ReadAsync();
+        Assert.Equal("SessionOpened", opened.Event);
+        // The wire carries the implant id in the ids' canonical N form.
+        Assert.Contains(implantId.ToString("N"), opened.Data);
+
+        // A poll cadence reuses the active session and must not re-publish:
+        // the next check-in stays silent, and the next event on the stream is
+        // the tasking issued after it -- not a second SessionOpened.
+        var reuse = await handshake.HandshakeAsync(new HandshakeCommand(
+            ImplantId: new ImplantId(implantId),
+            MajorVersion: 1,
+            MinorVersion: 0,
+            Capabilities: new[] { "shell.exec" },
+            CertificateEngagementId: new EngagementId(Guid.Parse(engagementId))));
+        Assert.True(reuse.ReusedSession);
+
+        var issued = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(
+                ImplantId: implantId.ToString("N"),
+                Verb: "file.pull",
+                Arguments: "/etc/hostname"));
+        issued.EnsureSuccessStatusCode();
+
+        var next = await stream.ReadAsync();
+        Assert.Equal("TaskIssued", next.Event);
     }
 
     [Fact]
