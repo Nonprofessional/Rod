@@ -81,6 +81,13 @@ internal sealed class RedirectorConfig
                 case "--help":
                     Console.Error.WriteLine(Usage);
                     throw new ExitProgramException(2);
+                case "-version":
+                case "--version":
+                    // The stamp is the answer to "which tree is this binary
+                    // from?"; stdout (not stderr) so a runbook can pipe it.
+                    Console.Out.WriteLine(
+                        $"rod-redirector {BuildStamp.Version} (commit {BuildStamp.SourceCommit})");
+                    throw new ExitProgramException(0);
                 case "-listen":
                 case "--listen":
                     config.ListenHost = TakeValue(args, ref i, flag);
@@ -174,6 +181,7 @@ internal sealed class RedirectorConfig
           -listen string    bind endpoint (host:port; host may be * for any, or a literal IP)
           -upstream string  teamserver listener endpoint (host:port; host may be a DNS name)
           -allow string     optional comma-separated source CIDR allow-list (e.g. 10.0.0.0/8)
+          -version          print version and source commit, then exit
 
         Each flag falls back to the matching ROD_LISTEN / ROD_UPSTREAM / ROD_ALLOW
         environment variable. The redirector forwards opaque TCP bytes; it never

@@ -42,6 +42,10 @@
          operators and engagements) can be layered into the test host and the
          durability acceptance test can resolve its DbContext directly. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Persistence\Rod.Persistence.csproj" />
+    <!-- Referenced so the composition root's own surface is testable: the
+         build-stamp endpoint (GET /build) lives in the executable because the
+         stamp is a property of the binary, not of any layer. -->
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.TeamServer\Rod.TeamServer.csproj" />
   </ItemGroup>
 
 </Project>

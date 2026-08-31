@@ -119,7 +119,18 @@ creation.
 ## 4. Verify the forwarder
 
 Before pointing live traffic at a freshly deployed redirector, confirm it splices
-both directions. From a host that can reach the redirector's public endpoint:
+both directions. First, confirm which tree the binary came from -- the build
+stamps the version and exact source commit into the binary, so provenance is
+read off the deployed artifact, not off deployment notes:
+
+```
+./rod-redirector -version
+# -> rod-redirector 1.0.0 (commit <sha>)   -- must match the release tag the
+#                                             binary was built from
+```
+
+The same pair is the first line the forwarder logs at startup. From a host that
+can reach the redirector's public endpoint:
 
 ```
 # The enroll route is HTTPS and mTLS-protected, so a plain TCP connect is enough

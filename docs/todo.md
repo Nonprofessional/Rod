@@ -25,14 +25,6 @@ starts from a gap an actual engagement surfaces.
       against the chain, then retire the engagement.
       _AC:_ a closed engagement's exported package re-verifies byte-exact
       on a host with no Rod infrastructure running.
-- [ ] **Stamp the release artifacts with their source.** Provenance of an
-      installed teamserver is a hand-declared build source tree in
-      configuration, and no tag exists. Embed version and source commit in
-      the binaries (the Native AOT redirector included), surface them at
-      startup and on request, cut the first tagged release, and let the
-      runbook cite the stamp.
-      _AC:_ an installed teamserver and redirector binary self-report their
-      exact source commit, and teamserver.md references the stamp.
 
 ## Operational quality (architecture.md Sec 4, Sec 5)
 

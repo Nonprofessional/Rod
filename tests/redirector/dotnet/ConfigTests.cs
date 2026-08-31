@@ -138,6 +138,35 @@ public class ConfigTests
         Assert.Contains("unknown flag", ex.Message);
     }
 
+    [Theory]
+    [InlineData("-version")]
+    [InlineData("--version")]
+    public void Version_Flag_Prints_Stamp_And_Exits_Zero(string flag)
+    {
+        // The stamp must answer without the required flags: a runbook checks a
+        // deployed binary before configuring it.
+        using var stdout = new StringWriter();
+        var original = Console.Out;
+        Console.SetOut(stdout);
+        try
+        {
+            var ex = Assert.Throws<ExitProgramException>(() => RedirectorConfig.Parse(new[] { flag }));
+
+            Assert.Equal(0, ex.ExitCode);
+            Assert.False(ex.HasMessage);
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        // The printed line is the same pair the startup log reports, so both
+        // surfaces stay interchangeable when verifying a deployment.
+        Assert.Equal(
+            $"rod-redirector {BuildStamp.Version} (commit {BuildStamp.SourceCommit}){Environment.NewLine}",
+            stdout.ToString());
+    }
+
     [Fact]
     public void Bracketed_Ipv6_Listen_Parses()
     {

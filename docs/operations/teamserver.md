@@ -231,6 +231,35 @@ executed walk logged into the installed UI, listed the engagements,
 opened one, and saw the live presence channel mark its own operator
 session online.
 
+### Build provenance
+
+The publish stamps its provenance into the binaries: the product version
+(`RodVersion` in `Directory.Build.props`) and the exact source commit the
+binary was built from, resolved from git HEAD at build time. A release is a
+git tag `v<RodVersion>` cut from the tree it was built from; the stamp is
+what ties an installed binary back to that tag -- not a hand-declared source
+path in configuration.
+
+The installed teamserver reports the pair two ways:
+
+- at startup, as the first log line -- `Rod teamserver 1.0.0
+  (commit <sha>)` in `journalctl -u rod-teamserver`;
+- on request, over the operator API, behind a session:
+
+```
+curl -s -c jar.txt -H 'Content-Type: application/json' \
+  -d '{"handle":"lead","password":"<from the secret store>"}' \
+  http://<operator listener>/operators/login > /dev/null
+curl -s -b jar.txt http://<operator listener>/build
+# -> {"version":"1.0.0","sourceCommit":"<sha>"}
+```
+
+Accept an install only when the stamp matches the tag it was cut from. The
+deployed redirector reports the same pair via `rod-redirector -version`
+([redirectors.md](redirectors.md)). The implant and stager are deliberately
+unstamped: a captured artifact must not carry the teamserver's source
+provenance.
+
 ### Secrets
 
 `Operators__Initial__Password` and `Pki__CaPrivateKeyPassphrase`
@@ -338,6 +367,10 @@ has already vouched for the store underneath.
   trail regardless of configuration -- keep `Audit:DataDirectory` (or
   Postgres) on durable storage, since the trail is the report source and
   outlives the operation (architecture.md Sec 11).
+- Pin the install to its source: accept a deployment only after the build
+  stamp matches the release tag it was cut from (see "Build provenance"
+  above) -- the binaries name their commit, so provenance is read off the
+  running system, not off deployment notes.
 - Before pointing the stack at a client network, walk the full lifecycle on
   the production shape once -- the procedure and its acceptance evidence
   live in [rehearsal.md](rehearsal.md).

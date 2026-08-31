@@ -54,6 +54,11 @@ catch (ExitProgramException ex)
     return ex.ExitCode;
 }
 
+// Self-report provenance: the first log line names the exact source tree this
+// binary was built from, so a deployed redirector identifies itself instead of
+// relying on deployment notes. The same pair answers on the -version flag.
+Console.Error.WriteLine($"rod-redirector {BuildStamp.Version} (commit {BuildStamp.SourceCommit})");
+
 var forwarder = new Forwarder(
     new IPEndPoint(config.ListenAddress, config.ListenPort),
     config.UpstreamHost,

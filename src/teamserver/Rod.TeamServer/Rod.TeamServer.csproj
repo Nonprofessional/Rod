@@ -33,6 +33,11 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <!-- Release provenance: compile the BuildStamp (version + source commit)
+         the startup log line and GET /build report (Directory.Build.targets).
+         The implant and stager are deliberately NOT stamped: a captured
+         artifact must not carry the teamserver's source provenance. -->
+    <RodStampBuildInfo>true</RodStampBuildInfo>
   </PropertyGroup>
 
   <!-- Fresh-clone convenience: the built operator UI is gitignored, so the first

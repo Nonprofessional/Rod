@@ -42,6 +42,10 @@
     <IsAotCompatible>true</IsAotCompatible>
     <!-- Fixed culture keeps the binary small and the logs deterministic. -->
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Release provenance: compile the BuildStamp (version + source commit)
+         the binary prints at startup and on the -version flag
+         (Directory.Build.targets). -->
+    <RodStampBuildInfo>true</RodStampBuildInfo>
   </PropertyGroup>
 
   <ItemGroup>

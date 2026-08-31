@@ -1,0 +1,50 @@
+<Project>
+
+  <!--
+    Release provenance: a project that sets <RodStampBuildInfo>true</RodStampBuildInfo>
+    compiles a generated BuildStamp class carrying the product version (RodVersion
+    from Directory.Build.props) and the exact source commit the binary was built
+    from. The commit comes from git HEAD unless injected as a property
+    (-p:RodSourceCommit=... for release builds from a source export), and falls
+    back to "unknown" outside a repository. Stamped binaries self-report the pair
+    at startup and on request (teamserver: GET /build and the startup log line;
+    redirector: the startup line and the -version flag), so an installed binary
+    names the tree it came from instead of a hand-declared config path.
+
+    The file path and the Compile item are computed from evaluation-time
+    properties only (BaseIntermediateOutputPath/Configuration/TargetFramework):
+    the target also runs in phases where the SDK's own intermediate-output
+    properties are empty, and a phase-dependent path would scatter the generated
+    file across the tree.
+  -->
+  <PropertyGroup Condition="'$(RodStampBuildInfo)' == 'true'">
+    <RodBuildStampPath>$(BaseIntermediateOutputPath)$(Configuration)/$(TargetFramework)/BuildStamp.g.cs</RodBuildStampPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RodStampBuildInfo)' == 'true'">
+    <Compile Include="$(RodBuildStampPath)" />
+  </ItemGroup>
+
+  <Target Name="RodGenerateBuildStamp"
+          BeforeTargets="CoreCompile"
+          Condition="'$(RodStampBuildInfo)' == 'true'">
+    <Exec Command="git rev-parse HEAD"
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="low"
+          Condition="'$(RodSourceCommit)' == ''">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_RodGitCommit" />
+    </Exec>
+    <PropertyGroup>
+      <RodSourceCommit Condition="'$(RodSourceCommit)' == '' and '$(_RodGitCommit)' != ''">$(_RodGitCommit)</RodSourceCommit>
+      <RodSourceCommit Condition="'$(RodSourceCommit)' == ''">unknown</RodSourceCommit>
+    </PropertyGroup>
+    <!-- WriteOnlyWhenDifferent keeps the timestamp stable when the stamp is
+         unchanged, so the generated file does not retrigger CoreCompile on
+         every build. %3B is an escaped semicolon (Lines splits items on ;). -->
+    <WriteLinesToFile File="$(RodBuildStampPath)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true"
+                      Lines="// Auto-generated from RodVersion/RodSourceCommit at build time%3B do not edit.&lt;auto-generated /&gt;&#10;namespace $(RootNamespace)%3B&#10;&#10;/// &lt;summary&gt;The version and source commit this binary was built from, generated at build time (Directory.Build.targets).&lt;/summary&gt;&#10;public static class BuildStamp&#10;{&#10;    public const string Version = &quot;$(RodVersion)&quot;%3B&#10;&#10;    public const string SourceCommit = &quot;$(RodSourceCommit)&quot;%3B&#10;}" />
+  </Target>
+
+</Project>

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Rod.Operators;
 using Rod.Operators.Auth;
 using Rod.Persistence;
+using Rod.TeamServer;
 using Rod.Tradecraft;
 using Rod.Transport;
 using Rod.Transport.Listeners;
@@ -68,6 +69,13 @@ builder.WebHost.UseRodListeners(listenerConfigs);
 
 var app = builder.Build();
 
+// Self-report provenance: the startup line names the exact source tree this
+// binary was built from, so an installed teamserver introduces itself by commit
+// instead of a hand-declared source path in configuration. GET /build reports
+// the same pair on request (BuildStampEndpoints).
+app.Logger.LogInformation(
+    "Rod teamserver {Version} (commit {Commit})", BuildStamp.Version, BuildStamp.SourceCommit);
+
 // The durable store's schema must match the model before any traffic is
 // served: a database restored without its constraints boots apparently healthy
 // and fails at the first task dispatch instead. The same fail-loudly posture
@@ -129,6 +137,10 @@ app.MapOperatorEndpoints();
 // operator-layer endpoints from the composition root for the same layer-
 // separation reason as AddRodOperators above.
 app.MapOperatorAuthEndpoints();
+// The build-report endpoint (GET /build): the binary's own provenance, mapped
+// from the composition root because the stamp is a property of this executable,
+// not of any layer.
+app.MapBuildStampEndpoints();
 // The tradecraft layer's capability catalog: mapped from the
 // composition root for the same layer-separation reason as AddRodTradecraft --
 // transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
