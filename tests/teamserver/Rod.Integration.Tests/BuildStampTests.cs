@@ -43,8 +43,9 @@ public partial class BuildStampTests
         // two surfaces (log line and endpoint) can never drift apart.
         Assert.Equal(BuildStamp.Version, report.Version);
         Assert.Equal(BuildStamp.SourceCommit, report.SourceCommit);
-        // A version always carries the product shape; the commit is a full git
-        // sha, or "unknown" when built outside a repository (a source export).
+        // A version always carries the product shape -- a bare x.y.z claims the
+        // released version, so a development tree carries a pre-release suffix
+        // (RodVersion in Directory.Build.props); the commit is either form.
         Assert.Matches(VersionShape(), report.Version);
         Assert.Matches(CommitShape(), report.SourceCommit);
     }
@@ -52,7 +53,7 @@ public partial class BuildStampTests
     private static void MapBuildStamp(IEndpointRouteBuilder endpoints)
         => endpoints.MapBuildStampEndpoints();
 
-    [GeneratedRegex(@"^\d+\.\d+\.\d+$")]
+    [GeneratedRegex(@"^\d+\.\d+\.\d+(?:-[\w.]+)?$")]
     private static partial Regex VersionShape();
 
     [GeneratedRegex("^(unknown|[0-9a-f]{40})$")]

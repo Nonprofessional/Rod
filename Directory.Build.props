@@ -5,6 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <RodVersion>1.0.0</RodVersion>
+    <!-- Release provenance: the product version every stamped binary reports
+         (Directory.Build.targets generates BuildStamp from it). One source of
+         truth for the release tag: a tree carrying a bare x.y.z claims the
+         released version, so while developing toward that release it carries
+         the -dev suffix, and the suffix is dropped in the same change that
+         cuts the git tag (v&lt;RodVersion&gt;) from the tree. -->
+    <RodVersion>1.0.0-dev</RodVersion>
   </PropertyGroup>
 </Project>
