@@ -766,19 +766,30 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // the durable schema it targets must already exist. The host itself does
             // not auto-migrate (migrations are a deliberate operator step), so the
             // test creates the schema here the way an operator would before startup.
-            // A failure here is annotated with the container's live state: CI kept
-            // losing the engine mid-class (new connections dying at SSL
-            // negotiation), and "Exited 137" vs "Running" points at very different
-            // causes.
+            // One bounded retry first: CI intermittently loses exactly one fresh
+            // connection at SSL negotiation while the engine reports Running (four
+            // runs, same signature, same test; the next host over the same database
+            // works), and the same suite is bulletproof locally -- a single re-open
+            // after a beat converts the transient without hiding a persistent
+            // failure, which still reports the container's live state and recent
+            // engine log below.
             try
             {
                 await EnsureSchemaAsync(env.Host);
             }
             catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException)
             {
-                throw new InvalidOperationException(
-                    $"Durable schema setup lost the Postgres container ({await postgres.DescribeAsync()}): {ex.Message}",
-                    ex);
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                try
+                {
+                    await EnsureSchemaAsync(env.Host);
+                }
+                catch (Exception ex2) when (ex2 is NpgsqlException or InvalidOperationException)
+                {
+                    throw new InvalidOperationException(
+                        $"Durable schema setup lost the Postgres container ({await postgres.DescribeAsync()}): {ex2.Message}",
+                        ex2);
+                }
             }
             await env.Host.StartAsync();
 

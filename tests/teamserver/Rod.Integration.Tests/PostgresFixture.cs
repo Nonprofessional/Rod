@@ -60,18 +60,27 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     /// <summary>
     /// What the container looks like right now, for failure messages: when a
-    /// test loses its database mid-class, the state and exit code say which
-    /// failure it was. <c>Exited</c> with 137 is the OOM killer; <c>Running</c>
-    /// means the engine is alive and the port mapping went stale -- different
-    /// problems, different fixes.
+    /// test loses its database mid-class, the state, exit code, and recent
+    /// engine log say which failure it was. <c>Exited</c> with 137 is the OOM
+    /// killer; <c>Running</c> with a "too many clients" or fork failure in the
+    /// log is connection exhaustion; a clean log with <c>Running</c> points at
+    /// the port mapping -- different problems, different fixes.
     /// </summary>
     public async Task<string> DescribeAsync()
     {
         try
         {
-            if (_container.State == TestcontainersStates.Exited)
-                return $"state={_container.State}, exitCode={await _container.GetExitCodeAsync()}";
-            return $"state={_container.State}";
+            var state = _container.State;
+            var summary = state == TestcontainersStates.Exited
+                ? $"state={state}, exitCode={await _container.GetExitCodeAsync()}"
+                : $"state={state}";
+
+            var logs = await _container.GetLogsAsync(
+                since: DateTime.UtcNow.AddMinutes(-2), timestampsEnabled: true);
+            var tail = (logs.Stdout + "\n" + logs.Stderr).Trim();
+            if (tail.Length > 2000)
+                tail = "..." + tail[^2000..];
+            return $"{summary}; recent engine log: {tail}";
         }
         catch (Exception ex)
         {
