@@ -30,12 +30,12 @@ public class ListenerRepointTests
             new ListenerConfig(
                 Name: "operator-api",
                 Transport: ListenerTransport.Http,
-                BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "http://op.example.test"),
             new ListenerConfig(
                 Name: "mtls-redirected",
                 Transport: ListenerTransport.Mtls,
-                BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: oldEndpoint));
 
         var recordedBind = env.MtlsBind;
@@ -75,7 +75,7 @@ public class ListenerRepointTests
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "http-default",
             Transport: ListenerTransport.Http,
-            BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost"));
 
         var response = await env.Http.PostAsJsonAsync(
@@ -91,7 +91,7 @@ public class ListenerRepointTests
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "http-default",
             Transport: ListenerTransport.Http,
-            BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost"));
 
         var list = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
@@ -120,7 +120,7 @@ public class ListenerRepointTests
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "http-default",
             Transport: ListenerTransport.Http,
-            BindAddress: $"127.0.0.1:{GetFreeTcpPort()}",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost"));
 
         var list = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
@@ -131,15 +131,6 @@ public class ListenerRepointTests
             new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "   "));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     /// <summary>
@@ -163,12 +154,12 @@ public class ListenerRepointTests
             var rewritten = new List<ListenerConfig>();
             if (httpListener is not null)
             {
-                env.HttpBind = $"127.0.0.1:{GetFreeTcpPort()}";
+                env.HttpBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
                 rewritten.Add(httpListener with { BindAddress = env.HttpBind });
             }
             if (mtlsListener is not null)
             {
-                env.MtlsBind = $"127.0.0.1:{GetFreeTcpPort()}";
+                env.MtlsBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
                 rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
             }
 

@@ -267,8 +267,8 @@ public class OperationalEventLogTests
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = GetFreeTcpPort();
-            env.HttpPort = GetFreeTcpPort();
+            env.MtlsPort = TestSupport.GetFreeTcpPort();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
@@ -323,14 +323,5 @@ public class OperationalEventLogTests
                 await Host.StopAsync();
             Host?.Dispose();
         }
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }

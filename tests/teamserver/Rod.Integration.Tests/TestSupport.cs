@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 
 namespace Rod.Integration.Tests;
 
@@ -47,5 +49,41 @@ internal static class TestSupport
         var start = Math.Max(1, port - 2);
         var end = Math.Min(65535, port + 2);
         return $"{start}-{end}";
+    }
+
+    // Hands out distinct loopback ports for test listeners. The per-file probe
+    // this replaces (bind :0, read the port, release, let Kestrel rebind later)
+    // handed the same released port to two TestEnvs racing in parallel test
+    // classes, and one Kestrel bind then died with "address already in use".
+    // A process-wide counter never repeats a port; the probe only skips ports
+    // something outside this process already holds.
+    private static readonly object PortGate = new();
+    private static int _nextPort = Random.Shared.Next(20_000, 40_000);
+
+    internal static int GetFreeTcpPort()
+    {
+        lock (PortGate)
+        {
+            while (true)
+            {
+                var port = _nextPort;
+                _nextPort = port >= 60_000 ? 20_000 : port + 1;
+
+                var listener = new TcpListener(IPAddress.Loopback, port);
+                try
+                {
+                    listener.Start();
+                    return port;
+                }
+                catch (SocketException)
+                {
+                    // Held by something outside the test process; take the next.
+                }
+                finally
+                {
+                    listener.Stop();
+                }
+            }
+        }
     }
 }

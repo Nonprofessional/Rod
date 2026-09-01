@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Net.Security;
 using System.Security.Cryptography;
@@ -236,8 +235,8 @@ public class HandshakePresenceTests
         public static async Task<TestEnv> StartAsync(Action<Dictionary<string, string?>>? extendConfig = null)
         {
             var env = new TestEnv();
-            env.MtlsPort = GetFreeTcpPort();
-            env.HttpPort = GetFreeTcpPort();
+            env.MtlsPort = TestSupport.GetFreeTcpPort();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig(extendConfig);
             env.Host = TransportHost.CreateHostBuilder(
@@ -299,15 +298,6 @@ public class HandshakePresenceTests
                 await Host.StopAsync();
             Host?.Dispose();
         }
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     // A self-signed leaf that does NOT chain to the dev CA, for the TLS-rejection

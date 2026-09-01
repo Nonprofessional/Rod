@@ -40,7 +40,7 @@ public class ListenerTests
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "http-1",
             Transport: ListenerTransport.Http,
-            BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://c2.example.test"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -79,7 +79,7 @@ public class ListenerTests
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "mtls-1",
             Transport: ListenerTransport.Mtls,
-            BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "https://c2.example.test"));
 
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
@@ -120,12 +120,12 @@ public class ListenerTests
             new ListenerConfig(
                 Name: "envelope-1",
                 Transport: ListenerTransport.HttpsEnvelope,
-                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "https://c2.example.test"),
             new ListenerConfig(
                 Name: "http-1",
                 Transport: ListenerTransport.Http,
-                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "http://c2.example.test"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -151,12 +151,12 @@ public class ListenerTests
             new ListenerConfig(
                 Name: "operator-api",
                 Transport: ListenerTransport.Http,
-                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "http://op.example.test"),
             new ListenerConfig(
                 Name: "mtls-redirected",
                 Transport: ListenerTransport.Mtls,
-                BindAddress: $"127.0.0.1:{TestEnv.GetFreeTcpPort()}",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "https://redirect-a.example.test"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -185,7 +185,7 @@ public class ListenerTests
     }
 
     private static ListenerConfig DefaultHttpListener()
-        => new("http-default", ListenerTransport.Http, $"127.0.0.1:{TestEnv.GetFreeTcpPort()}", "http://localhost");
+        => new("http-default", ListenerTransport.Http, $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
 
     private static async Task<string> MintTokenForNewEngagementAsync(HttpClient client)
     {
@@ -254,12 +254,12 @@ public class ListenerTests
             var rewritten = new List<ListenerConfig>();
             if (httpListener is not null)
             {
-                env.HttpBind = $"127.0.0.1:{GetFreeTcpPort()}";
+                env.HttpBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
                 rewritten.Add(httpListener with { BindAddress = env.HttpBind });
             }
             if (mtlsListener is not null)
             {
-                env.MtlsBind = $"127.0.0.1:{GetFreeTcpPort()}";
+                env.MtlsBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
                 rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
             }
 
@@ -270,7 +270,7 @@ public class ListenerTests
                 l => l.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls)))
             {
                 var bind = other.BindAddress.Contains(':', StringComparison.Ordinal)
-                    ? $"127.0.0.1:{GetFreeTcpPort()}"
+                    ? $"127.0.0.1:{TestSupport.GetFreeTcpPort()}"
                     : other.BindAddress;
                 rewritten.Add(other with { BindAddress = bind });
             }
@@ -356,15 +356,6 @@ public class ListenerTests
             if (Host is not null)
                 await Host.StopAsync();
             Host?.Dispose();
-        }
-
-        public static int GetFreeTcpPort()
-        {
-            using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
         }
     }
 }

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Net.Security;
 using System.Security.Cryptography;
@@ -334,8 +333,8 @@ public class TaskRoundTripTests
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = GetFreeTcpPort();
-            env.HttpPort = GetFreeTcpPort();
+            env.MtlsPort = TestSupport.GetFreeTcpPort();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
 
             // Compose the operator + auth layers so the operator API requires a
             // cookie session; the operator id is the seeded one, read back from
@@ -393,14 +392,5 @@ public class TaskRoundTripTests
                 await Host.StopAsync();
             Host?.Dispose();
         }
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }

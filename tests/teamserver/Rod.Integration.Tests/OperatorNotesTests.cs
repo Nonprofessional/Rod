@@ -212,7 +212,7 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
         public static async Task<TestEnv> StartAsync(string connectionString)
         {
             var env = new TestEnv();
-            var httpPort = GetFreeTcpPort();
+            var httpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig(
                 extend: dict => dict["ConnectionStrings:Postgres"] = connectionString);
@@ -251,15 +251,6 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
             if (Host is not null)
                 await Host.StopAsync();
             Host?.Dispose();
-        }
-
-        private static int GetFreeTcpPort()
-        {
-            using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
         }
     }
 }

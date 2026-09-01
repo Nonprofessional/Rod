@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Net.Security;
 using System.Security.Cryptography;
@@ -337,8 +336,8 @@ public class InteractiveShellRoundTripTests
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = GetFreeTcpPort();
-            env.HttpPort = GetFreeTcpPort();
+            env.MtlsPort = TestSupport.GetFreeTcpPort();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
@@ -393,14 +392,5 @@ public class InteractiveShellRoundTripTests
                 await Host.StopAsync();
             Host?.Dispose();
         }
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }

@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -755,7 +754,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         public static async Task<TestEnv> StartAsync(string connectionString)
         {
             var env = new TestEnv();
-            var httpPort = GetFreeTcpPort();
+            var httpPort = TestSupport.GetFreeTcpPort();
 
             // ConnectionStrings:Postgres selects the durable adapters (the same
             // opt-in shape as Audit:DataDirectory), layered on the seeded-operator
@@ -802,15 +801,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             if (Host is not null)
                 await Host.StopAsync();
             Host?.Dispose();
-        }
-
-        private static int GetFreeTcpPort()
-        {
-            using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
         }
     }
 }

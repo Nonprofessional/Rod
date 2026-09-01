@@ -57,7 +57,7 @@ public class StreamCheckInTests
     [Fact]
     public async Task Implant_ChecksInOverRawTcp_AndCompletesATask()
     {
-        var port = GetFreeTcpPort();
+        var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             "test-tcp", ListenerTransport.Tcp, $"127.0.0.1:{port}", $"10.0.0.5:{port}"));
 
@@ -344,7 +344,7 @@ public class StreamCheckInTests
         public static async Task<TestEnv> StartAsync(ListenerConfig streamListener)
         {
             var env = new TestEnv();
-            env.HttpPort = GetFreeTcpPort();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
@@ -371,14 +371,5 @@ public class StreamCheckInTests
                 await Host.StopAsync();
             Host?.Dispose();
         }
-    }
-
-    private static int GetFreeTcpPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }
