@@ -171,8 +171,8 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         var notBefore = DateTimeOffset.UtcNow;
         var leaf = request.Create(_caCertificate, notBefore, notBefore + LeafLifetime, Guid.NewGuid().ToByteArray());
 
-        // The listener signs handshakes with this key, so the private half stays
-        // attached to the returned certificate.
-        return leaf.CopyWithPrivateKey(key);
+        // The listener signs handshakes with this key, and SChannel needs it in
+        // a presentable (persisted) shape -- see SChannelCertificate.
+        return SChannelCertificate.WithUsableKey(leaf, key);
     }
 }

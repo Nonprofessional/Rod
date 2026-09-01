@@ -257,8 +257,8 @@ internal static class C2
     internal sealed class EnrollRejectedException(string message) : Exception(message);
 
     // Accepts the peer certificate iff it chains to one of the pinned CAs. The
-    // dev teamserver presents the CA certificate itself as its server identity
-    // (TransportHost.ConfigureMtlsHttps), and that CA cert carries no Subject
+    // dev teamserver presents a CA-issued listener leaf as its server identity
+    // (TransportHost.ConfigureMtlsHttps), and that leaf carries no Subject
     // Alternative Names -- standard TLS name verification would reject it. The
     // implant pins the CA explicitly, so the security property is
     // chain-to-pinned-CA, not DNS name match -- the same shape the server side
