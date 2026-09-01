@@ -25,6 +25,8 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     private static readonly TimeSpan LeafLifetime = TimeSpan.FromDays(30);
 
     private readonly X509Certificate2 _caCertificate;
+    private readonly object _serverCertificateLock = new();
+    private X509Certificate2? _serverCertificate;
 
     /// <param name="options">
     /// The on-disk CA material. Both paths are required; the passphrase is
@@ -111,6 +113,22 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     /// </summary>
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
+    /// <summary>
+    /// The listener server leaf, minted on first use and then reused for every
+    /// connection -- see the interface contract for why the CA's own root cannot
+    /// ride this position on Windows. An operator who wants a provisioned server
+    /// identity instead fronts the listener with their own certificate at the
+    /// transport seam; this is the self-sufficient default.
+    /// </summary>
+    public X509Certificate2 GetServerCertificate()
+    {
+        lock (_serverCertificateLock)
+        {
+            _serverCertificate ??= BuildServerCertificate();
+            return _serverCertificate;
+        }
+    }
+
     public byte[] SignTasking(string implantId, string taskId, string verb, string arguments, ulong? nonce = null)
     {
         // The ctor attached the loaded CA private key to the retained copy, so
@@ -160,6 +178,34 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
         return new IssuedCertificate(
             leaf.Export(X509ContentType.Cert),
             new[] { _caCertificate.Export(X509ContentType.Cert) });
+    }
+
+    // Builds and signs the TLS server leaf the listeners present: end-entity,
+    // digitalSignature/keyEncipherment, server-auth EKU -- the usage set
+    // SChannel demands before it will shake hands with us. Mirrors the dev
+    // authority's server leaf so both issuers present the same shape.
+    private X509Certificate2 BuildServerCertificate()
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=rod-listener,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(
+                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+                critical: true));
+        request.CertificateExtensions.Add(
+            new X509EnhancedKeyUsageExtension(
+                new OidCollection { new("1.3.6.1.5.5.7.3.1", "Server Authentication") }, // TLS server auth.
+                critical: true));
+
+        var notBefore = DateTimeOffset.UtcNow;
+        var leaf = request.Create(_caCertificate, notBefore, notBefore + LeafLifetime, Guid.NewGuid().ToByteArray());
+
+        // The listener signs handshakes with this key, so the private half stays
+        // attached to the returned certificate.
+        return leaf.CopyWithPrivateKey(key);
     }
 
     // True when both RSAs present the same public parameters (modulus + exponent).

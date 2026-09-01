@@ -64,6 +64,20 @@ public interface IImplantCertificateAuthority
     X509Certificate2 GetCaCertificate();
 
     /// <summary>
+    /// A TLS server certificate for the implant-facing listeners, signed by this
+    /// CA and carrying the server-authentication usage, private key attached.
+    /// SChannel (the Windows TLS stack the .NET implant rides) refuses to
+    /// complete a handshake whose server certificate is not valid for server
+    /// authentication, so presenting the CA's own root -- whose key usage is
+    /// certificate signing only -- aborts the mTLS beacon on Windows even
+    /// though Linux's OpenSSL tolerates it. The authority issues a real
+    /// end-entity server leaf instead; the same certificate serves every
+    /// connection for the authority's lifetime. Implant clients pin the CA and
+    /// do no name matching, so the leaf carries no hostname promises.
+    /// </summary>
+    X509Certificate2 GetServerCertificate();
+
+    /// <summary>
     /// Signs dispatched tasking with the CA's RSA key so an implant acts only
     /// on teamserver-authorized tasks (architecture.md Sec 9 -- command
     /// signing). The signature is RSASSA-PSS over SHA-256 of the canonical

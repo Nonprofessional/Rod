@@ -284,8 +284,8 @@ public static class TransportHost
 
     /// <summary>
     /// Configures Kestrel to terminate mTLS using the configured implant CA
-    /// (architecture.md Sec 9): the server presents a TLS certificate (the dev
-    /// CA's own cert by default) and requires a client certificate
+    /// (architecture.md Sec 9): the server presents the CA-issued server leaf
+    /// and requires a client certificate
     /// that chains to the CA. Implant leaves are accepted; anything else is
     /// refused at the TLS layer, before any beacon handler runs.
     /// </summary>
@@ -436,18 +436,21 @@ public static class TransportHost
     }
 
     // Applies the mTLS HTTPS configuration shared by UseRodMtls and the Mtls
-    // listener: the dev CA presents as the server identity, a client certificate
-    // is required, and it must chain to the CA. ApplicationServices resolves the
-    // CA per connection.
+    // listener: the authority's server leaf presents as the server identity, a
+    // client certificate is required, and it must chain to the CA.
+    // ApplicationServices resolves the authority per connection.
     private static void ConfigureMtlsHttps(ListenOptions listen, KestrelServerOptions kestrel)
     {
         listen.UseHttps(https =>
         {
-            // The dev CA doubles as the server identity by default; a real
-            // deployment presents a proper server certificate. The implant client
-            // trusts the CA (see test client validation).
+            // A CA-issued server leaf, not the CA root itself: the root's key
+            // usage is certificate signing only, which SChannel (the Windows
+            // TLS stack the .NET implant rides) rejects mid-handshake -- a
+            // leaf-presentation defect OpenSSL tolerates and SChannel does not.
+            // Implant clients pin the CA and chain to it (see test client
+            // validation).
             https.ServerCertificateSelector = (_, _) =>
-                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
+                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
             https.ClientCertificateMode =
                 Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.RequireCertificate;
             https.ClientCertificateValidation = (cert, chain, errors) =>
