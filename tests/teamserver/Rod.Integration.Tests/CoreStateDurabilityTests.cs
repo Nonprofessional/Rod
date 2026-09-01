@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
@@ -54,15 +55,13 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // --- Host A: apply the schema, then create an operator (implicitly, as
         //     the engagement owner) and an engagement through the HTTP API. Both
         //     land in Postgres. ---
         OperatorId operatorId;
         EngagementId engagementId;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -78,7 +77,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 
         // --- Host B: a fresh teamserver over the same Postgres. Its in-memory
         //     adapters are empty, but the durable adapters read the rows back. ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var operators = envB.Host.Services.GetRequiredService<IOperatorRepository>();
         var engagements = envB.Host.Services.GetRequiredService<IEngagementRepository>();
@@ -106,8 +105,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // --- Host A: apply the schema, then create an engagement (needed to scope
         //     the implants), a top-level implant, a child implant derived from it,
         //     and sessions that connect, reconnect (reusing the active one), and
@@ -118,7 +115,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         SessionId closedSessionId;
         SessionId activeSessionId;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -184,7 +181,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 
         // --- Host B: fresh teamserver, same Postgres. The durable adapters read
         //     both implants and all sessions back. ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var implantsB = envB.Host.Services.GetRequiredService<IImplantRepository>();
         var sessionsB = envB.Host.Services.GetRequiredService<ISessionRegistry>();
@@ -251,8 +248,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // --- Host A: apply the schema, create an engagement + implant, then
         //     enqueue three tasks on the implant and dispatch the first. The FIFO
         //     order is what the enqueue_seq column must preserve across restart. ---
@@ -262,7 +257,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         TaskId secondId;
         TaskId thirdId;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -301,7 +296,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // --- Host B: fresh teamserver, same Postgres. The durable task store
         //     reads all three back; the dispatched one kept its status, and the
         //     remaining two dequeue in enqueue order (FIFO via enqueue_seq). ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var tasksB = envB.Host.Services.GetRequiredService<ITaskRepository>();
 
@@ -360,8 +355,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // --- Host A: enroll an implant that negotiated the replay-nonce arm,
         //     then dispatch several tasks through the live TaskService -- each
         //     claim reserves and persists the next nonce. ---
@@ -370,7 +363,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         const int dispatchedBefore = 3;
         ulong floorBefore;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -410,7 +403,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         //     ReplayNonces flag survived with the implant row, and the floor
         //     survived with the task store: the next dispatch continues past
         //     the pre-restart count. ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var repositoryB = envB.Host.Services.GetRequiredService<ITaskRepository>();
         var serviceB = envB.Host.Services.GetRequiredService<TaskService>();
@@ -430,8 +423,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // --- Host A: apply the schema, create an engagement, mint a single-use
         //     token. The plaintext secret is captured now; only its hash is in
         //     Postgres. ---
@@ -439,7 +430,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         EngagementId engagementId;
         OperatorId ownerId;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -460,7 +451,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         //     the minting operator and engagement. A second redeem of the now-spent
         //     single-use token refuses as Spent (the durable store keeps the row at
         //     zero rather than deleting it). ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var tokensB = envB.Host.Services.GetRequiredService<IStagerTokenService>();
 
@@ -498,8 +489,6 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        var connectionString = _postgres.ConnectionString;
-
         // Captured on host A; asserted present and correct on host B.
         EngagementId engagementId;
         OperatorId ownerId;
@@ -511,7 +500,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var artifactBytes = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
         int auditEventCount;
 
-        await using (var envA = await TestEnv.StartAsync(connectionString))
+        await using (var envA = await TestEnv.StartAsync(_postgres))
         {
             await EnsureSchemaAsync(envA.Host);
 
@@ -602,7 +591,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // --- Host B: a fresh teamserver over the same Postgres. Every piece of
         //     state must read back through the public ports, and the audit chain
         //     must still verify. This is the acceptance criterion. ---
-        await using var envB = await TestEnv.StartAsync(connectionString);
+        await using var envB = await TestEnv.StartAsync(_postgres);
 
         var operatorsB = envB.Host.Services.GetRequiredService<IOperatorRepository>();
         var engagementsB = envB.Host.Services.GetRequiredService<IEngagementRepository>();
@@ -665,7 +654,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             return;
         }
 
-        await using var env = await TestEnv.StartAsync(_postgres.ConnectionString);
+        await using var env = await TestEnv.StartAsync(_postgres);
         var tasks = env.Host.Services.GetRequiredService<ITaskRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
 
@@ -752,7 +741,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         public HttpClient Http { get; private set; } = null!;
         public OperatorId OperatorId { get; private set; }
 
-        public static async Task<TestEnv> StartAsync(string connectionString)
+        public static async Task<TestEnv> StartAsync(PostgresFixture postgres)
         {
             var env = new TestEnv();
             var httpPort = TestSupport.GetFreeTcpPort();
@@ -761,7 +750,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // opt-in shape as Audit:DataDirectory), layered on the seeded-operator
             // config so the host comes up authenticated the same way as the suite.
             var config = AuthenticatedHost.BuildConfig(
-                extend: dict => dict["ConnectionStrings:Postgres"] = connectionString);
+                extend: dict => dict["ConnectionStrings:Postgres"] = postgres.ConnectionString);
 
             env.Host = TransportHost.CreateHostBuilder(
                     configuration: config,
@@ -777,7 +766,20 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             // the durable schema it targets must already exist. The host itself does
             // not auto-migrate (migrations are a deliberate operator step), so the
             // test creates the schema here the way an operator would before startup.
-            await EnsureSchemaAsync(env.Host);
+            // A failure here is annotated with the container's live state: CI kept
+            // losing the engine mid-class (new connections dying at SSL
+            // negotiation), and "Exited 137" vs "Running" points at very different
+            // causes.
+            try
+            {
+                await EnsureSchemaAsync(env.Host);
+            }
+            catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException)
+            {
+                throw new InvalidOperationException(
+                    $"Durable schema setup lost the Postgres container ({await postgres.DescribeAsync()}): {ex.Message}",
+                    ex);
+            }
             await env.Host.StartAsync();
 
             env.OperatorId = AuthenticatedHost.GetOperatorId(env.Host);

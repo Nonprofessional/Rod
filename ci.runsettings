@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <!-- Caps how many test assemblies run their own testhost in parallel.
+         The Postgres-backed durability tests kept losing their container
+         mid-class on CI while the build and conformance suites ran beside
+         them (new connections dying at SSL negotiation, three runs in a
+         row); the same full-parallel suite is green locally. Two concurrent
+         assemblies keep the lane green while preserving some overlap. -->
+    <MaxCpuCount>2</MaxCpuCount>
+  </RunConfiguration>
+</RunSettings>

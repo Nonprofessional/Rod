@@ -71,9 +71,20 @@ jobs:
         # hung without progress twice before (Aug 18 and 19, cancelled at the
         # six-hour budget) and did it again on Sep 1 -- without this, a hung
         # host just burns the runner until someone cancels by hand.
+        # ci.runsettings caps assembly parallelism (see the file for why).
         run: >-
-          dotnet test Rod.slnx --configuration Release --no-build
+          dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+      - name: Upload test diagnostics
+        # The blame collector writes the hang dump and the test sequence (its
+        # last entry names the hung test) under TestResults; they only survive
+        # the runner if they are uploaded before the job tears down.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: '**/TestResults/**'
+          if-no-files-found: ignore
 
   format:
     name: Format check

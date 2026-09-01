@@ -1,4 +1,5 @@
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -55,6 +56,27 @@ public sealed class PostgresFixture : IAsyncLifetime
             return _container.DisposeAsync().AsTask();
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// What the container looks like right now, for failure messages: when a
+    /// test loses its database mid-class, the state and exit code say which
+    /// failure it was. <c>Exited</c> with 137 is the OOM killer; <c>Running</c>
+    /// means the engine is alive and the port mapping went stale -- different
+    /// problems, different fixes.
+    /// </summary>
+    public async Task<string> DescribeAsync()
+    {
+        try
+        {
+            if (_container.State == TestcontainersStates.Exited)
+                return $"state={_container.State}, exitCode={await _container.GetExitCodeAsync()}";
+            return $"state={_container.State}";
+        }
+        catch (Exception ex)
+        {
+            return $"state=unknown ({ex.GetType().Name}: {ex.Message})";
+        }
     }
 }
 
