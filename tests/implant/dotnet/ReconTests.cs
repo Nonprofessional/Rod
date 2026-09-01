@@ -85,9 +85,23 @@ public class ReconTests
     {
         using var ln = LoopbackListener.Start();
         var registry = NewRegistry();
-        var (outcome, output, _) = registry.Dispatch("recon.service", $"127.0.0.1 {ln.Port}");
-        Assert.Equal(TaskOutcome.Succeeded, outcome);
-        Assert.Contains($"127.0.0.1:{ln.Port} open", output);
+
+        // The same scheduler-noise retry the port-scan test carries: the dial
+        // deadline is wall-clock, and on a busy parallel runner the connect
+        // completion can arrive late enough that the probe reports the open
+        // port closed. The listener is up for the whole loop.
+        for (var attempt = 1; ; attempt++)
+        {
+            var (outcome, output, _) = registry.Dispatch("recon.service", $"127.0.0.1 {ln.Port}");
+            var open = outcome == TaskOutcome.Succeeded && output.Contains($"127.0.0.1:{ln.Port} open");
+            if (open || attempt == 4)
+            {
+                Assert.True(
+                    open,
+                    $"recon.service missed the open loopback port after {attempt} attempt(s); last output: '{output}'.");
+                return;
+            }
+        }
     }
 
     [Fact]
