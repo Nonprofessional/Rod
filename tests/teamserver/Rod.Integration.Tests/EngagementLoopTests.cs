@@ -48,7 +48,7 @@ public class EngagementLoopTests
         var clientA = new Beacon.BeaconClient(channelA);
         var callA = clientA.CheckIn();
         await callA.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callA.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callA.ResponseStream.Current).Status);
 
         var issued = await env.Http.PostAsJsonAsync(
@@ -57,7 +57,7 @@ public class EngagementLoopTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await callA.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(callA.ResponseStream.Current.Payload);
         Assert.Equal("shell.exec", request.Verb);
 
@@ -83,7 +83,7 @@ public class EngagementLoopTests
             new { ImplantId = implant.Id.ToString(), Verb = "exfil.push", Arguments = "loot.txt /opt/loot" });
         exfilIssued.EnsureSuccessStatusCode();
 
-        Assert.True(await callA.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var exfilRequest = TaskRequest.Parser.ParseFrom(callA.ResponseStream.Current.Payload);
         Assert.Equal("exfil.push", exfilRequest.Verb);
 
@@ -168,7 +168,7 @@ public class EngagementLoopTests
         var clientB = new Beacon.BeaconClient(channelB);
         var callB = clientB.CheckIn();
         await callB.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callB.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await callB.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callB.ResponseStream.Current).Status);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id, CancellationToken.None));
 
@@ -176,7 +176,7 @@ public class EngagementLoopTests
         // away -- the five probes dispatch downstream on the fresh stream.
         for (var i = 0; i < 5; i++)
         {
-            Assert.True(await callB.ResponseStream.MoveNext(CancellationToken.None));
+            Assert.True(await callB.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
             var queued = TaskRequest.Parser.ParseFrom(callB.ResponseStream.Current.Payload);
             Assert.Equal("shell.exec", queued.Verb);
             Assert.True(VerifyTasking(caCert, implant.Id.ToString(), queued));
@@ -198,7 +198,7 @@ public class EngagementLoopTests
         var clientC = new Beacon.BeaconClient(channelC);
         var callC = clientC.CheckIn();
         await callC.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callC.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await callC.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callC.ResponseStream.Current).Status);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id, CancellationToken.None));
         await callC.RequestStream.CompleteAsync();

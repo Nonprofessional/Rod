@@ -55,7 +55,7 @@ public class HandshakePresenceTests
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 
         // Receive the server's handshake response.
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var response = ParseResponse(call.ResponseStream.Current);
         Assert.Equal(HandshakeStatus.Ok, response.Status);
         Assert.Equal(ProtocolVersions.Major, response.Version.Major);
@@ -79,7 +79,7 @@ public class HandshakePresenceTests
         // ends every check-in stream and reconnects seconds later, so liveness
         // is last-seen based and the staleness sweeper is the close path.
         await call.RequestStream.CompleteAsync();
-        await call.ResponseStream.MoveNext(CancellationToken.None); // server ends the stream
+        await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()); // server ends the stream
         await Task.Delay(50);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id));
 
@@ -106,7 +106,7 @@ public class HandshakePresenceTests
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, major: 2, minor: 0));
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var response = ParseResponse(call.ResponseStream.Current);
         Assert.Equal(HandshakeStatus.VersionMismatch, response.Status);
     }
@@ -137,7 +137,7 @@ public class HandshakePresenceTests
         var thrown = await Record.ExceptionAsync(async () =>
         {
             await call.RequestStream.WriteAsync(HandshakeFrame(ImplantId.New(), 1, 0));
-            await call.ResponseStream.MoveNext(CancellationToken.None);
+            await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline());
         });
         Assert.NotNull(thrown);
         Assert.True(
@@ -179,7 +179,7 @@ public class HandshakePresenceTests
         var call = client.CheckIn();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var response = ParseResponse(call.ResponseStream.Current);
         Assert.Equal(HandshakeStatus.Ok, response.Status);
 
@@ -189,7 +189,7 @@ public class HandshakePresenceTests
         Assert.Equal(implant.Id, online[0].ImplantId);
 
         await call.RequestStream.CompleteAsync();
-        await call.ResponseStream.MoveNext(CancellationToken.None);
+        await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline());
     }
 
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(

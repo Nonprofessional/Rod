@@ -53,6 +53,16 @@ internal static class TestSupport
         return $"{start}-{end}";
     }
 
+    // A deadline for beacon-stream waits. A lost dispatch frame must fail
+    // the test with a stack in ninety seconds, not suspend it forever: the
+    // Sep 1 hangs were exactly that -- a test awaiting a server frame no
+    // thread would ever produce, invisible to stacks and fatal to the run.
+    // Ninety seconds sits far above any healthy exchange and far below the
+    // blame-hang window; the per-call token is never disposed, which is fine
+    // at test scale (a timer per await, collected with its token).
+    internal static CancellationToken BeaconDeadline()
+        => new CancellationTokenSource(TimeSpan.FromSeconds(90)).Token;
+
     // Hands out distinct loopback ports for test listeners. The per-file probe
     // this replaces (bind :0, read the port, release, let Kestrel rebind later)
     // handed the same released port to two TestEnvs racing in parallel test

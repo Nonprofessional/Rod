@@ -48,7 +48,7 @@ public class ExfilRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // Operator tasks the implant over HTTP. exfil.push is Stage-2 gated, and
@@ -62,7 +62,7 @@ public class ExfilRoundTripTests
         Assert.Equal("exfil.push", issuedBody!.Verb);
 
         // The server pushes the task downstream; the implant reads it.
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         Assert.Equal("exfil.push", request.Verb);
 
@@ -143,7 +143,7 @@ public class ExfilRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         var issued = await env.Http.PostAsJsonAsync(
@@ -153,7 +153,7 @@ public class ExfilRoundTripTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         var taskId = Guid.Parse(request.TaskId);
 

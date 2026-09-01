@@ -71,7 +71,7 @@ public class PivotFrontingRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(parent.Id, "tunnel.forward"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // The operator tasks the child, not the parent. The class gate admits

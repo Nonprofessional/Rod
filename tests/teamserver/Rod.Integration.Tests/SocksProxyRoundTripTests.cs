@@ -55,7 +55,7 @@ public class SocksProxyRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // The proxy opens like any other task: no arguments, because every
@@ -147,7 +147,7 @@ public class SocksProxyRoundTripTests
         var client = new Beacon.BeaconClient(channel);
         var call = client.CheckIn();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         await AuthenticatedHost.LoginAsync(env.Http);

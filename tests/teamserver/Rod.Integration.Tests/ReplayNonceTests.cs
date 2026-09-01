@@ -294,7 +294,7 @@ public class ReplayNonceTests
                 Payload = ByteString.CopyFrom(handshake.ToByteArray()),
             });
 
-            Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+            Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
             var response = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
             Assert.Equal(HandshakeStatus.Ok, response.Status);
             return new BeaconConnection(
@@ -304,7 +304,7 @@ public class ReplayNonceTests
         /// <summary>Awaits the next dispatched task frame.</summary>
         public async Task<TaskRequest> ReadTaskAsync()
         {
-            Assert.True(await _call.ResponseStream.MoveNext(CancellationToken.None));
+            Assert.True(await _call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
             return TaskRequest.Parser.ParseFrom(_call.ResponseStream.Current.Payload);
         }
 

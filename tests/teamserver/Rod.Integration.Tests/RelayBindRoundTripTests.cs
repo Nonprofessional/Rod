@@ -56,7 +56,7 @@ public class RelayBindRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.forward"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // The tunnel opens like any other task; the implant bridges it to a

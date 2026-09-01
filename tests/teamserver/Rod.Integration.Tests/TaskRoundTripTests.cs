@@ -47,7 +47,7 @@ public class TaskRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // Operator tasks the implant over HTTP. The operator session is the gate;
@@ -62,7 +62,7 @@ public class TaskRoundTripTests
         Assert.Equal("shell.exec", issuedBody!.Verb);
 
         // The server pushes the task downstream; the implant reads it.
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         Assert.Equal(issuedBody.TaskId, request.TaskId);
         Assert.Equal("shell.exec", request.Verb);
@@ -128,7 +128,7 @@ public class TaskRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -138,7 +138,7 @@ public class TaskRoundTripTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
 
         // The implant's result arrives twice (a retransmission after a drop):
@@ -165,7 +165,7 @@ public class TaskRoundTripTests
         secondIssued.EnsureSuccessStatusCode();
         var secondBody = await secondIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var secondRequest = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         Assert.Equal(secondBody!.TaskId, secondRequest.TaskId);
 
@@ -190,13 +190,13 @@ public class TaskRoundTripTests
         using var victimChannel = env.ConnectBeacon(victimCert, victimKey);
         var victimCall = new Beacon.BeaconClient(victimChannel).CheckIn();
         await victimCall.RequestStream.WriteAsync(HandshakeFrame(victim.Id, 1, 0));
-        Assert.True(await victimCall.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await victimCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(victimCall.ResponseStream.Current).Status);
 
         using var impostorChannel = env.ConnectBeacon(impostorCert, impostorKey);
         var impostorCall = new Beacon.BeaconClient(impostorChannel).CheckIn();
         await impostorCall.RequestStream.WriteAsync(HandshakeFrame(impostor.Id, 1, 0));
-        Assert.True(await impostorCall.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await impostorCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(impostorCall.ResponseStream.Current).Status);
 
         // The operator tasks the victim; the victim's stream claims the task
@@ -208,7 +208,7 @@ public class TaskRoundTripTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await victimCall.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await victimCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(victimCall.ResponseStream.Current.Payload);
         Assert.Equal(issuedBody!.TaskId, request.TaskId);
 

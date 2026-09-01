@@ -158,7 +158,7 @@ public class DnsCheckInTests
         var client = new Beacon.BeaconClient(channel);
         var call = client.CheckIn();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
         await call.RequestStream.CompleteAsync();
 

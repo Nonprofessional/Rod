@@ -96,7 +96,7 @@ public class ListenerTests
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var response = ParseResponse(call.ResponseStream.Current);
         Assert.Equal(HandshakeStatus.Ok, response.Status);
         Assert.Equal(implant.EngagementId.ToString(), response.EngagementId);

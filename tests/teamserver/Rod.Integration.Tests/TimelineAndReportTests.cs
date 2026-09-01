@@ -262,7 +262,7 @@ public class TimelineAndReportTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implantId, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         var issued = await env.Http.PostAsJsonAsync(
@@ -270,7 +270,7 @@ public class TimelineAndReportTests
             new { ImplantId = implantId, Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
 
         await call.RequestStream.WriteAsync(ResultFrame(new TaskResult

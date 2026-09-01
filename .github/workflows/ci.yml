@@ -73,10 +73,13 @@ jobs:
         # six-hour budget) and did it again on Sep 1 -- without this, a hung
         # host just burns the runner until someone cancels by hand.
         # ci.runsettings caps assembly parallelism (see the file for why).
+        # Full dumps (not mini) so `dotnet-dump analyze -c dumpasync` can name
+        # the suspended state machine on the CI side the way the local repro
+        # did: a hung beacon read is invisible to thread stacks.
         continue-on-error: true
         run: >-
           dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
       - name: Upload test diagnostics
         # The blame collector writes the hang dump and the test sequence (its
         # last entry names the hung test) under TestResults; they only survive
@@ -96,7 +99,7 @@ jobs:
         if: steps.test_first.outcome == 'failure'
         run: >-
           dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
       - name: Upload test diagnostics (retry)
         if: failure()
         uses: actions/upload-artifact@v4

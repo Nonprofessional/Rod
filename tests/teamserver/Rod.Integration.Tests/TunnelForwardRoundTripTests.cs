@@ -57,7 +57,7 @@ public class TunnelForwardRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.forward"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // The operator opens the tunnel like any other task, naming the third
@@ -163,7 +163,7 @@ public class TunnelForwardRoundTripTests
         var client = new Beacon.BeaconClient(channel);
         var call = client.CheckIn();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.forward"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         await AuthenticatedHost.LoginAsync(env.Http);

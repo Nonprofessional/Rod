@@ -48,7 +48,7 @@ public class InteractiveShellRoundTripTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "shell.interact"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         // The operator opens the interactive shell like any other task.
@@ -154,7 +154,7 @@ public class InteractiveShellRoundTripTests
         var client = new Beacon.BeaconClient(channel);
         var call = client.CheckIn();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "shell.exec"));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         var oneshot = await env.Http.PostAsJsonAsync(

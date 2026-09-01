@@ -74,7 +74,7 @@ public class OperationalEventLogTests
         var call = client.CheckIn();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implantId, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
 
         var taskIssuer = env.OperatorId;
@@ -84,7 +84,7 @@ public class OperationalEventLogTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(CancellationToken.None));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
 
         await call.RequestStream.WriteAsync(ResultFrame(new TaskResult
