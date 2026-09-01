@@ -23,6 +23,7 @@ namespace Rod.Integration.Tests;
 /// trail, so it survives a teamserver restart with the trail itself
 /// (architecture.md Sec 3, Sec 11).
 /// </summary>
+[Collection("postgres")]
 public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
 {
     private readonly PostgresFixture _postgres;

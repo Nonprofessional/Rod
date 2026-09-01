@@ -57,3 +57,13 @@ public sealed class PostgresFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// Serializes the Postgres-backed suites. Each class still owns its container,
+/// but one runs at a time: on a CI runner already carrying the parallel
+/// build/conformance suites, two simultaneous engines squeezed the box enough
+/// that new pooled connections died mid-handshake (the twice-repeated
+/// durability flake), so the classes take turns instead.
+/// </summary>
+[CollectionDefinition("postgres")]
+public sealed class PostgresCollection;

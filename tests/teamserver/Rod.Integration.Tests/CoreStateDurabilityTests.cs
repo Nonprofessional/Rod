@@ -36,6 +36,7 @@ namespace Rod.Integration.Tests;
 /// and host B starts over the same database. What the durable adapters persisted
 /// must come back whole. The test skips (not fails) when Docker is absent.
 /// </remarks>
+[Collection("postgres")]
 public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
 {
     private readonly PostgresFixture _postgres;
