@@ -66,7 +66,14 @@ jobs:
       - name: Build
         run: dotnet build Rod.slnx --configuration Release --no-restore
       - name: Test
-        run: dotnet test Rod.slnx --configuration Release --no-build
+        # Blame-hang turns a silent hang into a five-minute failure that dumps
+        # the stuck test host and names the test it was running. The suite has
+        # hung without progress twice before (Aug 18 and 19, cancelled at the
+        # six-hour budget) and did it again on Sep 1 -- without this, a hung
+        # host just burns the runner until someone cancels by hand.
+        run: >-
+          dotnet test Rod.slnx --configuration Release --no-build
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
 
   format:
     name: Format check
