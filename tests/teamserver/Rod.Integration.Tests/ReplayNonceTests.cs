@@ -260,7 +260,7 @@ public class ReplayNonceTests
         {
             var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>()
                 .GetCaCertificate();
-            var leafWithKey = leaf.CopyWithPrivateKey(key);
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, key);
             var handler = new SocketsHttpHandler
             {
                 SslOptions = new SslClientAuthenticationOptions

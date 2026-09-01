@@ -212,7 +212,7 @@ public class DispatchPushTests
 
         public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
         {
-            var leafWithKey = leaf.HasPrivateKey ? leaf : leaf.CopyWithPrivateKey(leafKey);
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
 
             var handler = new SocketsHttpHandler();

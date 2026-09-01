@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Rod.Integration.Tests;
 
@@ -64,7 +66,9 @@ internal static class TestSupport
     {
         lock (PortGate)
         {
-            while (true)
+            // Bounded so a systemic bind failure (descriptor exhaustion, say)
+            // surfaces as a loud test error instead of a silent spin.
+            for (var attempt = 0; attempt < 200; attempt++)
             {
                 var port = _nextPort;
                 _nextPort = port >= 60_000 ? 20_000 : port + 1;
@@ -75,7 +79,7 @@ internal static class TestSupport
                     listener.Start();
                     return port;
                 }
-                catch (SocketException)
+                catch (SocketException e) when (e.SocketErrorCode == SocketError.AddressAlreadyInUse)
                 {
                     // Held by something outside the test process; take the next.
                 }
@@ -84,6 +88,32 @@ internal static class TestSupport
                     listener.Stop();
                 }
             }
+
+            throw new InvalidOperationException("No bindable loopback port found in 200 attempts.");
+        }
+    }
+
+    // Pairs an enrolled leaf with its private key for the in-process beacon
+    // client. Windows cannot present a certificate whose key exists only as an
+    // ephemeral in-memory handle (the same SChannel constraint the teamserver's
+    // server leaf works around in Rod.CoreState.Pki, and the implant at its
+    // enroll), so the pair travels through a PFX import with a persisted key
+    // set there. On Linux this is the plain pairing.
+    internal static X509Certificate2 BeaconClientCertificate(X509Certificate2 leaf, RSA leafKey)
+    {
+        if (leaf.HasPrivateKey)
+            return leaf;
+
+        var paired = leaf.CopyWithPrivateKey(leafKey);
+        if (!OperatingSystem.IsWindows())
+            return paired;
+
+        using (paired)
+        {
+            return X509CertificateLoader.LoadPkcs12(
+                paired.Export(X509ContentType.Pfx),
+                (string?)null,
+                X509KeyStorageFlags.DefaultKeySet | X509KeyStorageFlags.Exportable);
         }
     }
 }

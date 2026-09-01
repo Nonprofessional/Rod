@@ -421,7 +421,7 @@ public class EnvelopeCheckInTests
             string implantId,
             string engagementId)
         {
-            var leafWithKey = leaf.HasPrivateKey ? leaf : leaf.CopyWithPrivateKey(key);
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, key);
             var handler = new SocketsHttpHandler
             {
                 SslOptions = new SslClientAuthenticationOptions

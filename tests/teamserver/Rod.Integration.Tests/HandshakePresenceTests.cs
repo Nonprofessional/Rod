@@ -266,7 +266,7 @@ public class HandshakePresenceTests
             // Some leaves already carry their private key (e.g. a self-signed test
             // cert); others are DER-only and need the key attached for the TLS
             // handshake to prove possession.
-            var leafWithKey = leaf.HasPrivateKey ? leaf : leaf.CopyWithPrivateKey(leafKey);
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
 
             var handler = new SocketsHttpHandler();

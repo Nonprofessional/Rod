@@ -407,7 +407,7 @@ public class DnsCheckInTests
 
         public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
         {
-            var leafWithKey = leaf.HasPrivateKey ? leaf : leaf.CopyWithPrivateKey(leafKey);
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = _ca.GetCaCertificate();
             var handler = new SocketsHttpHandler();
             handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
