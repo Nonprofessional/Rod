@@ -30,17 +30,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Serialized collections (xunit.runner.json): the assembly kept losing
-         its completion signal on CI, with every test green, no thread running
-         anything, and the runner waiting forever (Sep 1 hang dumps; the same
-         shape burned six-hour budgets in August). Parallel collection
-         scheduling is where v2 loses runs, so the assembly takes the
-         wall-time hit instead. The structural fix is the xUnit v3 +
-         Microsoft Testing Platform migration. -->
-    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Transport\Rod.Transport.csproj" />
     <!-- Referenced so the operator layer (live bus + SSE endpoint) can be
          layered into the test host alongside the transport core. -->
