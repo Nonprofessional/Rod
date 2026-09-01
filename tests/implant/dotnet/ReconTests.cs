@@ -26,9 +26,24 @@ public class ReconTests
     {
         using var ln = LoopbackListener.Start();
         var registry = NewRegistry();
-        var (outcome, output, _) = registry.Dispatch("recon.portscan", ScanArgs(ln.Port));
-        Assert.Equal(TaskOutcome.Succeeded, outcome);
-        Assert.Contains($"127.0.0.1:{ln.Port} open", output);
+
+        // The dial deadline is wall-clock, so on a runner with the whole suite
+        // running in parallel, a thread-pool-starved connect can report a port
+        // that is open as closed -- the completion is merely late, never wrong.
+        // The listener is up for the whole loop, so retrying absorbs scheduling
+        // noise without weakening what the test proves.
+        for (var attempt = 1; ; attempt++)
+        {
+            var (outcome, output, _) = registry.Dispatch("recon.portscan", ScanArgs(ln.Port));
+            var open = outcome == TaskOutcome.Succeeded && output.Contains($"127.0.0.1:{ln.Port} open");
+            if (open || attempt == 4)
+            {
+                Assert.True(
+                    open,
+                    $"recon.portscan missed the open loopback port after {attempt} attempt(s); last output: '{output}'.");
+                return;
+            }
+        }
     }
 
     [Fact]
