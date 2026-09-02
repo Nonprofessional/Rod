@@ -1,12 +1,28 @@
-import { useState } from 'react'
-import { type BuildPayloadResult, buildPayload } from '../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { type BuildJob, enqueueBuildJob, listBuildJobs } from '../api'
+import { Icon } from '../components/Icons'
+import { StatusBadge } from '../components/StatusBadge'
 
-// The payload-build panel (//): builds an implant artifact,
-// baking in the beacon profile (mode, sleep/jitter), the kill date
-// (self-termination), and the malleable transport profile (endpoint, fallback
-// endpoints walked when the primary burns, URIs, headers, timing, envelope).
-// These are baked at generation -- a live implant's profile is read-only after
-// enrollment -- so OPSEC changes go through a rebuild and redeploy.
+// The payload-build panel: builds an implant artifact, baking in the beacon
+// profile (mode, sleep/jitter), the kill date (self-termination), and the
+// malleable transport profile (endpoint, fallback endpoints walked when the
+// primary burns, URIs, headers, timing, envelope). These are baked at
+// generation -- a live implant's profile is read-only after enrollment -- so
+// OPSEC changes go through a rebuild and redeploy.
+//
+// The build itself runs as a server-side job: a real toolchain takes the kind
+// of time an open request and a browser refresh must not own. Submitting
+// queues the job and returns immediately; the recent-builds list below is the
+// durable view of every job (fetched on mount, polled while anything runs), so
+// leaving the page, refreshing it, or losing the connection never loses a
+// build -- the finished artifact waits in the list with its download link.
+
+function elapsed(job: BuildJob): string {
+  const start = new Date(job.startedAt ?? job.requestedAt).getTime()
+  const end = job.completedAt ? new Date(job.completedAt).getTime() : Date.now()
+  const seconds = Math.max(0, Math.round((end - start) / 1000))
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`
+}
 
 export function PayloadBuildView({
   engagementId,
@@ -28,9 +44,9 @@ export function PayloadBuildView({
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
   const [killDate, setKillDate] = useState('')
-  const [result, setResult] = useState<BuildPayloadResult | null>(null)
+  const [jobs, setJobs] = useState<BuildJob[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -45,11 +61,45 @@ export function PayloadBuildView({
     return list.length > 0 ? list : null
   }
 
+  const refreshJobs = useCallback(async () => {
+    try {
+      setJobs(await listBuildJobs(engagementId))
+    } catch {
+      // Keep the last known list; the next poll retries.
+    }
+  }, [engagementId])
+
+  useEffect(() => {
+    void refreshJobs()
+  }, [refreshJobs])
+
+  const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
+
+  // Poll only while a job is in flight -- the list is otherwise quiet, and a
+  // completed build changes nothing until the next submit.
+  const timer = useRef<number | null>(null)
+  useEffect(() => {
+    if (!active) {
+      if (timer.current !== null) {
+        window.clearInterval(timer.current)
+        timer.current = null
+      }
+      return
+    }
+    timer.current = window.setInterval(() => void refreshJobs(), 2000)
+    return () => {
+      if (timer.current !== null) {
+        window.clearInterval(timer.current)
+        timer.current = null
+      }
+    }
+  }, [active, refreshJobs])
+
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
-    setBusy(true)
+    setSubmitting(true)
     try {
-      const built = await buildPayload(engagementId, {
+      await enqueueBuildJob(engagementId, {
         language: language || null,
         class: klass || null,
         targetOs: targetOs || null,
@@ -67,12 +117,12 @@ export function PayloadBuildView({
         jitterSeconds: num(jitterSeconds),
         killDate: killDate ? new Date(killDate).toISOString() : null,
       })
-      setResult(built)
       setError(null)
+      await refreshJobs()
     } catch (e) {
       setError(String(e))
     } finally {
-      setBusy(false)
+      setSubmitting(false)
     }
   }
 
@@ -82,7 +132,7 @@ export function PayloadBuildView({
       <p className="muted">
         Bake an implant with its beacon profile (sleep/jitter), kill date, and malleable transport
         profile. These are baked at generation; rebuild and redeploy to change an implant's OPSEC
-        profile.
+        profile. The build runs as a background job -- watch it finish under Recent builds.
       </p>
       <form className="build-form" onSubmit={onBuild}>
         <fieldset>
@@ -185,36 +235,77 @@ export function PayloadBuildView({
             </select>
           </label>
         </fieldset>
-        <button className="primary" type="submit" disabled={busy}>
+        <button className="primary" type="submit" disabled={submitting}>
           Build payload
         </button>
       </form>
       {error && <p className="error">{error}</p>}
-      {result && (
-        <dl className="kv">
-          <dt>Artifact</dt>
-          <dd>
-            <code>{result.artifactId.slice(0, 12)}</code>
-          </dd>
-          <dt>Fingerprint</dt>
-          <dd>
-            <code>{result.fingerprint.slice(0, 16)}</code>
-          </dd>
-          <dt>Size</dt>
-          <dd>{result.size} bytes</dd>
-          <dt>Built at</dt>
-          <dd>{new Date(result.builtAt).toLocaleString()}</dd>
-          <dt>Download</dt>
-          <dd>
-            <a
-              className="download-link"
-              href={`engagements/${engagementId}/payloads/${result.artifactId}`}
-              download
-            >
-              Retrieve artifact
-            </a>
-          </dd>
-        </dl>
+
+      <h3 className="jobs-head">Recent builds</h3>
+      {jobs.length === 0 ? (
+        <div className="empty">
+          <Icon name="package" />
+          No builds yet -- the queue is empty.
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Requested</th>
+                <th>Target</th>
+                <th>Endpoint</th>
+                <th>State</th>
+                <th>Artifact</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.jobId}>
+                  <td title={job.jobId}>{new Date(job.requestedAt).toLocaleString()}</td>
+                  <td>
+                    <code>
+                      {job.language}:{job.class} {job.target}
+                    </code>
+                  </td>
+                  <td>
+                    <code>{job.endpoint}</code>
+                  </td>
+                  <td>
+                    {(job.state === 'queued' || job.state === 'running') && (
+                      <span className="spinner inline-spinner" />
+                    )}
+                    <StatusBadge status={job.state} />
+                    <span className="muted"> {elapsed(job)}</span>
+                    {job.error && <div className="error">{job.error}</div>}
+                  </td>
+                  <td>
+                    {job.artifact ? (
+                      <span>
+                        <code>{job.artifact.fingerprint.slice(0, 16)}</code>
+                        <span className="muted"> ({job.artifact.size} bytes)</span>
+                      </span>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {job.artifact && (
+                      <a
+                        className="download-link"
+                        href={`engagements/${engagementId}/payloads/${job.artifact.artifactId}`}
+                        download
+                      >
+                        Retrieve
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

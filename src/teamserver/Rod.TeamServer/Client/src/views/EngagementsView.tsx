@@ -1,12 +1,30 @@
 import { useCallback, useEffect, useState } from 'react'
-import { type Engagement, createEngagement, listEngagements } from '../api'
+import {
+  type Engagement,
+  editEngagement,
+  createEngagement,
+  freezeEngagement,
+  listEngagements,
+  retireEngagement,
+} from '../api'
 import { Icon } from '../components/Icons'
 
-// The engagements list: enumerate every engagement the operator
-// can reach and create a new one. Drilling into an engagement hands off to the
-// engagement detail view, which carries the full capability surface.
-// The engagement's owner is the authenticated operator, resolved server-side,
-// so this view carries no identity of its own.
+// The engagements list: enumerate every engagement the operator can reach,
+// create a new one, edit an engagement's working record (name + description),
+// and drive the close-out arc (freeze -> export evidence -> retire) from the
+// row actions. Drilling into an engagement hands off to the detail view, which
+// carries the full capability surface.
+//
+// "Delete" here is the close-out, not an erasure: the audit trail is the
+// engagement's durable account, so retirement takes the engagement out of
+// service while its evidence stays readable. A retired record is sealed --
+// editing is refused server-side and hidden here.
+
+function statusOf(e: Engagement): { label: string; tone: string } {
+  if (e.retiredAt) return { label: 'retired', tone: 'status retired' }
+  if (e.frozenAt) return { label: 'frozen', tone: 'status' }
+  return { label: 'open', tone: 'status completed' }
+}
 
 export function EngagementsView() {
   const [items, setItems] = useState<Engagement[]>([])
@@ -15,6 +33,9 @@ export function EngagementsView() {
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [editing, setEditing] = useState<Engagement | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -45,6 +66,53 @@ export function EngagementsView() {
     }
   }
 
+  const beginEdit = (e: Engagement) => {
+    setEditing(e)
+    setEditName(e.name)
+    setEditDescription(e.description ?? '')
+  }
+
+  const onSaveEdit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!editing) return
+    try {
+      await editEngagement(editing.engagementId, {
+        name: editName,
+        description: editDescription || null,
+      })
+      setEditing(null)
+      await refresh()
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const onFreeze = async (e: Engagement) => {
+    if (!window.confirm(`Freeze "${e.name}"? It accepts no new tasking or deployments from now on.`))
+      return
+    try {
+      await freezeEngagement(e.engagementId)
+      await refresh()
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const onRetire = async (e: Engagement) => {
+    if (
+      !window.confirm(
+        `Retire "${e.name}"? This completes the close-out and is terminal: the record is sealed and stays as evidence.`,
+      )
+    )
+      return
+    try {
+      await retireEngagement(e.engagementId)
+      await refresh()
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
   return (
     <section>
       <div className="page-head">
@@ -52,22 +120,27 @@ export function EngagementsView() {
         <span className="muted">Scoped workspaces; everything else lives inside one.</span>
       </div>
       {error && <p className="error">{error}</p>}
-      <form className="card inline-form" onSubmit={onCreate}>
-        <input
-          placeholder="Engagement name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <input
-          className="wide"
-          placeholder="Description (optional)"
+      <form className="card create-form" onSubmit={onCreate}>
+        <div className="create-form-row">
+          <input
+            placeholder="Engagement name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <button className="primary" type="submit" disabled={busy}>
+            Create
+          </button>
+        </div>
+        {/* A description is working notes: free text the crew keeps on the
+            engagement, so it gets a roomy multi-line field, not one cramped
+            line. */}
+        <textarea
+          rows={3}
+          placeholder="Description (optional) -- scope, customer, target environment, working notes"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <button className="primary" type="submit" disabled={busy}>
-          Create
-        </button>
       </form>
 
       {loading ? (
@@ -89,21 +162,88 @@ export function EngagementsView() {
                 <th>Description</th>
                 <th>Owner</th>
                 <th>Created</th>
+                <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {items.map((e) => (
-                <tr key={e.engagementId}>
-                  <td>
-                    <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
-                  </td>
-                  <td className="muted">{e.description ?? ''}</td>
-                  <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
-                  <td>{new Date(e.createdAt).toLocaleString()}</td>
-                </tr>
-              ))}
+              {items.map((e) => {
+                const status = statusOf(e)
+                return (
+                  <tr key={e.engagementId} className={e.retiredAt ? 'row-dim' : undefined}>
+                    <td>
+                      <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
+                    </td>
+                    <td className="muted">{e.description ?? ''}</td>
+                    <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
+                    <td>{new Date(e.createdAt).toLocaleString()}</td>
+                    <td>
+                      <span className={status.tone}>{status.label}</span>
+                    </td>
+                    <td className="row-actions">
+                      {!e.retiredAt && (
+                        <button className="sm ghost" onClick={() => beginEdit(e)}>
+                          Edit
+                        </button>
+                      )}
+                      {!e.frozenAt && !e.retiredAt && (
+                        <button className="sm ghost" onClick={() => void onFreeze(e)}>
+                          Freeze
+                        </button>
+                      )}
+                      {e.frozenAt && !e.retiredAt && (
+                        <>
+                          <a
+                            className="sm ghost download-link"
+                            href={`engagements/${e.engagementId}:evidence-package`}
+                            download
+                          >
+                            Evidence
+                          </a>
+                          <button className="sm danger" onClick={() => void onRetire(e)}>
+                            Retire
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {editing && (
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <form
+            className="card modal edit-engagement"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={onSaveEdit}
+          >
+            <h3>Edit engagement</h3>
+            <label>
+              Name
+              <input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </label>
+            <label>
+              Description
+              <textarea
+                rows={5}
+                placeholder="Scope, customer, target environment, working notes"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+            </label>
+            <div className="inline-form">
+              <button className="primary" type="submit" disabled={busy}>
+                Save
+              </button>
+              <button className="ghost" type="button" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </section>

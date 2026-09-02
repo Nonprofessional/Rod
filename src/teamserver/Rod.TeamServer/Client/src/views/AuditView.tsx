@@ -5,8 +5,11 @@ import { Icon } from '../components/Icons'
 // The operational event log: the per-engagement, append-only,
 // hash-chained audit trail, oldest-first in causal order. Every action that
 // changes engagement state or binds an identity produces an immutable, attributed
-// event. A kind filter narrows the view (e.g. only TaskIssued); the full set is
-// the raw evidence feed the timeline/report exports consume.
+// event. Where the Timeline tab renders the story, this is the raw ledger --
+// the dense, paged, filterable table a forensic read wants: kind filter,
+// free-text search across verb/payload/outcome, and "load older" walking back
+// through history. The full set is the raw evidence feed the timeline/report
+// exports consume.
 
 const ALL_KINDS = '(all)'
 
@@ -32,6 +35,7 @@ export function AuditView({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [kind, setKind] = useState(ALL_KINDS)
+  const [query, setQuery] = useState('')
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -73,14 +77,26 @@ export function AuditView({
     return [ALL_KINDS, ...[...set].sort()]
   }, [events])
 
-  const filtered = kind === ALL_KINDS ? events : events.filter((e) => e.kind === kind)
+  const filtered = useMemo(() => {
+    const byKind = kind === ALL_KINDS ? events : events.filter((e) => e.kind === kind)
+    const needle = query.trim().toLowerCase()
+    if (needle === '') return byKind
+    return byKind.filter(
+      (e) =>
+        e.verb.toLowerCase().includes(needle) ||
+        e.payload.toLowerCase().includes(needle) ||
+        (e.output ?? '').toLowerCase().includes(needle) ||
+        e.outcome.toLowerCase().includes(needle) ||
+        e.operatorHandle.toLowerCase().includes(needle),
+    )
+  }, [events, kind, query])
 
   return (
     <div className="card">
       <h3>Audit trail</h3>
       <p className="muted">
-        The append-only, hash-chained event log for this engagement. Filter by kind to narrow the
-        view.
+        The append-only, hash-chained ledger for this engagement -- every recorded fact, paged and
+        filterable, the raw feed the timeline and report render from.
       </p>
       <div className="inline-form">
         <select
@@ -95,6 +111,12 @@ export function AuditView({
             </option>
           ))}
         </select>
+        <input
+          className="filter-text"
+          placeholder="Search verb, payload, outcome, operator…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon name="refresh" />
           Refresh

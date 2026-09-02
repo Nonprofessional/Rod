@@ -3,6 +3,14 @@
 // the implant and operator layers do; the host serves this bundle from wwwroot
 // so the calls are same-origin in production and proxied to :5080 in dev.
 
+export interface RoeProfile {
+  permittedVerbs: string[]
+  permittedImplants: string[]
+}
+
+// The close-out state rides on timestamps: null while the engagement is open,
+// frozenAt set once the close-out starts (no new tasking or deployments),
+// retiredAt set when it completes -- terminal, the record sealed.
 export interface Engagement {
   engagementId: string
   name: string
@@ -10,6 +18,9 @@ export interface Engagement {
   ownerId: string
   ownerHandle: string
   createdAt: string
+  roe: RoeProfile
+  frozenAt: string | null
+  retiredAt: string | null
 }
 
 export interface StagerToken {
@@ -167,6 +178,49 @@ export async function issueTask(
     body: JSON.stringify(input),
   })
   return jsonOrThrow(response)
+}
+
+// --- Engagement record management ------------------------------
+//
+// The working record (name + free-text description) is editable while the
+// engagement operates and while it is frozen; retirement seals it. The
+// close-out path (freeze -> export -> retire) is the engagement's exit from
+// service -- the trail stays as the durable account, so "delete" here means
+// retiring, not erasing.
+
+export async function getEngagement(engagementId: string): Promise<Engagement> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}`))
+}
+
+export async function editEngagement(
+  engagementId: string,
+  input: { name: string; description: string | null },
+): Promise<Engagement> {
+  const response = await fetch(`engagements/${engagementId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(response)
+}
+
+export interface EngagementClosedResult {
+  engagementId: string
+  at: string
+}
+
+export async function freezeEngagement(engagementId: string): Promise<EngagementClosedResult> {
+  const response = await fetch(`engagements/${engagementId}:freeze`, { method: 'POST' })
+  return jsonOrThrow(response)
+}
+
+export async function retireEngagement(engagementId: string): Promise<EngagementClosedResult> {
+  const response = await fetch(`engagements/${engagementId}:retire`, { method: 'POST' })
+  return jsonOrThrow(response)
+}
+
+export function evidencePackageUrl(engagementId: string): string {
+  return `engagements/${engagementId}:evidence-package`
 }
 
 // --- Cancel queued tasking ------------------------------------
@@ -677,6 +731,34 @@ export async function repointListener(listenerId: string, publicEndpoint: string
   )
 }
 
+// --- Listener runtime management -------------------------------
+//
+// Creating a listener binds its socket on the running teamserver (HTTP-shaped
+// transports ride Kestrel's endpoint reloader; DNS / SMB / TCP start their
+// socket services). Runtime listeners are not written back to the startup
+// configuration: a restart rebinds exactly what the configuration names, and
+// only runtime-created listeners can be deleted here.
+
+export interface CreateListenerInput {
+  name: string
+  transport: string
+  bindAddress: string
+  publicEndpoint: string
+}
+
+export async function createListener(input: CreateListenerInput): Promise<ListenerSummary> {
+  const response = await fetch('listeners', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function deleteListener(listenerId: string): Promise<void> {
+  await jsonOrThrow<unknown>(await fetch(`listeners/${listenerId}`, { method: 'DELETE' }))
+}
+
 // --- Online implant roster (presence) -------------------------
 //
 // The per-engagement online roster: an implant is online exactly while it
@@ -743,4 +825,47 @@ export async function buildPayload(engagementId: string, input: BuildPayloadInpu
       body: JSON.stringify(input),
     }),
   )
+}
+
+// --- Background payload builds ---------------------------------
+//
+// A build invokes a real toolchain, so it runs as a server-side job: POST
+// returns 202 with the queued job immediately, and the build finishes into
+// the payload store and the audit trail whatever happens to the page that
+// asked. The job list is the durable view -- a browser refresh reloads it and
+// keeps showing progress, so a build is never lost to navigation.
+
+export type BuildJobState = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface BuildJob {
+  jobId: string
+  engagementId: string
+  state: BuildJobState
+  requestedBy: string
+  requestedAt: string
+  startedAt: string | null
+  completedAt: string | null
+  class: string
+  language: string
+  target: string
+  endpoint: string
+  mode: string
+  error: string | null
+  artifact: BuildPayloadResult | null
+}
+
+export async function enqueueBuildJob(
+  engagementId: string,
+  input: BuildPayloadInput,
+): Promise<BuildJob> {
+  const response = await fetch(`engagements/${engagementId}/payload-jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function listBuildJobs(engagementId: string): Promise<BuildJob[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/payload-jobs`))
 }
