@@ -24,6 +24,7 @@ using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.Dns;
 using Rod.Transport.Listeners.Streams;
+using Rod.Transport.Payloads;
 
 namespace Rod.Transport;
 
@@ -278,6 +279,12 @@ public static class TransportHost
             .Get<string[]?>() ?? Array.Empty<string?>();
         services.AddSingleton(new PayloadTransformChain(PayloadTransformLoader.Load(transformEntries)));
         services.AddSingleton<PayloadBuildService>();
+        // Background payload builds: the same build pipeline behind a job queue,
+        // so a toolchain build neither holds a request open nor dies with a
+        // browser refresh. Registered as the hosted service too so the worker
+        // starts and stops with the host.
+        services.AddSingleton<PayloadBuildJobService>();
+        services.AddHostedService(sp => sp.GetRequiredService<PayloadBuildJobService>());
 
         return services;
     }
@@ -553,6 +560,8 @@ public static class TransportHost
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         app.MapPayloadEndpoints();
+        // Background payload builds: the job-queued face of the same pipeline.
+        app.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,
         // hash-chained audit trail read view. Distinct from the operators-layer
         // live SSE route (the transient fan-out).
@@ -591,6 +600,8 @@ public static class TransportHost
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
+        // Background payload builds: the job-queued face of the same pipeline.
+        endpoints.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,
         // hash-chained audit trail read view.
         endpoints.MapAuditEndpoints();
