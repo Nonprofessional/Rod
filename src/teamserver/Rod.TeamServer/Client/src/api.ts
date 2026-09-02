@@ -839,6 +839,10 @@ export interface BuildPayloadInput {
   class: string | null
   targetOs: string | null
   targetArch: string | null
+  // Naming the engagement's listener supplies the endpoint from its record;
+  // the manual endpoint covers shapes with no listener yet. Mutually
+  // exclusive on the wire.
+  listenerId: string | null
   endpoint: string | null
   fallbackEndpoints: string[] | null
   uriPath: string | null

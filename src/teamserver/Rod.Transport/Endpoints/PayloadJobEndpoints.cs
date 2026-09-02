@@ -42,6 +42,7 @@ public static class PayloadJobEndpoints
         ClaimsPrincipal user,
         IEngagementRepository engagements,
         IPayloadStore payloads,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
         PayloadBuildJobService jobs,
         CancellationToken cancellationToken)
     {
@@ -58,7 +59,7 @@ public static class PayloadJobEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var (request, error) = await PayloadBuildRequestParser.ParseAsync(
-            body, new EngagementId(engagementValue), requestedBy.Value, payloads, cancellationToken);
+            body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners, cancellationToken);
         if (error is not null)
             return Results.BadRequest(new Problem(error));
 

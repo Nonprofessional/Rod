@@ -1,12 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { type BuildJob, enqueueBuildJob, listBuildJobs } from '../api'
+import {
+  type BuildJob,
+  type ListenerSummary,
+  enqueueBuildJob,
+  listBuildJobs,
+  listListeners,
+} from '../api'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
 // The payload-build panel: builds an implant artifact, baking in the beacon
 // profile (mode, sleep/jitter), the kill date (self-termination), and the
 // malleable transport profile (endpoint, fallback endpoints walked when the
-// primary burns, URIs, headers, timing, envelope). These are baked at
+// primary burns, URIs, headers, timing, envelope). Naming the engagement's
+// listener fills the endpoint from its record -- the artifact dials what the
+// listener publishes, and the operator stops typing URLs. These are baked at
 // generation -- a live implant's profile is read-only after enrollment -- so
 // OPSEC changes go through a rebuild and redeploy.
 //
@@ -33,6 +41,8 @@ export function PayloadBuildView({
   const [klass, setKlass] = useState('Stage2')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
+  const [listenerId, setListenerId] = useState('')
+  const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [endpoint, setEndpoint] = useState('')
   const [fallbackEndpoints, setFallbackEndpoints] = useState('')
   const [uriPath, setUriPath] = useState('')
@@ -73,6 +83,19 @@ export function PayloadBuildView({
     void refreshJobs()
   }, [refreshJobs])
 
+  // This engagement's own listeners, the ingress a build can name. Loaded on
+  // mount; the listeners panel is where they are created.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await listListeners()
+        setListeners(all.filter((l) => l.engagementId === engagementId))
+      } catch {
+        // The form still offers the manual endpoint field on a failed load.
+      }
+    })()
+  }, [engagementId])
+
   const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
 
   // Poll only while a job is in flight -- the list is otherwise quiet, and a
@@ -104,7 +127,8 @@ export function PayloadBuildView({
         class: klass || null,
         targetOs: targetOs || null,
         targetArch: targetArch || null,
-        endpoint: endpoint || null,
+        listenerId: listenerId || null,
+        endpoint: !listenerId && endpoint ? endpoint : null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
         uriPath: uriPath || null,
         enrollPath: enrollPath || null,
@@ -200,8 +224,27 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Malleable transport profile</legend>
           <label>
+            Listener
+            {/* Naming the engagement's listener fills the endpoint from its
+                record (its public endpoint, scheme by transport); the manual
+                field below covers the shapes that have no listener yet. */}
+            <select value={listenerId} onChange={(e) => setListenerId(e.target.value)}>
+              <option value="">-- manual endpoint --</option>
+              {listeners.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.transport} → {l.publicEndpoint})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Endpoint
-            <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://redirect.example.test" />
+            <input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="https://redirect.example.test"
+              disabled={!!listenerId}
+            />
           </label>
           <label>
             Fallback endpoints

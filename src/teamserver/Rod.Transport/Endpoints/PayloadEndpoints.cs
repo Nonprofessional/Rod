@@ -48,6 +48,7 @@ public static class PayloadEndpoints
         PayloadBuildService builds,
         IEngagementRepository engagements,
         IPayloadStore payloads,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
         IAuditStore audit,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
@@ -69,9 +70,9 @@ public static class PayloadEndpoints
 
         // The request body parses and validates exactly as the background job
         // path does (the shared parser): same refusals, same defaults, same
-        // stager stage-2 resolution.
+        // stager stage-2 resolution, same listener-name endpoint resolution.
         var (request, parseError) = await PayloadBuildRequestParser.ParseAsync(
-            body, new EngagementId(engagementValue), requestedBy.Value, payloads, cancellationToken);
+            body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners, cancellationToken);
         if (parseError is not null)
             return Results.BadRequest(new Problem(parseError));
 
@@ -142,7 +143,9 @@ public static class PayloadEndpoints
     // UserAgent, Headers, RequestTimeoutSeconds, Envelope, FallbackEndpoints.
     // An operator who omits them gets a profile with the unchanged wire shape.
     // Defaulted so a minimal positional construction (as in the integration
-    // tests) stays valid.
+    // tests) stays valid. ListenerId names the engagement's own listener and
+    // supplies the endpoint from its record, so the two are mutually
+    // exclusive on the wire.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,
@@ -153,6 +156,7 @@ public static class PayloadEndpoints
         double? SleepSeconds,
         double? JitterSeconds,
         DateTimeOffset? KillDate,
+        string? ListenerId = null,
         string? Mode = null,
         string? EnrollPath = null,
         string? UserAgent = null,

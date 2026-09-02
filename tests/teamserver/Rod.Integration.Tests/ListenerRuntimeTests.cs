@@ -121,6 +121,81 @@ public class ListenerRuntimeTests
     }
 
     [Fact]
+    public async Task ANamedListener_SuppliesTheBuildEndpoint()
+    {
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        // The listener publishes the bare host:port redirector shape; a build
+        // naming it dials that shape with the transport's scheme.
+        var created = await env.Http.PostAsJsonAsync("/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "build-front",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "203.0.113.10:8080",
+                EngagementId: engagementId));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+
+        var built = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "DotNet",
+                Class: "Stage2",
+                TargetOs: "linux",
+                TargetArch: "amd64",
+                Endpoint: null,
+                UriPath: "/beacon",
+                SleepSeconds: 30,
+                JitterSeconds: 10,
+                KillDate: null,
+                ListenerId: listener!.Id));
+        Assert.Equal(HttpStatusCode.Created, built.StatusCode);
+
+        // Another engagement's listener is refused: an artifact dials its own
+        // engagement's ingress or nothing.
+        var foreignEngagement = await CreateEngagementAsync(env.Http);
+        var foreign = await env.Http.PostAsJsonAsync("/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "foreign-front",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "203.0.113.11:8080",
+                EngagementId: foreignEngagement));
+        var foreignListener = await foreign.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        var wrongEngagement = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "DotNet", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Endpoint: null, UriPath: "/beacon", SleepSeconds: 30, JitterSeconds: 10,
+                KillDate: null, ListenerId: foreignListener!.Id));
+        Assert.Equal(HttpStatusCode.BadRequest, wrongEngagement.StatusCode);
+
+        // The shared tier (the operator front) is not implant ingress.
+        var roster = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
+        var shared = Assert.Single(roster!, l => l.EngagementId is null);
+        var sharedTier = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "DotNet", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Endpoint: null, UriPath: "/beacon", SleepSeconds: 30, JitterSeconds: 10,
+                KillDate: null, ListenerId: shared.Id));
+        Assert.Equal(HttpStatusCode.BadRequest, sharedTier.StatusCode);
+
+        // And a request naming both a listener and an endpoint is refused
+        // rather than silently preferring one.
+        var both = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "DotNet", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Endpoint: "http://typed.example.test", UriPath: "/beacon", SleepSeconds: 30,
+                JitterSeconds: 10, KillDate: null, ListenerId: listener.Id));
+        Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+    }
+
+    [Fact]
     public async Task Create_UnknownEngagement_IsRejected()
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
