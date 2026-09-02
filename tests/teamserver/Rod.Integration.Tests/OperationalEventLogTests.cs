@@ -127,7 +127,13 @@ public class OperationalEventLogTests
             $"/engagements/{engagementId}/audit");
         Assert.NotNull(trailResponse);
 
-        var byKind = trailResponse!.Items.ToDictionary(e => e.Kind);
+        // A build mints and bakes its own enrollment credential, so this walk's
+        // trail carries two StagerTokenMinted facts -- the manual mint and the
+        // baked one. The readback keys by first-of-kind and the baked shape is
+        // asserted explicitly below.
+        var byKind = trailResponse!.Items
+            .GroupBy(e => e.Kind)
+            .ToDictionary(g => g.Key, g => g.First());
         // Every lifecycle kind is present.
         Assert.Contains("EngagementCreated", byKind.Keys);
         Assert.Contains("StagerTokenMinted", byKind.Keys);
@@ -136,11 +142,23 @@ public class OperationalEventLogTests
         Assert.Contains("TaskIssued", byKind.Keys);
         Assert.Contains("TaskDispatched", byKind.Keys);
         Assert.Contains("TaskCompleted", byKind.Keys);
+        Assert.Contains("PayloadBuilt", byKind.Keys);
         Assert.Contains("ImplantRetired", byKind.Keys);
+
+        // The build's minted credential is on the trail with the baked shape
+        // named, attributed to the owner (who authorizes the deployment
+        // channel) while the build fact attributes to its requester.
+        var mints = trailResponse.Items.Where(e => e.Kind == "StagerTokenMinted").ToArray();
+        Assert.Equal(2, mints.Length);
+        Assert.Contains(mints, e => e.Payload.Contains("bakedIntoPayload"));
+        Assert.All(mints, e => Assert.Equal(owner.Value, e.OperatorId));
 
         // Each event carries the correct attribution.
         Assert.Equal(owner.Value, byKind["EngagementCreated"].OperatorId);
         Assert.Equal(owner.Value, byKind["StagerTokenMinted"].OperatorId);
+        // The build fact attributes to the requesting operator (the owner
+        // here); the baked mint's attribution is asserted above with the mints.
+        Assert.Equal(owner.Value, byKind["PayloadBuilt"].OperatorId);
         // Enrollment is implant-initiated -> attributed to the token issuer (owner).
         Assert.Equal(owner.Value, byKind["ImplantEnrolled"].OperatorId);
         Assert.Equal(Guid.Parse(implantId), byKind["ImplantEnrolled"].ImplantId);
