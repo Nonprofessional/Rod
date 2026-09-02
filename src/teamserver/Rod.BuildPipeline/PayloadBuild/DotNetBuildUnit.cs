@@ -296,6 +296,12 @@ public sealed class DotNetBuildUnit : IBuildUnit
             // only fills the variable when it is unset).
             ["quiet"] = "true",
         };
+        // The enrollment credential, when the build was minted one: the
+        // artifact deploys with zero run-time arguments and spends the token
+        // at its own enroll. Omitted entirely when absent, so a
+        // credential-free build bakes the same profile it always did.
+        if (@params.TokenSecret is { } tokenSecret)
+            map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);
         return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
     }
@@ -337,6 +343,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
             // the narration back for a debugging run.
             ["quiet"] = "true",
         };
+        // The stager presents its own baked token for the fetch (verified, not
+        // spent); the stage-2 it launches spends the token baked into the
+        // stage-2's own profile.
+        if (@params.TokenSecret is { } tokenSecret)
+            map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);
         return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
     }

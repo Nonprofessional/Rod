@@ -160,6 +160,9 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         return Convert.FromBase64String(padded);
     }
 
+    public Task<bool> RevokeAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+        => Task.FromResult(_stored.TryRemove(id, out _));
+
     // IssuedBy is retained so redeem can attribute the deployment that follows:
     // a stager token is redeemed by an implant, but the operator who minted it
     // authorized the deployment, and enrollment records that operator on the

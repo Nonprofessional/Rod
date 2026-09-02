@@ -154,6 +154,17 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             : new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
     }
 
+    public async Task<bool> RevokeAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var stored = await db.StagerTokens.FindAsync(new object[] { id }, cancellationToken);
+        if (stored is null)
+            return false;
+        db.StagerTokens.Remove(stored);
+        await db.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<RedeemedStagerToken> VerifyAsync(
         string secret,
         DateTimeOffset now,

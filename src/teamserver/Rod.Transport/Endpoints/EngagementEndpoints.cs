@@ -7,6 +7,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Staging;
 
 namespace Rod.Transport.Endpoints;
 
@@ -34,6 +35,9 @@ public static class EngagementEndpoints
 
         group.MapPost("/{engagementId}/stager-tokens", MintStagerTokenAsync)
             .WithName(nameof(MintStagerTokenAsync));
+
+        group.MapPost("/{engagementId}/stager-tokens/{tokenId}:revoke", RevokeStagerTokenAsync)
+            .WithName(nameof(RevokeStagerTokenAsync));
 
         group.MapPut("/{engagementId}/roe", ApplyRoeAsync)
             .WithName(nameof(ApplyRoeAsync));
@@ -298,6 +302,51 @@ public static class EngagementEndpoints
         }
     }
 
+    private static async Task<IResult> RevokeStagerTokenAsync(
+        string engagementId,
+        string tokenId,
+        ClaimsPrincipal user,
+        IStagerTokenService tokens,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var idValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(tokenId, out var tokenValue))
+            return Results.BadRequest(new Problem("Stager token id is not a valid identifier."));
+
+        // The revocation is idempotent and honest about it: revoking an
+        // unknown (already revoked, spent, or never minted) id answers 404 so
+        // a fat-fingered id does not read as success.
+        if (!await tokens.RevokeAsync(new StagerTokenId(tokenValue), cancellationToken))
+            return Results.NotFound(new Problem("Stager token is not held (unknown, spent, or already revoked)."));
+
+        // The revocation is recorded like every engagement fact (architecture.md
+        // Sec 11): attributed to the acting operator, the outcome the revoked
+        // token id -- the trail lines up with the mint and the build that
+        // baked it.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: idValue,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "revoke-stager-token",
+                kind: AuditEventKind.StagerTokenRevoked,
+                payload: "revokedAt=" + clock.GetUtcNow().ToString("O"),
+                output: null,
+                outcome: tokenValue.ToString(),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Ok(new RevokedStagerTokenResponse(tokenValue.ToString()));
+    }
+
     private static async Task<IResult> ApplyRoeAsync(
         string engagementId,
         ApplyRoeRequest body,
@@ -410,6 +459,9 @@ public static class EngagementEndpoints
     /// keep the single-use, one-hour default.
     /// </summary>
     public sealed record MintStagerTokenRequest(int? MaxUses, long? LifetimeSeconds);
+
+    /// <summary>Result of revoking a stager token: the id that stopped working.</summary>
+    public sealed record RevokedStagerTokenResponse(string StagerTokenId);
 
     public sealed record StagerTokenResponse(
         string StagerTokenId,

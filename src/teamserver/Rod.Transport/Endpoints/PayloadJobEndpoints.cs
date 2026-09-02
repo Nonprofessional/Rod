@@ -43,6 +43,9 @@ public static class PayloadJobEndpoints
         IEngagementRepository engagements,
         IPayloadStore payloads,
         Rod.Transport.Listeners.IListenerRegistry listeners,
+        Rod.CoreState.Staging.IStagerTokenService tokens,
+        TimeProvider clock,
+        IAuditStore audit,
         PayloadBuildJobService jobs,
         CancellationToken cancellationToken)
     {
@@ -58,12 +61,18 @@ public static class PayloadJobEndpoints
         if (engagement is null)
             return Results.NotFound(new Problem("Engagement does not exist."));
 
-        var (request, error) = await PayloadBuildRequestParser.ParseAsync(
+        var (parsed, error) = await PayloadBuildRequestParser.ParseAsync(
             body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners, cancellationToken);
         if (error is not null)
             return Results.BadRequest(new Problem(error));
 
-        var job = jobs.Enqueue(request!);
+        // The enrollment credential mints at enqueue and rides the queued
+        // request into the bake -- identical to the synchronous path.
+        var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
+            engagement!, body, tokens, clock, audit, cancellationToken);
+        var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
+
+        var job = jobs.Enqueue(request);
         return Results.Accepted(
             $"/engagements/{engagementId}/payload-jobs/{job.JobId}",
             PayloadJobResponse.Of(job));

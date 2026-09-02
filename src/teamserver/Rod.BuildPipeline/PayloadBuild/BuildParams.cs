@@ -26,6 +26,18 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// integrity anchor the stager verifies the fetched bytes against. Null for
 /// every other class -- only the stager output consumes it.
 /// </param>
+/// <param name="TokenSecret">
+/// The enrollment credential baked into the artifact's profile: the artifact
+/// deploys with zero run-time arguments, the token spends itself at enroll,
+/// and the operator never handles the plaintext. Null keeps the artifact
+/// credential-free (the manual-mint shape: the secret rides run-time flags).
+/// A deployment credential, not key material -- the implant's cryptographic
+/// identity is still the keypair it generates at first run.
+/// </param>
+/// <param name="TokenId">
+/// The minted token's id, for reporting and revocation. Never baked; build
+/// units ignore it.
+/// </param>
 public sealed record BuildParams(
     EngagementId EngagementId,
     OperatorId RequestedBy,
@@ -33,7 +45,9 @@ public sealed record BuildParams(
     TargetProfile Target,
     TransportProfile Transport,
     BeaconProfile Beacon,
-    Stage2Payload? Stage2 = null);
+    Stage2Payload? Stage2 = null,
+    string? TokenSecret = null,
+    Guid? TokenId = null);
 
 /// <summary>
 /// The stage-2 payload a stage-1 stager build references: the built-payload id

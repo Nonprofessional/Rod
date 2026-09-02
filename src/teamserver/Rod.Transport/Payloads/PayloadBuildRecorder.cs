@@ -35,6 +35,10 @@ internal static class PayloadBuildRecorder
             : " transforms=" + string.Join(
                 ">",
                 artifact.Transforms.Select(t => t.Metadata is null ? t.Name : $"{t.Name}({t.Metadata})"));
+        // The baked enrollment credential is part of the build's story: the
+        // trail names the token id (never the secret) so a later revocation
+        // lines up with the artifact that carried it.
+        var tokenTrail = artifact.Params.TokenId is { } tokenId ? $" token={tokenId.ToString()[..8]}" : "";
         await payloads.SaveAsync(
             new PayloadRecord(
                 artifact.ArtifactId,
@@ -56,7 +60,7 @@ internal static class PayloadBuildRecorder
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{transformTrail}",
+                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{transformTrail}{tokenTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),
@@ -71,6 +75,7 @@ internal static class PayloadBuildRecorder
             artifact.Size,
             artifact.Fingerprint,
             artifact.BuiltAt,
-            artifact.Transforms.Select(t => t.Name).ToArray());
+            artifact.Transforms.Select(t => t.Name).ToArray(),
+            TokenId: artifact.Params.TokenId?.ToString());
     }
 }

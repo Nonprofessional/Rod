@@ -49,6 +49,8 @@ public static class PayloadEndpoints
         IEngagementRepository engagements,
         IPayloadStore payloads,
         Rod.Transport.Listeners.IListenerRegistry listeners,
+        Rod.CoreState.Staging.IStagerTokenService tokens,
+        TimeProvider clock,
         IAuditStore audit,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
@@ -71,10 +73,17 @@ public static class PayloadEndpoints
         // The request body parses and validates exactly as the background job
         // path does (the shared parser): same refusals, same defaults, same
         // stager stage-2 resolution, same listener-name endpoint resolution.
-        var (request, parseError) = await PayloadBuildRequestParser.ParseAsync(
+        var (parsed, parseError) = await PayloadBuildRequestParser.ParseAsync(
             body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners, cancellationToken);
         if (parseError is not null)
             return Results.BadRequest(new Problem(parseError));
+
+        // The build's enrollment credential is minted here and baked into the
+        // artifact -- the operator never handles the secret. Both build paths
+        // mint identically.
+        var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
+            engagement!, body, tokens, clock, audit, cancellationToken);
+        var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
 
         BuildArtifact artifact;
         try
@@ -164,8 +173,13 @@ public static class PayloadEndpoints
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
         string? Stage2PayloadId = null,
-        List<string>? FallbackEndpoints = null);
+        List<string>? FallbackEndpoints = null,
+        int? TokenMaxUses = null,
+        long? TokenLifetimeSeconds = null);
 
+    // The response's TokenId names the enrollment credential baked into the
+    // artifact (null on a credential-free build): enough to revoke it, never
+    // enough to reuse it -- the secret itself exists only inside the artifact.
     public sealed record BuildPayloadResponse(
         string ArtifactId,
         string EngagementId,
@@ -175,7 +189,8 @@ public static class PayloadEndpoints
         long Size,
         string Fingerprint,
         DateTimeOffset BuiltAt,
-        string[]? Transforms = null);
+        string[]? Transforms = null,
+        string? TokenId = null);
 
     public sealed record Problem(string Error);
 }

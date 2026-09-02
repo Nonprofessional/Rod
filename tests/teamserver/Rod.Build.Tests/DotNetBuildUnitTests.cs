@@ -151,6 +151,42 @@ public class DotNetBuildUnitTests
         Assert.Equal(0, empty.GetArrayLength());
     }
 
+    [Fact]
+    public void RenderBakedProfile_BakesTheEnrollmentCredentialWhenMinted()
+    {
+        // The build's minted token rides the profile as the "token" key, so
+        // the artifact deploys with zero run-time arguments and spends the
+        // credential at its own enroll. A credential-free build (no mint)
+        // omits the key entirely -- the same profile it always baked.
+        var @params = Params() with { TokenSecret = "build-minted-secret" };
+
+        using var baked = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(@params)));
+        Assert.Equal("build-minted-secret", baked.RootElement.GetProperty("token").GetString());
+
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        Assert.False(plain.RootElement.TryGetProperty("token", out _));
+    }
+
+    [Fact]
+    public void RenderStagerProfile_BakesTheFetchCredentialWhenMinted()
+    {
+        // The stager presents its own minted token for the fetch (verified,
+        // never spent); the stage-2 it launches spends the token baked into
+        // the stage-2's own profile.
+        var @params = Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123"),
+            TokenSecret = "stager-fetch-secret",
+        };
+
+        using var baked = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderStagerProfile(@params)));
+        Assert.Equal("stager-fetch-secret", baked.RootElement.GetProperty("token").GetString());
+
+        var plainParams = Params(ImplantClass.Stager) with { Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123") };
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderStagerProfile(plainParams)));
+        Assert.False(plain.RootElement.TryGetProperty("token", out _));
+    }
+
     [Theory]
     [InlineData("linux", "amd64", "linux-x64")]
     [InlineData("linux", "x86_64", "linux-x64")]

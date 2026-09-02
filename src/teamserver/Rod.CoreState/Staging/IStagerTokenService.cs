@@ -52,4 +52,14 @@ public interface IStagerTokenService
         string secret,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a token by id: the emergency answer to a leaked credential,
+    /// especially one baked into a deployed artifact. The next redeem (or
+    /// verify) of its secret reads Unknown. Returns false when the id is not
+    /// stored (already revoked, spent and removed, or never minted).
+    /// </summary>
+    Task<bool> RevokeAsync(
+        StagerTokenId id,
+        CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Rod.Audit;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -55,6 +57,51 @@ public class StagerTokenMintScopeTests
                 $"/engagements/{engagementId}/stager-tokens",
                 new EngagementEndpoints.MintStagerTokenRequest(MaxUses: null, LifetimeSeconds: 1));
             Assert.Equal(HttpStatusCode.BadRequest, noWindow.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ABuild_MintsAndReportsItsBakedToken_WhichRevokes()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            // The build mints its own enrollment credential and bakes it in;
+            // the response reports the token's id -- enough to revoke, never
+            // enough to reuse.
+            var built = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "DotNet", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                    Endpoint: "http://c2.example.test", UriPath: "/beacon",
+                    SleepSeconds: 30, JitterSeconds: 10, KillDate: null));
+            built.EnsureSuccessStatusCode();
+            var artifact = await built.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
+            Assert.False(string.IsNullOrWhiteSpace(artifact!.TokenId));
+
+            // The mint is on the trail with the baked shape named.
+            var audit = host.Services.GetRequiredService<IAuditStore>();
+            var trail = await audit.ListAsync(Guid.Parse(engagementId));
+            Assert.Contains(trail, e =>
+                e.Kind == AuditEventKind.StagerTokenMinted && e.Payload.Contains("bakedIntoPayload"));
+
+            // Revocation is the leak answer for a baked credential: the id
+            // stops working, the second attempt honestly 404s, and the
+            // revocation lands on the trail.
+            var revoked = await client.PostAsync(
+                $"/engagements/{engagementId}/stager-tokens/{artifact.TokenId}:revoke", null);
+            Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
+            var revokedAgain = await client.PostAsync(
+                $"/engagements/{engagementId}/stager-tokens/{artifact.TokenId}:revoke", null);
+            Assert.Equal(HttpStatusCode.NotFound, revokedAgain.StatusCode);
+
+            trail = await audit.ListAsync(Guid.Parse(engagementId));
+            Assert.Contains(trail, e =>
+                e.Kind == AuditEventKind.StagerTokenRevoked && e.Outcome == artifact.TokenId);
         }
     }
 

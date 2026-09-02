@@ -73,7 +73,9 @@ public sealed class PayloadBuildService
             request.Target,
             request.Transport,
             new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
-            request.Stage2);
+            request.Stage2,
+            request.TokenSecret,
+            request.MintedTokenId);
 
         var built = await unit.BuildAsync(@params, cancellationToken);
 
@@ -94,8 +96,10 @@ public sealed class PayloadBuildService
 
     // The kill date defaults to a window from build time when the caller does not
     // pin one; a pinned date wins. Enforced later as a self-termination check
-    //; here it is only baked into the artifact.
-    private static DateTimeOffset ResolveKillDate(DateTimeOffset now, DateTimeOffset? requested)
+    //; here it is only baked into the artifact. Public because a build's baked
+    // token defaults to the same window: the credential lives exactly as long
+    // as the artifact it rides.
+    public static DateTimeOffset ResolveKillDate(DateTimeOffset now, DateTimeOffset? requested)
     {
         if (requested is { } pinned && pinned > now)
             return pinned;
@@ -111,6 +115,9 @@ public sealed class PayloadBuildService
 /// to the build unit; <see cref="Class"/> is the implant class to generate.
 /// <see cref="Stage2"/> carries the stage-2 payload reference a stager-class
 /// build bakes in; it is required for the stager class and ignored elsewhere.
+/// <see cref="TokenSecret"/> is the enrollment credential the build bakes in
+/// (the transport layer mints it and attaches it here); null leaves the
+/// artifact credential-free.
 /// </summary>
 public sealed record BuildRequest(
     EngagementId EngagementId,
@@ -123,4 +130,6 @@ public sealed record BuildRequest(
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
     string Mode = "stream",
-    Stage2Payload? Stage2 = null);
+    Stage2Payload? Stage2 = null,
+    string? TokenSecret = null,
+    Guid? MintedTokenId = null);

@@ -231,6 +231,15 @@ public enum AuditEventKind
     EngagementUnfrozen,
 
     /// <summary>
+    /// An operator revoked a stager token: the credential stops working at the
+    /// next redeem or verify, whatever uses and validity it had left. The
+    /// emergency answer to a leaked credential -- above all one baked into a
+    /// deployed artifact. The payload names why revocation exists (the baked
+    /// shape or the manual mint); the outcome is the revoked token id.
+    /// </summary>
+    StagerTokenRevoked,
+
+    /// <summary>
     /// An operator edited the engagement's working record: its name and
     /// free-text description. The payload carries the new name (and whether a
     /// description is set); the outcome is the engagement id. The description

@@ -174,6 +174,16 @@ export async function mintStagerToken(
   return jsonOrThrow(response)
 }
 
+// The leak answer, above all for a credential baked into a deployed artifact:
+// the id stops working at the next redeem or verify. Idempotent-refusing -- a
+// second attempt 404s rather than reading as success.
+export async function revokeStagerToken(engagementId: string, tokenId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/stager-tokens/${tokenId}:revoke`, {
+    method: 'POST',
+  })
+  await jsonOrThrow<unknown>(response)
+}
+
 export async function listImplants(engagementId: string): Promise<Implant[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/implants`))
 }
@@ -855,6 +865,11 @@ export interface BuildPayloadInput {
   sleepSeconds: number | null
   jitterSeconds: number | null
   killDate: string | null
+  // The baked enrollment credential's scope: how many implants the artifact's
+  // token may enroll, and how long the mint stays redeemable. Absent values
+  // default server-side to single use inside the artifact's kill window.
+  tokenMaxUses: number | null
+  tokenLifetimeSeconds: number | null
 }
 
 export interface BuildPayloadResult {
@@ -866,6 +881,9 @@ export interface BuildPayloadResult {
   fingerprint: string
   size: number
   builtAt: string
+  // The id of the enrollment credential baked into the artifact, when the
+  // build minted one -- enough to revoke it, never the secret itself.
+  tokenId: string | null
 }
 
 export async function buildPayload(engagementId: string, input: BuildPayloadInput): Promise<BuildPayloadResult> {

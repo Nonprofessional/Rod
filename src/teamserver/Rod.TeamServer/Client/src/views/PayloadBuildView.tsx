@@ -5,6 +5,7 @@ import {
   enqueueBuildJob,
   listBuildJobs,
   listListeners,
+  revokeStagerToken,
 } from '../api'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
@@ -54,6 +55,9 @@ export function PayloadBuildView({
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
   const [killDate, setKillDate] = useState('')
+  const [tokenMaxUses, setTokenMaxUses] = useState('1')
+  const [tokenHours, setTokenHours] = useState('')
+  const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -118,6 +122,20 @@ export function PayloadBuildView({
     }
   }, [active, refreshJobs])
 
+  const onRevokeToken = async (tokenId: string) => {
+    if (!window.confirm(`Revoke baked token ${tokenId.slice(0, 8)}? The credential stops working immediately; a deployed artifact that has not enrolled yet will not be able to.`))
+      return
+    setRevoking(tokenId)
+    try {
+      await revokeStagerToken(engagementId, tokenId)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setRevoking(null)
+    }
+  }
+
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
     setSubmitting(true)
@@ -140,6 +158,8 @@ export function PayloadBuildView({
         sleepSeconds: num(sleepSeconds),
         jitterSeconds: num(jitterSeconds),
         killDate: killDate ? new Date(killDate).toISOString() : null,
+        tokenMaxUses: num(tokenMaxUses),
+        tokenLifetimeSeconds: num(tokenHours) !== null ? num(tokenHours)! * 3600 : null,
       })
       setError(null)
       await refreshJobs()
@@ -219,6 +239,27 @@ export function PayloadBuildView({
           <label>
             Kill date
             <input type="date" value={killDate} onChange={(e) => setKillDate(e.target.value)} />
+          </label>
+          <label>
+            Token uses
+            {/* The build mints the enrollment credential and bakes it in --
+                the artifact deploys with zero arguments. Uses names how many
+                implants the credential may enroll; the window (hours) is
+                optional and defaults to the artifact's kill window. */}
+            <input
+              value={tokenMaxUses}
+              onChange={(e) => setTokenMaxUses(e.target.value)}
+              title="How many implants the baked enrollment credential may enroll"
+            />
+          </label>
+          <label>
+            Token window (h)
+            <input
+              value={tokenHours}
+              onChange={(e) => setTokenHours(e.target.value)}
+              placeholder="kill window"
+              title="How long the baked credential stays redeemable; empty defaults to the artifact's kill window"
+            />
           </label>
         </fieldset>
         <fieldset>
@@ -331,6 +372,22 @@ export function PayloadBuildView({
                       </span>
                     ) : (
                       <span className="muted">—</span>
+                    )}
+                    {job.artifact?.tokenId && (
+                      <div className="muted" title={job.artifact.tokenId}>
+                        baked token {job.artifact.tokenId.slice(0, 8)}{' '}
+                        {revoking === job.artifact.tokenId ? (
+                          '(revoking…)'
+                        ) : (
+                          <button
+                            className="sm danger"
+                            onClick={() => void onRevokeToken(job.artifact!.tokenId!)}
+                            title="The leak answer: the baked credential stops working at the next enrollment attempt"
+                          >
+                            Revoke token
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td>

@@ -85,6 +85,15 @@ internal static class PayloadBuildRequestParser
         if (mode is not ("stream" or "poll"))
             return (null, "Mode must be 'stream' or 'poll'.");
 
+        // The baked token's scope rides the same request: how many implants
+        // the artifact's credential may enroll, and how long the mint stays
+        // redeemable. Absent values default at mint time (single use, the
+        // artifact's kill window).
+        if (body.TokenMaxUses is < 1 or > 10_000)
+            return (null, "TokenMaxUses must be between 1 and 10000.");
+        if (body.TokenLifetimeSeconds is < 60 or > 2_592_000)
+            return (null, "TokenLifetimeSeconds must be between 60 and 2592000 (30 days).");
+
         // The stager output class (architecture.md Sec 6) references the
         // stage-2 payload it fetches at run time: resolve it here so the build
         // contract carries a verified reference -- the payload's id and
