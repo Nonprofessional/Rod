@@ -218,4 +218,14 @@ public enum AuditEventKind
     /// engagement after its infrastructure is gone.
     /// </summary>
     EngagementRetired,
+
+    /// <summary>
+    /// An operator edited the engagement's working record: its name and
+    /// free-text description. The payload carries the new name (and whether a
+    /// description is set); the outcome is the engagement id. The description
+    /// text itself is not recorded -- it is the crew's working notes, not a
+    /// fact about the target environment, and the trail records that the
+    /// record moved, not every draft of it.
+    /// </summary>
+    EngagementUpdated,
 }

@@ -26,8 +26,11 @@ public static class EngagementEndpoints
         var group = endpoints.MapGroup("/engagements").RequireAuthorization();
 
         group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
+        group.MapGet("/{engagementId}", GetEngagementAsync).WithName(nameof(GetEngagementAsync));
         group.MapPost("/", CreateEngagementAsync)
             .WithName(nameof(CreateEngagementAsync));
+        group.MapPut("/{engagementId}", EditEngagementAsync)
+            .WithName(nameof(EditEngagementAsync));
 
         group.MapPost("/{engagementId}/stager-tokens", MintStagerTokenAsync)
             .WithName(nameof(MintStagerTokenAsync));
@@ -65,6 +68,32 @@ public static class EngagementEndpoints
         }
 
         return Results.Ok(body);
+    }
+
+    private static async Task<IResult> GetEngagementAsync(
+        string engagementId,
+        IEngagementRepository engagements,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var idValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        var engagement = await engagements.FindAsync(new EngagementId(idValue), cancellationToken);
+        if (engagement is null)
+            return Results.NotFound(new Problem($"Engagement {engagementId} does not exist."));
+
+        var owner = await operators.FindAsync(engagement.OwnerId, cancellationToken);
+        return Results.Ok(new EngagementResponse(
+            engagement.Id.ToString(),
+            engagement.Name,
+            engagement.Description,
+            engagement.OwnerId.ToString(),
+            owner?.Handle ?? string.Empty,
+            engagement.CreatedAt,
+            RoeProfileResponse.From(engagement.Roe),
+            engagement.FrozenAt,
+            engagement.RetiredAt));
     }
 
     private static async Task<IResult> CreateEngagementAsync(
@@ -118,6 +147,74 @@ public static class EngagementEndpoints
             cancellationToken);
 
         return Results.Created($"/engagements/{response.EngagementId}", response);
+    }
+
+    private static async Task<IResult> EditEngagementAsync(
+        string engagementId,
+        EditEngagementRequest body,
+        ClaimsPrincipal user,
+        IEngagementRepository engagements,
+        EngagementService service,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var idValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (string.IsNullOrWhiteSpace(body.Name))
+            return Results.BadRequest(new Problem("Engagement name is required."));
+
+        // Resolve first so an unknown id is a clean 404; after that the only
+        // InvalidOperationException left is the aggregate refusing the edit.
+        var existing = await engagements.FindAsync(new EngagementId(idValue), cancellationToken);
+        if (existing is null)
+            return Results.NotFound(new Problem($"Engagement {engagementId} does not exist."));
+
+        EngagementEdited edited;
+        try
+        {
+            edited = await service.EditEngagementAsync(
+                new EditEngagementCommand(new EngagementId(idValue), body.Name, body.Description),
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The aggregate seals a retired engagement's record.
+            return Results.Conflict(new Problem(ex.Message));
+        }
+
+        // The edit is recorded (architecture.md Sec 11): attributed to the
+        // editing operator, the payload naming the new record's shape. The
+        // description text itself stays out of the trail -- it is working
+        // notes, not a fact about the target.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: edited.Engagement.Id.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "edit-engagement",
+                kind: AuditEventKind.EngagementUpdated,
+                payload: $"name={edited.Engagement.Name} description={(edited.Engagement.Description is null ? "cleared" : "set")}",
+                output: null,
+                outcome: edited.Engagement.Id.ToString(),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Ok(new EngagementResponse(
+            edited.Engagement.Id.ToString(),
+            edited.Engagement.Name,
+            edited.Engagement.Description,
+            edited.Engagement.OwnerId.ToString(),
+            edited.OwnerHandle,
+            edited.Engagement.CreatedAt,
+            RoeProfileResponse.From(edited.Engagement.Roe),
+            edited.Engagement.FrozenAt,
+            edited.Engagement.RetiredAt));
     }
 
     private static async Task<IResult> MintStagerTokenAsync(
@@ -249,6 +346,11 @@ public static class EngagementEndpoints
     // The owner is the authenticated operator; only the engagement name is
     // supplied by the caller.
     public sealed record CreateEngagementRequest(string Name, string? Description = null);
+
+    // The edit replaces the working record whole: name and description. A null
+    // description clears it; an empty name is rejected before the service is
+    // reached.
+    public sealed record EditEngagementRequest(string Name, string? Description = null);
 
     public sealed record EngagementResponse(
         string EngagementId,

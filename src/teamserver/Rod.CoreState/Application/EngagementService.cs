@@ -92,6 +92,25 @@ public sealed class EngagementService
     }
 
     /// <summary>
+    /// Edits an engagement's working record: its name and free-text
+    /// description. The description is the crew's own running notes, so it
+    /// stays editable while the engagement operates (and while it is frozen --
+    /// the freeze locks tasking, not notes); a retired engagement is sealed.
+    /// The caller records the change in the audit trail.
+    /// </summary>
+    public async Task<EngagementEdited> EditEngagementAsync(
+        EditEngagementCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        engagement.Edit(command.Name, command.Description);
+        await _engagements.SaveAsync(engagement, cancellationToken);
+
+        var owner = await _operators.FindAsync(engagement.OwnerId, cancellationToken);
+        return new EngagementEdited(engagement, owner?.Handle ?? string.Empty);
+    }
+
+    /// <summary>
     /// Applies the engagement's rules-of-engagement profile (architecture.md
     /// Sec 9 -- ROE guardrails). The profile is the server-side scope of what
     /// the engagement's operators may task; task issuance refuses anything
@@ -167,6 +186,21 @@ public sealed record EngagementCreated(
 
 /// <summary>Request to mint a stager token for an engagement's owner.</summary>
 public sealed record MintStagerTokenCommand(EngagementId EngagementId);
+
+/// <summary>
+/// Request to edit an engagement's working record: the name and free-text
+/// description. Both are required in the command shape; an omitted description
+/// clears it (the endpoint distinguishes omitted from present on the wire).
+/// </summary>
+public sealed record EditEngagementCommand(
+    EngagementId EngagementId,
+    string Name,
+    string? Description);
+
+/// <summary>Result of editing an engagement's record: the saved aggregate and its owner's handle.</summary>
+public sealed record EngagementEdited(
+    Engagement Engagement,
+    string OwnerHandle);
 
 /// <summary>Request to apply an engagement's rules-of-engagement profile.</summary>
 public sealed record ApplyRoeCommand(EngagementId EngagementId, RoeProfile Profile);

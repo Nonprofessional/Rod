@@ -9,14 +9,14 @@ namespace Rod.CoreState.Engagements;
 public sealed class Engagement
 {
     public EngagementId Id { get; }
-    public string Name { get; }
+    public string Name { get; private set; }
 
     /// <summary>
     /// The engagement's free-text description: the working record the crew
-    /// starts the engagement with, set once at creation. Optional and never
-    /// interpreted by the framework.
+    /// carries through the engagement, set at creation and editable while the
+    /// engagement operates. Optional and never interpreted by the framework.
     /// </summary>
-    public string? Description { get; }
+    public string? Description { get; private set; }
 
     public OperatorId OwnerId { get; }
     public DateTimeOffset CreatedAt { get; }
@@ -92,6 +92,25 @@ public sealed class Engagement
 
         var trimmedDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         return new Engagement(id, name.Trim(), trimmedDescription, ownerId, createdAt);
+    }
+
+    /// <summary>
+    /// Edits the engagement's working record: the name and the free-text
+    /// description. Refused on a retired engagement -- retirement seals the
+    /// engagement as evidence, and its identifying record stops moving with it.
+    /// A frozen engagement stays editable: the freeze locks tasking and
+    /// deployments, not the crew's own notes about what the engagement is.
+    /// </summary>
+    public void Edit(string name, string? description)
+    {
+        if (RetiredAt is not null)
+            throw new InvalidOperationException($"Engagement {Id} is retired; its record is sealed.");
+
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Engagement name is required.", nameof(name));
+
+        Name = name.Trim();
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
     }
 
     /// <summary>
