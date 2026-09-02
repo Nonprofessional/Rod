@@ -133,13 +133,23 @@ public static class TransportHost
         services.AddSingleton<Channels.SocksProxyHub>();
 
         // Listener registry: the bound C2 ingress the teamserver is
-        // terminating. Populated at startup by UseRodListeners; read-only from the
-        // operator API. Listeners are global infrastructure, not engagement-scoped.
+        // terminating. Populated at startup by UseRodListeners and by runtime
+        // creates; read-only from the operator API. The registry is the live
+        // view -- the engagement association and its durability live in the
+        // store below.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
+        // The durable home for engagement-scoped listener definitions:
+        // in-memory by default (the process's lifetime, like the rest of core
+        // state without Postgres), Postgres-backed when the connection string
+        // is set (the composition root swaps the adapter).
+        services.AddSingleton<Rod.CoreState.Listeners.IListenerStore, Rod.CoreState.Listeners.InMemoryListenerStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.
         services.AddSingleton<ListenerManager>();
+        // The startup restore pass: rebind what the store holds so a restart
+        // gives the engagements back their ingress.
+        services.AddHostedService<ListenerRestoreService>();
         // The stream-check-in bridges (DNS and named-pipe/raw-TCP) are shared
         // singletons: the startup hosted services and the runtime listener
         // manager both resolve them, so they register here unconditionally --

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  type Engagement,
   type ListenerSummary,
   createListener,
   deleteListener,
+  listEngagements,
   listListeners,
   repointListener,
 } from '../api'
@@ -11,13 +13,13 @@ import { StatusBadge } from '../components/StatusBadge'
 
 // The listeners / redirector panel: the bound C2 ingress, each with the socket
 // it opens (bind) and the public endpoint implants dial (typically a
-// redirector). Repointing swaps that public endpoint at runtime -- a burned
-// redirector is replaced without backend change. Listeners can also be created
-// and deleted here while the teamserver serves; a runtime listener is not
-// written back to the startup configuration, so a restart rebinds exactly what
-// the configuration names (delete is refused for configuration-bound
-// listeners -- the configuration owns those). Global infrastructure, not
-// engagement-scoped.
+// redirector). A listener created here belongs to one engagement -- it is that
+// engagement's private ingress, and enrollment through it accepts only that
+// engagement's tokens. The definition is persisted, so a restart rebinds it
+// with the same id; repointing swaps the public endpoint at runtime and the
+// definition follows. The startup-configuration tier (the operator front and
+// any deliberately shared ingress) shows no engagement and cannot be deleted
+// here -- the configuration owns those.
 
 // The transports the create form offers, with the bind-address shape each
 // one takes. The server validates for real; this list only keeps the form
@@ -33,6 +35,7 @@ const TRANSPORTS = [
 
 export function ListenersView() {
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
+  const [engagements, setEngagements] = useState<Engagement[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [newEndpoint, setNewEndpoint] = useState<Record<string, string>>({})
@@ -43,6 +46,7 @@ export function ListenersView() {
   const [transport, setTransport] = useState('http')
   const [bindAddress, setBindAddress] = useState('')
   const [publicEndpoint, setPublicEndpoint] = useState('')
+  const [engagementId, setEngagementId] = useState('')
   const bindHint = TRANSPORTS.find((t) => t.value === transport)?.bindHint ?? ''
 
   const refresh = useCallback(async () => {
@@ -60,6 +64,20 @@ export function ListenersView() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // The create form's engagement picker: the open engagements a listener may
+  // belong to. Loaded beside the roster so a fresh engagement is one refresh
+  // away.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await listEngagements()
+        setEngagements(all.filter((e) => !e.retiredAt))
+      } catch {
+        // The roster still renders; the picker stays empty until a retry.
+      }
+    })()
+  }, [listeners])
 
   const onRepoint = async (id: string) => {
     const endpoint = newEndpoint[id]?.trim()
@@ -82,6 +100,7 @@ export function ListenersView() {
         transport,
         bindAddress,
         publicEndpoint,
+        engagementId,
       })
       setName('')
       setBindAddress('')
@@ -112,8 +131,9 @@ export function ListenersView() {
         C2 ingress. <strong>Bind</strong> is the socket this server opens;{' '}
         <strong>public endpoint</strong> is the address baked payloads dial -- usually your
         redirector. The two are decoupled on purpose: repoint swaps a burned front without touching
-        the backend. Runtime-created listeners are not persisted to the startup configuration -- a
-        restart rebinds what the configuration names.
+        the backend. A listener created here belongs to one engagement and is persisted -- a restart
+        rebinds it; enrollment through it accepts only that engagement's tokens. Listeners without
+        an engagement are the startup configuration's shared tier.
       </p>
 
       <form className="inline-form listener-create" onSubmit={onCreate}>
@@ -147,6 +167,22 @@ export function ListenersView() {
           onChange={(e) => setPublicEndpoint(e.target.value)}
           required
         />
+        <select
+          value={engagementId}
+          onChange={(e) => setEngagementId(e.target.value)}
+          aria-label="Engagement"
+          title="The engagement this listener answers for"
+          required
+        >
+          <option value="" disabled>
+            engagement…
+          </option>
+          {engagements.map((e) => (
+            <option key={e.engagementId} value={e.engagementId}>
+              {e.name}
+            </option>
+          ))}
+        </select>
         <button className="primary" type="submit" disabled={busy}>
           Create
         </button>
@@ -173,6 +209,7 @@ export function ListenersView() {
                 <th>Transport</th>
                 <th>Bind</th>
                 <th>Public endpoint</th>
+                <th>Engagement</th>
                 <th>State</th>
                 <th></th>
               </tr>
@@ -188,6 +225,16 @@ export function ListenersView() {
                   <td>
                     <code>{l.publicEndpoint}</code>
                     {l.repointedAt && <span className="muted"> (repointed)</span>}
+                  </td>
+                  <td>
+                    {l.engagementId ? (
+                      <code title={l.engagementId}>
+                        {engagements.find((e) => e.engagementId === l.engagementId)?.name ??
+                          l.engagementId.slice(0, 8)}
+                      </code>
+                    ) : (
+                      <span className="muted">shared</span>
+                    )}
                   </td>
                   <td>
                     <StatusBadge status={l.state} />

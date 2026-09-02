@@ -55,6 +55,7 @@ public static class EnrollmentEndpoints
         string payloadId,
         HttpRequest http,
         IStagerTokenService tokens,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
         TimeProvider clock,
         IPayloadStore payloads,
         CancellationToken cancellationToken)
@@ -70,6 +71,16 @@ public static class EnrollmentEndpoints
         try
         {
             var token = await tokens.VerifyAsync(secret, clock.GetUtcNow(), cancellationToken);
+
+            // The scope check an engagement's own listener enforces: the
+            // token must belong to the engagement this socket answers for, so
+            // a leaked token from another engagement is refused here, before
+            // any bytes leave. The shared (startup-configuration) tier carries
+            // no engagement and stays token-scoped only.
+            if (!await TokenMatchesListenerScopeAsync(http, listeners, token, cancellationToken))
+                return Results.Json(
+                    new Problem("Stager token was not accepted."),
+                    statusCode: StatusCodes.Status401Unauthorized);
 
             // Scoped by the token's engagement: a payload id from another
             // engagement is indistinguishable from a nonexistent one.
@@ -92,6 +103,9 @@ public static class EnrollmentEndpoints
     private static async Task<IResult> EnrollAsync(
         HttpRequest http,
         EnrollmentService service,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
+        IStagerTokenService tokens,
+        TimeProvider clock,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
@@ -139,6 +153,26 @@ public static class EnrollmentEndpoints
             if (!Guid.TryParse(body.ParentImplantId, out var parentValue))
                 return Results.BadRequest(new Problem("Parent implant id is not a valid identifier."));
             parentImplantId = new ImplantId(parentValue);
+        }
+
+        // The scope check an engagement's own listener enforces, before the
+        // token is spent: when the socket this request arrived on belongs to
+        // one engagement, a token minted for any other engagement is refused
+        // whole -- it keeps its uses for the listener it was minted for. The
+        // shared (startup-configuration) tier carries no engagement and stays
+        // token-scoped only (architecture.md Sec 8).
+        try
+        {
+            var presented = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
+            if (!await TokenMatchesListenerScopeAsync(http, listeners, presented, cancellationToken))
+                return Results.Json(
+                    new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
+                    statusCode: StatusCodes.Status401Unauthorized);
+        }
+        catch (StagerTokenRedeemException)
+        {
+            // The pre-check refuses quietly; the redeem inside EnrollAsync
+            // produces the precise refused-once-more status below.
         }
 
         try
@@ -226,6 +260,21 @@ public static class EnrollmentEndpoints
                 new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
+    }
+
+    // The engagement-scope check shared by enroll and the stage-2 fetch: when
+    // the socket the request arrived on is one engagement's own listener, the
+    // token must belong to that same engagement. A null listener (the shared
+    // tier, or a socket the registry does not know) leaves the token as the
+    // only scope, the shape every earlier deployment used.
+    private static async Task<bool> TokenMatchesListenerScopeAsync(
+        HttpRequest http,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
+        Rod.CoreState.Staging.RedeemedStagerToken token,
+        CancellationToken cancellationToken)
+    {
+        var listener = await listeners.FindByLocalPortAsync(http.HttpContext.Connection.LocalPort, cancellationToken);
+        return listener?.EngagementId is not { } scope || scope == token.EngagementId;
     }
 
     // Reads the enroll body in either of the two shapes the malleable

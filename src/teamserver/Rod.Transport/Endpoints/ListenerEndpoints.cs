@@ -1,18 +1,24 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.CoreState;
+using Rod.CoreState.Listeners;
 using Rod.Transport.Listeners;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing listener endpoints ( read view,
-/// repoint): which listeners are bound and serving, their transports, bind
-/// addresses, and -- crucially -- the public endpoints implants dial (typically
-/// a redirector, decoupled from the bind address per architecture.md Sec 8).
-/// Listeners are bound at startup; at runtime an operator can repoint a
-/// listener's public endpoint to swap a burned redirector without touching the
-/// backend (architecture.md Sec 7/8).
+/// The operator-facing listener endpoints: which listeners are bound and
+/// serving, their transports, bind addresses, the public endpoints implants
+/// dial (typically a redirector, decoupled from the bind address per
+/// architecture.md Sec 8), and the engagement each runtime listener belongs
+/// to. A runtime create names its engagement -- the listener is that
+/// engagement's private ingress, enrollment through it checks the presented
+/// token against the association, and the definition is persisted so a
+/// restart rebinds it. The startup-configuration tier (the operator front and
+/// any deliberately shared ingress) carries no engagement. At runtime an
+/// operator can also repoint a listener's public endpoint to swap a burned
+/// redirector without touching the backend (architecture.md Sec 7/8).
 /// </summary>
 public static class ListenerEndpoints
 {
@@ -47,6 +53,9 @@ public static class ListenerEndpoints
             return Results.BadRequest(new Problem("Bind address is required."));
         if (string.IsNullOrWhiteSpace(body.PublicEndpoint))
             return Results.BadRequest(new Problem("Public endpoint is required."));
+        if (!Guid.TryParse(body.EngagementId, out var engagementValue))
+            return Results.BadRequest(new Problem(
+                "Engagement id is required: a runtime listener belongs to exactly one engagement."));
 
         // The public endpoint's accepted shape is transport-shaped: what a
         // payload dials on the HTTP transports (a URL or host:port), the zone
@@ -59,14 +68,17 @@ public static class ListenerEndpoints
         try
         {
             var listener = await manager.CreateAsync(
-                new ListenerConfig(body.Name.Trim(), transport, body.BindAddress.Trim(), body.PublicEndpoint.Trim()),
+                new ListenerConfig(
+                    body.Name.Trim(), transport, body.BindAddress.Trim(), body.PublicEndpoint.Trim(),
+                    new EngagementId(engagementValue)),
                 cancellationToken);
 
             return Results.Created($"/listeners/{listener.Id}", Response.Of(listener));
         }
         catch (ArgumentException ex)
         {
-            // A malformed bind address for the transport: an operator mistake.
+            // A malformed bind address or an unknown engagement: an operator
+            // mistake.
             return Results.BadRequest(new Problem(ex.Message));
         }
         catch (InvalidOperationException ex)
@@ -128,6 +140,7 @@ public static class ListenerEndpoints
         string id,
         RepointListenerRequest body,
         IListenerRegistry listeners,
+        IListenerStore definitions,
         CancellationToken cancellationToken)
     {
         if (!ListenerId.TryParse(id, out var listenerId))
@@ -153,6 +166,23 @@ public static class ListenerEndpoints
         var listener = await listeners.RepointAsync(listenerId, body.PublicEndpoint, cancellationToken);
         if (listener is null)
             return Results.NotFound(new Problem("Listener is not registered."));
+
+        // A scoped listener's definition follows the repoint, so the restore
+        // pass after a restart rebinds the current front, not the burned one.
+        if (listener.EngagementId is not null)
+        {
+            await definitions.SaveAsync(
+                new ListenerDefinition(
+                    listener.Id.Value,
+                    listener.EngagementId.Value,
+                    listener.Name,
+                    listener.Transport.WireName(),
+                    listener.BindAddress,
+                    listener.PublicEndpoint,
+                    listener.CreatedAt,
+                    listener.RepointedAt),
+                cancellationToken);
+        }
 
         return Results.Ok(Response.Of(listener));
     }
@@ -223,14 +253,16 @@ public static class ListenerEndpoints
     /// <see cref="ListenerTransport"/> (case-insensitive); the bind address is
     /// the socket this server opens (host:port for every network transport, a
     /// bare pipe name for SMB); the public endpoint is the address implants
-    /// dial. Runtime listeners are not persisted -- a restart rebinds the
-    /// startup configuration.
+    /// dial; the engagement id names the engagement this listener answers for
+    /// -- required, because a runtime listener is that engagement's private
+    /// ingress. The definition is persisted, so a restart rebinds it.
     /// </summary>
     public sealed record CreateListenerRequest(
         string Name,
         string Transport,
         string BindAddress,
-        string PublicEndpoint);
+        string PublicEndpoint,
+        string EngagementId);
 
     /// <summary>
     /// Request to repoint a listener's public endpoint. The new endpoint is the
@@ -238,12 +270,18 @@ public static class ListenerEndpoints
     /// </summary>
     public sealed record RepointListenerRequest(string PublicEndpoint);
 
+    /// <summary>
+    /// A listener as the operator API renders it. The engagement id is null on
+    /// the startup-configuration tier (the operator front and any deliberately
+    /// shared ingress) and names the owning engagement on runtime listeners.
+    /// </summary>
     public sealed record ListenerResponse(
         string Id,
         string Name,
         string Transport,
         string BindAddress,
         string PublicEndpoint,
+        string? EngagementId,
         string State,
         DateTimeOffset CreatedAt,
         DateTimeOffset? RepointedAt);
@@ -259,6 +297,7 @@ public static class ListenerEndpoints
                 l.Transport.WireName(),
                 l.BindAddress,
                 l.PublicEndpoint,
+                l.EngagementId?.ToString(),
                 l.State.ToString().ToLowerInvariant(),
                 l.CreatedAt,
                 l.RepointedAt);

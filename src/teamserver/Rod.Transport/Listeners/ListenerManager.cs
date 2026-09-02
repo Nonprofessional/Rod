@@ -6,6 +6,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Rod.CoreState.Engagements;
+using Rod.CoreState.Listeners;
 using Rod.CoreState.Pki;
 using Rod.Transport.Listeners.Dns;
 using Rod.Transport.Listeners.Streams;
@@ -32,11 +34,12 @@ namespace Rod.Transport.Listeners;
 ///   service per listener on demand, the same services the startup path
 ///   registers.
 ///
-/// Runtime listeners are disposable infrastructure exactly like the registry:
-/// they are not written back to the startup configuration, so a restart
-/// rebinds exactly what the configuration names. Removing a startup-bound
-/// listener is refused (the reloader only touches endpoints it owns); the
-/// configuration is the owner of those.
+/// Runtime listeners are engagement-scoped: each create names the engagement
+/// the listener answers for, and its definition is persisted once the socket
+/// binds, so a restart rebinds what the operator built (the restore keeps the
+/// listener's id). Removing a startup-bound listener is refused (the reloader
+/// only touches endpoints it owns); the configuration is the owner of those,
+/// and they carry no engagement -- the shared tier.
 /// </summary>
 public sealed class ListenerManager
 {
@@ -47,6 +50,8 @@ public sealed class ListenerManager
 
     private readonly IServiceProvider _services;
     private readonly IListenerRegistry _listeners;
+    private readonly IListenerStore _definitions;
+    private readonly IEngagementRepository _engagements;
     private readonly TimeProvider _clock;
     private readonly ILogger<ListenerManager> _logger;
     private readonly DynamicEndpointsConfiguration _endpoints = new();
@@ -57,11 +62,15 @@ public sealed class ListenerManager
     public ListenerManager(
         IServiceProvider services,
         IListenerRegistry listeners,
+        IListenerStore definitions,
+        IEngagementRepository engagements,
         TimeProvider clock,
         ILogger<ListenerManager> logger)
     {
         _services = services;
         _listeners = listeners;
+        _definitions = definitions;
+        _engagements = engagements;
         _clock = clock;
         _logger = logger;
     }
@@ -92,13 +101,69 @@ public sealed class ListenerManager
     }
 
     /// <summary>
-    /// Creates and binds a listener. Returns the registered (running)
+    /// Creates and binds an engagement-scoped listener and persists its
+    /// definition, so a restart rebinds it. Returns the registered (running)
     /// listener. Throws <see cref="ArgumentException"/> for a malformed
-    /// request (bad bind address for the transport) and
-    /// <see cref="InvalidOperationException"/> when the bind is refused (port
-    /// in use) -- the caller maps those to 400 and 409.
+    /// request (bad bind address for the transport, missing or unknown
+    /// engagement) and <see cref="InvalidOperationException"/> when the bind is
+    /// refused (port in use) -- the caller maps those to 400 and 409.
     /// </summary>
     public async Task<Listener> CreateAsync(ListenerConfig config, CancellationToken cancellationToken = default)
+    {
+        if (config.EngagementId is not { } engagementId)
+            throw new ArgumentException(
+                "A runtime listener belongs to one engagement; supply its id.", nameof(config));
+
+        var engagement = await _engagements.FindAsync(engagementId, cancellationToken);
+        if (engagement is null)
+            throw new ArgumentException(
+                $"Engagement {engagementId} does not exist.", nameof(config));
+
+        var listener = await BindAsync(config, id: null, cancellationToken);
+
+        // Persist only once the socket is bound: a definition for a listener
+        // that never opened would resurrect as a phantom on every restart.
+        await _definitions.SaveAsync(DefinitionOf(listener), cancellationToken);
+        return listener;
+    }
+
+    /// <summary>
+    /// Rebinds a persisted definition at startup: the same bind path as
+    /// <see cref="CreateAsync"/> with the definition's own id, and no re-save
+    /// (the record is already the truth being restored). A definition whose
+    /// port no longer binds is logged and skipped -- the roster shows what is
+    /// actually listening -- instead of failing the whole boot.
+    /// </summary>
+    public async Task<Listener?> RestoreAsync(ListenerDefinition definition, CancellationToken cancellationToken = default)
+    {
+        if (!Enum.TryParse<ListenerTransport>(definition.Transport, ignoreCase: true, out var transport))
+        {
+            _logger.LogWarning(
+                "Stored listener {ListenerId} carries unknown transport '{Transport}'; skipped.",
+                definition.Id, definition.Transport);
+            return null;
+        }
+
+        try
+        {
+            var config = new ListenerConfig(
+                definition.Name, transport, definition.BindAddress, definition.PublicEndpoint, definition.EngagementId);
+            return await BindAsync(config, new ListenerId(definition.Id), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Stored listener {ListenerId} ({Name}) could not rebind {BindAddress}; skipped. "
+                + "Free the port or delete the listener and recreate it.",
+                definition.Id, definition.Name, definition.BindAddress);
+            return null;
+        }
+    }
+
+    // The shared bind path: validate, reserve the port, bind per transport
+    // shape, and register. A null id mints a fresh one (a create); a given id
+    // is honored (a restore, so listener ids survive restarts).
+    private async Task<Listener> BindAsync(ListenerConfig config, ListenerId? id, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(config.Name))
             throw new ArgumentException("Listener name is required.", nameof(config));
@@ -140,9 +205,9 @@ public sealed class ListenerManager
         return config.Transport switch
         {
             ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
-                => await CreateHttpListenerAsync(config, cancellationToken).ConfigureAwait(false),
+                => await CreateHttpListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
             ListenerTransport.Dns or ListenerTransport.Smb or ListenerTransport.Tcp
-                => await CreateStreamListenerAsync(config, cancellationToken).ConfigureAwait(false),
+                => await CreateStreamListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
             _ => throw new ArgumentException(
                 $"Transport {config.Transport} is not supported for runtime listeners.", nameof(config)),
         };
@@ -151,8 +216,9 @@ public sealed class ListenerManager
     /// <summary>
     /// Removes a runtime-created listener: unbinds its socket (stopping its
     /// stream service, or withdrawing its Kestrel endpoint -- Kestrel drains
-    /// the socket for up to its shutdown timeout first) and takes it out of
-    /// the registry. Returns false when the listener is not runtime-managed.
+    /// the socket for up to its shutdown timeout first), takes it out of the
+    /// registry, and deletes its persisted definition so a restart does not
+    /// resurrect it. Returns false when the listener is not runtime-managed.
     /// </summary>
     public async Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default)
     {
@@ -180,12 +246,14 @@ public sealed class ListenerManager
         }
 
         await _listeners.RemoveAsync(listener, cancellationToken).ConfigureAwait(false);
+        await _definitions.RemoveAsync(listener.Value, cancellationToken).ConfigureAwait(false);
         _logger.LogInformation(
             "Runtime listener {ListenerId} ({Name}) removed.", listener, entry.Listener.Name);
         return true;
     }
 
-    private async Task<Listener> CreateHttpListenerAsync(ListenerConfig config, CancellationToken cancellationToken)
+    private async Task<Listener> CreateHttpListenerAsync(
+        ListenerConfig config, ListenerId? id, CancellationToken cancellationToken)
     {
         var (host, port) = TransportHost.ParseBindAddress(config.BindAddress);
 
@@ -193,7 +261,8 @@ public sealed class ListenerManager
         // the host registered carry the CA-backed mTLS termination.
         var scheme = config.Transport == ListenerTransport.Http ? "http" : "https";
         var listener = Listener.Define(
-            ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint, _clock.GetUtcNow());
+            id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
+            _clock.GetUtcNow(), config.EngagementId);
 
         _endpoints.PublishEndpoint(EndpointKey(listener.Id), $"{scheme}://{config.BindAddress}");
 
@@ -216,10 +285,12 @@ public sealed class ListenerManager
         return listener;
     }
 
-    private async Task<Listener> CreateStreamListenerAsync(ListenerConfig config, CancellationToken cancellationToken)
+    private async Task<Listener> CreateStreamListenerAsync(
+        ListenerConfig config, ListenerId? id, CancellationToken cancellationToken)
     {
         var listener = Listener.Define(
-            ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint, _clock.GetUtcNow());
+            id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
+            _clock.GetUtcNow(), config.EngagementId);
 
         // The same per-entry services the startup path registers, started on
         // demand: each binds its socket and registers the aggregate itself --
@@ -294,6 +365,18 @@ public sealed class ListenerManager
     // The endpoint key under Kestrel:Endpoints. The listener id, not the name:
     // names can repeat or carry characters configuration keys would rather not.
     private static string EndpointKey(ListenerId listener) => $"rod-{listener.Value:N}";
+
+    // The persisted shape of a bound, engagement-scoped listener.
+    private static ListenerDefinition DefinitionOf(Listener listener)
+        => new(
+            listener.Id.Value,
+            listener.EngagementId!.Value,
+            listener.Name,
+            listener.Transport.WireName(),
+            listener.BindAddress,
+            listener.PublicEndpoint,
+            listener.CreatedAt,
+            listener.RepointedAt);
 
     // Pre-create validation for the bind address shape, per transport. The
     // host:port shapes parse exactly as the startup path parses them.

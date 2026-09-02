@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Rod.Audit;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.Listeners;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Staging;
@@ -82,6 +83,9 @@ public static class RodPersistenceHost
         services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());
         services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
         services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
+        // Engagement-scoped listener definitions: the durable pair so a restart
+        // rebinds the listeners the operator created per engagement.
+        services.Replace(ServiceDescriptor.Singleton<IListenerStore, PostgresListenerStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

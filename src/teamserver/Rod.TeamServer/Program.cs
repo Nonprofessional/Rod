@@ -61,18 +61,19 @@ builder.Services.AddRodPersistence(builder.Configuration);
 // reason as AddRodOperators above.
 builder.Services.AddRodOperatorAuth(builder.Configuration);
 
-// Bind the configured listeners (, architecture.md Sec 8). Each entry
-// is one C2 ingress: a transport (HTTP(S) or mTLS), the address Kestrel opens, and
-// the public endpoint implants dial -- decoupled, so a burned redirector is
-// replaceable without backend change. When the section is absent the host falls
-// back to a single loopback HTTP listener so `dotnet run` still works out of the
-// box.
+// Bind the operator front (architecture.md Sec 8). Configuration names the
+// shared tier only -- the loopback socket the operator UI and API ride (and
+// any deliberately shared ingress a deployment fronts); the implant-facing
+// listeners are engagement-scoped, created through the operator API, and
+// persisted so a restart rebinds them. When the section is absent the host
+// falls back to a single loopback listener so `dotnet run` still works out of
+// the box.
 var listenerConfigs = builder.Configuration.GetSection("Listeners").Get<List<ListenerConfig>>();
 if (listenerConfigs is null || listenerConfigs.Count == 0)
 {
     listenerConfigs = new List<ListenerConfig>
     {
-        new("dev-http", ListenerTransport.Http, "127.0.0.1:5080", "http://localhost:5080"),
+        new("operator-http", ListenerTransport.Http, "127.0.0.1:5080", "http://localhost:5080"),
     };
 }
 builder.WebHost.UseRodListeners(listenerConfigs);

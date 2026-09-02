@@ -1,12 +1,16 @@
+using Rod.CoreState;
+
 namespace Rod.Transport.Listeners;
 
 /// <summary>
-/// One bound C2 ingress the teamserver terminates (architecture.md Sec 8). A
-/// listener is global teamserver infrastructure -- it is shared across engagements,
-/// and tenancy is enforced where the architecture puts it (the stager token at
-/// enrollment, the <c>(implant_id, engagement_id)</c> client certificate at mTLS),
-/// never at the listener. A redirector fronts a listener; a burned redirector is
-/// replaced without touching the backend.
+/// One bound C2 ingress the teamserver terminates (architecture.md Sec 8).
+/// Two tiers share this shape: the engagement-scoped listener a runtime
+/// create binds for one engagement (enrollment through it checks the
+/// presented token against <see cref="EngagementId"/>), and the startup-
+/// configuration tier -- the operator front and any deliberately shared
+/// ingress -- which leaves <see cref="EngagementId"/> null and serves any
+/// engagement the stager token itself names. A redirector fronts a listener;
+/// a burned redirector is replaced without touching the backend.
 ///
 /// The listener decouples the address Kestrel opens (<see cref="BindAddress"/>) from
 /// the address implants are told to dial (<see cref="PublicEndpoint"/>). The bind
@@ -26,6 +30,10 @@ public sealed class Listener
     public ListenerTransport Transport { get; }
     public string BindAddress { get; }
     public string PublicEndpoint { get; private set; }
+
+    /// <summary>The engagement this listener answers for; null on the shared tier.</summary>
+    public EngagementId? EngagementId { get; }
+
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? RepointedAt { get; private set; }
     public ListenerState State { get; private set; }
@@ -36,6 +44,7 @@ public sealed class Listener
         ListenerTransport transport,
         string bindAddress,
         string publicEndpoint,
+        EngagementId? engagementId,
         DateTimeOffset createdAt,
         ListenerState state)
     {
@@ -44,6 +53,7 @@ public sealed class Listener
         Transport = transport;
         BindAddress = bindAddress;
         PublicEndpoint = publicEndpoint;
+        EngagementId = engagementId;
         CreatedAt = createdAt;
         State = state;
     }
@@ -59,8 +69,9 @@ public sealed class Listener
         ListenerTransport transport,
         string bindAddress,
         string publicEndpoint,
-        DateTimeOffset at)
-        => new(id, name, transport, bindAddress, publicEndpoint, at, ListenerState.Stopped);
+        DateTimeOffset at,
+        EngagementId? engagementId = null)
+        => new(id, name, transport, bindAddress, publicEndpoint, engagementId, at, ListenerState.Stopped);
 
     /// <summary>
     /// Marks the listener as bound and accepting connections. Only legal from

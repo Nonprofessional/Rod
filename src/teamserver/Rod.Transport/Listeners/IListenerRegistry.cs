@@ -47,4 +47,13 @@ public interface IListenerRegistry
     /// stops reporting it. Returns false when the listener is unknown.
     /// </summary>
     Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The HTTP-shaped listener bound to the local port a request arrived on,
+    /// or null when none matches (the request rode a socket the registry does
+    /// not know, or a stream transport). This is how enrollment finds the
+    /// engagement-scoped listener that received it -- the scope check compares
+    /// the listener's engagement against the presented token's.
+    /// </summary>
+    Task<Listener?> FindByLocalPortAsync(int port, CancellationToken cancellationToken = default);
 }

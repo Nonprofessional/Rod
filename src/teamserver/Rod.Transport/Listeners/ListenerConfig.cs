@@ -1,13 +1,24 @@
+using Rod.CoreState;
+
 namespace Rod.Transport.Listeners;
 
 /// <summary>
-/// One entry in the teamserver's startup listener configuration (architecture.md
-/// Sec 8). The host binds one socket per entry via <c>UseRodListeners</c>. This is
-/// configuration shape only -- it is not a <see cref="Listener"/> until the host
-/// has bound it and registered the result.
+/// One listener's configuration shape (architecture.md Sec 8): what the runtime
+/// manager binds for an engagement, and what the startup <c>Listeners</c>
+/// section names for the operator tier. This is configuration shape only -- it
+/// is not a <see cref="Listener"/> until the host (or the manager) has bound
+/// the socket and registered the result.
 /// </summary>
+/// <param name="EngagementId">
+/// The engagement this listener answers for. Required on a runtime create --
+/// an engagement's ingress is its own, and enrollment through it checks the
+/// presented token against this id. Null is the startup-configuration tier:
+/// the operator front (and any deliberately shared ingress a deployment
+/// fronts), which serves any engagement the token itself names.
+/// </param>
 public sealed record ListenerConfig(
     string Name,
     ListenerTransport Transport,
     string BindAddress,
-    string PublicEndpoint);
+    string PublicEndpoint,
+    EngagementId? EngagementId = null);

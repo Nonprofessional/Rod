@@ -59,4 +59,31 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
 
     public Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default)
         => Task.FromResult(_listeners.TryRemove(listener, out _));
+
+    public Task<Listener?> FindByLocalPortAsync(int port, CancellationToken cancellationToken = default)
+    {
+        // The HTTP-shaped listeners carry host:port binds; the first whose
+        // port matches is the listener the request arrived on. (Stream
+        // transports never serve HTTP enrollment, so their bind shapes are
+        // skipped by the parse.)
+        Listener? found = null;
+        foreach (var listener in _listeners.Values)
+        {
+            if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+                continue;
+            if (!TryParsePort(listener.BindAddress, out var bindPort) || bindPort != port)
+                continue;
+            if (found is null || listener.CreatedAt < found.CreatedAt)
+                found = listener;
+        }
+        return Task.FromResult(found);
+    }
+
+    // The bind address is host:port on every HTTP-shaped transport.
+    private static bool TryParsePort(string bindAddress, out int port)
+    {
+        port = 0;
+        var colon = bindAddress.LastIndexOf(':');
+        return colon >= 0 && int.TryParse(bindAddress[(colon + 1)..], out port);
+    }
 }

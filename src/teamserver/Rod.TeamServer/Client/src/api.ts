@@ -755,6 +755,7 @@ export interface ListenerSummary {
   transport: string
   bindAddress: string
   publicEndpoint: string
+  engagementId: string | null
   state: string
   createdAt: string
   repointedAt: string | null
@@ -778,15 +779,18 @@ export async function repointListener(listenerId: string, publicEndpoint: string
 //
 // Creating a listener binds its socket on the running teamserver (HTTP-shaped
 // transports ride Kestrel's endpoint reloader; DNS / SMB / TCP start their
-// socket services). Runtime listeners are not written back to the startup
-// configuration: a restart rebinds exactly what the configuration names, and
-// only runtime-created listeners can be deleted here.
+// socket services) and persists its definition: the listener belongs to one
+// engagement -- enrollment through it accepts only that engagement's tokens --
+// and a restart rebinds it with the same id. The startup configuration names
+// the shared tier (the operator front); only runtime-created listeners can be
+// deleted here.
 
 export interface CreateListenerInput {
   name: string
   transport: string
   bindAddress: string
   publicEndpoint: string
+  engagementId: string
 }
 
 export async function createListener(input: CreateListenerInput): Promise<ListenerSummary> {

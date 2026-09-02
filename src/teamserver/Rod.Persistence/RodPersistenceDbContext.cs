@@ -37,6 +37,7 @@ public sealed class RodPersistenceDbContext : DbContext
     public DbSet<Task> Tasks => Set<Task>();
     internal DbSet<StoredImplantTaskNonce> ImplantTaskNonces => Set<StoredImplantTaskNonce>();
     internal DbSet<StoredStagerToken> StagerTokens => Set<StoredStagerToken>();
+    internal DbSet<StoredListenerDefinition> ListenerDefinitions => Set<StoredListenerDefinition>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();
 
