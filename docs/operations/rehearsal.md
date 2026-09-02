@@ -20,6 +20,20 @@ an adversarial eye, and the CA rotation drill (Sec 6) swaps the engagement
 CA under live implants. Scale the addresses to the
 engagement's real infrastructure; the lifecycle steps do not change.
 
+> **Model update since these walks were executed.** Listeners and deployment
+> credentials have since been reworked (architecture.md Sec 6, Sec 8): the
+> `Listeners` configuration now names the shared tier only (the operator front
+> and any deliberately shared enroll edge -- the shapes Sec 2 and Sec 4
+> configure unchanged), while implant-facing listeners are engagement-scoped,
+> created through the operator API, persisted across restarts, and enforced at
+> enrollment. A payload build names its engagement's listener, and the build
+> mints and bakes the enrollment credential itself -- the artifact deploys
+with
+> zero run-time arguments, and the manual mint below remains the rotation and
+> re-entry path (Sec 6's fresh-token-per-implant drill is unchanged). Read the
+> mint and listener-configuration steps in Sec 2-4 as the shapes they were;
+> the composed acceptance points they prove are unchanged.
+
 ## 1. Provision the infrastructure
 
 ### The engagement CA (out of band)

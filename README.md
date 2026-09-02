@@ -115,27 +115,34 @@ dotnet build Rod.slnx     # builds the teamserver and the operator UI (wwwroot)
 dotnet run --project src/teamserver/Rod.TeamServer
 ```
 
-1. Open `http://127.0.0.1:5080` (the default dev listener; the operator UI is
-   served at the same origin).
+1. Open `http://127.0.0.1:5080` (the default operator front; the operator UI
+   is served at the same origin).
 2. Sign in with `operator` / `operator` -- the built-in Development account
    that applies whenever the `Operators` configuration section supplies no
    initial operator. Outside Development there is **no fallback**: production
    provisions its first operator from configuration
    (`Operators:Initial`, see `appsettings.json` and
    [docs/operations/teamserver.md](docs/operations/teamserver.md)).
-3. Create an engagement in the UI, mint a stager token on it, and enroll the
-   reference implant (`src/implant/dotnet`, run it with
-   `-enroll-url ... -token ...`) -- the full walk, with acceptance evidence,
-   is [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
+3. Create an engagement, create its listener (the Listeners panel -- an
+   engagement's listener is its own private ingress, persisted and rebound on
+   restart), then build a payload naming the listener: the build mints the
+   enrollment credential and bakes it in, so the artifact deploys with zero
+   run-time arguments and enrolls on run. A source-tree dev implant skips the
+   build: mint a token in the UI and run `src/implant/dotnet` with
+   `-enroll-url ... -token ...`. The full walk, with acceptance evidence, is
+   [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
 
 Configuration is opt-in sections of `appsettings.json`:
 
-- `ConnectionStrings:Postgres` -- durable teamserver state (PostgreSQL).
+- `ConnectionStrings:Postgres` -- durable teamserver state (PostgreSQL),
+  including the engagement-scoped listener definitions.
 - `Audit:DataDirectory` -- file-backed audit trail, artifacts, and built
   payloads that survive a restart.
 - `Pki` -- an externally provisioned engagement CA (PEM cert + key) for implant
   enrollment; omit for the dev self-signed CA.
-- `Listeners` -- C2 ingress (HTTP(S) and mTLS transports).
+- `Listeners` -- the shared tier only: the operator front (and any
+  deliberately shared ingress). Implant-facing listeners are engagement-scoped
+  and created through the operator API, not configuration.
 
 ## Documentation
 

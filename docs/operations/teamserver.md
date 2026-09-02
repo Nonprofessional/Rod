@@ -19,7 +19,17 @@ dotnet run --project src/teamserver/Rod.TeamServer
 ```
 
 With no `Listeners` configuration the host binds one loopback HTTP listener on
-`127.0.0.1:5080` so `dotnet run` works out of the box. The operator UI is
+`127.0.0.1:5080` so `dotnet run` works out of the box. That configuration
+names the **shared tier** only -- the operator front (plus any deliberately
+shared ingress, such as the certificate-less enroll edge a deployment fronts).
+Implant-facing listeners are **engagement-scoped**: created through the
+Listeners panel (or `POST /listeners`) against exactly one engagement,
+persisted so a restart rebinds them, unique across ports, and enforced at
+enrollment -- a token minted for another engagement is refused whole on that
+socket (architecture.md Sec 8). A payload build names its engagement's
+listener and the baked endpoint comes from the listener's record; the build
+also mints and bakes the artifact's enrollment credential, so the artifact
+deploys with zero run-time arguments. The operator UI is
 served same-origin at `/`; during UI development, `npm run dev` in
 `src/teamserver/Rod.TeamServer/Client` proxies the API to :5080.
 
@@ -113,7 +123,7 @@ standard `Section__Key` mapping):
 
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
-| `Listeners` | C2 ingress: one entry per socket -- `Name`, `Transport` (`Http`, `Mtls`, `HttpsEnvelope`, `Dns`, `Smb`, or `Tcp`), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS entries terminate mutual TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
+| `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Mtls`, `HttpsEnvelope`, `Dns`, `Smb`, or `Tcp`), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS entries terminate mutual TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
 | `Pki` | An externally provisioned engagement CA as PEM files (`CaCertificatePath`, `CaPrivateKeyPath`, optional `CaPrivateKeyPassphrase`) -- production leaf issuance. Unparseable or mismatched material fails at startup, not at the first enrollment. RSA only. | The self-signed dev CA (key lives in process -- not for production). |

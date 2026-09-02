@@ -229,8 +229,13 @@ artifact at build time, so each implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
 lost implant self-terminates at its kill date. No key material is baked: the
 implant's cryptographic identity is the keypair it generates itself at first
-run, bound to its engagement by the CA-signed leaf issued at enroll (Sec 9) --
-a captured artifact carries nothing reusable.
+run, bound to its engagement by the CA-signed leaf issued at enroll (Sec 9).
+What a captured artifact does carry is the enrollment credential the build
+minted for it (Sec 6): a deployment secret, not key material -- single-use by
+default, bounded by the artifact's own kill window, bound to its engagement's
+listener scope, revocable by id the moment it is known to have leaked. A build
+that mints nothing bakes nothing, and the credential never passes through an
+operator's hands.
 
 The endpoint list is ordered: a primary callback endpoint plus optional
 fallbacks, walked client-side when an entry burns (Sec 8).
@@ -394,14 +399,22 @@ recorded.**
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
-  -- alongside the listener and kill date. The loader runs with the deployment
-  credential (never baked; no key material crosses the build contract), fetches
-  the stage-2 over the anonymous implant listener (`GET /implants/stage2/{id}`,
-  the stager token verified without being spent), refuses bytes that do not
-  hash to the baked fingerprint, executes the fetched artifact, and hands the
-  credential to it: the stage-2 spends the token at its own enroll and appears
+  -- alongside the listener and kill date. Each stage of the chain carries its
+  own minted credential (a deployment secret, not key material): the loader
+  presents its token for the fetch (`GET /implants/stage2/{id}`, verified
+  without being spent), refuses bytes that do not hash to the baked
+  fingerprint, executes the fetched artifact, and forwards only a run-time
+  token -- the stage-2 spends its own baked token at its enroll and appears
   on the roster as a top-level implant. The .NET reference loader lives in
-  `src/stager/dotnet/`; the fetch route is engagement-scoped by the token.
+  `src/stager/dotnet/`; the fetch route is engagement-scoped by the token and
+  by the listener it arrived on (Sec 8).
+- **Every build mints the enrollment credential it bakes.** The token is
+  minted at build time (single use by default, inside the artifact's kill
+  window), baked into the profile's `token` key, and reported by id only --
+  the operator never handles the plaintext, and the leak answer is revocation
+  by id (`POST /engagements/{id}/stager-tokens/{tokenId}:revoke`, audited as
+  `StagerTokenRevoked`). The manual mint stays for the rotation and re-entry
+  flows (Sec 9), scoped per request to uses and window.
 - **The transform seam is post-build and out-of-tree.** Build-time artifact
   transformation -- where MSF put its encoders and payload encryption -- is a
   config-listed `IPayloadTransform` chain (Sec 13 keeps concrete transforms
@@ -471,6 +484,19 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 8. Transports, listeners, and redirectors
 
+- **Listeners come in two tiers.** The startup configuration names the shared
+  tier -- the operator front the UI and API ride, plus any deliberately shared
+  ingress a deployment fronts (the certificate-less enroll edge); those carry
+  no engagement and serve whatever engagement a presented token names.
+  Implant-facing listeners are **engagement-scoped**: created through the
+  operator API against exactly one engagement, persisted (in-memory with the
+  process, Postgres when configured; a restart rebinds them with the same
+  ids), and enforced at enrollment -- enroll and the stage-2 fetch resolve the
+  listener a request arrived on, and a token minted for any other engagement
+  is refused whole and unspent on that socket. Ports are unique across both
+  tiers: the create-time bind check refuses a collision with a clear error
+  before any socket opens. A payload build names its engagement's listener
+  and the baked endpoint comes from the listener's record.
 - Supported listener transports: **HTTP(S)**, **mTLS**, the **plain-HTTP
   envelope** over mTLS, **DNS**, **SMB** (named pipe), and **raw TCP** are
   implemented. Transport choice is a profile/deployment concern; the protocol
