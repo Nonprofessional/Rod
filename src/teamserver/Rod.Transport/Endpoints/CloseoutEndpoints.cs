@@ -21,7 +21,9 @@ namespace Rod.Transport.Endpoints;
 /// is final; <c>POST /engagements/{id}:evidence-package</c> exports the
 /// hash-chained trail, the artifacts, and the report as one ZIP that re-verifies
 /// offline (<see cref="EvidencePackage"/>); <c>POST /engagements/{id}:retire</c>
-/// completes the close-out, terminal.
+/// completes the close-out, terminal. A mistaken freeze is reversible before
+/// retirement: <c>POST /engagements/{id}:unfreeze</c> reopens the engagement,
+/// and both events stay in the trail.
 ///
 /// Every step is an audited, attributed operator action, so the trail carries
 /// its own close-out story. The export is refused on an open engagement -- the
@@ -43,6 +45,7 @@ public static class CloseoutEndpoints
         // as an action on the engagement itself.
         var group = endpoints.MapGroup("/engagements").RequireAuthorization();
         group.MapPost("/{engagementId}:freeze", FreezeAsync).WithName("FreezeEngagement");
+        group.MapPost("/{engagementId}:unfreeze", UnfreezeAsync).WithName("UnfreezeEngagement");
         group.MapPost("/{engagementId}:evidence-package", ExportEvidencePackageAsync).WithName("ExportEvidencePackage");
         group.MapPost("/{engagementId}:retire", RetireAsync).WithName("RetireEngagement");
         return endpoints;
@@ -94,6 +97,55 @@ public static class CloseoutEndpoints
             cancellationToken);
 
         return Results.Ok(new EngagementClosedResponse(frozen.EngagementId.ToString(), frozen.FrozenAt));
+    }
+
+    private static async Task<IResult> UnfreezeAsync(
+        string engagementId,
+        ClaimsPrincipal user,
+        IEngagementRepository engagements,
+        EngagementService service,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var (error, engagement) = await ResolveEngagementAsync(engagementId, engagements, cancellationToken);
+        if (engagement is null)
+            return error!;
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+
+        EngagementUnfrozen unfrozen;
+        try
+        {
+            unfrozen = await service.UnfreezeAsync(new UnfreezeEngagementCommand(engagement.Id), cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The aggregate rejected the transition: not frozen, or retired
+            // (the close-out completed and the record is sealed).
+            return Results.Conflict(new Problem(ex.Message));
+        }
+
+        // The unfreeze is recorded like the freeze it reverses: attributed,
+        // timestamped, on the live trail. The trail keeps both events, so the
+        // mistaken freeze stays part of the story instead of being erased.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: unfrozen.EngagementId.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "unfreeze-engagement",
+                kind: AuditEventKind.EngagementUnfrozen,
+                payload: $"unfrozenAt={unfrozen.UnfrozenAt:O}",
+                output: null,
+                outcome: unfrozen.EngagementId.ToString(),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.Ok(new EngagementReopenedResponse(unfrozen.EngagementId.ToString(), unfrozen.UnfrozenAt));
     }
 
     private static async Task<IResult> ExportEvidencePackageAsync(
@@ -243,6 +295,8 @@ public static class CloseoutEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     public sealed record EngagementClosedResponse(string EngagementId, DateTimeOffset At);
+
+    public sealed record EngagementReopenedResponse(string EngagementId, DateTimeOffset UnfrozenAt);
 
     public sealed record Problem(string Error);
 }

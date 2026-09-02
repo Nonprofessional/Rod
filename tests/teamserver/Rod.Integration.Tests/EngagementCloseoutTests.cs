@@ -119,6 +119,76 @@ public class EngagementCloseoutTests
         }
     }
 
+    [Fact]
+    public async Task Unfreeze_Recovers_A_Mistaken_Freeze()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var implant = await EnrollStage2Async(host, engagementId);
+
+            var frozen = await client.PostAsync($"/engagements/{engagementId}:freeze", null);
+            Assert.Equal(HttpStatusCode.OK, frozen.StatusCode);
+
+            // The recovery: the engagement reopens, and tasking and deployments
+            // resume -- the gates the freeze closed read open again.
+            var unfrozen = await client.PostAsync($"/engagements/{engagementId}:unfreeze", null);
+            Assert.Equal(HttpStatusCode.OK, unfrozen.StatusCode);
+            var reopened = await unfrozen.Content.ReadFromJsonAsync<CloseoutEndpoints.EngagementReopenedResponse>();
+            Assert.Equal(engagementId, reopened!.EngagementId);
+
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(implant.Id.ToString(), "shell.exec", "id"));
+            Assert.Equal(HttpStatusCode.Created, issued.StatusCode);
+            var minted = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", null);
+            Assert.Equal(HttpStatusCode.OK, minted.StatusCode);
+
+            // Both events stay in the trail: the mistaken freeze is part of the
+            // story, not erased by the recovery.
+            var audit = host.Services.GetRequiredService<IAuditStore>();
+            var trail = await audit.ListAsync(Guid.Parse(engagementId));
+            Assert.Contains(trail, e => e.Kind == AuditEventKind.EngagementFrozen);
+            Assert.Contains(trail, e => e.Kind == AuditEventKind.EngagementUnfrozen);
+
+            // The guard rails hold: unfreezing an open engagement conflicts, and
+            // retirement still requires a freeze first.
+            var unfrozenAgain = await client.PostAsync($"/engagements/{engagementId}:unfreeze", null);
+            Assert.Equal(HttpStatusCode.Conflict, unfrozenAgain.StatusCode);
+            var retired = await client.PostAsync($"/engagements/{engagementId}:retire", null);
+            Assert.Equal(HttpStatusCode.Conflict, retired.StatusCode);
+
+            var list = await client.GetFromJsonAsync<List<EngagementEndpoints.EngagementResponse>>("/engagements");
+            var entry = Assert.Single(list!, e => e.EngagementId == engagementId);
+            Assert.False(entry.FrozenAt.HasValue);
+            Assert.False(entry.RetiredAt.HasValue);
+        }
+    }
+
+    [Fact]
+    public async Task Unfreeze_Refuses_A_Retired_Engagement()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            await client.PostAsync($"/engagements/{engagementId}:freeze", null);
+            await client.PostAsync($"/engagements/{engagementId}:retire", null);
+
+            // Retirement is terminal: the record is sealed as evidence and the
+            // close-out cannot be walked back past it.
+            var response = await client.PostAsync($"/engagements/{engagementId}:unfreeze", null);
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        }
+    }
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync(

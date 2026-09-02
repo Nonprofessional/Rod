@@ -14,12 +14,18 @@ public interface IStagerTokenService
 {
     /// <summary>
     /// Mints a fresh stager token for <paramref name="engagementId"/>, issued by
-    /// <paramref name="issuedBy"/>. The returned secret is shown once.
+    /// <paramref name="issuedBy"/>. The returned secret is shown once. The
+    /// optional <paramref name="maxUses"/> and <paramref name="lifetime"/> scope
+    /// the token to a deployment batch: absent values keep the single-use,
+    /// one-hour default; a batch of N implants mints one token with N uses and
+    /// a longer window, each enroll spending one use.
     /// </summary>
     Task<StagerToken> MintAsync(
         EngagementId engagementId,
         OperatorId issuedBy,
         DateTimeOffset issuedAt,
+        int? maxUses = null,
+        TimeSpan? lifetime = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -29,6 +29,8 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         EngagementId engagementId,
         OperatorId issuedBy,
         DateTimeOffset issuedAt,
+        int? maxUses = null,
+        TimeSpan? lifetime = null,
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
@@ -38,11 +40,12 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             throw new StagerTokenException(
                 $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint stager tokens for it.");
 
+        var effectiveMaxUses = maxUses ?? DefaultMaxUses;
+        var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);
         var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var expiresAt = issuedAt + DefaultLifetime;
         var id = StagerTokenId.New();
 
-        _stored[id] = new StoredToken(SHA256.HashData(secretBytes), engagementId, issuedBy, expiresAt, DefaultMaxUses);
+        _stored[id] = new StoredToken(SHA256.HashData(secretBytes), engagementId, issuedBy, expiresAt, effectiveMaxUses);
 
         return new StagerToken
         {
@@ -52,7 +55,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
-            MaxUses = DefaultMaxUses,
+            MaxUses = effectiveMaxUses,
         };
     }
 

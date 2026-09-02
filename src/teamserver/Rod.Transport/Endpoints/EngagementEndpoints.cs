@@ -219,6 +219,7 @@ public static class EngagementEndpoints
 
     private static async Task<IResult> MintStagerTokenAsync(
         string engagementId,
+        HttpContext context,
         EngagementService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
@@ -226,10 +227,32 @@ public static class EngagementEndpoints
         if (!Guid.TryParse(engagementId, out var idValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
+        // The mint scope rides an optional JSON body: a body-less post keeps
+        // the single-use, one-hour default; a batch names how many implants the
+        // token may enroll and how long the window stays open. The content-type
+        // check (not ContentLength) gates the read, so a chunked body binds too.
+        MintStagerTokenRequest? request = null;
+        if (context.Request.HasJsonContentType())
+        {
+            try
+            {
+                request = await context.Request.ReadFromJsonAsync<MintStagerTokenRequest>(cancellationToken);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return Results.BadRequest(new Problem("The mint request body is not valid JSON."));
+            }
+        }
+        if (request?.MaxUses is < 1 or > 10_000)
+            return Results.BadRequest(new Problem("maxUses must be between 1 and 10000."));
+        if (request?.LifetimeSeconds is < 60 or > 2_592_000)
+            return Results.BadRequest(new Problem("lifetimeSeconds must be between 60 and 2592000 (30 days)."));
+        TimeSpan? lifetime = request?.LifetimeSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null;
+
         try
         {
             var minted = await service.MintStagerTokenForOwnerAsync(
-                new MintStagerTokenCommand(new EngagementId(idValue)),
+                new MintStagerTokenCommand(new EngagementId(idValue), request?.MaxUses, lifetime),
                 cancellationToken);
 
             var response = new StagerTokenResponse(
@@ -380,6 +403,13 @@ public static class EngagementEndpoints
     public sealed record EngagementScopedRoeResponse(
         string EngagementId,
         RoeProfileResponse Roe);
+
+    /// <summary>
+    /// The optional mint scope: how many implants the token may enroll (each
+    /// spend one use) and how long the mint stays redeemable. Absent values
+    /// keep the single-use, one-hour default.
+    /// </summary>
+    public sealed record MintStagerTokenRequest(int? MaxUses, long? LifetimeSeconds);
 
     public sealed record StagerTokenResponse(
         string StagerTokenId,

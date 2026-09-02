@@ -3,17 +3,20 @@ import {
   type Engagement,
   editEngagement,
   createEngagement,
+  fetchEvidencePackageBlob,
   freezeEngagement,
   listEngagements,
   retireEngagement,
+  unfreezeEngagement,
 } from '../api'
 import { Icon } from '../components/Icons'
 
 // The engagements list: enumerate every engagement the operator can reach,
 // create a new one, edit an engagement's working record (name + description),
 // and drive the close-out arc (freeze -> export evidence -> retire) from the
-// row actions. Drilling into an engagement hands off to the detail view, which
-// carries the full capability surface.
+// row actions. A mistaken freeze is reversible until retirement (unfreeze);
+// retire is the terminal step. Drilling into an engagement hands off to the
+// detail view, which carries the full capability surface.
 //
 // "Delete" here is the close-out, not an erasure: the audit trail is the
 // engagement's durable account, so retirement takes the engagement out of
@@ -93,6 +96,35 @@ export function EngagementsView() {
     try {
       await freezeEngagement(e.engagementId)
       await refresh()
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  const onUnfreeze = async (e: Engagement) => {
+    if (!window.confirm(`Unfreeze "${e.name}"? It reopens for tasking and deployments.`))
+      return
+    try {
+      await unfreezeEngagement(e.engagementId)
+      await refresh()
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
+  // The export is a POST-only close-out action, so the download posts and
+  // saves the returned ZIP itself -- a plain link would GET a POST-only route.
+  const onDownloadEvidence = async (e: Engagement) => {
+    try {
+      const blob = await fetchEvidencePackageBlob(e.engagementId)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `rod-evidence-${e.engagementId}.zip`
+      link.click()
+      // Revoke after the click has been handed to the browser: revoking in the
+      // same tick aborts the download in some browsers.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000)
     } catch (err) {
       setError(String(err))
     }
@@ -193,13 +225,12 @@ export function EngagementsView() {
                       )}
                       {e.frozenAt && !e.retiredAt && (
                         <>
-                          <a
-                            className="sm ghost download-link"
-                            href={`engagements/${e.engagementId}:evidence-package`}
-                            download
-                          >
+                          <button className="sm ghost" onClick={() => void onUnfreeze(e)}>
+                            Unfreeze
+                          </button>
+                          <button className="sm ghost" onClick={() => void onDownloadEvidence(e)}>
                             Evidence
-                          </a>
+                          </button>
                           <button className="sm danger" onClick={() => void onRetire(e)}>
                             Retire
                           </button>

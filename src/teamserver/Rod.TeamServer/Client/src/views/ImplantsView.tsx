@@ -44,6 +44,11 @@ export function ImplantsView({
   const [notes, setNotes] = useState<ImplantNote[]>([])
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
+  // The mint scope: a batch of N implants takes one token with N uses -- each
+  // enroll spends one -- inside the chosen window, so the credential is handed
+  // to the crew once instead of minted per deployment.
+  const [mintUses, setMintUses] = useState(1)
+  const [mintHours, setMintHours] = useState(1)
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -69,7 +74,11 @@ export function ImplantsView({
 
   const onMint = async () => {
     try {
-      setMinted(await mintStagerToken(engagementId))
+      const scope =
+        mintUses > 1 || mintHours !== 1
+          ? { maxUses: mintUses, lifetimeSeconds: mintHours * 3600 }
+          : undefined
+      setMinted(await mintStagerToken(engagementId, scope))
       setCopied(false)
       setError(null)
     } catch (e) {
@@ -281,14 +290,42 @@ export function ImplantsView({
       <div className="card">
         <h3>Stager token</h3>
         <p className="muted">
-          The deployment credential: a one-time secret you hand to a payload so it can enroll into
+          The deployment credential: a secret you hand to a payload so it can enroll into
           this engagement -- run the built implant (or its stager) with{' '}
           <code>-enroll-url &lt;endpoint&gt; -token &lt;secret&gt;</code>. Nothing joins the
-          engagement without one, and the secret is shown exactly once at mint.
+          engagement without one, and the secret is shown exactly once at mint. A batch
+          mints one token with several uses instead of one secret per deployment.
         </p>
-        <button className="primary" onClick={onMint} disabled={busy}>
-          Mint stager token
-        </button>
+        <div className="create-form-row">
+          <label className="muted" htmlFor="mint-uses">
+            uses
+          </label>
+          <input
+            id="mint-uses"
+            type="number"
+            min={1}
+            max={10000}
+            style={{ width: '5.5rem' }}
+            value={mintUses}
+            onChange={(e) => setMintUses(Math.min(10000, Math.max(1, Number(e.target.value) || 1)))}
+          />
+          <label className="muted" htmlFor="mint-window">
+            window
+          </label>
+          <select
+            id="mint-window"
+            value={mintHours}
+            onChange={(e) => setMintHours(Number(e.target.value))}
+          >
+            <option value={1}>1 hour</option>
+            <option value={8}>8 hours</option>
+            <option value={24}>24 hours</option>
+            <option value={168}>7 days</option>
+          </select>
+          <button className="primary" onClick={onMint} disabled={busy}>
+            Mint stager token
+          </button>
+        </div>
         {minted && (
           <>
             <div className="secret-row">

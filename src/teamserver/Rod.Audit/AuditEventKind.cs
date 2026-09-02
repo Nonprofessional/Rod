@@ -220,6 +220,17 @@ public enum AuditEventKind
     EngagementRetired,
 
     /// <summary>
+    /// An operator reversed a freeze: the engagement reopens and accepts
+    /// tasking and deployments again. The recovery for a mistaken freeze,
+    /// refused after retirement. The payload carries the unfreeze timestamp;
+    /// the outcome is the engagement id. The freeze and this event both stay
+    /// in the trail, so an exported package from the frozen window remains a
+    /// verifiable snapshot of that window while the live trail tells the full
+    /// story.
+    /// </summary>
+    EngagementUnfrozen,
+
+    /// <summary>
     /// An operator edited the engagement's working record: its name and
     /// free-text description. The payload carries the new name (and whether a
     /// description is set); the outcome is the engagement id. The description

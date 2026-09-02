@@ -143,6 +143,24 @@ public sealed class Engagement
     }
 
     /// <summary>
+    /// Reverses a freeze: the engagement resumes accepting tasking and
+    /// deployments. The recovery for a mistaken freeze -- the close-out path
+    /// starts once, but it can be walked back before retirement. Refused on a
+    /// retired engagement (terminal, sealed as evidence) and on an engagement
+    /// that is not frozen. Both the freeze and the unfreeze stay in the audit
+    /// trail, so the arc remains the true story.
+    /// </summary>
+    public void Unfreeze()
+    {
+        if (RetiredAt is not null)
+            throw new InvalidOperationException($"Engagement {Id} is retired; its close-out already completed.");
+        if (FrozenAt is null)
+            throw new InvalidOperationException($"Engagement {Id} is not frozen.");
+
+        FrozenAt = null;
+    }
+
+    /// <summary>
     /// Retires the engagement, completing the close-out (architecture.md Sec 2
     /// step 10). Terminal, and only reachable from the frozen state -- retiring
     /// an open engagement would skip the evidence export the close-out exists

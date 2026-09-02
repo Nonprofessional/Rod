@@ -154,8 +154,24 @@ export async function createEngagement(input: CreateEngagementInput): Promise<En
   return jsonOrThrow(response)
 }
 
-export async function mintStagerToken(engagementId: string): Promise<StagerToken> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/stager-tokens`, { method: 'POST' }))
+export interface MintStagerTokenInput {
+  maxUses?: number
+  lifetimeSeconds?: number
+}
+
+// Mints a deployment credential for the engagement. The optional scope sizes
+// the token for a batch: maxUses implants may each spend one use inside the
+// lifetime window; absent values keep the single-use, one-hour default.
+export async function mintStagerToken(
+  engagementId: string,
+  input?: MintStagerTokenInput,
+): Promise<StagerToken> {
+  const response = await fetch(`engagements/${engagementId}/stager-tokens`, {
+    method: 'POST',
+    headers: input ? { 'content-type': 'application/json' } : undefined,
+    body: input ? JSON.stringify(input) : undefined,
+  })
+  return jsonOrThrow(response)
 }
 
 export async function listImplants(engagementId: string): Promise<Implant[]> {
@@ -186,7 +202,8 @@ export async function issueTask(
 // engagement operates and while it is frozen; retirement seals it. The
 // close-out path (freeze -> export -> retire) is the engagement's exit from
 // service -- the trail stays as the durable account, so "delete" here means
-// retiring, not erasing.
+// retiring, not erasing. A mistaken freeze is walked back with unfreeze until
+// retirement completes.
 
 export async function getEngagement(engagementId: string): Promise<Engagement> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}`))
@@ -214,13 +231,39 @@ export async function freezeEngagement(engagementId: string): Promise<Engagement
   return jsonOrThrow(response)
 }
 
+export interface EngagementReopenedResult {
+  engagementId: string
+  unfrozenAt: string
+}
+
+// Reverses a mistaken freeze; refused once the engagement is retired. The
+// freeze and the unfreeze both stay in the audit trail.
+export async function unfreezeEngagement(engagementId: string): Promise<EngagementReopenedResult> {
+  const response = await fetch(`engagements/${engagementId}:unfreeze`, { method: 'POST' })
+  return jsonOrThrow(response)
+}
+
 export async function retireEngagement(engagementId: string): Promise<EngagementClosedResult> {
   const response = await fetch(`engagements/${engagementId}:retire`, { method: 'POST' })
   return jsonOrThrow(response)
 }
 
-export function evidencePackageUrl(engagementId: string): string {
-  return `engagements/${engagementId}:evidence-package`
+// The evidence package is a POST-only close-out action -- the export is an
+// audited operator act, not a fetchable resource -- so the download posts and
+// takes the returned ZIP as a blob.
+export async function fetchEvidencePackageBlob(engagementId: string): Promise<Blob> {
+  const response = await fetch(`engagements/${engagementId}:evidence-package`, { method: 'POST' })
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`
+    try {
+      const body = (await response.json()) as Problem
+      if (body?.error) detail = body.error
+    } catch {
+      // Non-JSON error body; keep the status text.
+    }
+    throw new Error(detail)
+  }
+  return response.blob()
 }
 
 // --- Cancel queued tasking ------------------------------------

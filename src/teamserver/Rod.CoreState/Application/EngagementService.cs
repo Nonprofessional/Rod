@@ -62,7 +62,9 @@ public sealed class EngagementService
     /// <summary>
     /// Mints a stager token for an engagement, issued by its owner. The secret is
     /// returned once; only the caller sees it. A closed engagement (frozen for
-    /// close-out or retired) mints nothing -- it accepts no new deployments.
+    /// close-out or retired) mints nothing -- it accepts no new deployments. The
+    /// command's optional scope (max uses, lifetime) sizes the token for a
+    /// deployment batch; absent values keep the single-use, one-hour default.
     /// </summary>
     public async Task<StagerTokenMinted> MintStagerTokenForOwnerAsync(
         MintStagerTokenCommand command,
@@ -79,7 +81,8 @@ public sealed class EngagementService
                 "; it mints no deployment tokens.");
         }
 
-        var token = await _stagerTokens.MintAsync(engagement.Id, engagement.OwnerId, now, cancellationToken);
+        var token = await _stagerTokens.MintAsync(
+            engagement.Id, engagement.OwnerId, now, command.MaxUses, command.Lifetime, cancellationToken);
 
         return new StagerTokenMinted(
             token.Id,
@@ -150,6 +153,25 @@ public sealed class EngagementService
     }
 
     /// <summary>
+    /// Reverses a freeze: the engagement resumes accepting tasking and
+    /// deployments. The recovery for a mistaken freeze, refused once the
+    /// close-out completes (retirement is terminal). The caller records the
+    /// unfreeze in the audit trail.
+    /// </summary>
+    public async Task<EngagementUnfrozen> UnfreezeAsync(
+        UnfreezeEngagementCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _clock.GetUtcNow();
+
+        var engagement = await _engagements.GetOrThrowAsync(command.EngagementId, cancellationToken);
+        engagement.Unfreeze();
+        await _engagements.SaveAsync(engagement, cancellationToken);
+
+        return new EngagementUnfrozen(engagement.Id, now);
+    }
+
+    /// <summary>
     /// Retires the engagement, completing the close-out (architecture.md Sec 2
     /// step 10): terminal, and only reachable from the frozen state -- the
     /// aggregate rejects retiring an open engagement so the evidence export
@@ -184,8 +206,15 @@ public sealed record EngagementCreated(
     string OwnerHandle,
     DateTimeOffset CreatedAt);
 
-/// <summary>Request to mint a stager token for an engagement's owner.</summary>
-public sealed record MintStagerTokenCommand(EngagementId EngagementId);
+/// <summary>
+/// Request to mint a stager token for an engagement's owner. The optional scope
+/// sizes the token for a deployment batch: <see cref="MaxUses"/> implants may
+/// each spend one use inside <see cref="Lifetime"/>.
+/// </summary>
+public sealed record MintStagerTokenCommand(
+    EngagementId EngagementId,
+    int? MaxUses = null,
+    TimeSpan? Lifetime = null);
 
 /// <summary>
 /// Request to edit an engagement's working record: the name and free-text
@@ -208,11 +237,17 @@ public sealed record ApplyRoeCommand(EngagementId EngagementId, RoeProfile Profi
 /// <summary>Request to freeze an engagement for close-out.</summary>
 public sealed record FreezeEngagementCommand(EngagementId EngagementId);
 
+/// <summary>Request to reverse a mistaken freeze and reopen the engagement.</summary>
+public sealed record UnfreezeEngagementCommand(EngagementId EngagementId);
+
 /// <summary>Request to retire an engagement, completing its close-out.</summary>
 public sealed record RetireEngagementCommand(EngagementId EngagementId);
 
 /// <summary>Result of freezing an engagement for close-out.</summary>
 public sealed record EngagementFrozen(EngagementId EngagementId, DateTimeOffset FrozenAt);
+
+/// <summary>Result of reversing a freeze: the engagement is open again.</summary>
+public sealed record EngagementUnfrozen(EngagementId EngagementId, DateTimeOffset UnfrozenAt);
 
 /// <summary>Result of retiring an engagement.</summary>
 public sealed record EngagementRetired(EngagementId EngagementId, DateTimeOffset RetiredAt);

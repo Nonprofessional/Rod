@@ -36,8 +36,8 @@ namespace Rod.Persistence.Stores;
 /// </remarks>
 internal sealed class PostgresStagerTokenService : IStagerTokenService
 {
-    // Defaults carried verbatim from the in-memory service; they become
-    // per-request inputs later.
+    // The fall-back shape when a mint names no scope: single-use, one hour.
+    // A batch mint passes explicit maxUses/lifetime through the service.
     private static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(1);
     private const int DefaultMaxUses = 1;
 
@@ -56,6 +56,8 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         EngagementId engagementId,
         OperatorId issuedBy,
         DateTimeOffset issuedAt,
+        int? maxUses = null,
+        TimeSpan? lifetime = null,
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
@@ -65,8 +67,9 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             throw new StagerTokenException(
                 $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint stager tokens for it.");
 
+        var effectiveMaxUses = maxUses ?? DefaultMaxUses;
+        var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);
         var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var expiresAt = issuedAt + DefaultLifetime;
         var id = StagerTokenId.New();
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -78,8 +81,8 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             Hash = SHA256.HashData(secretBytes),
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
-            MaxUses = DefaultMaxUses,
-            RemainingUses = DefaultMaxUses,
+            MaxUses = effectiveMaxUses,
+            RemainingUses = effectiveMaxUses,
         });
         await db.SaveChangesAsync(cancellationToken);
 
@@ -91,7 +94,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
-            MaxUses = DefaultMaxUses,
+            MaxUses = effectiveMaxUses,
         };
     }
 
