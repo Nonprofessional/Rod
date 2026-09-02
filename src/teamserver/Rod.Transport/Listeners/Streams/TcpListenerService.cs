@@ -20,23 +20,20 @@ namespace Rod.Transport.Listeners.Streams;
 /// </summary>
 internal sealed class TcpListenerService : BackgroundService
 {
-    private readonly ListenerConfig _listener;
+    private readonly Listener _listener;
     private readonly StreamBeaconBridge _bridge;
     private readonly IListenerRegistry _listeners;
-    private readonly TimeProvider _clock;
     private readonly ILogger<TcpListenerService> _logger;
 
     public TcpListenerService(
-        ListenerConfig listener,
+        Listener listener,
         StreamBeaconBridge bridge,
         IListenerRegistry listeners,
-        TimeProvider clock,
         ILogger<TcpListenerService> logger)
     {
         _listener = listener;
         _bridge = bridge;
         _listeners = listeners;
-        _clock = clock;
         _logger = logger;
     }
 
@@ -48,11 +45,7 @@ internal sealed class TcpListenerService : BackgroundService
 
         // Bind first, then register: the registry reflects what is actually
         // listening, the same ordering the Kestrel-bound transports follow.
-        await _listeners.RegisterAsync(
-            Listener.Define(
-                ListenerId.New(), _listener.Name, _listener.Transport,
-                _listener.BindAddress, _listener.PublicEndpoint, _clock.GetUtcNow()),
-            stoppingToken);
+        await _listeners.RegisterAsync(_listener, stoppingToken);
 
         _logger.LogInformation(
             "Rod TCP listener {Name} answering socket check-ins on {Bind} for {Endpoint}.",

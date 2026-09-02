@@ -56,4 +56,7 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
 
         return Task.FromResult<Listener?>(null);
     }
+
+    public Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default)
+        => Task.FromResult(_listeners.TryRemove(listener, out _));
 }

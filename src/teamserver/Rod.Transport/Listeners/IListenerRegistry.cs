@@ -39,4 +39,12 @@ public interface IListenerRegistry
         ListenerId listener,
         string publicEndpoint,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a listener from the registry -- the runtime-delete counterpart
+    /// to <see cref="RegisterAsync"/>. The caller unbinds the listener's
+    /// socket (or hands it to the transport that owns it); the registry only
+    /// stops reporting it. Returns false when the listener is unknown.
+    /// </summary>
+    Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default);
 }

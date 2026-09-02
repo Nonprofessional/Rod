@@ -23,23 +23,20 @@ namespace Rod.Transport.Listeners.Dns;
 /// </summary>
 internal sealed class DnsListenerService : BackgroundService
 {
-    private readonly ListenerConfig _listener;
+    private readonly Listener _listener;
     private readonly DnsBeaconBridge _bridge;
     private readonly IListenerRegistry _listeners;
-    private readonly TimeProvider _clock;
     private readonly ILogger<DnsListenerService> _logger;
 
     public DnsListenerService(
-        ListenerConfig listener,
+        Listener listener,
         DnsBeaconBridge bridge,
         IListenerRegistry listeners,
-        TimeProvider clock,
         ILogger<DnsListenerService> logger)
     {
         _listener = listener;
         _bridge = bridge;
         _listeners = listeners;
-        _clock = clock;
         _logger = logger;
     }
 
@@ -50,11 +47,7 @@ internal sealed class DnsListenerService : BackgroundService
 
         // Bind first, then register: the registry reflects what is actually
         // listening, the same ordering the Kestrel-bound transports follow.
-        await _listeners.RegisterAsync(
-            Listener.Define(
-                ListenerId.New(), _listener.Name, _listener.Transport,
-                _listener.BindAddress, _listener.PublicEndpoint, _clock.GetUtcNow()),
-            stoppingToken);
+        await _listeners.RegisterAsync(_listener, stoppingToken);
 
         _logger.LogInformation("Rod DNS listener {Name} answering TXT check-ins for zone {Zone} on {Bind}.",
             _listener.Name, _listener.PublicEndpoint, _listener.BindAddress);

@@ -136,6 +136,17 @@ public static class TransportHost
         // terminating. Populated at startup by UseRodListeners; read-only from the
         // operator API. Listeners are global infrastructure, not engagement-scoped.
         services.AddSingleton<IListenerRegistry, InMemoryListenerRegistry>();
+        // Runtime listener management: create/remove listeners while the host
+        // serves. The Kestrel half activates only on a host that binds real
+        // listeners (UseRodListeners); the stream half works on any host.
+        services.AddSingleton<ListenerManager>();
+        // The stream-check-in bridges (DNS and named-pipe/raw-TCP) are shared
+        // singletons: the startup hosted services and the runtime listener
+        // manager both resolve them, so they register here unconditionally --
+        // a host with no stream listeners configured still serves runtime
+        // creates for those transports.
+        services.AddSingleton<DnsBeaconBridge>();
+        services.AddSingleton<StreamBeaconBridge>();
 
         // Audit, artifact, and payload stores: in-memory by default -- the
         // hash-chained trail and first-class evidence objects -- or file-backed
@@ -344,13 +355,14 @@ public static class TransportHost
         {
             builder.ConfigureServices(services =>
             {
-                services.AddSingleton<DnsBeaconBridge>();
                 foreach (var entry in dnsEntries)
                     services.AddHostedService(sp => new DnsListenerService(
-                        entry,
+                        Listener.Define(
+                            ListenerId.New(), entry.Name, entry.Transport,
+                            entry.BindAddress, entry.PublicEndpoint,
+                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
                         sp.GetRequiredService<DnsBeaconBridge>(),
                         sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<TimeProvider>(),
                         sp.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>()));
             });
         }
@@ -367,20 +379,23 @@ public static class TransportHost
         {
             builder.ConfigureServices(services =>
             {
-                services.AddSingleton<StreamBeaconBridge>();
                 foreach (var entry in smbEntries)
                     services.AddHostedService(sp => new SmbListenerService(
-                        entry,
+                        Listener.Define(
+                            ListenerId.New(), entry.Name, entry.Transport,
+                            entry.BindAddress, entry.PublicEndpoint,
+                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
                         sp.GetRequiredService<StreamBeaconBridge>(),
                         sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<TimeProvider>(),
                         sp.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>()));
                 foreach (var entry in tcpEntries)
                     services.AddHostedService(sp => new TcpListenerService(
-                        entry,
+                        Listener.Define(
+                            ListenerId.New(), entry.Name, entry.Transport,
+                            entry.BindAddress, entry.PublicEndpoint,
+                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
                         sp.GetRequiredService<StreamBeaconBridge>(),
                         sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<TimeProvider>(),
                         sp.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>()));
             });
         }
@@ -438,6 +453,16 @@ public static class TransportHost
 
                 registry.RegisterAsync(listener, CancellationToken.None).GetAwaiter().GetResult();
             }
+
+            // Runtime listener management (architecture.md Sec 8): the manager's
+            // push-only endpoint configuration rides Kestrel's config reloader,
+            // so endpoints published after startup bind and withdrawn ones
+            // unbind without touching the code-bound listeners above. The HTTPS
+            // defaults apply to exactly those later-bound TLS endpoints --
+            // startup listeners configured their own termination above.
+            var manager = kestrel.ApplicationServices.GetRequiredService<ListenerManager>();
+            kestrel.Configure(manager.KestrelSection, reloadOnChange: true);
+            kestrel.ConfigureHttpsDefaults(manager.ApplyDynamicHttpsDefaults);
         });
         return builder;
     }
@@ -470,7 +495,9 @@ public static class TransportHost
     // an IP (v4 or v6) or "*" / "+" (any IP) -- mirrors ListenAnyIP semantics --
     // and a port. Throws a clear error on anything else so a misconfigured listener
     // fails fast at startup rather than binding silently to the wrong place.
-    private static (IPAddress Host, int Port) ParseBindAddress(string bindAddress)
+    // Internal: the runtime listener manager validates operator-supplied bind
+    // addresses with the same rule.
+    internal static (IPAddress Host, int Port) ParseBindAddress(string bindAddress)
     {
         var span = bindAddress.AsSpan();
         IPAddress host;
@@ -529,7 +556,16 @@ public static class TransportHost
     // the flag suppresses. So after building, we confirm the chain's root IS our
     // CA by thumbprint. A cert issued by any other root, or self-signed, is
     // refused here, before any beacon handler runs.
-    private static bool ClientCertificateChainsToCa(
+    // Internal: the runtime listener manager's dynamic HTTPS defaults validate
+    // client certificates with the same chain-to-CA rule the startup mTLS
+    // listeners apply.
+    internal static bool ClientCertificateChainsToCa(
+        X509Certificate2? certificate,
+        X509Chain? chain,
+        IServiceProvider services)
+        => ClientCertificateChainsToCaCore(certificate, chain, services);
+
+    private static bool ClientCertificateChainsToCaCore(
         X509Certificate2? certificate,
         X509Chain? chain,
         IServiceProvider services)
