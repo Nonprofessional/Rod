@@ -75,7 +75,9 @@ public sealed class PayloadBuildService
             new BeaconProfile(request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
             request.Stage2,
             request.TokenSecret,
-            request.MintedTokenId);
+            request.MintedTokenId,
+            request.EnvelopeKeyId,
+            request.EnvelopeKey);
 
         var built = await unit.BuildAsync(@params, cancellationToken);
 
@@ -117,7 +119,10 @@ public sealed class PayloadBuildService
 /// build bakes in; it is required for the stager class and ignored elsewhere.
 /// <see cref="TokenSecret"/> is the enrollment credential the build bakes in
 /// (the transport layer mints it and attaches it here); null leaves the
-/// artifact credential-free.
+/// artifact credential-free. <see cref="EnvelopeKeyId"/> and
+/// <see cref="EnvelopeKey"/> are the per-artifact AES-GCM envelope pair the
+/// transport layer mints when the profile's envelope is AesGcm; null on every
+/// other envelope.
 /// </summary>
 public sealed record BuildRequest(
     EngagementId EngagementId,
@@ -132,4 +137,6 @@ public sealed record BuildRequest(
     string Mode = "stream",
     Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
-    Guid? MintedTokenId = null);
+    Guid? MintedTokenId = null,
+    Guid? EnvelopeKeyId = null,
+    byte[]? EnvelopeKey = null);

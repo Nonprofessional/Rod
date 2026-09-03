@@ -24,6 +24,17 @@ namespace Rod.Audit;
 /// to revoke it from the library view, never enough to reuse it. Null when the
 /// build was credential-free, or on old records.
 /// </param>
+/// <param name="EnvelopeKeyId">
+/// The id of the per-artifact AES-GCM envelope key, when the artifact's
+/// profile carries the AesGcm envelope; the enroll decode resolves the key by
+/// it. The pair lives exactly as long as this record: deleting the payload
+/// deletes the key, and that artifact's envelopes stop being decodable. Null
+/// on every other envelope and on old records.
+/// </param>
+/// <param name="EnvelopeKey">
+/// The teamserver's half of the envelope key pair (the artifact carries the
+/// same key baked in). Metadata-sized, so it rides the jsonl line.
+/// </param>
 public sealed record PayloadRecord(
     Guid PayloadId,
     Guid EngagementId,
@@ -36,4 +47,6 @@ public sealed record PayloadRecord(
     DateTimeOffset BuiltAt,
     string? Target = null,
     string? Endpoint = null,
-    Guid? TokenId = null);
+    Guid? TokenId = null,
+    Guid? EnvelopeKeyId = null,
+    byte[]? EnvelopeKey = null);

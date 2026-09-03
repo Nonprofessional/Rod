@@ -30,6 +30,14 @@ public interface IPayloadStore
     Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The payload carrying an AES-GCM envelope key under this id, or null
+    /// when none does. The enroll decode resolves the key by the id the
+    /// encrypted body prefixes; engagement scoping happens inside the body
+    /// (the enroll token), so the lookup itself is by key id only.
+    /// </summary>
+    Task<PayloadRecord?> FindByEnvelopeKeyAsync(Guid envelopeKeyId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a payload from the engagement: the stored bytes and the library
     /// listing are gone, a stager fetching this payload 404s from now on, and
     /// the deletion is the caller's to audit. Returns false when no such

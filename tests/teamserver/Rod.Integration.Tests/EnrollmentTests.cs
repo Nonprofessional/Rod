@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState.Pki;
 using Rod.Transport.Endpoints;
@@ -30,6 +31,15 @@ public class EnrollmentTests
         return (client, host);
     }
 
+    private static async Task<string> MintEngagementIdAsync(HttpClient client)
+    {
+        var createResponse = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        return created!.EngagementId;
+    }
+
     private static async Task<string> MintTokenForNewEngagementAsync(HttpClient client)
     {
         var createResponse = await client.PostAsJsonAsync("/engagements",
@@ -43,6 +53,54 @@ public class EnrollmentTests
         var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
         Assert.NotNull(token);
         return token!.Secret;
+    }
+
+    [Fact]
+    public async Task Enroll_AesGcmEnvelope_DecodesUnderTheRecordedKey()
+    {
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = Guid.Parse(await MintEngagementIdAsync(client));
+            var payloads = host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+
+            // The per-artifact key pair, minted as the build would mint it and
+            // recorded beside a stored payload, as the build would record it.
+            var (keyId, key) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
+            await payloads.SaveAsync(new Rod.Audit.PayloadRecord(
+                Guid.NewGuid(), engagementId, "Stage2", "DotNet", "application/octet-stream",
+                new string('a', 64), Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
+                EnvelopeKeyId: keyId, EnvelopeKey: key));
+
+            // A body encrypted under the key decodes: the garbage token inside
+            // is what answers (401), proving the envelope -- not the decode --
+            // was the failure point.
+            var json = JsonSerializer.Serialize(
+                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
+            var wrapped = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+                System.Text.Encoding.UTF8.GetBytes(json), keyId, key);
+            var encrypted = await client.PostAsync("/implants/enroll",
+                new StringContent($"\"{wrapped}\"", Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.Unauthorized, encrypted.StatusCode);
+
+            // A tampered body fails authentication (GCM), a foreign key id is
+            // unknown, and both read as a bad request -- nothing about the
+            // envelope's contents leaks.
+            var tamperedChars = wrapped.ToCharArray();
+            tamperedChars[^2] = tamperedChars[^2] == 'A' ? 'B' : 'A';
+            var tampered = await client.PostAsync("/implants/enroll",
+                new StringContent($"\"{new string(tamperedChars)}\"", Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.BadRequest, tampered.StatusCode);
+
+            var (otherId, otherKey) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
+            var foreign = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+                System.Text.Encoding.UTF8.GetBytes(json), otherId, otherKey);
+            var unknownKey = await client.PostAsync("/implants/enroll",
+                new StringContent($"\"{foreign}\"", Encoding.UTF8, "application/json"));
+            Assert.Equal(HttpStatusCode.BadRequest, unknownKey.StatusCode);
+        }
     }
 
     [Fact]

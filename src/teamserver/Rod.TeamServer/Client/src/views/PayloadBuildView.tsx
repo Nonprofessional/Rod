@@ -434,10 +434,11 @@ export function PayloadBuildView({
               <select
                 value={envelope}
                 onChange={(e) => setEnvelope(e.target.value)}
-                title="None sends the raw JSON body; Base64 wraps it as one string so it does not read as structured C2."
+                title="None sends the raw JSON body; Base64 wraps it as one string so it does not read as structured C2; AES-GCM encrypts it under a per-artifact key minted at build, so the body stays opaque even where TLS terminates early."
               >
                 <option>None</option>
                 <option>Base64</option>
+                <option value="AesGcm">AES-GCM</option>
               </select>
             </label>
             <label>

@@ -296,6 +296,13 @@ public sealed class DotNetBuildUnit : IBuildUnit
             // only fills the variable when it is unset).
             ["quiet"] = "true",
         };
+        // The AES-GCM envelope key, when the profile asked for the encrypted
+        // envelope: one base64 value carrying the key id and the key, baked the
+        // same way on every build unit so the implant-side decode is uniform.
+        // Omitted entirely when absent, so a plaintext-envelope build bakes the
+        // same profile it always did.
+        if (@params.EnvelopeKeyId is { } envelopeKeyId && @params.EnvelopeKey is { } envelopeKey)
+            map["envelopeKey"] = Convert.ToBase64String(envelopeKeyId.ToByteArray().Concat(envelopeKey).ToArray());
         // The enrollment credential, when the build was minted one: the
         // artifact deploys with zero run-time arguments and spends the token
         // at its own enroll. Omitted entirely when absent, so a

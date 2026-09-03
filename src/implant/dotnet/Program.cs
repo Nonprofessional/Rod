@@ -248,6 +248,7 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "userAgent", "ROD_USER_AGENT");
         SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
         SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
+        SetEnvIfPresent(root, "envelopeKey", "ROD_ENVELOPE_KEY");
         // The pipeline bakes quiet=true for every artifact; a debugging run
         // presets ROD_QUIET=0 to override it (SetEnvIfPresent leaves an
         // already-set variable untouched).

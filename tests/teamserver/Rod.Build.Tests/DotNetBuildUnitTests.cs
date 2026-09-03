@@ -168,6 +168,38 @@ public class DotNetBuildUnitTests
     }
 
     [Fact]
+    public void RenderBakedProfile_BakesTheEnvelopeKeyWhenTheEnvelopeIsEncrypted()
+    {
+        // The AES-GCM envelope's key pair rides as one base64 value --
+        // keyId(16) || key(32) -- beside the "aesgcm" envelope name, so the
+        // implant encrypts its enroll body under the key the teamserver
+        // recorded. Every other envelope omits the key entirely.
+        var keyId = Guid.NewGuid();
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        var @params = Params() with
+        {
+            Transport = new TransportProfile("http://c2.example.test", "/beacon")
+            {
+                Envelope = TransportEnvelope.AesGcm,
+            },
+            EnvelopeKeyId = keyId,
+            EnvelopeKey = key,
+        };
+
+        using var baked = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(@params)));
+        Assert.Equal("aesgcm", baked.RootElement.GetProperty("envelope").GetString());
+        var bakedKey = baked.RootElement.GetProperty("envelopeKey").GetString();
+        Assert.NotNull(bakedKey);
+        var packed = Convert.FromBase64String(bakedKey!);
+        Assert.Equal(16 + 32, packed.Length);
+        Assert.Equal(keyId, new Guid(packed[..16].ToArray()));
+        Assert.Equal(key, packed[16..].ToArray());
+
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        Assert.False(plain.RootElement.TryGetProperty("envelopeKey", out _));
+    }
+
+    [Fact]
     public void RenderStagerProfile_BakesTheFetchCredentialWhenMinted()
     {
         // The stager presents its own minted token for the fetch (verified,

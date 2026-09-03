@@ -155,10 +155,16 @@ public static class PayloadEndpoints
 
         // The build's enrollment credential is minted here and baked into the
         // artifact -- the operator never handles the secret. Both build paths
-        // mint identically.
+        // mint identically, and the AES-Gcm envelope's per-artifact key mints
+        // the same way when the profile asked for the encrypted envelope.
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm)
+        {
+            var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
+            request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };
+        }
 
         BuildArtifact artifact;
         try

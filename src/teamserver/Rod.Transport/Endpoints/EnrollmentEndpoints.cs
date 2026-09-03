@@ -7,6 +7,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Staging;
+using Rod.Transport.Payloads;
 using Rod.V1;
 
 namespace Rod.Transport.Endpoints;
@@ -107,13 +108,14 @@ public static class EnrollmentEndpoints
         IStagerTokenService tokens,
         TimeProvider clock,
         IAuditStore audit,
+        IPayloadStore payloads,
         CancellationToken cancellationToken)
     {
-        var body = await ReadEnrollRequestAsync(http, cancellationToken);
+        var body = await ReadEnrollRequestAsync(http, payloads, cancellationToken);
         if (body is null)
         {
             return Results.BadRequest(new Problem(
-                "Request body is not an enroll request (raw JSON or a base64-wrapped JSON string)."));
+                "Request body is not an enroll request (raw JSON, a base64-wrapped JSON string, or an AES-GCM-wrapped one)."));
         }
 
         if (string.IsNullOrWhiteSpace(body.StagerTokenSecret))
@@ -279,16 +281,17 @@ public static class EnrollmentEndpoints
         return listener is null || listener.EngagementId == token.EngagementId;
     }
 
-    // Reads the enroll body in either of the two shapes the malleable
-    // transport profile allows (architecture.md Sec 7): the raw JSON document,
-    // or a single base64 string wrapping it (the profile's base64 envelope --
-    // the body stops looking like a structured C2 message). The teamserver
-    // understands both, so an envelope-profiled implant enrolls against a stock
-    // deployment with no unwrapping edge in front; a TLS-terminating edge may
-    // still rewrite the shape, but nothing requires one. Anything that is
-    // neither shape returns null for a 400.
+    // Reads the enroll body in any of the shapes the malleable transport
+    // profile allows (architecture.md Sec 7): the raw JSON document, a single
+    // base64 string wrapping it (the base64 envelope -- the body stops looking
+    // like a structured C2 message), or a single base64 string wrapping
+    // AES-256-GCM ciphertext under the artifact's per-build envelope key (the
+    // AesGcm envelope -- the body stays opaque even where TLS terminates
+    // early). The teamserver understands all of them, so an envelope-profiled
+    // implant enrolls against a stock deployment with no unwrapping edge in
+    // front of it. Anything that matches no shape returns null for a 400.
     private static async Task<EnrollRequest?> ReadEnrollRequestAsync(
-        HttpRequest http, CancellationToken cancellationToken)
+        HttpRequest http, IPayloadStore payloads, CancellationToken cancellationToken)
     {
         string raw;
         using (var reader = new StreamReader(http.Body))
@@ -297,8 +300,10 @@ public static class EnrollmentEndpoints
         if (raw.Length == 0)
             return null;
 
-        // A leading quote means the body is a JSON string -- the base64
-        // envelope. Decode it and parse the inner JSON as the request.
+        // A leading quote means the body is a JSON string -- an envelope.
+        // Which one depends on the decoded bytes: the R1 magic names the
+        // AES-Gcm shape (resolve the key by the id it prefixes, decrypt);
+        // anything else is the base64 envelope's inner JSON.
         if (raw[0] == '"')
         {
             string? wrapped;
@@ -312,13 +317,30 @@ public static class EnrollmentEndpoints
             }
             if (string.IsNullOrEmpty(wrapped))
                 return null;
-            try
+
+            if (AesGcmEnvelope.TryReadKeyId(wrapped) is { } keyId)
             {
-                raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(wrapped));
+                // The key lives beside the stored payload it was minted with;
+                // a deleted payload takes its key along, and that artifact's
+                // envelopes stop being decodable.
+                var carrier = await payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
+                if (carrier?.EnvelopeKey is not { } key)
+                    return null;
+                var plaintext = AesGcmEnvelope.TryUnwrap(wrapped, carrier.EnvelopeKeyId!.Value, key);
+                if (plaintext is null)
+                    return null;
+                raw = System.Text.Encoding.UTF8.GetString(plaintext);
             }
-            catch (FormatException)
+            else
             {
-                return null;
+                try
+                {
+                    raw = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(wrapped));
+                }
+                catch (FormatException)
+                {
+                    return null;
+                }
             }
         }
 

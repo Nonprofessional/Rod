@@ -38,6 +38,16 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// The minted token's id, for reporting and revocation. Never baked; build
 /// units ignore it.
 /// </param>
+/// <param name="EnvelopeKeyId">
+/// The id of the per-artifact AES-GCM envelope key, minted with the token when
+/// the profile's envelope is <c>AesGcm</c>. Baked beside the key so the
+/// teamserver can find its half of the pair; null on every other envelope.
+/// </param>
+/// <param name="EnvelopeKey">
+/// The per-artifact AES-256 envelope key itself: baked into the artifact (the
+/// implant encrypts its enroll body with it) and recorded beside the stored
+/// payload (the teamserver decrypts with it). Null on every other envelope.
+/// </param>
 public sealed record BuildParams(
     EngagementId EngagementId,
     OperatorId RequestedBy,
@@ -47,7 +57,9 @@ public sealed record BuildParams(
     BeaconProfile Beacon,
     Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
-    Guid? TokenId = null);
+    Guid? TokenId = null,
+    Guid? EnvelopeKeyId = null,
+    byte[]? EnvelopeKey = null);
 
 /// <summary>
 /// The stage-2 payload a stage-1 stager build references: the built-payload id

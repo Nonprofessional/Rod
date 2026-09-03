@@ -67,10 +67,17 @@ public static class PayloadJobEndpoints
             return Results.BadRequest(new Problem(error));
 
         // The enrollment credential mints at enqueue and rides the queued
-        // request into the bake -- identical to the synchronous path.
+        // request into the bake -- identical to the synchronous path, including
+        // the AES-Gcm envelope's per-artifact key when the profile asked for
+        // the encrypted envelope.
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm)
+        {
+            var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
+            request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };
+        }
 
         var job = jobs.Enqueue(request);
         return Results.Accepted(

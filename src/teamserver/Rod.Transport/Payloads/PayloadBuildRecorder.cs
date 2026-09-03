@@ -52,7 +52,9 @@ internal static class PayloadBuildRecorder
                 artifact.BuiltAt,
                 Target: $"{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture}",
                 Endpoint: artifact.Params.Transport.Endpoint,
-                TokenId: artifact.Params.TokenId),
+                TokenId: artifact.Params.TokenId,
+                EnvelopeKeyId: artifact.Params.EnvelopeKeyId,
+                EnvelopeKey: artifact.Params.EnvelopeKey),
             cancellationToken);
         await audit.AppendAsync(
             AuditEvent.Fact(

