@@ -23,4 +23,18 @@ public sealed class InMemoryPayloadStore : IPayloadStore
             _payloads.TryGetValue(payloadId, out var payload) && payload.EngagementId == engagementId
                 ? payload
                 : null);
+
+    public Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<PayloadRecord>>(
+            _payloads.Values
+                .Where(p => p.EngagementId == engagementId)
+                .OrderByDescending(p => p.BuiltAt)
+                .Select(p => p with { Content = Array.Empty<byte>() })
+                .ToArray());
+
+    public Task<bool> RemoveAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default)
+        => Task.FromResult(
+            _payloads.TryGetValue(payloadId, out var payload)
+            && payload.EngagementId == engagementId
+            && _payloads.TryRemove(payloadId, out _));
 }

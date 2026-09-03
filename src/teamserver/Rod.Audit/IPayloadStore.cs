@@ -20,4 +20,20 @@ public interface IPayloadStore
     /// such payload exists in that engagement.
     /// </summary>
     Task<PayloadRecord?> FindAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The engagement's payloads, newest first, as metadata only -- the bytes
+    /// stay wherever the adapter keeps them and are loaded per
+    /// <see cref="FindAsync"/>. This is the operator's library view: the
+    /// durable answer to the bounded, process-local build-job list.
+    /// </summary>
+    Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a payload from the engagement: the stored bytes and the library
+    /// listing are gone, a stager fetching this payload 404s from now on, and
+    /// the deletion is the caller's to audit. Returns false when no such
+    /// payload exists in that engagement.
+    /// </summary>
+    Task<bool> RemoveAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default);
 }

@@ -143,6 +143,52 @@ public class PayloadBuildTests
         }
     }
 
+    [DotNetFact]
+    public async Task PayloadLibrary_ListsAndDeletes_WithAnAuditFact()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var audit = host.Services.GetRequiredService<IAuditStore>();
+
+            var built = await PostBuildAsync(client, engagementId);
+
+            // The library row carries the build's own metadata -- target,
+            // endpoint, and the baked credential's id for revocation -- so the
+            // durable store reads like the build that made it.
+            var listed = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
+                $"/engagements/{engagementId}/payloads");
+            var row = Assert.Single(listed!);
+            Assert.Equal(built!.ArtifactId, row.ArtifactId);
+            Assert.Equal("linux/amd64", row.Target);
+            Assert.Equal("http://c2.example.test", row.Endpoint);
+            Assert.Equal(built.TokenId, row.TokenId);
+
+            // Deleting is the kill switch for hosted bytes: the row and the
+            // download are gone, a second delete 404s, and the trail records
+            // what was removed by whom.
+            var deleted = await client.DeleteAsync($"/engagements/{engagementId}/payloads/{built.ArtifactId}");
+            Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+            var emptied = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
+                $"/engagements/{engagementId}/payloads");
+            Assert.NotNull(emptied);
+            Assert.Empty(emptied!);
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await client.GetAsync($"/engagements/{engagementId}/payloads/{built.ArtifactId}")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await client.DeleteAsync($"/engagements/{engagementId}/payloads/{built.ArtifactId}")).StatusCode);
+
+            var trail = await audit.ListAsync(Guid.Parse(engagementId));
+            var deletion = Assert.Single(trail, e => e.Kind == AuditEventKind.PayloadDeleted);
+            Assert.Equal("payload.delete", deletion.Verb);
+            Assert.Equal(built.Fingerprint, deletion.Outcome);
+            Assert.Null(AuditChain.VerifyTrail(trail));
+        }
+    }
+
     [Fact]
     public async Task BuiltPayload_IsInvisibleToAnotherEngagement()
     {

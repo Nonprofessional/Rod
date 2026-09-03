@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type BuildJob,
   type ListenerSummary,
+  type PayloadSummary,
+  deletePayload,
   enqueueBuildJob,
   listBuildJobs,
   listListeners,
+  listPayloads,
   revokeStagerToken,
 } from '../api'
 import { Icon } from '../components/Icons'
@@ -72,6 +75,8 @@ export function PayloadBuildView({
   const [tokenMaxUses, setTokenMaxUses] = useState('1')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
+  const [payloads, setPayloads] = useState<PayloadSummary[]>([])
+  const [payloadFilter, setPayloadFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -112,6 +117,22 @@ export function PayloadBuildView({
     void refreshJobs()
   }, [refreshJobs])
 
+  // The durable library: the payload store's own listing, unlike the job
+  // queue above. Re-read whenever work settles (mount, and the moment a
+  // running job finishes) so a fresh build appears without a manual refresh.
+  const refreshPayloads = useCallback(async () => {
+    try {
+      setPayloads(await listPayloads(engagementId))
+    } catch {
+      // Keep the last known library; the next settle retries.
+    }
+  }, [engagementId])
+
+  const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
+  useEffect(() => {
+    if (!active) void refreshPayloads()
+  }, [active, refreshPayloads])
+
   // This engagement's own listeners, the ingress a build can name. Loaded on
   // mount; the engagement's listeners panel is where they are created.
   useEffect(() => {
@@ -139,8 +160,6 @@ export function PayloadBuildView({
   const stage2Artifacts = jobs.filter(
     (j) => j.state === 'completed' && j.class === 'Stage2' && j.artifact,
   )
-
-  const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
 
   // Poll only while a job is in flight -- the list is otherwise quiet, and a
   // completed build changes nothing until the next submit.
@@ -173,6 +192,23 @@ export function PayloadBuildView({
       setError(String(e))
     } finally {
       setRevoking(null)
+    }
+  }
+
+  const onDeletePayload = async (p: PayloadSummary) => {
+    if (
+      !window.confirm(
+        `Delete payload ${p.fingerprint.slice(0, 12)} (${p.class}${p.target ? ' ' + p.target : ''})? ` +
+          'The stored bytes are gone and any stager fetching it stops working. The deletion is audited.',
+      )
+    )
+      return
+    try {
+      await deletePayload(engagementId, p.artifactId)
+      setError(null)
+      await refreshPayloads()
+    } catch (e) {
+      setError(String(e))
     }
   }
 
@@ -335,25 +371,26 @@ export function PayloadBuildView({
             />
           </label>
           <label>
-            Self-destruct date
+            Expiry date
             <input
               type="date"
               value={killDate}
               onChange={(e) => setKillDate(e.target.value)}
-              title="The implant refuses to run past this date — the engagement's safety fuse. Empty = 30 days from the build; it also bounds the baked credential's window."
+              title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = 30 days from the build; it also bounds the baked credential's window."
             />
           </label>
           <label>
-            Max hosts
+            Max uses
             <input
               value={tokenMaxUses}
               onChange={(e) => setTokenMaxUses(e.target.value)}
-              title="How many hosts this artifact's baked credential may enroll — one copy per host. Default 1. Revoke it under Recent builds to kill a leaked artifact's credential."
+              title="How many times this artifact's baked credential may enroll — one spend per host, so one copy per machine. Default 1. Revoke it in the payload library to kill a leaked artifact's credential."
             />
           </label>
           <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
             The implant calls home every <em>check-in</em> seconds, randomized by ±<em>randomize</em>
-            . Past the <em>self-destruct date</em> it refuses to run. <em>Max hosts</em> caps how
+            . Past the <em>expiry date</em> the executable stops working — a leftover copy refuses
+            to run, and a live implant terminates at its next check-in. <em>Max uses</em> caps how
             many hosts one artifact may enroll — copies share the credential, one spend each.
           </p>
           {isStager && (
@@ -505,12 +542,110 @@ export function PayloadBuildView({
                         href={`engagements/${engagementId}/payloads/${job.artifact.artifactId}`}
                         download
                       >
-                        Retrieve
+                        Download
                       </a>
                     )}
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="jobs-head">Payload library</h3>
+      <p className="muted">
+        Every payload this engagement ever built, straight from the durable store — it survives
+        restarts and outlives the build queue above. Download again, revoke the baked credential,
+        or delete a payload (a stager fetching a deleted payload stops working). The filter
+        matches class, language, target, endpoint, or fingerprint.
+      </p>
+      <div className="inline-form">
+        <input
+          className="filter-text"
+          placeholder="Filter payloads (linux, Stage2, host…)"
+          value={payloadFilter}
+          onChange={(e) => setPayloadFilter(e.target.value)}
+        />
+        <button className="ghost" onClick={() => void refreshPayloads()}>
+          <Icon name="refresh" />
+          Refresh
+        </button>
+      </div>
+      {payloads.length === 0 ? (
+        <div className="empty">
+          <Icon name="package" />
+          No payloads stored yet -- the first build lands here.
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Built</th>
+                <th>Class</th>
+                <th>Target</th>
+                <th>Endpoint</th>
+                <th>Size</th>
+                <th>Fingerprint</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {payloads
+                .filter((p) => {
+                  const q = payloadFilter.trim().toLowerCase()
+                  if (!q) return true
+                  return [p.class, p.language, p.target, p.endpoint, p.fingerprint].some((v) =>
+                    v?.toLowerCase().includes(q),
+                  )
+                })
+                .map((p) => (
+                  <tr key={p.artifactId}>
+                    <td>{new Date(p.builtAt).toLocaleString()}</td>
+                    <td>
+                      <code>
+                        {p.language}:{p.class}
+                      </code>
+                    </td>
+                    <td>{p.target ?? '—'}</td>
+                    <td>
+                      <code>{p.endpoint ?? '—'}</code>
+                    </td>
+                    <td>{p.size} bytes</td>
+                    <td>
+                      <code title={p.fingerprint}>{p.fingerprint.slice(0, 16)}</code>
+                      {p.tokenId && (
+                        <div className="muted" title={p.tokenId}>
+                          baked token {p.tokenId.slice(0, 8)}{' '}
+                          {revoking === p.tokenId ? (
+                            '(revoking…)'
+                          ) : (
+                            <button
+                              className="sm danger"
+                              onClick={() => void onRevokeToken(p.tokenId!)}
+                              title="The baked credential stops working at the next enrollment attempt"
+                            >
+                              Revoke token
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <a
+                        className="download-link"
+                        href={`engagements/${engagementId}/payloads/${p.artifactId}`}
+                        download
+                      >
+                        Download
+                      </a>{' '}
+                      <button className="sm danger" onClick={() => void onDeletePayload(p)}>
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

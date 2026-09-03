@@ -932,3 +932,36 @@ export async function enqueueBuildJob(
 export async function listBuildJobs(engagementId: string): Promise<BuildJob[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/payload-jobs`))
 }
+
+// --- Payload library -----------------------------------------
+//
+// The payload store's own listing: the durable answer to the bounded,
+// process-local build-job list. A payload built weeks ago stays here --
+// downloadable, its baked credential revocable, and deletable (which also
+// stops any stager fetching it) -- whatever happened to the Recent builds
+// queue or the teamserver process in between.
+
+export interface PayloadSummary {
+  artifactId: string
+  class: string
+  language: string
+  target: string | null
+  endpoint: string | null
+  contentType: string
+  size: number
+  fingerprint: string
+  builtAt: string
+  tokenId: string | null
+}
+
+export async function listPayloads(engagementId: string): Promise<PayloadSummary[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/payloads`))
+}
+
+// Removes the stored payload: the bytes and the library row are gone, and a
+// stager fetching it 404s from now on. The deletion is audited server-side.
+export async function deletePayload(engagementId: string, artifactId: string): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/payloads/${artifactId}`, { method: 'DELETE' }),
+  )
+}

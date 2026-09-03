@@ -10,6 +10,20 @@ namespace Rod.Audit;
 /// audit layer stays free of core-state and build-pipeline types -- the
 /// innermost ring crosses the layer boundary with primitives only.
 /// </summary>
+/// <param name="Target">
+/// The build target as <c>os/arch</c> (e.g. <c>linux/amd64</c>), for the
+/// operator's library view and filtering. Null on records written before the
+/// field existed.
+/// </param>
+/// <param name="Endpoint">
+/// The dial address baked into the artifact (the listener's public endpoint),
+/// so the library reads which front a payload phones. Null on old records.
+/// </param>
+/// <param name="TokenId">
+/// The enrollment credential minted for and baked into this artifact: enough
+/// to revoke it from the library view, never enough to reuse it. Null when the
+/// build was credential-free, or on old records.
+/// </param>
 public sealed record PayloadRecord(
     Guid PayloadId,
     Guid EngagementId,
@@ -19,4 +33,7 @@ public sealed record PayloadRecord(
     string Fingerprint,
     byte[] Content,
     long Size,
-    DateTimeOffset BuiltAt);
+    DateTimeOffset BuiltAt,
+    string? Target = null,
+    string? Endpoint = null,
+    Guid? TokenId = null);

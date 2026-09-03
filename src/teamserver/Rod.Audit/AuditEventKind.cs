@@ -94,6 +94,16 @@ public enum AuditEventKind
     PayloadBuilt,
 
     /// <summary>
+    /// A stored payload was deleted from the library by an operator: the bytes
+    /// and the listing entry are gone, and a stager fetching it 404s from now
+    /// on -- the kill switch for a hosted stage-2. The event carries the
+    /// payload's class and target with the fingerprint it carried in life, so
+    /// the trail still names what was removed even though the bytes are not
+    /// retrievable anymore.
+    /// </summary>
+    PayloadDeleted,
+
+    /// <summary>
     /// An implant was retired (architecture.md Sec 7). The event carries
     /// the implant id and the retiring operator; the outcome is the recorded
     /// retirement timestamp. A retired implant is refused at handshake and

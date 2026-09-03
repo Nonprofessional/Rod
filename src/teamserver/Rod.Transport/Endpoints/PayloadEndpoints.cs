@@ -36,9 +36,84 @@ public static class PayloadEndpoints
         var group = endpoints.MapGroup("/engagements/{engagementId}/payloads").RequireAuthorization();
 
         group.MapPost("/", BuildAsync).WithName(nameof(BuildAsync));
+        group.MapGet("/", ListPayloadsAsync).WithName(nameof(ListPayloadsAsync));
         group.MapGet("/{artifactId}", DownloadAsync).WithName(nameof(DownloadAsync));
+        group.MapDelete("/{artifactId}", DeleteAsync).WithName(nameof(DeleteAsync));
 
         return endpoints;
+    }
+
+    // The durable library view: the payload store's own listing, which
+    // survives restarts and outlives the bounded, process-local build-job
+    // list. An operator who needs the artifact built three weeks ago -- to
+    // download it again, revoke its baked credential, or delete it so a
+    // deployed stager's fetch stops answering -- finds it here.
+    private static async Task<IResult> ListPayloadsAsync(
+        string engagementId,
+        IEngagementRepository engagements,
+        IPayloadStore payloads,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        if (await engagements.FindAsync(new EngagementId(engagementValue), cancellationToken) is null)
+            return Results.NotFound(new Problem("Engagement does not exist."));
+
+        var records = await payloads.ListAsync(engagementValue, cancellationToken);
+        return Results.Ok(records.Select(PayloadSummaryResponse.Of).ToArray());
+    }
+
+    // Deletes a stored payload: the bytes and the library entry are gone and a
+    // stager fetching it 404s from now on. The deletion is audited -- the trail
+    // names what was removed -- and revoking the baked credential stays its own
+    // action on the library row.
+    private static async Task<IResult> DeleteAsync(
+        string engagementId,
+        string artifactId,
+        ClaimsPrincipal user,
+        IEngagementRepository engagements,
+        IPayloadStore payloads,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var requestedBy = user.TryGetOperatorId();
+        if (requestedBy is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(artifactId, out var artifactValue))
+            return Results.BadRequest(new Problem("Artifact id is not a valid identifier."));
+
+        if (await engagements.FindAsync(new EngagementId(engagementValue), cancellationToken) is null)
+            return Results.NotFound(new Problem("Engagement does not exist."));
+
+        // Resolve first so the audit fact carries the payload's own metadata;
+        // the store's removal is the state change it records.
+        var payload = await payloads.FindAsync(artifactValue, engagementValue, cancellationToken);
+        if (payload is null)
+            return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+
+        if (!await payloads.RemoveAsync(artifactValue, engagementValue, cancellationToken))
+            return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: requestedBy.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "payload.delete",
+                kind: AuditEventKind.PayloadDeleted,
+                payload: $"{payload.Language}:{payload.Class} {payload.Target ?? "unknown-target"} {payload.Endpoint ?? "unknown-endpoint"}",
+                output: null,
+                outcome: payload.Fingerprint,
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.NoContent();
     }
 
     private static async Task<IResult> BuildAsync(
@@ -191,6 +266,37 @@ public static class PayloadEndpoints
         DateTimeOffset BuiltAt,
         string[]? Transforms = null,
         string? TokenId = null);
+
+    /// <summary>
+    /// One row of the payload library: a stored payload's metadata without the
+    /// bytes. The engagement is the path, not the row. <see cref="Target"/> and
+    /// <see cref="Endpoint"/> are null on payloads built before those fields
+    /// were recorded.
+    /// </summary>
+    public sealed record PayloadSummaryResponse(
+        string ArtifactId,
+        string Class,
+        string Language,
+        string? Target,
+        string? Endpoint,
+        string ContentType,
+        long Size,
+        string Fingerprint,
+        DateTimeOffset BuiltAt,
+        string? TokenId = null)
+    {
+        public static PayloadSummaryResponse Of(Rod.Audit.PayloadRecord record) => new(
+            record.PayloadId.ToString(),
+            record.Class,
+            record.Language,
+            record.Target,
+            record.Endpoint,
+            record.ContentType,
+            record.Size,
+            record.Fingerprint,
+            record.BuiltAt,
+            TokenId: record.TokenId?.ToString());
+    }
 
     public sealed record Problem(string Error);
 }

@@ -54,18 +54,27 @@ public sealed class FilePayloadStore : IPayloadStore
         var blobPath = BlobPath(payload.PayloadId);
         File.WriteAllBytes(blobPath, payload.Content);
 
-        using var stream = new FileStream(
+        // The jsonl line is metadata only -- the blob written above is the
+        // bytes' home -- so a metadata line never grows with the artifact. The
+        // index holds the same contentless shape; FindAsync rehydrates from
+        // the blob. Lines written before this rule (which carried the bytes)
+        // still parse; recovery keeps their metadata and ignores their copy of
+        // the bytes.
+        var metadata = payload with { Content = Array.Empty<byte>() };
+        using (var stream = new FileStream(
             _payloadsPath,
             FileMode.Append,
             FileAccess.Write,
             FileShare.Read,
             bufferSize: 4096,
-            useAsync: false);
-        using var writer = new StreamWriter(stream, Utf8NoBom);
-        writer.WriteLine(JsonSerializer.Serialize(payload, AuditJsonContext.Default.PayloadRecord));
-        writer.Flush();
+            useAsync: false))
+        using (var writer = new StreamWriter(stream, Utf8NoBom))
+        {
+            writer.WriteLine(JsonSerializer.Serialize(metadata, AuditJsonContext.Default.PayloadRecord));
+            writer.Flush();
+        }
 
-        _index[payload.PayloadId] = payload;
+        _index[payload.PayloadId] = metadata;
         return Task.CompletedTask;
     }
 
@@ -82,6 +91,67 @@ public sealed class FilePayloadStore : IPayloadStore
 
         var bytes = await File.ReadAllBytesAsync(blobPath, cancellationToken).ConfigureAwait(false);
         return metadata with { Content = bytes };
+    }
+
+    public Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        return Task.FromResult<IReadOnlyList<PayloadRecord>>(
+            _index.Values
+                .Where(p => p.EngagementId == engagementId)
+                .OrderByDescending(p => p.BuiltAt)
+                .Select(p => p with { Content = Array.Empty<byte>() })
+                .ToArray());
+    }
+
+    public Task<bool> RemoveAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        if (!_index.TryGetValue(payloadId, out var payload) || payload.EngagementId != engagementId)
+            return Task.FromResult(false);
+
+        // Blob first, then the metadata line: a crash between the two leaves a
+        // metadata line whose blob is gone, and FindAsync already reads that
+        // shape as missing. The rewrite also drops the removed line and writes
+        // every survivor back metadata-only, so a delete is the one-time
+        // compaction for lines written before metadata lines dropped bytes.
+        var blobPath = BlobPath(payloadId);
+        if (File.Exists(blobPath))
+            File.Delete(blobPath);
+
+        if (File.Exists(_payloadsPath))
+        {
+            var tempPath = _payloadsPath + ".tmp";
+            using (var stream = new FileStream(
+                tempPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                useAsync: false))
+            using (var writer = new StreamWriter(stream, Utf8NoBom))
+            {
+                foreach (var line in File.ReadLines(_payloadsPath))
+                {
+                    if (line.Length == 0)
+                        continue;
+                    var record = JsonSerializer.Deserialize(line, AuditJsonContext.Default.PayloadRecord);
+                    if (record is null || record.PayloadId == payloadId)
+                        continue;
+                    writer.WriteLine(
+                        JsonSerializer.Serialize(record with { Content = Array.Empty<byte>() }, AuditJsonContext.Default.PayloadRecord));
+                }
+
+                writer.Flush();
+            }
+
+            File.Move(tempPath, _payloadsPath, overwrite: true);
+        }
+
+        _index.TryRemove(payloadId, out _);
+        return Task.FromResult(true);
     }
 
     private string BlobPath(Guid payloadId) => Path.Combine(_blobsDirectory, payloadId.ToString("N"));
@@ -109,7 +179,7 @@ public sealed class FilePayloadStore : IPayloadStore
 
                     var payload = JsonSerializer.Deserialize(line, AuditJsonContext.Default.PayloadRecord);
                     if (payload is not null)
-                        _index[payload.PayloadId] = payload;
+                        _index[payload.PayloadId] = payload with { Content = Array.Empty<byte>() };
                 }
             }
 
