@@ -1463,6 +1463,13 @@ textarea:focus-visible {
   width: 160px;
 }
 
+/* Room for the placeholders to show whole: the endpoint hint and the
+   transport-specific bind example both outrun the default ~20-character
+   input width. The row wraps, so wide fields stay safe on narrow panes. */
+.listener-create input:not(:first-child) {
+  width: 215px;
+}
+
 /* --- Engagement timeline (story view) ------------------------------------------------------ */
 
 .timeline {

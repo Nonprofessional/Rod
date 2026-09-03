@@ -74,8 +74,23 @@ public static class ListenerEndpoints
             {
                 publicEndpoint = derived;
             }
-            else if (!string.IsNullOrWhiteSpace(body.PublicEndpoint)
-                && IsPublicEndpoint(body.PublicEndpoint.Trim()))
+            else if (string.IsNullOrWhiteSpace(body.PublicEndpoint))
+            {
+                // The one blank the derivation refuses: a wildcard bind is
+                // every interface, not an address anything can dial. Name
+                // that instead of restating the endpoint rule the operator
+                // just followed. (A malformed bind also lands here and falls
+                // through, so the manager's bind validation names it.)
+                if (IsWildcardBind(body.BindAddress.Trim()))
+                {
+                    return Results.BadRequest(new Problem(
+                        "A wildcard bind (0.0.0.0 or ::) is every interface, not an address implants can "
+                        + "dial, so the public endpoint cannot be left empty for it -- type the hostname "
+                        + "implants should reach (e.g. c2.example.test)."));
+                }
+                publicEndpoint = "";
+            }
+            else if (IsPublicEndpoint(body.PublicEndpoint.Trim()))
             {
                 // A complete endpoint with an underivable bind: the manager's
                 // bind validation names the real problem (a 400 with its
@@ -312,7 +327,7 @@ public static class ListenerEndpoints
         var value = publicEndpoint?.Trim() ?? "";
         if (value.Length == 0)
         {
-            if (bind.Host.Equals(IPAddress.Any) || bind.Host.Equals(IPAddress.IPv6Any))
+            if (IsWildcard(bind.Host))
                 return null;
             return $"{SchemeOf(transport)}://{HostText(bind.Host)}:{bind.Port}";
         }
@@ -335,6 +350,24 @@ public static class ListenerEndpoints
 
     private static string SchemeOf(ListenerTransport transport)
         => transport == ListenerTransport.Http ? "http" : "https";
+
+    // A wildcard bind covers every interface, which is a legitimate way to
+    // open the socket -- but it names no single address, so nothing can dial
+    // it and no public endpoint derives from it.
+    private static bool IsWildcard(IPAddress host)
+        => host.Equals(IPAddress.Any) || host.Equals(IPAddress.IPv6Any);
+
+    private static bool IsWildcardBind(string bindAddress)
+    {
+        try
+        {
+            return IsWildcard(TransportHost.ParseBindAddress(bindAddress).Host);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     // IPv6 authorities need their brackets; everything else stringifies as
     // dialable.

@@ -111,11 +111,14 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     <div className="card">
       <h3>Listeners</h3>
       <p className="muted">
-        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens (where
-        the teamserver listens); <strong>public endpoint</strong> is the address baked into payloads
-        — what implants actually dial, usually your redirector in production. Leave it empty and
-        implants dial the bind itself; a bare hostname takes the transport's scheme and this
-        listener's port. Every listener is persisted — a restart rebinds it — and enrollment
+        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens;{' '}
+        <strong>public endpoint</strong> is the address baked into payloads — what implants
+        actually dial, usually your redirector in production. Leave it empty and the server derives
+        it from the bind: bind 10.1.2.3:8443 on https-envelope becomes{' '}
+        <code>https://10.1.2.3:8443</code>. A bare hostname (<code>redirect.example</code>) takes
+        the transport's scheme and this listener's port; a wildcard bind (0.0.0.0) names no
+        address implants can dial, so it needs a hostname. DNS, SMB, and TCP cannot derive — spell
+        their endpoint out. Every listener is persisted — a restart rebinds it — and enrollment
         through it accepts only this engagement's tokens.
       </p>
 
@@ -145,7 +148,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           required
         />
         <input
-          placeholder="Public endpoint (empty = the bind itself)"
+          placeholder="Public endpoint (optional)"
+          title="Leave empty and the server derives it from the bind (the transport's scheme + the bind host:port). A bare hostname gets the scheme and this listener's port. A wildcard bind like 0.0.0.0 cannot derive — type the hostname implants should dial."
           value={publicEndpoint}
           onChange={(e) => setPublicEndpoint(e.target.value)}
         />

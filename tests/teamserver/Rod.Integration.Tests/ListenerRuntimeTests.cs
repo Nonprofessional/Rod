@@ -290,6 +290,17 @@ public class ListenerRuntimeTests
         var directListener = await direct.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
         Assert.Equal($"http://127.0.0.1:{directPort}", directListener!.PublicEndpoint);
 
+        // The one blank the derivation refuses: a wildcard bind is every
+        // interface, not an address anything can dial, and the refusal names
+        // that fact instead of restating the endpoint rule.
+        var wildcard = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "wild", Transport: "http",
+                BindAddress: $"0.0.0.0:{TestSupport.GetFreeTcpPort()}", PublicEndpoint: ""));
+        Assert.Equal(HttpStatusCode.BadRequest, wildcard.StatusCode);
+        var wildcardBody = await wildcard.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        Assert.Contains("wildcard", wildcardBody!.Error);
+
         // A bare hostname takes the transport's scheme and the listener's own
         // bind port -- "tmp" is a complete dialable endpoint now.
         var aliasPort = TestSupport.GetFreeTcpPort();
