@@ -124,6 +124,7 @@ standard `Section__Key` mapping):
 
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
+| `Operators:Initial` | The first loginable account, provisioned idempotently at startup (`Handle`, `DisplayName`, `Password`). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Development: the built-in `operator`/`operator` account. Production: **no account** -- a server configured without one has no login. |
 | `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Mtls`, `HttpsEnvelope`, `Dns`, `Smb`, or `Tcp`), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS entries terminate mutual TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
@@ -131,6 +132,8 @@ standard `Section__Key` mapping):
 | `Sessions:Staleness` | `Threshold` and `SweepInterval` for the session sweeper -- the close path for streams that die silently and for poll-mode check-in cadences. | 15-minute threshold, 1-minute sweep. |
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
+| `Build:ImplantExtensionDirectory` | The tradecraft extension kit's implant half: a directory of out-of-tree handler sources overlaid onto every implant-class build ([extending/tradecraft.md](../extending/tradecraft.md)). A configured-but-missing directory fails startup loudly. | Empty -- the reference implant builds as-is. |
+| `Build:ImplantSourceDirectory` / `Build:StagerSourceDirectory` | An installed teamserver (a publish with no repo above it) names the implant/stager source trees the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/dotnet`, `src/stager/dotnet`). |
 
 ## Production install and recovery
 

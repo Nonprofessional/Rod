@@ -227,8 +227,8 @@ export function PayloadBuildView({
         Pick the listener the implant dials and the target it runs on, leave the rest, and build:
         the artifact is a self-contained executable (Rod.Implant.exe on Windows, ~no runtime
         needed on the target) with its enrollment credential baked in -- drop it and run. Copies
-        of one artifact share that credential, so Token uses caps how many hosts may enroll with
-        it. Every knob is baked at generation; changing the profile later means rebuilding.
+        of one artifact share that credential, so Max hosts caps how many machines may enroll
+        with it. Every knob is baked at generation; changing the profile later means rebuilding.
       </p>
       <form className="build-form" onSubmit={onBuild}>
         <fieldset>
@@ -319,30 +319,43 @@ export function PayloadBuildView({
             </select>
           </label>
           <label>
-            Sleep (s)
-            <input value={sleepSeconds} onChange={(e) => setSleepSeconds(e.target.value)} />
+            Check-in every (s)
+            <input
+              value={sleepSeconds}
+              onChange={(e) => setSleepSeconds(e.target.value)}
+              title="How often the implant calls home. Default 30."
+            />
           </label>
           <label>
-            Jitter (s)
-            <input value={jitterSeconds} onChange={(e) => setJitterSeconds(e.target.value)} />
+            Randomize ± (s)
+            <input
+              value={jitterSeconds}
+              onChange={(e) => setJitterSeconds(e.target.value)}
+              title="Random slack added to every interval so check-ins are not clockwork. Default 10."
+            />
           </label>
           <label>
-            Kill date
+            Self-destruct date
             <input
               type="date"
               value={killDate}
               onChange={(e) => setKillDate(e.target.value)}
-              title="The implant self-terminates past this date. Empty defaults to 30 days from the build."
+              title="The implant refuses to run past this date — the engagement's safety fuse. Empty = 30 days from the build; it also bounds the baked credential's window."
             />
           </label>
           <label>
-            Token uses
+            Max hosts
             <input
               value={tokenMaxUses}
               onChange={(e) => setTokenMaxUses(e.target.value)}
-              title="How many hosts this artifact's baked credential may enroll -- one copy per host. The stage-2's credential window defaults to the kill date."
+              title="How many hosts this artifact's baked credential may enroll — one copy per host. Default 1. Revoke it under Recent builds to kill a leaked artifact's credential."
             />
           </label>
+          <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            The implant calls home every <em>check-in</em> seconds, randomized by ±<em>randomize</em>
+            . Past the <em>self-destruct date</em> it refuses to run. <em>Max hosts</em> caps how
+            many hosts one artifact may enroll — copies share the credential, one spend each.
+          </p>
           {isStager && (
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               The stager bakes only its kill date; beacon timing belongs to the Stage2 it
