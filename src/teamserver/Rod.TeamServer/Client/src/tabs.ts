@@ -13,6 +13,7 @@ export type TabId =
   | 'report'
   | 'listeners'
   | 'build'
+  | 'payloads'
 
 export interface NavItemDef {
   id: TabId
@@ -35,6 +36,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     items: [
       { id: 'listeners', label: 'Listeners', icon: 'radio' },
       { id: 'build', label: 'Build', icon: 'package' },
+      { id: 'payloads', label: 'Payloads', icon: 'archive' },
     ],
   },
   {

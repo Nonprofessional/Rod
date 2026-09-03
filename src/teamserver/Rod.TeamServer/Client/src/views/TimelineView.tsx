@@ -121,10 +121,8 @@ export function TimelineView({ engagementId }: { engagementId: string }) {
   return (
     <div className="card">
       <h3>Timeline</h3>
-      <p className="muted">
-        The engagement's story -- the content-hashed projection of the trail, read as a narrative.
-        The Audit tab is the same facts as a raw, paged ledger; this view is for catching up on what
-        happened, day by day.
+      <p className="muted" title="The content-hashed projection of the audit trail, read as a narrative, day by day. The Audit tab is the same facts as a raw ledger.">
+        The engagement's story, day by day.
       </p>
       <div className="inline-form">
         <div className="segmented" role="group" aria-label="Timeline format">

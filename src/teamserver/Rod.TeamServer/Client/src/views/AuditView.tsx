@@ -94,9 +94,8 @@ export function AuditView({
   return (
     <div className="card">
       <h3>Audit trail</h3>
-      <p className="muted">
-        The append-only, hash-chained ledger for this engagement -- every recorded fact, paged and
-        filterable, the raw feed the timeline and report render from.
+      <p className="muted" title="Append-only and hash-chained: tampering with a stored event breaks the chain at the next link.">
+        The engagement's append-only ledger — every recorded fact, paged and filterable.
       </p>
       <div className="inline-form">
         <select

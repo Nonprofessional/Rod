@@ -14,6 +14,7 @@ import { AuditView } from './AuditView'
 import { ImplantsView } from './ImplantsView'
 import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
+import { PayloadsView } from './PayloadsView'
 import { ReportView } from './ReportView'
 import { TaskingView } from './TaskingView'
 import { TimelineView } from './TimelineView'
@@ -138,6 +139,7 @@ export function EngagementView({
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
+      {tab === 'payloads' && <PayloadsView engagementId={engagementId} />}
     </LiveContext.Provider>
   )
 }

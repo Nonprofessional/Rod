@@ -31,7 +31,9 @@ the baked endpoint comes from the listener's record; the build also mints and
 bakes the artifact's enrollment credential, so the artifact deploys with zero
 run-time arguments. The manual mint endpoint stays server-side for the
 rotation and re-entry drills, but it is no operator surface. The operator UI
-is served same-origin at `/`; during UI development, `npm run dev` in
+is served same-origin at `/`; its panels and every build/listener field are
+documented in [operator-ui.md](operator-ui.md). During UI development,
+`npm run dev` in
 `src/teamserver/Rod.TeamServer/Client` proxies the API to :5080.
 
 ## First login

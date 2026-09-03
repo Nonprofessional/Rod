@@ -2,12 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type BuildJob,
   type ListenerSummary,
-  type PayloadSummary,
-  deletePayload,
   enqueueBuildJob,
   listBuildJobs,
   listListeners,
-  listPayloads,
   revokeStagerToken,
 } from '../api'
 import { Icon } from '../components/Icons'
@@ -34,9 +31,10 @@ import { StatusBadge } from '../components/StatusBadge'
 // below.
 //
 // The build runs as a server-side job: submitting queues it and returns
-// immediately; the recent-builds list below is the durable view (fetched on
-// mount, polled while anything runs), so leaving the page or refreshing never
-// loses a build -- the finished artifact waits with its download link.
+// immediately; the recent-builds list below is the in-process view of the
+// queue (fetched on mount, polled while anything runs), so leaving the page
+// or refreshing never loses a running build. The durable, restart-safe home
+// of finished payloads is the Payloads tab.
 
 // The transports an implant can enroll through; the listener select offers
 // these and greyes everything else out.
@@ -75,8 +73,6 @@ export function PayloadBuildView({
   const [tokenMaxUses, setTokenMaxUses] = useState('1')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
-  const [payloads, setPayloads] = useState<PayloadSummary[]>([])
-  const [payloadFilter, setPayloadFilter] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -117,21 +113,7 @@ export function PayloadBuildView({
     void refreshJobs()
   }, [refreshJobs])
 
-  // The durable library: the payload store's own listing, unlike the job
-  // queue above. Re-read whenever work settles (mount, and the moment a
-  // running job finishes) so a fresh build appears without a manual refresh.
-  const refreshPayloads = useCallback(async () => {
-    try {
-      setPayloads(await listPayloads(engagementId))
-    } catch {
-      // Keep the last known library; the next settle retries.
-    }
-  }, [engagementId])
-
   const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
-  useEffect(() => {
-    if (!active) void refreshPayloads()
-  }, [active, refreshPayloads])
 
   // This engagement's own listeners, the ingress a build can name. Loaded on
   // mount; the engagement's listeners panel is where they are created.
@@ -195,23 +177,6 @@ export function PayloadBuildView({
     }
   }
 
-  const onDeletePayload = async (p: PayloadSummary) => {
-    if (
-      !window.confirm(
-        `Delete payload ${p.fingerprint.slice(0, 12)} (${p.class}${p.target ? ' ' + p.target : ''})? ` +
-          'The stored bytes are gone and any stager fetching it stops working. The deletion is audited.',
-      )
-    )
-      return
-    try {
-      await deletePayload(engagementId, p.artifactId)
-      setError(null)
-      await refreshPayloads()
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!listenerId && !endpoint.trim()) {
@@ -259,12 +224,8 @@ export function PayloadBuildView({
   return (
     <div className="card">
       <h3>Build payload</h3>
-      <p className="muted">
-        Pick the listener the implant dials and the target it runs on, leave the rest, and build:
-        the artifact is a self-contained executable (Rod.Implant.exe on Windows, ~no runtime
-        needed on the target) with its enrollment credential baked in -- drop it and run. Copies
-        of one artifact share that credential, so Max hosts caps how many machines may enroll
-        with it. Every knob is baked at generation; changing the profile later means rebuilding.
+      <p className="muted" title="A self-contained executable with its enrollment credential baked in — drop it and run. Every knob is baked at generation.">
+        Pick a listener and a target, leave the rest at the defaults.
       </p>
       <form className="build-form" onSubmit={onBuild}>
         <fieldset>
@@ -388,10 +349,8 @@ export function PayloadBuildView({
             />
           </label>
           <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-            The implant calls home every <em>check-in</em> seconds, randomized by ±<em>randomize</em>
-            . Past the <em>expiry date</em> the executable stops working — a leftover copy refuses
-            to run, and a live implant terminates at its next check-in. <em>Max uses</em> caps how
-            many hosts one artifact may enroll — copies share the credential, one spend each.
+            Call-home cadence, the artifact's expiry fuse, and the baked credential's use count —
+            hover each field for specifics.
           </p>
           {isStager && (
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
@@ -419,7 +378,7 @@ export function PayloadBuildView({
                 value={fallbackEndpoints}
                 onChange={(e) => setFallbackEndpoints(e.target.value)}
                 placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Walked in order when the primary burns; empty bakes the single-endpoint shape."
+                title="Backup fronts dialed in order when the primary burns — empty bakes the single-endpoint shape."
               />
             </label>
             <label>
@@ -428,6 +387,7 @@ export function PayloadBuildView({
                 value={enrollPath}
                 onChange={(e) => setEnrollPath(e.target.value)}
                 placeholder="/implants/enroll"
+                title="The URI path the implant enrolls on. Change it only when a redirector rewrites to the real route."
               />
             </label>
             <label>
@@ -436,6 +396,7 @@ export function PayloadBuildView({
                 value={userAgent}
                 onChange={(e) => setUserAgent(e.target.value)}
                 placeholder="HTTP client default"
+                title="The User-Agent header the implant presents, so the traffic blends with a known-good client."
               />
             </label>
             <label>
@@ -444,22 +405,27 @@ export function PayloadBuildView({
                 value={requestTimeoutSeconds}
                 onChange={(e) => setRequestTimeoutSeconds(e.target.value)}
                 placeholder="30"
+                title="Per-request HTTP timeout. Default 30."
               />
             </label>
             <label>
               Envelope
-              <select value={envelope} onChange={(e) => setEnvelope(e.target.value)}>
+              <select
+                value={envelope}
+                onChange={(e) => setEnvelope(e.target.value)}
+                title="None sends the raw JSON body; Base64 wraps it as one string so it does not read as structured C2."
+              >
                 <option>None</option>
                 <option>Base64</option>
               </select>
             </label>
             <label>
-              Token window (h)
+              Credential window (h)
               <input
                 value={tokenHours}
                 onChange={(e) => setTokenHours(e.target.value)}
-                placeholder="kill window"
-                title="How long the baked credential stays redeemable; empty defaults to the artifact's kill window."
+                placeholder="expiry window"
+                title="How long the baked credential stays redeemable; empty defaults to the artifact's expiry window."
               />
             </label>
           </div>
@@ -553,103 +519,9 @@ export function PayloadBuildView({
         </div>
       )}
 
-      <h3 className="jobs-head">Payload library</h3>
       <p className="muted">
-        Every payload this engagement ever built, straight from the durable store — it survives
-        restarts and outlives the build queue above. Download again, revoke the baked credential,
-        or delete a payload (a stager fetching a deleted payload stops working). The filter
-        matches class, language, target, endpoint, or fingerprint.
+        Finished payloads live on in the <a href={`#/engagements/${engagementId}/payloads`}>Payloads</a> tab.
       </p>
-      <div className="inline-form">
-        <input
-          className="filter-text"
-          placeholder="Filter payloads (linux, Stage2, host…)"
-          value={payloadFilter}
-          onChange={(e) => setPayloadFilter(e.target.value)}
-        />
-        <button className="ghost" onClick={() => void refreshPayloads()}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-      </div>
-      {payloads.length === 0 ? (
-        <div className="empty">
-          <Icon name="package" />
-          No payloads stored yet -- the first build lands here.
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Built</th>
-                <th>Class</th>
-                <th>Target</th>
-                <th>Endpoint</th>
-                <th>Size</th>
-                <th>Fingerprint</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {payloads
-                .filter((p) => {
-                  const q = payloadFilter.trim().toLowerCase()
-                  if (!q) return true
-                  return [p.class, p.language, p.target, p.endpoint, p.fingerprint].some((v) =>
-                    v?.toLowerCase().includes(q),
-                  )
-                })
-                .map((p) => (
-                  <tr key={p.artifactId}>
-                    <td>{new Date(p.builtAt).toLocaleString()}</td>
-                    <td>
-                      <code>
-                        {p.language}:{p.class}
-                      </code>
-                    </td>
-                    <td>{p.target ?? '—'}</td>
-                    <td>
-                      <code>{p.endpoint ?? '—'}</code>
-                    </td>
-                    <td>{p.size} bytes</td>
-                    <td>
-                      <code title={p.fingerprint}>{p.fingerprint.slice(0, 16)}</code>
-                      {p.tokenId && (
-                        <div className="muted" title={p.tokenId}>
-                          baked token {p.tokenId.slice(0, 8)}{' '}
-                          {revoking === p.tokenId ? (
-                            '(revoking…)'
-                          ) : (
-                            <button
-                              className="sm danger"
-                              onClick={() => void onRevokeToken(p.tokenId!)}
-                              title="The baked credential stops working at the next enrollment attempt"
-                            >
-                              Revoke token
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <a
-                        className="download-link"
-                        href={`engagements/${engagementId}/payloads/${p.artifactId}`}
-                        download
-                      >
-                        Download
-                      </a>{' '}
-                      <button className="sm danger" onClick={() => void onDeletePayload(p)}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   )
 }

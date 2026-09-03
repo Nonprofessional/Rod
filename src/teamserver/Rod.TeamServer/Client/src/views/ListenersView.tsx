@@ -168,16 +168,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   return (
     <div className="card">
       <h3>Listeners</h3>
-      <p className="muted">
-        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens — pick
-        the interface (or all interfaces) and the port; <strong>public endpoint</strong> is the
-        address baked into payloads — what deployed implants dial back to, usually your redirector
-        in production. Leave it empty and the server derives it from the bind: bind 10.1.2.3:8443
-        on https-envelope becomes <code>https://10.1.2.3:8443</code>. A bare hostname (
-        <code>redirect.example</code>) takes the transport's scheme and this listener's port; a
-        wildcard bind (0.0.0.0) names no address implants can dial, so it needs a hostname. DNS,
-        SMB, and TCP cannot derive — spell their endpoint out. Every listener is persisted — a
-        restart rebinds it — and enrollment through it accepts only this engagement's tokens.
+      <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
+        This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
+        dial.
       </p>
 
       <form className="inline-form listener-create" onSubmit={onCreate}>
