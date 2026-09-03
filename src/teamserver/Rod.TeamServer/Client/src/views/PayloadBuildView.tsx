@@ -130,15 +130,20 @@ export function PayloadBuildView({
     })()
   }, [engagementId])
 
-  // One pickable listener preselects itself: with exactly one front there is
-  // nothing to choose between, and the main path stays two clicks long.
+  // One pickable listener preselects itself on first load: with exactly one
+  // front there is nothing to choose between. Only once -- after the user
+  // has chosen (or deliberately chosen none), the preselect never fights
+  // them again by snapping a deselected listener back into place.
+  const preselected = useRef(false)
   const pickable = useMemo(
     () => listeners.filter((l) => HTTP_INGRESS.has(l.transport)),
     [listeners],
   )
   useEffect(() => {
-    if (!listenerId && pickable.length === 1) setListenerId(pickable[0].id)
-  }, [pickable, listenerId])
+    if (preselected.current || listeners.length === 0 || listenerId) return
+    if (pickable.length === 1) setListenerId(pickable[0].id)
+    preselected.current = true
+  }, [pickable, listenerId, listeners.length])
 
   // The finished Stage2 builds a stager can fetch -- the artifact ids the
   // request resolves against the payload store.

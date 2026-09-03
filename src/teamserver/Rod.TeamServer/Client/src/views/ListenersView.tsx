@@ -26,17 +26,17 @@ import { StatusBadge } from '../components/StatusBadge'
 // per transport. The public endpoint stays free text -- it names the redirector
 // implants dial, which is a fact about the target network, not this host.
 
-// The transports the create form offers, with the default port each one takes.
-// The server validates for real; this list only keeps the form from offering
-// shapes the server would refuse. SMB is the odd one out: its bind is a bare
-// pipe name, not interface + port.
+// The transports the create form offers, with the default port each one takes
+// and the wire it rides named in the label. The server validates for real;
+// this list only keeps the form from offering shapes the server would refuse.
+// SMB is the odd one out: its bind is a bare pipe name, not interface + port.
 const TRANSPORTS = [
-  { value: 'http', label: 'HTTP (plain, loopback dev posture)', port: '5090' },
-  { value: 'mtls', label: 'mTLS (gRPC beacon)', port: '5443' },
-  { value: 'https-envelope', label: 'HTTPS envelope (POST check-ins)', port: '8443' },
-  { value: 'dns', label: 'DNS (TXT check-ins)', port: '53' },
-  { value: 'smb', label: 'SMB named pipe', port: '' },
-  { value: 'tcp', label: 'Raw TCP', port: '4444' },
+  { value: 'http', label: 'HTTP — plain HTTP, dev/loopback', port: '5090' },
+  { value: 'mtls', label: 'mTLS — gRPC over HTTP/2', port: '5443' },
+  { value: 'https-envelope', label: 'HTTPS envelope — POST check-ins', port: '8443' },
+  { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
+  { value: 'smb', label: 'SMB — named pipe', port: '' },
+  { value: 'tcp', label: 'Raw TCP — framed messages', port: '4444' },
 ]
 
 // Select values that are not reported addresses: the wildcard bind and the
