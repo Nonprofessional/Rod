@@ -80,7 +80,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         name,
         transport,
         bindAddress,
-        publicEndpoint,
+        // An empty field means "derive it from the bind"; the server completes
+        // blanks and bare hostnames, so the form never blocks on typing a
+        // fully-qualified URL.
+        publicEndpoint: publicEndpoint.trim(),
       })
       setName('')
       setBindAddress('')
@@ -108,11 +111,12 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     <div className="card">
       <h3>Listeners</h3>
       <p className="muted">
-        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens;{' '}
-        <strong>public endpoint</strong> is the address baked payloads dial -- usually your
-        redirector. The two are decoupled on purpose: repoint swaps a burned front without touching
-        the backend. Every listener is persisted -- a restart rebinds it -- and enrollment through
-        it accepts only this engagement's tokens. Whatever this engagement needs, it builds here.
+        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens (where
+        the teamserver listens); <strong>public endpoint</strong> is the address baked into payloads
+        — what implants actually dial, usually your redirector in production. Leave it empty and
+        implants dial the bind itself; a bare hostname takes the transport's scheme and this
+        listener's port. Every listener is persisted — a restart rebinds it — and enrollment
+        through it accepts only this engagement's tokens.
       </p>
 
       <form className="inline-form listener-create" onSubmit={onCreate}>
@@ -141,10 +145,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           required
         />
         <input
-          placeholder="Public endpoint"
+          placeholder="Public endpoint (empty = the bind itself)"
           value={publicEndpoint}
           onChange={(e) => setPublicEndpoint(e.target.value)}
-          required
         />
         <button className="primary" type="submit" disabled={busy}>
           Create

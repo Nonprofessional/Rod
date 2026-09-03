@@ -257,8 +257,76 @@ public class ListenerRuntimeTests
 
         var badEndpoint = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
-                Name: "x", Transport: "http", BindAddress: "127.0.0.1:9999", PublicEndpoint: "guess"));
+                Name: "x", Transport: "http", BindAddress: "127.0.0.1:9999", PublicEndpoint: "not a url"));
         Assert.Equal(HttpStatusCode.BadRequest, badEndpoint.StatusCode);
+
+        // A port typed alone is not a hostname; accepting it would bake a
+        // payload that dials a number.
+        var barePort = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "x", Transport: "http", BindAddress: "127.0.0.1:9999", PublicEndpoint: "666"));
+        Assert.Equal(HttpStatusCode.BadRequest, barePort.StatusCode);
+    }
+
+    [Fact]
+    public async Task PublicEndpoint_BlankAndBareHostnames_AreCompletedFromTheListener()
+    {
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        // Blank means "implants dial the bind itself": the whole endpoint
+        // derives from the bind, scheme by transport.
+        var directPort = TestSupport.GetFreeTcpPort();
+        var direct = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "direct", Transport: "http",
+                BindAddress: $"127.0.0.1:{directPort}", PublicEndpoint: ""));
+        direct.EnsureSuccessStatusCode();
+        var directListener = await direct.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal($"http://127.0.0.1:{directPort}", directListener!.PublicEndpoint);
+
+        // A bare hostname takes the transport's scheme and the listener's own
+        // bind port -- "tmp" is a complete dialable endpoint now.
+        var aliasPort = TestSupport.GetFreeTcpPort();
+        var aliased = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "aliased", Transport: "http",
+                BindAddress: $"127.0.0.1:{aliasPort}", PublicEndpoint: "tmp"));
+        aliased.EnsureSuccessStatusCode();
+        var aliasListener = await aliased.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal($"http://tmp:{aliasPort}", aliasListener!.PublicEndpoint);
+
+        // The TLS-shaped transports complete with https.
+        var mtlsPort = TestSupport.GetFreeTcpPort();
+        var fronted = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "mtls-front", Transport: "mtls",
+                BindAddress: $"127.0.0.1:{mtlsPort}", PublicEndpoint: "front.internal"));
+        fronted.EnsureSuccessStatusCode();
+        var frontListener = await fronted.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal($"https://front.internal:{mtlsPort}", frontListener!.PublicEndpoint);
+
+        // The stream transports cannot derive: a DNS listener requires its
+        // zone spelled out.
+        var zoneless = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "zone", Transport: "dns",
+                BindAddress: "0.0.0.0:5333", PublicEndpoint: ""));
+        Assert.Equal(HttpStatusCode.BadRequest, zoneless.StatusCode);
+
+        // A repoint completes a bare hostname the same way, so swapping a
+        // front never demands more typing than creating one did.
+        var repointed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners/{directListener.Id}:repoint",
+            new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "newfront"));
+        repointed.EnsureSuccessStatusCode();
+        var repointBody = await repointed.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal($"http://newfront:{directPort}", repointBody!.PublicEndpoint);
     }
 
     [Fact]
