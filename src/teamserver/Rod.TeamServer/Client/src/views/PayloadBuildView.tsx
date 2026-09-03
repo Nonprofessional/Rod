@@ -75,6 +75,9 @@ export function PayloadBuildView({
   const [jobs, setJobs] = useState<BuildJob[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // The Advanced disclosure's open state is tracked so choosing the manual
+  // endpoint can open the section the endpoint field lives in.
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
@@ -234,10 +237,15 @@ export function PayloadBuildView({
             Listener
             <select
               value={listenerId}
-              onChange={(e) => setListenerId(e.target.value)}
+              onChange={(e) => {
+                setListenerId(e.target.value)
+                // Choosing the manual option is choosing to type an endpoint:
+                // open the section it lives in.
+                if (e.target.value === '') setAdvancedOpen(true)
+              }}
               title="The listener's public endpoint is what the artifact dials. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
             >
-              <option value="">-- pick a listener --</option>
+              <option value="">-- no listener: type endpoint in Advanced --</option>
               {listeners.map((l) =>
                 HTTP_INGRESS.has(l.transport) ? (
                   <option key={l.id} value={l.id}>
@@ -359,7 +367,11 @@ export function PayloadBuildView({
             </p>
           )}
         </fieldset>
-        <details className="build-advanced">
+        <details
+          className="build-advanced"
+          open={advancedOpen || undefined}
+          onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
+        >
           <summary>Advanced — wire shape and credential window</summary>
           <div className="grid">
             <label>
@@ -369,7 +381,11 @@ export function PayloadBuildView({
                 onChange={(e) => setEndpoint(e.target.value)}
                 placeholder="https://redirect.example.test"
                 disabled={!!listenerId}
-                title="Only without a listener: the absolute URL baked as the dial address. With a listener picked, its public endpoint is used."
+                title={
+                  listenerId
+                    ? 'A listener is picked, so its public endpoint is used. Choose "-- no listener --" above to type one manually.'
+                    : 'The absolute URL baked as the dial address — an address not registered as a listener.'
+                }
               />
             </label>
             <label>
