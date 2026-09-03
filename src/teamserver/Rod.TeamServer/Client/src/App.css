@@ -1489,11 +1489,19 @@ textarea:focus-visible {
   width: 160px;
 }
 
-/* Room for the placeholders to show whole: the endpoint hint and the
-   transport-specific bind example both outrun the default ~20-character
-   input width. The row wraps, so wide fields stay safe on narrow panes. */
+/* Room for the placeholders to show whole; the row wraps, so wide fields
+   stay safe on narrow panes. The bind port rides narrow and the callback
+   endpoint takes the leftover row, so its hint stays visible. */
 .listener-create input:not(:first-child) {
   width: 215px;
+}
+
+.listener-create .bind-port {
+  width: 72px;
+}
+
+.listener-create .endpoint-input {
+  flex: 1 1 230px;
 }
 
 /* --- Engagement timeline (story view) ------------------------------------------------------ */

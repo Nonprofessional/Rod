@@ -22,6 +22,25 @@ namespace Rod.Integration.Tests;
 public class ListenerRuntimeTests
 {
     [Fact]
+    public async Task NetworkInterfaces_ListTheBindableAddresses_AndRequireASession()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var _ = host;
+
+        // Anonymous reads the 401 every operator surface answers with.
+        var anonymous = await client.GetAsync("/network/interfaces");
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        // Authenticated, the host's own interfaces read back -- loopback
+        // always among them, the shape the bind dropdown offers.
+        await AuthenticatedHost.LoginAsync(client);
+        var listed = await client.GetFromJsonAsync<NetworkEndpoints.InterfaceResponse[]>(
+            "/network/interfaces");
+        Assert.NotNull(listed);
+        Assert.Contains(listed!, i => i.Address == "127.0.0.1");
+    }
+
+    [Fact]
     public async Task HttpListener_CreatedAtRuntime_ServesAndDeletes()
     {
         var extraPort = TestSupport.GetFreeTcpPort();

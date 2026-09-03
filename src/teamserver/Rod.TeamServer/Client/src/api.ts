@@ -753,6 +753,18 @@ export interface ListenerSummary {
   repointedAt: string | null
 }
 
+// The host's bindable interfaces (GET /network/interfaces): the read view the
+// listener form's bind dropdown is built from. The wildcard all-interfaces
+// entry is a client-side constant, not a reported interface.
+export interface NetworkInterfaceSummary {
+  name: string
+  address: string
+}
+
+export async function listNetworkInterfaces(): Promise<NetworkInterfaceSummary[]> {
+  return jsonOrThrow(await fetch('network/interfaces'))
+}
+
 export async function listListeners(engagementId: string): Promise<ListenerSummary[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/listeners`))
 }

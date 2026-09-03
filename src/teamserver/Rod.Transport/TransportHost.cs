@@ -603,6 +603,9 @@ public static class TransportHost
         app.MapEnrollmentEndpoints();
         app.MapImplantEndpoints();
         app.MapListenerEndpoints();
+        // The host's bindable interfaces: the read view behind the listener
+        // form's bind dropdown.
+        app.MapNetworkEndpoints();
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         app.MapPayloadEndpoints();
@@ -643,6 +646,9 @@ public static class TransportHost
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
         endpoints.MapListenerEndpoints();
+        // The host's bindable interfaces: the read view behind the listener
+        // form's bind dropdown.
+        endpoints.MapNetworkEndpoints();
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();

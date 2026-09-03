@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   type ListenerSummary,
+  type NetworkInterfaceSummary,
   createListener,
   deleteListener,
   listListeners,
+  listNetworkInterfaces,
   repointListener,
 } from '../api'
 import { Icon } from '../components/Icons'
@@ -17,18 +19,37 @@ import { StatusBadge } from '../components/StatusBadge'
 // runtime and the definition follows. The operator front the UI rides is
 // startup configuration: it carries no implant ingress and never appears
 // here.
+//
+// The bind is picked, not typed: the host reports its interfaces
+// (GET /network/interfaces), the form offers them beside the all-interfaces
+// wildcard and a custom escape hatch, and the port is its own field defaulted
+// per transport. The public endpoint stays free text -- it names the redirector
+// implants dial, which is a fact about the target network, not this host.
 
-// The transports the create form offers, with the bind-address shape each
-// one takes. The server validates for real; this list only keeps the form
-// from offering shapes the server would refuse.
+// The transports the create form offers, with the default port each one takes.
+// The server validates for real; this list only keeps the form from offering
+// shapes the server would refuse. SMB is the odd one out: its bind is a bare
+// pipe name, not interface + port.
 const TRANSPORTS = [
-  { value: 'http', label: 'HTTP (plain, loopback dev posture)', bindHint: '127.0.0.1:5090' },
-  { value: 'mtls', label: 'mTLS (gRPC beacon)', bindHint: '0.0.0.0:5443' },
-  { value: 'https-envelope', label: 'HTTPS envelope (POST check-ins)', bindHint: '0.0.0.0:8443' },
-  { value: 'dns', label: 'DNS (TXT check-ins)', bindHint: '0.0.0.0:53' },
-  { value: 'smb', label: 'SMB named pipe', bindHint: 'rod-pipe' },
-  { value: 'tcp', label: 'Raw TCP', bindHint: '0.0.0.0:4444' },
+  { value: 'http', label: 'HTTP (plain, loopback dev posture)', port: '5090' },
+  { value: 'mtls', label: 'mTLS (gRPC beacon)', port: '5443' },
+  { value: 'https-envelope', label: 'HTTPS envelope (POST check-ins)', port: '8443' },
+  { value: 'dns', label: 'DNS (TXT check-ins)', port: '53' },
+  { value: 'smb', label: 'SMB named pipe', port: '' },
+  { value: 'tcp', label: 'Raw TCP', port: '4444' },
 ]
+
+// Select values that are not reported addresses: the wildcard bind and the
+// custom-host escape hatch.
+const ALL_INTERFACES = '0.0.0.0'
+const CUSTOM = 'custom'
+
+// Composes the wire's host:port bind from the two form fields, bracketing an
+// IPv6 literal so the port reads unambiguously.
+function hostPort(host: string, port: string): string {
+  const bracketed = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return `${bracketed}:${port}`
+}
 
 export function ListenersView({ engagementId }: { engagementId: string }) {
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
@@ -36,13 +57,18 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [busy, setBusy] = useState(false)
   const [newEndpoint, setNewEndpoint] = useState<Record<string, string>>({})
 
-  // The create form's working state; the transport select drives the bind
-  // placeholder so the accepted shape is visible where it is entered.
+  // The create form's working state. The transport select drives the default
+  // port; the interface select is built from the host's reported interfaces
+  // with the wildcard and a custom entry riding along.
   const [name, setName] = useState('')
   const [transport, setTransport] = useState('http')
-  const [bindAddress, setBindAddress] = useState('')
+  const [interfaces, setInterfaces] = useState<NetworkInterfaceSummary[]>([])
+  const [bindInterface, setBindInterface] = useState('')
+  const [customHost, setCustomHost] = useState('')
+  const [bindPort, setBindPort] = useState('5090')
+  const [pipeName, setPipeName] = useState('')
   const [publicEndpoint, setPublicEndpoint] = useState('')
-  const bindHint = TRANSPORTS.find((t) => t.value === transport)?.bindHint ?? ''
+  const isSmb = transport === 'smb'
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -60,6 +86,30 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     void refresh()
   }, [refresh])
 
+  // The host's bindable interfaces for the bind dropdown. A failed load keeps
+  // the dropdown useful: wildcard, loopback, and custom remain.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setInterfaces(await listNetworkInterfaces())
+      } catch {
+        // Wildcard and custom still cover a host whose list did not load.
+      }
+    })()
+  }, [])
+
+  // Pick the default bind: the first non-loopback address (a dialable NIC, so
+  // an empty public endpoint can derive from it), else loopback.
+  useEffect(() => {
+    if (bindInterface !== '' || interfaces.length === 0) return
+    const lan = interfaces.find((i) => !i.address.startsWith('127.') && !i.address.includes(':'))
+    const chosen = lan?.address ?? interfaces[0].address
+    setBindInterface(interfaces.some((i) => i.address === chosen) ? chosen : ALL_INTERFACES)
+  }, [interfaces, bindInterface])
+
+  // The loopback option rides even when the host list did not load.
+  const loopbackMissing = !interfaces.some((i) => i.address === '127.0.0.1')
+
   const onRepoint = async (id: string) => {
     const endpoint = newEndpoint[id]?.trim()
     if (!endpoint) return
@@ -75,6 +125,14 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
 
   const onCreate = async (event: React.FormEvent) => {
     event.preventDefault()
+    // An unresolved interface (the list never loaded, or no default picked
+    // yet) reads as the wildcard the dropdown already shows as selected.
+    const iface = bindInterface === '' ? ALL_INTERFACES : bindInterface
+    const bindAddress = isSmb
+      ? pipeName.trim()
+      : iface === CUSTOM
+        ? hostPort(customHost.trim(), bindPort.trim())
+        : hostPort(iface, bindPort.trim())
     try {
       await createListener(engagementId, {
         name,
@@ -86,7 +144,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         publicEndpoint: publicEndpoint.trim(),
       })
       setName('')
-      setBindAddress('')
+      setPipeName('')
       setPublicEndpoint('')
       setError(null)
       await refresh()
@@ -111,15 +169,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     <div className="card">
       <h3>Listeners</h3>
       <p className="muted">
-        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens;{' '}
-        <strong>public endpoint</strong> is the address baked into payloads — what implants
-        actually dial, usually your redirector in production. Leave it empty and the server derives
-        it from the bind: bind 10.1.2.3:8443 on https-envelope becomes{' '}
-        <code>https://10.1.2.3:8443</code>. A bare hostname (<code>redirect.example</code>) takes
-        the transport's scheme and this listener's port; a wildcard bind (0.0.0.0) names no
-        address implants can dial, so it needs a hostname. DNS, SMB, and TCP cannot derive — spell
-        their endpoint out. Every listener is persisted — a restart rebinds it — and enrollment
-        through it accepts only this engagement's tokens.
+        This engagement's C2 ingress. <strong>Bind</strong> is the socket this server opens — pick
+        the interface (or all interfaces) and the port; <strong>public endpoint</strong> is the
+        address baked into payloads — what deployed implants dial back to, usually your redirector
+        in production. Leave it empty and the server derives it from the bind: bind 10.1.2.3:8443
+        on https-envelope becomes <code>https://10.1.2.3:8443</code>. A bare hostname (
+        <code>redirect.example</code>) takes the transport's scheme and this listener's port; a
+        wildcard bind (0.0.0.0) names no address implants can dial, so it needs a hostname. DNS,
+        SMB, and TCP cannot derive — spell their endpoint out. Every listener is persisted — a
+        restart rebinds it — and enrollment through it accepts only this engagement's tokens.
       </p>
 
       <form className="inline-form listener-create" onSubmit={onCreate}>
@@ -131,7 +189,11 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         />
         <select
           value={transport}
-          onChange={(e) => setTransport(e.target.value)}
+          onChange={(e) => {
+            setTransport(e.target.value)
+            const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
+            if (port !== '') setBindPort(port)
+          }}
           aria-label="Transport"
           title="Transport"
         >
@@ -141,15 +203,54 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </option>
           ))}
         </select>
+        {isSmb ? (
+          <input
+            placeholder="Pipe name (rod-pipe)"
+            value={pipeName}
+            onChange={(e) => setPipeName(e.target.value)}
+            required
+          />
+        ) : (
+          <>
+            <select
+              value={bindInterface}
+              onChange={(e) => setBindInterface(e.target.value)}
+              aria-label="Bind interface"
+              title="The interface this listener opens its socket on"
+            >
+              <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
+              {interfaces.map((i) => (
+                <option key={`${i.name}-${i.address}`} value={i.address}>
+                  {i.name} ({i.address})
+                </option>
+              ))}
+              {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
+              <option value={CUSTOM}>Custom address…</option>
+            </select>
+            {bindInterface === CUSTOM ? (
+              <input
+                placeholder="Bind host (192.168.1.5)"
+                value={customHost}
+                onChange={(e) => setCustomHost(e.target.value)}
+                title="The address to bind — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
+                required
+              />
+            ) : null}
+            <input
+              className="bind-port"
+              placeholder="Port"
+              value={bindPort}
+              onChange={(e) => setBindPort(e.target.value)}
+              aria-label="Bind port"
+              title="The port this listener opens"
+              required
+            />
+          </>
+        )}
         <input
-          placeholder={`Bind (${bindHint})`}
-          value={bindAddress}
-          onChange={(e) => setBindAddress(e.target.value)}
-          required
-        />
-        <input
-          placeholder="Public endpoint (optional)"
-          title="Leave empty and the server derives it from the bind (the transport's scheme + the bind host:port). A bare hostname gets the scheme and this listener's port. A wildcard bind like 0.0.0.0 cannot derive — type the hostname implants should dial."
+          className="endpoint-input"
+          placeholder="Implant callback address (empty = the bind)"
+          title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Empty derives it from the bind; a bare hostname gets the transport's scheme and this port. A wildcard bind cannot derive — type the hostname implants should reach."
           value={publicEndpoint}
           onChange={(e) => setPublicEndpoint(e.target.value)}
         />
