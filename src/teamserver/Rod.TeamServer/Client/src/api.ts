@@ -834,8 +834,10 @@ export interface BuildPayloadInput {
   // exclusive on the wire.
   listenerId: string | null
   endpoint: string | null
+  // A stager-class build only: the completed Stage-2 artifact the loader
+  // fetches at run time. Null everywhere else.
+  stage2PayloadId: string | null
   fallbackEndpoints: string[] | null
-  uriPath: string | null
   enrollPath: string | null
   userAgent: string | null
   headers: Record<string, string> | null

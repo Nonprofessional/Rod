@@ -1077,6 +1077,32 @@ a:hover {
   font-size: 12.5px;
 }
 
+/* The advanced disclosure: same field rhythm as the fieldsets, visually
+   quieter so the main path reads as the form and this reads as the
+   behind-the-door remainder. */
+.build-advanced {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 10px 14px;
+}
+
+.build-advanced summary {
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.build-advanced .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
 /* --- Report columns ---------------------------------------------------------------------- */
 
 .report-cols {

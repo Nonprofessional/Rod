@@ -80,6 +80,28 @@ public class PayloadJobTests
     }
 
     [Fact]
+    public async Task BuildJob_DotNetX86OffWindows_IsRefusedWithoutQueuing()
+    {
+        var (client, _, _) = AuthenticatedHost.Create();
+        await AuthenticatedHost.LoginAsync(client);
+        var engagementId = await CreateEngagementAsync(client);
+
+        // No linux-x86 runtime exists to bundle, so the pair is a 400 naming
+        // the fix, not a queued job that dies at restore.
+        var refused = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request() with { TargetOs = "linux", TargetArch = "x86" });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var problem = await refused.Content.ReadFromJsonAsync<PayloadJobEndpoints.Problem>();
+        Assert.Contains("x86", problem!.Error);
+
+        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
+            $"/engagements/{engagementId}/payload-jobs");
+        Assert.NotNull(jobs);
+        Assert.Empty(jobs!);
+    }
+
+    [Fact]
     public async Task BuildJob_NoUnitForLanguage_FailsTheJobWithTheReason()
     {
         var (client, _, _) = AuthenticatedHost.Create();

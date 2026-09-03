@@ -52,6 +52,18 @@ internal static class PayloadBuildRequestParser
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
 
+        // The in-tree .NET toolchain bundles a runtime for every pair it maps
+        // except x86 off Windows (no linux-x86/osx-x86 runtime exists), so the
+        // pair is refused here with the reason instead of failing the queued
+        // job at restore with the toolchain's own error.
+        if (language == Language.DotNet
+            && string.Equals(body.TargetArch ?? "amd64", "x86", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(body.TargetOs ?? "linux", "windows", StringComparison.OrdinalIgnoreCase))
+        {
+            return (null,
+                "The .NET toolchain builds x86 artifacts only for Windows targets; choose amd64 or arm64.");
+        }
+
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
         // produce a payload that phones nowhere, the silent kind of failure

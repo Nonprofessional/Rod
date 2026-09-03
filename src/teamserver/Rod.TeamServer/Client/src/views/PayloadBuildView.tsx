@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type BuildJob,
   type ListenerSummary,
@@ -10,21 +10,42 @@ import {
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
-// The payload-build panel: builds an implant artifact, baking in the beacon
-// profile (mode, sleep/jitter), the kill date (self-termination), and the
-// malleable transport profile (endpoint, fallback endpoints walked when the
-// primary burns, URIs, headers, timing, envelope). Naming the engagement's
-// listener fills the endpoint from its record -- the artifact dials what the
-// listener publishes, and the operator stops typing URLs. These are baked at
-// generation -- a live implant's profile is read-only after enrollment -- so
-// OPSEC changes go through a rebuild and redeploy.
+// The payload-build panel. The main path is the mainstream shape (Cobalt
+// Strike's package dialog, Sliver's generate): name the listener the implant
+// dials and the target it runs on, leave everything else at its default, and
+// build -- the artifact is a self-contained executable with its enrollment
+// credential baked in, so "drop it on the target and run" needs no arguments.
+// Everything an operator sets rarely -- the malleable wire knobs (fallbacks,
+// paths, headers-adjacent fields, envelope), the manual endpoint, and the
+// credential window -- folds into the Advanced disclosure, defaulted server
+// side, so the form never makes an operator read a knob they will not touch.
 //
-// The build itself runs as a server-side job: a real toolchain takes the kind
-// of time an open request and a browser refresh must not own. Submitting
-// queues the job and returns immediately; the recent-builds list below is the
-// durable view of every job (fetched on mount, polled while anything runs), so
-// leaving the page, refreshing it, or losing the connection never loses a
-// build -- the finished artifact waits in the list with its download link.
+// The form offers only what the pipeline actually delivers: the in-tree .NET
+// unit (no language picker for units that are not registered), the Stage2 and
+// Stager classes (the deployable shapes; the reduced classes compile the same
+// beacon with a gutted verb set and stay API-only), this engagement's
+// HTTP-shaped listeners (the ones implants can enroll through -- DNS/SMB/TCP
+// listeners appear greyed out), and the arch set the toolchain bundles a
+// runtime for (x86 only pairs with Windows). A stager names the completed
+// Stage-2 artifact it fetches, so that select lists the finished Stage2 builds
+// below.
+//
+// The build runs as a server-side job: submitting queues it and returns
+// immediately; the recent-builds list below is the durable view (fetched on
+// mount, polled while anything runs), so leaving the page or refreshing never
+// loses a build -- the finished artifact waits with its download link.
+
+// The transports an implant can enroll through; the listener select offers
+// these and greyes everything else out.
+const HTTP_INGRESS = new Set(['http', 'mtls', 'https-envelope'])
+
+// The arch set per OS that the .NET toolchain bundles a runtime for: x86
+// exists only as a Windows target.
+const ARCHS: Record<string, string[]> = {
+  linux: ['amd64', 'arm64'],
+  windows: ['amd64', 'x86', 'arm64'],
+  osx: ['amd64', 'arm64'],
+}
 
 function elapsed(job: BuildJob): string {
   const start = new Date(job.startedAt ?? job.requestedAt).getTime()
@@ -38,29 +59,33 @@ export function PayloadBuildView({
 }: {
   engagementId: string
 }) {
-  const [language, setLanguage] = useState('DotNet')
   const [klass, setKlass] = useState('Stage2')
+  const [stage2PayloadId, setStage2PayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
-  const [endpoint, setEndpoint] = useState('')
-  const [fallbackEndpoints, setFallbackEndpoints] = useState('')
-  const [uriPath, setUriPath] = useState('')
-  const [enrollPath, setEnrollPath] = useState('')
-  const [userAgent, setUserAgent] = useState('')
-  const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
-  const [envelope, setEnvelope] = useState('None')
   const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
   const [killDate, setKillDate] = useState('')
   const [tokenMaxUses, setTokenMaxUses] = useState('1')
-  const [tokenHours, setTokenHours] = useState('')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // The Advanced disclosure's fields; every one defaults server side, so they
+  // ride empty unless the operator opens the section and fills them.
+  const [endpoint, setEndpoint] = useState('')
+  const [fallbackEndpoints, setFallbackEndpoints] = useState('')
+  const [enrollPath, setEnrollPath] = useState('')
+  const [userAgent, setUserAgent] = useState('')
+  const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
+  const [envelope, setEnvelope] = useState('None')
+  const [tokenHours, setTokenHours] = useState('')
+
+  const isStager = klass === 'Stager'
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -98,6 +123,22 @@ export function PayloadBuildView({
       }
     })()
   }, [engagementId])
+
+  // One pickable listener preselects itself: with exactly one front there is
+  // nothing to choose between, and the main path stays two clicks long.
+  const pickable = useMemo(
+    () => listeners.filter((l) => HTTP_INGRESS.has(l.transport)),
+    [listeners],
+  )
+  useEffect(() => {
+    if (!listenerId && pickable.length === 1) setListenerId(pickable[0].id)
+  }, [pickable, listenerId])
+
+  // The finished Stage2 builds a stager can fetch -- the artifact ids the
+  // request resolves against the payload store.
+  const stage2Artifacts = jobs.filter(
+    (j) => j.state === 'completed' && j.class === 'Stage2' && j.artifact,
+  )
 
   const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
 
@@ -137,17 +178,27 @@ export function PayloadBuildView({
 
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (!listenerId && !endpoint.trim()) {
+      setError('Pick a listener (or fill the endpoint under Advanced).')
+      return
+    }
+    if (isStager && !stage2PayloadId) {
+      setError('A stager fetches a Stage-2 payload -- build one first and pick it.')
+      return
+    }
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
-        language: language || null,
-        class: klass || null,
-        targetOs: targetOs || null,
-        targetArch: targetArch || null,
+        // Language rides empty: the server defaults to the in-tree .NET unit,
+        // and no other unit is registered to pick.
+        language: null,
+        class: klass,
+        targetOs,
+        targetArch,
         listenerId: listenerId || null,
         endpoint: !listenerId && endpoint ? endpoint : null,
+        stage2PayloadId: isStager ? stage2PayloadId : null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
-        uriPath: uriPath || null,
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
         headers: null,
@@ -173,58 +224,98 @@ export function PayloadBuildView({
     <div className="card">
       <h3>Build payload</h3>
       <p className="muted">
-        Bake an implant with its beacon profile (sleep/jitter), kill date, and malleable transport
-        profile. These are baked at generation; rebuild and redeploy to change an implant's OPSEC
-        profile. The build runs as a background job -- watch it finish under Recent builds.
+        Pick the listener the implant dials and the target it runs on, leave the rest, and build:
+        the artifact is a self-contained executable (Rod.Implant.exe on Windows, ~no runtime
+        needed on the target) with its enrollment credential baked in -- drop it and run. Copies
+        of one artifact share that credential, so Token uses caps how many hosts may enroll with
+        it. Every knob is baked at generation; changing the profile later means rebuilding.
       </p>
       <form className="build-form" onSubmit={onBuild}>
         <fieldset>
           <legend>Target</legend>
           <label>
-            Language
-            <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-              <option>Go</option>
-              <option>DotNet</option>
+            Listener
+            <select
+              value={listenerId}
+              onChange={(e) => setListenerId(e.target.value)}
+              title="The listener's public endpoint is what the artifact dials. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
+            >
+              <option value="">-- pick a listener --</option>
+              {listeners.map((l) =>
+                HTTP_INGRESS.has(l.transport) ? (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.transport} → {l.publicEndpoint})
+                  </option>
+                ) : (
+                  <option key={l.id} disabled>
+                    {l.name} ({l.transport} — not HTTP ingress)
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
-              <option>Stage2</option>
-              <option>Stager</option>
-              <option>WebShell</option>
-              <option>Ephemeral</option>
-              <option>Pivot</option>
+              <option value="Stage2">Stage2 — full implant</option>
+              <option value="Stager">Stager — small loader, fetches a Stage2</option>
             </select>
           </label>
+          {isStager && (
+            <label>
+              Stage-2 payload
+              <select
+                value={stage2PayloadId}
+                onChange={(e) => setStage2PayloadId(e.target.value)}
+                title="The finished Stage2 build the loader fetches and runs at launch."
+              >
+                <option value="">-- pick the Stage2 it fetches --</option>
+                {stage2Artifacts.map((j) => (
+                  <option key={j.artifact!.artifactId} value={j.artifact!.artifactId}>
+                    {j.artifact!.fingerprint.slice(0, 12)} · {j.target} ·{' '}
+                    {new Date(j.completedAt ?? j.requestedAt).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             OS
-            {/* The build unit maps these onto a runtime identifier and
-                refuses anything outside the supported set, so the form
-                offers exactly that set instead of free text a typo can
-                waste a build on. */}
-            <select value={targetOs} onChange={(e) => setTargetOs(e.target.value)}>
-              <option value="linux">linux</option>
-              <option value="windows">windows</option>
-              <option value="osx">osx</option>
+            {/* The build unit maps these onto a runtime identifier and refuses
+                anything outside the supported set, so the form offers exactly
+                that set instead of free text a typo can waste a build on. */}
+            <select
+              value={targetOs}
+              onChange={(e) => {
+                setTargetOs(e.target.value)
+                if (!ARCHS[e.target.value].includes(targetArch)) setTargetArch('amd64')
+              }}
+            >
+              <option value="linux">Linux</option>
+              <option value="windows">Windows</option>
+              <option value="osx">macOS</option>
             </select>
           </label>
           <label>
             Arch
+            {/* x86 exists only as a Windows target -- the toolchain bundles no
+                linux-x86/osx-x86 runtime -- so the arch list follows the OS. */}
             <select value={targetArch} onChange={(e) => setTargetArch(e.target.value)}>
-              <option value="amd64">amd64 / x64</option>
-              <option value="x86">x86</option>
-              <option value="arm64">arm64</option>
+              {ARCHS[targetOs].map((a) => (
+                <option key={a} value={a}>
+                  {a === 'amd64' ? 'amd64 / x64' : a}
+                </option>
+              ))}
             </select>
           </label>
         </fieldset>
-        <fieldset>
+        <fieldset disabled={isStager}>
           <legend>Beacon profile</legend>
           <label>
             Mode
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="stream">stream (persistent)</option>
-              <option value="poll">poll (low and slow)</option>
+              <option value="stream">stream — persistent (interactive)</option>
+              <option value="poll">poll — check in and sleep</option>
             </select>
           </label>
           <label>
@@ -237,87 +328,92 @@ export function PayloadBuildView({
           </label>
           <label>
             Kill date
-            <input type="date" value={killDate} onChange={(e) => setKillDate(e.target.value)} />
+            <input
+              type="date"
+              value={killDate}
+              onChange={(e) => setKillDate(e.target.value)}
+              title="The implant self-terminates past this date. Empty defaults to 30 days from the build."
+            />
           </label>
           <label>
             Token uses
-            {/* The build mints the enrollment credential and bakes it in --
-                the artifact deploys with zero arguments. Uses names how many
-                implants the credential may enroll; the window (hours) is
-                optional and defaults to the artifact's kill window. */}
             <input
               value={tokenMaxUses}
               onChange={(e) => setTokenMaxUses(e.target.value)}
-              title="How many implants the baked enrollment credential may enroll"
+              title="How many hosts this artifact's baked credential may enroll -- one copy per host. The stage-2's credential window defaults to the kill date."
             />
           </label>
-          <label>
-            Token window (h)
-            <input
-              value={tokenHours}
-              onChange={(e) => setTokenHours(e.target.value)}
-              placeholder="kill window"
-              title="How long the baked credential stays redeemable; empty defaults to the artifact's kill window"
-            />
-          </label>
+          {isStager && (
+            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+              The stager bakes only its kill date; beacon timing belongs to the Stage2 it
+              fetches.
+            </p>
+          )}
         </fieldset>
-        <fieldset>
-          <legend>Malleable transport profile</legend>
-          <label>
-            Listener
-            {/* Naming the engagement's listener fills the endpoint from its
-                record (its public endpoint, scheme by transport); the manual
-                field below covers the shapes that have no listener yet. */}
-            <select value={listenerId} onChange={(e) => setListenerId(e.target.value)}>
-              <option value="">-- manual endpoint --</option>
-              {listeners.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.transport} → {l.publicEndpoint})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Endpoint
-            <input
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="https://redirect.example.test"
-              disabled={!!listenerId}
-            />
-          </label>
-          <label>
-            Fallback endpoints
-            <input
-              value={fallbackEndpoints}
-              onChange={(e) => setFallbackEndpoints(e.target.value)}
-              placeholder="https://alt1.example.test, https://alt2.example.test"
-            />
-          </label>
-          <label>
-            URI path
-            <input value={uriPath} onChange={(e) => setUriPath(e.target.value)} />
-          </label>
-          <label>
-            Enroll path
-            <input value={enrollPath} onChange={(e) => setEnrollPath(e.target.value)} />
-          </label>
-          <label>
-            User agent
-            <input value={userAgent} onChange={(e) => setUserAgent(e.target.value)} />
-          </label>
-          <label>
-            Request timeout (s)
-            <input value={requestTimeoutSeconds} onChange={(e) => setRequestTimeoutSeconds(e.target.value)} />
-          </label>
-          <label>
-            Envelope
-            <select value={envelope} onChange={(e) => setEnvelope(e.target.value)}>
-              <option>None</option>
-              <option>Base64</option>
-            </select>
-          </label>
-        </fieldset>
+        <details className="build-advanced">
+          <summary>Advanced — wire shape and credential window</summary>
+          <div className="grid">
+            <label>
+              Endpoint (manual)
+              <input
+                value={endpoint}
+                onChange={(e) => setEndpoint(e.target.value)}
+                placeholder="https://redirect.example.test"
+                disabled={!!listenerId}
+                title="Only without a listener: the absolute URL baked as the dial address. With a listener picked, its public endpoint is used."
+              />
+            </label>
+            <label>
+              Fallback endpoints
+              <input
+                value={fallbackEndpoints}
+                onChange={(e) => setFallbackEndpoints(e.target.value)}
+                placeholder="https://alt1.example.test, https://alt2.example.test"
+                title="Walked in order when the primary burns; empty bakes the single-endpoint shape."
+              />
+            </label>
+            <label>
+              Enroll path
+              <input
+                value={enrollPath}
+                onChange={(e) => setEnrollPath(e.target.value)}
+                placeholder="/implants/enroll"
+              />
+            </label>
+            <label>
+              User agent
+              <input
+                value={userAgent}
+                onChange={(e) => setUserAgent(e.target.value)}
+                placeholder="HTTP client default"
+              />
+            </label>
+            <label>
+              Request timeout (s)
+              <input
+                value={requestTimeoutSeconds}
+                onChange={(e) => setRequestTimeoutSeconds(e.target.value)}
+                placeholder="30"
+              />
+            </label>
+            <label>
+              Envelope
+              <select value={envelope} onChange={(e) => setEnvelope(e.target.value)}>
+                <option>None</option>
+                <option>Base64</option>
+              </select>
+            </label>
+            <label>
+              Token window (h)
+              <input
+                value={tokenHours}
+                onChange={(e) => setTokenHours(e.target.value)}
+                placeholder="kill window"
+                title="How long the baked credential stays redeemable; empty defaults to the artifact's kill window."
+              />
+            </label>
+          </div>
+        </details>
         <button className="primary" type="submit" disabled={submitting}>
           Build payload
         </button>
