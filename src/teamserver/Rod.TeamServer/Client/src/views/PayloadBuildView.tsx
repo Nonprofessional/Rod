@@ -88,12 +88,11 @@ export function PayloadBuildView({
   }, [refreshJobs])
 
   // This engagement's own listeners, the ingress a build can name. Loaded on
-  // mount; the listeners panel is where they are created.
+  // mount; the engagement's listeners panel is where they are created.
   useEffect(() => {
     void (async () => {
       try {
-        const all = await listListeners()
-        setListeners(all.filter((l) => l.engagementId === engagementId))
+        setListeners(await listListeners(engagementId))
       } catch {
         // The form still offers the manual endpoint field on a failed load.
       }

@@ -20,17 +20,18 @@ dotnet run --project src/teamserver/Rod.TeamServer
 
 With no `Listeners` configuration the host binds one loopback HTTP listener on
 `127.0.0.1:5080` so `dotnet run` works out of the box. That configuration
-names the **shared tier** only -- the operator front (plus any deliberately
-shared ingress, such as the certificate-less enroll edge a deployment fronts).
-Implant-facing listeners are **engagement-scoped**: created through the
-Listeners panel (or `POST /listeners`) against exactly one engagement,
-persisted so a restart rebinds them, unique across ports, and enforced at
-enrollment -- a token minted for another engagement is refused whole on that
-socket (architecture.md Sec 8). A payload build names its engagement's
-listener and the baked endpoint comes from the listener's record; the build
-also mints and bakes the artifact's enrollment credential, so the artifact
-deploys with zero run-time arguments. The operator UI is
-served same-origin at `/`; during UI development, `npm run dev` in
+names the **operator front only** -- it carries no implant ingress, and
+enrollment is refused on it outright. Implant-facing listeners are
+**engagement-scoped**: created through the engagement's Listeners panel (or
+`POST /engagements/{id}/listeners`) against exactly one engagement, persisted
+so a restart rebinds them, unique across ports, and enforced at enrollment --
+anything but that engagement's own token is refused whole on the socket
+(architecture.md Sec 8). A payload build names its engagement's listener and
+the baked endpoint comes from the listener's record; the build also mints and
+bakes the artifact's enrollment credential, so the artifact deploys with zero
+run-time arguments. The manual mint endpoint stays server-side for the
+rotation and re-entry drills, but it is no operator surface. The operator UI
+is served same-origin at `/`; during UI development, `npm run dev` in
 `src/teamserver/Rod.TeamServer/Client` proxies the API to :5080.
 
 ## First login

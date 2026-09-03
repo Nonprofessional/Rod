@@ -123,14 +123,15 @@ dotnet run --project src/teamserver/Rod.TeamServer
    provisions its first operator from configuration
    (`Operators:Initial`, see `appsettings.json` and
    [docs/operations/teamserver.md](docs/operations/teamserver.md)).
-3. Create an engagement, create its listener (the Listeners panel -- an
-   engagement's listener is its own private ingress, persisted and rebound on
-   restart), then build a payload naming the listener: the build mints the
-   enrollment credential and bakes it in, so the artifact deploys with zero
-   run-time arguments and enrolls on run. A source-tree dev implant skips the
-   build: mint a token in the UI and run `src/implant/dotnet` with
-   `-enroll-url ... -token ...`. The full walk, with acceptance evidence, is
-   [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
+3. Create an engagement, create its listener (the engagement's Listeners
+   panel -- an engagement's listener is its own private ingress, persisted and
+   rebound on restart; the operator front refuses implant ingress), then build
+   a payload naming the listener: the build mints the enrollment credential
+   and bakes it in, so the artifact deploys with zero run-time arguments and
+   enrolls on run. A source-tree dev implant skips the build: mint a token
+   through the API (`POST /engagements/{id}/stager-tokens`) and run
+   `src/implant/dotnet` with `-enroll-url ... -token ...`. The full walk, with
+   acceptance evidence, is [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
 
 Configuration is opt-in sections of `appsettings.json`:
 

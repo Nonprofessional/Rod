@@ -229,29 +229,32 @@ public class OperatorSurfaceCoverageTests
             Assert.NotNull(retired);
             Assert.True(retired!.JustRetired);
 
-            // Register a listener directly with the registry (the TestServer host
-            // does not bind sockets, so GET /listeners would otherwise be empty),
-            // then swap its public endpoint through the operator API. This is the
-            //  acceptance: a burned redirector is replaced without backend
-            // change.
+            // Register a listener directly with the registry, scoped to the
+            // engagement under test (the TestServer host does not bind
+            // sockets, so the engagement's listing would otherwise be empty),
+            // then swap its public endpoint through the scoped operator API.
+            // This is the acceptance: a burned redirector is replaced without
+            // backend change.
             var registry = host.Services.GetRequiredService<IListenerRegistry>();
             var clock = host.Services.GetRequiredService<TimeProvider>();
             var listener = Listener.Define(
                 ListenerId.New(),
-                "operator-api",
+                "engagement-front",
                 ListenerTransport.Http,
                 "127.0.0.1:5080",
                 "https://redirect-old.example.test",
-                clock.GetUtcNow());
+                clock.GetUtcNow(),
+                new Rod.CoreState.EngagementId(Guid.Parse(engagementId)));
             await registry.RegisterAsync(listener);
 
-            var list = await client.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
+            var list = await client.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>(
+                $"/engagements/{engagementId}/listeners");
             Assert.NotNull(list);
-            var target = Assert.Single(list!, l => l.Name == "operator-api");
+            var target = Assert.Single(list!, l => l.Name == "engagement-front");
             Assert.Equal("https://redirect-old.example.test", target.PublicEndpoint);
 
             var repoint = await client.PostAsJsonAsync(
-                $"/listeners/{target.Id}:repoint",
+                $"/engagements/{engagementId}/listeners/{target.Id}:repoint",
                 new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "https://redirect-new.example.test"));
             Assert.Equal(HttpStatusCode.OK, repoint.StatusCode);
             var repointed = await repoint.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();

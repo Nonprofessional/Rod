@@ -136,7 +136,7 @@ export function EngagementView({
       )}
       {tab === 'timeline' && <TimelineView engagementId={engagementId} />}
       {tab === 'report' && <ReportView engagementId={engagementId} />}
-      {tab === 'listeners' && <ListenersView />}
+      {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
     </LiveContext.Provider>
   )

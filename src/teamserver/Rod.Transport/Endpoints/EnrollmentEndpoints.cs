@@ -75,8 +75,8 @@ public static class EnrollmentEndpoints
             // The scope check an engagement's own listener enforces: the
             // token must belong to the engagement this socket answers for, so
             // a leaked token from another engagement is refused here, before
-            // any bytes leave. The shared (startup-configuration) tier carries
-            // no engagement and stays token-scoped only.
+            // any bytes leave -- and a shared-tier socket (the operator
+            // front) refuses implant ingress outright.
             if (!await TokenMatchesListenerScopeAsync(http, listeners, token, cancellationToken))
                 return Results.Json(
                     new Problem("Stager token was not accepted."),
@@ -155,12 +155,12 @@ public static class EnrollmentEndpoints
             parentImplantId = new ImplantId(parentValue);
         }
 
-        // The scope check an engagement's own listener enforces, before the
-        // token is spent: when the socket this request arrived on belongs to
-        // one engagement, a token minted for any other engagement is refused
-        // whole -- it keeps its uses for the listener it was minted for. The
-        // shared (startup-configuration) tier carries no engagement and stays
-        // token-scoped only (architecture.md Sec 8).
+        // The scope check before the token is spent: when the socket this
+        // request arrived on belongs to one engagement, a token minted for
+        // any other engagement is refused whole -- it keeps its uses for the
+        // listener it was minted for -- and a shared-tier socket (the
+        // operator front) refuses implant ingress outright (architecture.md
+        // Sec 8).
         try
         {
             var presented = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
@@ -262,11 +262,13 @@ public static class EnrollmentEndpoints
         }
     }
 
-    // The engagement-scope check shared by enroll and the stage-2 fetch: when
-    // the socket the request arrived on is one engagement's own listener, the
-    // token must belong to that same engagement. A null listener (the shared
-    // tier, or a socket the registry does not know) leaves the token as the
-    // only scope, the shape every earlier deployment used.
+    // The engagement-scope check shared by enroll and the stage-2 fetch: the
+    // socket this request arrived on must be the token's own engagement's
+    // listener. A shared-tier (startup-configuration) socket refuses implant
+    // ingress outright -- the operator front carries no enrollment, and each
+    // engagement brings its own listener. A socket the registry does not know
+    // (the in-memory test harness, which binds no real ports) stays
+    // token-scoped only, the shape the harness has always used.
     private static async Task<bool> TokenMatchesListenerScopeAsync(
         HttpRequest http,
         Rod.Transport.Listeners.IListenerRegistry listeners,
@@ -274,7 +276,7 @@ public static class EnrollmentEndpoints
         CancellationToken cancellationToken)
     {
         var listener = await listeners.FindByLocalPortAsync(http.HttpContext.Connection.LocalPort, cancellationToken);
-        return listener?.EngagementId is not { } scope || scope == token.EngagementId;
+        return listener is null || listener.EngagementId == token.EngagementId;
     }
 
     // Reads the enroll body in either of the two shapes the malleable

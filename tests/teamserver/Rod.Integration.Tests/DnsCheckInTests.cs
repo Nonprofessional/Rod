@@ -166,11 +166,14 @@ public class DnsCheckInTests
         // signed TaskRequest in TXT, base32 across its strings.
         await env.LoginAsync();
 
-        // The DNS listener entry is real in the registry: Running, Dns, our zone.
-        var listeners = await env.Http.GetFromJsonAsync<ListenerBody[]>("/listeners");
-        Assert.Contains(listeners!, l =>
-            string.Equals(l.Transport, "dns", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(l.State, "running", StringComparison.OrdinalIgnoreCase)
+        // The DNS listener entry is real in the registry: Running, Dns, our
+        // zone. Read through the registry: the listener rides the startup
+        // configuration, and the engagement-scoped listing does not (and must
+        // not) surface that tier.
+        var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
+        Assert.Contains(await registry.ListAsync(), l =>
+            l.Transport == ListenerTransport.Dns
+            && l.State == ListenerState.Running
             && l.PublicEndpoint == Zone);
 
         var issued = await env.Http.PostAsJsonAsync(

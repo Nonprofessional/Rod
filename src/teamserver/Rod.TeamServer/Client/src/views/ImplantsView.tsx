@@ -3,11 +3,9 @@ import {
   type Implant,
   type ImplantNote,
   type PresenceRecord,
-  type StagerToken,
   addImplantNote,
   listImplantNotes,
   listImplants,
-  mintStagerToken,
   retireImplant,
 } from '../api'
 import { Icon } from '../components/Icons'
@@ -16,12 +14,15 @@ import { StatusBadge } from '../components/StatusBadge'
 // The implants panel: the enrolled sessions for an engagement,
 // each with its class, online state, kill date, and parentage, plus the live
 // roster (which implants hold active sessions right now, handed down from the
-// engagement view's presence query). An operator can mint a stager token (to
-// enroll a new implant), retire (burn) a live implant -- the OPSEC control
-// that takes an implant out of operation (refused at handshake and untaskable
-// afterwards) -- and keep free-text notes on an implant: the "whose beacon is
-// this" memory, attributed per author and durable in the audit trail, so it
-// survives a teamserver restart.
+// engagement view's presence query). An operator can retire (burn) a live
+// implant -- the OPSEC control that takes an implant out of operation (refused
+// at handshake and untaskable afterwards) -- and keep free-text notes on an
+// implant: the "whose beacon is this" memory, attributed per author and
+// durable in the audit trail, so it survives a teamserver restart.
+//
+// Deployment credentials no longer appear here: every payload build mints and
+// bakes its own token, so the manual mint left the operator surface (the
+// server keeps the mint endpoint for the rotation and re-entry drills).
 
 export function ImplantsView({
   engagementId,
@@ -36,29 +37,18 @@ export function ImplantsView({
   onlineImplants: PresenceRecord[]
 }) {
   const [implants, setImplants] = useState<Implant[]>([])
-  const [minted, setMinted] = useState<StagerToken | null>(null)
-  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [notesFor, setNotesFor] = useState<string | null>(null)
   const [notes, setNotes] = useState<ImplantNote[]>([])
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
-  // The mint scope: a batch of N implants takes one token with N uses -- each
-  // enroll spends one -- inside the chosen window, so the credential is handed
-  // to the crew once instead of minted per deployment.
-  const [mintUses, setMintUses] = useState(1)
-  const [mintHours, setMintHours] = useState(1)
 
   const refresh = useCallback(async () => {
-    setBusy(true)
     try {
       setImplants(await listImplants(engagementId))
       setError(null)
     } catch (e) {
       setError(String(e))
-    } finally {
-      setBusy(false)
     }
   }, [engagementId])
 
@@ -71,34 +61,6 @@ export function ImplantsView({
     setNotesFor(null)
     setNotes([])
   }, [engagementId])
-
-  const onMint = async () => {
-    try {
-      const scope =
-        mintUses > 1 || mintHours !== 1
-          ? { maxUses: mintUses, lifetimeSeconds: mintHours * 3600 }
-          : undefined
-      setMinted(await mintStagerToken(engagementId, scope))
-      setCopied(false)
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  // The secret is shown exactly once, so the copy affordance is the difference
-  // between transcribing it correctly and not.
-  const onCopySecret = async () => {
-    if (!minted) return
-    try {
-      await navigator.clipboard.writeText(minted.secret)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard access can be refused (permissions, non-secure origin);
-      // the secret stays selectable for manual copy.
-    }
-  }
 
   const onRetire = async (implantId: string) => {
     if (!window.confirm(`Retire (burn) implant ${implantId.slice(0, 8)}? It will be refused at handshake and untaskable.`)) {
@@ -285,63 +247,6 @@ export function ImplantsView({
           </div>
         )}
         {error && <p className="error">{error}</p>}
-      </div>
-
-      <div className="card">
-        <h3>Stager token</h3>
-        <p className="muted">
-          The deployment credential: a secret you hand to a payload so it can enroll into
-          this engagement -- run the built implant (or its stager) with{' '}
-          <code>-enroll-url &lt;endpoint&gt; -token &lt;secret&gt;</code>. Nothing joins the
-          engagement without one, and the secret is shown exactly once at mint. A batch
-          mints one token with several uses instead of one secret per deployment.
-        </p>
-        <div className="create-form-row">
-          <label className="muted" htmlFor="mint-uses">
-            uses
-          </label>
-          <input
-            id="mint-uses"
-            type="number"
-            min={1}
-            max={10000}
-            style={{ width: '5.5rem' }}
-            value={mintUses}
-            onChange={(e) => setMintUses(Math.min(10000, Math.max(1, Number(e.target.value) || 1)))}
-          />
-          <label className="muted" htmlFor="mint-window">
-            window
-          </label>
-          <select
-            id="mint-window"
-            value={mintHours}
-            onChange={(e) => setMintHours(Number(e.target.value))}
-          >
-            <option value={1}>1 hour</option>
-            <option value={8}>8 hours</option>
-            <option value={24}>24 hours</option>
-            <option value={168}>7 days</option>
-          </select>
-          <button className="primary" onClick={onMint} disabled={busy}>
-            Mint stager token
-          </button>
-        </div>
-        {minted && (
-          <>
-            <div className="secret-row">
-              <code className="secret">{minted.secret}</code>
-              <button className="sm" onClick={() => void onCopySecret()}>
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-            <dl className="kv">
-              <dt>Expires</dt>
-              <dd>{new Date(minted.expiresAt).toLocaleString()}</dd>
-              <dt>Max uses</dt>
-              <dd>{minted.maxUses}</dd>
-            </dl>
-          </>
-        )}
       </div>
     </>
   )

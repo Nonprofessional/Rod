@@ -34,31 +34,40 @@ public class ListenerTests
     [Fact]
     public async Task HttpListener_AcceptsImplantConnection_EndToEnd()
     {
-        // An HTTP listener serves the operator API and the implant enrollment
-        // endpoint over plain HTTP (no client certificate). This is the end-to-end
-        //  AC for the HTTP transport: an implant enrolls through the listener.
+        // An engagement's HTTP listener is created through the scoped API and
+        // serves the implant enrollment endpoint over plain HTTP (no client
+        // certificate). This is the end-to-end AC for the HTTP transport: an
+        // implant enrolls through the listener.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            Name: "http-1",
+            Name: "operator-http",
             Transport: ListenerTransport.Http,
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-            PublicEndpoint: "http://c2.example.test"));
+            PublicEndpoint: "http://localhost:5080"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
 
         // The listener is recorded with its bind address and public endpoint.
-        var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
-        Assert.NotNull(listeners);
-        var recorded = Assert.Single(listeners!);
-        Assert.Equal("http-1", recorded.Name);
-        Assert.Equal("http", recorded.Transport);
-        Assert.Equal(env.HttpBind, recorded.BindAddress);
-        Assert.Equal("http://c2.example.test", recorded.PublicEndpoint);
-        Assert.Equal("running", recorded.State);
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "http-1", Transport: "http",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "http://c2.example.test"));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+        Assert.Equal("http-1", listener!.Name);
+        Assert.Equal("http", listener.Transport);
+        Assert.Equal("http://c2.example.test", listener.PublicEndpoint);
+        Assert.Equal("running", listener.State);
 
-        // And the listener accepts an implant connection end-to-end: enroll against
-        // the listener's bind address and receive the bound certificate.
-        var secret = await MintTokenForNewEngagementAsync(env.Http);
-        var response = await env.Http.PostAsJsonAsync("/implants/enroll",
+        // And the listener accepts an implant connection end-to-end: enroll
+        // against the listener's bind address and receive the bound
+        // certificate. The operator front itself refuses implant ingress --
+        // the engagement's own listener is the only path in.
+        var secret = await MintTokenAsync(env.Http, engagementId);
+        using var scoped = new HttpClient { BaseAddress = new Uri($"http://{listener.BindAddress}") };
+        var response = await scoped.PostAsJsonAsync("/implants/enroll",
             new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -116,21 +125,19 @@ public class ListenerTests
         // (https-envelope), never as one mashed lower-cased word, and the
         // single-word transports keep their plain names. The operator UI
         // renders the listing's string verbatim, so this is the UI's name too.
-        await using var env = await TestEnv.StartAsync(
-            new ListenerConfig(
-                Name: "envelope-1",
-                Transport: ListenerTransport.HttpsEnvelope,
-                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-                PublicEndpoint: "https://c2.example.test"),
-            new ListenerConfig(
-                Name: "http-1",
-                Transport: ListenerTransport.Http,
-                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-                PublicEndpoint: "http://c2.example.test"));
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        await CreateListenerAsync(env.Http, engagementId, "envelope-1", "https-envelope", "https://c2.example.test");
+        await CreateListenerAsync(env.Http, engagementId, "http-1", "http", "http://c2.example.test");
 
-        var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
+        var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>(
+            $"/engagements/{engagementId}/listeners");
         Assert.NotNull(listeners);
         var transports = listeners!.ToDictionary(l => l.Name, l => l.Transport);
         Assert.Equal("https-envelope", transports["envelope-1"]);
@@ -145,32 +152,21 @@ public class ListenerTests
         // public endpoint is a redirector host that differs from the bind address;
         // the listener records both independently. The public endpoint is data, not
         // the socket -- swapping it (a different redirector) never touches the bind.
-        // An HTTP listener rides alongside so the operator API is reachable without
-        // an implant client certificate; the mTLS listener is the decoupling subject.
-        await using var env = await TestEnv.StartAsync(
-            new ListenerConfig(
-                Name: "operator-api",
-                Transport: ListenerTransport.Http,
-                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-                PublicEndpoint: "http://op.example.test"),
-            new ListenerConfig(
-                Name: "mtls-redirected",
-                Transport: ListenerTransport.Mtls,
-                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-                PublicEndpoint: "https://redirect-a.example.test"));
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
 
         await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var listener = await CreateListenerAsync(
+            env.Http, engagementId, "mtls-redirected", "mtls", "https://redirect-a.example.test");
 
-        var recordedBind = env.MtlsBind;
-
-        // The registry carries the listener with its decoupled public endpoint,
-        // visible through the operator API.
-        var body = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>("/listeners");
-        Assert.NotNull(body);
-        var listener = Assert.Single(body!, l => l.Name == "mtls-redirected");
-        Assert.Equal(recordedBind, listener.BindAddress);
+        // The record carries the listener with its decoupled public endpoint.
         Assert.Equal("https://redirect-a.example.test", listener.PublicEndpoint);
         Assert.NotEqual(listener.BindAddress, listener.PublicEndpoint);
+        Assert.StartsWith("127.0.0.1:", listener.BindAddress);
     }
 
     [Fact]
@@ -179,7 +175,8 @@ public class ListenerTests
         await using var env = await TestEnv.StartAsync(DefaultHttpListener());
 
         await AuthenticatedHost.LoginAsync(env.Http);
-        var response = await env.Http.GetAsync($"/listeners/{ListenerId.New()}");
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var response = await env.Http.GetAsync($"/engagements/{engagementId}/listeners/{ListenerId.New()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -187,19 +184,34 @@ public class ListenerTests
     private static ListenerConfig DefaultHttpListener()
         => new("http-default", ListenerTransport.Http, $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
 
-    private static async Task<string> MintTokenForNewEngagementAsync(HttpClient client)
+    private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
-        var createResponse = await client.PostAsJsonAsync("/engagements",
+        var response = await client.PostAsJsonAsync("/engagements",
             new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
-        createResponse.EnsureSuccessStatusCode();
-        var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        Assert.NotNull(created);
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        return created!.EngagementId;
+    }
 
-        var mintResponse = await client.PostAsync($"/engagements/{created!.EngagementId}/stager-tokens", content: null);
+    private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
+    {
+        var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
         mintResponse.EnsureSuccessStatusCode();
         var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
-        Assert.NotNull(token);
         return token!.Secret;
+    }
+
+    private static async Task<ListenerEndpoints.ListenerResponse> CreateListenerAsync(
+        HttpClient client, string engagementId, string name, string transport, string publicEndpoint)
+    {
+        var response = await client.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: name, Transport: transport,
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: publicEndpoint));
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        return created!;
     }
 
     private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(

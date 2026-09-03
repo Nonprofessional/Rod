@@ -94,13 +94,22 @@ public class StreamCheckInTests
 
         // The listener entry is registered and running, with the endpoint
         // implants dial decoupled from the bind the way every transport's
-        // entry is.
-        await AuthenticatedHost.LoginAsync(env.Http);
-        var listeners = await env.Http.GetFromJsonAsync<ListenerBody[]>("/listeners");
-        var entry = listeners!.Single(l => l.Transport == expectedTransport);
+        // entry is. Read through the registry: these listeners ride the
+        // startup configuration, and the engagement-scoped listing does not
+        // (and must not) surface that tier. The registration lands with the
+        // socket bind, so wait for it rather than racing the host's start.
+        var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
+        Listener? entry = null;
+        await WaitUntilAsync(async () =>
+        {
+            entry = (await registry.ListAsync()).SingleOrDefault(l =>
+                string.Equals(l.Transport.WireName(), expectedTransport, StringComparison.OrdinalIgnoreCase));
+            return entry is not null;
+        });
         Assert.NotNull(entry);
-        Assert.Equal("running", entry.State);
+        Assert.Equal(ListenerState.Running, entry.State);
         Assert.Equal(endpoint, entry.PublicEndpoint);
+        await AuthenticatedHost.LoginAsync(env.Http);
 
         // Check-in one: the handshake opens the session. The implant
         // advertises the replay-nonce arm like the reference implant, and the

@@ -154,26 +154,6 @@ export async function createEngagement(input: CreateEngagementInput): Promise<En
   return jsonOrThrow(response)
 }
 
-export interface MintStagerTokenInput {
-  maxUses?: number
-  lifetimeSeconds?: number
-}
-
-// Mints a deployment credential for the engagement. The optional scope sizes
-// the token for a batch: maxUses implants may each spend one use inside the
-// lifetime window; absent values keep the single-use, one-hour default.
-export async function mintStagerToken(
-  engagementId: string,
-  input?: MintStagerTokenInput,
-): Promise<StagerToken> {
-  const response = await fetch(`engagements/${engagementId}/stager-tokens`, {
-    method: 'POST',
-    headers: input ? { 'content-type': 'application/json' } : undefined,
-    body: input ? JSON.stringify(input) : undefined,
-  })
-  return jsonOrThrow(response)
-}
-
 // The leak answer, above all for a credential baked into a deployed artifact:
 // the id stops working at the next redeem or verify. Idempotent-refusing -- a
 // second attempt 404s rather than reading as success.
@@ -754,10 +734,13 @@ export async function addImplantNote(
 
 // --- Listeners and redirector repoint  -----------------------
 //
-// Listeners are the bound C2 ingress; their public endpoint is the redirector
-// implants dial, decoupled from the bind address. Repointing swaps that endpoint
-// at runtime -- a burned redirector is replaced without backend change. Global
-// infrastructure, not engagement-scoped.
+// Listeners are the engagement's own C2 ingress: created here against the
+// engagement in the path, persisted so a restart rebinds them, and enforced at
+// enrollment (a foreign engagement's token is refused whole on the socket).
+// The bind address is the socket; the public endpoint is the redirector
+// implants dial, decoupled so a repoint swaps a burned front without backend
+// change. The operator front the UI rides is startup configuration, carries no
+// implant ingress, and never appears here.
 
 export interface ListenerSummary {
   id: string
@@ -765,46 +748,27 @@ export interface ListenerSummary {
   transport: string
   bindAddress: string
   publicEndpoint: string
-  engagementId: string | null
   state: string
   createdAt: string
   repointedAt: string | null
 }
 
-export async function listListeners(): Promise<ListenerSummary[]> {
-  return jsonOrThrow(await fetch('listeners'))
+export async function listListeners(engagementId: string): Promise<ListenerSummary[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/listeners`))
 }
-
-export async function repointListener(listenerId: string, publicEndpoint: string): Promise<ListenerSummary> {
-  return jsonOrThrow(
-    await fetch(`listeners/${listenerId}:repoint`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ publicEndpoint }),
-    }),
-  )
-}
-
-// --- Listener runtime management -------------------------------
-//
-// Creating a listener binds its socket on the running teamserver (HTTP-shaped
-// transports ride Kestrel's endpoint reloader; DNS / SMB / TCP start their
-// socket services) and persists its definition: the listener belongs to one
-// engagement -- enrollment through it accepts only that engagement's tokens --
-// and a restart rebinds it with the same id. The startup configuration names
-// the shared tier (the operator front); only runtime-created listeners can be
-// deleted here.
 
 export interface CreateListenerInput {
   name: string
   transport: string
   bindAddress: string
   publicEndpoint: string
-  engagementId: string
 }
 
-export async function createListener(input: CreateListenerInput): Promise<ListenerSummary> {
-  const response = await fetch('listeners', {
+export async function createListener(
+  engagementId: string,
+  input: CreateListenerInput,
+): Promise<ListenerSummary> {
+  const response = await fetch(`engagements/${engagementId}/listeners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
@@ -812,8 +776,24 @@ export async function createListener(input: CreateListenerInput): Promise<Listen
   return jsonOrThrow(response)
 }
 
-export async function deleteListener(listenerId: string): Promise<void> {
-  await jsonOrThrow<unknown>(await fetch(`listeners/${listenerId}`, { method: 'DELETE' }))
+export async function repointListener(
+  engagementId: string,
+  listenerId: string,
+  publicEndpoint: string,
+): Promise<ListenerSummary> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/listeners/${listenerId}:repoint`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ publicEndpoint }),
+    }),
+  )
+}
+
+export async function deleteListener(engagementId: string, listenerId: string): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/listeners/${listenerId}`, { method: 'DELETE' }),
+  )
 }
 
 // --- Online implant roster (presence) -------------------------

@@ -484,19 +484,19 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 8. Transports, listeners, and redirectors
 
-- **Listeners come in two tiers.** The startup configuration names the shared
-  tier -- the operator front the UI and API ride, plus any deliberately shared
-  ingress a deployment fronts (the certificate-less enroll edge); those carry
-  no engagement and serve whatever engagement a presented token names.
-  Implant-facing listeners are **engagement-scoped**: created through the
-  operator API against exactly one engagement, persisted (in-memory with the
-  process, Postgres when configured; a restart rebinds them with the same
-  ids), and enforced at enrollment -- enroll and the stage-2 fetch resolve the
-  listener a request arrived on, and a token minted for any other engagement
-  is refused whole and unspent on that socket. Ports are unique across both
-  tiers: the create-time bind check refuses a collision with a clear error
-  before any socket opens. A payload build names its engagement's listener
-  and the baked endpoint comes from the listener's record.
+- **Listeners come in two tiers, and only one of them is implant ingress.**
+  The startup configuration names the shared tier -- the operator front the
+  UI and API ride -- which carries **no implant ingress at all**: enrollment
+  and the stage-2 fetch are refused on it outright. Implant-facing listeners
+  are **engagement-scoped**: created through the operator API against exactly
+  one engagement, persisted (in-memory with the process, Postgres when
+  configured; a restart rebinds them with the same ids), and enforced at
+  enrollment -- enroll and the stage-2 fetch resolve the listener a request
+  arrived on, and anything but that engagement's own token is refused whole
+  and unspent on that socket. Ports are unique across both tiers: the
+  create-time bind check refuses a collision with a clear error before any
+  socket opens. A payload build names its engagement's listener and the
+  baked endpoint comes from the listener's record.
 - Supported listener transports: **HTTP(S)**, **mTLS**, the **plain-HTTP
   envelope** over mTLS, **DNS**, **SMB** (named pipe), and **raw TCP** are
   implemented. Transport choice is a profile/deployment concern; the protocol
