@@ -118,7 +118,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return;
 
-        var implant = ResolveImplantId(handshakeRequest, httpContext);
+        var implant = ResolveIdentity(handshakeRequest, httpContext, ClientCertificateIdentity.Read(httpContext)).ImplantId;
 
         // A genuinely new session is recorded (architecture.md Sec 11). A
         // reused one (a reconnect -- a poll check-in or a flapped stream) is
@@ -378,19 +378,24 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // The certificate identity is authoritative (read off the mTLS-presented
         // cert), not the wire -- an implant cannot name another engagement by
         // editing its handshake. The implant id from the cert is what we look up.
+        // The handshake-id fallback -- identity by id alone, the cleartext dev
+        // posture a socket anything with reach can present -- fires only over
+        // cleartext. Over TLS the certificate is the identity: a certificate-less
+        // connection reached HTTP only because the single-port https listener
+        // allows one (enrollment has no certificate to present yet), and it must
+        // not be able to name an implant by id.
         var certIdentity = ClientCertificateIdentity.Read(httpContext);
+        var resolved = ResolveIdentity(request, httpContext, certIdentity);
 
         try
         {
             var result = await _handshake.HandshakeAsync(
                 new HandshakeCommand(
-                    ImplantId: certIdentity?.ImplantId
-                        ?? ParseImplantId(request.ImplantId)
-                        ?? default,
+                    ImplantId: resolved.ImplantId,
                     MajorVersion: request.Version?.Major ?? -1,
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
-                    CertificateEngagementId: certIdentity?.EngagementId,
+                    CertificateEngagementId: resolved.CertificateEngagementId,
                     ReplayNonces: request.ReplayNonces),
                 CancellationToken.None);
 
@@ -417,13 +422,21 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         }
     }
 
-    // The implant id resolved off the handshake/certificate. Prefer the
-    // certificate binding (authoritative); fall back to the handshake field only
-    // when no certificate was presented.
-    private static ImplantId ResolveImplantId(HandshakeRequest request, HttpContext httpContext)
-        => ClientCertificateIdentity.Read(httpContext)?.ImplantId
-           ?? ParseImplantId(request.ImplantId)
-           ?? default;
+    // The identity the handshake runs under: the certificate binding when one
+    // was presented; over cleartext only, the handshake-field fallback (the
+    // dev posture, architecture.md Sec 8); over TLS with no certificate,
+    // nothing -- the default id fails the handshake's implant lookup.
+    private readonly record struct ResolvedIdentity(ImplantId ImplantId, EngagementId? CertificateEngagementId);
+
+    private static ResolvedIdentity ResolveIdentity(
+        HandshakeRequest request, HttpContext httpContext, ClientIdentity? certIdentity)
+    {
+        if (certIdentity is { } identity)
+            return new(identity.ImplantId, identity.EngagementId);
+        if (!httpContext.Request.IsHttps && ParseImplantId(request.ImplantId) is { } byId)
+            return new(byId, null);
+        return new(default, null);
+    }
 
     private static ImplantId? ParseImplantId(string? text)
         => ImplantId.TryParse(text, out var id) ? id : null;

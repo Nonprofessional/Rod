@@ -84,17 +84,23 @@ public sealed class ListenerManager
 
     /// <summary>
     /// The HTTPS defaults for runtime-created TLS endpoints -- the same
-    /// termination the startup mTLS listeners configure per endpoint: the
-    /// CA-issued server leaf, a required client certificate, and validation
-    /// that chains to the engagement CA. Applied through
-    /// <c>ConfigureHttpsDefaults</c>, Kestrel runs it for every endpoint the
-    /// reloader binds later, which is exactly the population that needs it.
+    /// termination the startup listeners configure per endpoint: the
+    /// CA-issued server leaf and validation that chains presented client
+    /// certificates to the engagement CA. The certificate mode is
+    /// <see cref="ClientCertificateMode.AllowCertificate"/>: the single-port
+    /// https shape serves enrollment (no certificate exists to present yet)
+    /// and check-ins on one socket, with the beacon routes demanding the
+    /// enrolled certificate at the application layer -- a certificate-less
+    /// connection reaches HTTP, but nothing implant-authenticated answers it.
+    /// Applied through <c>ConfigureHttpsDefaults</c>, Kestrel runs it for
+    /// every endpoint the reloader binds later, which is exactly the
+    /// population that needs it.
     /// </summary>
     internal void ApplyDynamicHttpsDefaults(HttpsConnectionAdapterOptions https)
     {
         https.ServerCertificateSelector = (_, _) =>
             _services.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
-        https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+        https.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
         https.ClientCertificateValidation = (certificate, chain, _) =>
             TransportHost.ClientCertificateChainsToCa(certificate, chain, _services);
         https.CheckCertificateRevocation = false;
@@ -204,7 +210,8 @@ public sealed class ListenerManager
 
         return config.Transport switch
         {
-            ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
+            ListenerTransport.Http or ListenerTransport.Https
+                or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
                 => await CreateHttpListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
             ListenerTransport.Dns or ListenerTransport.Smb or ListenerTransport.Tcp
                 => await CreateStreamListenerAsync(config, id, cancellationToken).ConfigureAwait(false),

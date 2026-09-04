@@ -33,14 +33,29 @@ engagement's tokens. **Repoint** swaps the public endpoint at runtime without
 touching the socket (a burned redirector is severed); **Delete** unbinds and
 forgets it.
 
-One transport caveat shapes the whole panel: **the cleartext HTTP transport
-carries enrollment but not check-ins.** The beacon is gRPC -- HTTP/2 over
-mTLS -- and a cleartext socket serves its HTTP/1.x traffic only (Kestrel
-serves cleartext HTTP/2 solely on an HTTP/2-only endpoint, which cannot also
-serve enrollment). A local dev deployment therefore needs two listeners: an
-`http` one for enrollment and an `mTLS` (or HTTPS envelope) one for the
-beacon; the Build panel pairs them. Behind a TLS-terminating redirector a
-single `mTLS`-shaped listener carries both halves.
+One transport caveat shapes the whole panel: **check-ins are gRPC (HTTP/2
+over mTLS) and cannot ride a cleartext socket** (Kestrel serves cleartext
+HTTP/2 only on an HTTP/2-only endpoint, which cannot also serve the HTTP/1.x
+enrollment). The shapes that follow from that:
+
+- **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
+  the client certificate optional at the TLS layer -- enrollment rides the
+  socket on the stager token before any certificate exists, and the check-in
+  routes demand the enrolled certificate at the application layer. One
+  listener, one port, everything on it. Builds against it need no split.
+- **`HTTP` (cleartext) carries enrollment and stager fetch only.** A
+  cleartext check-in exists for envelope-speaking clients (POST check-ins,
+  identity by implant id -- the same anything-with-reach posture as
+  DNS/SMB/TCP), and the in-tree .NET implant does not speak it: build
+  against it with a beacon listener named (the split-socket shape) unless
+  your implant is a Tier-0 envelope client.
+- **`mTLS` / HTTPS envelope** are the strict beacon-only sockets (the
+  certificate is demanded at the TLS layer); pair one with an `HTTP`
+  listener for enrollment when you want the hard posture.
+
+Every payload build pins the teamserver CA into the artifact, so the
+implant's first contact (enroll) validates the server it dials against the
+C2's own CA -- no system-trust assumptions.
 
 ## Build
 
@@ -53,11 +68,11 @@ and run, zero arguments.
 **Beacon listener** appears when the picked listener is cleartext `http`:
 check-ins cannot ride that socket, so the form asks for the engagement's
 `mTLS`/HTTPS-envelope listener the beacon stream dials -- the split-socket
-shape (enroll one socket, beacon another). Leave it out on a TLS-shaped
-listener and the beacon rides the same endpoint. The build API takes the same
-thing as `beaconListenerId`, or a typed `beaconEndpoint`, and refuses a
-cleartext enroll endpoint with no beacon named -- that artifact would enroll
-and then sit offline forever.
+shape (enroll one socket, beacon another). An `https` listener carries both
+halves itself and needs no split. The build API takes the same thing as
+`beaconListenerId`, or a typed `beaconEndpoint`, and refuses a cleartext
+enroll endpoint with no beacon named -- that artifact would enroll and then
+sit offline forever.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs

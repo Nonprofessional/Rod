@@ -179,17 +179,22 @@ internal static class ImplantApp
 
 internal static class CACertLoader
 {
-    // Loads an optional PEM-encoded CA bundle from a file path; the implant pins
-    // it as the teamserver identity for the enroll TLS connection. An empty path
-    // returns null (system roots / trust the chain returned at enroll).
-    public static X509Certificate2Collection? LoadOptional(string path)
+    // Loads an optional PEM-encoded CA bundle -- either a file path or the
+    // PEM text itself (the baked profile carries the pinned CA inline) -- and
+    // the implant pins it as the teamserver identity for the enroll TLS
+    // connection. An empty value returns null (system roots / trust the chain
+    // returned at enroll).
+    public static X509Certificate2Collection? LoadOptional(string pathOrPem)
     {
-        if (path.Length == 0)
+        if (pathOrPem.Length == 0)
             return null;
         var collection = new X509Certificate2Collection();
-        collection.ImportFromPemFile(path);
+        if (pathOrPem.Contains("-----BEGIN CERTIFICATE"))
+            collection.ImportFromPem(pathOrPem);
+        else
+            collection.ImportFromPemFile(pathOrPem);
         if (collection.Count == 0)
-            throw new InvalidOperationException($"no PEM certificates found in '{path}'");
+            throw new InvalidOperationException($"no PEM certificates found in '{pathOrPem}'");
         return collection;
     }
 }
@@ -240,6 +245,9 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "verbs", "ROD_VERBS");
         SetEnvIfPresent(root, "mode", "ROD_MODE");
         SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
+        // The pinned teamserver CA rides as the PEM text itself; the loader
+        // accepts inline PEM or a file path under the same knob.
+        SetEnvIfPresent(root, "caCert", "ROD_CA_CERT");
         SetEnvIfPresent(root, "token", "ROD_STAGER_TOKEN");
         SetEnvIfPresent(root, "sleep", "ROD_SLEEP");
         SetEnvIfPresent(root, "jitter", "ROD_JITTER");

@@ -67,7 +67,8 @@ public static class ListenerEndpoints
         // derive -- a DNS zone or pipe path is not a function of the bind --
         // so they require it spelled out.
         string publicEndpoint;
-        if (transport is ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
+        if (transport is ListenerTransport.Http or ListenerTransport.Https
+            or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
         {
             var derived = DeriveHttpPublicEndpoint(transport, body.BindAddress.Trim(), body.PublicEndpoint);
             if (derived is not null)

@@ -38,7 +38,7 @@ import { StatusBadge } from '../components/StatusBadge'
 
 // The transports an implant can enroll through; the listener select offers
 // these and greyes everything else out.
-const HTTP_INGRESS = new Set(['http', 'mtls', 'https-envelope'])
+const HTTP_INGRESS = new Set(['http', 'https', 'mtls', 'https-envelope'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.

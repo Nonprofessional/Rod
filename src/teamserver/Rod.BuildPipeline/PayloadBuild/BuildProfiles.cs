@@ -96,6 +96,16 @@ public sealed record TransportProfile(
     public string? BeaconEndpoint { get; init; }
 
     /// <summary>
+    /// The PEM-encoded teamserver CA pinned into the artifact, so the
+    /// implant's first contact (enroll, before any certificate of its own)
+    /// validates the server it dials against the C2's own CA rather than
+    /// system roots -- the single-port https shape needs exactly this trust
+    /// anchor, and every other shape gets server pinning for free. Null keeps
+    /// the artifact on system/default validation.
+    /// </summary>
+    public string? CaPem { get; init; }
+
+    /// <summary>
     /// The shared default values for the malleable knobs. Centralized so the
     /// transport endpoint, the build service, and the tests agree on what a
     /// "minimal" profile fills in.

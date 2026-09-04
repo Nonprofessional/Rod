@@ -140,6 +140,30 @@ public class DotNetBuildUnitTests
     }
 
     [Fact]
+    public void RenderBakedProfile_BakesThePinnedCaWhenTheProfileCarriesOne()
+    {
+        // The pinned teamserver CA rides the profile verbatim, so the
+        // artifact's first contact (enroll, before any certificate of its
+        // own) validates the server against the C2's CA -- the single-port
+        // https shape needs exactly this trust anchor. An empty pin keeps
+        // system/default validation.
+        const string pem = "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n";
+
+        var pinned = Params() with
+        {
+            Transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+            {
+                CaPem = pem,
+            },
+        };
+        using var pinnedDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(pinned)));
+        Assert.Equal(pem, pinnedDoc.RootElement.GetProperty("caCert").GetString());
+
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        Assert.Equal(string.Empty, plain.RootElement.GetProperty("caCert").GetString());
+    }
+
+    [Fact]
     public void RenderBakedProfile_BakesTheOrderedFallbackEndpoints()
     {
         // The fallback egress list (architecture.md Sec 8) rides as a JSON array

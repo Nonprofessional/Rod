@@ -459,6 +459,14 @@ public static class TransportHost
                     // implants use differs (architecture.md Sec 8).
                     if (config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
                         ConfigureMtlsHttps(listen, kestrel);
+                    // The single-port https listener requests but does not
+                    // require the client certificate: enrollment has no
+                    // certificate to present yet, so it rides the same socket
+                    // the beacon later authenticates on -- the beacon routes
+                    // demand the certificate at the application layer, and a
+                    // presented certificate still must chain to the CA.
+                    if (config.Transport == ListenerTransport.Https)
+                        ConfigureOptionalClientCertificateHttps(listen, kestrel);
                 });
 
                 registry.RegisterAsync(listener, CancellationToken.None).GetAwaiter().GetResult();
@@ -495,6 +503,26 @@ public static class TransportHost
                 kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
             https.ClientCertificateMode =
                 Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.RequireCertificate;
+            https.ClientCertificateValidation = (cert, chain, errors) =>
+                ClientCertificateChainsToCa(cert, chain, kestrel.ApplicationServices);
+            https.CheckCertificateRevocation = false;
+        });
+    }
+
+    // The single-port https termination: the CA-issued server leaf presents
+    // as the server identity, a client certificate is requested but optional,
+    // and one that is presented must chain to the CA -- the same validation
+    // ConfigureMtlsHttps applies. Certificate-less connections complete TLS
+    // and reach HTTP, where enrollment answers on the stager token and the
+    // beacon routes refuse anything without the enrolled certificate.
+    private static void ConfigureOptionalClientCertificateHttps(ListenOptions listen, KestrelServerOptions kestrel)
+    {
+        listen.UseHttps(https =>
+        {
+            https.ServerCertificateSelector = (_, _) =>
+                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
+            https.ClientCertificateMode =
+                Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
             https.ClientCertificateValidation = (cert, chain, errors) =>
                 ClientCertificateChainsToCa(cert, chain, kestrel.ApplicationServices);
             https.CheckCertificateRevocation = false;

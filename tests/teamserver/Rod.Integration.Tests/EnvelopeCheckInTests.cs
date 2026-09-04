@@ -293,15 +293,53 @@ public class EnvelopeCheckInTests
     }
 
     [Fact]
-    public async Task Envelope_RequiresClientCertificate()
+    public async Task Envelope_CleartextWithoutCertificate_AnswersTheRefusedHandshake()
     {
-        // The route is mapped on every listener, but a check-in without the
-        // mTLS-presented implant certificate is refused before any frame is
-        // read -- over plain HTTP there is no certificate at all.
+        // Over cleartext no certificate can exist, so the route no longer
+        // answers 401 on sight: the body is parsed, and a well-framed
+        // check-in whose handshake carries no implant id gets the refused
+        // handshake status (unknown implant). Over TLS the certificate-less
+        // connection is still refused before any frame is read -- the
+        // single-port https listener admits one for enrollment's sake, and
+        // the check-in turns it away.
         await using var env = await TestEnv.StartAsync();
+        // One zero-length frame: a valid delimited Frame (empty message),
+        // so a handshake with no fields at all. The version check fires
+        // first on a versionless handshake -- still the refused-handshake
+        // shape, just that specific refusal.
         var response = await env.Http.PostAsync(
-            "/implants/beacon", new ByteArrayContent(new byte[] { 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f }));
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            "/implants/beacon", new ByteArrayContent(new byte[] { 0x00 }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var frames = ScratchImplant.Parse(await response.Content.ReadAsByteArrayAsync());
+        var handshake = HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
+        Assert.Equal(HandshakeStatus.VersionMismatch, handshake.Status);
+    }
+
+    [Fact]
+    public async Task Envelope_CleartextCheckIn_IdentifiesByTheHandshakeId()
+    {
+        // The pure-HTTP posture: an implant with an HTTP client and no
+        // certificate at all checks in over cleartext, identified by the
+        // implant id in its handshake -- the same anything-with-reach
+        // tradeoff the cleartext gRPC stream and the DNS/SMB/TCP transports
+        // document. The session opens and the implant is online.
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+
+        // The same implant identity, dialing the cleartext port with a bare
+        // HTTP client: no client certificate anywhere on the path.
+        using var cleartext = ScratchImplant.ConnectBeaconCertless(
+            $"http://127.0.0.1:{env.HttpPort}", implant.ImplantId, implant.EngagementId);
+        var first = await cleartext.CheckInAsync();
+        var handshake = HandshakeResponse.Parser.ParseFrom(first[0].Payload);
+        Assert.Equal(HandshakeStatus.Ok, handshake.Status);
+        Assert.Single(first);
+
+        var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
+        Assert.True(EngagementId.TryParse(implant.EngagementId, out var engagementId));
+        var online = await sessions.ListActiveAsync(engagementId);
+        Assert.Single(online, s => s.ImplantId.ToString() == implant.ImplantId);
     }
 
     [Fact]
@@ -441,6 +479,18 @@ public class EnvelopeCheckInTests
             return implant;
         }
 
+        /// <summary>
+        /// The cleartext twin: a bare HTTP client with no certificate and no
+        /// TLS options -- the pure-HTTP check-in, identified by handshake id.
+        /// </summary>
+        public static ScratchImplant ConnectBeaconCertless(
+            string baseAddress, string implantId, string engagementId)
+            => new(new HttpClient { BaseAddress = new Uri(baseAddress) })
+            {
+                ImplantId = implantId,
+                EngagementId = engagementId,
+            };
+
         /// <summary>One poll check-in: POST the frames, parse the response.</summary>
         public async Task<List<Frame>> CheckInAsync(
             IEnumerable<Frame>? upstream = null, int major = 1, int minor = 0)
@@ -522,7 +572,7 @@ public class EnvelopeCheckInTests
             return body.ToArray();
         }
 
-        private static List<Frame> Parse(byte[] body)
+        public static List<Frame> Parse(byte[] body)
         {
             var frames = new List<Frame>();
             var position = 0;

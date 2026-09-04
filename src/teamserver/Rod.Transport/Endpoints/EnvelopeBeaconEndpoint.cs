@@ -25,9 +25,11 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// Maps the envelope check-in route. Mapped alongside the operator API on
-/// every listener like the gRPC beacon: the route itself demands the
-/// mTLS-presented implant certificate, so on a plain-HTTP listener it answers
-/// 401 and only an mTLS-terminated endpoint ever serves a check-in.
+/// every listener like the gRPC beacon. Over TLS the route demands the
+/// mTLS-presented implant certificate (401 without one); over cleartext the
+/// handshake's implant id is the identity -- the documented anything-with-reach
+/// posture of the plain-HTTP socket, shared with the cleartext gRPC stream
+/// and the DNS/SMB/TCP transports.
 /// </summary>
 public static class EnvelopeBeaconEndpoints
 {
@@ -95,12 +97,18 @@ internal sealed class EnvelopeBeaconCheckIn
 
     public async Task<IResult> HandleAsync(HttpContext http, CancellationToken cancellationToken)
     {
-        // The envelope rides the same client certificates as the stream
-        // (architecture.md Sec 8): the identity is the certificate binding,
-        // full stop. Without one -- the route reached over a listener that did
-        // not terminate mTLS -- there is no check-in to serve.
+        // The envelope rides client certificates over TLS (architecture.md
+        // Sec 8): the identity is the certificate binding. Over cleartext --
+        // the pure-HTTP listener, where no certificate can exist -- the
+        // check-in falls back to the implant id in its handshake, the same
+        // anything-with-reach posture the cleartext gRPC stream and the
+        // DNS/SMB/TCP transports already document.
         var identity = ClientCertificateIdentity.Read(http);
-        if (identity is null)
+
+        // Over TLS a certificate-less connection has no identity to offer:
+        // the single-port https listener admits one for enrollment's sake,
+        // and the check-in turns it away before any frame is read.
+        if (identity is null && http.Request.IsHttps)
             return Results.Json(
                 new Problem("A client certificate bound to an implant is required."),
                 statusCode: StatusCodes.Status401Unauthorized);
@@ -132,7 +140,10 @@ internal sealed class EnvelopeBeaconCheckIn
         if (frames.Count == 0 || !TryParseHandshake(frames[0], out handshakeRequest))
             return EnvelopeResponse(Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
 
-        var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest);
+        // Over cleartext the handshake's implant id is the identity (the dev
+        // posture above); over TLS the certificate already resolved or the
+        // connection was refused above.
+        var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest, !http.Request.IsHttps);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return EnvelopeResponse(response);
 
@@ -157,8 +168,12 @@ internal sealed class EnvelopeBeaconCheckIn
                 CancellationToken.None);
         }
 
+        // The session context carries the handshake's identity (the implant
+        // the handshake authenticated), not the certificate binding: over
+        // cleartext there is no certificate, and the handshake result already
+        // resolved one identity or refused.
         var session = new BeaconSessionContext(
-            identity.ImplantId,
+            handshake.ImplantId,
             handshake.EngagementId,
             handshake.SessionId,
             handshake.DeployedBy,
@@ -240,18 +255,20 @@ internal sealed class EnvelopeBeaconCheckIn
     }
 
     private async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
-        ClientIdentity identity,
-        HandshakeRequest request)
+        ClientIdentity? identity,
+        HandshakeRequest request,
+        bool cleartextFallback)
     {
         try
         {
             var result = await _handshake.HandshakeAsync(
                 new HandshakeCommand(
-                    ImplantId: identity.ImplantId,
+                    ImplantId: identity?.ImplantId
+                        ?? (cleartextFallback && ImplantId.TryParse(request.ImplantId, out var byId) ? byId : default),
                     MajorVersion: request.Version?.Major ?? -1,
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
-                    CertificateEngagementId: identity.EngagementId,
+                    CertificateEngagementId: identity?.EngagementId,
                     ReplayNonces: request.ReplayNonces),
                 CancellationToken.None);
             return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);

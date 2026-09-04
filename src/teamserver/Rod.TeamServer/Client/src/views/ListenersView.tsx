@@ -31,8 +31,9 @@ import { StatusBadge } from '../components/StatusBadge'
 // this list only keeps the form from offering shapes the server would refuse.
 // SMB is the odd one out: its bind is a bare pipe name, not interface + port.
 const TRANSPORTS = [
-  { value: 'http', label: 'HTTP — cleartext; enroll only', port: '5090' },
+  { value: 'https', label: 'HTTPS — one port: enroll + check-ins', port: '443' },
   { value: 'mtls', label: 'mTLS — gRPC over HTTP/2', port: '5443' },
+  { value: 'http', label: 'HTTP — cleartext; enroll only', port: '5090' },
   { value: 'https-envelope', label: 'HTTPS envelope — POST check-ins', port: '8443' },
   { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
   { value: 'smb', label: 'SMB — named pipe', port: '' },

@@ -282,6 +282,10 @@ public sealed class DotNetBuildUnit : IBuildUnit
             // gRPC beacon on another (architecture.md Sec 8).
             ["beaconURL"] = @params.Transport.BeaconEndpoint
                 ?? BeaconUrlFromEnroll(@params.Transport.Endpoint),
+            // The pinned teamserver CA: the enroll client validates the
+            // server it dials against this anchor (the C2's own CA is in no
+            // system store). Empty keeps system/default validation.
+            ["caCert"] = @params.Transport.CaPem ?? "",
             ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),

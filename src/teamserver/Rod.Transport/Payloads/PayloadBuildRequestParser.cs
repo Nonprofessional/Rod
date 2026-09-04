@@ -4,6 +4,7 @@ using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Pki;
 using Rod.Transport.Listeners;
 
 namespace Rod.Transport.Payloads;
@@ -34,7 +35,8 @@ internal static class PayloadBuildRequestParser
     /// string naming the first refusal. The stager stage-2 reference resolves
     /// against the payload store here so the build contract carries a verified
     /// reference, never a raw operator string; a named listener resolves to
-    /// its public endpoint the same way.
+    /// its public endpoint the same way. The teamserver's CA is baked into the
+    /// profile as the pin the artifact's first contact validates against.
     /// </summary>
     public static async Task<(BuildRequest? Request, string? Error)> ParseAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
@@ -42,6 +44,7 @@ internal static class PayloadBuildRequestParser
         OperatorId requestedBy,
         IPayloadStore payloads,
         IListenerRegistry listeners,
+        IImplantCertificateAuthority ca,
         CancellationToken cancellationToken)
     {
         // Language and class come in as strings and parse to the enums; anything
@@ -145,12 +148,25 @@ internal static class PayloadBuildRequestParser
             language,
             @class,
             new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
-            BuildTransport(body, endpoint.Value, beacon.Value),
+            BuildTransport(body, endpoint.Value, beacon.Value, ExportCaPem(ca)),
             ParseDuration(body.SleepSeconds, DefaultSleep),
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
             mode,
             stage2), null);
+    }
+
+    // Exports the teamserver CA as the PEM the artifact pins: the implant's
+    // enroll client validates the server it dials against this anchor (the
+    // dev CA is self-signed and in no system store; a production CA is
+    // known only to this teamserver).
+    private static string ExportCaPem(IImplantCertificateAuthority ca)
+    {
+        var der = ca.GetCaCertificate().Export(
+            System.Security.Cryptography.X509Certificates.X509ContentType.Cert);
+        return "-----BEGIN CERTIFICATE-----\n"
+            + Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks)
+            + "\n-----END CERTIFICATE-----\n";
     }
 
     // Resolves the endpoint the baked artifact dials: the listener's public
@@ -189,7 +205,8 @@ internal static class PayloadBuildRequestParser
                 "ListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
         if (listener.EngagementId != engagementId)
             return (null, null, "ListenerId names another engagement's listener.");
-        if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+        if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Https
+            or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
             return (null, null,
                 $"The {listener.Transport.ToString().ToLowerInvariant()} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
 
@@ -270,7 +287,8 @@ internal static class PayloadBuildRequestParser
     private static TransportProfile BuildTransport(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         string? endpoint,
-        string? beaconEndpoint)
+        string? beaconEndpoint,
+        string caPem)
     {
         var profile = new TransportProfile(
             endpoint ?? "http://localhost:5080",
@@ -279,6 +297,8 @@ internal static class PayloadBuildRequestParser
             // The split-socket shape: enroll dials one host, the beacon
             // stream another. Null keeps the derived single-front bake.
             BeaconEndpoint = beaconEndpoint,
+            // The pinned teamserver CA rides every build.
+            CaPem = caPem,
         };
 
         if (!string.IsNullOrWhiteSpace(body.EnrollPath))

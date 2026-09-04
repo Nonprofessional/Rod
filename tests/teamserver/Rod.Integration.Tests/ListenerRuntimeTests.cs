@@ -96,6 +96,72 @@ public class ListenerRuntimeTests
     }
 
     [Fact]
+    public async Task HttpsListener_ServesBothHalvesWithoutAClientCertificateAtTLS()
+    {
+        // The single-port https shape (the mainstream C2 listener): TLS
+        // terminates with the CA-issued leaf, a client certificate is
+        // requested but optional -- enrollment has none to present yet, so
+        // it rides the same socket on the stager token -- while the
+        // check-in routes turn a certificate-less connection away at the
+        // application layer. One socket, both halves.
+        var port = TestSupport.GetFreeTcpPort();
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "single-port-https",
+                Transport: "https",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+        Assert.Equal("running", listener!.State);
+
+        // A client that carries no certificate and trusts only the
+        // teamserver's own CA -- the shape a fresh implant's enroll client
+        // has.
+        var ca = env.Host.Services
+            .GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>()
+            .GetCaCertificate();
+        using var handler = new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
+                {
+                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+                    chain.ChainPolicy.VerificationFlags =
+                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    chain.ChainPolicy.ExtraStore.Add(ca);
+                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
+                    return leaf is not null
+                        && chain.Build(leaf)
+                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
+                },
+            },
+        };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
+
+        // Enrollment reaches its route over TLS without a client certificate
+        // (the bad token's 401 proves the route answered, not the TLS layer).
+        var enroll = await client.PostAsJsonAsync("/implants/enroll",
+            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
+        Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
+
+        // The check-in refuses the certificate-less connection outright.
+        var beacon = await client.PostAsync("/implants/beacon",
+            new ByteArrayContent(new byte[] { 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f }));
+        Assert.Equal(HttpStatusCode.Unauthorized, beacon.StatusCode);
+    }
+
+    [Fact]
     public async Task ScopedListener_RefusesAForeignEngagementsToken_AndTheFrontRefusesImplants()
     {
         var scopedPort = TestSupport.GetFreeTcpPort();

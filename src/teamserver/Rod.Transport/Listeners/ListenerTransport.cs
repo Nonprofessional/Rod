@@ -15,6 +15,20 @@ public enum ListenerTransport
     Http,
 
     /// <summary>
+    /// The single-port TLS shape (the mainstream C2 listener: one https
+    /// socket carries everything). TLS terminates with the CA-issued server
+    /// leaf; a client certificate is requested but optional at the TLS layer
+    /// -- enrollment has no certificate to present yet, so it rides this
+    /// socket on the stager token, while the beacon routes demand the
+    /// enrolled certificate at the application layer. A presented
+    /// certificate must still chain to the engagement CA, so a rogue
+    /// certificate dies at the TLS layer exactly as under
+    /// <see cref="Mtls"/>. Use <see cref="Mtls"/> when the listener exists
+    /// to terminate beacons only and enrollment is refused at the TLS layer.
+    /// </summary>
+    Https,
+
+    /// <summary>
     /// Mutual TLS. The implant presents a client certificate that must chain to the
     /// engagement CA and bind <c>(implant_id, engagement_id)</c>; the beacon stream
     /// terminates here (architecture.md Sec 9).
