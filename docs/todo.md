@@ -35,7 +35,11 @@ tree; the bake selects which transport modules compile in.
       port on `http`, and every build carries the gRPC stack it does not
       need. Add the envelope POST client as the implant's default check-in
       for `http://` and `https://` beacon endpoints (poll cadence; channel
-      verbs refuse, as poll mode already does).
+      verbs refuse, as poll mode already does). The build parser's
+      cleartext-enroll refusal (the beacon-split requirement added when
+      http beacons could not work at all) relaxes with it: naming a beacon
+      listener over cleartext stays available as the hardened option, and
+      the Build form stops demanding it.
       _AC:_ a stage2 built against a plain `http` listener with no beacon
       named enrolls and checks in online over that single cleartext port,
       and the same artifact shape runs against an `https` listener.
