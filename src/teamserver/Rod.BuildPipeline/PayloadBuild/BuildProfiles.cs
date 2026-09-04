@@ -83,6 +83,19 @@ public sealed record TransportProfile(
     public IReadOnlyList<string> FallbackEndpoints { get; init; } = Defaults.FallbackEndpoints;
 
     /// <summary>
+    /// The host the beacon stream dials, when it differs from the enroll
+    /// endpoint (architecture.md Sec 8, the split-socket shape): enrollment is
+    /// an anonymous token redemption an HTTP/1.x socket serves, while the
+    /// beacon is gRPC (HTTP/2) and rides an mTLS-terminated socket -- Kestrel
+    /// serves cleartext HTTP/2 only on an HTTP/2-only endpoint, so one
+    /// cleartext listener cannot carry both halves. Null -- the default --
+    /// derives the beacon host from <see cref="Endpoint"/>: the single-front
+    /// shape where one https endpoint (typically a redirector's) serves
+    /// enroll and beacon alike.
+    /// </summary>
+    public string? BeaconEndpoint { get; init; }
+
+    /// <summary>
     /// The shared default values for the malleable knobs. Centralized so the
     /// transport endpoint, the build service, and the tests agree on what a
     /// "minimal" profile fills in.

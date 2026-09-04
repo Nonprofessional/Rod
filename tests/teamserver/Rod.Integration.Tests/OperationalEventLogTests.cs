@@ -107,7 +107,7 @@ public class OperationalEventLogTests
                 Class: null,
                 TargetOs: "linux",
                 TargetArch: "amd64",
-                Endpoint: "http://c2.example.test",
+                Endpoint: "https://c2.example.test",
                 UriPath: "/beacon",
                 SleepSeconds: 30,
                 JitterSeconds: 10,

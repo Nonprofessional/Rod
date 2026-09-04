@@ -127,6 +127,11 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                     <td>{p.target ?? '—'}</td>
                     <td>
                       <code>{p.endpoint ?? '—'}</code>
+                      {p.beaconEndpoint && (
+                        <div className="muted" title="The socket the check-in stream dials (split-socket build)">
+                          beacon <code>{p.beaconEndpoint}</code>
+                        </div>
+                      )}
                     </td>
                     <td>{p.size} bytes</td>
                     <td>

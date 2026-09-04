@@ -49,7 +49,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "http://c2.example.test",
+                    Endpoint: "https://c2.example.test",
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -108,7 +108,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "http://c2.example.test",
+                    Endpoint: "https://c2.example.test",
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -164,7 +164,7 @@ public class PayloadBuildTests
             var row = Assert.Single(listed!);
             Assert.Equal(built!.ArtifactId, row.ArtifactId);
             Assert.Equal("linux/amd64", row.Target);
-            Assert.Equal("http://c2.example.test", row.Endpoint);
+            Assert.Equal("https://c2.example.test", row.Endpoint);
             Assert.Equal(built.TokenId, row.TokenId);
 
             // Deleting is the kill switch for hosted bytes: the row and the
@@ -238,7 +238,7 @@ public class PayloadBuildTests
                 Class: "Stage2",
                 TargetOs: "linux",
                 TargetArch: "amd64",
-                Endpoint: "http://c2.example.test",
+                Endpoint: "https://c2.example.test",
                 UriPath: "/beacon",
                 SleepSeconds: 30,
                 JitterSeconds: 10,
@@ -265,7 +265,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "http://c2.example.test",
+                    Endpoint: "https://c2.example.test",
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,

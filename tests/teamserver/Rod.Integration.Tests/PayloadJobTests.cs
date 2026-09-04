@@ -20,9 +20,13 @@ public class PayloadJobTests
     private static PayloadEndpoints.BuildPayloadRequest Request(
         string language = "DotNet",
         string @class = "Stage2",
-        string? mode = null)
-        => new(language, @class, TargetOs: null, TargetArch: null, Endpoint: null,
-            UriPath: null, SleepSeconds: null, JitterSeconds: null, KillDate: null, Mode: mode);
+        string? mode = null,
+        string? endpoint = null,
+        string? beaconListenerId = null,
+        string? beaconEndpoint = null)
+        => new(language, @class, TargetOs: null, TargetArch: null, Endpoint: endpoint,
+            UriPath: null, SleepSeconds: null, JitterSeconds: null, KillDate: null, Mode: mode,
+            BeaconListenerId: beaconListenerId, BeaconEndpoint: beaconEndpoint);
 
     [DotNetFact]
     public async Task BuildJob_CompletesAndTheArtifactDownloads()
@@ -94,6 +98,88 @@ public class PayloadJobTests
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
         var problem = await refused.Content.ReadFromJsonAsync<PayloadJobEndpoints.Problem>();
         Assert.Contains("x86", problem!.Error);
+
+        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
+            $"/engagements/{engagementId}/payload-jobs");
+        Assert.NotNull(jobs);
+        Assert.Empty(jobs!);
+    }
+
+    [Fact]
+    public async Task BuildJob_CleartextEnrollWithoutABeacon_IsRefusedWithoutQueuing()
+    {
+        // A cleartext enroll endpoint cannot carry the gRPC beacon (Kestrel
+        // serves cleartext HTTP/2 only on an HTTP/2-only endpoint, which
+        // cannot also serve HTTP/1.x enrollment), so a build that would bake
+        // a beacon onto it is refused here -- otherwise the artifact enrolls
+        // and then sits offline forever, retrying a check-in no socket can
+        // answer. The 400 names the fix: name a TLS beacon endpoint.
+        var (client, _, _) = AuthenticatedHost.Create();
+        await AuthenticatedHost.LoginAsync(client);
+        var engagementId = await CreateEngagementAsync(client);
+
+        var refused = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request(endpoint: "http://10.0.0.5:5090"));
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var problem = await refused.Content.ReadFromJsonAsync<PayloadJobEndpoints.Problem>();
+        Assert.Contains("beacon", problem!.Error);
+
+        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
+            $"/engagements/{engagementId}/payload-jobs");
+        Assert.NotNull(jobs);
+        Assert.Empty(jobs!);
+    }
+
+    [Fact]
+    public async Task BuildJob_CleartextEnrollWithABeaconEndpoint_IsAccepted()
+    {
+        // The split-socket shape: enroll dials the cleartext endpoint, the
+        // beacon the named https one. The accepted job carries the resolved
+        // beacon so the queue (and the operator) reads both fronts. A Go
+        // language request keeps the worker from invoking the toolchain --
+        // the parser's acceptance is what this pins.
+        var (client, _, _) = AuthenticatedHost.Create();
+        await AuthenticatedHost.LoginAsync(client);
+        var engagementId = await CreateEngagementAsync(client);
+
+        var accepted = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request(language: "Go", endpoint: "http://10.0.0.5:5090", beaconEndpoint: "https://10.0.0.5:5443"));
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
+        Assert.NotNull(job);
+        Assert.Equal("https://10.0.0.5:5443", job!.BeaconEndpoint);
+    }
+
+    [Fact]
+    public async Task BuildJob_MalformedBeaconFields_AreRefusedWithoutQueuing()
+    {
+        // The beacon must be TLS (it speaks gRPC over mTLS) and named one way
+        // -- a listener id or a typed endpoint, never both; and a stager
+        // never checks in, so beacon fields on its builds are a mistake the
+        // build refuses rather than silently drops.
+        var (client, _, _) = AuthenticatedHost.Create();
+        await AuthenticatedHost.LoginAsync(client);
+        var engagementId = await CreateEngagementAsync(client);
+
+        var notHttps = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request(endpoint: "http://10.0.0.5:5090", beaconEndpoint: "http://10.0.0.5:5443"));
+        Assert.Equal(HttpStatusCode.BadRequest, notHttps.StatusCode);
+
+        var both = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request(
+                endpoint: "https://10.0.0.5:5443",
+                beaconListenerId: Guid.NewGuid().ToString(),
+                beaconEndpoint: "https://alt.example.test"));
+        Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+
+        var stager = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            Request(@class: "Stager", beaconEndpoint: "https://10.0.0.5:5443"));
+        Assert.Equal(HttpStatusCode.BadRequest, stager.StatusCode);
 
         var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
             $"/engagements/{engagementId}/payload-jobs");

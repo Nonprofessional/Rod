@@ -846,6 +846,12 @@ export interface BuildPayloadInput {
   // exclusive on the wire.
   listenerId: string | null
   endpoint: string | null
+  // The socket the check-in stream dials when it differs from the enroll
+  // endpoint (the split-socket shape). Named by listener or typed URL, and
+  // required when the enroll side is cleartext http, which cannot carry the
+  // gRPC beacon.
+  beaconListenerId: string | null
+  beaconEndpoint: string | null
   // A stager-class build only: the completed Stage-2 artifact the loader
   // fetches at run time. Null everywhere else.
   stage2PayloadId: string | null
@@ -912,6 +918,9 @@ export interface BuildJob {
   language: string
   target: string
   endpoint: string
+  // The check-in socket on a split-socket build; null when the beacon rides
+  // the enroll endpoint.
+  beaconEndpoint: string | null
   mode: string
   error: string | null
   artifact: BuildPayloadResult | null
@@ -947,6 +956,7 @@ export interface PayloadSummary {
   language: string
   target: string | null
   endpoint: string | null
+  beaconEndpoint: string | null
   contentType: string
   size: number
   fingerprint: string

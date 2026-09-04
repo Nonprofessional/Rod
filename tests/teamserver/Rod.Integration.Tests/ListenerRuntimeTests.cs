@@ -371,13 +371,15 @@ public class ListenerRuntimeTests
         var engagementId = await CreateEngagementAsync(env.Http);
 
         // The listener publishes the bare host:port redirector shape; a build
-        // naming it dials that shape with the transport's scheme.
+        // naming it dials that shape with the transport's scheme. An mTLS
+        // front carries enroll and beacon on one socket, so the build needs
+        // no beacon split; a cleartext front would have to name one.
         var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
                 Name: "build-front",
-                Transport: "http",
+                Transport: "mtls",
                 BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-                PublicEndpoint: "203.0.113.10:8080"));
+                PublicEndpoint: "203.0.113.10:8443"));
         created.EnsureSuccessStatusCode();
         var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
 

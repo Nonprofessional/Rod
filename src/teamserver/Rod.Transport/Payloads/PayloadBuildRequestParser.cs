@@ -87,6 +87,16 @@ internal static class PayloadBuildRequestParser
             }
         }
 
+        // The beacon host: the socket the check-in stream dials. Normally it
+        // is the enroll endpoint (the single-front shape), but a cleartext
+        // enroll listener cannot carry the gRPC beacon at all -- HTTP/2 rides
+        // cleartext only on an HTTP/2-only Kestrel endpoint, which would stop
+        // serving the HTTP/1.x enrollment on the same socket -- so the build
+        // must name the mTLS socket separately (the split-socket shape).
+        var beacon = await ResolveBeaconAsync(body, @class, endpoint.PlainHttp, engagementId, listeners, cancellationToken);
+        if (beacon.Error is { } beaconRefusal)
+            return (null, beaconRefusal);
+
         // The check-in mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow check-ins). A typo
         // must not silently build the interactive shape for an operator who
@@ -135,7 +145,7 @@ internal static class PayloadBuildRequestParser
             language,
             @class,
             new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
-            BuildTransport(body, endpoint.Value),
+            BuildTransport(body, endpoint.Value, beacon.Value),
             ParseDuration(body.SleepSeconds, DefaultSleep),
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
@@ -147,31 +157,40 @@ internal static class PayloadBuildRequestParser
     // endpoint when the request names one (refusing anything that is not this
     // engagement's own HTTP-shaped listener), the typed endpoint otherwise.
     // The refusal is returned as a string; the value is null only when the
-    // error is set.
-    private static async Task<(string? Value, string? Error)> ResolveEndpointAsync(
+    // error is set. PlainHttp reports whether the resolved enroll endpoint is
+    // a cleartext http one (a listener of the plain-Http transport, or a typed
+    // http:// URL) -- the fact the beacon resolution below needs, because a
+    // cleartext enroll side cannot also carry the check-in stream.
+    private static async Task<(string? Value, bool? PlainHttp, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
         IListenerRegistry listeners,
         CancellationToken cancellationToken)
     {
         if (body.ListenerId is not { } listenerIdText)
-            return (body.Endpoint, null);
+        {
+            var typed = body.Endpoint?.Trim();
+            bool? plain = null;
+            if (typed is { Length: > 0 } && Uri.TryCreate(typed, UriKind.Absolute, out var typedUri))
+                plain = typedUri.Scheme == Uri.UriSchemeHttp;
+            return (typed, plain, null);
+        }
 
         if (body.Endpoint is not null)
-            return (null, "Name either listenerId or endpoint, not both.");
+            return (null, null, "Name either listenerId or endpoint, not both.");
         if (!Guid.TryParse(listenerIdText, out var listenerValue))
-            return (null, "ListenerId is not a valid identifier.");
+            return (null, null, "ListenerId is not a valid identifier.");
 
         var listener = await listeners.FindAsync(new ListenerId(listenerValue), cancellationToken);
         if (listener is null)
-            return (null, "ListenerId does not name a listener.");
+            return (null, null, "ListenerId does not name a listener.");
         if (listener.EngagementId is null)
-            return (null,
+            return (null, null,
                 "ListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
         if (listener.EngagementId != engagementId)
-            return (null, "ListenerId names another engagement's listener.");
+            return (null, null, "ListenerId names another engagement's listener.");
         if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
-            return (null,
+            return (null, null,
                 $"The {listener.Transport.ToString().ToLowerInvariant()} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
 
         // The public endpoint may be the bare host:port redirector shape; the
@@ -179,9 +198,68 @@ internal static class PayloadBuildRequestParser
         var publicEndpoint = listener.PublicEndpoint.Trim();
         if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
             && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
-            return (publicEndpoint, null);
+            return (publicEndpoint, absolute.Scheme == Uri.UriSchemeHttp, null);
         var scheme = listener.Transport == ListenerTransport.Http ? "http" : "https";
-        return ($"{scheme}://{publicEndpoint}", null);
+        return ($"{scheme}://{publicEndpoint}", listener.Transport == ListenerTransport.Http, null);
+    }
+
+    // Resolves the beacon host the check-in stream dials: a named listener's
+    // public endpoint, a typed https URL, or null to derive from the enroll
+    // endpoint (the single-front shape). A cleartext enroll side cannot carry
+    // the beacon -- Kestrel serves cleartext HTTP/2 only on an HTTP/2-only
+    // endpoint, which cannot also serve HTTP/1.x enrollment -- so there the
+    // beacon must be named and must be TLS-terminated. Stagers never check
+    // in, so beacon fields are refused on their builds.
+    private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
+        Endpoints.PayloadEndpoints.BuildPayloadRequest body,
+        ImplantClass @class,
+        bool? enrollIsPlainHttp,
+        EngagementId engagementId,
+        IListenerRegistry listeners,
+        CancellationToken cancellationToken)
+    {
+        if (body.BeaconListenerId is not null && body.BeaconEndpoint is not null)
+            return (null, "Name either beaconListenerId or beaconEndpoint, not both.");
+        if (@class == ImplantClass.Stager)
+            return (body.BeaconListenerId is not null || body.BeaconEndpoint is not null
+                ? (null, "A stager fetches its stage-2 and never checks in; beacon fields are not valid on a stager build.")
+                : (null, (string?)null));
+
+        if (body.BeaconListenerId is { } beaconListenerText)
+        {
+            if (!Guid.TryParse(beaconListenerText, out var beaconListenerValue))
+                return (null, "BeaconListenerId is not a valid identifier.");
+            var listener = await listeners.FindAsync(new ListenerId(beaconListenerValue), cancellationToken);
+            if (listener is null)
+                return (null, "BeaconListenerId does not name a listener.");
+            if (listener.EngagementId is null)
+                return (null, "BeaconListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
+            if (listener.EngagementId != engagementId)
+                return (null, "BeaconListenerId names another engagement's listener.");
+            if (listener.Transport is not (ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+                return (null,
+                    $"The beacon is gRPC over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS or https-envelope listener.");
+
+            var publicEndpoint = listener.PublicEndpoint.Trim();
+            if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
+                && absolute.Scheme == Uri.UriSchemeHttps)
+                return (publicEndpoint, null);
+            return ($"https://{publicEndpoint}", null);
+        }
+
+        if (body.BeaconEndpoint is { } beaconEndpoint)
+        {
+            var trimmed = beaconEndpoint.Trim();
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                return (null,
+                    $"Beacon endpoint must be an absolute https URL the check-in stream can dial, got '{beaconEndpoint}'.");
+            return (trimmed, null);
+        }
+
+        if (enrollIsPlainHttp == true)
+            return (null,
+                "The enroll endpoint is cleartext http, which cannot carry implant check-ins: the beacon speaks gRPC (HTTP/2 over mTLS) and a cleartext socket serves HTTP/1.x enrollment only. Name the engagement's mTLS listener as the beacon (beaconListenerId), or type its endpoint (beaconEndpoint).");
+        return (null, (string?)null);
     }
 
     // Builds the malleable transport profile off the request body
@@ -191,11 +269,17 @@ internal static class PayloadBuildRequestParser
     // name/value map and are applied verbatim; an empty or null map adds none.
     private static TransportProfile BuildTransport(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
-        string? endpoint)
+        string? endpoint,
+        string? beaconEndpoint)
     {
         var profile = new TransportProfile(
             endpoint ?? "http://localhost:5080",
-            body.UriPath ?? "/beacon");
+            body.UriPath ?? "/beacon")
+        {
+            // The split-socket shape: enroll dials one host, the beacon
+            // stream another. Null keeps the derived single-front bake.
+            BeaconEndpoint = beaconEndpoint,
+        };
 
         if (!string.IsNullOrWhiteSpace(body.EnrollPath))
             profile = profile with { EnrollPath = body.EnrollPath };

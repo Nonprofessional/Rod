@@ -19,6 +19,12 @@ namespace Rod.Audit;
 /// The dial address baked into the artifact (the listener's public endpoint),
 /// so the library reads which front a payload phones. Null on old records.
 /// </param>
+/// <param name="BeaconEndpoint">
+/// The host the baked artifact's check-in stream dials, when it differs from
+/// <see cref="Endpoint"/> (the split-socket shape: cleartext enroll listener,
+/// mTLS beacon listener). Null is the single-front shape -- and every record
+/// built before the field existed.
+/// </param>
 /// <param name="TokenId">
 /// The enrollment credential minted for and baked into this artifact: enough
 /// to revoke it from the library view, never enough to reuse it. Null when the
@@ -47,6 +53,7 @@ public sealed record PayloadRecord(
     DateTimeOffset BuiltAt,
     string? Target = null,
     string? Endpoint = null,
+    string? BeaconEndpoint = null,
     Guid? TokenId = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null);

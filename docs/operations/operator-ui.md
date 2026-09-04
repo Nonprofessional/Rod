@@ -33,6 +33,15 @@ engagement's tokens. **Repoint** swaps the public endpoint at runtime without
 touching the socket (a burned redirector is severed); **Delete** unbinds and
 forgets it.
 
+One transport caveat shapes the whole panel: **the cleartext HTTP transport
+carries enrollment but not check-ins.** The beacon is gRPC -- HTTP/2 over
+mTLS -- and a cleartext socket serves its HTTP/1.x traffic only (Kestrel
+serves cleartext HTTP/2 solely on an HTTP/2-only endpoint, which cannot also
+serve enrollment). A local dev deployment therefore needs two listeners: an
+`http` one for enrollment and an `mTLS` (or HTTPS envelope) one for the
+beacon; the Build panel pairs them. Behind a TLS-terminating redirector a
+single `mTLS`-shaped listener carries both halves.
+
 ## Build
 
 The main path is the mainstream shape: pick the **listener** the implant dials
@@ -40,6 +49,15 @@ and the **target** (OS/arch; x86 pairs with Windows only), leave the rest at
 the defaults, and build. The artifact is a self-contained single-file
 executable with its enrollment credential baked in -- drop it on the target
 and run, zero arguments.
+
+**Beacon listener** appears when the picked listener is cleartext `http`:
+check-ins cannot ride that socket, so the form asks for the engagement's
+`mTLS`/HTTPS-envelope listener the beacon stream dials -- the split-socket
+shape (enroll one socket, beacon another). Leave it out on a TLS-shaped
+listener and the beacon rides the same endpoint. The build API takes the same
+thing as `beaconListenerId`, or a typed `beaconEndpoint`, and refuses a
+cleartext enroll endpoint with no beacon named -- that artifact would enroll
+and then sit offline forever.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs
@@ -65,6 +83,9 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 
 - **Endpoint (manual)** -- the dial address when you deliberately build
   without naming a listener.
+- **Beacon endpoint (manual)** -- the https host the check-in stream dials
+  when it differs from the enroll endpoint (empty = the enroll endpoint);
+  the typed-URL twin of the Beacon listener picker above.
 - **Fallback endpoints** -- backup fronts baked in behind the primary and
   dialed in order when it burns.
 - **Enroll path** -- the URI path the implant enrolls on; change it only when

@@ -39,6 +39,11 @@ internal static class PayloadBuildRecorder
         // trail names the token id (never the secret) so a later revocation
         // lines up with the artifact that carried it.
         var tokenTrail = artifact.Params.TokenId is { } tokenId ? $" token={tokenId.ToString()[..8]}" : "";
+        // The split-socket shape names its second front: enroll dials the
+        // endpoint above, the beacon the one here.
+        var beaconTrail = artifact.Params.Transport.BeaconEndpoint is { } beaconEndpoint
+            ? $" beacon={beaconEndpoint}"
+            : "";
         await payloads.SaveAsync(
             new PayloadRecord(
                 artifact.ArtifactId,
@@ -52,6 +57,7 @@ internal static class PayloadBuildRecorder
                 artifact.BuiltAt,
                 Target: $"{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture}",
                 Endpoint: artifact.Params.Transport.Endpoint,
+                BeaconEndpoint: artifact.Params.Transport.BeaconEndpoint,
                 TokenId: artifact.Params.TokenId,
                 EnvelopeKeyId: artifact.Params.EnvelopeKeyId,
                 EnvelopeKey: artifact.Params.EnvelopeKey),
@@ -65,7 +71,7 @@ internal static class PayloadBuildRecorder
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{transformTrail}{tokenTrail}",
+                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{beaconTrail}{transformTrail}{tokenTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),

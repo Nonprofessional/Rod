@@ -66,6 +66,10 @@ export function PayloadBuildView({
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
+  // The socket the check-in stream dials when it differs from the enroll
+  // front: required against a cleartext (http) listener, which cannot carry
+  // the gRPC beacon. Empty means "same as the enroll endpoint".
+  const [beaconListenerId, setBeaconListenerId] = useState('')
   const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
@@ -82,6 +86,7 @@ export function PayloadBuildView({
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
   const [endpoint, setEndpoint] = useState('')
+  const [beaconEndpoint, setBeaconEndpoint] = useState('')
   const [fallbackEndpoints, setFallbackEndpoints] = useState('')
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
@@ -90,6 +95,21 @@ export function PayloadBuildView({
   const [tokenHours, setTokenHours] = useState('')
 
   const isStager = klass === 'Stager'
+
+  // A cleartext enroll front cannot also carry the check-in stream: the
+  // beacon speaks gRPC (HTTP/2 over mTLS), and a cleartext socket serves its
+  // HTTP/1.x enrollment only. A build against the http transport therefore
+  // names a second, TLS-terminated front for the beacon -- the split-socket
+  // shape. Everything else (mtls, https-envelope, an https URL) carries both
+  // halves on one socket.
+  const selectedListener = listeners.find((l) => l.id === listenerId)
+  const enrollIsPlainHttp = selectedListener
+    ? selectedListener.transport === 'http'
+    : /^http:\/\//i.test(endpoint.trim())
+  const needsBeacon = !isStager && enrollIsPlainHttp
+  const beaconCandidates = listeners.filter(
+    (l) => l.transport === 'mtls' || l.transport === 'https-envelope',
+  )
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -195,6 +215,12 @@ export function PayloadBuildView({
       setError('A stager fetches a Stage-2 payload -- build one first and pick it.')
       return
     }
+    if (needsBeacon && !beaconListenerId && !beaconEndpoint.trim()) {
+      setError(
+        'A cleartext (http) listener cannot carry check-ins: pick the Beacon listener for the check-in stream, or type a beacon endpoint under Advanced.',
+      )
+      return
+    }
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
@@ -207,6 +233,10 @@ export function PayloadBuildView({
         listenerId: listenerId || null,
         endpoint: !listenerId && endpoint ? endpoint : null,
         stage2PayloadId: isStager ? stage2PayloadId : null,
+        beaconListenerId: !isStager && beaconListenerId ? beaconListenerId : null,
+        beaconEndpoint: !isStager && !beaconListenerId && beaconEndpoint.trim()
+          ? beaconEndpoint.trim()
+          : null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
@@ -247,8 +277,13 @@ export function PayloadBuildView({
                 // Choosing the manual option is choosing to type an endpoint:
                 // open the section it lives in.
                 if (e.target.value === '') setAdvancedOpen(true)
+                // A TLS-terminated listener carries enroll and beacon on one
+                // socket; a beacon picked for a previous cleartext front
+                // would silently split a build that does not need it.
+                const next = listeners.find((l) => l.id === e.target.value)
+                if (next && next.transport !== 'http') setBeaconListenerId('')
               }}
-              title="The listener's public endpoint is what the artifact dials. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
+              title="The listener whose public endpoint the artifact enrolls through. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
             >
               <option value="">-- no listener: type endpoint in Advanced --</option>
               {listeners.map((l) =>
@@ -264,6 +299,23 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
+          {needsBeacon && (
+            <label>
+              Beacon listener
+              <select
+                value={beaconListenerId}
+                onChange={(e) => setBeaconListenerId(e.target.value)}
+                title="Check-ins are gRPC over mTLS and cannot ride the cleartext listener: pick the mTLS/https listener the beacon stream dials (the split-socket shape), or type a beacon endpoint under Advanced."
+              >
+                <option value="">-- pick the mTLS listener check-ins dial --</option>
+                {beaconCandidates.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.transport} → {l.publicEndpoint})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
@@ -394,6 +446,20 @@ export function PayloadBuildView({
               />
             </label>
             <label>
+              Beacon endpoint (manual)
+              <input
+                value={beaconEndpoint}
+                onChange={(e) => setBeaconEndpoint(e.target.value)}
+                placeholder="https://mtls.example.test"
+                disabled={!!beaconListenerId}
+                title={
+                  beaconListenerId
+                    ? 'A beacon listener is picked, so its public endpoint is used.'
+                    : 'The https host the check-in stream dials when it differs from the enroll endpoint (empty = the enroll endpoint). Required in the split-socket shape: a cleartext enroll endpoint cannot carry the gRPC beacon.'
+                }
+              />
+            </label>
+            <label>
               Fallback endpoints
               <input
                 value={fallbackEndpoints}
@@ -488,6 +554,11 @@ export function PayloadBuildView({
                   </td>
                   <td>
                     <code>{job.endpoint}</code>
+                    {job.beaconEndpoint && (
+                      <div className="muted" title="The socket the check-in stream dials (split-socket build)">
+                        beacon <code>{job.beaconEndpoint}</code>
+                      </div>
+                    )}
                   </td>
                   <td>
                     {(job.state === 'queued' || job.state === 'running') && (

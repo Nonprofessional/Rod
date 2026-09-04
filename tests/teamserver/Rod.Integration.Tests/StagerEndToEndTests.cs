@@ -31,6 +31,9 @@ public class StagerEndToEndTests
 
         // Build the stage-2 first: a linux/amd64 single-file implant baked for
         // this teamserver's enroll endpoint, sleeping at a 1s beacon cadence.
+        // The beacon host is baked too -- the split-socket shape (enroll on
+        // the plain-HTTP listener, check-ins on the mTLS port) is now a
+        // first-class build input, so the artifact needs no run-time override.
         var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
         var stage2 = await env.BuildAsync(new
         {
@@ -38,6 +41,7 @@ public class StagerEndToEndTests
             TargetOs = "linux",
             TargetArch = "amd64",
             Endpoint = enrollUrl,
+            BeaconEndpoint = $"https://127.0.0.1:{env.MtlsPort}",
             SleepSeconds = 1.0,
             JitterSeconds = 0.0,
         });
@@ -57,8 +61,8 @@ public class StagerEndToEndTests
 
         // Download the stager executable and run it as the operator would drop
         // it on a target: a bare binary plus the deployment credential. The
-        // beacon address is passed explicitly because the test topology splits
-        // the plain-HTTP enroll listener from the mTLS beacon port.
+        // stage-2's baked profile already carries the beacon host (the
+        // split-socket shape above); only the CA pin rides the environment.
         var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-stager-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var stagerPath = Path.Combine(outDir, "Rod.Stager");
@@ -81,12 +85,11 @@ public class StagerEndToEndTests
             UseShellExecute = false,
             RedirectStandardError = true,
             // The loader takes the token at run time, never baked: it forwards
-            // the credential (and the beacon address and CA pin the test
-            // topology needs) to the stage-2 through the process environment.
+            // the credential (and the CA pin the mTLS beacon handshake needs)
+            // to the stage-2 through the process environment.
             Environment =
             {
                 ["ROD_STAGER_TOKEN"] = secret,
-                ["ROD_BEACON_URL"] = $"127.0.0.1:{env.MtlsPort}",
                 ["ROD_CA_CERT"] = env.CACertFile,
             },
         });

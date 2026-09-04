@@ -235,7 +235,11 @@ public static class PayloadEndpoints
     // Defaulted so a minimal positional construction (as in the integration
     // tests) stays valid. ListenerId names the engagement's own listener and
     // supplies the endpoint from its record, so the two are mutually
-    // exclusive on the wire.
+    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the socket
+    // the check-in stream dials when it differs from the enroll endpoint --
+    // the split-socket shape (enroll on a cleartext listener, the gRPC beacon
+    // on an mTLS listener); they are mutually exclusive too, and required
+    // when the enroll side is cleartext, which cannot carry check-ins.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,
@@ -256,7 +260,9 @@ public static class PayloadEndpoints
         string? Stage2PayloadId = null,
         List<string>? FallbackEndpoints = null,
         int? TokenMaxUses = null,
-        long? TokenLifetimeSeconds = null);
+        long? TokenLifetimeSeconds = null,
+        string? BeaconListenerId = null,
+        string? BeaconEndpoint = null);
 
     // The response's TokenId names the enrollment credential baked into the
     // artifact (null on a credential-free build): enough to revoke it, never
@@ -275,9 +281,9 @@ public static class PayloadEndpoints
 
     /// <summary>
     /// One row of the payload library: a stored payload's metadata without the
-    /// bytes. The engagement is the path, not the row. <see cref="Target"/> and
-    /// <see cref="Endpoint"/> are null on payloads built before those fields
-    /// were recorded.
+    /// bytes. The engagement is the path, not the row. <see cref="Target"/>,
+    /// <see cref="Endpoint"/>, and <see cref="BeaconEndpoint"/> are null on
+    /// payloads built before those fields were recorded.
     /// </summary>
     public sealed record PayloadSummaryResponse(
         string ArtifactId,
@@ -289,7 +295,8 @@ public static class PayloadEndpoints
         long Size,
         string Fingerprint,
         DateTimeOffset BuiltAt,
-        string? TokenId = null)
+        string? TokenId = null,
+        string? BeaconEndpoint = null)
     {
         public static PayloadSummaryResponse Of(Rod.Audit.PayloadRecord record) => new(
             record.PayloadId.ToString(),
@@ -301,7 +308,8 @@ public static class PayloadEndpoints
             record.Size,
             record.Fingerprint,
             record.BuiltAt,
-            TokenId: record.TokenId?.ToString());
+            TokenId: record.TokenId?.ToString(),
+            BeaconEndpoint: record.BeaconEndpoint);
     }
 
     public sealed record Problem(string Error);

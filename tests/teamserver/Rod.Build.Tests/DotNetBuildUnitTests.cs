@@ -116,6 +116,30 @@ public class DotNetBuildUnitTests
     }
 
     [Fact]
+    public void RenderBakedProfile_BakesTheSplitBeaconHostWhenNamed()
+    {
+        // The split-socket shape (architecture.md Sec 8): enroll dials the
+        // cleartext listener, the gRPC beacon the mTLS one, so the baked
+        // beaconURL must carry the named beacon host verbatim -- deriving it
+        // from the enroll endpoint would bake a beacon onto a socket that
+        // cannot carry HTTP/2. Without a named beacon the derived
+        // single-front bake stays exactly as it was.
+        var split = Params() with
+        {
+            Transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+            {
+                BeaconEndpoint = "https://mtls.example.test",
+            },
+        };
+
+        using var splitDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(split)));
+        Assert.Equal("https://mtls.example.test", splitDoc.RootElement.GetProperty("beaconURL").GetString());
+
+        using var plain = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        Assert.Equal("http://c2.example.test", plain.RootElement.GetProperty("beaconURL").GetString());
+    }
+
+    [Fact]
     public void RenderBakedProfile_BakesTheOrderedFallbackEndpoints()
     {
         // The fallback egress list (architecture.md Sec 8) rides as a JSON array

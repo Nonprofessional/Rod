@@ -77,7 +77,7 @@ public class StagerTokenMintScopeTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "DotNet", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
-                    Endpoint: "http://c2.example.test", UriPath: "/beacon",
+                    Endpoint: "https://c2.example.test", UriPath: "/beacon",
                     SleepSeconds: 30, JitterSeconds: 10, KillDate: null));
             built.EnsureSuccessStatusCode();
             var artifact = await built.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
