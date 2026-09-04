@@ -17,14 +17,16 @@ starts from a gap an actual engagement surfaces.
 ## Transports and identity (architecture.md Sec 8, Sec 9)
 
 The end state these items build toward, in one paragraph: the .NET implant
-carries exactly one check-in client -- the envelope POST cycle, the shape
-every mainstream HTTP(S) C2 uses -- with authentication at the application
-layer under a per-artifact key. The `http` and `https` listeners are
-single-port and indistinguishable from ordinary web traffic (no TLS
-certificate request anywhere), the token stays enrollment-only, and the
-gRPC stream survives only in mTLS-shaped builds that ask for interactive
-channels. One source tree; the bake selects which transport modules
-compile in.
+carries exactly one web check-in client -- the envelope POST cycle, the
+shape every mainstream HTTP(S) C2 uses, polled on a jittered sleep --
+with authentication at the application layer under a per-artifact key.
+The `http` and `https` listeners are single-port and indistinguishable
+from ordinary web traffic (no TLS certificate request anywhere), the
+token stays enrollment-only, and tasking keeps its signature and replay
+nonces regardless of transport. `mTLS` is the dedicated interactive
+listener -- per-implant certificates, the persistent gRPC stream, live
+channels -- built against only when an engagement wants them. One source
+tree; the bake selects which transport modules compile in.
 
 - [ ] **Check in from the .NET implant over the envelope cycle.** The
       cleartext envelope check-in is served (identity by handshake id
@@ -57,6 +59,16 @@ compile in.
       generation mechanism extended), with the trimmer as the backstop.
       _AC:_ a stage2 built for an `http`/`https` listener contains no
       gRPC client code, and an mTLS-shaped build keeps the stream mode.
+- [ ] **Retire the `HttpsEnvelope` listener entry.** It exists to name an
+      endpoint whose purpose is envelope-only reach; once the envelope
+      cycle is the default web check-in on `http`/`https`, every web
+      listener serves it and the entry says nothing the transport list
+      does not. Remove the entry (existing definitions migrate to the
+      nearest surviving transport), leaving `https`, `http`, `mtls`,
+      `dns`, `smb`, `tcp`.
+      _AC:_ the create form and the transport enum surface six transports,
+      and an engagement that held an https-envelope definition binds it
+      again after a restart under its migrated shape.
 - [ ] **Harden the implant certificate profile.** Issued leaves carry the
       implant id as the CN and the engagement id under a custom OID -- a
       GUID common name with an unknown extension is itself a toolchain
