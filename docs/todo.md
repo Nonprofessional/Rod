@@ -27,6 +27,21 @@ starts from a gap an actual engagement surfaces.
       does).
       _AC:_ a stage2 built against a plain `http` listener with no beacon
       named enrolls and checks in online over that single cleartext port.
+- [ ] **Check in over pure HTTPS with no client certificate.** A TLS
+      CertificateRequest is itself a fingerprint -- an ordinary website
+      never asks the visitor for one, so an IDS flags the handshake, and
+      mainstream HTTP(S) C2s (Cobalt Strike, Havoc, Mythic) authenticate
+      implants at the application layer instead: per-build symmetric keys
+      negotiated or baked at staging, metadata encrypted and signed with
+      them. Add the CS-shaped posture beside the certificate one: bake a
+      per-artifact key, sign/encrypt check-in metadata under it (nonce
+      covered, replay refused), verify in the beacon routes, and leave the
+      TLS handshake indistinguishable from an ordinary site. The mTLS
+      transports stay for operators who want the PKI posture.
+      _AC:_ a stage2 built against an Https listener performs enrollment
+      and check-ins whose TLS handshake carries no certificate request,
+      authenticated by the baked key at the application layer, and reports
+      online.
 - [ ] **Harden the implant certificate profile.** Issued leaves carry the
       implant id as the CN and the engagement id under a custom OID -- a
       GUID common name with an unknown extension is itself a toolchain
