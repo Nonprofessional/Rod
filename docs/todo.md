@@ -50,7 +50,12 @@ tree; the bake selects which transport modules compile in.
       requesting client certificates on the `Https` transport entirely.
       The same key envelopes the check-in frames, so the cleartext `http`
       posture carries confidential content, not just authenticated
-      content -- the Cobalt Strike metadata model.
+      content -- the Cobalt Strike metadata model. The build surface
+      keeps the two phases as two independent Advanced knobs: the
+      enroll-body shaping stays a three-way pick, while check-in
+      protection is its own toggle (default on; off is the lab-debug
+      plaintext frame -- the disguise ladder does not apply to binary
+      frames, and the key is the authentication).
       _AC:_ a stage2 built against an Https listener performs enrollment
       and check-ins whose TLS handshake carries no certificate request,
       authenticated by the baked key, and reports online.
