@@ -108,8 +108,14 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 - **User agent** -- the `User-Agent` the implant presents, to blend with a
   known-good client. Empty leaves the HTTP client's default.
 - **Request timeout (s)** -- per-request HTTP timeout. Default 30.
-- **Envelope** -- `None` sends the raw JSON body; `Base64` wraps it as one
-  string so the body does not read as structured C2.
+- **Enroll body** -- shapes the ENROLL request body only (the "envelope"
+  word elsewhere -- the POST check-in shape -- is a different thing).
+  `None` sends the raw JSON body; `Base64` wraps it as one string so the
+  body does not read as structured C2; `AES-GCM` encrypts it under a
+  per-artifact key minted at build, so the body stays opaque even where
+  TLS terminates early (a redirector, a fronting CDN) or on cleartext
+  `http`. On direct `https` it is redundant -- TLS already encrypts the
+  channel.
 - **Credential window (h)** -- how long the baked credential stays
   redeemable. Empty defaults to the artifact's expiry window.
 

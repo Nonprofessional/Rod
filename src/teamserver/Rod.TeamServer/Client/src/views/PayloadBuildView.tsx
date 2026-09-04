@@ -496,11 +496,11 @@ export function PayloadBuildView({
               />
             </label>
             <label>
-              Envelope
+              Enroll body
               <select
                 value={envelope}
                 onChange={(e) => setEnvelope(e.target.value)}
-                title="None sends the raw JSON body; Base64 wraps it as one string so it does not read as structured C2; AES-GCM encrypts it under a per-artifact key minted at build, so the body stays opaque even where TLS terminates early."
+                title="Shapes the ENROLL request body only (check-ins ride TLS on https, and get the baked key's protection on cleartext http once key auth ships). None sends the raw JSON body; Base64 wraps it as one string so it no longer reads as structured C2; AES-GCM encrypts it under a per-artifact key minted at build — worth it on cleartext http or where a redirector terminates TLS early; redundant on direct https, where TLS already encrypts the channel."
               >
                 <option>None</option>
                 <option>Base64</option>

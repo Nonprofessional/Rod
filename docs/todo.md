@@ -48,6 +48,9 @@ tree; the bake selects which transport modules compile in.
       Mint a key per build (the envelope-key shape), bake it, cover a
       nonce in every check-in, verify in the beacon routes, and stop
       requesting client certificates on the `Https` transport entirely.
+      The same key envelopes the check-in frames, so the cleartext `http`
+      posture carries confidential content, not just authenticated
+      content -- the Cobalt Strike metadata model.
       _AC:_ a stage2 built against an Https listener performs enrollment
       and check-ins whose TLS handshake carries no certificate request,
       authenticated by the baked key, and reports online.
