@@ -16,38 +16,54 @@ starts from a gap an actual engagement surfaces.
 
 ## Transports and identity (architecture.md Sec 8, Sec 9)
 
-- [ ] **Check in over plain HTTP from the .NET implant.** The cleartext
-      envelope check-in (identity by handshake id) is served, but the
-      in-tree implant speaks gRPC only -- so a build against a plain
-      `http` listener still must name a TLS beacon listener, and an
-      engagement whose only egress is cleartext HTTP-shaped cannot run
-      the reference implant on one port. When the baked beacon endpoint
-      is `http://`, drive the envelope POST cycle instead of the gRPC
-      stream (poll cadence; channel verbs refuse, as poll mode already
-      does).
+The end state these items build toward, in one paragraph: the .NET implant
+carries exactly one check-in client -- the envelope POST cycle, the shape
+every mainstream HTTP(S) C2 uses -- with authentication at the application
+layer under a per-artifact key. The `http` and `https` listeners are
+single-port and indistinguishable from ordinary web traffic (no TLS
+certificate request anywhere), the token stays enrollment-only, and the
+gRPC stream survives only in mTLS-shaped builds that ask for interactive
+channels. One source tree; the bake selects which transport modules
+compile in.
+
+- [ ] **Check in from the .NET implant over the envelope cycle.** The
+      cleartext envelope check-in is served (identity by handshake id
+      today), but the in-tree implant speaks gRPC only -- an engagement
+      whose egress is HTTP-shaped cannot run the reference implant single-
+      port on `http`, and every build carries the gRPC stack it does not
+      need. Add the envelope POST client as the implant's default check-in
+      for `http://` and `https://` beacon endpoints (poll cadence; channel
+      verbs refuse, as poll mode already does).
       _AC:_ a stage2 built against a plain `http` listener with no beacon
-      named enrolls and checks in online over that single cleartext port.
-- [ ] **Check in over pure HTTPS with no client certificate.** A TLS
-      CertificateRequest is itself a fingerprint -- an ordinary website
-      never asks the visitor for one, so an IDS flags the handshake, and
-      mainstream HTTP(S) C2s (Cobalt Strike, Havoc, Mythic) authenticate
-      implants at the application layer instead: per-build symmetric keys
-      negotiated or baked at staging, metadata encrypted and signed with
-      them. Add the CS-shaped posture beside the certificate one: bake a
-      per-artifact key, sign/encrypt check-in metadata under it (nonce
-      covered, replay refused), verify in the beacon routes, and leave the
-      TLS handshake indistinguishable from an ordinary site. The mTLS
-      transports stay for operators who want the PKI posture.
+      named enrolls and checks in online over that single cleartext port,
+      and the same artifact shape runs against an `https` listener.
+- [ ] **Authenticate check-ins with a per-artifact key, not a TLS client
+      certificate.** A TLS CertificateRequest is itself a fingerprint --
+      an ordinary website never asks the visitor for one, so an IDS flags
+      the handshake -- and mainstream HTTP(S) C2s (Cobalt Strike, Havoc,
+      Mythic) authenticate implants at the application layer instead:
+      per-build symmetric keys, metadata encrypted and signed under them.
+      Mint a key per build (the envelope-key shape), bake it, cover a
+      nonce in every check-in, verify in the beacon routes, and stop
+      requesting client certificates on the `Https` transport entirely.
       _AC:_ a stage2 built against an Https listener performs enrollment
       and check-ins whose TLS handshake carries no certificate request,
-      authenticated by the baked key at the application layer, and reports
-      online.
+      authenticated by the baked key, and reports online.
+- [ ] **Trim each build to the transport it dials.** Every artifact today
+      compiles the whole implant tree, so a plain-HTTP build still carries
+      the gRPC client it can never use -- surface, size, and fingerprint
+      for nothing. Select transport modules at bake time from the same
+      tree (whole source files in or out per build, the BakedProfile
+      generation mechanism extended), with the trimmer as the backstop.
+      _AC:_ a stage2 built for an `http`/`https` listener contains no
+      gRPC client code, and an mTLS-shaped build keeps the stream mode.
 - [ ] **Harden the implant certificate profile.** Issued leaves carry the
       implant id as the CN and the engagement id under a custom OID -- a
       GUID common name with an unknown extension is itself a toolchain
       fingerprint, and host forensics reads both. Move the identity into
       URI SAN entries (the shape legitimate service certificates use) and
-      make the remaining fields match a conventional profile.
+      make the remaining fields match a conventional profile. Serves the
+      mTLS posture, which stays for operators who want the PKI shape.
       _AC:_ an issued leaf exposes no GUID CN and no custom OID; identity
       binds through SANs; pinning and check-in verification are unchanged.
 - [ ] **Move implant keys to ECDSA P-256.** First-run RSA-2048 keygen
