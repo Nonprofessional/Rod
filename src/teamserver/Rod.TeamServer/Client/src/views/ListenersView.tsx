@@ -31,7 +31,7 @@ import { StatusBadge } from '../components/StatusBadge'
 // this list only keeps the form from offering shapes the server would refuse.
 // SMB is the odd one out: its bind is a bare pipe name, not interface + port.
 const TRANSPORTS = [
-  { value: 'http', label: 'HTTP — plain HTTP, dev/loopback', port: '5090' },
+  { value: 'http', label: 'HTTP — cleartext; enroll only', port: '5090' },
   { value: 'mtls', label: 'mTLS — gRPC over HTTP/2', port: '5443' },
   { value: 'https-envelope', label: 'HTTPS envelope — POST check-ins', port: '8443' },
   { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
@@ -188,7 +188,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             if (port !== '') setBindPort(port)
           }}
           aria-label="Transport"
-          title="Transport"
+          title="The wire this listener speaks. The cleartext HTTP transport carries enrollment and the operator API but not implant check-ins — the beacon is gRPC over mTLS, so pair an HTTP listener with an mTLS one (Build picks both up)."
         >
           {TRANSPORTS.map((t) => (
             <option key={t.value} value={t.value}>
@@ -220,15 +220,25 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
               <option value={CUSTOM}>Custom address…</option>
             </select>
-            {bindInterface === CUSTOM ? (
-              <input
-                placeholder="Bind host (192.168.1.5)"
-                value={customHost}
-                onChange={(e) => setCustomHost(e.target.value)}
-                title="The address to bind — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
-                required
-              />
-            ) : null}
+            {/* Always rendered, disabled unless Custom is picked, so the row
+                never reshuffles when the custom entry comes and goes; the
+                disabled value mirrors the selected interface, so the host
+                about to be bound stays readable. */}
+            <input
+              className="bind-host"
+              placeholder="Custom host (192.168.1.5)"
+              value={
+                bindInterface === CUSTOM
+                  ? customHost
+                  : bindInterface === ''
+                    ? ALL_INTERFACES
+                    : bindInterface
+              }
+              onChange={(e) => setCustomHost(e.target.value)}
+              disabled={bindInterface !== CUSTOM}
+              title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
+              required={bindInterface === CUSTOM}
+            />
             <input
               className="bind-port"
               placeholder="Port"

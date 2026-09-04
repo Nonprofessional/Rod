@@ -1496,6 +1496,17 @@ textarea:focus-visible {
   width: 215px;
 }
 
+/* The always-rendered bind-host mirror: fixed width so enabling Custom
+   (typing) never shifts the row, and dimmed when disabled so the mirrored
+   interface address reads as a value, not an editable field. */
+.listener-create .bind-host {
+  width: 165px;
+}
+
+.listener-create .bind-host:disabled {
+  opacity: 0.55;
+}
+
 .listener-create .bind-port {
   width: 72px;
 }

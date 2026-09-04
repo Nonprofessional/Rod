@@ -190,6 +190,7 @@ export function EngagementsView() {
           <table>
             <thead>
               <tr>
+                <th>ID</th>
                 <th>Name</th>
                 <th>Description</th>
                 <th>Owner</th>
@@ -203,6 +204,13 @@ export function EngagementsView() {
                 const status = statusOf(e)
                 return (
                   <tr key={e.engagementId} className={e.retiredAt ? 'row-dim' : undefined}>
+                    <td>
+                      {/* Names can repeat (nothing forces them unique), so the
+                          id prefix -- the same short form the URL and every
+                          other view use -- is the disambiguator. Hover carries
+                          the full id for copying. */}
+                      <code title={e.engagementId}>{e.engagementId.slice(0, 8)}</code>
+                    </td>
                     <td>
                       <a href={`#/engagements/${e.engagementId}`}>{e.name}</a>
                     </td>
