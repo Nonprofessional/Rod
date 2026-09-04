@@ -106,39 +106,37 @@ public class PayloadJobTests
     }
 
     [Fact]
-    public async Task BuildJob_CleartextEnrollWithoutABeacon_IsRefusedWithoutQueuing()
+    public async Task BuildJob_CleartextEnrollWithoutABeacon_IsAccepted()
     {
-        // A cleartext enroll endpoint cannot carry the gRPC beacon (Kestrel
-        // serves cleartext HTTP/2 only on an HTTP/2-only endpoint, which
-        // cannot also serve HTTP/1.x enrollment), so a build that would bake
-        // a beacon onto it is refused here -- otherwise the artifact enrolls
-        // and then sits offline forever, retrying a check-in no socket can
-        // answer. The 400 names the fix: name a TLS beacon endpoint.
+        // The envelope POST cycle made the cleartext front self-sufficient:
+        // check-ins ride an ordinary HTTP POST on the same socket enrollment
+        // does, so a build against a cleartext endpoint needs no beacon
+        // split. The accepted job carries no beacon endpoint -- the derived
+        // single-front shape. A Go language request keeps the worker from
+        // invoking the toolchain; the parser's acceptance is what this pins.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
 
-        var refused = await client.PostAsJsonAsync(
+        var accepted = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(endpoint: "http://10.0.0.5:5090"));
-        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-        var problem = await refused.Content.ReadFromJsonAsync<PayloadJobEndpoints.Problem>();
-        Assert.Contains("beacon", problem!.Error);
-
-        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
-            $"/engagements/{engagementId}/payload-jobs");
-        Assert.NotNull(jobs);
-        Assert.Empty(jobs!);
+            Request(language: "Go", endpoint: "http://10.0.0.5:5090"));
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
+        Assert.NotNull(job);
+        Assert.Null(job!.BeaconEndpoint);
     }
 
     [Fact]
     public async Task BuildJob_CleartextEnrollWithABeaconEndpoint_IsAccepted()
     {
-        // The split-socket shape: enroll dials the cleartext endpoint, the
-        // beacon the named https one. The accepted job carries the resolved
-        // beacon so the queue (and the operator) reads both fronts. A Go
-        // language request keeps the worker from invoking the toolchain --
-        // the parser's acceptance is what this pins.
+        // The split-socket shape (the hardened option): enroll dials the
+        // cleartext endpoint, the gRPC stream the named mTLS one. The
+        // accepted job carries the resolved beacon as the bare authority the
+        // stream dials -- a schemed beacon URL is the envelope cycle's shape,
+        // so the mTLS dial shape carries no scheme. A Go language request
+        // keeps the worker from invoking the toolchain; the parser's
+        // acceptance is what this pins.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
@@ -149,16 +147,16 @@ public class PayloadJobTests
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
         Assert.NotNull(job);
-        Assert.Equal("https://10.0.0.5:5443", job!.BeaconEndpoint);
+        Assert.Equal("10.0.0.5:5443", job!.BeaconEndpoint);
     }
 
     [Fact]
     public async Task BuildJob_MalformedBeaconFields_AreRefusedWithoutQueuing()
     {
-        // The beacon must be TLS (it speaks gRPC over mTLS) and named one way
-        // -- a listener id or a typed endpoint, never both; and a stager
-        // never checks in, so beacon fields on its builds are a mistake the
-        // build refuses rather than silently drops.
+        // The beacon names the mTLS socket (TLS, and named one way -- a
+        // listener id or a typed endpoint, never both); and a stager never
+        // checks in, so beacon fields on its builds are a mistake the build
+        // refuses rather than silently drops.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);

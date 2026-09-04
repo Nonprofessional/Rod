@@ -571,21 +571,30 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   at `/implants/enroll`; URI and header routing at the public endpoint is a
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
-- **The plain-HTTP envelope check-in is the implant-reach transport.** The
-  same rod.v1 frames the gRPC stream carries, marshaled as
-  varint-length-delimited sequences in ordinary HTTPS request/response bodies
-  over the same client certificates -- one POST (`/implants/beacon`) is one
-  poll check-in: the request body carries the handshake first plus any
-  results, exfil chunks, and staged pulls; the response carries the handshake
-  response, the staged chunk runs answering the request's demands, and queued
-  tasking while a 4 MiB dispatch budget lasts (what does not fit is requeued
-  for the next check-in). It changes the framing, not the protocol semantics:
-  the route is mapped on every listener but demands the mTLS client
-  certificate, the frame paths are the beacon compositions every transport
+- **The plain-HTTP envelope check-in is the implant-reach transport and the
+  reference implant's web check-in.** The same rod.v1 frames the gRPC stream
+  carries, marshaled as varint-length-delimited sequences in ordinary
+  HTTPS request/response bodies over the same client certificates -- one
+  POST (`/implants/beacon`) is one poll check-in: the request body carries
+  the handshake first plus any results, exfil chunks, and staged pulls; the
+  response carries the handshake response, the staged chunk runs answering
+  the request's demands, and queued tasking while a 4 MiB dispatch budget
+  lasts (what does not fit is requeued for the next check-in). It changes
+  the framing, not the protocol semantics: the route is mapped on every
+  listener (over TLS it demands the mTLS client certificate; over the plain
+  `Http` transport the handshake's implant id is the identity, the DNS
+  posture), the frame paths are the beacon compositions every transport
   shares, and an `HttpsEnvelope` listener entry binds the same mTLS socket
   the gRPC listener binds so a deployment can name an envelope-only endpoint.
-  Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable
-  from any language with an HTTP client and a protobuf codec
+  The reference .NET implant picks its check-in client by the baked beacon
+  URL's shape: an `http(s)://` URL runs the envelope POST cycle on that port
+  -- the mainstream single-port web posture, the build's derived default for
+  `Http`/`Https` fronts -- while a bare host:port dials the mTLS gRPC stream
+  (what a named mTLS beacon listener bakes). A build against a web front
+  therefore needs no beacon split; naming the mTLS listener as the beacon
+  stays the hardened option for an engagement that wants the interactive
+  stream. Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is
+  reachable from any language with an HTTP client and a protobuf codec
   ([extending/implants.md](extending/implants.md)). A channel task is never
   claimed over the envelope (its input half needs a live stream, the same
   rule the DNS transport applies), and an artifact's exfil chunk run must

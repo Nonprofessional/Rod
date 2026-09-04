@@ -90,13 +90,12 @@ internal static class PayloadBuildRequestParser
             }
         }
 
-        // The beacon host: the socket the check-in stream dials. Normally it
-        // is the enroll endpoint (the single-front shape), but a cleartext
-        // enroll listener cannot carry the gRPC beacon at all -- HTTP/2 rides
-        // cleartext only on an HTTP/2-only Kestrel endpoint, which would stop
-        // serving the HTTP/1.x enrollment on the same socket -- so the build
-        // must name the mTLS socket separately (the split-socket shape).
-        var beacon = await ResolveBeaconAsync(body, @class, endpoint.PlainHttp, engagementId, listeners, cancellationToken);
+        // The check-in the baked artifact runs: named, the mTLS socket the
+        // gRPC stream dials; derived, whatever the enroll front implies -- an
+        // http(s) front carries the envelope POST cycle on its own port (the
+        // mainstream single-port shape), an mTLS front the stream on the same
+        // socket.
+        var beacon = await ResolveBeaconAsync(body, @class, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
         if (beacon.Error is { } beaconRefusal)
             return (null, beaconRefusal);
 
@@ -173,11 +172,11 @@ internal static class PayloadBuildRequestParser
     // endpoint when the request names one (refusing anything that is not this
     // engagement's own HTTP-shaped listener), the typed endpoint otherwise.
     // The refusal is returned as a string; the value is null only when the
-    // error is set. PlainHttp reports whether the resolved enroll endpoint is
-    // a cleartext http one (a listener of the plain-Http transport, or a typed
-    // http:// URL) -- the fact the beacon resolution below needs, because a
-    // cleartext enroll side cannot also carry the check-in stream.
-    private static async Task<(string? Value, bool? PlainHttp, string? Error)> ResolveEndpointAsync(
+    // error is set. Transport reports the named listener's transport (null
+    // for a typed endpoint) -- the fact the beacon resolution below needs, so
+    // a derived check-in matches the front it rides: an mTLS front carries
+    // the gRPC stream, a web front the envelope POST cycle.
+    private static async Task<(string? Value, ListenerTransport? Transport, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
         IListenerRegistry listeners,
@@ -186,10 +185,7 @@ internal static class PayloadBuildRequestParser
         if (body.ListenerId is not { } listenerIdText)
         {
             var typed = body.Endpoint?.Trim();
-            bool? plain = null;
-            if (typed is { Length: > 0 } && Uri.TryCreate(typed, UriKind.Absolute, out var typedUri))
-                plain = typedUri.Scheme == Uri.UriSchemeHttp;
-            return (typed, plain, null);
+            return (typed, null, null);
         }
 
         if (body.Endpoint is not null)
@@ -215,22 +211,25 @@ internal static class PayloadBuildRequestParser
         var publicEndpoint = listener.PublicEndpoint.Trim();
         if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
             && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
-            return (publicEndpoint, absolute.Scheme == Uri.UriSchemeHttp, null);
+            return (publicEndpoint, listener.Transport, null);
         var scheme = listener.Transport == ListenerTransport.Http ? "http" : "https";
-        return ($"{scheme}://{publicEndpoint}", listener.Transport == ListenerTransport.Http, null);
+        return ($"{scheme}://{publicEndpoint}", listener.Transport, null);
     }
 
-    // Resolves the beacon host the check-in stream dials: a named listener's
-    // public endpoint, a typed https URL, or null to derive from the enroll
-    // endpoint (the single-front shape). A cleartext enroll side cannot carry
-    // the beacon -- Kestrel serves cleartext HTTP/2 only on an HTTP/2-only
-    // endpoint, which cannot also serve HTTP/1.x enrollment -- so there the
-    // beacon must be named and must be TLS-terminated. Stagers never check
-    // in, so beacon fields are refused on their builds.
+    // Resolves the check-in the baked artifact runs. A named beacon listener
+    // or a typed beacon endpoint names the mTLS socket the gRPC stream dials,
+    // and bakes as the bare authority -- to the implant a schemed beacon URL
+    // means the envelope POST cycle, so the stream's dial shape carries no
+    // scheme. With neither named the check-in derives from the enroll front:
+    // an mTLS front carries the gRPC stream on the same socket, every web
+    // front (http, https, or a typed http(s) URL) the envelope POST cycle on
+    // its own port -- the mainstream single-port shape, no split required.
+    // Stagers never check in, so beacon fields are refused on their builds.
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
-        bool? enrollIsPlainHttp,
+        ListenerTransport? enrollTransport,
+        string? enrollEndpoint,
         EngagementId engagementId,
         IListenerRegistry listeners,
         CancellationToken cancellationToken)
@@ -255,13 +254,9 @@ internal static class PayloadBuildRequestParser
                 return (null, "BeaconListenerId names another engagement's listener.");
             if (listener.Transport is not (ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
                 return (null,
-                    $"The beacon is gRPC over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS or https-envelope listener.");
+                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS or https-envelope listener.");
 
-            var publicEndpoint = listener.PublicEndpoint.Trim();
-            if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
-                && absolute.Scheme == Uri.UriSchemeHttps)
-                return (publicEndpoint, null);
-            return ($"https://{publicEndpoint}", null);
+            return (BeaconAuthority(listener.PublicEndpoint), null);
         }
 
         if (body.BeaconEndpoint is { } beaconEndpoint)
@@ -269,14 +264,27 @@ internal static class PayloadBuildRequestParser
             var trimmed = beaconEndpoint.Trim();
             if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
                 return (null,
-                    $"Beacon endpoint must be an absolute https URL the check-in stream can dial, got '{beaconEndpoint}'.");
-            return (trimmed, null);
+                    $"Beacon endpoint must be an absolute https URL naming the mTLS socket the check-in stream dials, got '{beaconEndpoint}'.");
+            return (BeaconAuthority(trimmed), null);
         }
 
-        if (enrollIsPlainHttp == true)
-            return (null,
-                "The enroll endpoint is cleartext http, which cannot carry implant check-ins: the beacon speaks gRPC (HTTP/2 over mTLS) and a cleartext socket serves HTTP/1.x enrollment only. Name the engagement's mTLS listener as the beacon (beaconListenerId), or type its endpoint (beaconEndpoint).");
+        if (enrollTransport == ListenerTransport.Mtls && enrollEndpoint is { } front)
+            return (BeaconAuthority(front), null);
         return (null, (string?)null);
+    }
+
+    // Strips a TLS endpoint down to the authority the gRPC stream dials. The
+    // listener record normalizes its TLS public endpoints to https URLs and a
+    // typed beacon endpoint arrives as one; the baked mTLS dial shape must
+    // carry none, because to the implant a schemed beacon URL is the envelope
+    // POST cycle's.
+    private static string BeaconAuthority(string endpoint)
+    {
+        var trimmed = endpoint.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            return uri.Authority;
+        return trimmed;
     }
 
     // Builds the malleable transport profile off the request body

@@ -28,21 +28,6 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Check in from the .NET implant over the envelope cycle.** The
-      cleartext envelope check-in is served (identity by handshake id
-      today), but the in-tree implant speaks gRPC only -- an engagement
-      whose egress is HTTP-shaped cannot run the reference implant single-
-      port on `http`, and every build carries the gRPC stack it does not
-      need. Add the envelope POST client as the implant's default check-in
-      for `http://` and `https://` beacon endpoints (poll cadence; channel
-      verbs refuse, as poll mode already does). The build parser's
-      cleartext-enroll refusal (the beacon-split requirement added when
-      http beacons could not work at all) relaxes with it: naming a beacon
-      listener over cleartext stays available as the hardened option, and
-      the Build form stops demanding it.
-      _AC:_ a stage2 built against a plain `http` listener with no beacon
-      named enrolls and checks in online over that single cleartext port,
-      and the same artifact shape runs against an `https` listener.
 - [ ] **Authenticate check-ins with a per-artifact key, not a TLS client
       certificate.** A TLS CertificateRequest is itself a fingerprint --
       an ordinary website never asks the visitor for one, so an IDS flags

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
+using Rod.Transport.Listeners;
 
 namespace Rod.Integration.Tests;
 
@@ -114,11 +115,11 @@ public class DotNetImplantTests
     /// primary enroll endpoint is a port nothing answers; the fallback entry is
     /// the live enroll route. Enroll walks to the fallback and redeems the token
     /// there; the beacon cycle then starts on the fallback's derived beacon host
-    /// (not an mTLS gRPC endpoint in the dev topology), fails, and walks on --
-    /// proving both halves of the walk, at enroll and at check-in, in one run.
-    /// The identity criterion: exactly one implant is enrolled and online -- the
-    /// leaf issued at the fallback enroll is the leaf every check-in presents --
-    /// and a task round-trips against it.
+    /// -- the same cleartext front, which carries the check-in itself over the
+    /// envelope POST cycle -- proving both halves of the walk, at enroll and at
+    /// check-in, in one run. The identity criterion: exactly one implant is
+    /// enrolled and online -- the leaf issued at the fallback enroll is the leaf
+    /// every check-in presents -- and a task round-trips against it.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_WalksFallbackEndpoints_WhenThePrimaryIsDead_EndToEnd()
@@ -737,6 +738,125 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Acceptance for the envelope check-in as the implant's web default
+    /// (architecture.md Sec 8): a stage-2 with no beacon named derives its
+    /// check-in from the enroll front and runs the envelope POST cycle on
+    /// that same port. Leg one is the plain cleartext front -- one socket for
+    /// enrollment and check-ins, the implant identified by its handshake id;
+    /// leg two is a single-port https listener -- the same artifact shape
+    /// with the enrolled leaf presented over the same socket's TLS. A task
+    /// round-trips on both legs; the acceptance criterion is the literal one:
+    /// a stage-2 built against a plain http front with no beacon named
+    /// enrolls and checks in online over that single port, and the same
+    /// artifact shape runs against an https listener.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_EnvelopeCheckIn_RunsOnPlainHttpAndHttpsFronts_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (engagementId, httpToken, httpsToken) = await env.MintEngagementWithTwoTokensAsync();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        try
+        {
+            // Leg one -- the cleartext front. No -beacon-url: the derived
+            // check-in URL is the enroll host itself, and the envelope cycle
+            // rides the same socket.
+            var httpStderr = new StringBuilder();
+            var httpImplant = StartImplant(implantDll, env, httpToken,
+                sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, deriveBeaconUrl: true);
+            httpImplant.ErrorDataReceived += (_, e) => { if (e.Data is not null) httpStderr.AppendLine(e.Data); };
+            httpImplant.BeginErrorReadLine();
+            string firstLegImplantId;
+            using (httpImplant)
+            {
+                try
+                {
+                    var (_, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), httpStderr);
+                    firstLegImplantId = implantId;
+                    TaskBody task;
+                    try
+                    {
+                        task = await IssueAndWaitAsync(env.Http, engagementId, implantId,
+                            "shell.exec", "echo rod-envelope-http");
+                    }
+                    catch (TimeoutException)
+                    {
+                        throw new TimeoutException("The cleartext-front task never completed. Implant stderr:\n" + httpStderr);
+                    }
+                    Assert.Equal("Succeeded", task.Outcome);
+                    Assert.Contains("rod-envelope-http", task.Output);
+                }
+                finally
+                {
+                    if (!httpImplant.HasExited)
+                    {
+                        try { httpImplant.Kill(entireProcessTree: true); } catch { }
+                        httpImplant.WaitForExit(5000);
+                    }
+                }
+            }
+
+            // Leg two -- the single-port https listener: an engagement's own
+            // TLS front, client certificates optional at the TLS layer. The
+            // same derived check-in, now answering over TLS with the leaf
+            // presented.
+            var httpsPort = TestSupport.GetFreeTcpPort();
+            var created = await env.Http.PostAsJsonAsync(
+                $"/engagements/{engagementId}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "single-port-https", Transport: "https",
+                    BindAddress: $"127.0.0.1:{httpsPort}", PublicEndpoint: $"127.0.0.1:{httpsPort}"));
+            created.EnsureSuccessStatusCode();
+
+            var httpsStderr = new StringBuilder();
+            var httpsImplant = StartImplant(implantDll, env, httpsToken,
+                sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, deriveBeaconUrl: true,
+                enrollUrl: $"https://127.0.0.1:{httpsPort}/implants/enroll");
+            httpsImplant.ErrorDataReceived += (_, e) => { if (e.Data is not null) httpsStderr.AppendLine(e.Data); };
+            httpsImplant.BeginErrorReadLine();
+            using (httpsImplant)
+            {
+                try
+                {
+                    // Both legs share the engagement, and the killed first-leg
+                    // implant lingers active on the roster until the staleness
+                    // sweep (minutes away), so "some implant is online" is not
+                    // enough -- wait for this leg's own identity to appear.
+                    var implantId = await WaitForNewImplantOnlineAsync(
+                        env, engagementId, firstLegImplantId, deadline: TimeSpan.FromSeconds(60), httpsStderr);
+                    TaskBody task;
+                    try
+                    {
+                        task = await IssueAndWaitAsync(env.Http, engagementId, implantId,
+                            "shell.exec", "echo rod-envelope-https");
+                    }
+                    catch (TimeoutException)
+                    {
+                        throw new TimeoutException("The https-front task never completed. Implant stderr:\n" + httpsStderr);
+                    }
+                    Assert.Equal("Succeeded", task.Outcome);
+                    Assert.Contains("rod-envelope-https", task.Output);
+                }
+                finally
+                {
+                    if (!httpsImplant.HasExited)
+                    {
+                        try { httpsImplant.Kill(entireProcessTree: true); } catch { }
+                        httpsImplant.WaitForExit(5000);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Acceptance for staged uploads (architecture.md Sec 10, the per-verb
     /// typed arm), driven by the real implant: a 10 MiB file.push carries its
     /// payload as staged content -- the sha256 bound into the signed
@@ -961,10 +1081,13 @@ public class DotNetImplantTests
     // identity (the dev CA doubles as the server cert). stdout/stderr are captured
     // for diagnostics on failure but are not asserted -- the acceptance criterion is the
     // teamserver-side outcome. The optional overrides exist for the egress-walk
-    // acceptance test: a dead primary endpoint plus a fallback list.
+    // acceptance test: a dead primary endpoint plus a fallback list, and for
+    // the envelope acceptance test: a derived check-in (no -beacon-url, so
+    // the implant derives the check-in URL from the enroll front itself).
     private static Process StartImplant(
         string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream",
-        string? enrollUrl = null, string? beaconUrl = null, string? fallbackEnrollUrls = null)
+        string? enrollUrl = null, string? beaconUrl = null, string? fallbackEnrollUrls = null,
+        bool deriveBeaconUrl = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -976,8 +1099,15 @@ public class DotNetImplantTests
         psi.ArgumentList.Add(implantDll);
         psi.ArgumentList.Add("-enroll-url");
         psi.ArgumentList.Add(enrollUrl ?? $"http://127.0.0.1:{env.HttpPort}/implants/enroll");
-        psi.ArgumentList.Add("-beacon-url");
-        psi.ArgumentList.Add(beaconUrl ?? $"127.0.0.1:{env.MtlsPort}");
+        // The default pins the mTLS port (the gRPC stream dial shape); a
+        // derived check-in omits the flag so the beacon URL derives from the
+        // enroll front -- an http(s) front runs the envelope POST cycle on
+        // its own port.
+        if (!deriveBeaconUrl)
+        {
+            psi.ArgumentList.Add("-beacon-url");
+            psi.ArgumentList.Add(beaconUrl ?? $"127.0.0.1:{env.MtlsPort}");
+        }
         if (fallbackEnrollUrls is not null)
         {
             psi.ArgumentList.Add("-fallback-enroll-urls");
@@ -1027,6 +1157,27 @@ public class DotNetImplantTests
         }
         throw new TimeoutException(
             "The .NET implant did not appear online within the deadline. Implant stderr:\n" + stderr);
+    }
+
+    // Waits for an online implant in the named engagement whose id is not the
+    // known one -- the shape a second implant in the same engagement needs,
+    // because a killed implant lingers active on the roster until the
+    // staleness sweep retires its session.
+    private static async Task<string> WaitForNewImplantOnlineAsync(
+        TestEnv env, string engagementId, string knownImplantId, TimeSpan deadline, StringBuilder stderr)
+    {
+        var end = DateTimeOffset.UtcNow + deadline;
+        while (DateTimeOffset.UtcNow < end)
+        {
+            var presence = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
+                $"/engagements/{engagementId}/presence");
+            var fresh = presence?.FirstOrDefault(p => p.ImplantId != knownImplantId);
+            if (fresh is not null)
+                return fresh.ImplantId;
+            await Task.Delay(500);
+        }
+        throw new TimeoutException(
+            "The second .NET implant did not appear online within the deadline. Implant stderr:\n" + stderr);
     }
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan deadline)
@@ -1315,6 +1466,13 @@ public class DotNetImplantTests
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodMtls(env.MtlsPort)
+                    // No startup listeners of its own, but the reloader the
+                    // runtime listener manager rides must be attached -- the
+                    // envelope acceptance test creates the engagement's https
+                    // listener through the operator API the way a deployment
+                    // does, and a runtime bind needs the dynamic-endpoint
+                    // path UseRodListeners wires.
+                    .UseRodListeners(Array.Empty<ListenerConfig>())
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();

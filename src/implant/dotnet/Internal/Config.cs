@@ -24,11 +24,13 @@ internal sealed class Config
     public string EnrollURL { get; set; } = string.Empty;
 
     /// <summary>
-    /// The host:port (or https URL) of the mTLS beacon endpoint (the gRPC
-    /// Beacon.CheckIn stream). The implant opens a long-lived reverse connection
-    /// here after enrolling (architecture.md Sec 5/8). When empty it is derived
-    /// from <see cref="EnrollURL"/>. It pairs with the primary endpoint only;
-    /// every <see cref="FallbackEnrollURLs"/> entry derives its own beacon host.
+    /// The check-in endpoint. A bare host:port names the mTLS socket the gRPC
+    /// Beacon.CheckIn stream dials; an http(s) URL names the web front whose
+    /// envelope POST cycle (/implants/beacon) carries the check-in
+    /// (architecture.md Sec 8). When empty it is derived from
+    /// <see cref="EnrollURL"/> -- an http(s) front derives its own web URL, an
+    /// mTLS front its bare host. It pairs with the primary endpoint only; every
+    /// <see cref="FallbackEnrollURLs"/> entry derives its own beacon host.
     /// </summary>
     public string BeaconURL { get; set; } = string.Empty;
 
@@ -278,7 +280,9 @@ internal sealed class Config
         usage: rod-implant [flags]
 
           -enroll-url string   teamserver enroll endpoint (https://host:port/implants/enroll)
-          -beacon-url string   teamserver mTLS beacon endpoint (host:port or https URL)
+          -beacon-url string   check-in endpoint: host:port dials the mTLS gRPC stream,
+                               http(s):// dials the envelope POST cycle (empty = derive
+                               from the enroll endpoint)
           -fallback-enroll-urls strings
                                ordered fallback enroll endpoints walked when the
                                primary burns (comma-separated)

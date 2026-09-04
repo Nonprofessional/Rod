@@ -66,9 +66,9 @@ export function PayloadBuildView({
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
-  // The socket the check-in stream dials when it differs from the enroll
-  // front: required against a cleartext (http) listener, which cannot carry
-  // the gRPC beacon. Empty means "same as the enroll endpoint".
+  // The socket the check-in stream dials when the build takes the hardened
+  // split: an mTLS front beside the enroll front. Empty means the check-in
+  // rides the enroll front's own envelope cycle.
   const [beaconListenerId, setBeaconListenerId] = useState('')
   const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
@@ -96,17 +96,16 @@ export function PayloadBuildView({
 
   const isStager = klass === 'Stager'
 
-  // A cleartext enroll front cannot also carry the check-in stream: the
-  // beacon speaks gRPC (HTTP/2 over mTLS), and a cleartext socket serves its
-  // HTTP/1.x enrollment only. A build against the http transport therefore
-  // names a second, TLS-terminated front for the beacon -- the split-socket
-  // shape. Everything else (mtls, https-envelope, an https URL) carries both
-  // halves on one socket.
+  // Every web front carries its own check-ins: the envelope POST cycle rides
+  // the same socket enrollment does, so no build needs a beacon split. The
+  // split-socket shape -- enroll on a web front, the interactive gRPC stream
+  // on an mTLS listener -- stays available as the hardened option, offered on
+  // the cleartext front where an operator most often wants it.
   const selectedListener = listeners.find((l) => l.id === listenerId)
   const enrollIsPlainHttp = selectedListener
     ? selectedListener.transport === 'http'
     : /^http:\/\//i.test(endpoint.trim())
-  const needsBeacon = !isStager && enrollIsPlainHttp
+  const offersBeaconSplit = !isStager && enrollIsPlainHttp
   const beaconCandidates = listeners.filter(
     (l) => l.transport === 'mtls' || l.transport === 'https-envelope',
   )
@@ -215,12 +214,6 @@ export function PayloadBuildView({
       setError('A stager fetches a Stage-2 payload -- build one first and pick it.')
       return
     }
-    if (needsBeacon && !beaconListenerId && !beaconEndpoint.trim()) {
-      setError(
-        'A cleartext (http) listener cannot carry check-ins: pick the Beacon listener for the check-in stream, or type a beacon endpoint under Advanced.',
-      )
-      return
-    }
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
@@ -299,15 +292,15 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {needsBeacon && (
+          {offersBeaconSplit && (
             <label>
-              Beacon listener
+              Beacon listener (optional)
               <select
                 value={beaconListenerId}
                 onChange={(e) => setBeaconListenerId(e.target.value)}
-                title="Check-ins are gRPC over mTLS and cannot ride the cleartext listener: pick the mTLS/https listener the beacon stream dials (the split-socket shape), or type a beacon endpoint under Advanced."
+                title="Check-ins already ride the enroll listener's own port over the envelope POST cycle. Pick the mTLS listener only for the hardened split-socket shape: the interactive gRPC stream (live channels) on its own TLS socket."
               >
-                <option value="">-- pick the mTLS listener check-ins dial --</option>
+                <option value="">-- none: check-ins ride the enroll listener --</option>
                 {beaconCandidates.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name} ({l.transport} → {l.publicEndpoint})
@@ -375,8 +368,12 @@ export function PayloadBuildView({
           <legend>Beacon profile</legend>
           <label>
             Mode
-            <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="stream">stream — persistent (interactive)</option>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+              title="How the artifact checks in. A web (http/https) front always polls -- one envelope POST per interval, whatever this says; stream mode holds the mTLS stream open and needs an mTLS front (pick a Beacon listener for it)."
+            >
+              <option value="stream">stream — persistent (interactive, mTLS)</option>
               <option value="poll">poll — check in and sleep</option>
             </select>
           </label>
@@ -455,7 +452,7 @@ export function PayloadBuildView({
                 title={
                   beaconListenerId
                     ? 'A beacon listener is picked, so its public endpoint is used.'
-                    : 'The https host the check-in stream dials when it differs from the enroll endpoint (empty = the enroll endpoint). Required in the split-socket shape: a cleartext enroll endpoint cannot carry the gRPC beacon.'
+                    : 'The https host of the mTLS socket the interactive gRPC stream dials. Leave empty and check-ins ride the enroll front itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>

@@ -237,11 +237,11 @@ public static class PayloadEndpoints
     // Defaulted so a minimal positional construction (as in the integration
     // tests) stays valid. ListenerId names the engagement's own listener and
     // supplies the endpoint from its record, so the two are mutually
-    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the socket
-    // the check-in stream dials when it differs from the enroll endpoint --
-    // the split-socket shape (enroll on a cleartext listener, the gRPC beacon
-    // on an mTLS listener); they are mutually exclusive too, and required
-    // when the enroll side is cleartext, which cannot carry check-ins.
+    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the mTLS
+    // socket the gRPC stream dials when the check-in should not ride the
+    // enroll front's own envelope cycle -- the split-socket shape (enroll on
+    // a web listener, the stream on an mTLS listener), optional everywhere:
+    // a web front carries its check-ins itself, so no split is required.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,

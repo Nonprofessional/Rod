@@ -489,3 +489,10 @@ gRPC stream remains the interactive shape -- server-push tasking the moment
 it is queued, and the live channels -- so an implant that wants
 `shell.interact` still wants the stream; an implant that only polls has no
 reason to carry a gRPC stack at all.
+
+The reference .NET implant made the same cut: an artifact built against an
+`http`/`https` front with no beacon named checks in over the envelope POST
+cycle on that front's own port (the mainstream single-port web shape), and
+only an mTLS-shaped build dials the gRPC stream -- so the wire contract this
+document describes is the one the reference implant itself runs on the web
+transports.
