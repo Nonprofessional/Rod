@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Rod.CoreState;
+using Rod.CoreState.Listeners;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -238,6 +240,58 @@ public class ListenerRuntimeTests
                 BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "http://orphan.example.test"));
         Assert.Equal(HttpStatusCode.NotFound, created.StatusCode);
+    }
+
+    [Fact]
+    public async Task StoredHttpsEnvelopeDefinition_RebindsAsMtls_AndTheRetiredEntryIsRefused()
+    {
+        var port = TestSupport.GetFreeTcpPort();
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        // The create form no longer knows the retired entry, and its refusal
+        // names exactly the six surviving transports.
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "late-envelope",
+                Transport: "https-envelope",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
+        var problem = await created.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        Assert.NotNull(problem);
+        Assert.Contains("http, https, mtls, dns, smb, tcp", problem!.Error);
+
+        // A definition saved before the retirement runs the restore path (what
+        // a restart runs per definition) and rebinds under its migrated shape:
+        // the entry always shared mtls's bind and termination, so the same id
+        // comes back as an mtls listener on the same port.
+        Assert.True(EngagementId.TryParse(engagementId, out var owning));
+        var definition = new ListenerDefinition(
+            Guid.NewGuid(), owning, "envelope-front",
+            "https-envelope", $"127.0.0.1:{port}", $"https://envelope.example.test:{port}",
+            DateTimeOffset.UtcNow);
+        var manager = env.Host.Services.GetRequiredService<ListenerManager>();
+        var restored = await manager.RestoreAsync(definition);
+        Assert.NotNull(restored);
+        Assert.Equal(ListenerTransport.Mtls, restored!.Transport);
+
+        var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
+        var bound = await registry.FindAsync(new ListenerId(definition.Id));
+        Assert.NotNull(bound);
+        Assert.Equal(ListenerTransport.Mtls, bound!.Transport);
+        Assert.Equal("running", bound.State.ToString().ToLowerInvariant());
+
+        // The migrated shape is a real socket: the port accepts connections.
+        using (var probe = new TcpClient())
+        {
+            await probe.ConnectAsync(IPAddress.Loopback, port, CancellationToken.None);
+        }
     }
 
     [Fact]

@@ -458,11 +458,11 @@ public static class TransportHost
                 // listener's State moves to Running inside RegisterAsync.
                 kestrel.Listen(host, port, listen =>
                 {
-                    // The envelope listener terminates mTLS exactly like the
-                    // gRPC listener: same client-certificate requirement, same
-                    // chain-to-CA validation -- only the check-in shape its
-                    // implants use differs (architecture.md Sec 8).
-                    if (config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
+                    // The mTLS listener terminates the client certificate the
+                    // enrolled implants present: required at the TLS layer,
+                    // validated chain-to-CA on the same CA-issued server leaf
+                    // every TLS endpoint presents (architecture.md Sec 8).
+                    if (config.Transport == ListenerTransport.Mtls)
                         ConfigureMtlsHttps(listen, kestrel);
                     // The single-port https listener never requests a client
                     // certificate: a TLS CertificateRequest is itself a

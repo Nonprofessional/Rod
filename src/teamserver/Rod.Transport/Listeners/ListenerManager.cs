@@ -20,7 +20,7 @@ namespace Rod.Transport.Listeners;
 /// <c>Listeners</c> configuration (architecture.md Sec 8). Two mechanics sit
 /// behind one shape:
 ///
-/// - The HTTP-shaped transports (<c>Http</c>, <c>Mtls</c>, <c>HttpsEnvelope</c>)
+/// - The HTTP-shaped transports (<c>Http</c>, <c>Https</c>, <c>Mtls</c>)
 ///   ride Kestrel's endpoint-configuration reloader: the manager publishes the
 ///   bind address as an endpoint URL into a push-only configuration source the
 ///   host registered with <c>KestrelServerOptions.Configure(..., reloadOnChange:
@@ -140,7 +140,22 @@ public sealed class ListenerManager
     /// </summary>
     public async Task<Listener?> RestoreAsync(ListenerDefinition definition, CancellationToken cancellationToken = default)
     {
-        if (!Enum.TryParse<ListenerTransport>(definition.Transport, ignoreCase: true, out var transport))
+        // The stored transport parses from its wire name ("mtls") or the enum
+        // name, case-insensitively, dashes ignored. The retired https-envelope
+        // entry maps to its nearest surviving transport, Mtls -- the bind and
+        // the mTLS termination it always shared -- so a definition saved
+        // before the retirement rebinds under its migrated shape instead of
+        // dying as unknown.
+        var normalized = definition.Transport.Trim().Replace("-", "");
+        ListenerTransport transport;
+        if (normalized.Equals("httpsenvelope", StringComparison.OrdinalIgnoreCase))
+        {
+            transport = ListenerTransport.Mtls;
+            _logger.LogInformation(
+                "Stored listener {ListenerId} ({Name}) carries the retired https-envelope transport; rebinding as mtls.",
+                definition.Id, definition.Name);
+        }
+        else if (!Enum.TryParse<ListenerTransport>(normalized, ignoreCase: true, out transport))
         {
             _logger.LogWarning(
                 "Stored listener {ListenerId} carries unknown transport '{Transport}'; skipped.",
@@ -209,7 +224,7 @@ public sealed class ListenerManager
         return config.Transport switch
         {
             ListenerTransport.Http or ListenerTransport.Https
-                or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
+                or ListenerTransport.Mtls
                 => await CreateHttpListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
             ListenerTransport.Dns or ListenerTransport.Smb or ListenerTransport.Tcp
                 => await CreateStreamListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
@@ -272,7 +287,7 @@ public sealed class ListenerManager
         // default never asks, the fingerprint rule the https posture is built
         // on (architecture.md Sec 8/9).
         var scheme = config.Transport == ListenerTransport.Http ? "http" : "https";
-        var clientCertificateMode = config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
+        var clientCertificateMode = config.Transport == ListenerTransport.Mtls
             ? nameof(ClientCertificateMode.AllowCertificate)
             : null;
         var listener = Listener.Define(

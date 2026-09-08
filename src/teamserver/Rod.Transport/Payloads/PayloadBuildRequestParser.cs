@@ -202,7 +202,7 @@ internal static class PayloadBuildRequestParser
         if (listener.EngagementId != engagementId)
             return (null, null, "ListenerId names another engagement's listener.");
         if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Https
-            or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+            or ListenerTransport.Mtls))
             return (null, null,
                 $"The {listener.Transport.ToString().ToLowerInvariant()} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
 
@@ -252,9 +252,9 @@ internal static class PayloadBuildRequestParser
                 return (null, "BeaconListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
             if (listener.EngagementId != engagementId)
                 return (null, "BeaconListenerId names another engagement's listener.");
-            if (listener.Transport is not (ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+            if (listener.Transport != ListenerTransport.Mtls)
                 return (null,
-                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS or https-envelope listener.");
+                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS listener.");
 
             return (BeaconAuthority(listener.PublicEndpoint), null);
         }

@@ -28,16 +28,6 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Retire the `HttpsEnvelope` listener entry.** It exists to name an
-      endpoint whose purpose is envelope-only reach; once the envelope
-      cycle is the default web check-in on `http`/`https`, every web
-      listener serves it and the entry says nothing the transport list
-      does not. Remove the entry (existing definitions migrate to the
-      nearest surviving transport), leaving `https`, `http`, `mtls`,
-      `dns`, `smb`, `tcp`.
-      _AC:_ the create form and the transport enum surface six transports,
-      and an engagement that held an https-envelope definition binds it
-      again after a restart under its migrated shape.
 - [ ] **Harden the implant certificate profile.** Issued leaves carry the
       implant id as the CN and the engagement id under a custom OID -- a
       GUID common name with an unknown extension is itself a toolchain

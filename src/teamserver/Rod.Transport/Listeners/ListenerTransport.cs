@@ -2,7 +2,7 @@ namespace Rod.Transport.Listeners;
 
 /// <summary>
 /// The C2 transport a <see cref="Listener"/> terminates (architecture.md Sec 8).
-///  ships <see cref="Http"/>, <see cref="Mtls"/>, <see cref="HttpsEnvelope"/>,
+///  ships <see cref="Http"/>, <see cref="Https"/>, <see cref="Mtls"/>,
 /// <see cref="Dns"/>, <see cref="Smb"/>, and <see cref="Tcp"/>.
 /// </summary>
 public enum ListenerTransport
@@ -31,23 +31,11 @@ public enum ListenerTransport
     /// <summary>
     /// Mutual TLS. The implant presents a client certificate that must chain to the
     /// engagement CA and bind <c>(implant_id, engagement_id)</c>; the beacon stream
-    /// terminates here (architecture.md Sec 9).
+    /// terminates here (architecture.md Sec 9). The envelope POST cycle rides the
+    /// same socket alongside the stream, so an implant without a gRPC stack still
+    /// checks in against an mTLS front.
     /// </summary>
     Mtls,
-
-    /// <summary>
-    /// The plain-HTTP envelope (architecture.md Sec 8, the implant-reach
-    /// escape hatch): the same rod.v1 frames the gRPC stream carries, as
-    /// varint-length-delimited sequences in ordinary HTTPS request/response
-    /// bodies over the same client certificates. One POST is one poll
-    /// check-in. The bind and the mTLS termination are identical to
-    /// <see cref="Mtls"/> -- the difference is purely which check-in shape an
-    /// implant uses against it, and both are served on either; the listener
-    /// entry exists so a deployment can name an endpoint whose purpose is
-    /// envelope-only reach (a target language with an HTTP client and a
-    /// protobuf codec but no gRPC stack).
-    /// </summary>
-    HttpsEnvelope,
 
     /// <summary>
     /// DNS over UDP: TXT-record check-ins for egress-restricted targets
@@ -86,11 +74,12 @@ public enum ListenerTransport
 }
 
 /// <summary>
-/// The stable wire name of a listener transport: the enum name in kebab case
-/// (<c>HttpsEnvelope</c> -&gt; <c>https-envelope</c>). The listener listing and
-/// the operator UI render this name, so a multi-word transport never
-/// stringifies as one mashed word; the plain lower-casing the listing once
-/// applied produced <c>httpsenvelope</c>, which reads as nothing.
+/// The stable wire name of a listener transport: the enum name in kebab case,
+/// a dash at each word break. The listener listing and the operator UI render
+/// this name, so a multi-word transport never stringifies as one mashed word
+/// (the plain lower-casing the listing once applied produced
+/// <c>httpsenvelope</c>, which reads as nothing). Every current entry is
+/// single-word and lower-cases as itself.
 /// </summary>
 public static class ListenerTransportNames
 {

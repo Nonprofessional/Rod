@@ -119,12 +119,13 @@ public class ListenerTests
     }
 
     [Fact]
-    public async Task ListenerListing_RendersKebabCaseTransportNames()
+    public async Task ListenerListing_RendersTheTransportWireNames()
     {
-        // The stable label contract: multi-word transports render kebab-cased
-        // (https-envelope), never as one mashed lower-cased word, and the
-        // single-word transports keep their plain names. The operator UI
-        // renders the listing's string verbatim, so this is the UI's name too.
+        // The stable label contract: the listing renders each transport's
+        // wire name -- plain for the single-word entries (every current
+        // transport), kebab-cased for any multi-word entry to come, never
+        // one mashed lower-cased word. The operator UI renders the listing's
+        // string verbatim, so this is the UI's name too.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
             Transport: ListenerTransport.Http,
@@ -133,14 +134,14 @@ public class ListenerTests
 
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http);
-        await CreateListenerAsync(env.Http, engagementId, "envelope-1", "https-envelope", "https://c2.example.test");
+        await CreateListenerAsync(env.Http, engagementId, "mtls-1", "mtls", "https://c2.example.test");
         await CreateListenerAsync(env.Http, engagementId, "http-1", "http", "http://c2.example.test");
 
         var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>(
             $"/engagements/{engagementId}/listeners");
         Assert.NotNull(listeners);
         var transports = listeners!.ToDictionary(l => l.Name, l => l.Transport);
-        Assert.Equal("https-envelope", transports["envelope-1"]);
+        Assert.Equal("mtls", transports["mtls-1"]);
         Assert.Equal("http", transports["http-1"]);
     }
 

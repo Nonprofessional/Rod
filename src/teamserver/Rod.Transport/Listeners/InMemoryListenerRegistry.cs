@@ -69,7 +69,7 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
         Listener? found = null;
         foreach (var listener in _listeners.Values)
         {
-            if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope))
+            if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls))
                 continue;
             if (!TryParsePort(listener.BindAddress, out var bindPort) || bindPort != port)
                 continue;

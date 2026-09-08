@@ -544,10 +544,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - Supported listener transports: **HTTP(S)**, **HTTPS** (the single-port
   shape: one TLS socket serves enrollment on the stager token and check-ins
   on the enrolled certificate, the certificate optional at the TLS layer so
-  the certificate-less enrollment handshake can complete), **mTLS**, the
-  **plain-HTTP envelope** over mTLS, **DNS**, **SMB** (named pipe), and
-  **raw TCP** are implemented. Transport choice is a profile/deployment
-  concern; the protocol semantics are transport-independent.
+  the certificate-less enrollment handshake can complete), **mTLS**, **DNS**,
+  **SMB** (named pipe), and **raw TCP** are implemented. Transport choice is
+  a profile/deployment concern; the protocol semantics are
+  transport-independent.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
   it: the operator API and UI in the clear, and check-ins identified by the
@@ -562,8 +562,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   route -- a certificate-less connection reaches HTTP only on the `Https`
   transport (where enrollment needs it), and the check-in routes refuse it.
   A deployment that fronts the teamserver with its own TLS-terminating edge
-  accepts the split knowingly; without such an edge, real binds are `Https`,
-  `Mtls`, or `HttpsEnvelope`.
+  accepts the split knowingly; without such an edge, real binds are `Https`
+  or `Mtls`.
 - **DNS is the egress-restricted check-in transport.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
@@ -624,10 +624,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   response, the staged chunk runs answering the request's demands, and
   queued tasking while a 4 MiB dispatch budget lasts (what does not fit is
   requeued for the next check-in). It changes the framing, not the protocol
-  semantics: the route is mapped on every listener, the frame paths are the
-  beacon compositions every transport shares, and an `HttpsEnvelope` listener
-  entry binds the same mTLS socket the gRPC listener binds so a deployment
-  can name an envelope-only endpoint. Authentication is at the application
+  semantics: the route is mapped on every listener and the frame paths are
+  the beacon compositions every transport shares -- an mTLS front serves it
+  alongside the gRPC stream on the same socket, so a deployment never needs a
+  dedicated envelope-only entry (the retired `HttpsEnvelope` listener name
+  said nothing the transport list did not; its stored definitions migrate to
+  `mtls` on restore). Authentication is at the application
   layer, under the per-artifact key the build mints (Sec 9) -- the mainstream
   HTTP(S) C2 shape, and the reason the `http`/`https` listeners are
   single-port and request no TLS client certificate anywhere: a

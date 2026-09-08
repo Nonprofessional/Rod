@@ -12,15 +12,15 @@ An engagement's C2 ingress. Each listener owns two addresses:
 - **Bind** -- the socket *this server* opens. Picked from the host's
   interfaces (the dropdown is built from `GET /network/interfaces`): one NIC,
   the all-interfaces wildcard (`0.0.0.0`), or a custom address; the port is
-  its own field, defaulted per transport (http 5090, mTLS 5443, HTTPS
-  envelope 8443, DNS 53, TCP 4444). SMB has no interface/port -- its bind is
+  its own field, defaulted per transport (http 5090, mTLS 5443, HTTPS 8443,
+  DNS 53, TCP 4444). SMB has no interface/port -- its bind is
   a bare pipe name.
 - **Public endpoint** -- the address *implants dial*, baked into payloads.
   In production this is typically your redirector
   ([redirectors.md](redirectors.md)); in dev it is usually the bind itself.
 
 Endpoint completion (HTTP-shaped transports only): an empty endpoint derives
-from the bind (`bind 10.1.2.3:8443` on https-envelope becomes
+from the bind (`bind 10.1.2.3:8443` on https becomes
 `https://10.1.2.3:8443`); a bare hostname (`redirect.example`) takes the
 transport's scheme and the listener's own port; a complete URL or `host:port`
 pair is stored verbatim. A wildcard bind (`0.0.0.0`) names no dialable
@@ -49,9 +49,9 @@ enrollment). The shapes that follow from that:
   DNS/SMB/TCP), and the in-tree .NET implant does not speak it: build
   against it with a beacon listener named (the split-socket shape) unless
   your implant is a Tier-0 envelope client.
-- **`mTLS` / HTTPS envelope** are the strict beacon-only sockets (the
-  certificate is demanded at the TLS layer); pair one with an `HTTP`
-  listener for enrollment when you want the hard posture.
+- **`mTLS`** is the strict beacon-only socket (the certificate is demanded
+  at the TLS layer); pair one with an `HTTP` listener for enrollment when
+  you want the hard posture.
 
 Every payload build pins the teamserver CA into the artifact, so the
 implant's first contact (enroll) validates the server it dials against the
@@ -67,7 +67,7 @@ and run, zero arguments.
 
 **Beacon listener** appears when the picked listener is cleartext `http`:
 check-ins cannot ride that socket, so the form asks for the engagement's
-`mTLS`/HTTPS-envelope listener the beacon stream dials -- the split-socket
+`mTLS` listener the beacon stream dials -- the split-socket
 shape (enroll one socket, beacon another). An `https` listener carries both
 halves itself and needs no split. The build API takes the same thing as
 `beaconListenerId`, or a typed `beaconEndpoint`, and refuses a cleartext

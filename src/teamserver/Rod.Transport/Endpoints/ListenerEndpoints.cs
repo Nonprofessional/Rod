@@ -68,7 +68,7 @@ public static class ListenerEndpoints
         // so they require it spelled out.
         string publicEndpoint;
         if (transport is ListenerTransport.Http or ListenerTransport.Https
-            or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
+            or ListenerTransport.Mtls)
         {
             var derived = DeriveHttpPublicEndpoint(transport, body.BindAddress.Trim(), body.PublicEndpoint);
             if (derived is not null)
@@ -246,9 +246,9 @@ public static class ListenerEndpoints
         return Results.Ok(Response.Of(listener));
     }
 
-    // The transport parses from the wire's kebab name ("https-envelope") or
-    // the enum name, case-insensitively -- the listing renders kebab, so the
-    // create form speaks the same shape it reads back.
+    // The transport parses from the wire's kebab name ("mtls") or the enum
+    // name, case-insensitively -- the listing renders kebab, so the create
+    // form speaks the same shape it reads back.
     private static bool TryParseTransport(string? text, out ListenerTransport transport)
     {
         if (text is not null
@@ -403,7 +403,7 @@ public static class ListenerEndpoints
 
         return transport switch
         {
-            ListenerTransport.Http or ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
+            ListenerTransport.Http or ListenerTransport.Mtls
                 => IsPublicEndpoint(text),
             // A zone or pipe path: letters, digits, dots, hyphens, and the
             // Windows pipe prefix's backslashes.
@@ -466,8 +466,9 @@ public static class ListenerEndpoints
             => new(
                 l.Id.ToString(),
                 l.Name,
-                // The stable kebab-case wire name (HttpsEnvelope -> "https-envelope"),
-                // which the listing and the operator UI render verbatim.
+                // The stable kebab-case wire name (a multi-word transport
+                // carries its dashes), which the listing and the operator UI
+                // render verbatim.
                 l.Transport.WireName(),
                 l.BindAddress,
                 l.PublicEndpoint,
