@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type EngagementTask,
   type Implant,
-  cancelTask,
   listEngagementTasks,
   listImplantTasks,
   listImplants,
@@ -13,16 +12,14 @@ import { StatusBadge } from '../components/StatusBadge'
 import { CHANNEL_VERBS } from '../verbForms'
 
 // The task log: the engagement's working record of issued tasking, live on
-// the SSE tick. Issuing moved to the fleet's context menu and the session
-// console; what belongs here is reading -- filter by implant (its console
-// feed, engagement-wide when unfiltered), by verb, by status, by operator, or
+// the SSE tick. Issuing moved to the implants menu and the session console;
+// what belongs here is reading -- filter by implant (its console feed,
+// engagement-wide when unfiltered), by verb, by status, by operator, or
 // free text over verb/arguments/output, and watch new rows land as operators
 // work. "Show me every shell command this engagement ran" is the shape this
-// view exists for.
-//
-// A queued task still retracts from here (its Cancel), and channel tasks
-// still open their pane (their Interact) -- the log is where an operator
-// notices, not where they type.
+// view exists for. Read-only by design: retracting a queued task is an
+// operational action and lives in the session console, next to the implant
+// it targets; channel transcripts still open from their rows.
 
 const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
@@ -121,20 +118,6 @@ export function TaskLogView({
     })
   }, [tasks, verbFilter, statusFilter, operatorFilter, implantFilter, textFilter])
 
-  const onCancel = async (taskId: string, verb: string) => {
-    if (!window.confirm(`Cancel queued ${verb} task ${taskId.slice(0, 8)}? It will never be dispatched.`)) {
-      return
-    }
-    try {
-      await cancelTask(engagementId, taskId)
-      await refresh()
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-      await refresh()
-    }
-  }
-
   const toggleExpanded = (taskId: string) => {
     setExpanded((current) => {
       const next = new Set(current)
@@ -160,8 +143,8 @@ export function TaskLogView({
     <div className="card">
       <h3>Task log</h3>
       <p className="muted">
-        Every task this engagement issued, newest first, live as operators work. Issue from an
-        implant's context menu or its session console; read it here.
+        Every task this engagement issued, newest first, live as operators work -- read-only;
+        cancel queued tasking from the implant's session console.
       </p>
       <div className="inline-form">
         <select
@@ -248,7 +231,6 @@ export function TaskLogView({
                   task={t}
                   expanded={expanded.has(t.taskId)}
                   onToggle={() => toggleExpanded(t.taskId)}
-                  onCancel={() => void onCancel(t.taskId, t.verb)}
                   onInteract={() =>
                     setInteractTask(interactTask === t.taskId ? null : t.taskId)
                   }
@@ -276,7 +258,6 @@ function LogRow({
   task,
   expanded,
   onToggle,
-  onCancel,
   onInteract,
   interactOpen,
 }: {
@@ -284,7 +265,6 @@ function LogRow({
   task: EngagementTask
   expanded: boolean
   onToggle: () => void
-  onCancel: () => void
   onInteract: () => void
   interactOpen: boolean
 }) {
@@ -301,7 +281,7 @@ function LogRow({
           <a
             className="button-link sm"
             href={`#/engagements/${engagementId}/implants/${task.implantId}`}
-            title="Open the session console"
+            title="Open the session console -- queued tasks cancel there"
             onClick={(e) => e.stopPropagation()}
           >
             {task.implantId.slice(0, 8)}
@@ -321,11 +301,6 @@ function LogRow({
         </td>
         <td onClick={(e) => e.stopPropagation()}>
           <div className="row-actions">
-            {task.status === 'Queued' && (
-              <button className="danger sm" onClick={onCancel}>
-                Cancel
-              </button>
-            )}
             {isChannelVerb(task.verb) && (
               <button className="sm" onClick={onInteract}>
                 {interactOpen ? 'Hide' : 'Interact'}

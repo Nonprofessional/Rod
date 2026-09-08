@@ -1496,6 +1496,9 @@ tr.device-row:hover td {
   width: 100%;
   gap: 8px;
   align-items: center;
+  /* The element-level button rule centers flex content (line ~377); a menu
+     row is a left-reading list entry, not a label button. */
+  justify-content: flex-start;
   padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -1795,6 +1798,7 @@ a.button-link:hover {
 /* A file browser entry: icon plus name as one inline target. */
 button.file-entry {
   display: inline-flex;
+  justify-content: flex-start;
   gap: 6px;
   align-items: center;
   padding: 0;
