@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type EngagementTask,
   type Implant,
@@ -21,36 +21,41 @@ import { TaskDialog } from '../components/TaskDialog'
 import { CHANNEL_VERBS, VERB_FORMS } from '../verbForms'
 import { implantMenuEntries } from './implantMenu'
 
-// The session console: one implant, operator-first. The header names the
-// device and the identity; the feed is this implant's own task history (live
-// on the SSE tick), rows expanding to their output; the command bar at the
-// bottom is the operator's keyboard path -- a plain line runs as a shell
-// command, a handful of prefixed words map to the common verbs. Channel tasks
-// (interactive shell, tunnels) get their terminal pane here. Everything the
-// command bar cannot express (an upload's file picker, the full verb table)
-// stays one menu away in the header's three-dot menu -- the same menu the
-// fleet rows open.
+// The session console: one implant, rendered as the terminal operators expect
+// from a C2. A title bar names the device, the identity, and the live state;
+// below it the transcript -- this implant's task history in causal order,
+// each task a line with its status, output expanding under the line (short
+// output shows outright, long output folds); the channel pane for interactive
+// tasks opens inside the same flow, above the prompt, so the typing never
+// changes windows. The prompt at the bottom is the keyboard path: a plain
+// line runs as a shell command, a handful of prefixed words map to the
+// common verbs, and 'help' lists them. Everything the prompt cannot express
+// (an upload's file picker, the full verb table) stays one menu away in the
+// title bar's three-dot menu -- the same menu the implant rows open.
 
 const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
+// Short outputs render unfolded; anything longer folds behind the line until
+// the operator opens it -- a recon.ps dump should not bury the prompt.
+const UNFOLDED_OUTPUT_LIMIT = 400
+
 interface QuickCommand {
-  word: string
   usage: string
   note: string
 }
 
 const QUICK_HELP: readonly QuickCommand[] = [
-  { word: '', usage: '<anything>', note: 'runs as a shell.exec command' },
-  { word: 'interact', usage: 'interact', note: 'open the interactive shell channel' },
-  { word: 'ps', usage: 'ps', note: 'list processes (the browser pane is in the menu)' },
-  { word: 'kill', usage: 'kill <pid>', note: 'terminate a process' },
-  { word: 'screenshot', usage: 'screenshot', note: 'capture the display' },
-  { word: 'hostenum', usage: 'hostenum', note: 'local host facts' },
-  { word: 'portscan', usage: 'portscan <host> <start-end>', note: 'scan a host' },
-  { word: 'services', usage: 'services <host> <ports>', note: 'probe services' },
-  { word: 'download', usage: 'download <path>', note: 'pull a file back' },
-  { word: 'files', usage: 'files', note: 'open the file browser pane' },
-  { word: 'raw', usage: 'raw <verb> [args…]', note: 'issue any verb directly' },
+  { usage: '‹command line›', note: 'runs as a shell command' },
+  { usage: 'interact', note: 'open the interactive shell channel' },
+  { usage: 'ps', note: 'list processes (the browser pane is in the menu)' },
+  { usage: 'kill <pid>', note: 'terminate a process' },
+  { usage: 'screenshot', note: 'capture the display' },
+  { usage: 'hostenum', note: 'local host facts' },
+  { usage: 'portscan <host> <start-end>', note: 'scan a host' },
+  { usage: 'services <host> <ports>', note: 'probe services' },
+  { usage: 'download <path>', note: 'pull a file back' },
+  { usage: 'files', note: 'open the file browser pane' },
+  { usage: 'raw <verb> [args…]', note: 'issue any verb directly' },
 ]
 
 export function InteractView({
@@ -70,21 +75,24 @@ export function InteractView({
   const [missing, setMissing] = useState(false)
   const [tasks, setTasks] = useState<EngagementTask[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Output blocks the operator flipped against their default fold state.
+  const [toggled, setToggled] = useState<Set<string>>(new Set())
   const [interactTask, setInteractTask] = useState<string | null>(null)
   const [dialogVerb, setDialogVerb] = useState<string | null>(null)
   const [processes, setProcesses] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
-  const [groups, setGroups] = useState<CapabilityGroup[]>([])
+  const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
   const [line, setLine] = useState('')
   const [hint, setHint] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const menu = useContextMenu()
+  const transcriptRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef(true)
 
   useEffect(() => {
     void loadCapabilityGroups()
-      .then(setGroups)
+      .then(setCapabilityGroups)
       .catch((e) => setError(String(e)))
   }, [])
 
@@ -108,6 +116,12 @@ export function InteractView({
     void refresh()
   }, [refresh, onlineTick])
 
+  // A stale toggle set or channel pane must not survive an engagement switch.
+  useEffect(() => {
+    setToggled(new Set())
+    setInteractTask(null)
+  }, [engagementId, implantId])
+
   const loadOlder = useCallback(async () => {
     if (!cursor) return
     try {
@@ -121,19 +135,34 @@ export function InteractView({
 
   const descriptorByVerb = useMemo(() => {
     const map = new Map<string, Record<string, string>>()
-    for (const group of groups) {
+    for (const group of capabilityGroups) {
       for (const descriptor of group.descriptors) {
         map.set(descriptor.verb, descriptor.attributes)
       }
     }
     return map
-  }, [groups])
+  }, [capabilityGroups])
 
   const presence = onlineImplants.find((p) => p.implantId === implantId)
+
+  // The transcript follows the newest line only while the operator is parked
+  // at the bottom (a terminal, not a jump scroll); scrolling up to read pins
+  // the view until they return down.
+  useEffect(() => {
+    const el = transcriptRef.current
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
+  }, [tasks, interactTask, toggled])
+
+  const onTranscriptScroll = () => {
+    const el = transcriptRef.current
+    if (!el) return
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
 
   const issue = useCallback(
     async (verb: string, args: string) => {
       setBusy(true)
+      pinnedRef.current = true
       try {
         const task = await issueTask(engagementId, { implantId, verb, arguments: args })
         setHint(null)
@@ -160,11 +189,7 @@ export function InteractView({
     try {
       switch (head) {
         case 'help':
-          setHint(
-            QUICK_HELP.map((c) =>
-              [c.usage || '‹command line›', '--', c.note].join(' '),
-            ).join('   ·   '),
-          )
+          setHint(QUICK_HELP.map((c) => `${c.usage} — ${c.note}`).join('    ·    '))
           return
         case 'interact': {
           const task = await issue('shell.interact', '')
@@ -230,8 +255,8 @@ export function InteractView({
     }
   }
 
-  const toggleExpanded = (taskId: string) => {
-    setExpanded((current) => {
+  const toggleToggled = (taskId: string) => {
+    setToggled((current) => {
       const next = new Set(current)
       if (next.has(taskId)) next.delete(taskId)
       else next.add(taskId)
@@ -246,7 +271,7 @@ export function InteractView({
         <div className="empty">
           <Icon name="cpu" />
           Implant {implantId.slice(0, 8)} is not enrolled in this engagement.{' '}
-          <a href={`#/engagements/${engagementId}/implants`}>Back to the fleet</a>.
+          <a href={`#/engagements/${engagementId}/implants`}>Back to the implants</a>.
         </div>
       </div>
     )
@@ -267,38 +292,42 @@ export function InteractView({
       })
     : []
 
+  const hostLabel = implant?.hostname ?? 'unknown host'
+
   return (
     <>
-      <div className="card">
-        <div className="console-head">
-          <div>
-            <a className="back-link" href={`#/engagements/${engagementId}/implants`}>
-              ← Fleet
-            </a>
-            <h3>
-              {implant?.hostname ?? 'unknown host'}{' '}
-              <span className="muted">
-                {implant ? [implant.os, implant.arch].filter(Boolean).join(' · ') : ''}
-              </span>
-            </h3>
-            <p className="muted">
-              <code>{implantId.slice(0, 8)}</code> {implant?.class} ·{' '}
-              {implant?.username ? `as ${implant.username} · ` : ''}
-              {implant?.parentImplantId ? `parent ${implant.parentImplantId.slice(0, 8)} · ` : ''}
-              kill {implant ? new Date(implant.killDate).toLocaleDateString() : '—'}
-            </p>
-          </div>
-          <div className="console-status">
+      <div className="terminal console-terminal">
+        <div className="console-titlebar">
+          <a className="back-link" href={`#/engagements/${engagementId}/implants`}>
+            ← Implants
+          </a>
+          <span className="console-host" title={`Implant ${implantId}`}>
+            <Icon name="cpu" className="wire-icon" />
+            {hostLabel}
+            <code>{implantId.slice(0, 8)}</code>
+          </span>
+          <span className="console-facts">
+            {implant ? [implant.class, ...[implant.os, implant.arch].filter(Boolean)].join(' · ') : ''}
+            {implant?.username ? ` · as ${implant.username}` : ''}
+            {implant?.parentImplantId ? ` · parent ${implant.parentImplantId.slice(0, 8)}` : ''}
+            {implant ? ` · kill ${new Date(implant.killDate).toLocaleDateString()}` : ''}
+          </span>
+          <span className="console-live">
             {implant && (
               <StatusBadge
                 status={implant.retiredAt ? 'retired' : implant.isOnline ? 'online' : 'offline'}
               />
             )}
             {presence && !implant?.retiredAt && (
-              <span className="muted" title={`Online since ${new Date(presence.onlineAt).toLocaleString()}`}>
-                last seen {new Date(presence.lastSeenAt).toLocaleTimeString()}
+              <span
+                className="muted"
+                title={`Online since ${new Date(presence.onlineAt).toLocaleString()}`}
+              >
+                seen {new Date(presence.lastSeenAt).toLocaleTimeString()}
               </span>
             )}
+          </span>
+          <span className="spacer">
             <button
               className="ghost sm menu-trigger"
               title="Implant actions"
@@ -309,90 +338,68 @@ export function InteractView({
             >
               <Icon name="more" />
             </button>
-          </div>
+          </span>
         </div>
-        {error && <p className="error">{error}</p>}
-      </div>
 
-      <div className="card">
-        <h3>Task feed</h3>
-        {tasks.length === 0 ? (
-          <div className="empty">
-            <Icon name="inbox" />
-            No tasks on this implant yet -- type below or use the menu.
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Verb</th>
-                  <th>Status</th>
-                  <th>By</th>
-                  <th>At</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...tasks].reverse().map((task) => (
-                  <ConsoleRow
-                    key={task.taskId}
-                    task={task}
-                    operatorId={operator.operatorId}
-                    expanded={expanded.has(task.taskId)}
-                    onToggle={() => toggleExpanded(task.taskId)}
-                    onCancel={() => void onCancel(task.taskId)}
-                    onInteract={() =>
-                      setInteractTask(interactTask === task.taskId ? null : task.taskId)
-                    }
-                    interactOpen={interactTask === task.taskId}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {cursor && (
-          <div className="load-more">
-            <button className="ghost" onClick={() => void loadOlder()}>
-              Load older
+        <div className="console-transcript" ref={transcriptRef} onScroll={onTranscriptScroll}>
+          {cursor && (
+            <button className="ghost sm console-older" onClick={() => void loadOlder()}>
+              ↑ load older
             </button>
-          </div>
-        )}
-      </div>
+          )}
+          {tasks.length === 0 && (
+            <div className="console-empty muted">
+              No tasks on this implant yet -- type below, 'help' for the shortcuts, or use the
+              menu (top right).
+            </div>
+          )}
+          {tasks.map((task) => (
+            <ConsoleBlock
+              key={task.taskId}
+              task={task}
+              operatorId={operator.operatorId}
+              toggled={toggled.has(task.taskId)}
+              onToggle={() => toggleToggled(task.taskId)}
+              onCancel={() => void onCancel(task.taskId)}
+              onInteract={() =>
+                setInteractTask(interactTask === task.taskId ? null : task.taskId)
+              }
+            />
+          ))}
+          {interactTask && (
+            <InteractPane
+              engagementId={engagementId}
+              taskId={interactTask}
+              verb={tasks.find((t) => t.taskId === interactTask)?.verb ?? 'channel'}
+              onClose={() => setInteractTask(null)}
+            />
+          )}
+        </div>
 
-      {interactTask && (
-        <InteractPane
-          engagementId={engagementId}
-          taskId={interactTask}
-          verb={tasks.find((t) => t.taskId === interactTask)?.verb ?? 'channel'}
-          onClose={() => setInteractTask(null)}
-        />
-      )}
-
-      <div className="terminal console-bar">
-        <form className="task-form" onSubmit={onQuick}>
+        <form className="console-prompt" onSubmit={onQuick}>
           <span className="prompt" aria-hidden="true">
-            ›
+            {hostLabel.split('.')[0]} ›
           </span>
           <input
             className="wide"
-            placeholder="type a command and press Enter -- 'help' for the shortcuts"
+            placeholder={implant?.retiredAt ? 'implant retired' : 'type a command and press Enter -- help lists the shortcuts'}
             value={line}
             onChange={(e) => setLine(e.target.value)}
             disabled={busy || !!implant?.retiredAt}
+            autoFocus
           />
           <button className="primary sm" type="submit" disabled={busy || !line.trim()}>
             Run
           </button>
         </form>
-        {hint && <p className="muted console-hint">{hint}</p>}
+        {hint && <div className="console-hint muted">{hint}</div>}
+        {error && <p className="error terminal-error">{error}</p>}
       </div>
 
       <details className="build-advanced">
         <summary>Advanced — raw task against this implant</summary>
         <RawTaskForm
-          groups={groups}
+          groups={capabilityGroups}
           disabled={!!implant?.retiredAt}
           onSubmit={(verb, args) => void issue(verb, args)}
         />
@@ -417,13 +424,13 @@ export function InteractView({
           engagementId={engagementId}
           implantId={implantId}
           verb={dialogVerb}
-          form={VERB_FORMS[dialogVerb] ?? {
-            title: 'Issue task',
-            fields: [
-              { key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' },
-            ],
-            build: (values) => ({ arguments: (values.args ?? '').trim() }),
-          }}
+          form={
+            VERB_FORMS[dialogVerb] ?? {
+              title: 'Issue task',
+              fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
+              build: (values) => ({ arguments: (values.args ?? '').trim() }),
+            }
+          }
           attributes={descriptorByVerb.get(dialogVerb) ?? {}}
           onClose={() => setDialogVerb(null)}
           onIssued={() => void refresh()}
@@ -433,73 +440,69 @@ export function InteractView({
   )
 }
 
-// One feed row: verb and arguments, status, attribution, time; the output
-// hides behind the row until the operator expands it (console transcripts are
-// long, and the newest command's result is what the eye is hunting).
-function ConsoleRow({
+// One task in the transcript: the line (time, status tag, verb, arguments,
+// author, row actions) with the output folded under it. Short output renders
+// unfolded so the common case -- a command and its answer -- reads like a
+// terminal exchange without a click; the toggle set holds blocks the operator
+// flipped against their default.
+function ConsoleBlock({
   task,
   operatorId,
-  expanded,
+  toggled,
   onToggle,
   onCancel,
   onInteract,
-  interactOpen,
 }: {
   task: EngagementTask
   operatorId: string
-  expanded: boolean
+  toggled: boolean
   onToggle: () => void
   onCancel: () => void
   onInteract: () => void
-  interactOpen: boolean
 }) {
-  const long = (task.output ?? '').length > 0
+  const output = task.output ?? ''
+  const hasOutput = output.length > 0
+  const unfoldByDefault = hasOutput && output.length <= UNFOLDED_OUTPUT_LIMIT
+  const visible = unfoldByDefault ? !toggled : toggled
+
+  const failed = task.outcome === 'Failed'
+
   return (
-    <>
-      <tr className="console-row" onClick={onToggle} title={long ? 'Click to toggle output' : undefined}>
-        <td>
-          <code>{task.verb}</code>{' '}
-          <span className="muted console-args">{task.arguments.length > 0 ? ellipsize(task.arguments) : ''}</span>
-        </td>
-        <td>
-          <StatusBadge status={task.status} />
-          {task.outcome === 'Failed' && <span className="error"> failed</span>}
-        </td>
-        <td>
-          <code>{task.issuedBy === operatorId ? 'you' : task.issuedBy.slice(0, 8)}</code>
-        </td>
-        <td>
-          {task.completedAt
-            ? new Date(task.completedAt).toLocaleTimeString()
-            : new Date(task.createdAt).toLocaleTimeString()}
-        </td>
-        <td onClick={(e) => e.stopPropagation()}>
-          <div className="row-actions">
-            {task.status === 'Queued' && (
-              <button className="danger sm" onClick={onCancel}>
-                Cancel
-              </button>
-            )}
-            {isChannelVerb(task.verb) && (
-              <button className="sm" onClick={onInteract}>
-                {interactOpen ? 'Hide' : 'Interact'}
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={5}>
-            <pre className="output long">{task.output ?? '—'}</pre>
-          </td>
-        </tr>
-      )}
-    </>
+    <div className={`console-block${visible && hasOutput ? ' open' : ''}`}>
+      <div className="console-line" onClick={hasOutput ? onToggle : undefined}>
+        <span className="t">
+          {new Date(task.completedAt ?? task.createdAt).toLocaleTimeString()}
+        </span>
+        <span className={`tag tag-${task.status.toLowerCase()}${failed ? ' tag-failed' : ''}`}>
+          {failed ? 'failed' : task.status.toLowerCase()}
+        </span>
+        <code className="v">{task.verb}</code>
+        <span className="args">{task.arguments.length > 0 ? ellipsize(task.arguments) : ''}</span>
+        <span className="by">{task.issuedBy === operatorId ? 'you' : task.issuedBy.slice(0, 8)}</span>
+        <span className="acts" onClick={(e) => e.stopPropagation()}>
+          {task.status === 'Queued' && (
+            <button className="danger sm" onClick={onCancel}>
+              cancel
+            </button>
+          )}
+          {isChannelVerb(task.verb) && (
+            <button className="sm" onClick={onInteract}>
+              interact
+            </button>
+          )}
+          {hasOutput && !visible && (
+            <button className="ghost sm" onClick={onToggle}>
+              {(output.match(/\n/g)?.length ?? 0) + 1} lines
+            </button>
+          )}
+        </span>
+      </div>
+      {hasOutput && visible && <pre className="console-output">{output}</pre>}
+    </div>
   )
 }
 
-function ellipsize(value: string, max = 72): string {
+function ellipsize(value: string, max = 96): string {
   const single = value.replace(/\s+/g, ' ')
   return single.length > max ? `${single.slice(0, max)}…` : single
 }

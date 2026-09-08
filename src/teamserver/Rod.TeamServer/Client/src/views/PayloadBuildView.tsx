@@ -300,7 +300,7 @@ export function PayloadBuildView({
               }}
               title="The front the artifact registers through, and -- unless an interactive front is picked beside it -- the front its check-ins ride. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
             >
-              <option value="">-- no listener: type endpoint in Advanced --</option>
+              <option value="">-- none: manual endpoint --</option>
               {listeners.map((l) =>
                 HTTP_INGRESS.has(l.transport) ? (
                   <option key={l.id} value={l.id}>
@@ -338,14 +338,6 @@ export function PayloadBuildView({
               the interactive channel onto its own TLS socket.
             </p>
           )}
-          <WireShape
-            enroll={
-              selectedListener
-                ? `${selectedListener.name} (${selectedListener.transport})`
-                : endpoint.trim() || 'manual endpoint'
-            }
-            interactive={interactiveFront}
-          />
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
@@ -400,6 +392,16 @@ export function PayloadBuildView({
               ))}
             </select>
           </label>
+          {/* The traffic picture reads after the fields it summarizes: one
+              socket, or two when the interactive stream gets its own. */}
+          <WireShape
+            enroll={
+              selectedListener
+                ? `${selectedListener.name} (${selectedListener.transport})`
+                : endpoint.trim() || 'manual endpoint'
+            }
+            interactive={interactiveFront}
+          />
         </fieldset>
         <fieldset disabled={isStager}>
           <legend>Beacon profile</legend>

@@ -20,15 +20,14 @@ import { TaskDialog } from '../components/TaskDialog'
 import { VERB_FORMS } from '../verbForms'
 import { implantMenuEntries } from './implantMenu'
 
-// The fleet panel: every implant this engagement enrolled, grouped by the
-// device each implant reported at enroll. Three identity layers fold into one
-// table -- the device is the group header (hostname, os/arch, how many
-// implants live there), the implant is the row (its class, kill date,
-// parentage, lifecycle), and the session is the status dot plus the
-// last-seen column (the presence query's projection, handed down from the
-// engagement view's live tick). One row per implant is enough because the
-// session registry holds at most one active session per implant; a re-check-in
-// refreshes it rather than adding rows.
+// The implants panel: the fleet as one table, three identity layers deep. The
+// device is the group header (the host each implant reported at enroll --
+// hostname, os/arch, how many implants live there), the implant is the row
+// (its class, kill date, parentage, lifecycle), and the session is the status
+// dot plus the last-seen column (the presence query's projection, handed down
+// from the engagement view's live tick). One row per implant is enough because
+// the session registry holds at most one active session per implant; a
+// re-check-in refreshes it rather than adding rows.
 //
 // Implants that predate host reporting (or a test client) group under
 // "unknown host", one group per implant -- the fallback keeps the grouping
@@ -252,7 +251,7 @@ export function ImplantsView({
   if (implants.length === 0 && !error) {
     return (
       <div className="card">
-        <h3>Fleet</h3>
+        <h3>Implants</h3>
         <div className="empty">
           <Icon name="cpu" />
           No implants enrolled yet.
@@ -263,7 +262,7 @@ export function ImplantsView({
 
   return (
     <div className="card">
-      <h3>Fleet</h3>
+      <h3>Implants</h3>
       <p className="muted">
         {groups.length} device{groups.length === 1 ? '' : 's'} · {implants.length} implant{implants.length === 1 ? '' : 's'} ·{' '}
         {onlineCount} online. Grouped by the host reported at enroll; the dot is the live session.
@@ -288,7 +287,6 @@ export function ImplantsView({
                   onClick={() => toggleGroup(group.key)}
                 >
                   <td colSpan={6}>
-                    <Icon name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'} className="device-caret" />
                     <strong>{group.hostname ?? 'unknown host'}</strong>
                     <span className="device-meta">
                       {group.os || group.arch
@@ -299,6 +297,10 @@ export function ImplantsView({
                       {group.implants.length} implant{group.implants.length === 1 ? '' : 's'}
                       {group.online > 0 ? ` · ${group.online} online` : ''}
                     </span>
+                    <Icon
+                      name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'}
+                      className="device-caret"
+                    />
                   </td>
                 </tr>
                 {!collapsed.has(group.key) &&
@@ -379,7 +381,7 @@ export function ImplantsView({
                           </td>
                         </tr>
                         {notesFor === implant.implantId && (
-                          <tr>
+                          <tr className="notes-row">
                             <td colSpan={6}>
                               <div className="notes-panel">
                                 <ul className="notes-list">

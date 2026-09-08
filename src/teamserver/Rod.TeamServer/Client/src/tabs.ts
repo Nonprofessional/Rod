@@ -24,15 +24,16 @@ export interface NavItemDef {
   icon: IconName
 }
 
-// Grouped the way operators think: operating the fleet first (the fleet table
-// and the log it produces -- issuing happens in the fleet's menu and the
-// session console, not in a tab of its own), infrastructure second, evidence
-// last in reading order (ledger, story, objects, bundle).
+// Grouped the way operators think: operating the implants first (the implant
+// list -- devices, identities, live sessions -- and the task log it produces;
+// issuing happens in the implant's context menu and session console, not in a
+// tab of its own), infrastructure second, evidence last in reading order
+// (ledger, story, objects, bundle).
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: null,
     items: [
-      { id: 'implants', label: 'Fleet', icon: 'cpu' },
+      { id: 'implants', label: 'Implants', icon: 'cpu' },
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
     ],
   },

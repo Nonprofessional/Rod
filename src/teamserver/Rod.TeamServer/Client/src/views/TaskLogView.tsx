@@ -160,8 +160,8 @@ export function TaskLogView({
     <div className="card">
       <h3>Task log</h3>
       <p className="muted">
-        Every task this engagement issued, newest first, live as operators work. Issue from
-        the fleet's context menu or a session console; read it here.
+        Every task this engagement issued, newest first, live as operators work. Issue from an
+        implant's context menu or its session console; read it here.
       </p>
       <div className="inline-form">
         <select

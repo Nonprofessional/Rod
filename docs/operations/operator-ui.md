@@ -14,21 +14,26 @@ one enrolled identity (class, kill date, lineage, lifecycle), and a
 **session** is the live connection (at most one per implant; its state is
 the status dot and the last-seen column).
 
-- **Fleet** (the Implants tab) -- one table, one row per implant, grouped by
-  device with collapsible group headers. The row's dot is the session; notes
-  and retire live on the row, and everything else opens from its context
-  menu (right-click or the three-dot button): shell commands, the file
-  browser, the process browser, recon, persistence, collection -- each
-  entry gated on the implant's class, argument-bearing verbs opening a
+- **Implants** -- the fleet in one table, one row per implant, grouped by
+  device with collapsible group headers (hostname flush-left with the column
+  content, the collapse caret at the far right). The row's dot is the
+  session; notes and retire live on the row, and everything else opens from
+  its context menu (right-click or the three-dot button): shell commands,
+  the file browser, the process browser, recon, persistence, collection --
+  each entry gated on the implant's class, argument-bearing verbs opening a
   labeled dialog, zero-argument verbs issuing directly.
 - **Session console** (`#/engagements/{id}/implants/{implantId}`, the
-  Interact link on a row) -- one implant, full screen. The header names the
-  device and identity; the feed is that implant's task history with
-  expandable output; the bottom bar is a keyboard path (a plain line runs
-  as a shell command; `help` lists the shortcuts: `interact`, `ps`, `kill`,
-  `screenshot`, `hostenum`, `portscan`, `services`, `download`, `files`,
-  `raw`). Channel tasks get the terminal pane. The Advanced disclosure is
-  the raw verb+arguments escape hatch, pinned to this implant.
+  Interact link on a row) -- one implant, rendered as a terminal: a title
+  bar naming the device, identity, and live state; a scrolling transcript of
+  that implant's task history (each task a line with time, status tag, verb,
+  and arguments; short output unfolds under the line, long output folds
+  behind a line count; the channel pane for interactive tasks opens in the
+  same flow above the prompt); and a prompt at the bottom -- a plain line
+  runs as a shell command, `help` lists the shortcuts (`interact`, `ps`,
+  `kill`, `screenshot`, `hostenum`, `portscan`, `services`, `download`,
+  `files`, `raw`). The transcript follows the newest line while the operator
+  is parked at the bottom and pins when they scroll up. The Advanced
+  disclosure is the raw verb+arguments escape hatch, pinned to this implant.
 - **Task log** (the Tasking tab) -- the engagement's task history as a
   filterable, live log: by implant (switches to that implant's own feed),
   verb, status, issuing operator, or free text. Rows expand to their
