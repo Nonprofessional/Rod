@@ -111,6 +111,26 @@ export function PayloadBuildView({
     (l) => l.transport === 'mtls' || l.transport === 'https-envelope',
   )
 
+  // The interactive front in play, whichever way it was named: a picked mTLS
+  // listener, the manual endpoint under Advanced, or none (check-ins ride the
+  // enroll front itself). This is what the traffic diagram draws and what
+  // gates stream mode.
+  const interactiveFront =
+    !isStager && enrollIsPlainHttp
+      ? listeners.find((l) => l.id === beaconListenerId)
+        ? `${listeners.find((l) => l.id === beaconListenerId)!.name} (mTLS)`
+        : beaconEndpoint.trim() || null
+      : null
+
+  // Stream mode needs an mTLS path to hold open: a TLS-terminated front, or
+  // an explicit interactive front beside a cleartext one. A cleartext front
+  // with no interactive front is poll-only, and the form says so instead of
+  // offering a mode the build cannot honor.
+  const streamAvailable = !enrollIsPlainHttp || interactiveFront !== null
+  useEffect(() => {
+    if (!streamAvailable && mode === 'stream') setMode('poll')
+  }, [streamAvailable, mode])
+
   const num = (value: string): number | null => {
     const trimmed = value.trim()
     if (trimmed === '') return null
@@ -264,7 +284,7 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
-            Listener
+            Enroll front
             <select
               value={listenerId}
               onChange={(e) => {
@@ -278,7 +298,7 @@ export function PayloadBuildView({
                 const next = listeners.find((l) => l.id === e.target.value)
                 if (next && next.transport !== 'http') setBeaconListenerId('')
               }}
-              title="The listener whose public endpoint the artifact enrolls through. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
+              title="The front the artifact registers through, and -- unless an interactive front is picked beside it -- the front its check-ins ride. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
             >
               <option value="">-- no listener: type endpoint in Advanced --</option>
               {listeners.map((l) =>
@@ -296,13 +316,13 @@ export function PayloadBuildView({
           </label>
           {offersBeaconSplit && (
             <label>
-              Beacon listener (optional)
+              Interactive front (mTLS)
               <select
                 value={beaconListenerId}
                 onChange={(e) => setBeaconListenerId(e.target.value)}
-                title="Check-ins already ride the enroll listener's own port over the envelope POST cycle. Pick the mTLS listener only for the hardened split-socket shape: the interactive gRPC stream (live channels) on its own TLS socket."
+                title="The socket the interactive gRPC stream (live channels) dials. Leave empty and check-ins ride the enroll front over the envelope POST cycle (poll mode); pick the mTLS listener only for the hardened split-socket shape."
               >
-                <option value="">-- none: check-ins ride the enroll listener --</option>
+                <option value="">-- none: check-ins ride the enroll front (poll) --</option>
                 {beaconCandidates.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name} ({l.transport} → {l.publicEndpoint})
@@ -311,6 +331,21 @@ export function PayloadBuildView({
               </select>
             </label>
           )}
+          {offersBeaconSplit && (
+            <p className="muted wire-note">
+              A cleartext front cannot carry the interactive stream. Leave this empty and the
+              beacon polls the enroll front; pick an mTLS listener to split registration from
+              the interactive channel onto its own TLS socket.
+            </p>
+          )}
+          <WireShape
+            enroll={
+              selectedListener
+                ? `${selectedListener.name} (${selectedListener.transport})`
+                : endpoint.trim() || 'manual endpoint'
+            }
+            interactive={interactiveFront}
+          />
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
@@ -373,11 +408,18 @@ export function PayloadBuildView({
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value)}
-              title="How the artifact checks in. A web (http/https) front always polls -- one envelope POST per interval, whatever this says; stream mode holds the mTLS stream open and needs an mTLS front (pick a Beacon listener for it)."
+              title="How the artifact checks in. Poll posts one envelope per interval over the web front; stream holds the mTLS connection open for interactive channels and needs a TLS path -- a TLS-terminated front or a picked interactive front."
             >
-              <option value="stream">stream — persistent (interactive, mTLS)</option>
+              <option value="stream" disabled={!streamAvailable}>
+                stream — persistent (interactive, mTLS)
+              </option>
               <option value="poll">poll — check in and sleep</option>
             </select>
+            {!streamAvailable && (
+              <span className="field-help">
+                Stream needs TLS: pick a TLS front or an interactive front above.
+              </span>
+            )}
           </label>
           <label>
             Check-in every (s)
@@ -445,7 +487,7 @@ export function PayloadBuildView({
               />
             </label>
             <label>
-              Beacon endpoint (manual)
+              Interactive endpoint (manual)
               <input
                 value={beaconEndpoint}
                 onChange={(e) => setBeaconEndpoint(e.target.value)}
@@ -453,7 +495,7 @@ export function PayloadBuildView({
                 disabled={!!beaconListenerId}
                 title={
                   beaconListenerId
-                    ? 'A beacon listener is picked, so its public endpoint is used.'
+                    ? 'An interactive front listener is picked, so its public endpoint is used.'
                     : 'The https host of the mTLS socket the interactive gRPC stream dials. Leave empty and check-ins ride the enroll front itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
@@ -624,6 +666,34 @@ export function PayloadBuildView({
       <p className="muted">
         Finished payloads live on in the <a href={`#/engagements/${engagementId}/payloads`}>Payloads</a> tab.
       </p>
+    </div>
+  )
+}
+
+// The traffic shape this build bakes, drawn from the current picks: one line
+// when check-ins ride the enroll front, two when the interactive stream gets
+// its own mTLS socket. The form's words say what each field does; this says
+// what the target will see moving.
+function WireShape({ enroll, interactive }: { enroll: string; interactive: string | null }) {
+  return (
+    <div className="wire-shape" title="The traffic shape this build bakes">
+      <span className="wire-node">
+        <Icon name="cpu" className="wire-icon" /> implant
+      </span>
+      <div className="wire-paths">
+        <div className="wire-path">
+          <span className="wire-label">{interactive ? 'enroll' : 'enroll + check-ins · envelope POST'}</span>
+          <span className="wire-arrow">→</span>
+          <span className="wire-node">{enroll}</span>
+        </div>
+        {interactive && (
+          <div className="wire-path">
+            <span className="wire-label">interactive stream · mTLS</span>
+            <span className="wire-arrow">⇉</span>
+            <span className="wire-node">{interactive}</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

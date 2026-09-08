@@ -171,7 +171,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       <h3>Listeners</h3>
       <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
         This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
-        dial.
+        dial. Pairing note: a cleartext HTTP front carries enrollment but not check-in streams
+        (those are gRPC over mTLS), so an HTTP listener wants an mTLS one beside it — the Build
+        form picks both up.
       </p>
 
       <form className="inline-form listener-create" onSubmit={onCreate}>

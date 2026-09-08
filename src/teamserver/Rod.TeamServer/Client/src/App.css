@@ -1672,6 +1672,68 @@ a.button-link:hover {
   overflow: auto;
 }
 
+/* --- Build traffic-shape diagram ------------------------------------------------------ */
+
+/* The live picture of what a build bakes: the artifact on the left, the front
+   (or fronts) it dials on the right, one path per socket. */
+.wire-shape {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  margin: 2px 0 6px;
+}
+
+.wire-node {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.wire-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.wire-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wire-path {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.wire-label {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.wire-arrow {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.wire-note {
+  margin: 0 0 6px;
+}
+
 /* --- List filter field ---------------------------------------------------------------- */
 
 .filter-text {
