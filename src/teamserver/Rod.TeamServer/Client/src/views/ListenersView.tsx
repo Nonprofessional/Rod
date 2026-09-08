@@ -56,7 +56,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [newEndpoint, setNewEndpoint] = useState<Record<string, string>>({})
+  // The endpoint being repointed, one row at a time: the listener id plus the
+  // draft (seeded from the current endpoint so an edit is a tweak, not a
+  // retype). Null when no row is editing.
+  const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null)
 
   // The create form's working state. The transport select drives the default
   // port; the interface select is built from the host's reported interfaces
@@ -111,12 +114,16 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // The loopback option rides even when the host list did not load.
   const loopbackMissing = !interfaces.some((i) => i.address === '127.0.0.1')
 
-  const onRepoint = async (id: string) => {
-    const endpoint = newEndpoint[id]?.trim()
-    if (!endpoint) return
+  const onRepoint = async () => {
+    if (!editing) return
+    const endpoint = editing.draft.trim()
+    if (!endpoint || endpoint === listeners.find((l) => l.id === editing.id)?.publicEndpoint) {
+      setEditing(null)
+      return
+    }
     try {
-      await repointListener(engagementId, id, endpoint)
-      setNewEndpoint((m) => ({ ...m, [id]: '' }))
+      await repointListener(engagementId, editing.id, endpoint)
+      setEditing(null)
       await refresh()
       setError(null)
     } catch (e) {
@@ -299,32 +306,55 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                     <code>{l.bindAddress}</code>
                   </td>
                   <td>
-                    <code>{l.publicEndpoint}</code>
-                    {l.repointedAt && <span className="muted"> (repointed)</span>}
+                    {editing?.id === l.id ? (
+                      <form
+                        className="endpoint-edit"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          void onRepoint()
+                        }}
+                      >
+                        <input
+                          value={editing.draft}
+                          onChange={(e) =>
+                            setEditing({ id: l.id, draft: e.target.value })
+                          }
+                          autoFocus
+                          title="The address deployed implants should dial — a burned redirector's replacement."
+                        />
+                        <button className="sm" type="submit" title="Save the new endpoint">
+                          <Icon name="check" />
+                        </button>
+                        <button
+                          className="ghost sm"
+                          type="button"
+                          title="Cancel"
+                          onClick={() => setEditing(null)}
+                        >
+                          <Icon name="x" />
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="endpoint-cell">
+                        <code>{l.publicEndpoint}</code>
+                        {l.repointedAt && <span className="muted"> (repointed)</span>}
+                        <button
+                          className="ghost sm menu-trigger"
+                          title="Repoint this endpoint"
+                          onClick={() => setEditing({ id: l.id, draft: l.publicEndpoint })}
+                        >
+                          <Icon name="edit" />
+                        </button>
+                      </span>
+                    )}
                   </td>
                   <td>
                     <StatusBadge status={l.state} />
                   </td>
                   <td>
-                    <form
-                      className="repoint-form"
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        void onRepoint(l.id)
-                      }}
-                    >
-                      <input
-                        placeholder="new endpoint"
-                        value={newEndpoint[l.id] ?? ''}
-                        onChange={(e) => setNewEndpoint((m) => ({ ...m, [l.id]: e.target.value }))}
-                      />
-                      <button className="sm" type="submit">
-                        Repoint
-                      </button>
-                      <button className="sm danger" type="button" onClick={() => void onDelete(l)}>
-                        Delete
-                      </button>
-                    </form>
+                    <button className="sm danger" onClick={() => void onDelete(l)}>
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

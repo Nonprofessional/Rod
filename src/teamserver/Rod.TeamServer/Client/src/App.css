@@ -633,7 +633,7 @@ tbody tr:hover {
 td .row-actions {
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1540,10 +1540,15 @@ tr.device-row:hover td {
 }
 
 /* The quiet per-row trigger button (three dots) that opens the context menu
-   where right-click is not obvious. */
+   where right-click is not obvious. Sized to sit level with the small
+   buttons beside it. */
 button.menu-trigger {
-  padding: 3px 7px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
 }
 
 button.menu-trigger .nav-icon {
@@ -1861,9 +1866,24 @@ button.file-entry {
   margin: 2px 0 0;
 }
 
-.wire-note {
-  grid-column: 1 / -1;
+/* The Advanced disclosure's checkbox: the browser default renders large and
+   off-baseline next to 12px form text; bring it to the form's scale. */
+.build-advanced input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
   margin: 0;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+/* A checkbox label reads inline (box beside its text), unlike the column
+   labels around it. Same specificity as .build-form label; file order wins. */
+label.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-top: 18px;
+  color: var(--text);
 }
 
 .wire-node {
@@ -1908,6 +1928,28 @@ button.file-entry {
 .wire-arrow {
   color: var(--accent);
   font-family: var(--font-mono);
+}
+
+/* --- Endpoint inline edit ---------------------------------------------------------------- */
+
+/* The endpoint cell at rest: the address with the repoint pencil riding
+   quietly at its right. */
+.endpoint-cell {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The editing form that replaces the cell: the draft input (seeded with the
+   current endpoint) and save/cancel icon buttons on one line. */
+.endpoint-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.endpoint-edit input {
+  min-width: 220px;
 }
 
 /* --- List filter field ---------------------------------------------------------------- */

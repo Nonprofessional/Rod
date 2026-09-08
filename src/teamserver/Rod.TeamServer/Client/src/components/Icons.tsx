@@ -94,6 +94,19 @@ const ICONS = {
   ),
   chevronRight: <polyline points="9 18 15 12 9 6" />,
   chevronDown: <polyline points="6 9 12 15 18 9" />,
+  edit: (
+    <>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </>
+  ),
+  check: <polyline points="20 6 9 17 4 12" />,
+  x: (
+    <>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </>
+  ),
   more: (
     <>
       <circle cx="12" cy="5" r="1.4" />

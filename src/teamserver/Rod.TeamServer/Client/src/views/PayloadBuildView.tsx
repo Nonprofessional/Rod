@@ -314,30 +314,36 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {offersBeaconSplit && (
-            <label>
-              Interactive front (mTLS)
-              <select
-                value={beaconListenerId}
-                onChange={(e) => setBeaconListenerId(e.target.value)}
-                title="The socket the interactive gRPC stream (live channels) dials. Leave empty and check-ins ride the enroll front over the envelope POST cycle (poll mode); pick the mTLS listener only for the hardened split-socket shape."
-              >
-                <option value="">-- none: check-ins ride the enroll front (poll) --</option>
-                {beaconCandidates.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name} ({l.transport} → {l.publicEndpoint})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {offersBeaconSplit && (
-            <p className="muted wire-note">
-              A cleartext front cannot carry the interactive stream. Leave this empty and the
-              beacon polls the enroll front; pick an mTLS listener to split registration from
-              the interactive channel onto its own TLS socket.
-            </p>
-          )}
+          {/* Always mounted, disabled unless the enroll front is cleartext --
+              the form's grid never reshuffles when a listener is picked. The
+              empty option carries the default (poll the enroll front); the
+              full split rationale lives in the hover text. */}
+          <label>
+            Interactive front (mTLS)
+            <select
+              value={offersBeaconSplit ? beaconListenerId : ''}
+              disabled={!offersBeaconSplit}
+              onChange={(e) => setBeaconListenerId(e.target.value)}
+              title={
+                offersBeaconSplit
+                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the beacon polls the enroll front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
+                  : 'A TLS-terminated front carries enroll and check-ins on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
+              }
+            >
+              {offersBeaconSplit ? (
+                <>
+                  <option value="">-- none: check-ins ride the enroll front (poll) --</option>
+                  {beaconCandidates.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({l.transport} → {l.publicEndpoint})
+                    </option>
+                  ))}
+                </>
+              ) : (
+                <option value="">-- same socket as the enroll front --</option>
+              )}
+            </select>
+          </label>
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
@@ -551,14 +557,15 @@ export function PayloadBuildView({
               </select>
             </label>
             <label
+              className="checkbox-label"
               title="Seals every check-in POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web check-ins use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
             >
-              Protect check-ins
               <input
                 type="checkbox"
                 checked={checkInProtection}
                 onChange={(e) => setCheckInProtection(e.target.checked)}
               />
+              Protect check-ins
             </label>
             <label>
               Credential window (h)

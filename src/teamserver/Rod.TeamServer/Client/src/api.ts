@@ -93,7 +93,14 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
     }
     throw new Error(detail)
   }
-  return (await response.json()) as T
+  // A 204 (and any empty body) carries nothing to parse -- the delete routes
+  // answer that way, and json() on an empty body would turn success into a
+  // parse error. Callers expecting void read undefined.
+  if (response.status === 204) {
+    return undefined as T
+  }
+  const text = await response.text()
+  return (text === '' ? undefined : JSON.parse(text)) as T
 }
 
 // --- Operator session (architecture.md Sec 4) --------------------------------
