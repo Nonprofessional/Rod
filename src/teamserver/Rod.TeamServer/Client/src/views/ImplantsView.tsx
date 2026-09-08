@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type Implant,
   type ImplantNote,
@@ -11,18 +11,73 @@ import {
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
-// The implants panel: the enrolled sessions for an engagement,
-// each with its class, online state, kill date, and parentage, plus the live
-// roster (which implants hold active sessions right now, handed down from the
-// engagement view's presence query). An operator can retire (burn) a live
-// implant -- the OPSEC control that takes an implant out of operation (refused
-// at handshake and untaskable afterwards) -- and keep free-text notes on an
-// implant: the "whose beacon is this" memory, attributed per author and
-// durable in the audit trail, so it survives a teamserver restart.
+// The fleet panel: every implant this engagement enrolled, grouped by the
+// device each implant reported at enroll. Three identity layers fold into one
+// table -- the device is the group header (hostname, os/arch, how many
+// implants live there), the implant is the row (its class, kill date,
+// parentage, lifecycle), and the session is the status dot plus the
+// last-seen column (the presence query's projection, handed down from the
+// engagement view's live tick). One row per implant is enough because the
+// session registry holds at most one active session per implant; a re-check-in
+// refreshes it rather than adding rows.
 //
-// Deployment credentials no longer appear here: every payload build mints and
-// bakes its own token, so the manual mint left the operator surface (the
-// server keeps the mint endpoint for the rotation and re-entry drills).
+// Implants that predate host reporting (or a test client) group under
+// "unknown host", one group per implant -- the fallback keeps the grouping
+// honest without inventing a shared device.
+//
+// An operator can retire (burn) a live implant -- the OPSEC control that
+// takes an implant out of operation (refused at handshake and untaskable
+// afterwards) -- and keep free-text notes on an implant: the "whose beacon is
+// this" memory, attributed per author and durable in the audit trail, so it
+// survives a teamserver restart.
+
+// One device's slice of the fleet: the grouping key and the implants that
+// reported it. A null hostname groups alone (the unknown-host fallback).
+interface DeviceGroup {
+  key: string
+  hostname: string | null
+  os: string | null
+  arch: string | null
+  implants: Implant[]
+  online: number
+}
+
+function groupByDevice(implants: Implant[]): DeviceGroup[] {
+  const groups = new Map<string, DeviceGroup>()
+  for (const implant of implants) {
+    // Unknown hosts never merge: each unreported implant is its own group, so
+    // two pre-field implants are not silently presented as one device.
+    const key = implant.hostname ?? `unknown:${implant.implantId}`
+    const group = groups.get(key) ?? {
+      key,
+      hostname: implant.hostname,
+      os: implant.os,
+      arch: implant.arch,
+      implants: [],
+      online: 0,
+    }
+    group.implants.push(implant)
+    if (implant.isOnline && !implant.retiredAt) group.online += 1
+    groups.set(key, group)
+  }
+  return [...groups.values()].sort((a, b) => {
+    // Devices with something online first, then by hostname; unknown hosts
+    // sink to the end of both bands.
+    if (a.online !== b.online) return b.online - a.online
+    return (a.hostname ?? '\uffff').localeCompare(b.hostname ?? '\uffff')
+  })
+}
+
+// Compact "how long ago" for the session column: seconds just now, then
+// minutes, then hours -- the clock an operator actually reads.
+function ago(iso: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (seconds < 10) return 'now'
+  if (seconds < 60) return `${seconds}s ago`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
 
 export function ImplantsView({
   engagementId,
@@ -42,6 +97,7 @@ export function ImplantsView({
   const [notes, setNotes] = useState<ImplantNote[]>([])
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     try {
@@ -60,7 +116,28 @@ export function ImplantsView({
   useEffect(() => {
     setNotesFor(null)
     setNotes([])
+    setCollapsed(new Set())
   }, [engagementId])
+
+  // The session projection by implant: last-seen and online-since fold into
+  // the implant's row, so no separate live-sessions table is needed.
+  const presenceByImplant = useMemo(() => {
+    const map = new Map<string, PresenceRecord>()
+    for (const record of onlineImplants) map.set(record.implantId, record)
+    return map
+  }, [onlineImplants])
+
+  const groups = useMemo(() => groupByDevice(implants), [implants])
+  const onlineCount = implants.filter((i) => i.isOnline && !i.retiredAt).length
+
+  const toggleGroup = (key: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const onRetire = async (implantId: string) => {
     if (!window.confirm(`Retire (burn) implant ${implantId.slice(0, 8)}? It will be refused at handshake and untaskable.`)) {
@@ -106,148 +183,157 @@ export function ImplantsView({
     }
   }
 
-  return (
-    <>
-      <div className="card">
-        <h3>Live sessions</h3>
-        <p className="muted">
-          Implants holding an active session right now. Opens and closes arrive as live events,
-          so this roster moves the moment the fleet changes.
-        </p>
-        {onlineImplants.length === 0 ? (
-          <div className="empty">
-            <Icon name="radio" />
-            No implants online.
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Implant</th>
-                  <th>Online since</th>
-                  <th>Last seen</th>
-                  <th>Capabilities</th>
-                </tr>
-              </thead>
-              <tbody>
-                {onlineImplants.map((p) => (
-                  <tr key={p.sessionId}>
-                    <td>
-                      <span className="dot online" title="online" />{' '}
-                      <code>{p.implantId.slice(0, 8)}</code>
-                    </td>
-                    <td>{new Date(p.onlineAt).toLocaleTimeString()}</td>
-                    <td>{new Date(p.lastSeenAt).toLocaleTimeString()}</td>
-                    <td>
-                      <span className="muted" title={p.capabilities.join(', ')}>
-                        {p.capabilities.length} capabilit{p.capabilities.length === 1 ? 'y' : 'ies'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
+  if (implants.length === 0 && !error) {
+    return (
       <div className="card">
         <h3>Fleet</h3>
-        {implants.length === 0 ? (
-          <div className="empty">
-            <Icon name="cpu" />
-            No implants enrolled yet.
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Implant</th>
-                  <th>Class</th>
-                  <th>Status</th>
-                  <th>Kill date</th>
-                  <th>Parent</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {implants.map((i) => (
-                  <Fragment key={i.implantId}>
-                    <tr>
-                      <td>
-                        <code>{i.implantId.slice(0, 8)}</code>
-                      </td>
-                      <td>{i.class}</td>
-                      <td>
-                        <StatusBadge
-                          status={i.retiredAt ? 'retired' : i.isOnline ? 'online' : 'offline'}
-                        />
-                      </td>
-                      <td>{new Date(i.killDate).toLocaleDateString()}</td>
-                      <td>
-                        {i.parentImplantId ? (
-                          <code>{i.parentImplantId.slice(0, 8)}</code>
-                        ) : (
-                          <span className="muted">&mdash;</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="row-actions">
-                          <button className="sm" onClick={() => void onToggleNotes(i.implantId)}>
-                            {notesFor === i.implantId ? 'Hide notes' : 'Notes'}
-                          </button>
-                          {!i.retiredAt && (
-                            <button className="danger sm" onClick={() => onRetire(i.implantId)}>
-                              Retire
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {notesFor === i.implantId && (
-                      <tr>
-                        <td colSpan={6}>
-                          <div className="notes-panel">
-                            <ul className="notes-list">
-                              {notes.length === 0 ? (
-                                <li className="muted">No notes on this implant yet.</li>
-                              ) : (
-                                notes.map((n) => (
-                                  <li key={n.noteId}>
-                                    <span className="notes-meta">
-                                      <code>{n.author.slice(0, 8)}</code>{' '}
-                                      {new Date(n.at).toLocaleString()}
-                                    </span>
-                                    {n.text}
-                                  </li>
-                                ))
-                              )}
-                            </ul>
-                            <form className="task-form" onSubmit={onAddNote}>
-                              <input
-                                className="wide"
-                                placeholder="whose beacon is this?"
-                                value={noteDraft}
-                                onChange={(e) => setNoteDraft(e.target.value)}
-                              />
-                              <button className="sm" type="submit" disabled={noteBusy || !noteDraft.trim()}>
-                                Add note
-                              </button>
-                            </form>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {error && <p className="error">{error}</p>}
+        <div className="empty">
+          <Icon name="cpu" />
+          No implants enrolled yet.
+        </div>
       </div>
-    </>
+    )
+  }
+
+  return (
+    <div className="card">
+      <h3>Fleet</h3>
+      <p className="muted">
+        {groups.length} device{groups.length === 1 ? '' : 's'} · {implants.length} implant{implants.length === 1 ? '' : 's'} ·{' '}
+        {onlineCount} online. Grouped by the host reported at enroll; the dot is the live session.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Implant</th>
+              <th>Status</th>
+              <th>Session</th>
+              <th>Kill date</th>
+              <th>Parent</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((group) => (
+              <Fragment key={group.key}>
+                <tr
+                  className={`device-row${collapsed.has(group.key) ? ' collapsed' : ''}`}
+                  onClick={() => toggleGroup(group.key)}
+                >
+                  <td colSpan={6}>
+                    <Icon name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'} className="device-caret" />
+                    <strong>{group.hostname ?? 'unknown host'}</strong>
+                    <span className="device-meta">
+                      {group.os || group.arch
+                        ? [group.os, group.arch].filter(Boolean).join(' · ')
+                        : 'no host facts reported'}
+                    </span>
+                    <span className="device-meta">
+                      {group.implants.length} implant{group.implants.length === 1 ? '' : 's'}
+                      {group.online > 0 ? ` · ${group.online} online` : ''}
+                    </span>
+                  </td>
+                </tr>
+                {!collapsed.has(group.key) &&
+                  group.implants.map((implant) => {
+                    const presence = presenceByImplant.get(implant.implantId)
+                    return (
+                      <Fragment key={implant.implantId}>
+                        <tr className={implant.isOnline || implant.retiredAt ? undefined : 'row-dim'}>
+                          <td>
+                            <span className="dot online" title="online" />{' '}
+                            <code>{implant.implantId.slice(0, 8)}</code>{' '}
+                            <span className="muted">{implant.class}</span>
+                            {implant.username && (
+                              <span className="muted" title="The account the implant runs under">
+                                {' '}
+                                as {implant.username}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <StatusBadge
+                              status={implant.retiredAt ? 'retired' : implant.isOnline ? 'online' : 'offline'}
+                            />
+                          </td>
+                          <td>
+                            {presence && !implant.retiredAt ? (
+                              <span title={`Online since ${new Date(presence.onlineAt).toLocaleString()}\n${presence.capabilities.length} capabilities: ${presence.capabilities.join(', ')}`}>
+                                {ago(presence.lastSeenAt)}
+                              </span>
+                            ) : (
+                              <span className="muted">&mdash;</span>
+                            )}
+                          </td>
+                          <td>
+                            <span title={new Date(implant.killDate).toLocaleString()}>
+                              {new Date(implant.killDate).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td>
+                            {implant.parentImplantId ? (
+                              <code>{implant.parentImplantId.slice(0, 8)}</code>
+                            ) : (
+                              <span className="muted">&mdash;</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
+                                {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
+                              </button>
+                              {!implant.retiredAt && (
+                                <button className="danger sm" onClick={() => onRetire(implant.implantId)}>
+                                  Retire
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {notesFor === implant.implantId && (
+                          <tr>
+                            <td colSpan={6}>
+                              <div className="notes-panel">
+                                <ul className="notes-list">
+                                  {notes.length === 0 ? (
+                                    <li className="muted">No notes on this implant yet.</li>
+                                  ) : (
+                                    notes.map((n) => (
+                                      <li key={n.noteId}>
+                                        <span className="notes-meta">
+                                          <code>{n.author.slice(0, 8)}</code>{' '}
+                                          {new Date(n.at).toLocaleString()}
+                                        </span>
+                                        {n.text}
+                                      </li>
+                                    ))
+                                  )}
+                                </ul>
+                                <form className="task-form" onSubmit={onAddNote}>
+                                  <input
+                                    className="wide"
+                                    placeholder="whose beacon is this?"
+                                    value={noteDraft}
+                                    onChange={(e) => setNoteDraft(e.target.value)}
+                                  />
+                                  <button className="sm" type="submit" disabled={noteBusy || !noteDraft.trim()}>
+                                    Add note
+                                  </button>
+                                </form>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {error && <p className="error">{error}</p>}
+    </div>
   )
 }
