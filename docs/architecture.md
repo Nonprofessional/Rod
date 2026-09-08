@@ -719,7 +719,14 @@ fleet-wide code execution. Security is a first-class concern.
   each credential revokes through its own route, so rotating one never
   silently invalidates the other.
 - **mTLS.** The mTLS transport is mutually authenticated; an implant's certificate
-  binds `(implant_id, engagement_id)`.
+  binds `(implant_id, engagement_id)` through labeled URI SAN entries
+  (`spiffe://rod/implant/<id>`, `spiffe://rod/engagement/<id>`) under a
+  conventional service-certificate profile -- a fixed non-identifying subject,
+  standard end-entity extensions, a random serial. Neither id rides the
+  subject DN and no custom OID exists: a GUID common name with an unknown
+  extension is itself a toolchain fingerprint, on the wire and in host
+  forensics, while URI-SAN identity is the shape legitimate service
+  certificates use.
 - **Check-in keys.** The web transports authenticate implants at the
   application layer, not the TLS layer -- a TLS `CertificateRequest` is
   itself a fingerprint (an ordinary website never asks the visitor for one),

@@ -64,7 +64,7 @@ public readonly record struct ImplantId(Guid Value)
     /// Parses an implant id from its string form. Accepts the compact "N"
     /// format produced by <see cref="ToString"/> and the hyphenated Guid form;
     /// returns false on anything else. Used to read the binding back out of a
-    /// certificate subject (architecture.md Sec 9).
+    /// certificate's URI SAN entries (architecture.md Sec 9).
     /// </summary>
     public static bool TryParse(string? text, out ImplantId id)
     {

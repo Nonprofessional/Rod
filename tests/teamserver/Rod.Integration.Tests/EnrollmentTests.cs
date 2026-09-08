@@ -134,11 +134,14 @@ public class EnrollmentTests
             using var leaf = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.LeafCertificate!));
             using var root = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.CaChain[0]));
 
-            // Binding: the leaf's common name is the implant id, and the Rod
-            // engagement-id extension carries the engagement id.
-            Assert.Equal($"CN={enrolled.ImplantId}", leaf.Subject);
-            Assert.True(RodImplantEngagementExtension.TryRead(leaf, out var engagementFromCert),
-                "Leaf certificate must carry the Rod engagement-id extension.");
+            // Binding: the ids ride labeled URI SAN entries under the fixed
+            // conventional subject every implant leaf shares -- no GUID common
+            // name, no custom OID.
+            Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
+            Assert.True(
+                ImplantSubjectAlternativeNames.TryRead(leaf, out var implantFromCert, out var engagementFromCert),
+                "Leaf certificate must carry the implant and engagement URI SAN entries.");
+            Assert.Equal(enrolled.ImplantId, implantFromCert);
             Assert.Equal(enrolled.EngagementId, engagementFromCert);
 
             // Chain: the leaf is issued by the dev CA, and the only chain-status is
@@ -240,9 +243,12 @@ public class EnrollmentTests
             var leafPublicKey = leafRsa.ExportSubjectPublicKeyInfo();
             Assert.Equal(publicKeyDer, leafPublicKey);
 
-            // The binding is intact regardless of which key path was taken.
-            Assert.Equal($"CN={enrolled.ImplantId}", leaf.Subject);
-            Assert.True(RodImplantEngagementExtension.TryRead(leaf, out var engagementFromCert));
+            // The binding is intact regardless of which key path was taken:
+            // both ids ride the leaf's URI SAN entries.
+            Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
+            Assert.True(
+                ImplantSubjectAlternativeNames.TryRead(leaf, out var implantFromCert, out var engagementFromCert));
+            Assert.Equal(enrolled.ImplantId, implantFromCert);
             Assert.Equal(enrolled.EngagementId, engagementFromCert);
         }
     }

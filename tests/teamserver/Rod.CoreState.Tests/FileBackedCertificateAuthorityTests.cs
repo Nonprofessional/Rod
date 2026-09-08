@@ -61,9 +61,20 @@ public class FileBackedCertificateAuthorityTests
             new ImplantCertificateSubject(implantId, engagementId), leafKey, CancellationToken.None);
         using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
 
-        Assert.Equal(implantId.ToString(), leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
-        Assert.True(RodImplantEngagementExtension.TryRead(leaf, out var readEngagement));
+        // Binding: the ids ride labeled URI SAN entries under the fixed
+        // conventional subject every implant leaf shares -- no GUID common name.
+        Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
+        Assert.True(ImplantSubjectAlternativeNames.TryRead(leaf, out var readImplant, out var readEngagement));
+        Assert.Equal(implantId.ToString(), readImplant);
         Assert.Equal(engagementId.ToString(), readEngagement);
+
+        // Profile hardening: neither id leaks into the subject DN or serial, and
+        // the retired custom-OID engagement extension is gone (its OID was
+        // 1.3.6.1.4.1.65535.1.1 -- a GUID CN plus an unknown OID is itself a
+        // toolchain fingerprint).
+        Assert.DoesNotContain(implantId.ToString(), leaf.Subject);
+        Assert.DoesNotContain(engagementId.ToString(), leaf.Subject);
+        Assert.DoesNotContain(leaf.Extensions, ext => ext.Oid?.Value == "1.3.6.1.4.1.65535.1.1");
     }
 
     [Fact]

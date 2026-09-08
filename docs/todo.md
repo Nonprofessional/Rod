@@ -28,15 +28,6 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Harden the implant certificate profile.** Issued leaves carry the
-      implant id as the CN and the engagement id under a custom OID -- a
-      GUID common name with an unknown extension is itself a toolchain
-      fingerprint, and host forensics reads both. Move the identity into
-      URI SAN entries (the shape legitimate service certificates use) and
-      make the remaining fields match a conventional profile. Serves the
-      mTLS posture, which stays for operators who want the PKI shape.
-      _AC:_ an issued leaf exposes no GUID CN and no custom OID; identity
-      binds through SANs; pinning and check-in verification are unchanged.
 - [ ] **Move implant keys to ECDSA P-256.** First-run RSA-2048 keygen
       costs ~100ms on-target for no benefit over a modern curve, and RSA
       leaves and handshakes are the largest certificates on the wire. The

@@ -301,18 +301,19 @@ public class HandshakePresenceTests
     }
 
     // A self-signed leaf that does NOT chain to the dev CA, for the TLS-rejection
-    // path. Mimics the implant leaf shape (CN + Rod engagement extension) but is
-    // its own issuer, so the server's ClientCertificateValidation refuses it.
+    // path. Mimics the implant leaf shape (conventional subject + URI SAN
+    // identity entries) but is its own issuer, so the server's
+    // ClientCertificateValidation refuses it.
     private static X509Certificate2 BuildSelfSignedLeaf(RSA key, string implantId, string engagementId)
     {
         var notBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
         var notAfter = notBefore.AddDays(1);
         var request = new CertificateRequest(
-            $"CN={implantId}", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            "CN=rod-implant,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         request.CertificateExtensions.Add(
             new X509EnhancedKeyUsageExtension(
                 new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, critical: true));
-        request.CertificateExtensions.Add(RodImplantEngagementExtension.Build(engagementId));
+        request.CertificateExtensions.Add(ImplantSubjectAlternativeNames.Build(implantId, engagementId));
         return request.CreateSelfSigned(notBefore, notAfter);
     }
 

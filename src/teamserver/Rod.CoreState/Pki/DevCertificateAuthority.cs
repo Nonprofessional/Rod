@@ -7,9 +7,9 @@ namespace Rod.CoreState.Pki;
 /// <summary>
 /// Self-signed development <see cref="IImplantCertificateAuthority"/> for dev
 /// runs and tests. Generates a throwaway CA root once at construction and signs
-/// each implant leaf with it, binding <c>(implant_id, engagement_id)</c>: the
-/// leaf subject's common name is the implant id, and a Rod custom extension
-/// carries the engagement id. Not for production: the CA key lives in process
+/// each implant leaf with it, binding <c>(implant_id, engagement_id)</c> into
+/// URI SAN entries under a conventional service-certificate profile. Not for
+/// production: the CA key lives in process
 /// memory and is non-rotatable. Real deployments substitute an externally
 /// provisioned, per-engagement CA behind the same port.
 /// </summary>
@@ -103,7 +103,10 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         var notBefore = DateTimeOffset.UtcNow;
         var notAfter = notBefore + LeafLifetime;
 
-        var subjectDn = $"CN={implantId}";
+        // Every implant leaf shares this fixed conventional subject; the ids
+        // ride the SAN entries below. A GUID common name is itself a toolchain
+        // fingerprint, on the wire and in host forensics.
+        var subjectDn = "CN=rod-implant,O=Rod,C=ZZ";
         var request = new CertificateRequest(subjectDn, leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
         // An implant leaf is an end-entity certificate: not a CA, may not sign others.
@@ -116,11 +119,13 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
             new X509EnhancedKeyUsageExtension(
                 new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, // TLS client auth.
                 critical: true));
-        // The engagement binding -- the half of (implant_id, engagement_id) that
-        // does not fit in the subject DN.
-        request.CertificateExtensions.Add(RodImplantEngagementExtension.Build(engagementId));
+        // The (implant_id, engagement_id) binding -- the half of the leaf an
+        // ordinary service certificate would carry in SANs, not in the DN.
+        request.CertificateExtensions.Add(ImplantSubjectAlternativeNames.Build(implantId, engagementId));
 
-        var serial = subject.ImplantId.Value.ToByteArray();
+        // A random serial, the conventional shape -- not the implant id's bytes,
+        // which would republish the identity in one more field.
+        var serial = Guid.NewGuid().ToByteArray();
         var leaf = request.Create(_caCertificate, notBefore, notAfter, serial);
 
         return new IssuedCertificate(
