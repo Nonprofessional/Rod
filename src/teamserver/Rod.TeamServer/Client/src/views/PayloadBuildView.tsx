@@ -37,8 +37,8 @@ import { StatusBadge } from '../components/StatusBadge'
 // of finished payloads is the Payloads tab.
 
 // The transports an implant can enroll through; the listener select offers
-// these and greyes everything else out.
-const HTTP_INGRESS = new Set(['http', 'https', 'mtls', 'https-envelope'])
+// these and greys everything else out.
+const HTTP_INGRESS = new Set(['http', 'https', 'mtls'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.
@@ -107,9 +107,7 @@ export function PayloadBuildView({
     ? selectedListener.transport === 'http'
     : /^http:\/\//i.test(endpoint.trim())
   const offersBeaconSplit = !isStager && enrollIsPlainHttp
-  const beaconCandidates = listeners.filter(
-    (l) => l.transport === 'mtls' || l.transport === 'https-envelope',
-  )
+  const beaconCandidates = listeners.filter((l) => l.transport === 'mtls')
 
   // The interactive front in play, whichever way it was named: a picked mTLS
   // listener, the manual endpoint under Advanced, or none (check-ins ride the
@@ -480,8 +478,14 @@ export function PayloadBuildView({
         >
           <summary>Advanced — wire shape and credential window</summary>
           <div className="grid">
+            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+              Manual overrides only, for builds without a picked listener: two addresses at most
+              (the callback URL, and the interactive URL for the hardened split), spare callback
+              fronts, and the one path knob — registration's. Check-ins ride a fixed route and the
+              interactive stream rides its own, so no other path exists to set.
+            </p>
             <label>
-              Endpoint (manual)
+              Callback URL (manual)
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
@@ -489,13 +493,13 @@ export function PayloadBuildView({
                 disabled={!!listenerId}
                 title={
                   listenerId
-                    ? 'A listener is picked, so its public endpoint is used. Choose "-- no listener --" above to type one manually.'
-                    : 'The absolute URL baked as the dial address — an address not registered as a listener.'
+                    ? 'A callback front listener is picked, so its public endpoint is used. Choose "-- none: manual endpoint --" above to type one manually.'
+                    : 'The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere).'
                 }
               />
             </label>
             <label>
-              Interactive endpoint (manual)
+              Interactive URL (manual)
               <input
                 value={beaconEndpoint}
                 onChange={(e) => setBeaconEndpoint(e.target.value)}
@@ -504,17 +508,17 @@ export function PayloadBuildView({
                 title={
                   beaconListenerId
                     ? 'An interactive front listener is picked, so its public endpoint is used.'
-                    : 'The https host of the mTLS socket the interactive gRPC stream dials. Leave empty and check-ins ride the callback front itself over the envelope POST cycle; name it only for the split-socket shape.'
+                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins ride the callback front itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>
             <label>
-              Fallback endpoints
+              Fallback fronts
               <input
                 value={fallbackEndpoints}
                 onChange={(e) => setFallbackEndpoints(e.target.value)}
                 placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Backup fronts dialed in order when the primary burns — empty bakes the single-endpoint shape."
+                title="Spare callback fronts the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-front shape."
               />
             </label>
             <label>
@@ -523,7 +527,7 @@ export function PayloadBuildView({
                 value={enrollPath}
                 onChange={(e) => setEnrollPath(e.target.value)}
                 placeholder="/implants/enroll"
-                title="The URI path the implant enrolls on. Change it only when a redirector rewrites to the real route."
+                title="The URI path of the one-time registration POST (default /implants/enroll). The only path knob: check-ins ride the fixed /implants/beacon route and the interactive stream rides the mTLS socket's own path. Change it only when a redirector rewrites to the real route."
               />
             </label>
             <label>

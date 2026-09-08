@@ -618,6 +618,64 @@ th {
   white-space: nowrap;
 }
 
+/* --- Table toolbar / sorting / paging ---------------------------------------- */
+
+/* The fleet toolbar: search takes the slack, the two filters size to their
+   options; wraps on narrow panes instead of overflowing. */
+.table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.table-toolbar .toolbar-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* A header that sorts: reads as the column label, not a button -- the cursor
+   and the active column's arrow are the whole affordance. */
+button.th-sort {
+  height: auto;
+  padding: 0;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+button.th-sort:hover:not(:disabled) {
+  background: none;
+  border-color: transparent;
+  color: var(--text);
+}
+
+button.th-sort.active {
+  color: var(--text);
+}
+
+.sort-arrow {
+  font-size: 10px;
+}
+
+/* The pager under a long table: page turns right-aligned, the counter
+   between. */
+.table-pager {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
 tbody tr:last-child td {
   border-bottom: none;
 }
@@ -1474,7 +1532,7 @@ tr.device-row:hover td {
   position: fixed;
   z-index: 80;
   min-width: 220px;
-  max-width: 300px;
+  max-width: 340px;
   padding: 5px;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
@@ -1499,6 +1557,10 @@ tr.device-row:hover td {
   /* The element-level button rule centers flex content (line ~377); a menu
      row is a left-reading list entry, not a label button. */
   justify-content: flex-start;
+  /* The same element rule also pins nowrap, which clipped long labels
+     against the menu's max-width; a menu row wraps instead. */
+  white-space: normal;
+  line-height: 1.35;
   padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-sm);

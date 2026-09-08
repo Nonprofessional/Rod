@@ -17,14 +17,22 @@ the status dot and the last-seen column).
 - **Implants** -- the fleet in one table, one row per implant, grouped by
   device with collapsible group headers (an OS mark and the hostname
   flush-left with the column content, the collapse caret at the far right).
-  The row's dot is the session (green while it lives, gray after) and the
-  last-seen column reads the freshest stamp -- the presence roster while
-  online, the implant row's durable heartbeat after the beacon goes dark.
-  Notes and retire live on the row, and everything else opens from its
-  context menu (right-click or the three-dot button): shell commands, the
-  file browser, the process browser, recon, persistence, collection --
-  each entry gated on the implant's class, argument-bearing verbs opening a
-  labeled dialog, zero-argument verbs issuing directly.
+  A toolbar rides the table: free-text search across the identity fields,
+  a state filter (online / offline / retired), a class filter, and column
+  sorting (implant id, last seen, kill date -- first click the natural
+  direction, second flips, third returns to the default fleet order);
+  past ten device groups the table paginates. The header row is always
+  laid down, so an empty fleet (or a filter that matches nothing) reads as
+  a table with a message, not an empty card. The row's dot is the session
+  (green while it lives, gray after) and the last-seen column reads the
+  freshest stamp -- the presence roster while online, the implant row's
+  durable heartbeat after the beacon goes dark -- re-rendered on a quiet
+  30 s clock so relative stamps keep moving between live events. Notes and
+  retire live on the row, and everything else opens from its context menu
+  (right-click or the three-dot button): shell commands, the file browser,
+  the process browser, recon, persistence, collection -- each entry gated
+  on the implant's class, argument-bearing verbs opening a labeled dialog,
+  zero-argument verbs issuing directly.
 - **Session console** (`#/engagements/{id}/implants/{implantId}`, the
   Interact link on a row) -- one implant, rendered as a terminal: a title
   bar naming the device, identity, and live state; a scrolling transcript of
@@ -40,8 +48,9 @@ the status dot and the last-seen column).
 - **Task log** (in Evidence) -- the engagement's task history as a
   filterable, live log: by implant (switches to that implant's own feed),
   verb, status, issuing operator, or free text. Rows expand to their
-  output, queued tasks cancel from here, channels open their pane. Issuing
-  happens in the implant menu and the console; this tab is for reading.
+  output and channels open their pane; the log is read-only -- canceling a
+  queued task happens in that implant's session console. Issuing happens
+  in the implant menu and the console; this tab is for reading.
 
 Two browsing panes open from the menu (and the console): the **process
 browser** (`recon.ps` as a filterable table with a confirmed per-row
@@ -56,7 +65,7 @@ An engagement's C2 ingress. Each listener owns two addresses:
 - **Bind** -- the socket *this server* opens. Picked from the host's
   interfaces (the dropdown is built from `GET /network/interfaces`): one NIC,
   the all-interfaces wildcard (`0.0.0.0`), or a custom address; the port is
-  its own field, defaulted per transport (http 5090, mTLS 5443, HTTPS 8443,
+  its own field, defaulted per transport (https 443, mTLS 5443, http 5090,
   DNS 53, TCP 4444). SMB has no interface/port -- its bind is
   a bare pipe name.
 - **Public endpoint** -- the address *implants dial*, baked into payloads.
@@ -149,15 +158,20 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 
 **Advanced** (all defaulted server side; open only to change them):
 
-- **Endpoint (manual)** -- the dial address when you deliberately build
+- **Callback URL (manual)** -- the dial address when you deliberately build
   without naming a listener.
-- **Interactive endpoint (manual)** -- the https host the interactive stream
-  dials when it differs from the enroll endpoint (empty = the enroll
-  endpoint); the typed-URL twin of the Interactive front picker above.
-- **Fallback endpoints** -- backup fronts baked in behind the primary and
-  dialed in order when it burns.
-- **Enroll path** -- the URI path the implant enrolls on; change it only when
-  a redirector rewrites to the real route. Default `/implants/enroll`.
+- **Interactive URL (manual)** -- the https host the interactive stream
+  dials when it differs from the callback front (empty = check-ins ride the
+  callback front's envelope cycle); the typed-URL twin of the Interactive
+  front picker above.
+- **Fallback fronts** -- backup callback fronts baked in behind the primary
+  and dialed in order when it burns; they share the enroll path and the
+  fixed check-in route.
+- **Enroll path** -- the URI path of the one-time registration POST. The
+  only path knob: check-ins ride the fixed `/implants/beacon` route and the
+  interactive stream rides the mTLS socket's own gRPC path, so no other path
+  exists to set. Change it only when a redirector rewrites to the real
+  route. Default `/implants/enroll`.
 - **User agent** -- the `User-Agent` the implant presents, to blend with a
   known-good client. Empty leaves the HTTP client's default.
 - **Request timeout (s)** -- per-request HTTP timeout. Default 30.

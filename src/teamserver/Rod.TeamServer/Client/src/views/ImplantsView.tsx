@@ -19,6 +19,7 @@ import { ProcessBrowser } from '../components/ProcessBrowser'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { VERB_FORMS } from '../verbForms'
+import { ago, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
 // The implants panel: the fleet as one table, three identity layers deep. The
@@ -29,6 +30,13 @@ import { implantMenuEntries } from './implantMenu'
 // from the engagement view's live tick). One row per implant is enough because
 // the session registry holds at most one active session per implant; a
 // re-check-in refreshes it rather than adding rows.
+//
+// The table rides a toolbar -- text search, a state filter, a class filter,
+// column sorting -- and paginates by device group when the fleet outgrows one
+// screen. The header row is always laid down (an empty fleet reads as a table
+// with a message, not as a card with nothing in it), and relative last-seen
+// stamps re-render on a quiet clock so "2m ago" keeps moving without a live
+// event to bump it.
 //
 // Implants that predate host reporting (or a test client) group under
 // "unknown host", one group per implant -- the fallback keeps the grouping
@@ -77,16 +85,26 @@ function groupByDevice(implants: Implant[]): DeviceGroup[] {
   })
 }
 
-// Compact "how long ago" for the session column: seconds just now, then
-// minutes, then hours -- the clock an operator actually reads.
-function ago(iso: string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-  if (seconds < 10) return 'now'
-  if (seconds < 60) return `${seconds}s ago`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  return `${Math.floor(seconds / 86400)}d ago`
+// Column sorting: null is the default order (online-first devices, server
+// order within), otherwise the key with a direction multiplier over the
+// ascending comparison. Each column names the direction its first click
+// should land on -- newest last-seen first, soonest kill date first.
+type SortKey = 'id' | 'seen' | 'kill'
+interface Sort {
+  key: SortKey
+  dir: 1 | -1
 }
+
+const SORT_DEFAULTS: Record<SortKey, 1 | -1> = { id: 1, seen: -1, kill: 1 }
+
+function timeOf(iso: string | null): number {
+  return iso ? new Date(iso).getTime() : 0
+}
+
+// How many device groups one page holds. The fleet view is scanned, not
+// scrolled through: past this the pager takes over and the standfirst keeps
+// the whole-fleet counts honest.
+const DEVICES_PER_PAGE = 10
 
 export function ImplantsView({
   engagementId,
@@ -118,6 +136,19 @@ export function ImplantsView({
   // three-dot button); null while no menu is open.
   const [menuFor, setMenuFor] = useState<string | null>(null)
   const menu = useContextMenu()
+
+  // The toolbar: free text across the identity fields, the session/lifecycle
+  // state, and the implant class. All client-side -- the fleet is one query's
+  // worth of rows, and filters must feel instant, not round-trip.
+  const [search, setSearch] = useState('')
+  const [stateFilter, setStateFilter] = useState('')
+  const [classFilter, setClassFilter] = useState('')
+  const [sort, setSort] = useState<Sort | null>(null)
+  const [page, setPage] = useState(0)
+
+  // The quiet clock for relative stamps: bumps every 30s so "2m ago" keeps
+  // moving between live events.
+  const now = useNow(30_000)
 
   useEffect(() => {
     void loadCapabilityGroups()
@@ -155,7 +186,18 @@ export function ImplantsView({
     setNotesFor(null)
     setNotes([])
     setCollapsed(new Set())
+    setSearch('')
+    setStateFilter('')
+    setClassFilter('')
+    setSort(null)
+    setPage(0)
   }, [engagementId])
+
+  // Any narrowed view restarts at the first page -- page five of a filter
+  // that now matches three rows is a dead end.
+  useEffect(() => {
+    setPage(0)
+  }, [search, stateFilter, classFilter])
 
   // The session projection by implant: last-seen and online-since fold into
   // the implant's row, so no separate live-sessions table is needed.
@@ -165,8 +207,83 @@ export function ImplantsView({
     return map
   }, [onlineImplants])
 
-  const groups = useMemo(() => groupByDevice(implants), [implants])
-  const onlineCount = implants.filter((i) => i.isOnline && !i.retiredAt).length
+  // The fresher of the two stamps: the presence roster while a session
+  // lives, the implant row's durable heartbeat after it is gone.
+  const seenOf = useCallback(
+    (implant: Implant) =>
+      presenceByImplant.get(implant.implantId)?.lastSeenAt ?? implant.lastSeenAt,
+    [presenceByImplant],
+  )
+
+  const classes = useMemo(
+    () => [...new Set(implants.map((i) => i.class))].sort(),
+    [implants],
+  )
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    return implants.filter((implant) => {
+      if (classFilter !== '' && implant.class !== classFilter) return false
+      const retired = !!implant.retiredAt
+      if (stateFilter === 'online' && !(implant.isOnline && !retired)) return false
+      if (stateFilter === 'offline' && !(!implant.isOnline && !retired)) return false
+      if (stateFilter === 'retired' && !retired) return false
+      if (needle !== '') {
+        const haystack = [
+          implant.hostname,
+          implant.implantId,
+          implant.class,
+          implant.username,
+          implant.os,
+          implant.arch,
+        ]
+          .filter((v): v is string => !!v)
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(needle)) return false
+      }
+      return true
+    })
+  }, [implants, search, stateFilter, classFilter])
+
+  const compareUnderSort = useCallback(
+    (a: Implant, b: Implant): number => {
+      if (!sort) return 0
+      switch (sort.key) {
+        case 'id':
+          return a.implantId.localeCompare(b.implantId) * sort.dir
+        case 'seen':
+          return (timeOf(seenOf(a)) - timeOf(seenOf(b))) * sort.dir
+        case 'kill':
+          return (new Date(a.killDate).getTime() - new Date(b.killDate).getTime()) * sort.dir
+      }
+    },
+    [sort, seenOf],
+  )
+
+  // Grouping over the filtered rows, then the sort: within a group by the
+  // chosen column, and -- when a sort is active -- the groups themselves by
+  // their best row, so a "last seen" sort reads newest-first down the whole
+  // table, not just inside each device.
+  const sortedGroups = useMemo(() => {
+    const grouped = groupByDevice(filtered)
+    if (!sort) return grouped
+    const withSortedRows = grouped.map((group) => ({
+      ...group,
+      implants: [...group.implants].sort(compareUnderSort),
+    }))
+    return withSortedRows.sort((a, b) => compareUnderSort(a.implants[0], b.implants[0]))
+  }, [filtered, sort, compareUnderSort])
+
+  const totalPages = Math.max(1, Math.ceil(sortedGroups.length / DEVICES_PER_PAGE))
+  const currentPage = Math.min(page, totalPages - 1)
+  const pageGroups = sortedGroups.slice(
+    currentPage * DEVICES_PER_PAGE,
+    (currentPage + 1) * DEVICES_PER_PAGE,
+  )
+
+  const filtering = search.trim() !== '' || stateFilter !== '' || classFilter !== ''
+  const onlineCount = filtered.filter((i) => i.isOnline && !i.retiredAt).length
 
   const toggleGroup = (key: string) => {
     setCollapsed((current) => {
@@ -176,6 +293,27 @@ export function ImplantsView({
       return next
     })
   }
+
+  // A header that sorts: first click lands on the column's natural direction,
+  // the second flips it, the third returns to the default fleet order.
+  const sortHeader = (key: SortKey, label: string) => (
+    <button
+      type="button"
+      className={`th-sort${sort?.key === key ? ' active' : ''}`}
+      onClick={() =>
+        setSort((current) =>
+          current?.key === key
+            ? current.dir === SORT_DEFAULTS[key]
+              ? { key, dir: current.dir === 1 ? -1 : 1 }
+              : null
+            : { key, dir: SORT_DEFAULTS[key] },
+        )
+      }
+    >
+      {label}
+      {sort?.key === key && <span className="sort-arrow">{sort.dir === 1 ? '↑' : '↓'}</span>}
+    </button>
+  )
 
   const onRetire = async (implantId: string) => {
     if (!window.confirm(`Retire (burn) implant ${implantId.slice(0, 8)}? It will be refused at handshake and untaskable.`)) {
@@ -241,47 +379,86 @@ export function ImplantsView({
           }
         })()
       },
-        onDialog: (verb) => setDialog({ implantId, verb }),
-        onProcesses: () => setProcessesFor(implantId),
-        onFiles: () => setFilesFor(implantId),
-        onNotes: () => void onToggleNotes(implantId),
-        onRetire: () => onRetire(implantId),
-      })
-    }
-
-  if (implants.length === 0 && !error) {
-    return (
-      <div className="card">
-        <h3>Implants</h3>
-        <div className="empty">
-          <Icon name="cpu" />
-          No implants enrolled yet.
-        </div>
-      </div>
-    )
+      onDialog: (verb) => setDialog({ implantId, verb }),
+      onProcesses: () => setProcessesFor(implantId),
+      onFiles: () => setFilesFor(implantId),
+      onNotes: () => void onToggleNotes(implantId),
+      onRetire: () => onRetire(implantId),
+    })
   }
 
   return (
     <div className="card">
       <h3>Implants</h3>
       <p className="muted">
-        {groups.length} device{groups.length === 1 ? '' : 's'} · {implants.length} implant{implants.length === 1 ? '' : 's'} ·{' '}
-        {onlineCount} online. Grouped by the host reported at enroll; the dot is the live session.
+        {sortedGroups.length} device{sortedGroups.length === 1 ? '' : 's'} ·{' '}
+        {filtered.length} implant{filtered.length === 1 ? '' : 's'} · {onlineCount} online
+        {filtering && implants.length !== filtered.length && (
+          <span title="Clear the toolbar's search and filters to see the whole fleet">
+            {' '}
+            (of {implants.length})
+          </span>
+        )}
+        . Grouped by the host reported at enroll; the dot is the live session.
       </p>
+      <div className="table-toolbar">
+        <input
+          className="toolbar-search"
+          placeholder="Search host, id, user, class…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          value={stateFilter}
+          onChange={(e) => setStateFilter(e.target.value)}
+          aria-label="State filter"
+          title="The session/lifecycle state: online (live session), offline (no session), retired (burned)"
+        >
+          <option value="">All states</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+          <option value="retired">Retired</option>
+        </select>
+        <select
+          value={classFilter}
+          onChange={(e) => setClassFilter(e.target.value)}
+          aria-label="Class filter"
+          title="The implant class -- the capability set its build baked"
+        >
+          <option value="">All classes</option>
+          {classes.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="table-wrap">
         <table>
             <thead>
               <tr>
-                <th>Implant</th>
+                <th>{sortHeader('id', 'Implant')}</th>
                 <th>Status</th>
-                <th>Last seen</th>
-                <th>Kill date</th>
+                <th>{sortHeader('seen', 'Last seen')}</th>
+                <th>{sortHeader('kill', 'Kill date')}</th>
                 <th>Parent</th>
                 <th></th>
               </tr>
             </thead>
           <tbody>
-            {groups.map((group) => (
+            {pageGroups.length === 0 && (
+              <tr>
+                <td colSpan={6}>
+                  <div className="empty">
+                    <Icon name="cpu" />
+                    {implants.length === 0
+                      ? 'No implants enrolled yet.'
+                      : 'No implants match — clear the search or filters.'}
+                  </div>
+                </td>
+              </tr>
+            )}
+            {pageGroups.map((group) => (
               <Fragment key={group.key}>
                 <tr
                   className={`device-row${collapsed.has(group.key) ? ' collapsed' : ''}`}
@@ -308,10 +485,7 @@ export function ImplantsView({
                 {!collapsed.has(group.key) &&
                   group.implants.map((implant) => {
                     const presence = presenceByImplant.get(implant.implantId)
-                    // The fresher of the two stamps: the presence roster while
-                    // a session lives, the implant row's durable heartbeat
-                    // after it is gone.
-                    const lastSeen = presence?.lastSeenAt ?? implant.lastSeenAt
+                    const lastSeen = seenOf(implant)
                     const retired = !!implant.retiredAt
                     return (
                       <Fragment key={implant.implantId}>
@@ -355,7 +529,7 @@ export function ImplantsView({
                               <span
                                 title={new Date(lastSeen).toLocaleString()}
                               >
-                                {ago(lastSeen)}
+                                {ago(lastSeen, now)}
                               </span>
                             ) : (
                               <span className="muted">&mdash;</span>
@@ -442,6 +616,27 @@ export function ImplantsView({
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="table-pager">
+          <button
+            className="ghost sm"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            ‹ Prev
+          </button>
+          <span className="muted">
+            page {currentPage + 1} / {totalPages}
+          </span>
+          <button
+            className="ghost sm"
+            disabled={currentPage >= totalPages - 1}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            Next ›
+          </button>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       {menu.menu && menuFor && (
         <ContextMenu

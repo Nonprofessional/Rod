@@ -20,6 +20,7 @@ import { ProcessBrowser } from '../components/ProcessBrowser'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { CHANNEL_VERBS, VERB_FORMS } from '../verbForms'
+import { ago, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
 // The session console: one implant, rendered as the terminal operators expect
@@ -145,6 +146,11 @@ export function InteractView({
   }, [capabilityGroups])
 
   const presence = onlineImplants.find((p) => p.implantId === implantId)
+
+  // The quiet clock: the offline branch's "last seen 2m ago" is derived from
+  // the passage of time, so it re-renders on its own instead of waiting for a
+  // live event that (by definition) is not coming.
+  const now = useNow(30_000)
 
   // The transcript follows the newest line only while the operator is parked
   // at the bottom (a terminal, not a jump scroll); scrolling up to read pins
@@ -325,6 +331,14 @@ export function InteractView({
                 title={`Online since ${new Date(presence.onlineAt).toLocaleString()}`}
               >
                 seen {new Date(presence.lastSeenAt).toLocaleTimeString()}
+              </span>
+            )}
+            {!presence && implant?.lastSeenAt && !implant.retiredAt && (
+              <span
+                className="muted"
+                title={`Last heard ${new Date(implant.lastSeenAt).toLocaleString()}`}
+              >
+                last seen {ago(implant.lastSeenAt, now)}
               </span>
             )}
           </span>

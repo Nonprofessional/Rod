@@ -28,13 +28,14 @@ import { StatusBadge } from '../components/StatusBadge'
 
 // The transports the create form offers, with the default port each one takes
 // and the wire it rides named in the label. The server validates for real;
-// this list only keeps the form from offering shapes the server would refuse.
-// SMB is the odd one out: its bind is a bare pipe name, not interface + port.
+// this list only keeps the form from offering shapes the server would refuse
+// (the retired https-envelope transport is deliberately absent -- envelope
+// check-ins ride the HTTPS listener now). SMB is the odd one out: its bind is
+// a bare pipe name, not interface + port.
 const TRANSPORTS = [
   { value: 'https', label: 'HTTPS — one port: enroll + check-ins', port: '443' },
   { value: 'mtls', label: 'mTLS — gRPC over HTTP/2', port: '5443' },
   { value: 'http', label: 'HTTP — cleartext; enroll only', port: '5090' },
-  { value: 'https-envelope', label: 'HTTPS envelope — POST check-ins', port: '8443' },
   { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
   { value: 'smb', label: 'SMB — named pipe', port: '' },
   { value: 'tcp', label: 'Raw TCP — framed messages', port: '4444' },
@@ -262,8 +263,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         )}
         <input
           className="endpoint-input"
-          placeholder="Implant callback address (empty = the bind)"
-          title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Empty derives it from the bind; a bare hostname gets the transport's scheme and this port. A wildcard bind cannot derive — type the hostname implants should reach."
+          placeholder="Callback address — host, host:port, or URL (empty = the bind)"
+          title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port rides verbatim; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
           value={publicEndpoint}
           onChange={(e) => setPublicEndpoint(e.target.value)}
         />
