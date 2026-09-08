@@ -105,26 +105,28 @@ public class EnvelopeBeaconTests
         // versa, so neither direction's ciphertext can be reflected.
         var baked = Convert.ToBase64String(
             Guid.NewGuid().ToByteArray().Concat(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToArray());
-        var key = EnvelopeBeacon.ParseBakedKey(baked);
-        Assert.NotNull(key);
+        var parsed = EnvelopeBeacon.ParseBakedKey(baked);
+        Assert.NotNull(parsed);
+        var (keyId, keyMaterial) = parsed!.Value;
 
         var plaintext = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f };
 
-        var request = EnvelopeBeacon.SealCheckInBody(plaintext, key!.KeyId, key.Key, "rod-checkin-v1");
-        var response = EnvelopeBeacon.SealCheckInBody(plaintext, key.KeyId, key.Key, "rod-checkin-response-v1");
+        var request = EnvelopeBeacon.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-v1");
+        var response = EnvelopeBeacon.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-response-v1");
 
-        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(request, key.KeyId, key.Key, "rod-checkin-v1"));
-        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(response, key.KeyId, key.Key, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(request, key.KeyId, key.Key, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(response, key.KeyId, key.Key, "rod-checkin-v1"));
+        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-v1"));
+        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-response-v1"));
+        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-response-v1"));
+        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-v1"));
 
         // Tampered bytes never open, and a foreign key never opens the seal.
         var tampered = (byte[])request.Clone();
         tampered[^2] = (byte)(tampered[^2] ^ 0x01);
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(tampered, key.KeyId, key.Key, "rod-checkin-v1"));
+        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(tampered, keyId, keyMaterial, "rod-checkin-v1"));
         var other = EnvelopeBeacon.ParseBakedKey(Convert.ToBase64String(
             Guid.NewGuid().ToByteArray().Concat(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToArray()));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(request, other!.KeyId, other.Key, "rod-checkin-v1"));
+        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(
+            request, other!.Value.KeyId, other.Value.Key, "rod-checkin-v1"));
     }
 
     [Fact]
