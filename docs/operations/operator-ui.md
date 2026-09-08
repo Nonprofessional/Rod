@@ -5,6 +5,42 @@ everything else lives in hover text on the field it describes. This page is
 the long form: what each panel shows, and what every build and listener field
 does, in one place. Screenshots-age; this text is the reference.
 
+## Operating surfaces
+
+Three identity layers fold into the UI, and it pays to keep them straight:
+a **device** is the host an implant reported at enroll (hostname, OS/arch,
+account -- recorded on the implant, grouped in the fleet), an **implant** is
+one enrolled identity (class, kill date, lineage, lifecycle), and a
+**session** is the live connection (at most one per implant; its state is
+the status dot and the last-seen column).
+
+- **Fleet** (the Implants tab) -- one table, one row per implant, grouped by
+  device with collapsible group headers. The row's dot is the session; notes
+  and retire live on the row, and everything else opens from its context
+  menu (right-click or the three-dot button): shell commands, the file
+  browser, the process browser, recon, persistence, collection -- each
+  entry gated on the implant's class, argument-bearing verbs opening a
+  labeled dialog, zero-argument verbs issuing directly.
+- **Session console** (`#/engagements/{id}/implants/{implantId}`, the
+  Interact link on a row) -- one implant, full screen. The header names the
+  device and identity; the feed is that implant's task history with
+  expandable output; the bottom bar is a keyboard path (a plain line runs
+  as a shell command; `help` lists the shortcuts: `interact`, `ps`, `kill`,
+  `screenshot`, `hostenum`, `portscan`, `services`, `download`, `files`,
+  `raw`). Channel tasks get the terminal pane. The Advanced disclosure is
+  the raw verb+arguments escape hatch, pinned to this implant.
+- **Task log** (the Tasking tab) -- the engagement's task history as a
+  filterable, live log: by implant (switches to that implant's own feed),
+  verb, status, issuing operator, or free text. Rows expand to their
+  output, queued tasks cancel from here, channels open their pane. Issuing
+  happens in the fleet menu and the console; this tab is for reading.
+
+Two browsing panes open from the menu (and the console): the **process
+browser** (`recon.ps` as a filterable table with a confirmed per-row
+`proc.kill`) and the **file browser** (`fs.list` walks the tree; upload
+rides `file.push`, download rides `file.pull` -- small files inline, larger
+ones through the artifact store). Both are snapshots with a refresh.
+
 ## Listeners
 
 An engagement's C2 ingress. Each listener owns two addresses:
@@ -59,20 +95,23 @@ C2's own CA -- no system-trust assumptions.
 
 ## Build
 
-The main path is the mainstream shape: pick the **listener** the implant dials
-and the **target** (OS/arch; x86 pairs with Windows only), leave the rest at
-the defaults, and build. The artifact is a self-contained single-file
-executable with its enrollment credential baked in -- drop it on the target
-and run, zero arguments.
+The main path is the mainstream shape: pick the **enroll front** (the
+listener the implant registers through) and the **target** (OS/arch; x86
+pairs with Windows only), leave the rest at the defaults, and build. The
+artifact is a self-contained single-file executable with its enrollment
+credential baked in -- drop it on the target and run, zero arguments. A small
+diagram under the picks draws the traffic shape the build bakes and follows
+them live.
 
-**Beacon listener** appears when the picked listener is cleartext `http`:
-check-ins cannot ride that socket, so the form asks for the engagement's
-`mTLS` listener the beacon stream dials -- the split-socket
-shape (enroll one socket, beacon another). An `https` listener carries both
-halves itself and needs no split. The build API takes the same thing as
-`beaconListenerId`, or a typed `beaconEndpoint`, and refuses a cleartext
-enroll endpoint with no beacon named -- that artifact would enroll and then
-sit offline forever.
+**Interactive front (mTLS)** appears when the picked front is cleartext
+`http`: check-ins cannot ride that socket, so the form offers the
+engagement's `mTLS` listener for the interactive stream -- the split-socket
+shape (registration one socket, interactive channel another). Left empty,
+the beacon polls the enroll front over the envelope POST cycle instead. An
+`https` front carries both halves itself and needs no split. The build API
+takes the same thing as `beaconListenerId`, or a typed `beaconEndpoint`, and
+refuses a cleartext enroll endpoint with no beacon named -- that artifact
+would enroll and then sit offline forever.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs
@@ -98,9 +137,9 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 
 - **Endpoint (manual)** -- the dial address when you deliberately build
   without naming a listener.
-- **Beacon endpoint (manual)** -- the https host the check-in stream dials
-  when it differs from the enroll endpoint (empty = the enroll endpoint);
-  the typed-URL twin of the Beacon listener picker above.
+- **Interactive endpoint (manual)** -- the https host the interactive stream
+  dials when it differs from the enroll endpoint (empty = the enroll
+  endpoint); the typed-URL twin of the Interactive front picker above.
 - **Fallback endpoints** -- backup fronts baked in behind the primary and
   dialed in order when it burns.
 - **Enroll path** -- the URI path the implant enrolls on; change it only when

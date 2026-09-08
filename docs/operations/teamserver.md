@@ -73,10 +73,13 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
 4. Run the reference implant for a quick end-to-end check:
    `dotnet run --project src/implant/dotnet -- -enroll-url
    http://127.0.0.1:5080/implants/enroll -token <secret>`, or add `-mode poll`
-   for the low-and-slow cadence. It appears on the engagement roster, takes
-   tasking, and its results land in the audit trail.
-5. For a live shell, issue `shell.interact` against it (Tasking tab, or
-   `POST /engagements/{id}/tasks`) and open the Interact pane: type into the
+   for the low-and-slow cadence. It appears in the fleet (grouped under the
+   host it reported at enroll), takes tasking, and its results land in the
+   audit trail.
+5. For a live shell, open the implant's session console (its Interact link in
+   the fleet) and type `interact` -- or issue `shell.interact` from the
+   implant's context menu, or `POST /engagements/{id}/tasks` -- and the
+   Interact pane opens: type into the
    input line and watch the transcript stream. Over the API the same loop is
    `POST /engagements/{id}/tasks/{taskId}/input` with `{"data": "<base64>"}`
    per line and `{"eof": true}` to close stdin -- the task completes with the
