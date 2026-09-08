@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  type ArtifactSummary,
   type EngagementTask,
   type Implant,
+  fetchArtifactBlob,
+  listArtifacts,
   listEngagementTasks,
   listImplantTasks,
   listImplants,
@@ -330,11 +333,76 @@ function LogRow({
       {expanded && (
         <tr>
           <td colSpan={7}>
-            <pre className="output long">{task.output ?? '—'}</pre>
+            <div className="task-detail">
+              {task.arguments.length > 0 && (
+                <div className="task-detail-line">
+                  <span className="muted">arguments</span> <code>{task.arguments}</code>
+                </div>
+              )}
+              <pre className="output long">{task.output ?? '—'}</pre>
+              <div className="task-detail-line muted">
+                created {new Date(task.createdAt).toLocaleString()}
+                {task.completedAt && <> · completed {new Date(task.completedAt).toLocaleString()}</>}
+                {' '}· by <code title={task.issuedBy}>{task.issuedBy.slice(0, 8)}</code>
+              </div>
+              <TaskArtifacts engagementId={engagementId} taskId={task.taskId} />
+            </div>
           </td>
         </tr>
       )}
     </>
+  )
+}
+
+// The artifacts a task produced or consumed, lazily fetched on expand: a
+// staged upload binds its bytes to the task, a large pull streams into the
+// store -- the expanded row carries the download instead of making the
+// operator cross to the Artifacts tab.
+function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId: string }) {
+  const [artifacts, setArtifacts] = useState<ArtifactSummary[] | null>(null)
+
+  useEffect(() => {
+    let stopped = false
+    void listArtifacts(engagementId, taskId)
+      .then((page) => {
+        if (!stopped) setArtifacts(page.items)
+      })
+      .catch(() => {
+        if (!stopped) setArtifacts([])
+      })
+    return () => {
+      stopped = true
+    }
+  }, [engagementId, taskId])
+
+  if (!artifacts || artifacts.length === 0) return null
+
+  const onDownload = async (artifact: ArtifactSummary) => {
+    try {
+      const blob = await fetchArtifactBlob(engagementId, artifact.artifactId)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = artifact.name
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    } catch {
+      // The row stays; a failed fetch surfaces on retry.
+    }
+  }
+
+  return (
+    <div className="task-detail-artifacts">
+      <span className="muted">artifacts</span>
+      {artifacts.map((a) => (
+        <span key={a.artifactId} className="task-detail-artifact">
+          <code>{a.name}</code> <span className="muted">({a.size} bytes)</span>{' '}
+          <button className="sm" onClick={() => void onDownload(a)}>
+            Download
+          </button>
+        </span>
+      ))}
+    </div>
   )
 }
 

@@ -33,8 +33,11 @@ export function classVerbs(klass: string): ReadonlySet<string> {
 }
 
 export interface ImplantMenuActions {
-  // Open the session console (fleet) or start an interactive shell (console).
-  onInteract: () => void
+  // Open the session console. Omitted where it would be a no-op (the console
+  // itself) -- the menu's Interact entry follows it.
+  onConsole?: () => void
+  // Start the live interactive shell channel (shell.interact).
+  onShell: () => void
   // Issue a zero-argument verb directly; the caller owns any confirmation.
   onIssue: (verb: string) => void
   // Open the per-verb dialog for an argument-bearing verb.
@@ -52,21 +55,25 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
     return entry
   }
 
-  const entries: MenuEntry[] = [
-    {
+  const entries: MenuEntry[] = []
+  if (actions.onConsole) {
+    entries.push({
       kind: 'item',
       label: 'Interact',
       icon: 'terminal',
       title: 'Open this implant\'s session console',
-      onSelect: actions.onInteract,
-    },
-    { kind: 'sep' },
+      onSelect: actions.onConsole,
+    })
+    entries.push({ kind: 'sep' })
+  }
+  entries.push(
     { kind: 'label', label: 'Shell' },
     push(
       {
         kind: 'item',
         label: 'Run command',
         icon: 'terminal',
+        opensDialog: true,
         title: 'shell.exec -- run one command through the system shell and return its output',
         onSelect: () => actions.onDialog('shell.exec'),
       },
@@ -77,8 +84,8 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Interactive shell',
         icon: 'terminal',
-        title: 'shell.interact -- a live typing channel held open over the check-in stream',
-        onSelect: actions.onInteract,
+        title: 'shell.interact -- a live typing channel: real terminal semantics on Linux, line-based elsewhere',
+        onSelect: actions.onShell,
       },
       'shell.interact',
     ),
@@ -98,6 +105,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Upload file',
         icon: 'package',
+        opensDialog: true,
         title: 'file.push -- push a local file to a target path',
         onSelect: () => actions.onDialog('file.push'),
       },
@@ -108,6 +116,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Download file',
         icon: 'package',
+        opensDialog: true,
         title: 'file.pull -- pull a target file back (inline when small, else to the artifact store)',
         onSelect: () => actions.onDialog('file.pull'),
       },
@@ -130,6 +139,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         label: 'Kill pid',
         icon: 'list',
         danger: true,
+        opensDialog: true,
         title: 'proc.kill -- terminate one process by pid (observable, irreversible)',
         onSelect: () => actions.onDialog('proc.kill'),
       },
@@ -151,6 +161,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Port scan',
         icon: 'globe',
+        opensDialog: true,
         title: 'recon.portscan -- sweep a host\'s port range',
         onSelect: () => actions.onDialog('recon.portscan'),
       },
@@ -161,6 +172,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Probe services',
         icon: 'globe',
+        opensDialog: true,
         title: 'recon.service -- fingerprint the services behind specific ports',
         onSelect: () => actions.onDialog('recon.service'),
       },
@@ -182,6 +194,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Credentials',
         icon: 'users',
+        opensDialog: true,
         title: 'collect.cred -- harvest stored credentials',
         onSelect: () => actions.onDialog('collect.cred'),
       },
@@ -203,6 +216,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Install',
         icon: 'clock',
+        opensDialog: true,
         title: 'persist.install -- install a persistence mechanism',
         onSelect: () => actions.onDialog('persist.install'),
       },
@@ -213,12 +227,13 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         kind: 'item',
         label: 'Remove',
         icon: 'clock',
+        opensDialog: true,
         title: 'persist.remove -- remove an installed persistence mechanism',
         onSelect: () => actions.onDialog('persist.remove'),
       },
       'persist.remove',
     ),
-  ]
+  )
   if (actions.onNotes || (actions.onRetire && !implant.retiredAt)) {
     entries.push({ kind: 'sep' })
     if (actions.onNotes) {
@@ -236,7 +251,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         label: 'Retire (burn)',
         icon: 'logout',
         danger: true,
-        title: 'Take the implant out of operation: refused at handshake, untaskable afterwards',
+        title: 'Take the implant out of operation: refused at handshake and untaskable afterwards',
         onSelect: actions.onRetire,
       })
     }

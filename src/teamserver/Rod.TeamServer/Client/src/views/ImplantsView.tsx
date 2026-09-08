@@ -15,6 +15,7 @@ import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
 import { Icon } from '../components/Icons'
+import { InteractPane } from '../components/InteractPane'
 import { ProcessBrowser } from '../components/ProcessBrowser'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
@@ -129,6 +130,9 @@ export function ImplantsView({
   // (or just the implant for the browser). One at a time -- the operator acts
   // on one row at a time.
   const [dialog, setDialog] = useState<{ implantId: string; verb: string } | null>(null)
+  // The live interactive-shell channel opened from the fleet (the menu's
+  // "Interactive shell"): the channel task id plus the implant it runs on.
+  const [shell, setShell] = useState<{ implantId: string; taskId: string } | null>(null)
   const [processesFor, setProcessesFor] = useState<string | null>(null)
   const [filesFor, setFilesFor] = useState<string | null>(null)
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
@@ -366,8 +370,19 @@ export function ImplantsView({
     const target = implants.find((i) => i.implantId === implantId)
     if (!target) return []
     return implantMenuEntries(target, {
-      onInteract: () => {
+      onConsole: () => {
         window.location.hash = `#/engagements/${engagementId}/implants/${implantId}`
+      },
+      onShell: () => {
+        void (async () => {
+          try {
+            const task = await issueTask(engagementId, { implantId, verb: 'shell.interact', arguments: '' })
+            setShell({ implantId, taskId: task.taskId })
+            setError(null)
+          } catch (e) {
+            setError(String(e))
+          }
+        })()
       },
       onIssue: (verb) => {
         void (async () => {
@@ -638,6 +653,14 @@ export function ImplantsView({
         </div>
       )}
       {error && <p className="error">{error}</p>}
+      {shell && (
+        <InteractPane
+          engagementId={engagementId}
+          taskId={shell.taskId}
+          verb="shell.interact"
+          onClose={() => setShell(null)}
+        />
+      )}
       {menu.menu && menuFor && (
         <ContextMenu
           x={menu.menu.x}

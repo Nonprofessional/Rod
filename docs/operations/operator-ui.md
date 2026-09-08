@@ -22,6 +22,23 @@ and the UI uses them precisely:
   typing. An implant that never opens one still fully operates through
   check-ins.
 
+Two builds of that contact cadence: **poll** mode makes each check-in a
+short request-response cycle (call home, drain tasking, sleep), while
+**stream** mode holds one long-lived connection open instead -- not "one
+check-in", but one connection that never ends: tasking is pushed down it in
+real time and the session's last-seen advances by touches on the same
+stream. Either way every ordinary task rides the same verb grammar; the
+difference is only how the bytes travel.
+
+The interactive shell (`shell.interact`) is a real terminal where the
+platform allows it: on Linux/macOS the reference implant runs the shell
+under a pseudo-terminal, so prompts and line editing appear and the pane's
+^C button sends the interrupt byte that becomes SIGINT for the foreground
+program. Where no pseudo-terminal wrapper exists (a stripped container,
+Windows before a ConPTY handler lands), the channel falls back to
+byte-transparent pipes: fully usable, but without echo or signal
+semantics.
+
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
 account -- recorded on the implant, grouped in the fleet), an **implant** is

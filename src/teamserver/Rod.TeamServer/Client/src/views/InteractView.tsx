@@ -286,9 +286,11 @@ export function InteractView({
 
   const menuEntries = implant
     ? implantMenuEntries(implant, {
-        onInteract: async () => {
-          const task = await issue('shell.interact', '').catch(() => null)
-          if (task) setInteractTask(task.taskId)
+        onShell: () => {
+          void (async () => {
+            const task = await issue('shell.interact', '').catch(() => null)
+            if (task) setInteractTask(task.taskId)
+          })()
         },
         onIssue: (verb) => {
           void issue(verb, '')

@@ -16,6 +16,9 @@ export interface MenuItem {
   danger?: boolean
   disabled?: boolean
   title?: string
+  // The entry opens a dialog instead of acting directly -- marked with a
+  // right-edge chevron so "asks for more" reads at a glance.
+  opensDialog?: boolean
   onSelect: () => void
 }
 
@@ -97,6 +100,11 @@ export function ContextMenu({
           >
             {entry.icon && <Icon name={entry.icon} />}
             {entry.label}
+            {entry.opensDialog && (
+              <span className="menu-dialog-mark" aria-hidden="true">
+                ›
+              </span>
+            )}
           </button>
         )
       })}

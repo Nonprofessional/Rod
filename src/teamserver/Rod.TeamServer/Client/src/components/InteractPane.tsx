@@ -89,6 +89,23 @@ export function InteractPane({
     }
   }
 
+  // The interrupt: sends the ETX byte (0x03) the way a real terminal does.
+  // On a PTY-backed channel (the Unix interactive shell) the line discipline
+  // turns it into SIGINT for the foreground program; on a pipes channel it
+  // is a byte the shell ignores -- harmless, but the button only matters
+  // where it works, so its tooltip says so.
+  const onInterrupt = async () => {
+    setBusy(true)
+    try {
+      await sendTaskInput(engagementId, taskId, '\x03')
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="terminal">
       <div className="terminal-header">
@@ -118,6 +135,15 @@ export function InteractPane({
         />
         <button className="primary sm" type="submit" disabled={busy || done || !line}>
           Send
+        </button>
+        <button
+          className="ghost sm"
+          type="button"
+          onClick={() => void onInterrupt()}
+          disabled={busy || done}
+          title="Send the interrupt byte (Ctrl+C) -- SIGINT to the foreground program on a PTY-backed shell"
+        >
+          ^C
         </button>
         <button className="ghost sm" type="button" onClick={() => void onCloseStdin()} disabled={busy || done}>
           Close stdin

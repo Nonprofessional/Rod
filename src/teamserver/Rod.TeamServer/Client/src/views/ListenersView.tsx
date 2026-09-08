@@ -184,93 +184,116 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         form picks both up.
       </p>
 
-      <form className="inline-form listener-create" onSubmit={onCreate}>
-        <input
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <select
-          value={transport}
-          onChange={(e) => {
-            setTransport(e.target.value)
-            const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
-            if (port !== '') setBindPort(port)
-          }}
-          aria-label="Transport"
-          title="The wire this listener speaks. The cleartext HTTP transport carries enrollment and the operator API but not implant check-ins — the beacon is gRPC over mTLS, so pair an HTTP listener with an mTLS one (Build picks both up)."
-        >
-          {TRANSPORTS.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        {isSmb ? (
+      {/* The same labeled-grid shape as the Build form: every field carries
+          its name above it, placeholders stay as hints only. */}
+      <form className="listener-form" onSubmit={onCreate}>
+        <label>
+          Name
           <input
-            placeholder="Pipe name (rod-pipe)"
-            value={pipeName}
-            onChange={(e) => setPipeName(e.target.value)}
+            placeholder="front"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             required
           />
-        ) : (
-          <>
-            <select
-              value={bindInterface}
-              onChange={(e) => setBindInterface(e.target.value)}
-              aria-label="Bind interface"
-              title="The interface this listener opens its socket on"
-            >
-              <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
-              {interfaces.map((i) => (
-                <option key={`${i.name}-${i.address}`} value={i.address}>
-                  {i.name} ({i.address})
-                </option>
-              ))}
-              {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
-              <option value={CUSTOM}>Custom address…</option>
-            </select>
-            {/* Always rendered, disabled unless Custom is picked, so the row
-                never reshuffles when the custom entry comes and goes; the
-                disabled value mirrors the selected interface, so the host
-                about to be bound stays readable. */}
+        </label>
+        <label>
+          Transport
+          <select
+            value={transport}
+            onChange={(e) => {
+              setTransport(e.target.value)
+              const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
+              if (port !== '') setBindPort(port)
+            }}
+            title="The wire this listener speaks. The cleartext HTTP transport carries enrollment and the operator API but not implant check-ins — the beacon is gRPC over mTLS, so pair an HTTP listener with an mTLS one (Build picks both up)."
+          >
+            {TRANSPORTS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {isSmb ? (
+          <label>
+            Pipe name
             <input
-              className="bind-host"
-              placeholder="Custom host (192.168.1.5)"
-              value={
-                bindInterface === CUSTOM
-                  ? customHost
-                  : bindInterface === ''
-                    ? ALL_INTERFACES
-                    : bindInterface
-              }
-              onChange={(e) => setCustomHost(e.target.value)}
-              disabled={bindInterface !== CUSTOM}
-              title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
-              required={bindInterface === CUSTOM}
-            />
-            <input
-              className="bind-port"
-              placeholder="Port"
-              value={bindPort}
-              onChange={(e) => setBindPort(e.target.value)}
-              aria-label="Bind port"
-              title="The port this listener opens"
+              placeholder="rod-pipe"
+              value={pipeName}
+              onChange={(e) => setPipeName(e.target.value)}
+              title="SMB has no interface or port — its bind is the named pipe implants open."
               required
             />
+          </label>
+        ) : (
+          <>
+            <label>
+              Bind interface
+              <select
+                value={bindInterface}
+                onChange={(e) => setBindInterface(e.target.value)}
+                title="The interface this listener opens its socket on"
+              >
+                <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
+                {interfaces.map((i) => (
+                  <option key={`${i.name}-${i.address}`} value={i.address}>
+                    {i.name} ({i.address})
+                  </option>
+                ))}
+                {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
+                <option value={CUSTOM}>Custom address…</option>
+              </select>
+            </label>
+            <label>
+              Custom host
+              {/* Always rendered, disabled unless Custom is picked, so the
+                  grid never reshuffles when the custom entry comes and goes;
+                  the disabled value mirrors the selected interface, so the
+                  host about to be bound stays readable. */}
+              <input
+                className="bind-host"
+                placeholder="192.168.1.5"
+                value={
+                  bindInterface === CUSTOM
+                    ? customHost
+                    : bindInterface === ''
+                      ? ALL_INTERFACES
+                      : bindInterface
+                }
+                onChange={(e) => setCustomHost(e.target.value)}
+                disabled={bindInterface !== CUSTOM}
+                title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
+                required={bindInterface === CUSTOM}
+              />
+            </label>
+            <label>
+              Bind port
+              <input
+                className="bind-port"
+                placeholder="5090"
+                value={bindPort}
+                onChange={(e) => setBindPort(e.target.value)}
+                title="The port this listener opens"
+                required
+              />
+            </label>
           </>
         )}
-        <input
-          className="endpoint-input"
-          placeholder="Callback address — host, host:port, or URL (empty = the bind)"
-          title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port rides verbatim; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
-          value={publicEndpoint}
-          onChange={(e) => setPublicEndpoint(e.target.value)}
-        />
-        <button className="primary" type="submit" disabled={busy}>
-          Create
-        </button>
+        <label>
+          Callback address
+          <input
+            className="endpoint-input"
+            placeholder="host, host:port, or URL — empty = the bind"
+            title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
+            value={publicEndpoint}
+            onChange={(e) => setPublicEndpoint(e.target.value)}
+          />
+        </label>
+        <div className="listener-form-actions">
+          <button className="primary" type="submit" disabled={busy}>
+            Create
+          </button>
+        </div>
       </form>
 
       <div className="inline-form">

