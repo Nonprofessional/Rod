@@ -67,8 +67,8 @@ export function PayloadBuildView({
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   // The socket the check-in stream dials when the build takes the hardened
-  // split: an mTLS front beside the enroll front. Empty means the check-in
-  // rides the enroll front's own envelope cycle.
+  // split: an mTLS front beside the callback front. Empty means the check-in
+  // rides the callback front's own envelope cycle.
   const [beaconListenerId, setBeaconListenerId] = useState('')
   const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
@@ -113,7 +113,7 @@ export function PayloadBuildView({
 
   // The interactive front in play, whichever way it was named: a picked mTLS
   // listener, the manual endpoint under Advanced, or none (check-ins ride the
-  // enroll front itself). This is what the traffic diagram draws and what
+  // callback front itself). This is what the traffic diagram draws and what
   // gates stream mode.
   const interactiveFront =
     !isStager && enrollIsPlainHttp
@@ -284,7 +284,7 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
-            Enroll front
+            Callback front
             <select
               value={listenerId}
               onChange={(e) => {
@@ -298,7 +298,7 @@ export function PayloadBuildView({
                 const next = listeners.find((l) => l.id === e.target.value)
                 if (next && next.transport !== 'http') setBeaconListenerId('')
               }}
-              title="The front the artifact registers through, and -- unless an interactive front is picked beside it -- the front its check-ins ride. Only HTTP-shaped listeners serve enrollment; DNS/SMB/TCP fronts are reached by other means."
+              title="The address the implant calls home to: it registers here once (enroll) and checks in here for the rest of its life, unless an interactive front is picked beside it. Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
             >
               <option value="">-- none: manual endpoint --</option>
               {listeners.map((l) =>
@@ -314,9 +314,9 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {/* Always mounted, disabled unless the enroll front is cleartext --
+          {/* Always mounted, disabled unless the callback front is cleartext --
               the form's grid never reshuffles when a listener is picked. The
-              empty option carries the default (poll the enroll front); the
+              empty option carries the default (poll the callback front); the
               full split rationale lives in the hover text. */}
           <label>
             Interactive front (mTLS)
@@ -326,13 +326,13 @@ export function PayloadBuildView({
               onChange={(e) => setBeaconListenerId(e.target.value)}
               title={
                 offersBeaconSplit
-                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the beacon polls the enroll front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
-                  : 'A TLS-terminated front carries enroll and check-ins on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
+                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the callback front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
+                  : 'A TLS-terminated front carries the callback and its check-ins on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
               }
             >
               {offersBeaconSplit ? (
                 <>
-                  <option value="">-- none: check-ins ride the enroll front (poll) --</option>
+                  <option value="">-- none: check-ins ride the callback front (poll) --</option>
                   {beaconCandidates.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name} ({l.transport} → {l.publicEndpoint})
@@ -340,7 +340,7 @@ export function PayloadBuildView({
                   ))}
                 </>
               ) : (
-                <option value="">-- same socket as the enroll front --</option>
+                <option value="">-- same socket as the callback front --</option>
               )}
             </select>
           </label>
@@ -504,7 +504,7 @@ export function PayloadBuildView({
                 title={
                   beaconListenerId
                     ? 'An interactive front listener is picked, so its public endpoint is used.'
-                    : 'The https host of the mTLS socket the interactive gRPC stream dials. Leave empty and check-ins ride the enroll front itself over the envelope POST cycle; name it only for the split-socket shape.'
+                    : 'The https host of the mTLS socket the interactive gRPC stream dials. Leave empty and check-ins ride the callback front itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>
@@ -680,7 +680,7 @@ export function PayloadBuildView({
 }
 
 // The traffic shape this build bakes, drawn from the current picks: one line
-// when check-ins ride the enroll front, two when the interactive stream gets
+// when check-ins ride the callback front, two when the interactive stream gets
 // its own mTLS socket. The form's words say what each field does; this says
 // what the target will see moving.
 function WireShape({ enroll, interactive }: { enroll: string; interactive: string | null }) {
@@ -691,7 +691,7 @@ function WireShape({ enroll, interactive }: { enroll: string; interactive: strin
       </span>
       <div className="wire-paths">
         <div className="wire-path">
-          <span className="wire-label">{interactive ? 'enroll' : 'enroll + check-ins · envelope POST'}</span>
+          <span className="wire-label">{interactive ? 'registration' : 'callback · registration + check-ins'}</span>
           <span className="wire-arrow">→</span>
           <span className="wire-node">{enroll}</span>
         </div>

@@ -24,18 +24,15 @@ export interface NavItemDef {
   icon: IconName
 }
 
-// Grouped the way operators think: operating the implants first (the implant
-// list -- devices, identities, live sessions -- and the task log it produces;
-// issuing happens in the implant's context menu and session console, not in a
-// tab of its own), infrastructure second, evidence last in reading order
-// (ledger, story, objects, bundle).
+// Grouped the way operators think: the implants tab is the operating surface
+// (issuing happens in the implant's context menu and session console, not in
+// a tab of its own); infrastructure next; evidence last in reading order --
+// the task log joins it because it is read during and after the work, while
+// its Cancel action stays available wherever its rows are.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: null,
-    items: [
-      { id: 'implants', label: 'Implants', icon: 'cpu' },
-      { id: 'tasking', label: 'Task log', icon: 'inbox' },
-    ],
+    items: [{ id: 'implants', label: 'Implants', icon: 'cpu' }],
   },
   {
     label: 'Infrastructure',
@@ -49,6 +46,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Evidence',
     items: [
       { id: 'audit', label: 'Audit', icon: 'list' },
+      { id: 'tasking', label: 'Task log', icon: 'inbox' },
       { id: 'timeline', label: 'Timeline', icon: 'clock' },
       { id: 'artifacts', label: 'Artifacts', icon: 'archive' },
       { id: 'report', label: 'Report', icon: 'file' },

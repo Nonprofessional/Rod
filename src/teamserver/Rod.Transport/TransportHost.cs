@@ -109,7 +109,14 @@ public static class TransportHost
         {
             services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
         }
-        services.AddSingleton<ISessionRegistry, InMemorySessionRegistry>();
+        // The session registry wears its last-seen decorator (architecture.md
+        // Sec 10.3): every open, touch, and sweep-close also advances the
+        // implant row's durable LastSeenAt stamp, so an offline implant still
+        // answers "when did we last hear from it". The persistence host
+        // re-wraps its Postgres registry the same way when it swaps in.
+        services.AddSingleton<ISessionRegistry>(sp => new LastSeenSessionRegistry(
+            new InMemorySessionRegistry(),
+            sp.GetRequiredService<IImplantRepository>()));
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
         // Task-queue wake (architecture.md Sec 10.3): TaskService releases it
         // on every accepted enqueue and the beacon writer parks on it, so a

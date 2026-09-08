@@ -10,6 +10,7 @@ import {
   retireImplant,
 } from '../api'
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { osIconFor } from '../osKind'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
@@ -269,16 +270,16 @@ export function ImplantsView({
       </p>
       <div className="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Implant</th>
-              <th>Status</th>
-              <th>Session</th>
-              <th>Kill date</th>
-              <th>Parent</th>
-              <th></th>
-            </tr>
-          </thead>
+            <thead>
+              <tr>
+                <th>Implant</th>
+                <th>Status</th>
+                <th>Last seen</th>
+                <th>Kill date</th>
+                <th>Parent</th>
+                <th></th>
+              </tr>
+            </thead>
           <tbody>
             {groups.map((group) => (
               <Fragment key={group.key}>
@@ -287,6 +288,7 @@ export function ImplantsView({
                   onClick={() => toggleGroup(group.key)}
                 >
                   <td colSpan={6}>
+                    <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
                     <strong>{group.hostname ?? 'unknown host'}</strong>
                     <span className="device-meta">
                       {group.os || group.arch
@@ -306,10 +308,15 @@ export function ImplantsView({
                 {!collapsed.has(group.key) &&
                   group.implants.map((implant) => {
                     const presence = presenceByImplant.get(implant.implantId)
+                    // The fresher of the two stamps: the presence roster while
+                    // a session lives, the implant row's durable heartbeat
+                    // after it is gone.
+                    const lastSeen = presence?.lastSeenAt ?? implant.lastSeenAt
+                    const retired = !!implant.retiredAt
                     return (
                       <Fragment key={implant.implantId}>
                         <tr
-                          className={implant.isOnline || implant.retiredAt ? undefined : 'row-dim'}
+                          className={implant.isOnline || retired ? undefined : 'row-dim'}
                           onContextMenu={(e) => {
                             e.preventDefault()
                             setMenuFor(implant.implantId)
@@ -317,7 +324,18 @@ export function ImplantsView({
                           }}
                         >
                           <td>
-                            <span className="dot online" title="online" />{' '}
+                            <span
+                              className={`dot ${!retired && implant.isOnline ? 'online' : 'offline'}`}
+                              title={
+                                retired
+                                  ? 'Retired: refused at handshake, untaskable'
+                                  : implant.isOnline
+                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()}`
+                                    : lastSeen
+                                      ? `No active session; last heard ${new Date(lastSeen).toLocaleString()}`
+                                      : 'No active session'
+                              }
+                            />{' '}
                             <code>{implant.implantId.slice(0, 8)}</code>{' '}
                             <span className="muted">{implant.class}</span>
                             {implant.username && (
@@ -329,13 +347,15 @@ export function ImplantsView({
                           </td>
                           <td>
                             <StatusBadge
-                              status={implant.retiredAt ? 'retired' : implant.isOnline ? 'online' : 'offline'}
+                              status={retired ? 'retired' : implant.isOnline ? 'online' : 'offline'}
                             />
                           </td>
                           <td>
-                            {presence && !implant.retiredAt ? (
-                              <span title={`Online since ${new Date(presence.onlineAt).toLocaleString()}\n${presence.capabilities.length} capabilities: ${presence.capabilities.join(', ')}`}>
-                                {ago(presence.lastSeenAt)}
+                            {lastSeen ? (
+                              <span
+                                title={new Date(lastSeen).toLocaleString()}
+                              >
+                                {ago(lastSeen)}
                               </span>
                             ) : (
                               <span className="muted">&mdash;</span>

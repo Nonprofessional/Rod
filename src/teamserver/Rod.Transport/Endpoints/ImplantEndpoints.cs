@@ -73,7 +73,8 @@ public static class ImplantEndpoints
                 Hostname: i.Hostname,
                 Os: i.Os,
                 Arch: i.Arch,
-                Username: i.Username))
+                Username: i.Username,
+                LastSeenAt: i.LastSeenAt))
             .ToArray();
 
         return Results.Ok(body);
@@ -309,7 +310,11 @@ public static class ImplantEndpoints
         string? Hostname = null,
         string? Os = null,
         string? Arch = null,
-        string? Username = null);
+        string? Username = null,
+        // The durable heartbeat: when the teamserver last heard from the
+        // implant, kept after the session is gone. While a session is active
+        // the presence roster's stamp is the fresher one.
+        DateTimeOffset? LastSeenAt = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,

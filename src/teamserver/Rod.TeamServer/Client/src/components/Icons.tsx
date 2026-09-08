@@ -101,6 +101,31 @@ const ICONS = {
     </>
   ),
   check: <polyline points="20 6 9 17 4 12" />,
+  // OS brand marks, simplified to the icon language (24x24, stroke). They
+  // decorate device group headers and the console title bar; the reported OS
+  // string rides beside them for the exact version.
+  osWindows: (
+    <>
+      <path d="M3 5.6 10.6 4.5v7H3Z" />
+      <path d="M11.6 4.3 21 3v8.5h-9.4Z" />
+      <path d="M3 12.5h7.6v7L3 18.4Z" />
+      <path d="M11.6 12.5H21V21l-9.4-1.3Z" />
+    </>
+  ),
+  osApple: (
+    <>
+      <path d="M12 7.6c1-1.8 3.4-2.1 4.7-.4 1.3 1.7.9 4.7-.4 6.7-.7 1.1-1.5 2.2-2.6 2.2-.6 0-1-.4-1.7-.4s-1.1.4-1.7.4c-1.1 0-1.9-1.1-2.6-2.2-1.3-2-1.7-5-.4-6.7 1.3-1.7 3.7-1.4 4.7.4Z" />
+      <path d="M12 7.4c-.2-1.7 1-3.2 2.6-3.4.2 1.7-1 3.2-2.6 3.4Z" />
+    </>
+  ),
+  osLinux: (
+    <>
+      <path d="M12 3c1.9 0 3.1 1.6 3.1 3.4 0 1.4-.5 2.4-.5 3.5 0 2.1 3 3.4 3 6.6 0 2.5-2.1 4.5-5.6 4.5S6.4 19 6.4 16.5c0-3.2 3-4.5 3-6.6 0-1.1-.5-2.1-.5-3.5C8.9 4.6 10.1 3 12 3Z" />
+      <circle cx="10.6" cy="6.8" r="0.2" />
+      <circle cx="13.4" cy="6.8" r="0.2" />
+      <path d="m11.2 8.4.8.8.8-.8" />
+    </>
+  ),
   x: (
     <>
       <line x1="18" y1="6" x2="6" y2="18" />

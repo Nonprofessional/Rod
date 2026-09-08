@@ -68,6 +68,16 @@ public sealed class Implant
     /// <summary>The account the implant process runs under, as reported at enroll; null when unreported.</summary>
     public string? Username { get; }
 
+    /// <summary>
+    /// When the teamserver last heard from this implant, whether or not a
+    /// session is active now -- the durable heartbeat the operator list reads
+    /// for an offline implant ("when did we last see this beacon"). Advanced
+    /// by the session registry's last-seen decorator, at most once a minute
+    /// (the presence roster carries the fresh stamp; this is the durable,
+    /// post-mortem one). Null for implants that never checked in past enroll.
+    /// </summary>
+    public DateTimeOffset? LastSeenAt { get; private set; }
+
     /// <summary>True once the implant has been taken out of operation.</summary>
     public bool IsRetired => RetiredAt is not null;
 
@@ -199,6 +209,31 @@ public sealed class Implant
             return false;
 
         ReplayNonces = true;
+        return true;
+    }
+
+    // The resolution of the durable last-seen stamp: advancing it on every
+    // frame would write the implant row at channel speed, and the presence
+    // roster already carries a fresh timestamp for online implants -- this
+    // stamp only needs to survive the session.
+    private static readonly TimeSpan SeenResolution = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Advances <see cref="LastSeenAt"/> to <paramref name="at"/>: monotonic
+    /// (an older stamp never overwrites a newer one) and bounded to one
+    /// advance per minute so a busy stream does not turn the stamp into a
+    /// per-frame write. Returns whether the stamp moved, so the caller saves
+    /// only on a change.
+    /// </summary>
+    public bool NoteSeen(DateTimeOffset at)
+    {
+        if (LastSeenAt is { } seen)
+        {
+            if (at <= seen || at - seen < SeenResolution)
+                return false;
+        }
+
+        LastSeenAt = at;
         return true;
     }
 }

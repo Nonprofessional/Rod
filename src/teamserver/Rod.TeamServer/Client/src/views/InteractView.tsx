@@ -10,6 +10,7 @@ import {
   listImplants,
 } from '../api'
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { osIconFor } from '../osKind'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
@@ -302,7 +303,7 @@ export function InteractView({
             ← Implants
           </a>
           <span className="console-host" title={`Implant ${implantId}`}>
-            <Icon name="cpu" className="wire-icon" />
+            <Icon name={osIconFor(implant?.os)} className="wire-icon" />
             {hostLabel}
             <code>{implantId.slice(0, 8)}</code>
           </span>

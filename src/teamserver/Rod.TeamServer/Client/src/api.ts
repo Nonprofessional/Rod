@@ -48,6 +48,9 @@ export interface Implant {
   os: string | null
   arch: string | null
   username: string | null
+  // The durable heartbeat: when the teamserver last heard from this implant,
+  // kept after the session is gone. Null when it never checked in past enroll.
+  lastSeenAt: string | null
 }
 
 export interface Task {

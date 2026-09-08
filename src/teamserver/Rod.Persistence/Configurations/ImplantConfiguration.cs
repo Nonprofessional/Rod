@@ -44,6 +44,10 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.Os).HasColumnName("os");
         builder.Property(i => i.Arch).HasColumnName("arch");
         builder.Property(i => i.Username).HasColumnName("username");
+        // The durable heartbeat: when the teamserver last heard from this
+        // implant, kept after the session is gone. Null for implants that
+        // predate the stamp.
+        builder.Property(i => i.LastSeenAt).HasColumnName("last_seen_at");
         // IsRetired is a computed expression; never mapped.
 
         // Engagement scoping is structural: index the engagement column so

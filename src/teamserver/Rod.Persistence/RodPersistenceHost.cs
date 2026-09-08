@@ -80,7 +80,12 @@ public static class RodPersistenceHost
         services.Replace(ServiceDescriptor.Singleton<IOperatorApiTokenStore, PostgresOperatorApiTokenStore>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
         services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
-        services.Replace(ServiceDescriptor.Singleton<ISessionRegistry, PostgresSessionRegistry>());
+        // The Postgres session registry keeps the last-seen decorator the
+        // in-memory registration wears (the durable stamp is written through
+        // the Postgres implant repository resolved above).
+        services.Replace(ServiceDescriptor.Singleton<ISessionRegistry>(sp => new LastSeenSessionRegistry(
+            new PostgresSessionRegistry(sp.GetRequiredService<IDbContextFactory<RodPersistenceDbContext>>()),
+            sp.GetRequiredService<IImplantRepository>())));
         services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
         services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
         // Engagement-scoped listener definitions: the durable pair so a restart
