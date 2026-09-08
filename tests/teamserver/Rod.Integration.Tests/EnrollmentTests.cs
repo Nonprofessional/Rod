@@ -80,7 +80,7 @@ public class EnrollmentTests
             var json = JsonSerializer.Serialize(
                 new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
             var wrapped = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
-                System.Text.Encoding.UTF8.GetBytes(json), keyId, key);
+                System.Text.Encoding.UTF8.GetBytes(json), keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.Aad);
             var encrypted = await client.PostAsync("/implants/enroll",
                 new StringContent($"\"{wrapped}\"", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.Unauthorized, encrypted.StatusCode);
@@ -96,7 +96,7 @@ public class EnrollmentTests
 
             var (otherId, otherKey) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
             var foreign = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
-                System.Text.Encoding.UTF8.GetBytes(json), otherId, otherKey);
+                System.Text.Encoding.UTF8.GetBytes(json), otherId, otherKey, Rod.Transport.Payloads.AesGcmEnvelope.Aad);
             var unknownKey = await client.PostAsync("/implants/enroll",
                 new StringContent($"\"{foreign}\"", Encoding.UTF8, "application/json"));
             Assert.Equal(HttpStatusCode.BadRequest, unknownKey.StatusCode);

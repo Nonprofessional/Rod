@@ -574,27 +574,39 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - **The plain-HTTP envelope check-in is the implant-reach transport and the
   reference implant's web check-in.** The same rod.v1 frames the gRPC stream
   carries, marshaled as varint-length-delimited sequences in ordinary
-  HTTPS request/response bodies over the same client certificates -- one
-  POST (`/implants/beacon`) is one poll check-in: the request body carries
-  the handshake first plus any results, exfil chunks, and staged pulls; the
-  response carries the handshake response, the staged chunk runs answering
-  the request's demands, and queued tasking while a 4 MiB dispatch budget
-  lasts (what does not fit is requeued for the next check-in). It changes
-  the framing, not the protocol semantics: the route is mapped on every
-  listener (over TLS it demands the mTLS client certificate; over the plain
-  `Http` transport the handshake's implant id is the identity, the DNS
-  posture), the frame paths are the beacon compositions every transport
-  shares, and an `HttpsEnvelope` listener entry binds the same mTLS socket
-  the gRPC listener binds so a deployment can name an envelope-only endpoint.
-  The reference .NET implant picks its check-in client by the baked beacon
-  URL's shape: an `http(s)://` URL runs the envelope POST cycle on that port
-  -- the mainstream single-port web posture, the build's derived default for
-  `Http`/`Https` fronts -- while a bare host:port dials the mTLS gRPC stream
-  (what a named mTLS beacon listener bakes). A build against a web front
-  therefore needs no beacon split; naming the mTLS listener as the beacon
-  stays the hardened option for an engagement that wants the interactive
-  stream. Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is
-  reachable from any language with an HTTP client and a protobuf codec
+  HTTP(S) request/response bodies -- one POST (`/implants/beacon`) is one
+  poll check-in: the request body carries the handshake first plus any
+  results, exfil chunks, and staged pulls; the response carries the handshake
+  response, the staged chunk runs answering the request's demands, and
+  queued tasking while a 4 MiB dispatch budget lasts (what does not fit is
+  requeued for the next check-in). It changes the framing, not the protocol
+  semantics: the route is mapped on every listener, the frame paths are the
+  beacon compositions every transport shares, and an `HttpsEnvelope` listener
+  entry binds the same mTLS socket the gRPC listener binds so a deployment
+  can name an envelope-only endpoint. Authentication is at the application
+  layer, under the per-artifact key the build mints (Sec 9) -- the mainstream
+  HTTP(S) C2 shape, and the reason the `http`/`https` listeners are
+  single-port and request no TLS client certificate anywhere: a
+  CertificateRequest is itself a fingerprint an IDS reads. The default body
+  is that key sealing `counter || frames` as AES-256-GCM, and the response
+  seals the same way, so the cleartext `http` posture carries confidential
+  content, not just authenticated content; the counter is strictly increasing
+  per attempt and the route refuses one at or below its floor (a replayed
+  body turns away without a session or a touch), and an enrollment that
+  redeemed a build-minted token is bound to that build's key, so its check-ins
+  cannot downgrade to the plaintext frame. The plaintext framed body is the
+  lab-debug toggle's shape (check-in protection off at build), served only
+  for implants no key was ever bound to; a client certificate still resolves
+  first where an mTLS front presented one. The reference .NET implant picks
+  its check-in client by the baked beacon URL's shape: an `http(s)://` URL
+  runs the envelope POST cycle on that port -- the mainstream single-port web
+  posture, the build's derived default for `Http`/`Https` fronts -- while a
+  bare host:port dials the mTLS gRPC stream (what a named mTLS beacon
+  listener bakes). A build against a web front therefore needs no beacon
+  split; naming the mTLS listener as the beacon stays the hardened option for
+  an engagement that wants the interactive stream. Dropping the
+  gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable from any
+  language with an HTTP client and a protobuf codec
   ([extending/implants.md](extending/implants.md)). A channel task is never
   claimed over the envelope (its input half needs a live stream, the same
   rule the DNS transport applies), and an artifact's exfil chunk run must
@@ -647,8 +659,10 @@ Rod is remote-code-execution infrastructure: a compromised teamserver is
 fleet-wide code execution. Security is a first-class concern.
 
 - **Identity.** Operator identities (credentials and API tokens) verified at
-  login and per request; implant identities bound to their engagement via
-  client certificates. API tokens are bearer credentials minted per operator
+  login and per request; implant identities bound to their engagement by the
+  transport they check in over -- a client certificate on the mTLS listener,
+  the per-artifact check-in key on the web transports (below). API tokens are
+  bearer credentials minted per operator
   through the operator API (shown once, stored as a digest), honored alongside
   cookie sessions through a front scheme that authenticates by what the
   request presents, and revocable by their own route with the same
@@ -657,6 +671,32 @@ fleet-wide code execution. Security is a first-class concern.
   silently invalidates the other.
 - **mTLS.** The mTLS transport is mutually authenticated; an implant's certificate
   binds `(implant_id, engagement_id)`.
+- **Check-in keys.** The web transports authenticate implants at the
+  application layer, not the TLS layer -- a TLS `CertificateRequest` is
+  itself a fingerprint (an ordinary website never asks the visitor for one),
+  which is why the `http`/`https` listeners never send one. Each build mints
+  a per-artifact AES-256 key (the same envelope-key shape the opt-in AesGcm
+  enroll body uses), bakes it into the artifact, and records it beside the
+  stored payload: deleting the payload deletes the key, and that artifact's
+  sealed bodies stop being decodable -- enroll included. Check-in protection
+  defaults on at build (its own Advanced knob beside the enroll-body
+  envelope; off is the lab-debug plaintext frame), and every envelope
+  check-in body is then AES-256-GCM under that key covering a strictly
+  increasing counter -- possession of the key is the authentication, the
+  GCM tag binds the counter to the frames, the server keeps a per-implant
+  floor and refuses a counter at or below it (a replayed body never opens a
+  session or touches presence), and the response seals the same way, so the
+  cleartext `http` posture carries confidential content, not just
+  authenticated content -- the Cobalt Strike metadata model. Each direction
+  binds to its own purpose tag, so one direction's ciphertext cannot be
+  reflected as the other's. When the redeemed enroll token was the one the
+  build minted, the enrollment binds the implant to that build's key: a
+  plaintext body from a bound implant is refused whole (no downgrade to the
+  lab shape) and another artifact's key does not impersonate it. The counter
+  burns per POST attempt, not per delivery, so the batch retransmission
+  after a lost response never trips the floor. The floor and the binding are
+  process-local like the sessions they protect; the key itself lives exactly
+  as long as its payload record.
 - **Production implant CA.** The teamserver consumes an externally provisioned
   engagement CA; it does not generate the production CA. When
   `Pki:CaCertificatePath` and `Pki:CaPrivateKeyPath` are configured,
@@ -738,7 +778,10 @@ fleet-wide code execution. Security is a first-class concern.
   interoperating (see [extending/implants.md](extending/implants.md)).
 - **Per-implant identity and rotation.** Each implant owns a keypair it
   generated itself; the server binds it with a CA-signed leaf at enroll and
-  never sees the private half (Sec 7, Sec 9). Artifacts carry no key material.
+  never sees the private half (Sec 7, Sec 9). Identity key material stays out
+  of artifacts; the one symmetric key a build bakes is the per-artifact
+  check-in/envelope key above -- it seals wire bodies, not identity, and it
+  is per-artifact and revocable with the payload it is recorded beside.
   Rotation is the operational flow *retire the compromised implant, repoint its
   endpoint, and build a fresh artifact*; there is no live in-place key swap.
 - **Retirement.** An implant can be retired from the operator API

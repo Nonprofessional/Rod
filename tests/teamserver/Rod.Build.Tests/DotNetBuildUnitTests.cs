@@ -116,6 +116,41 @@ public class DotNetBuildUnitTests
     }
 
     [Fact]
+    public void RenderBakedProfile_BakesCheckInSealingOnlyWhenTheKeyRides()
+    {
+        // Check-in protection is its own knob beside the enroll-body envelope
+        // (architecture.md Sec 8/9): "aesgcm" seals every check-in body under
+        // the per-artifact key, "none" is the lab-debug plaintext frame. The
+        // seal bakes only when the key rides the params too -- a protection
+        // ask with no key never bakes a seal the artifact cannot honor, and
+        // an explicit opt-out stays opted out even when a key happens to ride
+        // (the AesGcm enroll envelope mints one for the enroll body alone).
+        var (keyId, key) = (Guid.NewGuid(), RandomNumberGenerator.GetBytes(32));
+        var @params = Params() with { EnvelopeKeyId = keyId, EnvelopeKey = key };
+
+        using var sealedDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(@params)));
+        Assert.Equal("aesgcm", sealedDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+
+        // The default transport profile carries no key here (the mint is the
+        // transport endpoint's), so a unit-level build bakes the plaintext
+        // shape -- and so does a params pair whose protection was turned off.
+        using var plainDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
+        Assert.Equal("none", plainDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+
+        var optedOut = Params() with
+        {
+            Transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
+            {
+                CheckInProtection = false,
+            },
+            EnvelopeKeyId = keyId,
+            EnvelopeKey = key,
+        };
+        using var outDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(optedOut)));
+        Assert.Equal("none", outDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+    }
+
+    [Fact]
     public void RenderBakedProfile_BakesTheSplitBeaconHostWhenNamed()
     {
         // The split-socket shape (architecture.md Sec 8): enroll dials the

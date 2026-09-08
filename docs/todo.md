@@ -28,26 +28,6 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Authenticate check-ins with a per-artifact key, not a TLS client
-      certificate.** A TLS CertificateRequest is itself a fingerprint --
-      an ordinary website never asks the visitor for one, so an IDS flags
-      the handshake -- and mainstream HTTP(S) C2s (Cobalt Strike, Havoc,
-      Mythic) authenticate implants at the application layer instead:
-      per-build symmetric keys, metadata encrypted and signed under them.
-      Mint a key per build (the envelope-key shape), bake it, cover a
-      nonce in every check-in, verify in the beacon routes, and stop
-      requesting client certificates on the `Https` transport entirely.
-      The same key envelopes the check-in frames, so the cleartext `http`
-      posture carries confidential content, not just authenticated
-      content -- the Cobalt Strike metadata model. The build surface
-      keeps the two phases as two independent Advanced knobs: the
-      enroll-body shaping stays a three-way pick, while check-in
-      protection is its own toggle (default on; off is the lab-debug
-      plaintext frame -- the disguise ladder does not apply to binary
-      frames, and the key is the authentication).
-      _AC:_ a stage2 built against an Https listener performs enrollment
-      and check-ins whose TLS handshake carries no certificate request,
-      authenticated by the baked key, and reports online.
 - [ ] **Trim each build to the transport it dials.** Every artifact today
       compiles the whole implant tree, so a plain-HTTP build still carries
       the gRPC client it can never use -- surface, size, and fingerprint

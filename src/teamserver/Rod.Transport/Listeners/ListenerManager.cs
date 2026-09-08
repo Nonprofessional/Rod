@@ -83,24 +83,22 @@ public sealed class ListenerManager
         => _runtime.ContainsKey(listener);
 
     /// <summary>
-    /// The HTTPS defaults for runtime-created TLS endpoints -- the same
-    /// termination the startup listeners configure per endpoint: the
-    /// CA-issued server leaf and validation that chains presented client
-    /// certificates to the engagement CA. The certificate mode is
-    /// <see cref="ClientCertificateMode.AllowCertificate"/>: the single-port
-    /// https shape serves enrollment (no certificate exists to present yet)
-    /// and check-ins on one socket, with the beacon routes demanding the
-    /// enrolled certificate at the application layer -- a certificate-less
-    /// connection reaches HTTP, but nothing implant-authenticated answers it.
-    /// Applied through <c>ConfigureHttpsDefaults</c>, Kestrel runs it for
-    /// every endpoint the reloader binds later, which is exactly the
-    /// population that needs it.
+    /// The HTTPS defaults for runtime-created TLS endpoints -- the termination
+    /// every transport shares: the CA-issued server leaf, and chain-to-CA
+    /// validation for whatever client certificate a transport asks to see.
+    /// The certificate mode is deliberately not set here:
+    /// <c>ConfigureHttpsDefaults</c> runs for every endpoint alike and would
+    /// flatten the one HTTPS knob the transports differ on, so each published
+    /// endpoint carries its own per-endpoint <c>ClientCertificateMode</c> in
+    /// the configuration (see <see cref="CreateHttpListenerAsync"/>): the
+    /// mTLS-shaped listeners request the certificate, and every other TLS
+    /// endpoint -- the https transport's fingerprint rule, no request at all
+    /// -- leaves it at the Kestrel default.
     /// </summary>
     internal void ApplyDynamicHttpsDefaults(HttpsConnectionAdapterOptions https)
     {
         https.ServerCertificateSelector = (_, _) =>
             _services.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
-        https.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
         https.ClientCertificateValidation = (certificate, chain, _) =>
             TransportHost.ClientCertificateChainsToCa(certificate, chain, _services);
         https.CheckCertificateRevocation = false;
@@ -265,13 +263,23 @@ public sealed class ListenerManager
         var (host, port) = TransportHost.ParseBindAddress(config.BindAddress);
 
         // The TLS-shaped transports publish an https URL; the HTTPS defaults
-        // the host registered carry the CA-backed mTLS termination.
+        // the host registered carry the CA-backed termination, and the
+        // endpoint's own configuration entry names the certificate mode the
+        // transport needs: the mTLS-shaped listeners request the client
+        // certificate (enrollment still rides the same socket certificate-less,
+        // so the request is optional at TLS and demanded at the application
+        // layer), while the https transport publishes none -- the Kestrel
+        // default never asks, the fingerprint rule the https posture is built
+        // on (architecture.md Sec 8/9).
         var scheme = config.Transport == ListenerTransport.Http ? "http" : "https";
+        var clientCertificateMode = config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope
+            ? nameof(ClientCertificateMode.AllowCertificate)
+            : null;
         var listener = Listener.Define(
             id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
             _clock.GetUtcNow(), config.EngagementId);
 
-        _endpoints.PublishEndpoint(EndpointKey(listener.Id), $"{scheme}://{config.BindAddress}");
+        _endpoints.PublishEndpoint(EndpointKey(listener.Id), $"{scheme}://{config.BindAddress}", clientCertificateMode);
 
         // The reloader binds asynchronously and reports failures only to the
         // log, so observe the outcome: the port must start accepting within

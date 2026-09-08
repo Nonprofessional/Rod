@@ -322,6 +322,11 @@ internal static class PayloadBuildRequestParser
         {
             profile = profile with { Envelope = parsed };
         }
+        // Check-in protection is its own knob, independent of the enroll-body
+        // envelope (architecture.md Sec 8/9): on by default, and only an
+        // explicit opt-out rides -- the lab-debug plaintext frame.
+        if (body.CheckInProtection is false)
+            profile = profile with { CheckInProtection = false };
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             // The fallback list is the egress walk order (architecture.md Sec 8):

@@ -92,6 +92,7 @@ export function PayloadBuildView({
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
   const [envelope, setEnvelope] = useState('None')
+  const [checkInProtection, setCheckInProtection] = useState(true)
   const [tokenHours, setTokenHours] = useState('')
 
   const isStager = klass === 'Stager'
@@ -236,6 +237,7 @@ export function PayloadBuildView({
         headers: null,
         requestTimeoutSeconds: num(requestTimeoutSeconds),
         envelope: envelope !== 'None' ? envelope : null,
+        checkInProtection: checkInProtection ? null : false,
         mode: mode !== 'stream' ? mode : null,
         sleepSeconds: num(sleepSeconds),
         jitterSeconds: num(jitterSeconds),
@@ -497,12 +499,22 @@ export function PayloadBuildView({
               <select
                 value={envelope}
                 onChange={(e) => setEnvelope(e.target.value)}
-                title="Shapes the ENROLL request body only (check-ins ride TLS on https, and get the baked key's protection on cleartext http once key auth ships). None sends the raw JSON body; Base64 wraps it as one string so it no longer reads as structured C2; AES-GCM encrypts it under a per-artifact key minted at build — worth it on cleartext http or where a redirector terminates TLS early; redundant on direct https, where TLS already encrypts the channel."
+                title="Shapes the ENROLL request body only. None sends the raw JSON body; Base64 wraps it as one string so it no longer reads as structured C2; AES-GCM encrypts it under a per-artifact key minted at build — worth it on cleartext http or where a redirector terminates TLS early; redundant on direct https, where TLS already encrypts the channel."
               >
                 <option>None</option>
                 <option>Base64</option>
                 <option value="AesGcm">AES-GCM</option>
               </select>
+            </label>
+            <label
+              title="Seals every check-in POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web check-ins use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
+            >
+              Protect check-ins
+              <input
+                type="checkbox"
+                checked={checkInProtection}
+                onChange={(e) => setCheckInProtection(e.target.checked)}
+              />
             </label>
             <label>
               Credential window (h)

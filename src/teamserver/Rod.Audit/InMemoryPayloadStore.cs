@@ -36,6 +36,10 @@ public sealed class InMemoryPayloadStore : IPayloadStore
         => Task.FromResult(
             _payloads.Values.FirstOrDefault(p => p.EnvelopeKeyId == envelopeKeyId));
 
+    public Task<PayloadRecord?> FindByTokenAsync(Guid tokenId, CancellationToken cancellationToken = default)
+        => Task.FromResult(
+            _payloads.Values.FirstOrDefault(p => p.TokenId == tokenId));
+
     public Task<bool> RemoveAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default)
         => Task.FromResult(
             _payloads.TryGetValue(payloadId, out var payload)

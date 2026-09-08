@@ -126,4 +126,24 @@ internal static class TestSupport
                 X509KeyStorageFlags.DefaultKeySet | X509KeyStorageFlags.Exportable);
         }
     }
+
+    // A throwaway self-signed client certificate for the no-CertificateRequest
+    // probe (architecture.md Sec 8/9): the client offers it over TLS, and the
+    // moment a listener asks to see a client certificate it fails the
+    // chain-to-CA validation and kills the handshake -- so an exchange that
+    // completes with this cert in hand proves the handshake never carried a
+    // certificate request. The pair materializes through a PFX import for the
+    // same SChannel presentation constraint BeaconClientCertificate documents.
+    internal static X509Certificate2 OfferedCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=not-an-implant", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var cert = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        return X509CertificateLoader.LoadPkcs12(
+            cert.Export(X509ContentType.Pfx),
+            (string?)null,
+            X509KeyStorageFlags.DefaultKeySet | X509KeyStorageFlags.Exportable);
+    }
 }

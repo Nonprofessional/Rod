@@ -20,6 +20,12 @@ namespace Rod.Transport.Payloads;
 /// guessing, and a future shape can coexist. Public because the wire layout is
 /// the cross-component contract: the implant reimplements it verbatim, and the
 /// tests encode with the same bytes the teamserver decodes.
+///
+/// The same key, in the same R1 shape but under purpose-specific AAD tags,
+/// also seals the envelope check-in bodies (architecture.md Sec 8): every
+/// check-in request and response is AES-GCM ciphertext under the artifact key,
+/// so the cleartext-http posture carries confidential content, not just
+/// authenticated content -- the Cobalt Strike metadata model.
 /// </summary>
 public static class AesGcmEnvelope
 {
@@ -33,10 +39,26 @@ public static class AesGcmEnvelope
     public const int NonceBytes = 12;
 
     /// <summary>
-    /// The additional-authenticated data binding the envelope to its purpose,
-    /// so a wrapped body cannot be replayed as another protocol's ciphertext.
+    /// The additional-authenticated data binding the enroll envelope to its
+    /// purpose, so a wrapped enroll body cannot be replayed as another
+    /// protocol's ciphertext.
     /// </summary>
     public static ReadOnlySpan<byte> Aad => "rod-envelope-v1"u8;
+
+    /// <summary>
+    /// The AAD binding an implant's sealed check-in request to its purpose
+    /// (architecture.md Sec 8/9): the same per-artifact key envelopes the
+    /// enroll body and the check-in bodies, so the purpose tag is what keeps
+    /// one direction's ciphertext from being replayed as the other's.
+    /// </summary>
+    public static ReadOnlySpan<byte> CheckInRequestAad => "rod-checkin-v1"u8;
+
+    /// <summary>
+    /// The response-side twin of <see cref="CheckInRequestAad"/>: the
+    /// teamserver seals every check-in response under this tag, so a sealed
+    /// request body cannot be reflected as a response and vice versa.
+    /// </summary>
+    public static ReadOnlySpan<byte> CheckInResponseAad => "rod-checkin-response-v1"u8;
 
     /// <summary>The key size in bytes: AES-256.</summary>
     public const int KeyBytes = 32;
@@ -83,16 +105,20 @@ public static class AesGcmEnvelope
 
     /// <summary>
     /// Wraps plaintext as the full wire value (the JSON string's content):
-    /// base64 of magic, key id, nonce, ciphertext, and tag.
+    /// base64 of magic, key id, nonce, ciphertext, and tag. The
+    /// <paramref name="aad"/> names the purpose the ciphertext is bound to --
+    /// <see cref="Aad"/> for the enroll body, the check-in tags for the
+    /// check-in bodies -- so one purpose's wrapped bytes never validate as
+    /// another's.
     /// </summary>
-    public static string Wrap(byte[] plaintext, Guid keyId, byte[] key)
+    public static string Wrap(byte[] plaintext, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(key.Length, KeyBytes);
         var nonce = RandomNumberGenerator.GetBytes(NonceBytes);
         var ciphertext = new byte[plaintext.Length];
         var tag = new byte[TagBytes];
         using var aes = new AesGcm(key, TagBytes);
-        aes.Encrypt(nonce, plaintext, ciphertext, tag, Aad);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag, aad);
 
         var body = new byte[2 + 16 + NonceBytes + ciphertext.Length + TagBytes];
         var position = 0;
@@ -109,11 +135,12 @@ public static class AesGcmEnvelope
     }
 
     /// <summary>
-    /// Unwraps a wire value produced by <see cref="Wrap"/>: authenticates the
-    /// tag, checks the magic, and returns the plaintext -- or null on any
-    /// mismatch (wrong key, tampered bytes, foreign shape).
+    /// Unwraps a wire value produced by <see cref="Wrap"/> under the same
+    /// <paramref name="aad"/>: authenticates the tag, checks the magic, and
+    /// returns the plaintext -- or null on any mismatch (wrong key, tampered
+    /// bytes, foreign shape, or a different purpose's ciphertext).
     /// </summary>
-    public static byte[]? TryUnwrap(string wrapped, Guid keyId, byte[] key)
+    public static byte[]? TryUnwrap(string wrapped, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
     {
         if (string.IsNullOrEmpty(wrapped) || key.Length != KeyBytes)
             return null;
@@ -142,7 +169,7 @@ public static class AesGcmEnvelope
         try
         {
             using var aes = new AesGcm(key, TagBytes);
-            aes.Decrypt(nonce, ciphertext, tag, plaintext, Aad);
+            aes.Decrypt(nonce, ciphertext, tag, plaintext, aad);
         }
         catch (CryptographicException)
         {

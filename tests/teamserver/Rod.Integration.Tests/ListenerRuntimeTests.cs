@@ -99,11 +99,12 @@ public class ListenerRuntimeTests
     public async Task HttpsListener_ServesBothHalvesWithoutAClientCertificateAtTLS()
     {
         // The single-port https shape (the mainstream C2 listener): TLS
-        // terminates with the CA-issued leaf, a client certificate is
-        // requested but optional -- enrollment has none to present yet, so
-        // it rides the same socket on the stager token -- while the
-        // check-in routes turn a certificate-less connection away at the
-        // application layer. One socket, both halves.
+        // terminates with the CA-issued leaf and never requests a client
+        // certificate -- the handshake is indistinguishable from an ordinary
+        // website's (a TLS CertificateRequest is itself an IDS fingerprint),
+        // and both halves authenticate at the application layer: enrollment
+        // on the stager token, check-ins under the per-artifact key the
+        // build baked (architecture.md Sec 8/9). One socket, both halves.
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
@@ -126,20 +127,27 @@ public class ListenerRuntimeTests
 
         // A client that carries no certificate and trusts only the
         // teamserver's own CA -- the shape a fresh implant's enroll client
-        // has.
+        // has. It deliberately OFFERS a self-signed certificate: if the
+        // listener ever asked to see one, the offered cert would fail the
+        // chain-to-CA validation and kill the TLS handshake, so any HTTP
+        // answer below is also the wire-level proof no CertificateRequest
+        // rode the handshake.
         var ca = env.Host.Services
             .GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>()
             .GetCaCertificate();
+        using var offered = TestSupport.OfferedCertificate();
         using var handler = new SocketsHttpHandler
         {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
+                ClientCertificates =
+                    new System.Security.Cryptography.X509Certificates.X509CertificateCollection { offered },
                 RemoteCertificateValidationCallback = (_, cert, chain, _) =>
                 {
                     chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags =
+                    chain!.ChainPolicy.VerificationFlags =
                         System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
+                    chain!.ChainPolicy.ExtraStore.Add(ca);
                     var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
                     return leaf is not null
                         && chain.Build(leaf)
@@ -150,15 +158,23 @@ public class ListenerRuntimeTests
         using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
 
         // Enrollment reaches its route over TLS without a client certificate
-        // (the bad token's 401 proves the route answered, not the TLS layer).
+        // (the bad token's 401 proves the route answered, not the TLS layer --
+        // and that the handshake above never asked for the offered one).
         var enroll = await client.PostAsJsonAsync("/implants/enroll",
             new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
 
-        // The check-in refuses the certificate-less connection outright.
+        // The check-in route answers the certificate-less connection too --
+        // a body whose single frame is not a handshake gets the refused
+        // handshake status in the response envelope, never a TLS-layer or
+        // identity 401: the key a real artifact seals with is the identity
+        // here, and this body carries none.
         var beacon = await client.PostAsync("/implants/beacon",
-            new ByteArrayContent(new byte[] { 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f }));
-        Assert.Equal(HttpStatusCode.Unauthorized, beacon.StatusCode);
+            new ByteArrayContent(new byte[] { 0x00 }));
+        Assert.Equal(HttpStatusCode.OK, beacon.StatusCode);
+        var frames = ParseFrames(await beacon.Content.ReadAsByteArrayAsync());
+        var handshake = Rod.V1.HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
+        Assert.Equal(Rod.V1.HandshakeStatus.VersionMismatch, handshake.Status);
     }
 
     [Fact]
@@ -508,6 +524,31 @@ public class ListenerRuntimeTests
         response.EnsureSuccessStatusCode();
         var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         return created!.EngagementId;
+    }
+
+    // Splits a delimited envelope body (a varint length ahead of each
+    // marshaled rod.v1 Frame) back into its frames -- enough of the wire
+    // grammar to read a check-in response's handshake status.
+    private static List<Rod.V1.Frame> ParseFrames(byte[] body)
+    {
+        var frames = new List<Rod.V1.Frame>();
+        var position = 0;
+        while (position < body.Length)
+        {
+            uint length = 0;
+            var shift = 0;
+            while (true)
+            {
+                var b = body[position++];
+                length |= (uint)(b & 0x7f) << shift;
+                if ((b & 0x80) == 0)
+                    break;
+                shift += 7;
+            }
+            frames.Add(Rod.V1.Frame.Parser.ParseFrom(body, position, (int)length));
+            position += (int)length;
+        }
+        return frames;
     }
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)

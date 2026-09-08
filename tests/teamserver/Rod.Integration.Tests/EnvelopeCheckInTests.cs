@@ -343,6 +343,103 @@ public class EnvelopeCheckInTests
     }
 
     [Fact]
+    public async Task Envelope_SealedCheckIn_RoundTrips_AndRefusesReplayAndDowngrade()
+    {
+        // The per-artifact key posture (architecture.md Sec 8/9): the build
+        // mints a key, bakes it, and records it beside the payload whose
+        // token the artifact redeems -- so the enrollment binds the implant
+        // to the key. Every check-in body is then AES-256-GCM ciphertext
+        // covering a fresh counter, over cleartext http no less: the posture
+        // carries confidential content, not just authenticated content, and
+        // neither a replayed body nor a downgrade to the plaintext lab shape
+        // gets past the route.
+        await using var env = await TestEnv.StartAsync();
+        var (engagementId, secret, bakedKey) = await env.MintSealedArtifactShapeAsync();
+
+        // The enrollment redeems the payload's own token, so the bind rides
+        // with it; the check-in client is the sealed cleartext twin -- no
+        // certificate anywhere on the path.
+        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var sealedImplant = ScratchImplant.ConnectBeaconSealed(
+            $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId, bakedKey);
+
+        var first = await sealedImplant.SealedCheckInAsync();
+        var handshake = HandshakeResponse.Parser.ParseFrom(first[0].Payload);
+        Assert.Equal(HandshakeStatus.Ok, handshake.Status);
+        Assert.Single(first);
+
+        var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
+        Assert.True(EngagementId.TryParse(engagementId, out var parsedEngagement));
+        var online = await sessions.ListActiveAsync(parsedEngagement);
+        Assert.Single(online, s => s.ImplantId.ToString() == enrolled.ImplantId);
+
+        // A task still round-trips under the seal: the response's tasking
+        // rides the sealed body like any other frame.
+        var (taskId, _) = await env.IssueTaskAsync(
+            engagementId, enrolled.ImplantId, "shell.exec", "echo rod-sealed");
+        var second = await sealedImplant.SealedCheckInAsync();
+        Assert.True(second.Count >= 2, "expected the handshake response plus a task");
+        var request = TaskRequest.Parser.ParseFrom(second[1].Payload);
+        Assert.Equal(taskId, request.TaskId);
+        var third = await sealedImplant.SealedCheckInAsync(new[] { ImplantFrames.TaskResult(
+            request.TaskId, Rod.V1.TaskOutcome.Succeeded, "rod-sealed\n") });
+        Assert.Single(third);
+        var task = await env.GetTaskAsync(engagementId, taskId);
+        Assert.Equal("Succeeded", task!.Outcome);
+
+        // Replay: the captured first body, re-posted verbatim, falls at the
+        // counter floor and is refused -- no second session, no touch.
+        Assert.NotNull(sealedImplant.LastSealedBody);
+        var replay = await sealedImplant.PostSealedRawAsync(sealedImplant.LastSealedBody!);
+        Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+
+        // Downgrade: the same implant id, now posting the plaintext lab body,
+        // is refused whole -- the bind at enroll means no keyless check-in.
+        using var plain = ScratchImplant.ConnectBeaconCertless(
+            $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId);
+        var downgrade = await plain.CheckInRawAsync();
+        Assert.Equal(HttpStatusCode.Unauthorized, downgrade.StatusCode);
+
+        // And the sealed cadence still works after both refusals: the floor
+        // advanced only for accepted counters, and the session is intact.
+        var fourth = await sealedImplant.SealedCheckInAsync();
+        Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(fourth[0].Payload).Status);
+    }
+
+    [Fact]
+    public async Task Envelope_SealedBody_UnderAForeignOrMissingKey_IsRefused()
+    {
+        // The seal is the authentication: a body sealed under a key the store
+        // does not know (or a tampered one under the right key id) is a 401,
+        // not a decode error -- nothing about the route's handling leaks.
+        await using var env = await TestEnv.StartAsync();
+        var (_, secret, bakedKey) = await env.MintSealedArtifactShapeAsync();
+        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var sealedImplant = ScratchImplant.ConnectBeaconSealed(
+            $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId, bakedKey);
+
+        var (otherId, otherKey) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
+        var foreign = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+            new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 }, otherId, otherKey,
+            Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+        var refused = await sealedImplant.PostSealedRawAsync(
+            System.Text.Encoding.UTF8.GetBytes(foreign));
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+
+        // A body under the artifact's real key id but tampered ciphertext
+        // fails the GCM tag the same way.
+        Assert.True(Rod.Transport.Payloads.AesGcmEnvelope.TryUnbake(bakedKey, out var keyId, out var key));
+        var real = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+            new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 },
+            keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+        var tamperedChars = real.ToCharArray();
+        tamperedChars[^2] = tamperedChars[^2] == 'A' ? 'B' : 'A';
+        var tampered = await sealedImplant.PostSealedRawAsync(
+            System.Text.Encoding.UTF8.GetBytes(new string(tamperedChars)));
+        Assert.Equal(HttpStatusCode.Unauthorized, tampered.StatusCode);
+    }
+
+    [Fact]
     public async Task Envelope_MalformedAndOversizedBodies_AreRefused()
     {
         await using var env = await TestEnv.StartAsync();
@@ -406,9 +503,21 @@ public class EnvelopeCheckInTests
         private readonly HttpClient _beacon;
         private readonly List<X509Certificate2> _cas = new();
 
-        private ScratchImplant(HttpClient beacon)
+        // The sealed posture (architecture.md Sec 8/9): when set, every body
+        // this client exchanges is AES-256-GCM under the artifact's baked
+        // key, the request covering a fresh counter. The counter burns per
+        // attempt, mirroring the reference implant.
+        private readonly string? _bakedKey;
+        private long _counter;
+
+        // The exact body the last sealed check-in posted -- the replay probe
+        // re-posts it verbatim.
+        public byte[]? LastSealedBody { get; private set; }
+
+        private ScratchImplant(HttpClient beacon, string? bakedKey = null)
         {
             _beacon = beacon;
+            _bakedKey = bakedKey;
         }
 
         /// <summary>
@@ -491,6 +600,21 @@ public class EnvelopeCheckInTests
                 EngagementId = engagementId,
             };
 
+        /// <summary>
+        /// The sealed twin: the default build posture over any front -- a bare
+        /// HTTP client whose bodies wrap counter || framed-frames as AES-GCM
+        /// under the artifact's baked key. The sealed bytes come from the
+        /// teamserver's own codec constants (the wire contract), the same way
+        /// EnrollmentTests encodes the sealed enroll body.
+        /// </summary>
+        public static ScratchImplant ConnectBeaconSealed(
+            string baseAddress, string implantId, string engagementId, string bakedKey)
+            => new(new HttpClient { BaseAddress = new Uri(baseAddress) }, bakedKey)
+            {
+                ImplantId = implantId,
+                EngagementId = engagementId,
+            };
+
         /// <summary>One poll check-in: POST the frames, parse the response.</summary>
         public async Task<List<Frame>> CheckInAsync(
             IEnumerable<Frame>? upstream = null, int major = 1, int minor = 0)
@@ -504,6 +628,73 @@ public class EnvelopeCheckInTests
             using var response = await _beacon.PostAsync("/implants/beacon", content);
             response.EnsureSuccessStatusCode();
             return Parse(await response.Content.ReadAsByteArrayAsync());
+        }
+
+        /// <summary>
+        /// The sealed check-in: wraps the handshake (plus upstream frames)
+        /// behind a fresh big-endian counter as AES-GCM under the baked key,
+        /// posts the base64 body, and opens the sealed response.
+        /// </summary>
+        public async Task<List<Frame>> SealedCheckInAsync(IEnumerable<Frame>? upstream = null)
+        {
+            var frames = new List<Frame> { HandshakeFrame(1, 0) };
+            if (upstream is not null)
+                frames.AddRange(upstream);
+            var body = Seal(frames, ++_counter);
+            LastSealedBody = body;
+            var response = await _beacon.PostAsync("/implants/beacon", TextBody(body));
+            response.EnsureSuccessStatusCode();
+            return Parse(Open(await response.Content.ReadAsByteArrayAsync()));
+        }
+
+        /// <summary>Posts a previously sealed body verbatim (the replay probe).</summary>
+        public async Task<HttpResponseMessage> PostSealedRawAsync(byte[] sealedBody)
+            => await _beacon.PostAsync("/implants/beacon", TextBody(sealedBody));
+
+        /// <summary>
+        /// The plaintext check-in without the success assertion, so a refusal
+        /// is an assertable outcome (the downgrade probe).
+        /// </summary>
+        public async Task<HttpResponseMessage> CheckInRawAsync(IEnumerable<Frame>? upstream = null)
+        {
+            var frames = new List<Frame> { HandshakeFrame(1, 0) };
+            if (upstream is not null)
+                frames.AddRange(upstream);
+            using var content = new ByteArrayContent(Encode(frames));
+            content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+            return await _beacon.PostAsync("/implants/beacon", content);
+        }
+
+        private static StringContent TextBody(byte[] sealedBody)
+            => new(System.Text.Encoding.UTF8.GetString(sealedBody), System.Text.Encoding.UTF8, "text/plain");
+
+        private byte[] Seal(IReadOnlyList<Frame> frames, long counter)
+        {
+            var encoded = Encode(frames);
+            var plaintext = new byte[8 + encoded.Length];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(plaintext, counter);
+            encoded.CopyTo(plaintext, 8);
+            var (keyId, key) = Unbake();
+            var wrapped = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+                plaintext, keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+            return System.Text.Encoding.UTF8.GetBytes(wrapped);
+        }
+
+        private byte[] Open(byte[] body)
+        {
+            var (keyId, key) = Unbake();
+            var plaintext = Rod.Transport.Payloads.AesGcmEnvelope.TryUnwrap(
+                System.Text.Encoding.UTF8.GetString(body).Trim(), keyId, key,
+                Rod.Transport.Payloads.AesGcmEnvelope.CheckInResponseAad);
+            Assert.NotNull(plaintext);
+            return plaintext!;
+        }
+
+        private (Guid KeyId, byte[] Key) Unbake()
+        {
+            Assert.True(Rod.Transport.Payloads.AesGcmEnvelope.TryUnbake(_bakedKey!, out var keyId, out var key));
+            return (keyId, key);
         }
 
         /// <summary>Posts raw bytes, for the framing-refusal assertions.</summary>
@@ -758,6 +949,41 @@ public class EnvelopeCheckInTests
         public async Task<TaskBody?> GetTaskAsync(string engagementId, string taskId)
             => await Http.GetFromJsonAsync<TaskBody>(
                 $"/engagements/{engagementId}/tasks/{taskId}");
+
+        /// <summary>
+        /// Creates a fresh engagement in the shape a pipeline build leaves
+        /// behind: a stager token minted for the artifact, a payload record
+        /// carrying the token id beside a freshly minted envelope key, and the
+        /// baked key the artifact would carry. An enrollment that redeems the
+        /// token binds to the key through the record, exactly the way the
+        /// build-baked credential binds a real artifact's enrollment.
+        /// </summary>
+        public async Task<(string EngagementId, string Secret, string BakedKey)> MintSealedArtifactShapeAsync()
+        {
+            var engagement = await Http.PostAsJsonAsync("/engagements",
+                new { name = "sealed-" + Guid.NewGuid().ToString("N")[..8] });
+            engagement.EnsureSuccessStatusCode();
+            var created = await engagement.Content.ReadFromJsonAsync<EngagementBody>();
+            Assert.NotNull(created);
+            _engagementId = created!.EngagementId;
+            var engagementId = Guid.Parse(_engagementId);
+
+            var engagements = Host.Services.GetRequiredService<Rod.CoreState.Engagements.IEngagementRepository>();
+            var owner = (await engagements.FindAsync(new EngagementId(engagementId)))!.OwnerId;
+
+            var (keyId, key) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
+            var tokens = Host.Services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>();
+            var token = await tokens.MintAsync(
+                new EngagementId(engagementId), owner, DateTimeOffset.UtcNow, 1, TimeSpan.FromHours(1));
+
+            var payloads = Host.Services.GetRequiredService<IPayloadStore>();
+            await payloads.SaveAsync(new PayloadRecord(
+                Guid.NewGuid(), engagementId, "Stage2", "DotNet", "application/octet-stream",
+                new string('a', 64), Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
+                TokenId: token.Id.Value, EnvelopeKeyId: keyId, EnvelopeKey: key));
+
+            return (_engagementId, token.Secret, Rod.Transport.Payloads.AesGcmEnvelope.Bake(keyId, key));
+        }
 
         public async ValueTask DisposeAsync()
         {

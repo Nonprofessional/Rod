@@ -157,12 +157,14 @@ public static class PayloadEndpoints
 
         // The build's enrollment credential is minted here and baked into the
         // artifact -- the operator never handles the secret. Both build paths
-        // mint identically, and the AES-Gcm envelope's per-artifact key mints
-        // the same way when the profile asked for the encrypted envelope.
+        // mint identically, and the per-artifact envelope key mints the same
+        // way whenever a phase needs it: the AesGcm enroll envelope encrypts
+        // under it, and check-in protection (the default) seals every
+        // check-in body under it -- one key, minted once per build.
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
-        if (request.Transport.Envelope == TransportEnvelope.AesGcm)
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
             request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };
@@ -242,6 +244,10 @@ public static class PayloadEndpoints
     // enroll front's own envelope cycle -- the split-socket shape (enroll on
     // a web listener, the stream on an mTLS listener), optional everywhere:
     // a web front carries its check-ins itself, so no split is required.
+    // CheckInProtection is its own Advanced knob beside the enroll-body
+    // Envelope pick: on unless explicitly false (the lab-debug plaintext
+    // frame), sealing every check-in body under the per-artifact key the
+    // mint below then makes sure exists.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,
@@ -259,6 +265,7 @@ public static class PayloadEndpoints
         Dictionary<string, string>? Headers = null,
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
+        bool? CheckInProtection = null,
         string? Stage2PayloadId = null,
         List<string>? FallbackEndpoints = null,
         int? TokenMaxUses = null,

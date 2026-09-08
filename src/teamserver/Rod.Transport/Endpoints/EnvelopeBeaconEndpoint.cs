@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text;
 using Google.Protobuf;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -7,29 +9,38 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
+using Rod.Transport.Payloads;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Endpoints;
 
 // The plain-HTTP envelope check-in (architecture.md Sec 8, the implant-reach
-// escape hatch): the same rod.v1 Frames the gRPC stream carries, as
-// varint-length-delimited sequences in ordinary HTTPS request/response bodies
-// over the same client certificates. One POST is one poll check-in -- the
-// request body carries the handshake first, then any results, exfil chunks,
-// staged pulls, and channel output; the response body carries the handshake
-// response, then staged chunk runs answering the request's demands, then
-// queued tasking while the dispatch budget lasts. Dropping the gRPC/HTTP-2
-// requirement is the point: Tier 0 is reachable from any language with an
-// HTTP client and a protobuf codec (extending/implants.md).
+// transport): the same rod.v1 Frames the gRPC stream carries, as
+// varint-length-delimited sequences in ordinary HTTP request/response bodies.
+// One POST is one poll check-in -- the request body carries the handshake
+// first, then any results, exfil chunks, staged pulls, and channel output;
+// the response body carries the handshake response, then staged chunk runs
+// answering the request's demands, then queued tasking while the dispatch
+// budget lasts. Dropping the gRPC/HTTP-2 requirement is the point: Tier 0 is
+// reachable from any language with an HTTP client and a protobuf codec
+// (extending/implants.md).
+//
+// Authentication is at the application layer, under the per-artifact key the
+// build minted (the mainstream HTTP(S) C2 shape -- no TLS certificate request
+// anywhere): the default body is the R1 envelope sealing
+// counter || framed-frames under that key, and the response seals the same
+// way, so the cleartext-http posture carries confidential content, not just
+// authenticated content. The plaintext framed body is the lab-debug toggle's
+// shape, refused for implants whose enrollment bound them to a key.
 
 /// <summary>
 /// Maps the envelope check-in route. Mapped alongside the operator API on
-/// every listener like the gRPC beacon. Over TLS the route demands the
-/// mTLS-presented implant certificate (401 without one); over cleartext the
-/// handshake's implant id is the identity -- the documented anything-with-reach
-/// posture of the plain-HTTP socket, shared with the cleartext gRPC stream
-/// and the DNS/SMB/TCP transports.
+/// every listener like the gRPC beacon. The identity is the artifact key that
+/// sealed the body; a client certificate, where the mTLS front presented one,
+/// still resolves first; and the handshake's implant id alone -- the
+/// anything-with-reach posture of the cleartext lab shape -- serves only an
+/// implant no key was ever bound to.
 /// </summary>
 public static class EnvelopeBeaconEndpoints
 {
@@ -76,6 +87,8 @@ internal sealed class EnvelopeBeaconCheckIn
     private readonly BeaconTasking _tasking;
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
+    private readonly IPayloadStore _payloads;
+    private readonly EnvelopeCheckInKeys _checkInKeys;
 
     public EnvelopeBeaconCheckIn(
         HandshakeService handshake,
@@ -84,7 +97,9 @@ internal sealed class EnvelopeBeaconCheckIn
         BeaconIngest ingest,
         BeaconTasking tasking,
         IAuditStore audit,
-        TimeProvider clock)
+        TimeProvider clock,
+        IPayloadStore payloads,
+        EnvelopeCheckInKeys checkInKeys)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -93,25 +108,18 @@ internal sealed class EnvelopeBeaconCheckIn
         _tasking = tasking;
         _audit = audit;
         _clock = clock;
+        _payloads = payloads;
+        _checkInKeys = checkInKeys;
     }
 
     public async Task<IResult> HandleAsync(HttpContext http, CancellationToken cancellationToken)
     {
-        // The envelope rides client certificates over TLS (architecture.md
-        // Sec 8): the identity is the certificate binding. Over cleartext --
-        // the pure-HTTP listener, where no certificate can exist -- the
-        // check-in falls back to the implant id in its handshake, the same
-        // anything-with-reach posture the cleartext gRPC stream and the
-        // DNS/SMB/TCP transports already document.
+        // The identity the transport itself presented, when it presented one:
+        // a client certificate on an mTLS front. The https and http listeners
+        // never ask for a certificate (a TLS CertificateRequest is itself a
+        // fingerprint), so most check-ins carry none -- the sealed body below
+        // is what authenticates those.
         var identity = ClientCertificateIdentity.Read(http);
-
-        // Over TLS a certificate-less connection has no identity to offer:
-        // the single-port https listener admits one for enrollment's sake,
-        // and the check-in turns it away before any frame is read.
-        if (identity is null && http.Request.IsHttps)
-            return Results.Json(
-                new Problem("A client certificate bound to an implant is required."),
-                statusCode: StatusCodes.Status401Unauthorized);
 
         byte[] body;
         try
@@ -123,10 +131,53 @@ internal sealed class EnvelopeBeaconCheckIn
             return Results.StatusCode(StatusCodes.Status413RequestEntityTooLarge);
         }
 
+        // The sealed body (architecture.md Sec 8/9): base64 of
+        // magic || keyId || nonce || ciphertext || tag, AES-256-GCM under the
+        // artifact's per-build key, wrapping a strictly increasing counter
+        // (8 bytes, big-endian) ahead of the framed bytes. The key id resolves
+        // the key beside the stored payload; the GCM tag authenticates the
+        // whole body, counter and frames together. The wire-body cap above
+        // governs the base64 text, so the frames inside ride a ~3/4 share of
+        // it -- the budget was sized for exfil runs, not for this overhead.
+        long checkInCounter = 0;
+        var sealedKey = (KeyId: Guid.Empty, Key: Array.Empty<byte>());
+        var isSealed = false;
+        var framed = body;
+        if (TryReadSealedKeyId(body, out var sealedText) is { } keyId)
+        {
+            var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
+            if (carrier?.EnvelopeKey is not { } key
+                || AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.CheckInRequestAad)
+                    is not { } plaintext
+                || plaintext.Length < CounterBytes)
+                return Results.Json(
+                    new Problem("The check-in body did not verify under its artifact key."),
+                    statusCode: StatusCodes.Status401Unauthorized);
+
+            checkInCounter = BinaryPrimitives.ReadInt64BigEndian(plaintext);
+            framed = plaintext[CounterBytes..];
+            sealedKey = (keyId, key);
+            isSealed = true;
+        }
+
+        // Every envelope response after a verified unwrap seals the same way,
+        // handshake refusals included: the sealed client must be able to read
+        // its own refusal statuses, and an https or cleartext front leaks no
+        // frame bytes in either direction.
+        IResult Reply(IReadOnlyList<Frame> outbound)
+            => isSealed
+                ? Results.Text(
+                    AesGcmEnvelope.Wrap(
+                        EnvelopeFraming.Encode(outbound), sealedKey.KeyId, sealedKey.Key,
+                        AesGcmEnvelope.CheckInResponseAad),
+                    "text/plain",
+                    Encoding.UTF8)
+                : Results.Bytes(EnvelopeFraming.Encode(outbound), "application/octet-stream");
+
         List<Frame> frames;
         try
         {
-            frames = EnvelopeFraming.Parse(body);
+            frames = EnvelopeFraming.Parse(framed);
         }
         catch (EnvelopeFramingException ex)
         {
@@ -138,14 +189,43 @@ internal sealed class EnvelopeBeaconCheckIn
         // The implant speaks first here too: the first frame is the handshake.
         HandshakeRequest handshakeRequest;
         if (frames.Count == 0 || !TryParseHandshake(frames[0], out handshakeRequest))
-            return EnvelopeResponse(Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
+            return Reply(new[] { HandshakeFrame(Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) });
 
-        // Over cleartext the handshake's implant id is the identity (the dev
-        // posture above); over TLS the certificate already resolved or the
-        // connection was refused above.
-        var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest, !http.Request.IsHttps);
+        // The key posture gates, checked before the handshake opens anything:
+        // an implant bound to a build key at enroll checks in sealed under
+        // exactly that key (a plaintext body from it is the refused downgrade;
+        // another artifact's key does not impersonate it), and the counter
+        // must clear the floor -- a replayed body, whatever it claims, turns
+        // away without a session, a touch, or an audit record.
+        if (ImplantId.TryParse(handshakeRequest.ImplantId, out var sealedImplant))
+        {
+            if (_checkInKeys.TryGet(sealedImplant) is { } bound)
+            {
+                if (!isSealed)
+                    return Results.Json(
+                        new Problem("This implant checks in under its artifact key; the plaintext frame body is refused."),
+                        statusCode: StatusCodes.Status401Unauthorized);
+                if (sealedKey.KeyId != bound.KeyId)
+                    return Results.Json(
+                        new Problem("The check-in body did not verify under its artifact key."),
+                        statusCode: StatusCodes.Status401Unauthorized);
+            }
+            if (isSealed && !_checkInKeys.Accept(sealedImplant, checkInCounter))
+                return Results.Json(
+                    new Problem("The check-in body carries a counter at or below the accepted floor."),
+                    statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        // The identity for the handshake: the certificate binding when the
+        // transport presented one, else the handshake's implant id -- which
+        // the sealed body authenticated above, and which stands by reach only
+        // in the cleartext lab posture (the anything-with-reach tradeoff the
+        // cleartext gRPC stream and the DNS/SMB/TCP transports document). Over
+        // TLS with neither, there is no identity to offer and the handshake
+        // refuses the unknown implant.
+        var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest, isSealed || !http.Request.IsHttps);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
-            return EnvelopeResponse(response);
+            return Reply(new[] { HandshakeFrame(response) });
 
         // A genuinely new session is recorded; a reused one (every check-in
         // after the first) is not, the same flood guard the stream applies
@@ -187,7 +267,7 @@ internal sealed class EnvelopeBeaconCheckIn
         await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
         var active = await _sessions.GetActiveAsync(session.Implant, cancellationToken);
         if (active is null || active.Id != session.SessionId)
-            return EnvelopeResponse(response);
+            return Reply(new[] { HandshakeFrame(response) });
 
         var outbound = new List<Frame> { HandshakeFrame(response) };
 
@@ -237,7 +317,27 @@ internal sealed class EnvelopeBeaconCheckIn
             await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
         }
 
-        return Results.Bytes(EnvelopeFraming.Encode(outbound), "application/octet-stream");
+        return Reply(outbound);
+    }
+
+    /// <summary>
+    /// The sealed check-in counter's size in bytes: an 8-byte unsigned
+    /// big-endian integer, room for one fresh value per attempt for any
+    /// cadence an implant will ever run.
+    /// </summary>
+    private const int CounterBytes = 8;
+
+    /// <summary>
+    /// Reads the R1 key id off a request body, or null when the body is not
+    /// the sealed shape -- the plaintext framed body. A framed body whose
+    /// bytes happen to be base64 still decodes to protobuf, not the
+    /// magic-prefixed envelope, and a sealed body names a key id only the
+    /// build could have baked.
+    /// </summary>
+    private static Guid? TryReadSealedKeyId(byte[] body, out string sealedText)
+    {
+        sealedText = Encoding.UTF8.GetString(body).Trim();
+        return AesGcmEnvelope.TryReadKeyId(sealedText);
     }
 
     private static bool TryParseHandshake(Frame frame, out HandshakeRequest request)
@@ -299,9 +399,6 @@ internal sealed class EnvelopeBeaconCheckIn
 
     private static Frame HandshakeFrame(HandshakeResponse response)
         => new() { Payload = ByteString.CopyFrom(response.ToByteArray()) };
-
-    private static IResult EnvelopeResponse(HandshakeResponse response)
-        => Results.Bytes(EnvelopeFraming.Encode(new[] { HandshakeFrame(response) }), "application/octet-stream");
 
     public sealed record Problem(string Error);
 }

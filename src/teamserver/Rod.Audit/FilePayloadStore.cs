@@ -115,6 +115,16 @@ public sealed class FilePayloadStore : IPayloadStore
             _index.Values.FirstOrDefault(p => p.EnvelopeKeyId == envelopeKeyId));
     }
 
+    public Task<PayloadRecord?> FindByTokenAsync(Guid tokenId, CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        // The baked token id rides the metadata line beside the key pair --
+        // the same metadata-only answer.
+        return Task.FromResult(
+            _index.Values.FirstOrDefault(p => p.TokenId == tokenId));
+    }
+
     public Task<bool> RemoveAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default)
     {
         EnsureRecovered();

@@ -69,12 +69,12 @@ public static class PayloadJobEndpoints
 
         // The enrollment credential mints at enqueue and rides the queued
         // request into the bake -- identical to the synchronous path, including
-        // the AES-Gcm envelope's per-artifact key when the profile asked for
-        // the encrypted envelope.
+        // the per-artifact envelope key whenever a phase needs it: the AesGcm
+        // enroll envelope or check-in protection (the default).
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
-        if (request.Transport.Envelope == TransportEnvelope.AesGcm)
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
             request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };

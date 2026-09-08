@@ -109,6 +109,7 @@ public static class EnrollmentEndpoints
         TimeProvider clock,
         IAuditStore audit,
         IPayloadStore payloads,
+        EnvelopeCheckInKeys checkInKeys,
         CancellationToken cancellationToken)
     {
         var body = await ReadEnrollRequestAsync(http, payloads, cancellationToken);
@@ -162,11 +163,13 @@ public static class EnrollmentEndpoints
         // any other engagement is refused whole -- it keeps its uses for the
         // listener it was minted for -- and a shared-tier socket (the
         // operator front) refuses implant ingress outright (architecture.md
-        // Sec 8).
+        // Sec 8). The verified token is kept: when the redeem below succeeds,
+        // its id is what binds the enrollment to the build that minted it.
+        RedeemedStagerToken? presentedToken = null;
         try
         {
-            var presented = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
-            if (!await TokenMatchesListenerScopeAsync(http, listeners, presented, cancellationToken))
+            presentedToken = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
+            if (!await TokenMatchesListenerScopeAsync(http, listeners, presentedToken, cancellationToken))
                 return Results.Json(
                     new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                     statusCode: StatusCodes.Status401Unauthorized);
@@ -205,6 +208,13 @@ public static class EnrollmentEndpoints
                     outcome: enrolled.ImplantId.ToString(),
                     at: enrolled.EnrolledAt),
                 cancellationToken);
+
+            // Bind the enrollment to its build's check-in key (architecture.md
+            // Sec 8/9): a token minted with a payload -- the baked credential
+            // both build paths mint -- names the artifact, and the artifact
+            // names the key. From here the implant's envelope check-ins seal
+            // under that key; a plaintext body from it is refused.
+            await BindCheckInKeyAsync(enrolled, presentedToken, payloads, checkInKeys, cancellationToken);
 
             var response = new EnrollmentResponse(
                 EnrollStatus.Ok,
@@ -262,6 +272,29 @@ public static class EnrollmentEndpoints
                 new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
+    }
+
+    // Binds a fresh enrollment to its build's check-in key (architecture.md
+    // Sec 8/9): when the redeemed token was minted with a payload -- the
+    // baked credential both build paths mint -- the enrollment binds the new
+    // implant to that artifact's envelope key, so its later check-ins cannot
+    // downgrade to plaintext frames. A manually minted token names no
+    // payload and leaves the implant unbound: its sealed check-ins still
+    // authenticate by the key id every sealed body prefixes, but a plaintext
+    // check-in is not refused. A null token means the pre-check could not
+    // verify it; the redeem inside EnrollAsync is what refused the enroll.
+    private static async Task BindCheckInKeyAsync(
+        EnrollmentResult enrolled,
+        RedeemedStagerToken? token,
+        IPayloadStore payloads,
+        EnvelopeCheckInKeys checkInKeys,
+        CancellationToken cancellationToken)
+    {
+        if (token is null)
+            return;
+        var carrier = await payloads.FindByTokenAsync(token.Id.Value, cancellationToken);
+        if (carrier?.EnvelopeKeyId is { } keyId && carrier.EnvelopeKey is { } key)
+            checkInKeys.Bind(enrolled.ImplantId, keyId, key);
     }
 
     // The engagement-scope check shared by enroll and the stage-2 fetch: the
@@ -326,7 +359,8 @@ public static class EnrollmentEndpoints
                 var carrier = await payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
                 if (carrier?.EnvelopeKey is not { } key)
                     return null;
-                var plaintext = AesGcmEnvelope.TryUnwrap(wrapped, carrier.EnvelopeKeyId!.Value, key);
+                var plaintext = AesGcmEnvelope.TryUnwrap(
+                    wrapped, carrier.EnvelopeKeyId!.Value, key, AesGcmEnvelope.Aad);
                 if (plaintext is null)
                     return null;
                 raw = System.Text.Encoding.UTF8.GetString(plaintext);

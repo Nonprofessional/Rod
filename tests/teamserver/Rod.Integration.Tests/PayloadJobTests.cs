@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Rod.Transport.Endpoints;
 
 namespace Rod.Integration.Tests;
@@ -31,38 +32,54 @@ public class PayloadJobTests
     [DotNetFact]
     public async Task BuildJob_CompletesAndTheArtifactDownloads()
     {
-        var (client, _, _) = AuthenticatedHost.Create();
-        await AuthenticatedHost.LoginAsync(client);
-        var engagementId = await CreateEngagementAsync(client);
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
 
-        var accepted = await client.PostAsJsonAsync(
-            $"/engagements/{engagementId}/payload-jobs", Request());
-        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
-        var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
-        Assert.NotNull(job);
-        // The worker may already have picked the job up; either pre-terminal
-        // state is the accepted answer.
-        Assert.Contains(job!.State, new[] { "queued", "running" });
-        Assert.Null(job.Artifact);
+            var accepted = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payload-jobs", Request());
+            Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+            var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
+            Assert.NotNull(job);
+            // The worker may already have picked the job up; either pre-terminal
+            // state is the accepted answer.
+            Assert.Contains(job!.State, new[] { "queued", "running" });
+            Assert.Null(job.Artifact);
 
-        // The whole point of the queue: a real build takes toolchain time.
-        job = await WaitForTerminalAsync(client, engagementId, job.JobId, TimeSpan.FromMinutes(5));
-        Assert.Equal("completed", job.State);
-        Assert.NotNull(job.Artifact);
-        Assert.True(job.Artifact!.Size > 0);
+            // The whole point of the queue: a real build takes toolchain time.
+            job = await WaitForTerminalAsync(client, engagementId, job.JobId, TimeSpan.FromMinutes(5));
+            Assert.Equal("completed", job.State);
+            Assert.NotNull(job.Artifact);
+            Assert.True(job.Artifact!.Size > 0);
 
-        // The finished artifact downloads through the ordinary payload route.
-        var download = await client.GetAsync(
-            $"/engagements/{engagementId}/payloads/{job.Artifact.ArtifactId}");
-        download.EnsureSuccessStatusCode();
-        Assert.True((await download.Content.ReadAsByteArrayAsync()).Length > 0);
+            // The finished artifact downloads through the ordinary payload route.
+            var download = await client.GetAsync(
+                $"/engagements/{engagementId}/payloads/{job.Artifact.ArtifactId}");
+            download.EnsureSuccessStatusCode();
+            Assert.True((await download.Content.ReadAsByteArrayAsync()).Length > 0);
 
-        // The job list -- the view a refreshed browser reloads -- carries the
-        // completed job.
-        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
-            $"/engagements/{engagementId}/payload-jobs");
-        Assert.NotNull(jobs);
-        Assert.Contains(jobs!, j => j.JobId == job.JobId && j.State == "completed");
+            // Default check-in protection (architecture.md Sec 8/9): the
+            // build minted the per-artifact key the artifact seals its
+            // check-ins under, recorded beside the payload with the baked
+            // token -- the pair the enroll-time key bind resolves.
+            var payloads = host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+            var record = await payloads.FindAsync(
+                Guid.Parse(job.Artifact.ArtifactId), Guid.Parse(engagementId));
+            Assert.NotNull(record);
+            Assert.NotNull(record!.EnvelopeKeyId);
+            Assert.NotNull(record.EnvelopeKey);
+            Assert.NotNull(record.TokenId);
+
+            // The job list -- the view a refreshed browser reloads -- carries the
+            // completed job.
+            var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
+                $"/engagements/{engagementId}/payload-jobs");
+            Assert.NotNull(jobs);
+            Assert.Contains(jobs!, j => j.JobId == job.JobId && j.State == "completed");
+        }
     }
 
     [Fact]

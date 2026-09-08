@@ -223,6 +223,11 @@ public static class TransportHost
         // identically regardless of which transport carried it.
         services.AddSingleton<Endpoints.BeaconIngest>();
         services.AddSingleton<Endpoints.BeaconTasking>();
+        // The per-artifact check-in key bookkeeping (architecture.md Sec 8/9):
+        // the enroll-time implant-to-key binding and the check-in counter
+        // floor. Singleton because the binding spans the enroll route and the
+        // check-in route, and the floor spans every check-in an implant makes.
+        services.AddSingleton<Endpoints.EnvelopeCheckInKeys>();
         // The plain-HTTP envelope check-in handler (architecture.md Sec 8):
         // one POST is one poll check-in, the same frames the gRPC stream
         // carries as delimited sequences in ordinary request/response bodies.
@@ -459,14 +464,16 @@ public static class TransportHost
                     // implants use differs (architecture.md Sec 8).
                     if (config.Transport is ListenerTransport.Mtls or ListenerTransport.HttpsEnvelope)
                         ConfigureMtlsHttps(listen, kestrel);
-                    // The single-port https listener requests but does not
-                    // require the client certificate: enrollment has no
-                    // certificate to present yet, so it rides the same socket
-                    // the beacon later authenticates on -- the beacon routes
-                    // demand the certificate at the application layer, and a
-                    // presented certificate still must chain to the CA.
+                    // The single-port https listener never requests a client
+                    // certificate: a TLS CertificateRequest is itself a
+                    // fingerprint (an ordinary website never asks the visitor
+                    // for one), and check-ins authenticate at the application
+                    // layer under the per-artifact key the build baked. The
+                    // handshake carries a certificate exchange only for the
+                    // server identity -- indistinguishable from ordinary web
+                    // traffic (architecture.md Sec 8/9).
                     if (config.Transport == ListenerTransport.Https)
-                        ConfigureOptionalClientCertificateHttps(listen, kestrel);
+                        ConfigureHttps(listen, kestrel);
                 });
 
                 registry.RegisterAsync(listener, CancellationToken.None).GetAwaiter().GetResult();
@@ -510,22 +517,19 @@ public static class TransportHost
     }
 
     // The single-port https termination: the CA-issued server leaf presents
-    // as the server identity, a client certificate is requested but optional,
-    // and one that is presented must chain to the CA -- the same validation
-    // ConfigureMtlsHttps applies. Certificate-less connections complete TLS
-    // and reach HTTP, where enrollment answers on the stager token and the
-    // beacon routes refuse anything without the enrolled certificate.
-    private static void ConfigureOptionalClientCertificateHttps(ListenOptions listen, KestrelServerOptions kestrel)
+    // as the server identity and nothing else is negotiated -- no client
+    // certificate is requested at all (the default mode), so the TLS
+    // handshake looks like any ordinary website's. Enrollment answers on the
+    // stager token and check-ins authenticate under the baked per-artifact
+    // key, both at the application layer (architecture.md Sec 8/9).
+    private static void ConfigureHttps(ListenOptions listen, KestrelServerOptions kestrel)
     {
         listen.UseHttps(https =>
         {
+            // A CA-issued server leaf, not the CA root itself -- the same
+            // SChannel-shaped presentation ConfigureMtlsHttps documents.
             https.ServerCertificateSelector = (_, _) =>
                 kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
-            https.ClientCertificateMode =
-                Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
-            https.ClientCertificateValidation = (cert, chain, errors) =>
-                ClientCertificateChainsToCa(cert, chain, kestrel.ApplicationServices);
-            https.CheckCertificateRevocation = false;
         });
     }
 

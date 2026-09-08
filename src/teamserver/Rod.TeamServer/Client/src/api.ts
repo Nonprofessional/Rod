@@ -847,9 +847,10 @@ export interface BuildPayloadInput {
   listenerId: string | null
   endpoint: string | null
   // The socket the check-in stream dials when it differs from the enroll
-  // endpoint (the split-socket shape). Named by listener or typed URL, and
-  // required when the enroll side is cleartext http, which cannot carry the
-  // gRPC beacon.
+  // endpoint (the split-socket shape: enroll on a web front, the interactive
+  // mTLS stream on its own listener). Named by listener or typed URL, and
+  // optional everywhere -- a web front carries its check-ins itself over the
+  // envelope POST cycle.
   beaconListenerId: string | null
   beaconEndpoint: string | null
   // A stager-class build only: the completed Stage-2 artifact the loader
@@ -860,7 +861,14 @@ export interface BuildPayloadInput {
   userAgent: string | null
   headers: Record<string, string> | null
   requestTimeoutSeconds: number | null
+  // The enroll-body shape only. Check-in protection is its own knob below --
+  // the two phases are independent.
   envelope: string | null
+  // Whether the artifact's check-in bodies seal under the per-artifact key
+  // minted at build. Null (the default) leaves it on; false is the explicit
+  // lab-debug opt-out -- the plaintext frame body, unauthenticated over
+  // cleartext and unencrypted over TLS.
+  checkInProtection: boolean | null
   mode: string | null
   sleepSeconds: number | null
   jitterSeconds: number | null

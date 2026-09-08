@@ -25,22 +25,27 @@ architecture.md Sec 8):
 |---------|-----------|-------|
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
 | Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
-| Beacon / tasking (envelope) | Plain HTTPS POST over mutual TLS | `POST /implants/beacon` |
+| Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
 
 The enroll listener accepts plain JSON with no client certificate -- the
 implant authenticates with the one-use stager token, not a cert it does not
-have yet. The beacon listeners require a client certificate that chains to
-the engagement CA; enrollment is what mints it. The two beacon shapes carry
-the same frames over the same certificates -- the stream is the interactive
-shape (server-push tasking, live channels), the envelope the poll shape that
-needs no gRPC stack.
+have yet. The stream listener requires a client certificate that chains to
+the engagement CA (enrollment is what mints it); the envelope route is the
+web transports' poll shape, authenticated by the per-artifact key the build
+baked -- no TLS client certificate anywhere on it. The two beacon shapes
+carry the same frames -- the stream is the interactive shape (server-push
+tasking, live channels), the envelope the poll shape that needs no gRPC
+stack.
 
 ### TLS shape
 
-- **Beacon client certificate:** the leaf issued at enroll, paired with the
+- **Stream client certificate:** the leaf issued at enroll, paired with the
   implant's own private key. It binds `(implant_id, engagement_id)` -- the
   server's authoritative identity check is "the cert's engagement equals the
-  enrolled implant's engagement" (architecture.md Sec 9).
+  enrolled implant's engagement" (architecture.md Sec 9). Only the mTLS
+  listener asks to see it; the `http`/`https` listeners never send a TLS
+  `CertificateRequest` (it is itself a fingerprint), and the envelope
+  check-in authenticates under the baked key instead.
 - **Server identity:** the teamserver presents the engagement CA certificate
   itself as its server identity (it carries no SANs). Pin **chain-to-CA**, not
   DNS names: build the chain with the enrolled CA chain in the trust store,
@@ -126,31 +131,40 @@ server to end the stream, sleep the baked interval with jitter, reconnect and
 re-handshake). Both are Tier 0; the server treats them identically and reuses
 the implant's session across reconnects.
 
-### The envelope check-in (the no-gRPC alternative)
+### The envelope check-in (the web check-in)
 
-`POST /implants/beacon` against the same mTLS listener the gRPC stream uses,
-presenting the same client certificate. The body is a sequence of rod.v1
-`Frame` messages, each prefixed with its byte length as an unsigned protobuf
-varint -- the canonical delimited-stream shape every protobuf runtime ships.
-One POST is one poll check-in:
+`POST /implants/beacon` against any web listener (`http` and `https` fronts
+alike; an mTLS front serves it too, where the client certificate resolves
+first). The body is a sequence of rod.v1 `Frame` messages, each prefixed with
+its byte length as an unsigned protobuf varint -- the canonical
+delimited-stream shape every protobuf runtime ships -- sealed under the
+per-artifact key the build baked (below). One POST is one poll check-in:
 
-- **Request body:** the handshake `Frame` first, then any `TaskResult`,
-  `ExfilChunk`, `StagedPull`, and `ChannelOutput` frames. The server's caps
-  are 2 MiB per frame, 1024 frames, and 16 MiB per body: an oversized frame,
-  count, or body answers `413`, malformed framing answers `400`, and a
-  request without the client certificate answers `401` before any frame is
-  read.
-- **Response body:** the `HandshakeResponse` frame first, then the
-  `StagedChunk` run answering each request-body `StagedPull` (in demand
-  order), then dispatched `TaskRequest` frames in queue order while the 4 MiB
-  dispatch budget lasts -- what does not fit is requeued and rides the next
-  check-in. A non-OK handshake response is the only frame in the body: the
-  check-in is refused, and every non-OK status is permanent exactly as on the
-  stream.
+- **Request body:** the sealed envelope (or, on a lab build with check-in
+  protection off, the raw framed sequence) whose plaintext is a strictly
+  increasing 8-byte big-endian counter ahead of the handshake `Frame` first,
+  then any `TaskResult`, `ExfilChunk`, `StagedPull`, and `ChannelOutput`
+  frames. The server's caps are 2 MiB per frame, 1024 frames, and 16 MiB per
+  wire body (the frames inside a sealed body ride a ~3/4 share of that --
+  base64 overhead): an oversized frame, count, or body answers `413`,
+  malformed framing answers `400`, and a body that does not verify under its
+  artifact key, a counter at or below the accepted floor, or a plaintext body
+  from an implant bound to a key answers `401`.
+- **Response body:** the same seal, under the response's own purpose tag --
+  the `HandshakeResponse` frame first, then the `StagedChunk` run answering
+  each request-body `StagedPull` (in demand order), then dispatched
+  `TaskRequest` frames in queue order while the 4 MiB dispatch budget lasts
+  -- what does not fit is requeued and rides the next check-in. A non-OK
+  handshake response is the only frame in the body: the check-in is refused,
+  and every non-OK status is permanent exactly as on the stream.
 - **Poll discipline:** check in, drain, close, sleep the baked interval with
   jitter, repeat. Every POST re-handshakes; the server reuses the session
   across check-ins, so the cadence neither churns session entities nor
-  floods the engagement trail with `SessionOpened` records.
+  floods the engagement trail with `SessionOpened` records. Burn the counter
+  on every attempt, not every delivery: a retransmitted batch after a lost
+  response must carry a fresh counter, and the batch semantics make the
+  retransmission itself idempotent (a re-sent result for a completed task is
+  a no-op server-side).
 - **The envelope's bounds:** an artifact's `ExfilChunk` run must begin and
   end inside one request body (the reassembler is per-request), and a
   channel task (`shell.interact`) is never claimed over the envelope -- its
@@ -159,8 +173,31 @@ One POST is one poll check-in:
 
 The frame contents, the handshake order, the signature discipline, and the
 result/chunk grammar are identical to the stream's -- only the carriage
-changes. An implant that implements the envelope needs an HTTP client and a
-protobuf codec, nothing else.
+changes. An implant that implements the envelope needs an HTTP client, a
+protobuf codec, and AES-256-GCM, nothing else.
+
+#### The sealed body
+
+The default build shape (check-in protection on) seals both directions under
+the per-artifact key the build minted and baked -- the same key, wire shape,
+and byte layout as the opt-in AES-GCM enroll envelope, but under its own
+purpose tags so neither direction's ciphertext can be replayed as the
+other's:
+
+```
+body   := base64( b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16) )
+AAD    := "rod-checkin-v1"        (requests)
+        | "rod-checkin-response-v1"  (responses)
+plain  := counter(8, big-endian) || delimited-frames    (requests)
+        | delimited-frames                                (responses)
+```
+
+The key is standard base64 of `keyId(16) || key(32)` in the baked profile's
+`envelopeKey`; the `checkinEnvelope` profile key says `"aesgcm"` (seal) or
+`"none"` (the lab-debug plaintext frame). Possession of the key is the
+authentication -- the web transports request no TLS client certificate at
+all -- and the seal is the confidentiality: over cleartext `http`, everything
+past the TLS-less wire is still ciphertext to a listener.
 
 ### Task results and bulk data
 
@@ -342,8 +379,10 @@ The smallest implant that enrolls, checks in, and executes tasking:
    stager token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
 2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf -- or
-   POST the envelope route (`/implants/beacon`, above) with the same leaf and
-   no gRPC stack.
+   POST the envelope route (`/implants/beacon`, above) with no gRPC stack:
+   the default build bakes a per-artifact key, and every check-in body seals
+   under it covering a fresh counter (a lab build with protection off sends
+   the plaintext frames, on the cleartext front only).
 3. **Handshake.** Send the `HandshakeRequest` first; require OK; treat every
    other status as permanent.
 4. **Task loop.** Parse each downstream `TaskRequest`, execute its verb
@@ -362,8 +401,9 @@ leaf   = cert(enroll.leafCertificate) paired with key
 cas    = [cert(b) for b in enroll.caChain]
 
 forever:
-    # The envelope alternative drops the gRPC stack entirely: one HTTPS POST
-    # to /implants/beacon per cycle, same frames, same certificates.
+    # The envelope alternative drops the gRPC stack entirely: one HTTP(S) POST
+    # to /implants/beacon per cycle, the frames sealed (counter || frames)
+    # under the baked key, the response opened the same way.
     stream = grpc_connect("teamserver:port", mTLS(leaf, trust = chain_to(cas)))
     send Frame(payload = HandshakeRequest{1, 0, enroll.implantId, my_verbs})
     if HandshakeResponse.parse(recv()).status != OK: exit
@@ -483,8 +523,13 @@ Tier 0/Tier 1 example with switchable defects.
 Tier 0's heaviest piece used to be the gRPC/HTTP-2 channel, not the crypto or
 the messages. The plain-HTTP envelope check-in (above) shipped as the answer:
 the same rod.v1 frames carried as delimited sequences in ordinary HTTP
-request/response bodies over the same client certificates, one POST per poll
-check-in, so Tier 0 now needs only an HTTP client and a protobuf codec. The
+request/response bodies, one POST per poll check-in, so Tier 0 now needs only
+an HTTP client, a protobuf codec, and AES-256-GCM. Authentication moved to
+the application layer with it: the build bakes a per-artifact key, every
+check-in body seals under it covering a fresh counter, and the web transports
+request no TLS client certificate at all -- so a Tier 0 implant also needs no
+TLS client-certificate machinery on the web front, and the cleartext `http`
+posture carries confidential content. The
 gRPC stream remains the interactive shape -- server-push tasking the moment
 it is queued, and the live channels -- so an implant that wants
 `shell.interact` still wants the stream; an implant that only polls has no

