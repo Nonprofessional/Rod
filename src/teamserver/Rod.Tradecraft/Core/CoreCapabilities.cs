@@ -38,6 +38,14 @@ public static class CoreCapabilities
     /// <summary>Download a file off the target.</summary>
     public const string FilePull = "file.pull";
 
+    /// <summary>
+    /// List one directory of the target: names, entry kinds, sizes, and
+    /// modification times, one JSON object per output line. The browsing
+    /// companion of the transfer pair -- an operator file browser walks the
+    /// target's tree with it before pushing or pulling.
+    /// </summary>
+    public const string FsList = "fs.list";
+
     /// <summary>Terminate one process on the target by its pid.</summary>
     public const string ProcKill = "proc.kill";
 
@@ -73,12 +81,13 @@ public static class CoreCapabilities
         CapabilityDescriptor.Of(ShellInteract, CapabilityCategory.Core, "1.0"),
         CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk),
         CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
+        CapabilityDescriptor.Of(FsList, CapabilityCategory.Core, "1.0", ReadsFilesystem),
         CapabilityDescriptor.Of(ProcKill, CapabilityCategory.Core, "1.0", KillsProcess),
     };
 
     /// <summary>Every core verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        ShellExec, ShellInteract, FilePush, FilePull, ProcKill,
+        ShellExec, ShellInteract, FilePush, FilePull, FsList, ProcKill,
     };
 }

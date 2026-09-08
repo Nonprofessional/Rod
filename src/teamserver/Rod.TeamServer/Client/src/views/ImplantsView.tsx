@@ -12,6 +12,7 @@ import {
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
+import { FileBrowser } from '../components/FileBrowser'
 import { Icon } from '../components/Icons'
 import { ProcessBrowser } from '../components/ProcessBrowser'
 import { StatusBadge } from '../components/StatusBadge'
@@ -111,6 +112,7 @@ export function ImplantsView({
   // on one row at a time.
   const [dialog, setDialog] = useState<{ implantId: string; verb: string } | null>(null)
   const [processesFor, setProcessesFor] = useState<string | null>(null)
+  const [filesFor, setFilesFor] = useState<string | null>(null)
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
   // Which implant the open context menu acts on (a row right-click or its
   // three-dot button); null while no menu is open.
@@ -239,12 +241,13 @@ export function ImplantsView({
           }
         })()
       },
-      onDialog: (verb) => setDialog({ implantId, verb }),
-      onProcesses: () => setProcessesFor(implantId),
-      onNotes: () => void onToggleNotes(implantId),
-      onRetire: () => onRetire(implantId),
-    })
-  }
+        onDialog: (verb) => setDialog({ implantId, verb }),
+        onProcesses: () => setProcessesFor(implantId),
+        onFiles: () => setFilesFor(implantId),
+        onNotes: () => void onToggleNotes(implantId),
+        onRetire: () => onRetire(implantId),
+      })
+    }
 
   if (implants.length === 0 && !error) {
     return (
@@ -451,6 +454,14 @@ export function ImplantsView({
           engagementId={engagementId}
           implantId={processesFor}
           onClose={() => setProcessesFor(null)}
+        />
+      )}
+      {filesFor && (
+        <FileBrowser
+          engagementId={engagementId}
+          implantId={filesFor}
+          osHint={implants.find((i) => i.implantId === filesFor)?.os ?? null}
+          onClose={() => setFilesFor(null)}
         />
       )}
     </div>

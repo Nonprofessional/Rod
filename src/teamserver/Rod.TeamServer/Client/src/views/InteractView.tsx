@@ -12,6 +12,7 @@ import {
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
+import { FileBrowser } from '../components/FileBrowser'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { ProcessBrowser } from '../components/ProcessBrowser'
@@ -48,6 +49,7 @@ const QUICK_HELP: readonly QuickCommand[] = [
   { word: 'portscan', usage: 'portscan <host> <start-end>', note: 'scan a host' },
   { word: 'services', usage: 'services <host> <ports>', note: 'probe services' },
   { word: 'download', usage: 'download <path>', note: 'pull a file back' },
+  { word: 'files', usage: 'files', note: 'open the file browser pane' },
   { word: 'raw', usage: 'raw <verb> [args…]', note: 'issue any verb directly' },
 ]
 
@@ -72,6 +74,7 @@ export function InteractView({
   const [interactTask, setInteractTask] = useState<string | null>(null)
   const [dialogVerb, setDialogVerb] = useState<string | null>(null)
   const [processes, setProcesses] = useState(false)
+  const [filesOpen, setFilesOpen] = useState(false)
   const [groups, setGroups] = useState<CapabilityGroup[]>([])
   const [line, setLine] = useState('')
   const [hint, setHint] = useState<string | null>(null)
@@ -192,6 +195,9 @@ export function InteractView({
         case 'download':
           await issue('file.pull', rest)
           return
+        case 'files':
+          setFilesOpen(true)
+          return
         case 'upload':
           setHint('Uploads need a file picker -- use Upload… in the menu (top right).')
           return
@@ -257,6 +263,7 @@ export function InteractView({
         },
         onDialog: (verb) => setDialogVerb(verb),
         onProcesses: () => setProcesses(true),
+        onFiles: () => setFilesOpen(true),
       })
     : []
 
@@ -396,6 +403,14 @@ export function InteractView({
       )}
       {processes && implant && (
         <ProcessBrowser engagementId={engagementId} implantId={implantId} onClose={() => setProcesses(false)} />
+      )}
+      {filesOpen && implant && (
+        <FileBrowser
+          engagementId={engagementId}
+          implantId={implantId}
+          osHint={implant.os}
+          onClose={() => setFilesOpen(false)}
+        />
       )}
       {dialogVerb && implant && (
         <TaskDialog

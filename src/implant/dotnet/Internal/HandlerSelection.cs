@@ -36,6 +36,7 @@ internal static class HandlerSelection
             (TaskOutcome.Failed, "tunnel.socks runs as a live channel; this dispatch path does not carry one")),
         new CapabilityHandler("file.push", args => Files.Push(args)),
         new CapabilityHandler("file.pull", args => Files.Pull(args)),
+        new CapabilityHandler("fs.list", args => Files.List(args)),
         new CapabilityHandler("proc.kill", args => Proc.Kill(args)),
         new CapabilityHandler("recon.portscan", args => Core.PortScan(args)),
         new CapabilityHandler("recon.hostenum", args => Core.HostEnum(args)),

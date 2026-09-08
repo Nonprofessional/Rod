@@ -11,7 +11,7 @@ import type { MenuEntry, MenuItem } from '../components/ContextMenu'
 // the server still refuses anything this table gets wrong.
 const CLASS_VERBS: Record<string, readonly string[]> = {
   Stage2: [
-    'shell.exec', 'shell.interact', 'file.push', 'file.pull', 'proc.kill',
+    'shell.exec', 'shell.interact', 'file.push', 'file.pull', 'fs.list', 'proc.kill',
     'recon.portscan', 'recon.hostenum', 'recon.service', 'recon.ps',
     'lateral.move', 'lateral.token', 'lateral.exec_remote',
     'persist.install', 'persist.remove', 'persist.list',
@@ -36,6 +36,7 @@ export interface ImplantMenuActions {
   // Open the per-verb dialog for an argument-bearing verb.
   onDialog: (verb: string) => void
   onProcesses: () => void
+  onFiles: () => void
   onNotes?: () => void
   onRetire?: () => void
 }
@@ -60,6 +61,10 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
       'shell.interact',
     ),
     { kind: 'label', label: 'Files' },
+    push(
+      { kind: 'item', label: 'Browse files', icon: 'folder', onSelect: actions.onFiles },
+      'fs.list',
+    ),
     push(
       { kind: 'item', label: 'Upload…', icon: 'package', onSelect: () => actions.onDialog('file.push') },
       'file.push',

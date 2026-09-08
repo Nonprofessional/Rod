@@ -1615,6 +1615,15 @@ a.button-link:hover {
   color: var(--accent);
 }
 
+/* A file browser entry: icon plus name as one inline target. */
+button.file-entry {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0;
+  font: inherit;
+}
+
 /* --- Modal dialog ------------------------------------------------------------------- */
 
 .modal-backdrop {
