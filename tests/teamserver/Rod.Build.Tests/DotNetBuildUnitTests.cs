@@ -517,4 +517,57 @@ public class DotNetBuildUnitTests
 
         Assert.NotEqual(first.Fingerprint, second.Fingerprint);
     }
+
+    [DotNetFact]
+    public async Task Build_AWebShapedArtifact_CarriesNoGrpcClient()
+    {
+        // The transport trim's acceptance (architecture.md Sec 8): a build
+        // whose egress walk holds only web fronts compiles no stream module,
+        // so the artifact links no gRPC client at all -- the proto generation
+        // carried the rod.v1 message types only and the single-file bundle
+        // embeds no Grpc.Net.Client assembly.
+        var unit = new DotNetBuildUnit();
+
+        var artifact = await unit.BuildAsync(Params());
+
+        Assert.NotEmpty(artifact.Content);
+        Assert.False(Contains(artifact.Content, "Grpc.Net.Client.dll"u8),
+            "a web-shaped artifact must not embed the gRPC client library");
+    }
+
+    [DotNetFact]
+    public async Task Build_AnMtlsShapedArtifact_KeepsTheGrpcClient()
+    {
+        // The trim's other half: a walk whose primary is the bare-authority
+        // mTLS socket keeps the stream module, and with it the gRPC client
+        // the stream dials.
+        var unit = new DotNetBuildUnit();
+        var @params = Params() with
+        {
+            Transport = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+            {
+                BeaconEndpoint = "c2.example.test:8443",
+            },
+        };
+
+        var artifact = await unit.BuildAsync(@params);
+
+        Assert.NotEmpty(artifact.Content);
+        Assert.True(Contains(artifact.Content, "Grpc.Net.Client.dll"u8),
+            "an mTLS-shaped artifact keeps the gRPC client the stream dials");
+    }
+
+    // Scans the single-file bundle's bytes for a pattern. The bundle manifest
+    // lists every embedded file's name as plain text (only the payloads are
+    // compressed), so an assembly's presence in the bundle is visible in its
+    // name alone.
+    private static bool Contains(byte[] haystack, ReadOnlySpan<byte> needle)
+    {
+        for (var i = 0; i + needle.Length <= haystack.Length; i++)
+        {
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle))
+                return true;
+        }
+        return false;
+    }
 }

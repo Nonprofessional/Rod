@@ -396,6 +396,19 @@ recorded.**
   ([extending/tradecraft.md](extending/tradecraft.md)). A configured directory
   that is missing or yields no handler fails loudly, the same rule the
   server-side module loader applies; the stager tree is never overlaid.
+- **The bake trims each build to the transport it dials.** The egress walk
+  the profile bakes names URL shapes -- a schemed http(s) front carries the
+  envelope POST cycle, a bare host:port the mTLS gRPC stream (Sec 8) -- and
+  the unit compiles exactly the check-in modules those shapes can dial: the
+  other module's source files leave the staging copy whole, a generated
+  selection replaces the checked-in both-modules stub, and a walk with no
+  stream entry generates the rod.v1 message types without the gRPC client,
+  dropping the Grpc.Net.Client reference with them. A web-front artifact
+  therefore ships no gRPC client at all -- less surface, less size, one less
+  fingerprint -- while a shape-crossing walk (a stream primary with web
+  fallbacks) keeps both clients so no bake strands the artifact on a front
+  it cannot dial. The stager tree is never trimmed: it fetches over plain
+  HTTP and carries no check-in clients.
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
@@ -602,11 +615,14 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   runs the envelope POST cycle on that port -- the mainstream single-port web
   posture, the build's derived default for `Http`/`Https` fronts -- while a
   bare host:port dials the mTLS gRPC stream (what a named mTLS beacon
-  listener bakes). A build against a web front therefore needs no beacon
-  split; naming the mTLS listener as the beacon stays the hardened option for
-  an engagement that wants the interactive stream. Dropping the
-  gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable from any
-  language with an HTTP client and a protobuf codec
+  listener bakes). The pick is also compile-time: the bake compiles in only
+  the check-in modules the walk's URL shapes can dial, so a web-front
+  artifact carries no gRPC client code at all and an mTLS artifact keeps the
+  stream (Sec 6, the transport trim). A build against a web front therefore
+  needs no beacon split; naming the mTLS listener as the beacon stays the
+  hardened option for an engagement that wants the interactive stream.
+  Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable
+  from any language with an HTTP client and a protobuf codec
   ([extending/implants.md](extending/implants.md)). A channel task is never
   claimed over the envelope (its input half needs a live stream, the same
   rule the DNS transport applies), and an artifact's exfil chunk run must

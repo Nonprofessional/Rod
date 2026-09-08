@@ -28,21 +28,13 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Trim each build to the transport it dials.** Every artifact today
-      compiles the whole implant tree, so a plain-HTTP build still carries
-      the gRPC client it can never use -- surface, size, and fingerprint
-      for nothing. Select transport modules at bake time from the same
-      tree (whole source files in or out per build, the BakedProfile
-      generation mechanism extended), with the trimmer as the backstop.
-      _AC:_ a stage2 built for an `http`/`https` listener contains no
-      gRPC client code, and an mTLS-shaped build keeps the stream mode.
 - [ ] **Compile only the verbs the artifact carries.** Class-based verb
       gating today is behavioral: a reduced-class build compiles the full
       handler set and bakes a gutted verb list, so the code for
       capabilities the artifact will never run still ships inside it --
       surface, size, and a forensic confession in one. Extend the
-      bake-time trimming (the same whole-file mechanism as the transport
-      selection) to handler modules: the build names the verbs, unused
+      bake-time trimming (the whole-file trim the transport selection
+      already uses) to handler modules: the build names the verbs, unused
       handler sources stay out of the compilation, and the reduced
       classes become genuinely reduced binaries.
       _AC:_ a build whose verb set excludes keylogging contains no

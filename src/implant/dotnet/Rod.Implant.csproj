@@ -33,28 +33,41 @@
     -->
     <AssemblyName>Rod.Implant</AssemblyName>
     <RootNamespace>Rod.Implant</RootNamespace>
+    <!--
+      The generated gRPC surface, the compile half of the bake-time transport
+      trim (architecture.md Sec 8): "Client" (the default) also generates the
+      Beacon.CheckIn gRPC client the mTLS stream module dials; "None" (what
+      the build unit passes for a walk with no stream-shaped entry) generates
+      the rod.v1 message types only. The Grpc.Net.Client reference rides the
+      same switch below, so a web-shaped build links no gRPC client code at
+      all. Dev builds of the checked-in tree keep the full client.
+    -->
+    <RodGrpcServices Condition="'$(RodGrpcServices)' == ''">Client</RodGrpcServices>
   </PropertyGroup>
 
   <ItemGroup>
     <!--
-      The wire protocol contract, generated as a gRPC client. The proto is the
-      teamserver's (src/teamserver/Rod.Protocol/protos/rod.proto); the Link keeps it visible
+      The wire protocol contract. The proto is the teamserver's
+      (src/teamserver/Rod.Protocol/protos/rod.proto); the Link keeps it visible
       under protos/ in the implant project without copying it. Client-only: the
       implant dials the Beacon.CheckIn stream; it does not host any service.
-      rod.proto has no imports, so no ProtoRoot is needed; Grpc.Tools compiles
-      the single file directly.
+      The gRPC services generated alongside the messages follow the
+      RodGrpcServices trim switch above. rod.proto has no imports, so no
+      ProtoRoot is needed; Grpc.Tools compiles the single file directly.
     -->
     <Protobuf
       Include="..\..\teamserver\Rod.Protocol\protos\rod.proto"
       Link="protos\rod.proto"
-      GrpcServices="Client" />
+      GrpcServices="$(RodGrpcServices)" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Versions are governed centrally by Directory.Packages.props at the repo
-         root (CPM), so no Version is set here. -->
+         root (CPM), so no Version is set here. Google.Protobuf and Grpc.Tools
+         stay in every shape: the messages (and their generation) are the wire
+         contract both check-in clients speak. -->
     <PackageReference Include="Google.Protobuf" />
-    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Net.Client" Condition="'$(RodGrpcServices)' != 'None'" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
   </ItemGroup>
 

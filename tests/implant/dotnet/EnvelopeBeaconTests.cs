@@ -20,12 +20,13 @@ public class EnvelopeBeaconTests
     [InlineData("front.example.test:8443", false)]
     [InlineData("10.0.0.5:8443", false)]
     [InlineData("", false)]
-    public void IsWebBeaconUrl_ClassifiesByScheme(string beaconUrl, bool expected)
+    public void BeaconUrl_IsWebClassifiesByScheme(string beaconUrl, bool expected)
     {
         // The bake's discriminator: an entry carrying the web scheme checks
         // in over the envelope POST cycle; a bare host:port dials the mTLS
-        // gRPC stream.
-        Assert.Equal(expected, EnvelopeBeacon.IsWebBeaconUrl(beaconUrl));
+        // gRPC stream. The same predicate drives the run-time client choice
+        // and the build unit's module selection.
+        Assert.Equal(expected, BeaconUrl.IsWeb(beaconUrl));
     }
 
     [Theory]

