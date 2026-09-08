@@ -1539,6 +1539,82 @@ button.menu-trigger {
   line-height: 1;
 }
 
+button.menu-trigger .nav-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* --- Session console ------------------------------------------------------------------ */
+
+/* The console header: device identity on the left, live state and the
+   implant menu on the right. */
+.console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.console-head h3 {
+  margin: 6px 0 2px;
+}
+
+.console-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: none;
+}
+
+.back-link {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.back-link:hover {
+  color: var(--accent);
+}
+
+/* The command bar pinned under the feed: the operator's keyboard path. */
+.console-bar {
+  padding: 10px 12px;
+}
+
+.console-hint {
+  margin: 6px 2px 0;
+  font-size: 11.5px;
+}
+
+/* Feed rows carry a cursor when they hide an output transcript. */
+tr.console-row td {
+  cursor: default;
+}
+
+tr.console-row td:first-child code {
+  cursor: pointer;
+}
+
+.console-args {
+  font-size: 11.5px;
+}
+
+/* An anchor styled as the small buttons beside it (the Interact link). */
+a.button-link {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+a.button-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* --- Modal dialog ------------------------------------------------------------------- */
 
 .modal-backdrop {

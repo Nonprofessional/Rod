@@ -7,7 +7,7 @@ import { Icon, type IconName } from './Icons'
 //
 // Positioning is viewport-clamped: the menu prefers the cursor corner and
 // flips inside when it would spill an edge, so a row at the screen's bottom
-// still opens a usable menu.
+// still opens a usable menu. Its open/close state lives in contextMenuState.
 
 export interface MenuItem {
   kind: 'item'
@@ -102,21 +102,4 @@ export function ContextMenu({
       })}
     </div>
   )
-}
-
-// Owns one open menu's coordinates. `openAt` takes a mouse event (the
-// contextmenu handler) or explicit viewport coordinates (the three-dot
-// button's bounding box); renders nothing while closed.
-export function useContextMenu(): {
-  menu: { x: number; y: number } | null
-  openAt: (at: { clientX: number; clientY: number } | { x: number; y: number }) => void
-  close: () => void
-} {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
-  return {
-    menu: at,
-    openAt: (point) =>
-      setAt('clientX' in point ? { x: point.clientX, y: point.clientY } : point),
-    close: () => setAt(null),
-  }
 }

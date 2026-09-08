@@ -218,6 +218,15 @@ export const ZERO_ARG_VERBS: readonly string[] = [
   'tunnel.socks',
 ]
 
+// The verbs whose tasks run as live channels (the server's ChannelVerbs is the
+// authority; the operator UI keeps this mirror so a channel task can offer its
+// input pane). The input route refuses anything else server-side.
+export const CHANNEL_VERBS: readonly string[] = [
+  'shell.interact',
+  'tunnel.forward',
+  'tunnel.socks',
+]
+
 // Reads a picked file into the SelectedFile shape: the dialog calls it on
 // change and keeps the result in state until submit.
 export async function readSelectedFile(file: globalThis.File): Promise<SelectedFile> {

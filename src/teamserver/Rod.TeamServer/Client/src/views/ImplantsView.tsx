@@ -4,12 +4,20 @@ import {
   type ImplantNote,
   type PresenceRecord,
   addImplantNote,
+  issueTask,
   listImplantNotes,
   listImplants,
   retireImplant,
 } from '../api'
+import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { ContextMenu } from '../components/ContextMenu'
+import { useContextMenu } from '../contextMenuState'
 import { Icon } from '../components/Icons'
+import { ProcessBrowser } from '../components/ProcessBrowser'
 import { StatusBadge } from '../components/StatusBadge'
+import { TaskDialog } from '../components/TaskDialog'
+import { VERB_FORMS } from '../verbForms'
+import { implantMenuEntries } from './implantMenu'
 
 // The fleet panel: every implant this engagement enrolled, grouped by the
 // device each implant reported at enroll. Three identity layers fold into one
@@ -98,6 +106,34 @@ export function ImplantsView({
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // The per-verb dialog and process browser targets: an implant plus the verb
+  // (or just the implant for the browser). One at a time -- the operator acts
+  // on one row at a time.
+  const [dialog, setDialog] = useState<{ implantId: string; verb: string } | null>(null)
+  const [processesFor, setProcessesFor] = useState<string | null>(null)
+  const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
+  // Which implant the open context menu acts on (a row right-click or its
+  // three-dot button); null while no menu is open.
+  const [menuFor, setMenuFor] = useState<string | null>(null)
+  const menu = useContextMenu()
+
+  useEffect(() => {
+    void loadCapabilityGroups()
+      .then(setCapabilityGroups)
+      .catch(() => {
+        // The catalog only feeds dialog badges; a failed load leaves them empty.
+      })
+  }, [])
+
+  const attributesByVerb = useMemo(() => {
+    const map = new Map<string, Record<string, string>>()
+    for (const group of capabilityGroups) {
+      for (const descriptor of group.descriptors) {
+        map.set(descriptor.verb, descriptor.attributes)
+      }
+    }
+    return map
+  }, [capabilityGroups])
 
   const refresh = useCallback(async () => {
     try {
@@ -183,6 +219,33 @@ export function ImplantsView({
     }
   }
 
+  // The context menu for one implant: the shared builder over this view's
+  // actions (console navigation, dialogs, the process browser, notes,
+  // retire).
+  const menuEntriesFor = (implantId: string) => {
+    const target = implants.find((i) => i.implantId === implantId)
+    if (!target) return []
+    return implantMenuEntries(target, {
+      onInteract: () => {
+        window.location.hash = `#/engagements/${engagementId}/implants/${implantId}`
+      },
+      onIssue: (verb) => {
+        void (async () => {
+          try {
+            await issueTask(engagementId, { implantId, verb, arguments: '' })
+            await refresh()
+          } catch (e) {
+            setError(String(e))
+          }
+        })()
+      },
+      onDialog: (verb) => setDialog({ implantId, verb }),
+      onProcesses: () => setProcessesFor(implantId),
+      onNotes: () => void onToggleNotes(implantId),
+      onRetire: () => onRetire(implantId),
+    })
+  }
+
   if (implants.length === 0 && !error) {
     return (
       <div className="card">
@@ -240,7 +303,14 @@ export function ImplantsView({
                     const presence = presenceByImplant.get(implant.implantId)
                     return (
                       <Fragment key={implant.implantId}>
-                        <tr className={implant.isOnline || implant.retiredAt ? undefined : 'row-dim'}>
+                        <tr
+                          className={implant.isOnline || implant.retiredAt ? undefined : 'row-dim'}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            setMenuFor(implant.implantId)
+                            menu.openAt(e)
+                          }}
+                        >
                           <td>
                             <span className="dot online" title="online" />{' '}
                             <code>{implant.implantId.slice(0, 8)}</code>{' '}
@@ -280,14 +350,28 @@ export function ImplantsView({
                           </td>
                           <td>
                             <div className="row-actions">
+                              <a
+                                className="button-link sm"
+                                href={`#/engagements/${engagementId}/implants/${implant.implantId}`}
+                                title="Open the session console"
+                              >
+                                Interact
+                              </a>
                               <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
                                 {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
                               </button>
-                              {!implant.retiredAt && (
-                                <button className="danger sm" onClick={() => onRetire(implant.implantId)}>
-                                  Retire
-                                </button>
-                              )}
+                              <button
+                                className="ghost sm menu-trigger"
+                                title="Implant actions"
+                                onClick={(e) => {
+                                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                                  setMenuFor(implant.implantId)
+                                  menu.openAt({ x: rect.left, y: rect.bottom + 4 })
+                                }}
+                                onContextMenu={(e) => e.stopPropagation()}
+                              >
+                                <Icon name="more" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -334,6 +418,41 @@ export function ImplantsView({
         </table>
       </div>
       {error && <p className="error">{error}</p>}
+      {menu.menu && menuFor && (
+        <ContextMenu
+          x={menu.menu.x}
+          y={menu.menu.y}
+          entries={menuEntriesFor(menuFor)}
+          onClose={() => {
+            menu.close()
+            setMenuFor(null)
+          }}
+        />
+      )}
+      {dialog && (
+        <TaskDialog
+          engagementId={engagementId}
+          implantId={dialog.implantId}
+          verb={dialog.verb}
+          form={
+            VERB_FORMS[dialog.verb] ?? {
+              title: 'Issue task',
+              fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
+              build: (values) => ({ arguments: (values.args ?? '').trim() }),
+            }
+          }
+          attributes={attributesByVerb.get(dialog.verb) ?? {}}
+          onClose={() => setDialog(null)}
+          onIssued={() => void refresh()}
+        />
+      )}
+      {processesFor && (
+        <ProcessBrowser
+          engagementId={engagementId}
+          implantId={processesFor}
+          onClose={() => setProcessesFor(null)}
+        />
+      )}
     </div>
   )
 }

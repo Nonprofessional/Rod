@@ -502,6 +502,22 @@ export async function listEngagementTasks(
   return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks${query}`))
 }
 
+// --- Per-implant task list  ---------------------------------
+//
+// The same history scoped to one implant (the session console's feed), same
+// paging envelope as the engagement-wide list.
+
+export async function listImplantTasks(
+  engagementId: string,
+  implantId: string,
+  cursor?: string,
+): Promise<ListPage<EngagementTask>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/implants/${implantId}/tasks${query}`),
+  )
+}
+
 // --- Audit trail  ---------------------------------------------
 //
 // The per-engagement, append-only, hash-chained event stream. Every action that

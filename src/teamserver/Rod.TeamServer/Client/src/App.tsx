@@ -24,12 +24,17 @@ import { LoginView } from './views/LoginView'
 
 type Route =
   | { kind: 'engagements' }
-  | { kind: 'engagement'; engagementId: string; tab: string }
+  | { kind: 'engagement'; engagementId: string; tab: string; implantId?: string }
 
 function parseHash(): Route {
   const hash = window.location.hash.replace(/^#/, '')
-  // Tabbed engagement route first (more specific); bare engagement route falls
-  // back to the default tab.
+  // Most specific first: the session console under the implants tab (an
+  // implant drill-in), then any tabbed engagement route, then the bare
+  // engagement route's default tab.
+  const consoleRoute = /^\/engagements\/([\da-fA-F-]+)\/implants\/([\da-fA-F-]+)\/?$/.exec(hash)
+  if (consoleRoute) {
+    return { kind: 'engagement', engagementId: consoleRoute[1], tab: 'implants', implantId: consoleRoute[2] }
+  }
   const tabbed = /^\/engagements\/([\da-fA-F-]+)\/(\w+)\/?$/.exec(hash)
   if (tabbed) return { kind: 'engagement', engagementId: tabbed[1], tab: tabbed[2] }
   const match = /^\/engagements\/([\da-fA-F-]+)\/?$/.exec(hash)
@@ -208,7 +213,12 @@ function App() {
           {route.kind === 'engagements' ? (
             <EngagementsView />
           ) : (
-            <EngagementView engagementId={route.engagementId} operator={operator} tab={activeTab} />
+            <EngagementView
+              engagementId={route.engagementId}
+              operator={operator}
+              tab={activeTab}
+              implantId={route.implantId}
+            />
           )}
         </main>
       </div>

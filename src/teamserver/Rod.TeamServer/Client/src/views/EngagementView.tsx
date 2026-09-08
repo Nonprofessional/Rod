@@ -12,6 +12,7 @@ import { LiveContext } from '../shell'
 import { ArtifactsView } from './ArtifactsView'
 import { AuditView } from './AuditView'
 import { ImplantsView } from './ImplantsView'
+import { InteractView } from './InteractView'
 import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
 import { PayloadsView } from './PayloadsView'
@@ -34,10 +35,15 @@ export function EngagementView({
   engagementId,
   operator,
   tab,
+  implantId,
 }: {
   engagementId: string
   operator: SessionOperator
   tab: TabId
+  // Set only on the session-console route (#/engagements/{id}/implants/{implantId}):
+  // the implants tab then renders the per-implant console instead of the fleet
+  // table. Undefined on every plain tab route.
+  implantId?: string
 }) {
   const [online, setOnline] = useState<LiveOperator[]>([])
   const [connected, setConnected] = useState(false)
@@ -128,7 +134,16 @@ export function EngagementView({
       {tab === 'tasking' && (
         <TaskingView engagementId={engagementId} operator={operator} onlineTick={tick} />
       )}
-      {tab === 'implants' && (
+      {tab === 'implants' && implantId && (
+        <InteractView
+          engagementId={engagementId}
+          implantId={implantId}
+          operator={operator}
+          onlineTick={tick}
+          onlineImplants={onlineImplants}
+        />
+      )}
+      {tab === 'implants' && !implantId && (
         <ImplantsView engagementId={engagementId} onlineTick={tick} onlineImplants={onlineImplants} />
       )}
       {tab === 'audit' && <AuditView engagementId={engagementId} onlineTick={tick} />}
