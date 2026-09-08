@@ -1578,6 +1578,24 @@ button.menu-trigger {
   justify-content: flex-end;
 }
 
+/* Quiet per-field guidance under a dialog input. */
+.field-help {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* A pane-style dialog (process browser, file browser): wider than a form
+   modal, with its own scrolling table. */
+.modal.wide {
+  width: min(880px, 100%);
+}
+
+.process-table {
+  max-height: 55vh;
+  overflow: auto;
+}
+
 /* --- List filter field ---------------------------------------------------------------- */
 
 .filter-text {

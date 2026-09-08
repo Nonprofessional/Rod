@@ -178,6 +178,10 @@ export interface IssueTaskInput {
   implantId: string
   verb: string
   arguments: string
+  // The staged arm (file.push of a larger upload): base64 bytes the server
+  // stores as a task-bound artifact and the implant pulls by hash. Absent for
+  // every verb whose arguments carry everything.
+  content?: string
 }
 
 export async function issueTask(
