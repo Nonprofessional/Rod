@@ -17,7 +17,7 @@ import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
 import { PayloadsView } from './PayloadsView'
 import { ReportView } from './ReportView'
-import { TaskingView } from './TaskingView'
+import { TaskLogView } from './TaskLogView'
 import { TimelineView } from './TimelineView'
 
 // The engagement detail body: the active view only -- navigation lives in the
@@ -131,9 +131,7 @@ export function EngagementView({
   return (
     <LiveContext.Provider value={live}>
       {error && <p className="error">{error}</p>}
-      {tab === 'tasking' && (
-        <TaskingView engagementId={engagementId} operator={operator} onlineTick={tick} />
-      )}
+      {tab === 'tasking' && <TaskLogView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'implants' && implantId && (
         <InteractView
           engagementId={engagementId}

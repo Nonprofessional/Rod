@@ -1,6 +1,9 @@
 // Engagement tab definitions: the hash route's tab vocabulary plus the
 // sidebar's grouping. Lives in a plain module (not the Nav component file) so
 // the component file holds only components and stays fast-refresh clean.
+//
+// Tab ids are stable route segments (deep links keep working); labels and
+// order are presentation and move with the UI.
 
 import type { IconName } from './components/Icons'
 
@@ -21,14 +24,16 @@ export interface NavItemDef {
   icon: IconName
 }
 
-// Grouped the way operators think: operating the fleet first, infrastructure
-// second, evidence last.
+// Grouped the way operators think: operating the fleet first (the fleet table
+// and the log it produces -- issuing happens in the fleet's menu and the
+// session console, not in a tab of its own), infrastructure second, evidence
+// last in reading order (ledger, story, objects, bundle).
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: null,
     items: [
-      { id: 'tasking', label: 'Tasking', icon: 'terminal' },
-      { id: 'implants', label: 'Implants', icon: 'cpu' },
+      { id: 'implants', label: 'Fleet', icon: 'cpu' },
+      { id: 'tasking', label: 'Task log', icon: 'inbox' },
     ],
   },
   {
@@ -43,8 +48,8 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Evidence',
     items: [
       { id: 'audit', label: 'Audit', icon: 'list' },
-      { id: 'artifacts', label: 'Artifacts', icon: 'archive' },
       { id: 'timeline', label: 'Timeline', icon: 'clock' },
+      { id: 'artifacts', label: 'Artifacts', icon: 'archive' },
       { id: 'report', label: 'Report', icon: 'file' },
     ],
   },

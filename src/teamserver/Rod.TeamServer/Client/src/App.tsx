@@ -38,7 +38,7 @@ function parseHash(): Route {
   const tabbed = /^\/engagements\/([\da-fA-F-]+)\/(\w+)\/?$/.exec(hash)
   if (tabbed) return { kind: 'engagement', engagementId: tabbed[1], tab: tabbed[2] }
   const match = /^\/engagements\/([\da-fA-F-]+)\/?$/.exec(hash)
-  if (match) return { kind: 'engagement', engagementId: match[1], tab: 'tasking' }
+  if (match) return { kind: 'engagement', engagementId: match[1], tab: 'implants' }
   return { kind: 'engagements' }
 }
 
@@ -167,11 +167,12 @@ function App() {
     return <LoginView onLogin={onLogin} />
   }
 
-  // Unknown tab segments (stale links) fall back to the default tab.
+  // Unknown tab segments (stale links) fall back to the fleet -- the primary
+  // operating surface.
   const routeTab = route.kind === 'engagement' ? route.tab : ''
   const activeTab: TabId = (ENGAGEMENT_TABS as readonly string[]).includes(routeTab)
     ? (routeTab as TabId)
-    : 'tasking'
+    : 'implants'
 
   return (
     <div className="shell">
