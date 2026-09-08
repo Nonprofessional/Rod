@@ -50,6 +50,24 @@ public sealed class Implant
     /// </summary>
     public ImplantId? ParentImplantId { get; }
 
+    /// <summary>
+    /// Where this implant runs, as the implant itself reported at enroll: the
+    /// host's machine name. The device dimension of the fleet -- several
+    /// implants (a redeploy, a parent and its child) can share one host, and
+    /// this field is what groups them. Null when the enrolling implant did not
+    /// report it (a pre-field client or a test).
+    /// </summary>
+    public string? Hostname { get; }
+
+    /// <summary>The host's operating system as reported at enroll; null when unreported.</summary>
+    public string? Os { get; }
+
+    /// <summary>The host's CPU architecture as reported at enroll; null when unreported.</summary>
+    public string? Arch { get; }
+
+    /// <summary>The account the implant process runs under, as reported at enroll; null when unreported.</summary>
+    public string? Username { get; }
+
     /// <summary>True once the implant has been taken out of operation.</summary>
     public bool IsRetired => RetiredAt is not null;
 
@@ -70,7 +88,11 @@ public sealed class Implant
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy,
-        ImplantId? parentImplantId)
+        ImplantId? parentImplantId,
+        string? hostname = null,
+        string? os = null,
+        string? arch = null,
+        string? username = null)
     {
         Id = id;
         EngagementId = engagementId;
@@ -79,6 +101,10 @@ public sealed class Implant
         CreatedAt = createdAt;
         DeployedBy = deployedBy;
         ParentImplantId = parentImplantId;
+        Hostname = hostname;
+        Os = os;
+        Arch = arch;
+        Username = username;
     }
 
     /// <summary>
@@ -112,6 +138,11 @@ public sealed class Implant
     /// parent; this factory only records the linkage. <paramref name="deployedBy"/>
     /// is the operator who authorized the deployment; it defaults to unattributed
     /// so tests that do not care about attribution stay unchanged.
+    ///
+    /// The host fields (<paramref name="hostname"/>, <paramref name="os"/>,
+    /// <paramref name="arch"/>, <paramref name="username"/>) are what the implant
+    /// reported about the machine it runs on; all default to null so callers
+    /// that do not know them (tests, pre-field clients) compile unchanged.
     /// </summary>
     public static Implant EnrollChild(
         ImplantId id,
@@ -120,7 +151,11 @@ public sealed class Implant
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy = default,
-        ImplantId? parentImplantId = null)
+        ImplantId? parentImplantId = null,
+        string? hostname = null,
+        string? os = null,
+        string? arch = null,
+        string? username = null)
     {
         if (killDate <= createdAt)
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
@@ -129,7 +164,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username);
     }
 
     /// <summary>

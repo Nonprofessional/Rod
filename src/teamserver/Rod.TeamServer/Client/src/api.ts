@@ -42,6 +42,12 @@ export interface Implant {
   isOnline: boolean
   retiredAt: string | null
   parentImplantId: string | null
+  // The device identity the implant reported at enroll -- what the fleet
+  // groups rows by. Null when the enrolling client predated the field.
+  hostname: string | null
+  os: string | null
+  arch: string | null
+  username: string | null
 }
 
 export interface Task {

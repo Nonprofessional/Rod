@@ -180,6 +180,82 @@ public class EnrollmentTests
     }
 
     [Fact]
+    public async Task Enroll_RecordsReportedHostIdentity_OnTheImplantList()
+    {
+        // The device dimension of the fleet: an implant reports the machine it
+        // runs on at enroll, the teamserver records it, and the operator implant
+        // list reads it back. A client that reports nothing (a pre-field one)
+        // enrolls the same way and the fields read back null.
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await MintEngagementIdAsync(client);
+
+            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+            mintResponse.EnsureSuccessStatusCode();
+            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+
+            var response = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(
+                    StagerTokenSecret: token!.Secret,
+                    Class: null,
+                    Hostname: "  web01.example.test  ",
+                    Os: "Linux 6.12",
+                    Arch: "x64",
+                    Username: "svc-app"));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var listResponse = await client.GetAsync($"/engagements/{engagementId}/implants");
+            listResponse.EnsureSuccessStatusCode();
+            var implants = await listResponse.Content
+                .ReadFromJsonAsync<ImplantEndpoints.ImplantResponse[]>();
+            Assert.NotNull(implants);
+            var implant = Assert.Single(implants!);
+
+            // Reported facts round-trip; the whitespace-padded hostname was
+            // trimmed on the way in.
+            Assert.Equal("web01.example.test", implant!.Hostname);
+            Assert.Equal("Linux 6.12", implant.Os);
+            Assert.Equal("x64", implant.Arch);
+            Assert.Equal("svc-app", implant.Username);
+        }
+    }
+
+    [Fact]
+    public async Task Enroll_WithoutHostIdentity_LeavesTheFieldsNull()
+    {
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await MintEngagementIdAsync(client);
+
+            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+            mintResponse.EnsureSuccessStatusCode();
+            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+
+            var response = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: token!.Secret, Class: null));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var listResponse = await client.GetAsync($"/engagements/{engagementId}/implants");
+            listResponse.EnsureSuccessStatusCode();
+            var implants = await listResponse.Content
+                .ReadFromJsonAsync<ImplantEndpoints.ImplantResponse[]>();
+            Assert.NotNull(implants);
+            var implant = Assert.Single(implants!);
+
+            Assert.Null(implant!.Hostname);
+            Assert.Null(implant.Os);
+            Assert.Null(implant.Arch);
+            Assert.Null(implant.Username);
+        }
+    }
+
+    [Fact]
     public async Task Enroll_ReturnsSpent_WhenTokenAlreadyConsumed()
     {
         var (client, host) = CreateClient();

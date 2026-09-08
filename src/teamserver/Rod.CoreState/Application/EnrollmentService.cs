@@ -107,7 +107,9 @@ public sealed class EnrollmentService
         //    operator (architecture.md Sec 11).
         var implantId = ImplantId.New();
         var killDate = now + DefaultKillDateOffset;
-        var implant = Implant.EnrollChild(implantId, redeemed.EngagementId, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id);
+        var implant = Implant.EnrollChild(
+            implantId, redeemed.EngagementId, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
+            command.Hostname, command.Os, command.Arch, command.Username);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
@@ -127,6 +129,7 @@ public sealed class EnrollmentService
             issued.CaChain,
             implant.DeployedBy,
             implant.ParentImplantId,
+            implant.Hostname,
             now);
     }
 
@@ -192,19 +195,31 @@ public sealed class EnrollmentService
 /// <see cref="ParentImplantId"/> derives a child implant: when set,
 /// the service resolves and scope-checks the parent before recording the child.
 /// Null (the default) enrolls a top-level implant from the stager token.
+///
+/// The host fields (<see cref="Hostname"/>, <see cref="Os"/>,
+/// <see cref="Arch"/>, <see cref="Username"/>) are the implant's report about
+/// the machine it runs on -- the device dimension of the fleet. All default to
+/// null: an implant that does not report them (a pre-field client) enrolls the
+/// same way it always did.
 /// </summary>
 public sealed record EnrollCommand(
     string StagerTokenSecret,
     ImplantClass Class = ImplantClass.Stage2,
     byte[]? ClientPublicKey = null,
-    ImplantId? ParentImplantId = null);
+    ImplantId? ParentImplantId = null,
+    string? Hostname = null,
+    string? Os = null,
+    string? Arch = null,
+    string? Username = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
 /// the recorded kill date, the bound certificate plus CA chain, the operator who
 /// deployed it (the
 /// token issuer, used to attribute the enrollment), the parent it was derived
-/// from (null for a top-level implant), and the enrollment timestamp.
+/// from (null for a top-level implant), the hostname it reported (null when
+/// unreported -- carried so the audit trail can name the host), and the
+/// enrollment timestamp.
 /// </summary>
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
@@ -215,4 +230,5 @@ public sealed record EnrollmentResult(
     IReadOnlyList<byte[]> CaChain,
     OperatorId DeployedBy,
     ImplantId? ParentImplantId,
+    string? Hostname,
     DateTimeOffset EnrolledAt);

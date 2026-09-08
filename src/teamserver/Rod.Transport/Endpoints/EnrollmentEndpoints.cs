@@ -183,7 +183,10 @@ public static class EnrollmentEndpoints
         try
         {
             var enrolled = await service.EnrollAsync(
-                new EnrollCommand(body.StagerTokenSecret, @class, clientPublicKey, parentImplantId),
+                new EnrollCommand(
+                    body.StagerTokenSecret, @class, clientPublicKey, parentImplantId,
+                    CleanHostFact(body.Hostname), CleanHostFact(body.Os),
+                    CleanHostFact(body.Arch), CleanHostFact(body.Username)),
                 cancellationToken);
 
             // The enrollment is recorded (architecture.md Sec 11).
@@ -191,7 +194,8 @@ public static class EnrollmentEndpoints
             // who deployed the implant -- the one who minted the redeemed token,
             // carried on the implant as DeployedBy. The payload carries the class
             // (and the parent when it is a child derivation, architecture.md Sec
-            // 5.2); the outcome is the new implant id.
+            // 5.2) and the host when the implant reported one, so the trail names
+            // the machine; the outcome is the new implant id.
             await audit.AppendAsync(
                 AuditEvent.Fact(
                     eventId: Guid.NewGuid(),
@@ -201,9 +205,7 @@ public static class EnrollmentEndpoints
                     taskId: Guid.Empty,
                     verb: "enroll",
                     kind: AuditEventKind.ImplantEnrolled,
-                    payload: enrolled.ParentImplantId is { } parent
-                        ? $"{enrolled.Class} parent={parent}"
-                        : enrolled.Class.ToString(),
+                    payload: BuildEnrollPayload(enrolled),
                     output: null,
                     outcome: enrolled.ImplantId.ToString(),
                     at: enrolled.EnrolledAt),
@@ -396,7 +398,36 @@ public static class EnrollmentEndpoints
         string StagerTokenSecret,
         string? Class = null,
         string? PublicKey = null,
-        string? ParentImplantId = null);
+        string? ParentImplantId = null,
+        string? Hostname = null,
+        string? Os = null,
+        string? Arch = null,
+        string? Username = null);
+
+    // A host fact is implant-reported free text: trim it, cap it, and drop it to
+    // null when empty, so the stored device identity stays a bounded, honest
+    // echo of what the implant said rather than an arbitrary-length blob.
+    private const int MaxHostFactLength = 256;
+
+    private static string? CleanHostFact(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed)
+            ? null
+            : trimmed.Length <= MaxHostFactLength ? trimmed : trimmed[..MaxHostFactLength];
+    }
+
+    // The enroll audit payload: class, lineage, and the reported host -- the
+    // words an operator reads back in the audit trail for "what enrolled where".
+    private static string BuildEnrollPayload(EnrollmentResult enrolled)
+    {
+        var parts = new List<string> { enrolled.Class.ToString() };
+        if (enrolled.ParentImplantId is { } parent)
+            parts.Add($"parent={parent}");
+        if (enrolled.Hostname is { } hostname)
+            parts.Add($"host={hostname}");
+        return string.Join(' ', parts);
+    }
 
     public sealed record Problem(string Error);
 

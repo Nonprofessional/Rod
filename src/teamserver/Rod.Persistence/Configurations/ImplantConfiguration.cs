@@ -6,7 +6,7 @@ namespace Rod.Persistence.Configurations;
 
 /// <summary>
 /// EF Core mapping for <see cref="Implant"/> (ADR 0003). Private parameterized
-/// constructor (8 params) binds the get-only scalars; <see cref="Implant.RetiredAt"/>
+/// constructor binds the get-only scalars; <see cref="Implant.RetiredAt"/>
 /// has a private setter written via its backing field. The typed ids and the
 /// nullable parent id all map to Postgres <c>uuid</c>.
 /// </summary>
@@ -38,6 +38,12 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         // The sticky replay-nonce negotiation flag (architecture.md Sec 9);
         // false for implants that predate the arm, which never advertised it.
         builder.Property(i => i.ReplayNonces).HasColumnName("replay_nonces");
+        // The host identity reported at enroll (the device dimension of the
+        // fleet): nullable text, null for implants that predate the field.
+        builder.Property(i => i.Hostname).HasColumnName("hostname");
+        builder.Property(i => i.Os).HasColumnName("os");
+        builder.Property(i => i.Arch).HasColumnName("arch");
+        builder.Property(i => i.Username).HasColumnName("username");
         // IsRetired is a computed expression; never mapped.
 
         // Engagement scoping is structural: index the engagement column so
