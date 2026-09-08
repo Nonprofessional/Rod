@@ -194,12 +194,12 @@ public class OperationalEventLogTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static async Task<(string ImplantId, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
+    private static async Task<(string ImplantId, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
         HttpClient http, string secret, IImplantCertificateAuthority ca)
     {
         // The implant generates its own key pair and sends only the public half,
         // so the issued leaf is mTLS-capable (architecture.md Sec 9).
-        var leafKey = RSA.Create(2048);
+        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var spki = leafKey.ExportSubjectPublicKeyInfo();
 
         var response = await http.PostAsJsonAsync("/implants/enroll",
@@ -307,7 +307,7 @@ public class OperationalEventLogTests
             return env;
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();

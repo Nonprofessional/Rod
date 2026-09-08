@@ -17,10 +17,11 @@ namespace Rod.CoreState.Pki;
 /// <c>appsettings.json</c>.
 /// </para>
 /// <para>
-/// RSA is the only supported CA key type: it is what the implant leaf path speaks
-/// (<c>EnrollmentService</c> imports a DER <c>SubjectPublicKeyInfo</c> as RSA).
-/// The CA signs leaves with this key; the leaves carry the implant's own public
-/// key. ECDSA CA keys are a future concern, not a configuration toggle here.
+/// RSA is the only supported CA key type: it is the CA's signing key, held
+/// server-side and never on the wire inside a leaf. The leaves it signs carry
+/// the implant's own ECDSA public key (the algorithm-independent PKI shape --
+/// an RSA CA signing EC leaves). ECDSA CA keys are a future concern, not a
+/// configuration toggle here.
 /// </para>
 /// </remarks>
 public sealed record FileBackedCertificateAuthorityOptions(

@@ -60,7 +60,7 @@ stack.
 ```json
 {
   "stagerTokenSecret": "<the one-use secret the operator minted>",
-  "publicKey": "<base64 DER SubjectPublicKeyInfo of your RSA-2048 public key>",
+  "publicKey": "<base64 DER SubjectPublicKeyInfo of your ECDSA P-256 public key>",
   "class": "Stage2",
   "parentImplantId": null
 }
@@ -375,7 +375,7 @@ advertises keeps receiving it -- the addition is negotiated, never imposed.
 
 The smallest implant that enrolls, checks in, and executes tasking:
 
-1. **Enroll.** Generate an RSA-2048 key pair. POST the public key with the
+1. **Enroll.** Generate an ECDSA P-256 key pair. POST the public key with the
    stager token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
 2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf -- or
@@ -393,7 +393,7 @@ The smallest implant that enrolls, checks in, and executes tasking:
 In pseudocode, the whole obligation:
 
 ```
-key    = rsa_2048()
+key    = ecdsa_p256()
 enroll = post_json("https://teamserver/implants/enroll",
                    {"stagerTokenSecret": token,
                     "publicKey": b64(key.spki_der)})

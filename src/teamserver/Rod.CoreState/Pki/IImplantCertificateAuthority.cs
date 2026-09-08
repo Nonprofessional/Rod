@@ -6,9 +6,12 @@ namespace Rod.CoreState.Pki;
 /// <summary>
 /// Issues the client certificate that binds an implant to its engagement
 /// (architecture.md Sec 9 -- mTLS; an implant certificate binds
-/// <c>(implant_id, engagement_id)</c>). The default is a self-signed
-/// dev CA; production rotates to an externally provisioned engagement CA without
-/// changing this contract.
+/// <c>(implant_id, engagement_id)</c>). Implant leaves carry ECDSA P-256 keys:
+/// the implant's first-run keygen is effectively instantaneous where RSA-2048
+/// costs ~100ms on-target, and an EC leaf is the smaller certificate on the
+/// wire. The CA's own signing key is a separate concern and stays RSA. The
+/// default is a self-signed dev CA; production rotates to an externally
+/// provisioned engagement CA without changing this contract.
 /// </summary>
 public interface IImplantCertificateAuthority
 {
@@ -32,7 +35,7 @@ public interface IImplantCertificateAuthority
     /// </summary>
     Task<IssuedCertificate> IssueWithKeyAsync(
         ImplantCertificateSubject subject,
-        RSA leafPrivateKey,
+        ECDsa leafPrivateKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -47,13 +50,13 @@ public interface IImplantCertificateAuthority
     /// </summary>
     /// <remarks>
     /// <paramref name="leafPublicKey"/> carries only public parameters -- the
-    /// implementation reads its modulus/exponent and never requires, nor sees, the
-    /// private key. Both an implant enrolling over the wire and a test harness
-    /// driving enrollment through the same port end here.
+    /// implementation reads its curve and public point and never requires, nor
+    /// sees, the private key. Both an implant enrolling over the wire and a test
+    /// harness driving enrollment through the same port end here.
     /// </remarks>
     Task<IssuedCertificate> IssueWithPublicKeyAsync(
         ImplantCertificateSubject subject,
-        RSA leafPublicKey,
+        ECDsa leafPublicKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>

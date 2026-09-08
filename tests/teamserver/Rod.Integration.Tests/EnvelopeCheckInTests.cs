@@ -36,7 +36,7 @@ public class EnvelopeCheckInTests
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
 
-        // The from-scratch implant: RSA-2048 keypair, JSON enroll over plain
+        // The from-scratch implant: ECDSA P-256 keypair, JSON enroll over plain
         // HTTP, envelope check-ins over mTLS with the issued leaf. No gRPC
         // library anywhere on this path.
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
@@ -269,7 +269,7 @@ public class EnvelopeCheckInTests
             ImplantId.New(), EngagementId.New(),
             now.AddDays(-1), ImplantClass.Stage2, now.AddDays(-2));
         await implants.SaveAsync(expired);
-        using var key = RSA.Create(2048);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await ca.IssueWithKeyAsync(
             new ImplantCertificateSubject(expired.Id, expired.EngagementId), key, CancellationToken.None);
 
@@ -529,7 +529,7 @@ public class EnvelopeCheckInTests
         public static async Task<ScratchImplant> EnrollAsync(
             string enrollUrl, string beaconBaseAddress, string stagerToken)
         {
-            using var key = RSA.Create(2048);
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             using var plain = new HttpClient();
             var body = new
             {
@@ -564,7 +564,7 @@ public class EnvelopeCheckInTests
             string baseAddress,
             X509Certificate2 leaf,
             IReadOnlyList<X509Certificate2> cas,
-            RSA key,
+            ECDsa key,
             string implantId,
             string engagementId)
         {

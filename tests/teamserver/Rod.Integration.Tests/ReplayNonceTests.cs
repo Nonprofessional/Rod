@@ -173,7 +173,7 @@ public class ReplayNonceTests
             return env;
         }
 
-        public async Task<(Implant Implant, X509Certificate2 Leaf, RSA Key)> EnrollImplantAsync()
+        public async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa Key)> EnrollImplantAsync()
         {
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>();
             var implants = Host.Services.GetRequiredService<IImplantRepository>();
@@ -183,14 +183,14 @@ public class ReplayNonceTests
                 ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Stage2, now);
             await implants.SaveAsync(implant);
 
-            var key = RSA.Create(2048);
+            var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var issued = await ca.IssueWithKeyAsync(
                 new ImplantCertificateSubject(implant.Id, implant.EngagementId), key, CancellationToken.None);
             return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), key);
         }
 
         public async Task<BeaconConnection> ConnectBeaconAsync(
-            Implant implant, X509Certificate2 leaf, RSA key, bool advertiseReplayNonces)
+            Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseReplayNonces)
             => await BeaconConnection.OpenAsync(this, implant, leaf, key, advertiseReplayNonces);
 
         public async Task<(string TaskId, string Verb)> IssueTaskAsync(
@@ -256,7 +256,7 @@ public class ReplayNonceTests
         }
 
         public static async Task<BeaconConnection> OpenAsync(
-            TestEnv env, Implant implant, X509Certificate2 leaf, RSA key, bool advertiseReplayNonces)
+            TestEnv env, Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseReplayNonces)
         {
             var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>()
                 .GetCaCertificate();

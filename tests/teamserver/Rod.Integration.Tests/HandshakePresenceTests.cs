@@ -119,7 +119,7 @@ public class HandshakePresenceTests
         // path for mTLS. The connection never completes the gRPC call.
         await using var env = await TestEnv.StartAsync();
 
-        using var rogueKey = RSA.Create(2048);
+        using var rogueKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var rogue = BuildSelfSignedLeaf(rogueKey, "rogue-implant", "rogue-engagement");
 
         using var channel = env.ConnectBeacon(rogue, rogueKey);
@@ -192,7 +192,7 @@ public class HandshakePresenceTests
         await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline());
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
+    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
         IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
@@ -201,7 +201,7 @@ public class HandshakePresenceTests
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = RSA.Create(2048);
+        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await ca.IssueWithKeyAsync(
             new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
         return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
@@ -261,7 +261,7 @@ public class HandshakePresenceTests
         // the implant leaf (with its private key) and trusts the dev CA as the
         // server identity. The CA is resolved from the same teamserver the channel
         // connects to. The channel owns its handler and disposes it.
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             // Some leaves already carry their private key (e.g. a self-signed test
             // cert); others are DER-only and need the key attached for the TLS
@@ -302,14 +302,14 @@ public class HandshakePresenceTests
 
     // A self-signed leaf that does NOT chain to the dev CA, for the TLS-rejection
     // path. Mimics the implant leaf shape (conventional subject + URI SAN
-    // identity entries) but is its own issuer, so the server's
+    // identity entries, ECDSA key) but is its own issuer, so the server's
     // ClientCertificateValidation refuses it.
-    private static X509Certificate2 BuildSelfSignedLeaf(RSA key, string implantId, string engagementId)
+    private static X509Certificate2 BuildSelfSignedLeaf(ECDsa key, string implantId, string engagementId)
     {
         var notBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
         var notAfter = notBefore.AddDays(1);
         var request = new CertificateRequest(
-            "CN=rod-implant,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            "CN=rod-implant,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256);
         request.CertificateExtensions.Add(
             new X509EnhancedKeyUsageExtension(
                 new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, critical: true));

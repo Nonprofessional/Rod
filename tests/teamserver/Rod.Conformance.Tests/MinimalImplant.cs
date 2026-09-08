@@ -22,7 +22,7 @@ public sealed record ImplantDefects(
 
 /// <summary>
 /// A minimal Tier 0/Tier 1 implant written straight from the contract doc,
-/// in-process so the harness can switch defects on and off: RSA-2048 enroll,
+/// in-process so the harness can switch defects on and off: ECDSA P-256 enroll,
 /// gRPC check-in over mTLS with pinned-CA server validation, canonical
 /// tasking-signature verification, shell.exec execution, and chunked file.pull
 /// exfil. The deliberately broken candidates the acceptance criterion names
@@ -89,7 +89,7 @@ public sealed class MinimalImplant : IImplantCandidate
             return;
 
         // Tier 0, half one: generate the keypair, enroll the public half.
-        using var key = RSA.Create(2048);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var response = await _enroll.PostAsJsonAsync(target.EnrollUrl, new
         {
             stagerTokenSecret = target.StagerToken,
@@ -131,7 +131,7 @@ public sealed class MinimalImplant : IImplantCandidate
         string implantId,
         string engagementId,
         X509Certificate2 leaf,
-        RSA key,
+        ECDsa key,
         X509Certificate2[] cas,
         CancellationToken cancellationToken)
     {

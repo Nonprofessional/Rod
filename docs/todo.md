@@ -27,11 +27,3 @@ nonces regardless of transport. `mTLS` is the dedicated interactive
 listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
-
-- [ ] **Move implant keys to ECDSA P-256.** First-run RSA-2048 keygen
-      costs ~100ms on-target for no benefit over a modern curve, and RSA
-      leaves and handshakes are the largest certificates on the wire. The
-      enroll protocol already carries an algorithm-agnostic SPKI; issue
-      over the EC half.
-      _AC:_ enrollment issues over an ECDSA public key, the mTLS check-in
-      presents it, and first-run keygen is effectively instantaneous.

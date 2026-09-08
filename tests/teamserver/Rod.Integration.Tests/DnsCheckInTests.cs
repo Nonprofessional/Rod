@@ -392,7 +392,7 @@ public class DnsCheckInTests
 
         public async Task LoginAsync() => await AuthenticatedHost.LoginAsync(Http);
 
-        public async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync()
+        public async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync()
         {
             var implants = Host.Services.GetRequiredService<IImplantRepository>();
             var engagements = Host.Services.GetRequiredService<IEngagementRepository>();
@@ -402,13 +402,13 @@ public class DnsCheckInTests
                 ImplantId.New(), engagement.Id, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Stage2, DateTimeOffset.UtcNow);
             await implants.SaveAsync(implant);
 
-            var leafKey = RSA.Create(2048);
+            var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var issued = await _ca.IssueWithKeyAsync(
                 new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
             return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = _ca.GetCaCertificate();

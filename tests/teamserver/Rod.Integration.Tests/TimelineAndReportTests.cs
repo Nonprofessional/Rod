@@ -298,10 +298,10 @@ public class TimelineAndReportTests
         return (engagementId, owner, implantId);
     }
 
-    private static async Task<(string ImplantId, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
+    private static async Task<(string ImplantId, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
         HttpClient http, string secret, IImplantCertificateAuthority ca)
     {
-        var leafKey = RSA.Create(2048);
+        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var spki = leafKey.ExportSubjectPublicKeyInfo();
 
         var response = await http.PostAsJsonAsync("/implants/enroll",
@@ -486,7 +486,7 @@ public class TimelineAndReportTests
             return env;
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();

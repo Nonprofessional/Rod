@@ -495,8 +495,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   past it (`HANDSHAKE_STATUS_KILL_DATE_EXPIRED`, no session opens), and the
   implant refuses to start past it and re-checks it each beacon cycle so a
   long-running implant self-terminates the moment the date passes.
-- **Per-implant cryptographic identity.** Each implant generates its own RSA
-  keypair at first run and submits only the public half at enroll; the teamserver
+- **Per-implant cryptographic identity.** Each implant generates its own ECDSA
+  P-256 keypair at first run (effectively instantaneous, where RSA-2048 keygen
+  costs ~100ms on-target and produces the larger leaf on the wire) and submits
+  only the public half at enroll; the teamserver
   CA signs a leaf bound to (implant_id, engagement_id) over it. There is no
   shared secret anywhere, and the artifact carries no key material at all, so a
   captured payload compromises nothing. Compromise handling is the operational
@@ -757,13 +759,15 @@ fleet-wide code execution. Security is a first-class concern.
   engagement CA; it does not generate the production CA. When
   `Pki:CaCertificatePath` and `Pki:CaPrivateKeyPath` are configured,
   `FileBackedCertificateAuthority` loads the CA certificate and its RSA private
-  key (optionally passphrase-encrypted) from disk and signs implant leaves with
-  the same leaf construction the dev authority uses -- only the issuer changes.
+  key (optionally passphrase-encrypted) from disk and signs the implant's
+  ECDSA leaf with the same leaf construction the dev authority uses -- only the
+  issuer changes (an RSA CA signing EC leaves is the standard cross-algorithm
+  PKI shape; the CA's signing key and the leaf's key are independent).
   Absent the config the dev self-signed authority stays. The authority is built
   eagerly at DI registration, so a missing file, an unparseable PEM, a non-RSA
   key, or a key/cert mismatch fails the host at startup, not the first
-  enrollment; RSA is the only supported CA key type, matching the implant leaf
-  path. Rotation is operational (replace the files and restart). Rejected:
+  enrollment; RSA is the only supported CA key type, the server-held signing
+  key. Rotation is operational (replace the files and restart). Rejected:
   generating and persisting the CA from the teamserver (re-creates the dev
   posture -- key in the C2 -- at production privilege); `IOptions<T>` binding
   for the `Pki` section (diverges from the audit store, the other

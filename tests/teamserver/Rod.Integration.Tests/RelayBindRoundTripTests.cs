@@ -280,7 +280,7 @@ public class RelayBindRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, RSA LeafKey)> EnrollImplantAsync(
+    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
         IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock, ImplantClass @class)
     {
         var now = clock.GetUtcNow();
@@ -289,7 +289,7 @@ public class RelayBindRoundTripTests
             now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = RSA.Create(2048);
+        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await ca.IssueWithKeyAsync(
             new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
         return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
@@ -466,7 +466,7 @@ public class RelayBindRoundTripTests
             return env;
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();

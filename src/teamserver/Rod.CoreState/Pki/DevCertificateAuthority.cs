@@ -15,9 +15,11 @@ namespace Rod.CoreState.Pki;
 /// </summary>
 public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 {
-    // RSA key sizes; production values are an ops concern.
-    private const int CaKeySize = 2048;
-    private const int LeafKeySize = 2048;
+    // The CA root and the listener server leaf stay RSA (signing and serving
+    // keys, an ops concern); implant leaves carry the P-256 curve the implant
+    // leaf path speaks.
+    private const int RsaKeySize = 2048;
+    private static readonly ECCurve LeafCurve = ECCurve.NamedCurves.nistP256;
     private static readonly TimeSpan CaLifetime = TimeSpan.FromDays(365);
     private static readonly TimeSpan LeafLifetime = TimeSpan.FromDays(30);
 
@@ -28,7 +30,7 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 
     public DevCertificateAuthority()
     {
-        _caKey = RSA.Create(CaKeySize);
+        _caKey = RSA.Create(RsaKeySize);
         _caCertificate = BuildCaCertificate(_caKey);
     }
 
@@ -38,27 +40,27 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     {
         // The leaf key is the implant's own; it is not retained server-side after
         // the certificate is returned (the implant owns its private key).
-        using var leafKey = RSA.Create(LeafKeySize);
+        using var leafKey = ECDsa.Create(LeafCurve);
         return Task.FromResult(IssueLeaf(subject, leafKey));
     }
 
     public Task<IssuedCertificate> IssueWithKeyAsync(
         ImplantCertificateSubject subject,
-        RSA leafPrivateKey,
+        ECDsa leafPrivateKey,
         CancellationToken cancellationToken = default)
         => Task.FromResult(IssueLeaf(subject, leafPrivateKey));
 
     public Task<IssuedCertificate> IssueWithPublicKeyAsync(
         ImplantCertificateSubject subject,
-        RSA leafPublicKey,
+        ECDsa leafPublicKey,
         CancellationToken cancellationToken = default)
     {
         // Re-import only the public parameters so the signing path can never see,
         // or accidentally retain, the caller's private key. The CA key signs the
         // leaf; the leaf's public key is the implant's, bound to its engagement
-        // (architecture.md Sec 9). CertificateRequest accepts a public-only RSA.
+        // (architecture.md Sec 9). CertificateRequest accepts a public-only ECDsa.
         var publicParams = leafPublicKey.ExportParameters(includePrivateParameters: false);
-        using var publicKeyOnly = RSA.Create();
+        using var publicKeyOnly = ECDsa.Create();
         publicKeyOnly.ImportParameters(publicParams);
         return Task.FromResult(IssueLeaf(subject, publicKeyOnly));
     }
@@ -91,11 +93,11 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 
     // Builds and signs an implant leaf over the supplied key material, binding
     // (implant_id, engagement_id). The CA key signs; the leaf's public key is
-    // whatever the supplied RSA carries -- a full key pair (IssueAsync/
-    // IssueWithKeyAsync) or a public-only RSA (IssueWithPublicKeyAsync, the wire
+    // whatever the supplied ECDsa carries -- a full key pair (IssueAsync/
+    // IssueWithKeyAsync) or a public-only ECDsa (IssueWithPublicKeyAsync, the wire
     // enroll path). CertificateRequest needs only the public half to populate the
     // leaf; the private half never has to be present here.
-    private IssuedCertificate IssueLeaf(ImplantCertificateSubject subject, RSA leafKey)
+    private IssuedCertificate IssueLeaf(ImplantCertificateSubject subject, ECDsa leafKey)
     {
         var implantId = subject.ImplantId.ToString();
         var engagementId = subject.EngagementId.ToString();
@@ -107,14 +109,15 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         // ride the SAN entries below. A GUID common name is itself a toolchain
         // fingerprint, on the wire and in host forensics.
         var subjectDn = "CN=rod-implant,O=Rod,C=ZZ";
-        var request = new CertificateRequest(subjectDn, leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var request = new CertificateRequest(subjectDn, leafKey, HashAlgorithmName.SHA256);
 
-        // An implant leaf is an end-entity certificate: not a CA, may not sign others.
+        // An implant leaf is an end-entity certificate: not a CA, may not sign
+        // others. DigitalSignature alone -- keyEncipherment is the RSA
+        // key-transport bit, which no conventional EC service certificate
+        // carries.
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
         request.CertificateExtensions.Add(
-            new X509KeyUsageExtension(
-                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
-                critical: true));
+            new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
         request.CertificateExtensions.Add(
             new X509EnhancedKeyUsageExtension(
                 new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, // TLS client auth.
@@ -126,7 +129,14 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         // A random serial, the conventional shape -- not the implant id's bytes,
         // which would republish the identity in one more field.
         var serial = Guid.NewGuid().ToByteArray();
-        var leaf = request.Create(_caCertificate, notBefore, notAfter, serial);
+        // The generator overload signs cross-algorithm: the CA key here is RSA
+        // while the leaf key is ECDSA, a pair the issuerCertificate overload
+        // refuses. X.509 itself carries no such restriction -- any CA algorithm
+        // signing any leaf algorithm is the standard PKI shape.
+        var leaf = request.Create(
+            _caCertificate.SubjectName,
+            X509SignatureGenerator.CreateForRSA(_caKey, RSASignaturePadding.Pkcs1),
+            notBefore, notAfter, serial);
 
         return new IssuedCertificate(
             leaf.Export(X509ContentType.Cert),
@@ -159,7 +169,7 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     // SChannel demands before it will shake hands with us.
     private X509Certificate2 BuildServerCertificate()
     {
-        using var key = RSA.Create(LeafKeySize);
+        using var key = RSA.Create(RsaKeySize);
         var request = new CertificateRequest(
             "CN=rod-listener,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 

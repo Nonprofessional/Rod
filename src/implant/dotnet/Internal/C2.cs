@@ -89,8 +89,8 @@ internal sealed class Enrollment
     /// </summary>
     public X509Certificate2 Leaf { get; init; } = null!;
 
-    /// <summary>The leaf's private key (the implant's own RSA key).</summary>
-    public RSA PrivateKey { get; init; } = null!;
+    /// <summary>The leaf's private key (the implant's own ECDSA key).</summary>
+    public ECDsa PrivateKey { get; init; } = null!;
 
     /// <summary>
     /// The teamserver CA(s), trusted as the mTLS server identity and used to
@@ -125,7 +125,7 @@ internal static class C2
     public static async Task<Enrollment> EnrollAsync(
         string enrollUrl,
         string stagerToken,
-        RSA privateKey,
+        ECDsa privateKey,
         X509Certificate2Collection? serverCAs,
         CancellationToken cancellationToken = default)
         => await EnrollAsync(enrollUrl, stagerToken, parentImplantId: null, privateKey, serverCAs, new TransportProfile(), cancellationToken: cancellationToken);
@@ -153,7 +153,7 @@ internal static class C2
         string enrollUrl,
         string stagerToken,
         string? parentImplantId,
-        RSA privateKey,
+        ECDsa privateKey,
         X509Certificate2Collection? serverCAs,
         TransportProfile profile,
         string? implantClass = null,

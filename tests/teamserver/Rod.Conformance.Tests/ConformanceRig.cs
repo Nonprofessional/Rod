@@ -223,7 +223,7 @@ public sealed class ConformanceRig : IAsyncDisposable
             var enrolled = await UntilAsync(ObserveDeadline, async () =>
                 (await _implants.ListByEngagementAsync(engagement.EngagementId)).Count > 0);
             clauses.Add(new ConformanceClause(EnrollClause, enrolled,
-                enrolled ? "enrolled with an RSA-2048 SPKI public key via the one-use token"
+                enrolled ? "enrolled with an ECDSA P-256 SPKI public key via the one-use token"
                          : "no enrollment appeared in the engagement within the deadline"));
 
             var online = await UntilAsync(ObserveDeadline, async () =>

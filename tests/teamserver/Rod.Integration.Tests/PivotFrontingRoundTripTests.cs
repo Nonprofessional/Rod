@@ -62,7 +62,7 @@ public class PivotFrontingRoundTripTests
             ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Pivot, now, parentImplantId: parent.Id);
         await implants.SaveAsync(child);
 
-        var leafKey = RSA.Create(2048);
+        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await ca.IssueWithKeyAsync(
             new ImplantCertificateSubject(parent.Id, engagement), leafKey, CancellationToken.None);
 
@@ -466,7 +466,7 @@ public class PivotFrontingRoundTripTests
             return env;
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, RSA leafKey)
+        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
         {
             var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
             var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();

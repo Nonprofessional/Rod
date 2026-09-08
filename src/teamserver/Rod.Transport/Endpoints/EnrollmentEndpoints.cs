@@ -253,9 +253,10 @@ public static class EnrollmentEndpoints
         }
         catch (CryptographicException)
         {
-            // The supplied public key did not decode as a recognizable SPKI. Treat
-            // it as a malformed enroll: the token is intact, but the request is bad.
-            return Results.BadRequest(new Problem("Public key is not a recognizable SubjectPublicKeyInfo."));
+            // The supplied public key did not decode as a recognizable ECDSA
+            // SPKI. Treat it as a malformed enroll: the token is intact, but
+            // the request is bad.
+            return Results.BadRequest(new Problem("Public key is not a recognizable ECDSA SubjectPublicKeyInfo."));
         }
         catch (EngagementClosedException ex)
         {

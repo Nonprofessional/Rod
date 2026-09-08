@@ -30,7 +30,7 @@ public class FileBackedCertificateAuthorityTests
         var authority = new FileBackedCertificateAuthority(
             new FileBackedCertificateAuthorityOptions(certPath, keyPath, CaPrivateKeyPassphrase: null));
 
-        using var leafKey = RSA.Create(2048);
+        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await authority.IssueWithKeyAsync(
             new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), leafKey, CancellationToken.None);
         using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
@@ -56,7 +56,7 @@ public class FileBackedCertificateAuthorityTests
 
         var implantId = ImplantId.New();
         var engagementId = EngagementId.New();
-        using var leafKey = RSA.Create(2048);
+        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await authority.IssueWithKeyAsync(
             new ImplantCertificateSubject(implantId, engagementId), leafKey, CancellationToken.None);
         using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
@@ -100,16 +100,16 @@ public class FileBackedCertificateAuthorityTests
             new FileBackedCertificateAuthorityOptions(
                 WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
 
-        using var implantKey = RSA.Create(2048);
+        using var implantKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var publicKeyDer = implantKey.ExportSubjectPublicKeyInfo();
-        using var publicKeyOnly = RSA.Create();
+        using var publicKeyOnly = ECDsa.Create();
         publicKeyOnly.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
 
         var issued = await authority.IssueWithPublicKeyAsync(
             new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), publicKeyOnly, CancellationToken.None);
         using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
 
-        using var leafPublic = leaf.GetRSAPublicKey()!;
+        using var leafPublic = leaf.GetECDsaPublicKey()!;
         Assert.Equal(publicKeyDer, leafPublic.ExportSubjectPublicKeyInfo());
     }
 
@@ -125,7 +125,7 @@ public class FileBackedCertificateAuthorityTests
                 WriteEncryptedPemKey(dir, "ca.key", caKey, "secret-passphrase"),
                 "secret-passphrase"));
 
-        using var leafKey = RSA.Create(2048);
+        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var issued = await authority.IssueWithKeyAsync(
             new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), leafKey, CancellationToken.None);
         using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);

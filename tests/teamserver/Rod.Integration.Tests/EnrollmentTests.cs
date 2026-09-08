@@ -220,7 +220,7 @@ public class EnrollmentTests
             await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
 
-            using var implantKey = RSA.Create(2048);
+            using var implantKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             var publicKeyDer = implantKey.ExportSubjectPublicKeyInfo();
             var publicKeyB64 = Convert.ToBase64String(publicKeyDer);
 
@@ -239,8 +239,8 @@ public class EnrollmentTests
 
             // The leaf's public key is the implant's -- the server signed over the
             // public half the implant supplied and never saw the private key.
-            using var leafRsa = leaf.GetRSAPublicKey()!;
-            var leafPublicKey = leafRsa.ExportSubjectPublicKeyInfo();
+            using var leafEc = leaf.GetECDsaPublicKey()!;
+            var leafPublicKey = leafEc.ExportSubjectPublicKeyInfo();
             Assert.Equal(publicKeyDer, leafPublicKey);
 
             // The binding is intact regardless of which key path was taken:

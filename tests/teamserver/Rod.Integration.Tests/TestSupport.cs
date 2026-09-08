@@ -109,7 +109,7 @@ internal static class TestSupport
     // server leaf works around in Rod.CoreState.Pki, and the implant at its
     // enroll), so the pair travels through a PFX import with a persisted key
     // set there. On Linux this is the plain pairing.
-    internal static X509Certificate2 BeaconClientCertificate(X509Certificate2 leaf, RSA leafKey)
+    internal static X509Certificate2 BeaconClientCertificate(X509Certificate2 leaf, ECDsa leafKey)
     {
         if (leaf.HasPrivateKey)
             return leaf;

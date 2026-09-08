@@ -58,9 +58,11 @@ internal static class ImplantApp
         var log = config.Quiet ? TextWriter.Null : Console.Error;
 
         // The implant owns its private key; only the public half crosses enroll
-        // (architecture.md Sec 9). 2048-bit RSA matches the dev CA's leaf key size.
+        // (architecture.md Sec 9). ECDSA P-256: first-run keygen is effectively
+        // instantaneous where RSA-2048 costs ~100ms on-target, and the EC leaf
+        // is the smaller certificate on the wire.
         log.WriteLine("rod-implant: generating implant keypair");
-        using var privateKey = RSA.Create(2048);
+        using var privateKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
         var serverCAs = CACertLoader.LoadOptional(config.CACertPath);
 
@@ -155,7 +157,7 @@ internal static class ImplantApp
     private static async Task<Enrollment> EnrollWithRetryAsync(
         EgressEndpoints egress,
         Config config,
-        RSA privateKey,
+        ECDsa privateKey,
         X509Certificate2Collection? serverCAs,
         TextWriter log,
         CancellationToken cancellationToken)

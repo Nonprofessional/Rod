@@ -167,15 +167,15 @@ public sealed class EnrollmentService
     }
 
     // Decodes the implant-supplied public key (DER SubjectPublicKeyInfo) and asks the
-    // CA to sign a leaf over it. RSA is the only key type the dev CA and the current
-    // implant set speak; anything else is a malformed request, mapped to BadToken by
-    // the transport endpoint.
+    // CA to sign a leaf over it. ECDSA is the key type the leaf path speaks (the
+    // SPKI names its own curve, P-256 in the reference implant); anything else is a
+    // malformed request, mapped to a 400 by the transport endpoint.
     private Task<IssuedCertificate> IssueOverClientPublicKeyAsync(
         ImplantCertificateSubject subject,
         byte[] publicKeyDer,
         CancellationToken cancellationToken)
     {
-        using var publicKey = RSA.Create();
+        using var publicKey = ECDsa.Create();
         publicKey.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
         return _certificateAuthority.IssueWithPublicKeyAsync(subject, publicKey, cancellationToken);
     }
@@ -184,9 +184,10 @@ public sealed class EnrollmentService
 /// <summary>
 /// Request to enroll an implant. The stager token secret resolves the
 /// engagement; <see cref="Class"/> defaults to a stage-2 implant. When
-/// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo the CA
-/// signs a leaf over, so the implant keeps its private key for mTLS
-/// (architecture.md Sec 9); null leaves the CA to generate an ephemeral leaf key.
+/// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo of an
+/// ECDSA public key (P-256 in the reference implant) the CA signs a leaf over,
+/// so the implant keeps its private key for mTLS (architecture.md Sec 9); null
+/// leaves the CA to generate an ephemeral leaf key.
 ///
 /// <see cref="ParentImplantId"/> derives a child implant: when set,
 /// the service resolves and scope-checks the parent before recording the child.
