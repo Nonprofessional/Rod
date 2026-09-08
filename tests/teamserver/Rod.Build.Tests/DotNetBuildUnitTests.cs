@@ -492,6 +492,112 @@ public class DotNetBuildUnitTests
     }
 
     [DotNetFact]
+    public async Task Build_AClassExcludingKeylogging_CompilesWithoutTheKeylogHandler()
+    {
+        // The handler trim's acceptance, against the verb it names: an
+        // out-of-tree keylog handler (a stand-in that refuses to run -- the
+        // real tradecraft stays out-of-tree by the Sec 13 boundary) is gated
+        // to the stage-2 class, so a pivot build must compile with the
+        // handler's source and registration left out entirely. The staging
+        // rewrite is pinned file by file in HandlerModuleSelectionTests and
+        // the overlay's filter in ImplantExtensionOverlayTests; this leg
+        // proves the trimmed tree still publishes a real artifact. The
+        // operator's own verb (no class lists it) rides along as before.
+        var extensionDir = Path.Combine(Path.GetTempPath(), "rod-ext-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extensionDir);
+        try
+        {
+            await WriteKeylogKit(extensionDir);
+
+            var unit = new DotNetBuildUnit(extensionDir: extensionDir);
+
+            var artifact = await unit.BuildAsync(Params(ImplantClass.Pivot));
+
+            Assert.Equal(Language.DotNet, artifact.Language);
+            Assert.NotEmpty(artifact.Content);
+        }
+        finally
+        {
+            try { Directory.Delete(extensionDir, recursive: true); } catch { }
+        }
+    }
+
+    [DotNetFact]
+    public async Task Build_AFullClass_KeepsTheExtensionKeylogHandler()
+    {
+        // The trim's other half: the stage-2 class carries collect.keylog, so
+        // the same kit builds with the keylog handler compiled in and
+        // registered -- a full-class build is the unchanged shape.
+        var extensionDir = Path.Combine(Path.GetTempPath(), "rod-ext-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(extensionDir);
+        try
+        {
+            await WriteKeylogKit(extensionDir);
+
+            var unit = new DotNetBuildUnit(extensionDir: extensionDir);
+
+            var artifact = await unit.BuildAsync(Params(ImplantClass.Stage2));
+
+            Assert.Equal(Language.DotNet, artifact.Language);
+            Assert.NotEmpty(artifact.Content);
+        }
+        finally
+        {
+            try { Directory.Delete(extensionDir, recursive: true); } catch { }
+        }
+    }
+
+    [DotNetFact]
+    public async Task Build_AReducedClass_ProducesAnArtifact()
+    {
+        // The reference-side trim against the most reduced real shape: a
+        // pivot build compiles the tunnel sources alone against the
+        // generated HandlerSelection and still publishes -- the trim leaves
+        // a compilation that stands up whole.
+        var unit = new DotNetBuildUnit();
+
+        var artifact = await unit.BuildAsync(Params(ImplantClass.Pivot));
+
+        Assert.Equal(Language.DotNet, artifact.Language);
+        Assert.NotEmpty(artifact.Content);
+    }
+
+    // The keylog kit the trim acceptance builds against: a stand-in handler
+    // that refuses to run (input capture itself stays out-of-tree, Sec 13)
+    // plus the operator's own ungated verb.
+    private static async Task WriteKeylogKit(string extensionDir)
+    {
+        await File.WriteAllTextAsync(Path.Combine(extensionDir, "KeylogHandler.cs"), """
+            using Rod.Implant.Internal;
+            using Rod.V1;
+
+            namespace Kit.Collect;
+
+            internal sealed class KeylogHandler : ICapabilityHandler
+            {
+                public string Verb => "collect.keylog";
+
+                public HandlerResult Handle(string arguments)
+                    => (TaskOutcome.Failed, "keylog stand-in: no input capture in tests");
+            }
+            """);
+        await File.WriteAllTextAsync(Path.Combine(extensionDir, "DemoPingHandler.cs"), """
+            using Rod.Implant.Internal;
+            using Rod.V1;
+
+            namespace Kit.Demo;
+
+            internal sealed class DemoPingHandler : ICapabilityHandler
+            {
+                public string Verb => "demo.ping";
+
+                public HandlerResult Handle(string arguments)
+                    => (TaskOutcome.Succeeded, "pong");
+            }
+            """);
+    }
+
+    [DotNetFact]
     public async Task Build_Fingerprint_MatchesSha256OfContent()
     {
         var unit = new DotNetBuildUnit();

@@ -28,17 +28,6 @@ listener -- per-implant certificates, the persistent gRPC stream, live
 channels -- built against only when an engagement wants them. One source
 tree; the bake selects which transport modules compile in.
 
-- [ ] **Compile only the verbs the artifact carries.** Class-based verb
-      gating today is behavioral: a reduced-class build compiles the full
-      handler set and bakes a gutted verb list, so the code for
-      capabilities the artifact will never run still ships inside it --
-      surface, size, and a forensic confession in one. Extend the
-      bake-time trimming (the whole-file trim the transport selection
-      already uses) to handler modules: the build names the verbs, unused
-      handler sources stay out of the compilation, and the reduced
-      classes become genuinely reduced binaries.
-      _AC:_ a build whose verb set excludes keylogging contains no
-      keylog handler code, and a full Stage2 build is unchanged.
 - [ ] **Retire the `HttpsEnvelope` listener entry.** It exists to name an
       endpoint whose purpose is envelope-only reach; once the envelope
       cycle is the default web check-in on `http`/`https`, every web

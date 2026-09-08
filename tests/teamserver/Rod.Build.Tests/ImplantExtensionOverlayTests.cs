@@ -1,4 +1,5 @@
 using Rod.BuildPipeline.PayloadBuild;
+using Rod.CoreState.Implants;
 
 namespace Rod.Build.Tests;
 
@@ -187,5 +188,120 @@ public class ImplantExtensionOverlayTests : IDisposable
         var ex = Assert.Throws<InvalidOperationException>(
             () => ImplantExtensionOverlay.Apply(dir, staging));
         Assert.Contains("ICapabilityHandler", ex.Message);
+    }
+
+    [Fact]
+    public void Discover_ReadsTheVerbLiteral()
+    {
+        // The verb each handler serves, read from the expression-bodied Verb
+        // declaration the authoring shape documents: it is what the bake-time
+        // handler trim classifies the handler by. A shape the scan cannot
+        // read (a block-bodied property, several literals in one span) reads
+        // as null and never drops.
+        var dir = WriteExtension("verbs",
+            ("Keylog.cs", """
+                namespace Kit.Collect;
+
+                internal sealed class KeylogHandler : ICapabilityHandler
+                {
+                    public string Verb => "collect.keylog";
+                    public HandlerResult Handle(string arguments) => (TaskOutcome.Failed, "stand-in");
+                }
+                """),
+            ("BlockBodied.cs", """
+                namespace Kit.Odd;
+
+                internal sealed class BlockBodiedHandler : ICapabilityHandler
+                {
+                    public string Verb { get { return "demo.block"; } }
+                    public HandlerResult Handle(string arguments) => (TaskOutcome.Succeeded, "ack");
+                }
+                """));
+
+        var handlers = ImplantExtensionOverlay.Discover(dir);
+
+        Assert.Equal(
+            new[]
+            {
+                new ExtensionHandler(
+                    new ExtensionHandlerType("Kit.Odd", "BlockBodiedHandler"), null, "BlockBodied.cs"),
+                new ExtensionHandler(
+                    new ExtensionHandlerType("Kit.Collect", "KeylogHandler"), "collect.keylog", "Keylog.cs"),
+            },
+            handlers);
+    }
+
+    [Fact]
+    public void Apply_WithheldVerb_StaysOutOfTheStagingTree()
+    {
+        // The handler trim's extension leg, against the verb the acceptance
+        // names: keylogging is gated to the stage-2 class, so a pivot build
+        // compiles neither the keylog handler's source nor its registration,
+        // while a verb no class lists (the operator's own) and the plain
+        // helper sources ride along as before.
+        var dir = WriteExtension("trimmed",
+            ("Keylog.cs", """
+                namespace Kit.Collect;
+
+                internal sealed class KeylogHandler : ICapabilityHandler
+                {
+                    public string Verb => "collect.keylog";
+                    public HandlerResult Handle(string arguments) => (TaskOutcome.Failed, "stand-in");
+                }
+                """),
+            ("DemoPing.cs", """
+                namespace Kit.Demo;
+
+                internal sealed class DemoPingHandler : ICapabilityHandler
+                {
+                    public string Verb => "demo.ping";
+                    public HandlerResult Handle(string arguments) => (TaskOutcome.Succeeded, "pong");
+                }
+                """),
+            ("Helpers.cs", """
+                namespace Kit;
+
+                internal static class KitHelpers { }
+                """));
+        var staging = Path.Combine(_root, "staging-trim");
+        var extensions = Path.Combine(staging, "Extensions");
+        Directory.CreateDirectory(extensions);
+
+        ImplantExtensionOverlay.Apply(
+            dir, staging, verb => HandlerModuleSelection.CompilesVerb(ImplantClass.Pivot, verb));
+
+        Assert.False(File.Exists(Path.Combine(extensions, "Keylog.cs")));
+        Assert.True(File.Exists(Path.Combine(extensions, "DemoPing.cs")));
+        Assert.True(File.Exists(Path.Combine(extensions, "Helpers.cs")));
+        var registrations = File.ReadAllText(Path.Combine(extensions, ImplantExtensionOverlay.RegistrationsFileName));
+        Assert.Contains("new Kit.Demo.DemoPingHandler(),", registrations);
+        Assert.DoesNotContain("KeylogHandler", registrations);
+    }
+
+    [Fact]
+    public void Apply_AnUnreadableVerbShape_RidesEveryBuild()
+    {
+        // The conservative leg: a handler whose verb the scan cannot read
+        // compiles into every build even under a predicate that withholds
+        // everything -- the trim never silently drops what it cannot
+        // classify.
+        var dir = WriteExtension("unreadable", ("BlockBodied.cs", """
+            namespace Kit.Odd;
+
+            internal sealed class BlockBodiedHandler : ICapabilityHandler
+            {
+                public string Verb { get { return "demo.block"; } }
+                public HandlerResult Handle(string arguments) => (TaskOutcome.Succeeded, "ack");
+            }
+            """));
+        var staging = Path.Combine(_root, "staging-unreadable");
+        var extensions = Path.Combine(staging, "Extensions");
+        Directory.CreateDirectory(extensions);
+
+        ImplantExtensionOverlay.Apply(dir, staging, verbCompiles: _ => false);
+
+        Assert.True(File.Exists(Path.Combine(extensions, "BlockBodied.cs")));
+        var registrations = File.ReadAllText(Path.Combine(extensions, ImplantExtensionOverlay.RegistrationsFileName));
+        Assert.Contains("new Kit.Odd.BlockBodiedHandler(),", registrations);
     }
 }

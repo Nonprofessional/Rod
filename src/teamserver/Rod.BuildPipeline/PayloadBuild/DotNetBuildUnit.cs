@@ -145,16 +145,24 @@ public sealed class DotNetBuildUnit : IBuildUnit
                 RenderBakedSource(baked, isStager ? "Rod.Stager" : "Rod.Implant"),
                 cancellationToken);
 
-            // The extension overlay (the implant half of the tradecraft extension
-            // kit, extending/tradecraft.md): a configured directory's handler
-            // sources drop onto the staging copy and the generated registrations
-            // replace the checked-in empty ExtensionRegistrations stub, so every
-            // implant-class build carries the out-of-tree handlers without a fork
-            // of the implant tree. Implant builds only -- the stager is a minimal
-            // loader that carries no tradecraft handlers. A missing directory or
-            // one with no handler fails the build loudly here.
+            // The extension overlay (the implant half of the tradecraft
+            // extension kit, extending/tradecraft.md): a configured directory's
+            // handler sources drop onto the staging copy and the generated
+            // registrations replace the checked-in empty ExtensionRegistrations
+            // stub, so every implant-class build carries the out-of-tree
+            // handlers without a fork of the implant tree. Implant builds
+            // only -- the stager is a minimal loader that carries no
+            // tradecraft handlers. A missing directory or one with no handler
+            // fails the build loudly here. The verb decision rides along: a
+            // handler whose verb the build class withholds stays out of the
+            // compilation whole (the handler trim's rule), while the ungated
+            // contract verbs and any verb the class table does not know ride
+            // every build.
             if (!isStager && _extensionDir is not null)
-                ImplantExtensionOverlay.Apply(_extensionDir, stagingDir);
+                ImplantExtensionOverlay.Apply(
+                    _extensionDir,
+                    stagingDir,
+                    verb => HandlerModuleSelection.CompilesVerb(@params.Class, verb));
 
             // The bake-time transport trim (architecture.md Sec 8): the baked
             // egress walk's URL shapes decide which check-in modules compile,
@@ -167,6 +175,14 @@ public sealed class DotNetBuildUnit : IBuildUnit
                 modules = TransportModuleSelection.Select(@params.Transport);
                 TransportModuleSelection.Apply(stagingDir, modules);
             }
+
+            // The bake-time handler trim (architecture.md Sec 5.2/5.3): the
+            // class's verb set decides which handler sources compile, so a
+            // reduced class is a genuinely reduced binary -- the code for
+            // capabilities the artifact will never run neither links nor
+            // ships. The stager is never trimmed: it carries no handlers.
+            if (!isStager)
+                HandlerModuleSelection.Apply(stagingDir, HandlerModuleSelection.Select(@params.Class));
 
             // dotnet publish compiles the component into a self-contained
             // single-file executable for the requested runtime identifier: one

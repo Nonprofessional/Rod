@@ -20,6 +20,17 @@ public sealed record ExtensionHandlerType(string Namespace, string Name)
 }
 
 /// <summary>
+/// One discovered handler with its verb and source: the verb read from the
+/// class's expression-bodied <c>Verb => "..."</c> declaration when the scan
+/// can attribute exactly one, else null. The verb drives the bake-time
+/// handler trim -- a handler whose verb the build class withholds stays out
+/// of the compilation -- while a null verb (a shape the scan cannot read)
+/// keeps the handler in every build: the trim never silently drops what it
+/// cannot classify.
+/// </summary>
+public sealed record ExtensionHandler(ExtensionHandlerType Type, string? Verb, string SourceFile);
+
+/// <summary>
 /// The implant half of the tradecraft extension kit: overlays a configured
 /// out-of-tree extension directory onto the per-build staging tree
 /// (architecture.md Sec 5.3, Sec 6; extending/tradecraft.md). The directory's
@@ -79,14 +90,34 @@ public static class ImplantExtensionOverlay
         @"(?:class|record|struct)\s+([A-Za-z_][A-Za-z0-9_]*)[^{;]*:\s*[^{;]*\bICapabilityHandler\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    // A handler's verb declaration: the expression-bodied property the
+    // authoring shape documents. The literal is the verb the bake-time
+    // handler trim classifies the handler by.
+    private static readonly Regex VerbPattern = new(
+        @"string\s+Verb\s*=>\s*""([^""]*)""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     /// <summary>
     /// Applies the extension directory onto a staged implant tree: copies the
-    /// .cs sources into <c>&lt;stagingDir&gt;/Extensions</c>, discovers the handler
-    /// classes, and writes the generated registrations over the stub. Throws
-    /// <see cref="InvalidOperationException"/> when the directory is missing or
-    /// yields no handler -- both loudly, before any compile starts.
+    /// `.cs` sources into <c>&lt;stagingDir&gt;/Extensions</c>, discovers the
+    /// handler classes, and writes the generated registrations over the stub.
+    /// Throws <see cref="InvalidOperationException"/> when the directory is
+    /// missing or yields no handler -- both loudly, before any compile
+    /// starts.
     /// </summary>
-    public static void Apply(string extensionDir, string stagingDir)
+    /// <remarks>
+    /// <paramref name="verbCompiles"/> carries the build's verb decision (the
+    /// handler trim's rule, <see cref="HandlerModuleSelection"/>): a handler
+    /// whose verb it withholds leaves the compilation whole -- its source
+    /// stays behind and its registration is not written -- while a handler
+    /// whose verb the scan cannot read (null) and every helper source ride
+    /// along as before. A null predicate keeps everything, the pre-trim
+    /// behavior.
+    /// </remarks>
+    public static void Apply(
+        string extensionDir,
+        string stagingDir,
+        Func<string?, bool>? verbCompiles = null)
     {
         ArgumentNullException.ThrowIfNull(extensionDir);
         ArgumentNullException.ThrowIfNull(stagingDir);
@@ -95,18 +126,81 @@ public static class ImplantExtensionOverlay
                 $"The configured implant extension directory '{extensionDir}' does not exist.");
 
         var extensionsDir = Path.Combine(stagingDir, "Extensions");
-        CopySources(extensionDir, extensionsDir);
-
-        var handlers = DiscoverHandlers(extensionDir);
+        var handlers = Discover(extensionDir);
         if (handlers.Count == 0)
             throw new InvalidOperationException(
                 $"The configured implant extension directory '{extensionDir}' contains no handler: " +
                 "each handler is a top-level class whose base list names ICapabilityHandler " +
                 "(a concrete class with a parameterless constructor; see extending/tradecraft.md).");
 
+        // The verb trim: a withheld verb drops the handler's registration,
+        // and a source file whose handlers all drop stays behind entirely --
+        // the code for a capability the artifact will never run neither
+        // links nor ships.
+        var kept = handlers
+            .Where(h => h.Verb is null || (verbCompiles?.Invoke(h.Verb) ?? true))
+            .ToList();
+        var handlerFiles = handlers.Select(h => h.SourceFile).ToHashSet(StringComparer.Ordinal);
+        var keptFiles = kept.Select(h => h.SourceFile).ToHashSet(StringComparer.Ordinal);
+        CopySources(
+            extensionDir,
+            extensionsDir,
+            relative => !handlerFiles.Contains(relative) || keptFiles.Contains(relative));
+
         File.WriteAllText(
             Path.Combine(extensionsDir, RegistrationsFileName),
-            RenderRegistrations(handlers));
+            RenderRegistrations(kept.Select(h => h.Type).ToList()));
+    }
+
+    /// <summary>
+    /// Discovers every handler class in the extension directory with its
+    /// verb, in a stable order: files sorted by path (ordinal), declarations
+    /// in file order. A handler's verb is the single expression-bodied
+    /// <c>Verb</c> literal between its declaration and the next handler
+    /// declaration; anything else (no literal, or several the scan cannot
+    /// tell apart) reads as null -- a handler the trim conservatively keeps.
+    /// </summary>
+    public static IReadOnlyList<ExtensionHandler> Discover(string extensionDir)
+    {
+        ArgumentNullException.ThrowIfNull(extensionDir);
+        var root = Path.GetFullPath(extensionDir);
+        var handlers = new List<ExtensionHandler>();
+        foreach (var file in EnumerateSourceFiles(root))
+        {
+            var relative = Path.GetRelativePath(root, file);
+            var text = File.ReadAllText(file);
+            var namespaceMatches = NamespacePattern.Matches(text);
+            var classMatches = HandlerClassPattern.Matches(text);
+            var verbMatches = VerbPattern.Matches(text);
+            for (var i = 0; i < classMatches.Count; i++)
+            {
+                var match = classMatches[i];
+                var ns = "";
+                for (var n = 0; n < namespaceMatches.Count; n++)
+                {
+                    if (namespaceMatches[n].Index < match.Index)
+                        ns = namespaceMatches[n].Groups[1].Value;
+                }
+                var end = i + 1 < classMatches.Count ? classMatches[i + 1].Index : text.Length;
+                string? verb = null;
+                for (var v = 0; v < verbMatches.Count; v++)
+                {
+                    if (verbMatches[v].Index > match.Index && verbMatches[v].Index < end)
+                    {
+                        if (verb is not null)
+                        {
+                            // More than one literal in one handler's span:
+                            // the scan cannot tell them apart.
+                            verb = null;
+                            break;
+                        }
+                        verb = verbMatches[v].Groups[1].Value;
+                    }
+                }
+                handlers.Add(new ExtensionHandler(new ExtensionHandlerType(ns, match.Groups[1].Value), verb, relative));
+            }
+        }
+        return handlers;
     }
 
     /// <summary>
@@ -117,26 +211,7 @@ public static class ImplantExtensionOverlay
     /// dependent.
     /// </summary>
     public static IReadOnlyList<ExtensionHandlerType> DiscoverHandlers(string extensionDir)
-    {
-        var root = Path.GetFullPath(extensionDir);
-        var handlers = new List<ExtensionHandlerType>();
-        foreach (var file in EnumerateSourceFiles(root))
-        {
-            var text = File.ReadAllText(file);
-            var namespaceMatches = NamespacePattern.Matches(text);
-            foreach (Match match in HandlerClassPattern.Matches(text))
-            {
-                var ns = "";
-                for (var i = 0; i < namespaceMatches.Count; i++)
-                {
-                    if (namespaceMatches[i].Index < match.Index)
-                        ns = namespaceMatches[i].Groups[1].Value;
-                }
-                handlers.Add(new ExtensionHandlerType(ns, match.Groups[1].Value));
-            }
-        }
-        return handlers;
-    }
+        => Discover(extensionDir).Select(h => h.Type).ToList();
 
     /// <summary>
     /// Copies the extension directory's .cs sources into the staging tree's
@@ -144,13 +219,20 @@ public static class ImplantExtensionOverlay
     /// the extension compiles into the implant project (an SDK-style project
     /// globs every .cs under it), so binaries, docs, and build output stay
     /// behind and bin/obj are skipped like the implant tree copy does.
+    /// <paramref name="copyFile"/> receives each file's path relative to the
+    /// extension root and decides whether it copies; null copies everything.
     /// </summary>
-    public static void CopySources(string extensionDir, string destinationDir)
+    public static void CopySources(
+        string extensionDir,
+        string destinationDir,
+        Func<string, bool>? copyFile = null)
     {
         var root = Path.GetFullPath(extensionDir);
         foreach (var file in EnumerateSourceFiles(root))
         {
             var relative = Path.GetRelativePath(root, file);
+            if (copyFile is not null && !copyFile(relative))
+                continue;
             var target = Path.Combine(destinationDir, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: true);

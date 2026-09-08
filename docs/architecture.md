@@ -365,6 +365,25 @@ contract: the advertised set is the baked-verbs/handlers intersection for
 every class, an added registration widens it, and the reference registry
 contains no Sec 13 boundary verb.
 
+The class verb set is also a compile-time boundary, not only an
+advertise-time one: the bake trims each implant-class build to the verbs its
+class runs. The reference registrations sit behind a selection seam
+(`HandlerSelection`) the build unit rewrites per bake -- a reduced-class
+build generates the registrations naming only the class's verbs and deletes
+the unused handler sources from the compilation whole, the same whole-file
+trim the transport selection applies -- so a reduced class is a genuinely
+reduced binary: the code for capabilities the artifact will never run
+neither links nor ships. The trim is per source file (a file keeping one
+verb keeps all its handlers, and its support files with it; the handlers
+themselves register only for the class's own verbs), and the shared dispatch
+infrastructure -- the registry machinery, the channel contract, the enroll
+bundle, the chunker -- is always compiled. Out-of-tree handlers follow their
+verb through the extension overlay: a verb the class table gates compiles
+only into builds whose class carries it, while the ungated contract verbs
+and any verb the class table does not know ride every build, keeping the
+kit's drop-in promise; a handler whose verb the source scan cannot read is
+conservatively kept.
+
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 
 The flow: **operator build request -> teamserver emits build params -> the
@@ -392,7 +411,7 @@ recorded.**
   unit copies its `.cs` files onto the per-build staging tree and generates the
   registrations that feed the implant registry's `additional` seam (Sec 5.3),
   so an operator drops a handler in as a source file and every implant-class
-  build carries it -- no fork of the implant tree
+  build whose class permits the verb carries it -- no fork of the implant tree
   ([extending/tradecraft.md](extending/tradecraft.md)). A configured directory
   that is missing or yields no handler fails loudly, the same rule the
   server-side module loader applies; the stager tree is never overlaid.
@@ -409,6 +428,18 @@ recorded.**
   fallbacks) keeps both clients so no bake strands the artifact on a front
   it cannot dial. The stager tree is never trimmed: it fetches over plain
   HTTP and carries no check-in clients.
+- **The bake trims each build to the verbs it runs.** The class's verb set
+  (Sec 5.2) is the server's authority for what an artifact may run, and the
+  unit compiles exactly that set's handlers: the reference registrations sit
+  behind a selection seam the bake rewrites to name only the class's verbs
+  (Sec 5.3), and the unused handler sources leave the staging copy whole --
+  the same whole-file trim the transport selection applies. A reduced class
+  is therefore a genuinely reduced binary -- less surface, less size, one
+  less forensic confession -- while a class carrying every verb (stage-2)
+  builds exactly as before. Out-of-tree handlers follow their verb through
+  the overlay: a gated verb the class withholds stays out with its source,
+  and the ungated or unknown verbs ride every build. The stager tree is
+  never trimmed: a stage-1 loader carries no handlers.
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
