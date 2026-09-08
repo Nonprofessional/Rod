@@ -620,6 +620,36 @@ th {
 
 /* --- Table toolbar / sorting / paging ---------------------------------------- */
 
+/* The task log's disclosure chevron: the row's click-to-expand stays, but
+   the affordance must be visible -- a quiet icon button, not a hidden
+   gesture. */
+button.row-expand {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+
+button.row-expand:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+/* The one-line answer preview under a collapsed task-log row: the log shows
+   that data came back without demanding a click per row. */
+.output-preview {
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  opacity: 0.8;
+}
+
 /* The fleet toolbar: search takes the slack, the two filters size to their
    options; wraps on narrow panes instead of overflowing. */
 .table-toolbar {

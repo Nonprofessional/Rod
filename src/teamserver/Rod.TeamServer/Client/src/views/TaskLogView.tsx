@@ -215,6 +215,7 @@ export function TaskLogView({
           <table>
             <thead>
               <tr>
+                <th></th>
                 <th>Verb</th>
                 <th>Implant</th>
                 <th>Status</th>
@@ -270,12 +271,29 @@ function LogRow({
 }) {
   return (
     <>
-      <tr className="console-row" onClick={onToggle} title="Click to toggle output">
+      <tr className="console-row" onClick={onToggle}>
+        <td onClick={(e) => e.stopPropagation()}>
+          <button
+            className={`ghost sm row-expand${expanded ? ' open' : ''}`}
+            onClick={onToggle}
+            title={expanded ? 'Collapse the output' : 'Expand the full output'}
+          >
+            <Icon name={expanded ? 'chevronDown' : 'chevronRight'} />
+          </button>
+        </td>
         <td>
-          <code>{task.verb}</code>{' '}
-          <span className="muted console-args">
-            {task.arguments.length > 0 ? ellipsize(task.arguments) : ''}
-          </span>
+          <div>
+            <code>{task.verb}</code>{' '}
+            <span className="muted console-args">
+              {task.arguments.length > 0 ? ellipsize(task.arguments) : ''}
+            </span>
+          </div>
+          {/* A one-line preview of the answer under the command: the log's
+              rows stay scannable while still showing that data came back --
+              the chevron unfolds the whole thing. */}
+          {!expanded && task.output && (
+            <div className="muted console-args output-preview">{ellipsize(task.output, 96)}</div>
+          )}
         </td>
         <td>
           <a
@@ -311,7 +329,7 @@ function LogRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={6}>
+          <td colSpan={7}>
             <pre className="output long">{task.output ?? '—'}</pre>
           </td>
         </tr>

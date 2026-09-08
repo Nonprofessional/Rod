@@ -5,14 +5,24 @@ import {
   issueTask,
   listArtifacts,
 } from '../api'
+import { browseInFlight, ensureBrowse, lastBrowsedPath, rememberBrowsedPath, useBrowseEntry } from '../browserCache'
 import { Icon } from './Icons'
 import { StatusBadge } from './StatusBadge'
 import { readSelectedFile, VERB_FORMS, type SelectedFile } from '../verbForms'
 
 // The file browser: fs.list walks the target's tree, file.push uploads into
-// the listed directory, file.pull downloads the picked file. The same
-// snapshot discipline as the process browser -- refresh is the operator's,
-// and the pane never pretends the tree is live.
+// the listed directory, file.pull downloads the picked file. The snapshot
+// discipline is the process browser's: refresh is the operator's, and the
+// tree never pretends to be live.
+//
+// Directory listings ride the browse-result cache, one entry per (implant,
+// path): reopening lands on the last visited directory with its cached
+// listing, walking back up is instant, a listing in flight when the pane
+// closed is attached to instead of re-issued, and completions land in the
+// cache whether or not the pane is open. Refresh forces a fresh listing of
+// the current directory (cancelling the queued one it replaces). Uploads
+// and downloads are actions, not browses -- they issue directly and poll
+// their own task while the pane is open.
 //
 // Downloads ride the implant's own arms: a pull that fits the inline ceiling
 // comes back in the task output and saves from memory; a larger one streams
@@ -57,13 +67,11 @@ export function FileBrowser({
   osHint: string | null
   onClose: () => void
 }) {
-  const [path, setPath] = useState(() =>
-    osHint && /windows/i.test(osHint) ? 'C:\\' : '/',
+  const [path, setPath] = useState(
+    lastBrowsedPath(engagementId, implantId) ??
+      (osHint && /windows/i.test(osHint) ? 'C:\\' : '/'),
   )
   const [pathDraft, setPathDraft] = useState(path)
-  const [entries, setEntries] = useState<Entry[] | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const closedRef = useRef(false)
@@ -75,60 +83,33 @@ export function FileBrowser({
     }
   }, [])
 
-  // Issues a verb and polls its task to a terminal state; the shared loop of
-  // both browsers (files and processes). Returns the final task detail, or
-  // null when the pane closed mid-wait.
-  const runTask = useCallback(
-    async (verb: string, args: string, content?: string) => {
-      const task = await issueTask(engagementId, {
-        implantId,
-        verb,
-        arguments: args,
-        content,
-      })
-      for (;;) {
-        if (closedRef.current) return null
-        const detail = await getTask(engagementId, task.taskId)
-        setStatus(detail.status)
-        if (detail.status !== 'Queued' && detail.status !== 'Dispatched') {
-          return { id: task.taskId, detail }
-        }
-        await wait(700)
-      }
-    },
-    [engagementId, implantId],
-  )
-
-  const list = useCallback(
-    async (target: string) => {
-      if (busy) return
-      setBusy(true)
-      setError(null)
-      setEntries(null)
-      setStatus('Queued')
-      try {
-        const done = await runTask('fs.list', target)
-        if (!done) return
-        if (done.detail.outcome === 'Succeeded' && done.detail.output) {
-          setEntries(parseListing(done.detail.output))
-          setPath(target)
-          setPathDraft(target)
-        } else {
-          setError(done.detail.output ?? `fs.list ${done.detail.outcome ?? done.detail.status}`)
-        }
-      } catch (e) {
-        setError(String(e))
-      } finally {
-        setBusy(false)
-      }
-    },
-    [busy, runTask],
-  )
-
+  // The current directory's listing, from the cache. Cached directories
+  // render instantly; a cold one issues and the shared poller owns the wait.
   useEffect(() => {
-    void list(path)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    void ensureBrowse(engagementId, implantId, 'fs.list', path).catch((e) => setError(String(e)))
+  }, [engagementId, implantId, path])
+
+  const entry = useBrowseEntry(engagementId, implantId, 'fs.list', path)
+  const listing = browseInFlight(entry)
+
+  const entries = useMemo(() => {
+    if (!entry || entry.outcome !== 'Succeeded' || !entry.output) return null
+    return parseListing(entry.output)
+  }, [entry])
+
+  const listError =
+    entry && !listing && entry.outcome && entry.outcome !== 'Succeeded'
+      ? (entry.output ?? `fs.list ${entry.outcome}`)
+      : null
+
+  // A successful listing of a new directory becomes the remembered landing
+  // spot, so the next open resumes the walk where it left off.
+  useEffect(() => {
+    if (entry?.outcome === 'Succeeded' && !browseInFlight(entry)) {
+      rememberBrowsedPath(engagementId, implantId, path)
+      setPathDraft(path)
+    }
+  }, [engagementId, implantId, path, entry])
 
   const parent = useMemo(() => {
     const trimmed = path.replace(/[\\/]+$/, '')
@@ -141,11 +122,33 @@ export function FileBrowser({
   const joinPath = (name: string) =>
     path.endsWith('/') || path.endsWith('\\') ? `${path}${name}` : `${path}/${name}`
 
-  const onDownload = async (entry: Entry) => {
-    if (busy) return
-    const remote = joinPath(entry.name)
-    setPending(`downloading ${entry.name}…`)
-    setStatus('Queued')
+  // Actions (upload/download) issue directly and poll their own task while
+  // the pane is open; returns the final detail, or null when the pane closed
+  // mid-wait.
+  const runTask = useCallback(
+    async (verb: string, args: string, content?: string) => {
+      const task = await issueTask(engagementId, {
+        implantId,
+        verb,
+        arguments: args,
+        content,
+      })
+      for (;;) {
+        if (closedRef.current) return null
+        const detail = await getTask(engagementId, task.taskId)
+        if (detail.status !== 'Queued' && detail.status !== 'Dispatched') {
+          return { id: task.taskId, detail }
+        }
+        await wait(700)
+      }
+    },
+    [engagementId, implantId],
+  )
+
+  const onDownload = async (target: Entry) => {
+    if (pending) return
+    const remote = joinPath(target.name)
+    setPending(`downloading ${target.name}…`)
     try {
       const done = await runTask('file.pull', remote)
       if (!done) return
@@ -158,9 +161,9 @@ export function FileBrowser({
       const artifacts = await listArtifacts(engagementId, done.id)
       if (artifacts.items.length > 0) {
         const blob = await fetchArtifactBlob(engagementId, artifacts.items[0].artifactId)
-        saveBlob(blob, entry.name)
+        saveBlob(blob, target.name)
       } else if (done.detail.output !== null) {
-        saveBlob(new Blob([done.detail.output], { type: 'text/plain' }), entry.name)
+        saveBlob(new Blob([done.detail.output], { type: 'text/plain' }), target.name)
       } else {
         setError('file.pull returned no output and no artifact.')
       }
@@ -172,7 +175,7 @@ export function FileBrowser({
   }
 
   const onUploadPicked = async (file: globalThis.File | undefined) => {
-    if (!file || busy) return
+    if (!file || pending) return
     let selected: SelectedFile
     try {
       selected = await readSelectedFile(file)
@@ -181,7 +184,6 @@ export function FileBrowser({
       return
     }
     setPending(`uploading ${file.name}…`)
-    setStatus('Queued')
     try {
       // The shared file.push grammar: inline under the ceiling, staged above.
       const built = await VERB_FORMS['file.push'].build(
@@ -194,7 +196,9 @@ export function FileBrowser({
         setError(done.detail.output ?? `file.push ${done.detail.outcome}`)
         return
       }
-      await list(path)
+      // The directory just changed: refresh it (forcing past the cached
+      // listing of the old contents).
+      await ensureBrowse(engagementId, implantId, 'fs.list', path, { force: true })
     } catch (e) {
       setError(String(e))
     } finally {
@@ -203,12 +207,19 @@ export function FileBrowser({
     }
   }
 
+  const busy = listing || !!pending
+
   return (
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="card modal wide">
         <div className="inline-form">
           <h3 style={{ marginRight: 'auto' }}>Files</h3>
-          <button className="ghost" onClick={() => parent && void list(parent)} disabled={!parent || busy}>
+          <button
+            className="ghost"
+            onClick={() => parent && setPath(parent)}
+            disabled={!parent || busy}
+            title={parent ? `List ${parent}` : 'Already at the root'}
+          >
             Up
           </button>
           <input
@@ -217,18 +228,28 @@ export function FileBrowser({
             placeholder={path}
             onChange={(e) => setPathDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void list(pathDraft.trim() || path)
+              if (e.key === 'Enter') setPath(pathDraft.trim() || path)
             }}
             title="The directory to list; Enter applies."
           />
-          <button className="ghost" onClick={() => void list(pathDraft.trim() || path)} disabled={busy}>
+          <button
+            className="ghost"
+            onClick={() => setPath(pathDraft.trim() || path)}
+            disabled={busy}
+            title="List the typed path"
+          >
             Go
           </button>
-          <button className="ghost" onClick={() => void list(path)} disabled={busy}>
+          <button
+            className="ghost"
+            onClick={() => void ensureBrowse(engagementId, implantId, 'fs.list', path, { force: true }).catch((e) => setError(String(e)))}
+            disabled={busy}
+            title="Cancel the queued listing (if any) and issue a fresh fs.list of this directory"
+          >
             Refresh
           </button>
           <button className="ghost" onClick={() => fileInput.current?.click()} disabled={busy}>
-            Upload here…
+            Upload here
           </button>
           <input
             ref={fileInput}
@@ -242,17 +263,17 @@ export function FileBrowser({
         </div>
         <p className="muted">
           <code>{path}</code>{' '}
-          {status && (
+          {entry && (
             <>
-              · <StatusBadge status={status} />
+              · <StatusBadge status={entry.status} />
             </>
           )}
           {pending && <> · {pending}</>}
         </p>
-        {entries === null && !error && (
+        {entries === null && !listError && !error && (
           <div className="empty">
             <span className="spinner" />
-            {busy ? 'Listing…' : 'Waiting for the implant to answer…'}
+            {listing ? 'Listing…' : 'Waiting for the implant to answer…'}
           </div>
         )}
         {entries !== null && (
@@ -274,27 +295,27 @@ export function FileBrowser({
                     </td>
                   </tr>
                 )}
-                {entries.map((entry) => (
-                  <tr key={entry.name}>
+                {entries.map((fileEntry) => (
+                  <tr key={fileEntry.name}>
                     <td>
                       <button
                         className="link file-entry"
-                        onClick={() => entry.dir && void list(joinPath(entry.name))}
-                        disabled={!entry.dir || busy}
-                        title={entry.dir ? 'Open directory' : undefined}
+                        onClick={() => fileEntry.dir && setPath(joinPath(fileEntry.name))}
+                        disabled={!fileEntry.dir || busy}
+                        title={fileEntry.dir ? 'Open directory' : undefined}
                       >
-                        <Icon name={entry.dir ? 'folder' : 'file'} className="wire-icon" />
-                        <code>{entry.name}</code>
+                        <Icon name={fileEntry.dir ? 'folder' : 'file'} className="wire-icon" />
+                        <code>{fileEntry.name}</code>
                       </button>
                     </td>
-                    <td>{entry.dir ? '—' : `${entry.size} B`}</td>
-                    <td>{new Date(entry.mtime).toLocaleString()}</td>
+                    <td>{fileEntry.dir ? '—' : `${fileEntry.size} B`}</td>
+                    <td>{new Date(fileEntry.mtime).toLocaleString()}</td>
                     <td>
-                      {!entry.dir && (
+                      {!fileEntry.dir && (
                         <button
                           className="sm"
-                          onClick={() => void onDownload(entry)}
-                          disabled={busy || !!pending}
+                          onClick={() => void onDownload(fileEntry)}
+                          disabled={busy}
                           title="Small files come back inline as text; larger ones stream to the artifact store byte-exact."
                         >
                           Download
@@ -307,7 +328,7 @@ export function FileBrowser({
             </table>
           </div>
         )}
-        {error && <p className="error">{error}</p>}
+        {(listError || error) && <p className="error">{listError ?? error}</p>}
       </div>
     </div>
   )

@@ -477,6 +477,17 @@ public class ListenerRuntimeTests
         var frontListener = await fronted.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
         Assert.Equal($"https://front.internal:{mtlsPort}", frontListener!.PublicEndpoint);
 
+        // A host:port pair is completed with the transport's scheme too: the
+        // stored form is always a full URL, never a scheme-less authority,
+        // so the roster and every build read one uniform shape.
+        var paired = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "redirector", Transport: "http",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", PublicEndpoint: "203.0.113.10:443"));
+        paired.EnsureSuccessStatusCode();
+        var pairListener = await paired.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal("http://203.0.113.10:443", pairListener!.PublicEndpoint);
+
         // The stream transports cannot derive: a DNS listener requires its
         // zone spelled out.
         var zoneless = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
@@ -493,6 +504,15 @@ public class ListenerRuntimeTests
         repointed.EnsureSuccessStatusCode();
         var repointBody = await repointed.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
         Assert.Equal($"http://newfront:{directPort}", repointBody!.PublicEndpoint);
+
+        // And a host:port repoint completes the same way -- the roster stays
+        // uniform across creates and repoints.
+        var repointedPair = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners/{directListener.Id}:repoint",
+            new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "203.0.113.11:8443"));
+        repointedPair.EnsureSuccessStatusCode();
+        var repointPairBody = await repointedPair.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.Equal("http://203.0.113.11:8443", repointPairBody!.PublicEndpoint);
     }
 
     [Fact]

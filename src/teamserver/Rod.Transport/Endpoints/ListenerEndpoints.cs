@@ -62,10 +62,12 @@ public static class ListenerEndpoints
         // here. On the HTTP-shaped transports a blank endpoint means "implants
         // dial this bind itself" (the no-redirector shape) and derives from
         // the bind; a bare hostname takes the transport's scheme and the
-        // listener's own bind port. Complete input (an absolute URL or a
-        // host:port pair) is stored verbatim. The stream transports cannot
-        // derive -- a DNS zone or pipe path is not a function of the bind --
-        // so they require it spelled out.
+        // listener's own bind port; a host:port pair is completed with the
+        // transport's scheme; an absolute URL passes through verbatim. The
+        // stored form is always complete, so the roster and every build read
+        // one uniform shape. The stream transports cannot derive -- a DNS
+        // zone or pipe path is not a function of the bind -- so they require
+        // it spelled out.
         string publicEndpoint;
         if (transport is ListenerTransport.Http or ListenerTransport.Https
             or ListenerTransport.Mtls)
@@ -91,12 +93,19 @@ public static class ListenerEndpoints
                 }
                 publicEndpoint = "";
             }
-            else if (IsPublicEndpoint(body.PublicEndpoint.Trim()))
+            else if (IsAbsoluteHttpUrl(body.PublicEndpoint.Trim()))
             {
                 // A complete endpoint with an underivable bind: the manager's
                 // bind validation names the real problem (a 400 with its
                 // message), so fall through instead of blaming the endpoint.
                 publicEndpoint = body.PublicEndpoint.Trim();
+            }
+            else if (IsHostPort(body.PublicEndpoint.Trim()))
+            {
+                // The same completion the derivation applies, kept for the
+                // underivable-bind fall-through so a host:port never rides
+                // into builds scheme-less.
+                publicEndpoint = $"{SchemeOf(transport)}://{body.PublicEndpoint.Trim()}";
             }
             else
             {
@@ -205,18 +214,22 @@ public static class ListenerEndpoints
         if (string.IsNullOrWhiteSpace(body.PublicEndpoint))
             return Results.BadRequest(new Problem("Public endpoint is required."));
 
-        // A complete value is an absolute http(s) URL or a host:port pair. A
-        // bare hostname is accepted and completed with the transport's scheme
-        // and the listener's own bind port -- the same completion a create
-        // applies -- so a repoint never demands more typing than a create.
+        // A stored endpoint is always complete: an absolute http(s) URL
+        // passes through, a bare hostname takes the transport's scheme and
+        // the listener's own bind port, and a host:port pair takes the
+        // transport's scheme -- the same completion a create applies, so a
+        // repoint never demands more typing than a create and the roster
+        // keeps one uniform shape.
         var endpoint = body.PublicEndpoint.Trim();
-        if (!IsPublicEndpoint(endpoint))
+        if (!IsAbsoluteHttpUrl(endpoint))
         {
-            var completed = CompleteBareHost(existing, endpoint);
+            var completed = IsHostPort(endpoint)
+                ? $"{SchemeOf(existing.Transport)}://{endpoint}"
+                : CompleteBareHost(existing, endpoint);
             if (completed is null)
                 return Results.BadRequest(new Problem(
                     "Public endpoint must be an absolute http(s) URL, a host:port pair, or a bare "
-                    + $"hostname (completed with the listener's scheme and port), got '{body.PublicEndpoint}'."));
+                    + $"hostname -- each completed with the listener's scheme and port -- got '{body.PublicEndpoint}'."));
             endpoint = completed;
         }
 
@@ -278,20 +291,21 @@ public static class ListenerEndpoints
     private static bool Owns(Listener? listener, Guid engagementId)
         => listener?.EngagementId == new EngagementId(engagementId);
 
-    // A public endpoint is either an absolute http(s) URL or a bare
-    // host:port -- both shapes are documented deployments (the URL is what a
-    // payload build bakes, host:port is the redirector front). A DNS name or
-    // literal IP with a port is enough; no scheme-less bare host, because
-    // nothing downstream can guess a port.
+    // A public endpoint's two complete-ish shapes: an absolute http(s) URL is
+    // already what a payload build bakes; a bare host:port is the redirector
+    // front, completed with the transport's scheme before it is stored. A
+    // DNS name or literal IP with a port is enough; no scheme-less bare host,
+    // because nothing downstream can guess a port.
     private static bool IsPublicEndpoint(string text)
+        => IsAbsoluteHttpUrl(text) || IsHostPort(text);
+
+    private static bool IsAbsoluteHttpUrl(string text)
+        => Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static bool IsHostPort(string text)
     {
         var value = text.Trim();
-        if (Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-        {
-            return true;
-        }
-
         var colon = value.LastIndexOf(':');
         if (colon <= 0 || colon == value.Length - 1)
             return false;
@@ -305,10 +319,10 @@ public static class ListenerEndpoints
     // The create-time completion for the HTTP-shaped transports: blank
     // derives the whole endpoint from the bind (implants dial this server
     // directly -- the no-redirector shape), a bare hostname takes the
-    // transport's scheme and the listener's own bind port, and complete input
-    // passes through verbatim. Returns null when nothing honest can be
-    // derived (a wildcard bind has no dialable name) or the value is not a
-    // dialable shape at all.
+    // transport's scheme and the listener's own bind port, a host:port pair
+    // takes the transport's scheme, and an absolute URL passes through
+    // verbatim. Returns null when nothing honest can be derived (a wildcard
+    // bind has no dialable name) or the value is not a dialable shape at all.
     private static string? DeriveHttpPublicEndpoint(
         ListenerTransport transport, string bindAddress, string? publicEndpoint)
     {
@@ -333,8 +347,11 @@ public static class ListenerEndpoints
             return $"{SchemeOf(transport)}://{HostText(bind.Host)}:{bind.Port}";
         }
 
-        if (IsPublicEndpoint(value))
+        if (IsAbsoluteHttpUrl(value))
             return value;
+
+        if (IsHostPort(value))
+            return $"{SchemeOf(transport)}://{value}";
 
         if (IsBareHost(value))
             return $"{SchemeOf(transport)}://{value}:{bind.Port}";
@@ -424,8 +441,8 @@ public static class ListenerEndpoints
         ListenerTransport.Smb => $"Public endpoint must be the pipe path implants dial (e.g. \\\\host\\pipe\\name), got '{got}'.",
         ListenerTransport.Tcp => $"Public endpoint must be the host:port implants dial (e.g. 203.0.113.10:443), got '{got}'.",
         _ => "Public endpoint accepts an absolute http(s) URL, a host:port pair, or a bare hostname "
-            + "(completed with the transport's scheme and this listener's port); it may also be left "
-            + $"empty, which dials the bind itself. got '{got}'.",
+            + "-- each is completed with the transport's scheme (and this listener's port for a bare "
+            + $"hostname); it may also be left empty, which dials the bind itself. got '{got}'.",
     };
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---

@@ -60,9 +60,13 @@ export interface Task {
   issuedBy: string
   verb: string
   arguments: string
-  status: string
-  output: string | null
-  outcome: string | null
+  // Absent on the issue response -- a freshly issued task is queued by
+  // construction, so the server does not say it -- and present on task
+  // detail reads. Callers that need the state read getTask or track the
+  // task themselves.
+  status?: string
+  output?: string | null
+  outcome?: string | null
   createdAt: string
   dispatchedAt: string | null
   completedAt: string | null

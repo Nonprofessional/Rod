@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getTask, issueTask } from '../api'
+import { useEffect, useMemo, useState } from 'react'
+import { issueTask } from '../api'
+import { browseInFlight, ensureBrowse, useBrowseEntry } from '../browserCache'
+import { ago, useNow } from '../when'
 import { StatusBadge } from './StatusBadge'
 
 // The process browser: the classic operator pane. One recon.ps task lists
 // the host's processes; each row offers proc.kill behind a confirm. The
 // listing is a snapshot (the implant says so too), so the pane keeps a
 // refresh and never pretends to be live.
+//
+// The listing rides the browse-result cache: reopening shows the last
+// snapshot instantly (with its age), an in-flight listing is attached to
+// rather than re-issued, and a listing that completes while the pane is
+// closed lands in the cache anyway -- the background poller owns the wait.
+// Refresh cancels the queued listing it replaces and issues a fresh one.
 
 interface ProcessRow {
   pid: number
@@ -41,63 +49,30 @@ export function ProcessBrowser({
   implantId: string
   onClose: () => void
 }) {
-  const [rows, setRows] = useState<ProcessRow[] | null>(null)
-  const [raw, setRaw] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [killIssued, setKillIssued] = useState<Set<number>>(new Set())
-  const [busy, setBusy] = useState(false)
-  // Set by the unmount cleanup so the polling loop stops instead of setting
-  // state on a gone pane.
-  const closedRef = useRef(false)
+  const now = useNow(30_000)
 
-  const list = useCallback(async () => {
-    if (busy) return
-    setBusy(true)
-    setError(null)
-    setRows(null)
-    setRaw(null)
-    setStatus('Queued')
-    try {
-      const task = await issueTask(engagementId, {
-        implantId,
-        verb: 'recon.ps',
-        arguments: '',
-      })
-      // The task completes when the implant wakes and answers; poll the
-      // task's own record like the channel pane does.
-      for (;;) {
-        if (closedRef.current) return
-        const detail = await getTask(engagementId, task.taskId)
-        setStatus(detail.status)
-        if (detail.status !== 'Queued' && detail.status !== 'Dispatched') {
-          if (detail.outcome === 'Succeeded' && detail.output) {
-            const parsed = parseListing(detail.output)
-            setRows(parsed.length > 0 ? parsed : null)
-            setRaw(detail.output)
-          } else {
-            setError(detail.output ?? `recon.ps ${detail.outcome ?? detail.status}`)
-          }
-          break
-        }
-        await new Promise((resolve) => setTimeout(resolve, 700))
-      }
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }, [engagementId, implantId, busy])
-
-  // Run the first listing once on open; refreshes are the pane's own button.
   useEffect(() => {
-    void list()
-    return () => {
-      closedRef.current = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // Cached, in-flight, or cold -- the cache decides; the pane renders
+    // whatever state comes back.
+    void ensureBrowse(engagementId, implantId, 'recon.ps', '').catch((e) => setError(String(e)))
+  }, [engagementId, implantId])
+
+  const entry = useBrowseEntry(engagementId, implantId, 'recon.ps', '')
+  const busy = browseInFlight(entry)
+
+  const rows = useMemo(() => {
+    if (!entry || entry.outcome !== 'Succeeded' || !entry.output) return null
+    const parsed = parseListing(entry.output)
+    return parsed.length > 0 ? parsed : null
+  }, [entry])
+
+  const taskError =
+    entry && !busy && entry.outcome && entry.outcome !== 'Succeeded'
+      ? (entry.output ?? `recon.ps ${entry.outcome}`)
+      : null
 
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -131,7 +106,12 @@ export function ProcessBrowser({
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <button className="ghost" onClick={() => void list()} disabled={busy}>
+          <button
+            className="ghost"
+            onClick={() => void ensureBrowse(engagementId, implantId, 'recon.ps', '', { force: true }).catch((e) => setError(String(e)))}
+            disabled={busy}
+            title="Cancel the queued listing (if any) and issue a fresh recon.ps"
+          >
             Refresh
           </button>
           <button className="ghost" onClick={onClose}>
@@ -139,10 +119,17 @@ export function ProcessBrowser({
           </button>
         </div>
         <p className="muted">
-          A snapshot from <code>recon.ps</code>{' '}
-          {status && (
+          A snapshot from <code>recon.ps</code>
+          {entry && (
             <>
-              · <StatusBadge status={status} />
+              {' '}
+              · <StatusBadge status={entry.status} />
+              {entry.completedAt && (
+                <span title={new Date(entry.completedAt).toLocaleString()}>
+                  {' '}
+                  listed {ago(entry.completedAt, now)}
+                </span>
+              )}
             </>
           )}
           {killIssued.size > 0 && (
@@ -153,10 +140,14 @@ export function ProcessBrowser({
             </>
           )}
         </p>
-        {rows === null && !error && (
+        {rows === null && !taskError && !error && (
           <div className="empty">
             <span className="spinner" />
-            {busy ? 'Listing processes…' : 'Waiting for the implant to answer…'}
+            {busy
+              ? 'Listing processes…'
+              : entry && entry.completedAt
+                ? 'The listing did not parse — showing raw output below.'
+                : 'Waiting for the implant to answer…'}
           </div>
         )}
         {rows !== null && (
@@ -195,8 +186,8 @@ export function ProcessBrowser({
             </table>
           </div>
         )}
-        {rows === null && raw && <pre className="output long">{raw}</pre>}
-        {error && <p className="error">{error}</p>}
+        {rows === null && entry?.output && <pre className="output long">{entry.output}</pre>}
+        {(taskError || error) && <p className="error">{taskError ?? error}</p>}
       </div>
     </div>
   )

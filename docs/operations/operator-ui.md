@@ -7,6 +7,21 @@ does, in one place. Screenshots-age; this text is the reference.
 
 ## Operating surfaces
 
+Three words describe every conversation an implant has with the teamserver,
+and the UI uses them precisely:
+
+- **Enroll** -- the one-time registration. A dropped artifact redeems its
+  baked credential exactly once, receives its identity and certificate, and
+  reports its host facts. It never happens again for that implant.
+- **Check-in** -- every later contact, on the sleep cadence the build baked.
+  The implant calls home, picks up queued tasking, and returns results on
+  the next cycle. All ordinary operations (shell commands, file transfers,
+  process listings, screenshots) ride check-ins.
+- **Interactive** -- not "everything else": it is the on-demand live channel
+  (`shell.interact`, tunnels) held open over the mTLS stream for real-time
+  typing. An implant that never opens one still fully operates through
+  check-ins.
+
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
 account -- recorded on the implant, grouped in the fleet), an **implant** is
@@ -45,18 +60,27 @@ the status dot and the last-seen column).
   `files`, `raw`). The transcript follows the newest line while the operator
   is parked at the bottom and pins when they scroll up. The Advanced
   disclosure is the raw verb+arguments escape hatch, pinned to this implant.
-- **Task log** (in Evidence) -- the engagement's task history as a
-  filterable, live log: by implant (switches to that implant's own feed),
-  verb, status, issuing operator, or free text. Rows expand to their
-  output and channels open their pane; the log is read-only -- canceling a
-  queued task happens in that implant's session console. Issuing happens
-  in the implant menu and the console; this tab is for reading.
+- **Task log** (beside Implants, in the Operate group) -- the engagement's
+  task history as a filterable, live log: by implant (switches to that
+  implant's own feed), verb, status, issuing operator, or free text. Each
+  row carries a chevron that unfolds the full output (and a one-line
+  preview of the answer while collapsed); channels open their pane. The
+  log is read-only -- canceling a queued task happens in that implant's
+  session console. Issuing happens in the implant menu and the console;
+  this tab is for reading.
 
 Two browsing panes open from the menu (and the console): the **process
 browser** (`recon.ps` as a filterable table with a confirmed per-row
 `proc.kill`) and the **file browser** (`fs.list` walks the tree; upload
 rides `file.push`, download rides `file.pull` -- small files inline, larger
-ones through the artifact store). Both are snapshots with a refresh.
+ones through the artifact store). Both are snapshots with a refresh, and
+their results ride a browse cache: reopening shows the last listing with
+its age, a listing in flight when the pane closed is attached to instead
+of re-issued (its answer lands in the cache either way -- the cache polls
+on its own), walking back up the tree is instant, and the file browser
+reopens on the last visited directory. Refresh cancels the queued listing
+it replaces and issues a fresh one, so one browse never stacks a second
+identical command behind it.
 
 ## Listeners
 
@@ -75,10 +99,12 @@ An engagement's C2 ingress. Each listener owns two addresses:
 Endpoint completion (HTTP-shaped transports only): an empty endpoint derives
 from the bind (`bind 10.1.2.3:8443` on https becomes
 `https://10.1.2.3:8443`); a bare hostname (`redirect.example`) takes the
-transport's scheme and the listener's own port; a complete URL or `host:port`
-pair is stored verbatim. A wildcard bind (`0.0.0.0`) names no dialable
-address, so it cannot derive -- give it a hostname. DNS, SMB, and TCP cannot
-derive at all; their endpoint (zone / pipe path / host:port) is required.
+transport's scheme and the listener's own port; a `host:port` pair takes the
+transport's scheme; a complete URL passes through. The stored form is always
+a full URL, so the roster and every build read one uniform shape. A wildcard
+bind (`0.0.0.0`) names no dialable address, so it cannot derive -- give it a
+hostname. DNS, SMB, and TCP cannot derive at all; their endpoint (zone /
+pipe path / host:port) is required.
 
 Every listener is engagement-scoped and persisted -- a restart rebinds it with
 the same id -- and enrollment through its socket accepts only that
