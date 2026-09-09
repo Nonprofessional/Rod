@@ -1010,6 +1010,13 @@ export interface PayloadSummary {
   fingerprint: string
   builtAt: string
   tokenId: string | null
+  // The baked credential's live state, joined from the token store at list
+  // time. Null fields with a tokenId present mean the token is no longer
+  // stored -- spent-and-removed, revoked, or expired and swept -- which reads
+  // as "no enrollments left."
+  tokenMaxUses: number | null
+  tokenRemainingUses: number | null
+  tokenExpiresAt: string | null
 }
 
 export async function listPayloads(engagementId: string): Promise<PayloadSummary[]> {

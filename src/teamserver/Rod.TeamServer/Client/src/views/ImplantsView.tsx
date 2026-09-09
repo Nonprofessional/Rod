@@ -414,7 +414,12 @@ export function ImplantsView({
             (of {implants.length})
           </span>
         )}
-        . Grouped by the host reported at enroll; the dot is the live session.
+        . Grouped by the host reported at enroll; the dot is the live session.{' '}
+        <span
+          title="A stream that closes cleanly drops Online immediately; a stream that dies silently holds Online until the staleness sweep closes its session -- 15 minutes of silence by default, configurable as Sessions:Staleness:Threshold. The Last seen column always tells the truth in the meantime."
+        >
+          A vanished implant keeps its dot until the staleness sweep (default 15&nbsp;min).
+        </span>
       </p>
       <div className="table-toolbar">
         <input
@@ -519,7 +524,7 @@ export function ImplantsView({
                                 retired
                                   ? 'Retired: refused at handshake, untaskable'
                                   : implant.isOnline
-                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()}`
+                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()} -- a stream that dies silently holds Online until the staleness sweep (default 15 min of silence)`
                                     : lastSeen
                                       ? `No active session; last heard ${new Date(lastSeen).toLocaleString()}`
                                       : 'No active session'

@@ -52,6 +52,7 @@ public static class PayloadEndpoints
         string engagementId,
         IEngagementRepository engagements,
         IPayloadStore payloads,
+        Rod.CoreState.Staging.IStagerTokenService tokens,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -61,7 +62,19 @@ public static class PayloadEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var records = await payloads.ListAsync(engagementValue, cancellationToken);
-        return Results.Ok(records.Select(PayloadSummaryResponse.Of).ToArray());
+
+        // Each row that baked a credential joins the token's live state, so the
+        // library answers "how many enrolls does this artifact have left" -- the
+        // budget is the token's, and it moves as implants enroll.
+        var summaries = new List<PayloadSummaryResponse>();
+        foreach (var record in records)
+        {
+            Rod.CoreState.Staging.StagerTokenState? tokenState = null;
+            if (record.TokenId is { } tokenId)
+                tokenState = await tokens.FindAsync(new StagerTokenId(tokenId), cancellationToken);
+            summaries.Add(PayloadSummaryResponse.Of(record, tokenState));
+        }
+        return Results.Ok(summaries);
     }
 
     // Deletes a stored payload: the bytes and the library entry are gone and a
@@ -292,7 +305,12 @@ public static class PayloadEndpoints
     /// One row of the payload library: a stored payload's metadata without the
     /// bytes. The engagement is the path, not the row. <see cref="Target"/>,
     /// <see cref="Endpoint"/>, and <see cref="BeaconEndpoint"/> are null on
-    /// payloads built before those fields were recorded.
+    /// payloads built before those fields were recorded. The three
+    /// <c>Token*</c> fields are the baked credential's live state; they are
+    /// null when no credential was baked, and all null while a
+    /// <see cref="TokenId"/> is present only when the token is no longer
+    /// stored -- spent-and-removed (in-memory store), revoked, or expired and
+    /// swept -- which on the wire reads "no enrollments left."
     /// </summary>
     public sealed record PayloadSummaryResponse(
         string ArtifactId,
@@ -305,9 +323,14 @@ public static class PayloadEndpoints
         string Fingerprint,
         DateTimeOffset BuiltAt,
         string? TokenId = null,
-        string? BeaconEndpoint = null)
+        string? BeaconEndpoint = null,
+        int? TokenMaxUses = null,
+        int? TokenRemainingUses = null,
+        DateTimeOffset? TokenExpiresAt = null)
     {
-        public static PayloadSummaryResponse Of(Rod.Audit.PayloadRecord record) => new(
+        public static PayloadSummaryResponse Of(
+            Rod.Audit.PayloadRecord record,
+            Rod.CoreState.Staging.StagerTokenState? tokenState = null) => new(
             record.PayloadId.ToString(),
             record.Class,
             record.Language,
@@ -318,7 +341,10 @@ public static class PayloadEndpoints
             record.Fingerprint,
             record.BuiltAt,
             TokenId: record.TokenId?.ToString(),
-            BeaconEndpoint: record.BeaconEndpoint);
+            BeaconEndpoint: record.BeaconEndpoint,
+            TokenMaxUses: tokenState?.MaxUses,
+            TokenRemainingUses: tokenState?.RemainingUses,
+            TokenExpiresAt: tokenState?.ExpiresAt);
     }
 
     public sealed record Problem(string Error);

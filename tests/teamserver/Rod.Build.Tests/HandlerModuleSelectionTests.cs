@@ -35,7 +35,7 @@ public class HandlerModuleSelectionTests : IDisposable
             new[]
             {
                 "shell.exec", "shell.interact", "tunnel.forward", "tunnel.socks",
-                "file.push", "file.pull", "proc.kill",
+                "file.push", "file.pull", "fs.list", "proc.kill",
                 "recon.portscan", "recon.hostenum", "recon.service", "recon.ps",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
@@ -185,10 +185,11 @@ public class HandlerModuleSelectionTests : IDisposable
             Assert.True(File.Exists(Path.Combine(staging, "Internal", file)), file + " must survive a full-class bake");
 
         // The full-class generation carries the stub's registrations,
-        // including the enroll-capturing lateral.move, the staged arm, and
-        // every channel.
+        // including the enroll-capturing lateral.move, the staged arm, the
+        // file browser's listing verb, and every channel.
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "HandlerSelection.cs"));
         Assert.Contains("new CapabilityHandler(\"lateral.move\", args => Lateral.Move(args, enroll)),", selection);
+        Assert.Contains("new CapabilityHandler(\"fs.list\", args => Files.List(args)),", selection);
         Assert.Contains("(\"file.push\", (args, data) => Files.PushStaged(args, data)),", selection);
         Assert.Contains("new(\"shell.interact\", (args, stream, ct) => InteractiveShell.RunAsync(args, stream, ct)),", selection);
     }

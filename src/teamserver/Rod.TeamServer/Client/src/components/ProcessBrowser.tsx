@@ -74,6 +74,14 @@ export function ProcessBrowser({
       ? (entry.output ?? `recon.ps ${entry.outcome}`)
       : null
 
+  // The file browser's old-build translation applies here too: verbs are
+  // baked at build time, so a binary fielded before recon.ps answers
+  // "unknown verb" and the fix is a rebuild, not a retry.
+  const unknownVerb =
+    entry?.outcome === 'Failed' && !busy
+      ? (entry.output ?? '').match(/unknown verb:\s*(\S+)/)?.[1]
+      : undefined
+
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase()
     if (!rows || needle === '') return rows ?? []
@@ -188,6 +196,13 @@ export function ProcessBrowser({
         )}
         {rows === null && entry?.output && <pre className="output long">{entry.output}</pre>}
         {(taskError || error) && <p className="error">{taskError ?? error}</p>}
+        {unknownVerb && (
+          <p className="muted" style={{ marginTop: 4 }}>
+            This implant's build predates <code>{unknownVerb}</code> -- verbs are baked into the
+            artifact at build time. Rebuild the payload on the Build tab and redeploy to list
+            processes.
+          </p>
+        )}
       </div>
     </div>
   )

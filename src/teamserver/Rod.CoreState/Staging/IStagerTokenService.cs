@@ -62,4 +62,16 @@ public interface IStagerTokenService
     Task<bool> RevokeAsync(
         StagerTokenId id,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the token's state by id -- the budget and window an operator
+    /// minted, without the secret or any consume. The payload library joins
+    /// this onto its rows so an operator can see how many enrolls a deployed
+    /// artifact's credential has left. Null when the id is not stored: revoked,
+    /// spent-and-removed (the in-memory store drops a token at zero), or never
+    /// minted.
+    /// </summary>
+    Task<StagerTokenState?> FindAsync(
+        StagerTokenId id,
+        CancellationToken cancellationToken = default);
 }

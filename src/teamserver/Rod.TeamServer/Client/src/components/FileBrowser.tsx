@@ -102,6 +102,15 @@ export function FileBrowser({
       ? (entry.output ?? `fs.list ${entry.outcome}`)
       : null
 
+  // The honest refusal of an old build: verbs are baked into the artifact at
+  // build time, so an implant fielded before fs.list existed answers "unknown
+  // verb" instead of a listing. That answer deserves its translation -- the
+  // fix is a rebuild and redeploy, not a different path.
+  const unknownVerb =
+    entry?.outcome === 'Failed' && !listing
+      ? (entry.output ?? '').match(/unknown verb:\s*(\S+)/)?.[1]
+      : undefined
+
   // A successful listing of a new directory becomes the remembered landing
   // spot, so the next open resumes the walk where it left off.
   useEffect(() => {
@@ -329,6 +338,13 @@ export function FileBrowser({
           </div>
         )}
         {(listError || error) && <p className="error">{listError ?? error}</p>}
+        {unknownVerb && (
+          <p className="muted" style={{ marginTop: 4 }}>
+            This implant's build predates <code>{unknownVerb}</code> -- verbs are baked into the
+            artifact at build time, so an older binary answers "unknown verb" no matter the path.
+            Rebuild the payload on the Build tab and redeploy to browse the filesystem.
+          </p>
+        )}
       </div>
     </div>
   )

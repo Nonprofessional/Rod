@@ -59,12 +59,19 @@ the status dot and the last-seen column).
   (green while it lives, gray after) and the last-seen column reads the
   freshest stamp -- the presence roster while online, the implant row's
   durable heartbeat after the beacon goes dark -- re-rendered on a quiet
-  30 s clock so relative stamps keep moving between live events. Notes and
+  30 s clock so relative stamps keep moving between live events. A stream
+  that closes cleanly drops Online immediately; a stream that dies
+  silently holds Online until the staleness sweep closes its session
+  (default 15 minutes of silence, swept every minute, configurable as
+  `Sessions:Staleness:Threshold` / `SweepInterval`) -- the standfirst and
+  the dot's hover text say so, and Last seen always tells the truth in the
+  meantime. Notes and
   retire live on the row, and everything else opens from its context menu
   (right-click or the three-dot button): shell commands, the file browser,
   the process browser, recon, persistence, collection -- each entry gated
-  on the implant's class, argument-bearing verbs opening a labeled dialog,
-  zero-argument verbs issuing directly.
+  on the implant's class, argument-bearing verbs opening a labeled dialog
+  (marked with a right-edge ellipsis, the native "asks for more" menu
+  convention), zero-argument verbs issuing directly.
 - **Session console** (`#/engagements/{id}/implants/{implantId}`, the
   Interact link on a row) -- one implant, rendered as a terminal: a title
   bar naming the device, identity, and live state; a scrolling transcript of
@@ -74,9 +81,11 @@ the status dot and the last-seen column).
   same flow above the prompt); and a prompt at the bottom -- a plain line
   runs as a shell command, `help` lists the shortcuts (`interact`, `ps`,
   `kill`, `screenshot`, `hostenum`, `portscan`, `services`, `download`,
-  `files`, `raw`). The transcript follows the newest line while the operator
-  is parked at the bottom and pins when they scroll up. The Advanced
-  disclosure is the raw verb+arguments escape hatch, pinned to this implant.
+  `upload`, `files`, `raw`); `upload` opens the picker dialog, because its
+  argument is a local file. The transcript follows the newest line while
+  the operator is parked at the bottom and pins when they scroll up. The
+  Advanced disclosure is the raw verb+arguments escape hatch, pinned to
+  this implant.
 - **Task log** (beside Implants, in the Operate group) -- the engagement's
   task history as a filterable, live log: by implant (switches to that
   implant's own feed), verb, status, issuing operator, or free text. Each
@@ -97,7 +106,10 @@ of re-issued (its answer lands in the cache either way -- the cache polls
 on its own), walking back up the tree is instant, and the file browser
 reopens on the last visited directory. Refresh cancels the queued listing
 it replaces and issues a fresh one, so one browse never stacks a second
-identical command behind it.
+identical command behind it. An implant binary fielded before a browse
+verb existed answers "unknown verb" (verbs are baked into the artifact at
+build time); the panes translate that answer into the fix -- rebuild the
+payload and redeploy.
 
 ## Listeners
 
@@ -229,20 +241,33 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 - **Credential window (h)** -- how long the baked credential stays
   redeemable. Empty defaults to the artifact's expiry window.
 
-**Recent builds** is the job queue's view: builds run as background jobs, the
-list polls while anything runs, and each finished row carries its artifact,
-its baked token (revoke it there), and the download. The list is bounded
-(50 finished jobs per engagement) and lives for the process lifetime.
+**Recent builds** is the job queue's status strip: builds run as background
+jobs, the strip polls while anything runs, and it shows the last five -- enough
+to watch the running build and grab the artifact you just made. Each finished
+row carries its artifact, its baked token (revoke it there), the front it dials
+(the listener name when the endpoint matches one), and the download -- or a
+"deleted" note once the artifact is removed from the library, because a job row
+outlives the payload it produced. The queue itself is bounded (50 finished jobs
+per engagement) and lives for the process lifetime; the record of every
+artifact that ever finished is the Payloads tab, so the two do not try to be
+each other.
 
 ## Payloads
 
-The durable library: every payload the engagement ever built, straight from
-the payload store -- restart-safe, unbounded by the build queue. Filter by
-class, language, target, dial endpoint, or fingerprint. **Download** the
-bytes again, **Revoke token** to kill the baked credential (a deployed
-artifact that has not yet enrolled will not be able to), or **Delete** the
-payload -- the bytes and the row are gone, a stager fetching it 404s from
-then on, and the deletion is an audited fact.
+The durable library and the record of every build: every payload the
+engagement ever built, straight from the payload store -- restart-safe,
+unbounded by the build queue. Filter by class, language, target, dial front,
+or fingerprint. Each row shows the **front** it dials (the listener's name and
+transport when the baked endpoint matches one, the URL verbatim when it was
+typed for a redirector) and the **credential** column -- the baked token's use
+budget read live off the token store at list time: how many enrolls were spent
+out of the minted maximum, how many are left, and the window (an expired or
+revoked credential reads "no enrolls left"; on the in-memory dev store a fully
+spent token reads the same, because the store drops it at zero).
+**Download** the bytes again, **Revoke** to kill the baked credential (a
+deployed artifact that has not yet enrolled will not be able to), or
+**Delete** the payload -- the bytes and the row are gone, a stager fetching it
+404s from then on, and the deletion is an audited fact.
 
 ## Evidence panels
 

@@ -5,8 +5,10 @@ import {
   enqueueBuildJob,
   listBuildJobs,
   listListeners,
+  listPayloads,
   revokeStagerToken,
 } from '../api'
+import { frontFor } from '../fronts'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
@@ -33,8 +35,15 @@ import { StatusBadge } from '../components/StatusBadge'
 // The build runs as a server-side job: submitting queues it and returns
 // immediately; the recent-builds list below is the in-process view of the
 // queue (fetched on mount, polled while anything runs), so leaving the page
-// or refreshing never loses a running build. The durable, restart-safe home
-// of finished payloads is the Payloads tab.
+// or refreshing never loses a running build. The strip shows the last few
+// jobs as the queue's status -- for the artifact record (fronts, credential
+// budgets, every build that ever finished) the durable home is the Payloads
+// tab, which is also why a deleted payload reads "deleted" here instead of
+// offering a download the store can no longer serve.
+
+// How many jobs the queue strip shows; the rest is history the Payloads tab
+// owns better.
+const RECENT_BUILDS_SHOWN = 5
 
 // The transports an implant can enroll through; the listener select offers
 // these and greys everything else out.
@@ -77,6 +86,10 @@ export function PayloadBuildView({
   const [tokenMaxUses, setTokenMaxUses] = useState('1')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
+  // The library's artifact ids, fetched beside the jobs so the strip knows
+  // which finished artifacts still exist -- a deleted payload reads "deleted"
+  // instead of offering a download that would 404.
+  const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   // The Advanced disclosure's open state is tracked so choosing the manual
@@ -144,7 +157,16 @@ export function PayloadBuildView({
 
   const refreshJobs = useCallback(async () => {
     try {
-      setJobs(await listBuildJobs(engagementId))
+      const [list, library] = await Promise.all([
+        listBuildJobs(engagementId),
+        // A completed job's artifact can be deleted from the library at any
+        // time; the strip re-reads the ids with every refresh so the
+        // deleted/readable split stays current. The library load failing
+        // degrades to "download" -- the click itself reports the 404.
+        listPayloads(engagementId).catch(() => []),
+      ])
+      setJobs(list)
+      setLibraryIds(new Set(library.map((p) => p.artifactId)))
     } catch {
       // Keep the last known list; the next poll retries.
     }
@@ -601,78 +623,107 @@ export function PayloadBuildView({
               <tr>
                 <th>Requested</th>
                 <th>Target</th>
-                <th>Endpoint</th>
+                <th>Front</th>
                 <th>State</th>
                 <th>Artifact</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job) => (
-                <tr key={job.jobId}>
-                  <td title={job.jobId}>{new Date(job.requestedAt).toLocaleString()}</td>
-                  <td>
-                    <code>
-                      {job.language}:{job.class} {job.target}
-                    </code>
-                  </td>
-                  <td>
-                    <code>{job.endpoint}</code>
-                    {job.beaconEndpoint && (
-                      <div className="muted" title="The socket the check-in stream dials (split-socket build)">
-                        beacon <code>{job.beaconEndpoint}</code>
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {(job.state === 'queued' || job.state === 'running') && (
-                      <span className="spinner inline-spinner" />
-                    )}
-                    <StatusBadge status={job.state} />
-                    <span className="muted"> {elapsed(job)}</span>
-                    {job.error && <div className="error">{job.error}</div>}
-                  </td>
-                  <td>
-                    {job.artifact ? (
-                      <span>
-                        <code>{job.artifact.fingerprint.slice(0, 16)}</code>
-                        <span className="muted"> ({job.artifact.size} bytes)</span>
-                      </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                    {job.artifact?.tokenId && (
-                      <div className="muted" title={job.artifact.tokenId}>
-                        baked token {job.artifact.tokenId.slice(0, 8)}{' '}
-                        {revoking === job.artifact.tokenId ? (
-                          '(revoking…)'
-                        ) : (
-                          <button
-                            className="sm danger"
-                            onClick={() => void onRevokeToken(job.artifact!.tokenId!)}
-                            title="The leak answer: the baked credential stops working at the next enrollment attempt"
+              {jobs.slice(0, RECENT_BUILDS_SHOWN).map((job) => {
+                const front = frontFor(job.endpoint, listeners)
+                const inLibrary =
+                  !job.artifact || libraryIds.has(job.artifact.artifactId)
+                return (
+                  <tr key={job.jobId}>
+                    <td title={job.jobId}>{new Date(job.requestedAt).toLocaleString()}</td>
+                    <td>
+                      <code>
+                        {job.language}:{job.class} {job.target}
+                      </code>
+                    </td>
+                    <td>
+                      {front && (
+                        <div
+                          className="muted"
+                          title={`The ${front.transport} listener this build dials`}
+                        >
+                          via {front.name} ({front.transport})
+                        </div>
+                      )}
+                      <code>{job.endpoint}</code>
+                      {job.beaconEndpoint && (
+                        <div className="muted" title="The socket the check-in stream dials (split-socket build)">
+                          beacon <code>{job.beaconEndpoint}</code>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {(job.state === 'queued' || job.state === 'running') && (
+                        <span className="spinner inline-spinner" />
+                      )}
+                      <StatusBadge status={job.state} />
+                      <span className="muted"> {elapsed(job)}</span>
+                      {job.error && <div className="error">{job.error}</div>}
+                    </td>
+                    <td>
+                      {job.artifact ? (
+                        <span>
+                          <code>{job.artifact.fingerprint.slice(0, 16)}</code>
+                          <span className="muted"> ({job.artifact.size} bytes)</span>
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                      {job.artifact?.tokenId && (
+                        <div className="muted" title={job.artifact.tokenId}>
+                          baked token {job.artifact.tokenId.slice(0, 8)}{' '}
+                          {revoking === job.artifact.tokenId ? (
+                            '(revoking…)'
+                          ) : (
+                            <button
+                              className="sm danger"
+                              onClick={() => void onRevokeToken(job.artifact!.tokenId!)}
+                              title="The leak answer: the baked credential stops working at the next enrollment attempt"
+                            >
+                              Revoke token
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {job.artifact &&
+                        (inLibrary ? (
+                          <a
+                            className="download-link"
+                            href={`engagements/${engagementId}/payloads/${job.artifact.artifactId}`}
+                            download
                           >
-                            Revoke token
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {job.artifact && (
-                      <a
-                        className="download-link"
-                        href={`engagements/${engagementId}/payloads/${job.artifact.artifactId}`}
-                        download
-                      >
-                        Download
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                            Download
+                          </a>
+                        ) : (
+                          <span
+                            className="muted"
+                            title="The artifact was deleted from the payload library -- the bytes are gone and a stager fetching it 404s. The credential can still be revoked above."
+                          >
+                            deleted
+                          </span>
+                        ))}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
+          {jobs.length > RECENT_BUILDS_SHOWN && (
+            <p className="muted" style={{ padding: '6px 10px', margin: 0 }}>
+              {jobs.length - RECENT_BUILDS_SHOWN} older job
+              {jobs.length - RECENT_BUILDS_SHOWN === 1 ? '' : 's'} hidden -- every finished
+              artifact stays in the{' '}
+              <a href={`#/engagements/${engagementId}/payloads`}>Payloads</a> library.
+            </p>
+          )}
         </div>
       )}
 

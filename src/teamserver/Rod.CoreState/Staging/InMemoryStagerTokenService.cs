@@ -45,7 +45,8 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         var secretBytes = RandomNumberGenerator.GetBytes(32);
         var id = StagerTokenId.New();
 
-        _stored[id] = new StoredToken(SHA256.HashData(secretBytes), engagementId, issuedBy, expiresAt, effectiveMaxUses);
+        _stored[id] = new StoredToken(
+            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt, effectiveMaxUses, effectiveMaxUses);
 
         return new StagerToken
         {
@@ -163,10 +164,35 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
     public Task<bool> RevokeAsync(StagerTokenId id, CancellationToken cancellationToken = default)
         => Task.FromResult(_stored.TryRemove(id, out _));
 
+    public Task<StagerTokenState?> FindAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+    {
+        // A token this store spent or revoked is gone, so the read reports
+        // nothing -- the payload library renders that as "no enrolls left."
+        if (!_stored.TryGetValue(id, out var stored))
+            return Task.FromResult<StagerTokenState?>(null);
+        return Task.FromResult<StagerTokenState?>(new StagerTokenState
+        {
+            Id = id,
+            EngagementId = stored.EngagementId,
+            IssuedBy = stored.IssuedBy,
+            IssuedAt = stored.IssuedAt,
+            ExpiresAt = stored.ExpiresAt,
+            MaxUses = stored.MaxUses,
+            RemainingUses = stored.RemainingUses,
+        });
+    }
+
     // IssuedBy is retained so redeem can attribute the deployment that follows:
     // a stager token is redeemed by an implant, but the operator who minted it
     // authorized the deployment, and enrollment records that operator on the
-    // implant (architecture.md Sec 11).
+    // implant (architecture.md Sec 11). MaxUses rides beside RemainingUses so
+    // the inspectable state can state the budget, not just what is left of it.
     private sealed record StoredToken(
-        byte[] Hash, EngagementId EngagementId, OperatorId IssuedBy, DateTimeOffset ExpiresAt, int RemainingUses);
+        byte[] Hash,
+        EngagementId EngagementId,
+        OperatorId IssuedBy,
+        DateTimeOffset IssuedAt,
+        DateTimeOffset ExpiresAt,
+        int MaxUses,
+        int RemainingUses);
 }

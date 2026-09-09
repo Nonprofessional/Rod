@@ -1626,13 +1626,15 @@ tr.device-row:hover td {
 }
 
 /* The right-edge mark on entries that open a dialog: pushed to the menu's
-   right rim, quiet enough not to read as content. */
+   right rim, quiet enough not to read as content. The glyph is the ellipsis
+   of the native "asks for more" menu convention. */
 .context-menu-item .menu-dialog-mark {
   margin-left: auto;
   padding-left: 12px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1;
+  letter-spacing: 1px;
 }
 
 .context-menu-item:hover .nav-icon {
@@ -1867,6 +1869,11 @@ button.menu-trigger .nav-icon {
   background: var(--terminal-bg);
   border-color: var(--terminal-border);
   font-family: var(--font-mono);
+  /* The prompt owns the row's leftover width: the placeholder ("type a
+     command -- help lists the shortcuts") reads whole, and long command
+     lines are not clipped by a default-width input. */
+  flex: 1;
+  min-width: 120px;
 }
 
 .console-hint {

@@ -165,6 +165,29 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         return true;
     }
 
+    public async Task<StagerTokenState?> FindAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+    {
+        // A spent row survives here at remaining_uses = 0 (see the class
+        // remarks), so the durable read reports the full budget even after the
+        // token is spent; only revocation removes the row.
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var stored = await db.StagerTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+        if (stored is null)
+            return null;
+        return new StagerTokenState
+        {
+            Id = stored.Id,
+            EngagementId = stored.EngagementId,
+            IssuedBy = stored.IssuedBy,
+            IssuedAt = stored.IssuedAt,
+            ExpiresAt = stored.ExpiresAt,
+            MaxUses = stored.MaxUses,
+            RemainingUses = stored.RemainingUses,
+        };
+    }
+
     public async Task<RedeemedStagerToken> VerifyAsync(
         string secret,
         DateTimeOffset now,

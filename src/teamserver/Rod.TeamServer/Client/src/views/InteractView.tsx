@@ -47,8 +47,8 @@ interface QuickCommand {
 }
 
 const QUICK_HELP: readonly QuickCommand[] = [
-  { usage: '‹command line›', note: 'runs as a shell command' },
-  { usage: 'interact', note: 'open the interactive shell channel' },
+  { usage: '‹command line›', note: 'runs as a shell command on the target' },
+  { usage: 'interact', note: 'open the interactive shell channel (a real terminal: PTY, Ctrl+C works)' },
   { usage: 'ps', note: 'list processes (the browser pane is in the menu)' },
   { usage: 'kill <pid>', note: 'terminate a process' },
   { usage: 'screenshot', note: 'capture the display' },
@@ -56,6 +56,7 @@ const QUICK_HELP: readonly QuickCommand[] = [
   { usage: 'portscan <host> <start-end>', note: 'scan a host' },
   { usage: 'services <host> <ports>', note: 'probe services' },
   { usage: 'download <path>', note: 'pull a file back' },
+  { usage: 'upload', note: 'push a file (opens the picker)' },
   { usage: 'files', note: 'open the file browser pane' },
   { usage: 'raw <verb> [args…]', note: 'issue any verb directly' },
 ]
@@ -231,7 +232,9 @@ export function InteractView({
           setFilesOpen(true)
           return
         case 'upload':
-          setHint('Uploads need a file picker -- use Upload… in the menu (top right).')
+          // The one shortcut that cannot read its argument off a command
+          // line: it opens the picker dialog instead of issuing inline.
+          setDialogVerb('file.push')
           return
         case 'raw': {
           const verb = rest.split(/\s+/)[0] ?? ''

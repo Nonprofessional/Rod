@@ -17,7 +17,9 @@ export interface MenuItem {
   disabled?: boolean
   title?: string
   // The entry opens a dialog instead of acting directly -- marked with a
-  // right-edge chevron so "asks for more" reads at a glance.
+  // right-edge ellipsis, the native menu convention (macOS and desktop apps
+  // append "…" to commands that ask for more) now that the labels themselves
+  // are whole, so the mark reads as "asks for more," never as truncation.
   opensDialog?: boolean
   onSelect: () => void
 }
@@ -102,7 +104,7 @@ export function ContextMenu({
             {entry.label}
             {entry.opensDialog && (
               <span className="menu-dialog-mark" aria-hidden="true">
-                ›
+                …
               </span>
             )}
           </button>

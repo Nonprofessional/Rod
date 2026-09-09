@@ -33,6 +33,38 @@ public sealed record StagerToken
 }
 
 /// <summary>
+/// The token's inspectable state, read by id: the budget an operator minted
+/// (max uses, how many are left) and the window it lives in. No secret rides
+/// here -- this is the ledger side of a credential whose plaintext exists only
+/// inside the artifact it was baked into. A spent token's state depends on the
+/// store: the durable store keeps the row at zero remaining uses, the
+/// in-memory one drops it (so a missing read there means spent, revoked, or
+/// never minted).
+/// </summary>
+public sealed record StagerTokenState
+{
+    /// <summary>The token this state describes.</summary>
+    public required StagerTokenId Id { get; init; }
+
+    /// <summary>The engagement the token grants access to.</summary>
+    public required EngagementId EngagementId { get; init; }
+
+    /// <summary>The operator who minted the token.</summary>
+    public required OperatorId IssuedBy { get; init; }
+
+    public required DateTimeOffset IssuedAt { get; init; }
+
+    /// <summary>Hard expiry; the token is invalid after this instant.</summary>
+    public required DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>How many times the token may be redeemed in total.</summary>
+    public required int MaxUses { get; init; }
+
+    /// <summary>How many redeems remain before the token is spent.</summary>
+    public required int RemainingUses { get; init; }
+}
+
+/// <summary>
 /// The result of a successful <see cref="IStagerTokenService.RedeemAsync"/>: the
 /// engagement the redeemed token grants access to. Carries no secret -- the
 /// plaintext was matched and discarded; enrollment proceeds against this

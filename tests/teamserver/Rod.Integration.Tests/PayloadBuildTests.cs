@@ -158,7 +158,9 @@ public class PayloadBuildTests
 
             // The library row carries the build's own metadata -- target,
             // endpoint, and the baked credential's id for revocation -- so the
-            // durable store reads like the build that made it.
+            // durable store reads like the build that made it. The budget
+            // columns are the token's live state (default mint: one use, one
+            // hour), joined at list time rather than stored on the row.
             var listed = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
                 $"/engagements/{engagementId}/payloads");
             var row = Assert.Single(listed!);
@@ -166,6 +168,23 @@ public class PayloadBuildTests
             Assert.Equal("linux/amd64", row.Target);
             Assert.Equal("https://c2.example.test", row.Endpoint);
             Assert.Equal(built.TokenId, row.TokenId);
+            Assert.Equal(1, row.TokenMaxUses);
+            Assert.Equal(1, row.TokenRemainingUses);
+            Assert.NotNull(row.TokenExpiresAt);
+
+            // The join is live: revoking the baked credential removes the
+            // token, and the next listing keeps the historical id but reads
+            // no budget -- "no enrollments left" on the operator's row.
+            var tokens = host.Services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>();
+            Assert.True(await tokens.RevokeAsync(
+                new Rod.CoreState.StagerTokenId(Guid.Parse(built.TokenId!))));
+            var revoked = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
+                $"/engagements/{engagementId}/payloads");
+            var revokedRow = Assert.Single(revoked!);
+            Assert.Equal(built.TokenId, revokedRow.TokenId);
+            Assert.Null(revokedRow.TokenMaxUses);
+            Assert.Null(revokedRow.TokenRemainingUses);
+            Assert.Null(revokedRow.TokenExpiresAt);
 
             // Deleting is the kill switch for hosted bytes: the row and the
             // download are gone, a second delete 404s, and the trail records
