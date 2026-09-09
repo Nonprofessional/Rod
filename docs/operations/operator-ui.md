@@ -218,20 +218,23 @@ serves cleartext HTTP/2 only on an HTTP/2-only endpoint, which cannot also
 serve the HTTP/1.x enrollment). The shapes that follow from that:
 
 - **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
-  the client certificate optional at the TLS layer -- enrollment rides the
-  socket on the stager token before any certificate exists, and the
-  check-in routes demand the enrolled certificate at the application
-  layer. One listener, one port, everything on it: enroll + check-in +
-  interactive. Builds against it need no split.
+  no client certificate requested anywhere -- the handshake is
+  indistinguishable from an ordinary website's. Enrollment rides the socket
+  on the stager token and check-ins ride the sealed envelope under the
+  per-artifact key, both authenticated at the application layer. One
+  listener, one port: enroll + check-in. The interactive stream does not
+  ride it -- name an `mTLS` beacon when the engagement wants live channels.
 - **`HTTP` (cleartext) carries enroll + check-in over the envelope POST
   cycle** (poll mode): every check-in body and its response seal as
   AES-256-GCM under the per-artifact key -- the authentication cleartext
   http lacks a TLS client certificate for. What it cannot carry is the
   interactive stream: build against it with an interactive listener named
   (the split-socket shape) when you want live channels.
-- **`mTLS`** is the strict posture: the client certificate is demanded at
-  the TLS layer itself. It carries enroll + check-in + interactive; pair
-  one with a cleartext `HTTP` listener for enrollment when you want
+- **`mTLS`** is the strict posture and the interactive tier: the client
+  certificate is demanded at the TLS layer itself, carrying the persistent
+  gRPC stream, live channels, and sealed check-ins for certificated
+  implants. Enrollment cannot ride it (the leaf does not exist yet); pair
+  one with an `HTTP` or `HTTPS` listener for enrollment when you want
   hard-mode entry.
 
 Every payload build pins the teamserver CA into the artifact, so the

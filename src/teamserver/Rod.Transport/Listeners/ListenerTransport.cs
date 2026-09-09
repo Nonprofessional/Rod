@@ -16,15 +16,15 @@ public enum ListenerTransport
 
     /// <summary>
     /// The single-port TLS shape (the mainstream C2 listener: one https
-    /// socket carries everything). TLS terminates with the CA-issued server
-    /// leaf; a client certificate is requested but optional at the TLS layer
-    /// -- enrollment has no certificate to present yet, so it rides this
-    /// socket on the stager token, while the beacon routes demand the
-    /// enrolled certificate at the application layer. A presented
-    /// certificate must still chain to the engagement CA, so a rogue
-    /// certificate dies at the TLS layer exactly as under
-    /// <see cref="Mtls"/>. Use <see cref="Mtls"/> when the listener exists
-    /// to terminate beacons only and enrollment is refused at the TLS layer.
+    /// socket carries enrollment and check-ins). TLS terminates with the
+    /// CA-issued server leaf and never requests a client certificate -- a
+    /// TLS CertificateRequest is itself a fingerprint, and the handshake
+    /// stays indistinguishable from an ordinary website's. Enrollment rides
+    /// the stager token and check-ins ride the sealed envelope under the
+    /// per-artifact key, both authenticated at the application layer
+    /// (architecture.md Sec 8/9). The interactive gRPC stream does not ride
+    /// this transport: over TLS its identity is the client certificate only
+    /// <see cref="Mtls"/> asks for.
     /// </summary>
     Https,
 

@@ -549,11 +549,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   socket opens. A payload build names its engagement's listener and the
   baked endpoint comes from the listener's record.
 - Supported listener transports: **HTTP(S)**, **HTTPS** (the single-port
-  shape: one TLS socket serves enrollment on the stager token and check-ins
-  on the enrolled certificate, the certificate optional at the TLS layer so
-  the certificate-less enrollment handshake can complete), **mTLS**, **DNS**,
-  **SMB** (named pipe), and **raw TCP** are implemented. Transport choice is
-  a profile/deployment concern; the protocol semantics are
+  shape: one TLS socket that requests no client certificate anywhere, so the
+  handshake is indistinguishable from an ordinary website's -- enrollment
+  rides the stager token and check-ins ride the sealed envelope under the
+  per-artifact key, both authenticated at the application layer), **mTLS**,
+  **DNS**, **SMB** (named pipe), and **raw TCP** are implemented. Transport
+  choice is a profile/deployment concern; the protocol semantics are
   transport-independent.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
@@ -565,9 +566,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   envelope route (an ordinary HTTP/1.x POST): Kestrel serves cleartext
   HTTP/2 only on an HTTP/2-only endpoint, which cannot also serve the
   HTTP/1.x enrollment riding the same socket, so the gRPC stream is
-  TLS-carried. Over TLS the certificate is the identity on every check-in
-  route -- a certificate-less connection reaches HTTP only on the `Https`
-  transport (where enrollment needs it), and the check-in routes refuse it.
+  TLS-carried. Over TLS the gRPC stream's identity is the client
+  certificate, and only the `mtls` transport requests one; the
+  certificate-less `https` socket carries check-ins on the envelope route
+  instead, where the per-artifact key sealing the body is the identity.
   A deployment that fronts the teamserver with its own TLS-terminating edge
   accepts the split knowingly; without such an edge, real binds are `Https`
   or `Mtls`.
