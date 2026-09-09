@@ -7,6 +7,7 @@ import { useLive } from './shell'
 import { ENGAGEMENT_TABS, type TabId } from './tabs'
 import { EngagementView } from './views/EngagementView'
 import { EngagementsView } from './views/EngagementsView'
+import { SettingsView } from './views/SettingsView'
 import { LoginView } from './views/LoginView'
 
 // Operator UI shell: a fixed sidebar plus a scrolling content column, the
@@ -25,6 +26,7 @@ import { LoginView } from './views/LoginView'
 type Route =
   | { kind: 'engagements' }
   | { kind: 'engagement'; engagementId: string; tab: string; implantId?: string }
+  | { kind: 'settings' }
 
 function parseHash(): Route {
   const hash = window.location.hash.replace(/^#/, '')
@@ -39,6 +41,7 @@ function parseHash(): Route {
   if (tabbed) return { kind: 'engagement', engagementId: tabbed[1], tab: tabbed[2] }
   const match = /^\/engagements\/([\da-fA-F-]+)\/?$/.exec(hash)
   if (match) return { kind: 'engagement', engagementId: match[1], tab: 'implants' }
+  if (/^\/settings\/?$/.test(hash)) return { kind: 'settings' }
   return { kind: 'engagements' }
 }
 
@@ -69,6 +72,12 @@ function Topbar({ route, operatorId }: { route: Route; operatorId: string }) {
             <span className="current" title={route.engagementId}>
               {route.engagementId.slice(0, 8)}
             </span>
+          </>
+        )}
+        {route.kind === 'settings' && (
+          <>
+            <Icon name="chevronRight" className="sep-icon" />
+            <span className="current">Settings</span>
           </>
         )}
       </div>
@@ -193,6 +202,14 @@ function App() {
               <Icon name="globe" />
               <span className="label">Engagements</span>
             </a>
+            <a
+              className={`nav-item${route.kind === 'settings' ? ' active' : ''}`}
+              href="#/settings"
+              title="Teamserver runtime settings"
+            >
+              <Icon name="settings" />
+              <span className="label">Settings</span>
+            </a>
           </div>
           {route.kind === 'engagement' && (
             <EngagementNav engagementId={route.engagementId} active={activeTab} />
@@ -213,6 +230,8 @@ function App() {
         <main className="main">
           {route.kind === 'engagements' ? (
             <EngagementsView />
+          ) : route.kind === 'settings' ? (
+            <SettingsView />
           ) : (
             <EngagementView
               engagementId={route.engagementId}

@@ -41,6 +41,14 @@ namespace Rod.Audit;
 /// The teamserver's half of the envelope key pair (the artifact carries the
 /// same key baked in). Metadata-sized, so it rides the jsonl line.
 /// </param>
+/// <param name="Build">
+/// The build parameters as they were at bake time -- the beacon profile, the
+/// credential's minted budget, and the wire knobs the operator set. The
+/// library's detail view reads this so "what did I build" never depends on
+/// remembering the form. Null on records written before the snapshot existed;
+/// every field inside is nullable so a future knob snapshots without breaking
+/// old files.
+/// </param>
 public sealed record PayloadRecord(
     Guid PayloadId,
     Guid EngagementId,
@@ -56,4 +64,50 @@ public sealed record PayloadRecord(
     string? BeaconEndpoint = null,
     Guid? TokenId = null,
     Guid? EnvelopeKeyId = null,
-    byte[]? EnvelopeKey = null);
+    byte[]? EnvelopeKey = null,
+    PayloadBuildProfile? Build = null);
+
+/// <summary>
+/// The bake-time snapshot of a payload's build parameters (the values the
+/// Build form carried when the artifact was generated). Every field is
+/// nullable: the snapshot outlives form redesigns, and an old jsonl line
+/// simply reads null for a knob it never recorded. The presence semantics
+/// match the build request -- null means "the build's default", never a
+/// distinctive value.
+/// </summary>
+public sealed record PayloadBuildProfile
+{
+    /// <summary>How the artifact checks in: "stream" (persistent mTLS) or
+    /// "poll" (envelope POST cycles).</summary>
+    public string? Mode { get; init; }
+
+    /// <summary>The check-in interval in seconds.</summary>
+    public double? SleepSeconds { get; init; }
+
+    /// <summary>The random slack added to every interval, in seconds.</summary>
+    public double? JitterSeconds { get; init; }
+
+    /// <summary>The artifact's expiry fuse.</summary>
+    public DateTimeOffset? KillDate { get; init; }
+
+    /// <summary>How many enrolls the baked credential was minted for.</summary>
+    public int? TokenMaxUses { get; init; }
+
+    /// <summary>The URI path of the one-time registration POST.</summary>
+    public string? EnrollPath { get; init; }
+
+    /// <summary>The User-Agent the implant presents.</summary>
+    public string? UserAgent { get; init; }
+
+    /// <summary>The per-request HTTP timeout in seconds.</summary>
+    public double? RequestTimeoutSeconds { get; init; }
+
+    /// <summary>The enroll body shape: None, Base64, or AesGcm.</summary>
+    public string? Envelope { get; init; }
+
+    /// <summary>Whether check-in bodies seal under the per-artifact key.</summary>
+    public bool? CheckInProtection { get; init; }
+
+    /// <summary>The backup dial addresses baked behind the primary, in walk order.</summary>
+    public IReadOnlyList<string>? FallbackEndpoints { get; init; }
+}

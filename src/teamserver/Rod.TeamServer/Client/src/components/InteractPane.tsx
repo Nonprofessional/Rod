@@ -9,18 +9,22 @@ import { StatusBadge } from './StatusBadge'
 // posts through the input route and Close stdin sends the eof that ends (or
 // half-closes, for a tunnel) the channel.
 //
-// Shared by the task log (a channel row's Interact action) and the session
-// console (the shell.interact pane).
+// Shared by the task log (a channel row's Interact action), the session
+// console (inline channel panes), and the shell dialog (the live session at
+// the bottom). Inside the dialog the pane is embedded: same terminal, no
+// duplicate Hide button -- the dialog's Close is the one affordance.
 export function InteractPane({
   engagementId,
   taskId,
   verb,
   onClose,
+  embedded = false,
 }: {
   engagementId: string
   taskId: string
   verb: string
   onClose: () => void
+  embedded?: boolean
 }) {
   const [transcript, setTranscript] = useState('')
   const [status, setStatus] = useState('Dispatched')
@@ -113,11 +117,13 @@ export function InteractPane({
         <span>·</span>
         <code>{taskId.slice(0, 8)}</code>
         <StatusBadge status={status} />
-        <span className="spacer">
-          <button className="ghost sm" onClick={onClose}>
-            Hide
-          </button>
-        </span>
+        {!embedded && (
+          <span className="spacer">
+            <button className="ghost sm" onClick={onClose}>
+              Hide
+            </button>
+          </span>
+        )}
       </div>
       <pre className="interact-transcript" ref={transcriptRef}>
         {transcript || '—'}

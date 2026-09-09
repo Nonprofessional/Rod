@@ -73,7 +73,12 @@ public static class PayloadJobEndpoints
         // enroll envelope or check-in protection (the default).
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
-        var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
+        var request = parsed! with
+        {
+            TokenSecret = secret,
+            MintedTokenId = tokenId.Value,
+            TokenMaxUses = body.TokenMaxUses ?? 1,
+        };
         if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();

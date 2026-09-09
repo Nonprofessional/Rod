@@ -240,15 +240,21 @@ public static class TransportHost
         // carries as delimited sequences in ordinary request/response bodies.
         services.AddSingleton<Endpoints.EnvelopeBeaconCheckIn>();
 
-        // Session staleness sweep (architecture.md Sec 10.3): registered only
-        // when a configuration is supplied -- the composition root always has
-        // one, the bare test host never opts in. The hosted sweeper runs the
-        // threshold check on a timer; absent the Sessions:Staleness section it
-        // uses the 15-minute default. A present-but-misconfigured section fails
-        // startup loudly rather than leaving dead sessions on the roster.
+        // Session staleness sweep (architecture.md Sec 10.3): the live values
+        // are always registered -- the settings endpoints read them and the
+        // composition root seeds them from the Sessions:Staleness section
+        // (defaults absent it, fail-loudly on a present-but-misconfigured
+        // one). The hosted sweeper itself runs only when a configuration is
+        // supplied -- the composition root always has one, the bare test host
+        // never opts in and drives passes directly.
+        var staleness = configuration is not null
+            ? SessionStalenessOptions.FromConfiguration(configuration)
+            : SessionStalenessOptions.Default;
+        services.AddSingleton(new SessionRuntimeSettings(
+            staleness,
+            persistencePath: configuration?["RuntimeSettings:FilePath"]));
         if (configuration is not null)
         {
-            var staleness = SessionStalenessOptions.FromConfiguration(configuration);
             services.AddSingleton(staleness);
             services.AddSingleton<SessionSweepService>();
             // Registered as a plain singleton plus the hosted wrapper, so the
@@ -648,6 +654,8 @@ public static class TransportHost
         app.MapPresenceEndpoints();
         app.MapTaskEndpoints();
         app.MapPayloadEndpoints();
+        // Operator-facing runtime settings (the live session-presence knobs).
+        app.MapSettingsEndpoints();
         // Background payload builds: the job-queued face of the same pipeline.
         app.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,
@@ -691,6 +699,8 @@ public static class TransportHost
         endpoints.MapPresenceEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
+        // Operator-facing runtime settings (the live session-presence knobs).
+        endpoints.MapSettingsEndpoints();
         // Background payload builds: the job-queued face of the same pipeline.
         endpoints.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,

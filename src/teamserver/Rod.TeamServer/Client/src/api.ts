@@ -1017,6 +1017,23 @@ export interface PayloadSummary {
   tokenMaxUses: number | null
   tokenRemainingUses: number | null
   tokenExpiresAt: string | null
+  // The bake-time build parameters; null on payloads built before the
+  // snapshot existed, null fields inside mean "the build's default".
+  build: PayloadBuildProfile | null
+}
+
+export interface PayloadBuildProfile {
+  mode: string | null
+  sleepSeconds: number | null
+  jitterSeconds: number | null
+  killDate: string | null
+  tokenMaxUses: number | null
+  enrollPath: string | null
+  userAgent: string | null
+  requestTimeoutSeconds: number | null
+  envelope: string | null
+  checkInProtection: boolean | null
+  fallbackEndpoints: string[] | null
 }
 
 export async function listPayloads(engagementId: string): Promise<PayloadSummary[]> {
@@ -1028,5 +1045,31 @@ export async function listPayloads(engagementId: string): Promise<PayloadSummary
 export async function deletePayload(engagementId: string, artifactId: string): Promise<void> {
   await jsonOrThrow<unknown>(
     await fetch(`engagements/${engagementId}/payloads/${artifactId}`, { method: 'DELETE' }),
+  )
+}
+
+// --- Runtime settings -----------------------------------------
+//
+// Operator-adjustable server settings. The session-presence pair (the
+// staleness sweep's threshold and interval) applies live -- the sweeper reads
+// the current values on every pass -- and the server persists changes so a
+// restart keeps them.
+
+export interface SessionSettings {
+  thresholdMinutes: number
+  sweepIntervalMinutes: number
+}
+
+export async function getSessionSettings(): Promise<SessionSettings> {
+  return jsonOrThrow(await fetch('settings/sessions'))
+}
+
+export async function putSessionSettings(input: SessionSettings): Promise<SessionSettings> {
+  return jsonOrThrow(
+    await fetch('settings/sessions', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
   )
 }

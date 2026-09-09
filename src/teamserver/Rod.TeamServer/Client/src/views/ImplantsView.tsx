@@ -15,8 +15,8 @@ import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
 import { Icon } from '../components/Icons'
-import { InteractPane } from '../components/InteractPane'
 import { ProcessBrowser } from '../components/ProcessBrowser'
+import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { VERB_FORMS } from '../verbForms'
@@ -130,9 +130,11 @@ export function ImplantsView({
   // (or just the implant for the browser). One at a time -- the operator acts
   // on one row at a time.
   const [dialog, setDialog] = useState<{ implantId: string; verb: string } | null>(null)
-  // The live interactive-shell channel opened from the fleet (the menu's
-  // "Interactive shell"): the channel task id plus the implant it runs on.
-  const [shell, setShell] = useState<{ implantId: string; taskId: string } | null>(null)
+  // The interactive-shell dialog opened from the fleet (the menu's
+  // "Interactive shell"): which implant it runs on. The dialog itself owns
+  // the session lifecycle -- it continues a running shell or starts a new one
+  // under the implant's session history.
+  const [shell, setShell] = useState<{ implantId: string; host: string } | null>(null)
   const [processesFor, setProcessesFor] = useState<string | null>(null)
   const [filesFor, setFilesFor] = useState<string | null>(null)
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
@@ -373,17 +375,7 @@ export function ImplantsView({
       onConsole: () => {
         window.location.hash = `#/engagements/${engagementId}/implants/${implantId}`
       },
-      onShell: () => {
-        void (async () => {
-          try {
-            const task = await issueTask(engagementId, { implantId, verb: 'shell.interact', arguments: '' })
-            setShell({ implantId, taskId: task.taskId })
-            setError(null)
-          } catch (e) {
-            setError(String(e))
-          }
-        })()
-      },
+      onShell: () => setShell({ implantId, host: target.hostname ?? implantId.slice(0, 8) }),
       onIssue: (verb) => {
         void (async () => {
           try {
@@ -484,7 +476,10 @@ export function ImplantsView({
                   className={`device-row${collapsed.has(group.key) ? ' collapsed' : ''}`}
                   onClick={() => toggleGroup(group.key)}
                 >
-                  <td colSpan={6}>
+                  <td
+                    colSpan={6}
+                    title="Devices are grouped by the hostname reported at enroll. Two hosts that report the same hostname (cloned machines, a shared image) share a group -- the implant count and the rows underneath stay per-identity, so nothing merges beyond the presentation."
+                  >
                     <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
                     <strong>{group.hostname ?? 'unknown host'}</strong>
                     <span className="device-meta">
@@ -524,7 +519,7 @@ export function ImplantsView({
                                 retired
                                   ? 'Retired: refused at handshake, untaskable'
                                   : implant.isOnline
-                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()} -- a stream that dies silently holds Online until the staleness sweep (default 15 min of silence)`
+                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()} -- a stream that dies silently holds Online until the staleness sweep closes it (see Settings)`
                                     : lastSeen
                                       ? `No active session; last heard ${new Date(lastSeen).toLocaleString()}`
                                       : 'No active session'
@@ -659,10 +654,10 @@ export function ImplantsView({
       )}
       {error && <p className="error">{error}</p>}
       {shell && (
-        <InteractPane
+        <ShellDialog
           engagementId={engagementId}
-          taskId={shell.taskId}
-          verb="shell.interact"
+          implantId={shell.implantId}
+          hostLabel={shell.host}
           onClose={() => setShell(null)}
         />
       )}

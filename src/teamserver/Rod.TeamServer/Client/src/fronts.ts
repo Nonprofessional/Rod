@@ -12,3 +12,9 @@ export function frontFor(
   if (!endpoint) return null
   return listeners.find((l) => l.publicEndpoint === endpoint) ?? null
 }
+
+// The compact "address:port" form rows show: scheme and any path stripped, so
+// a listener cell reads "front (http) · 127.0.0.1:5098" on one line.
+export function hostPortOf(endpoint: string): string {
+  return endpoint.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '')
+}

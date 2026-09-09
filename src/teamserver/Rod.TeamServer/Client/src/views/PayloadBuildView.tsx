@@ -8,7 +8,7 @@ import {
   listPayloads,
   revokeStagerToken,
 } from '../api'
-import { frontFor } from '../fronts'
+import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
@@ -304,7 +304,7 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
-            Callback front
+            Enroll + check-in front
             <select
               value={listenerId}
               onChange={(e) => {
@@ -346,13 +346,13 @@ export function PayloadBuildView({
               onChange={(e) => setBeaconListenerId(e.target.value)}
               title={
                 offersBeaconSplit
-                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the callback front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
-                  : 'A TLS-terminated front carries the callback and its check-ins on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
+                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the enroll + check-in front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
+                  : 'A TLS-terminated front carries the enroll + check-in traffic and the interactive stream on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
               }
             >
               {offersBeaconSplit ? (
                 <>
-                  <option value="">-- none: check-ins ride the callback front (poll) --</option>
+                  <option value="">-- none: check-ins ride the enroll + check-in front (poll) --</option>
                   {beaconCandidates.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name} ({l.transport} → {l.publicEndpoint})
@@ -360,7 +360,7 @@ export function PayloadBuildView({
                   ))}
                 </>
               ) : (
-                <option value="">-- same socket as the callback front --</option>
+                <option value="">-- same socket as the enroll + check-in front --</option>
               )}
             </select>
           </label>
@@ -502,12 +502,12 @@ export function PayloadBuildView({
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Manual overrides only, for builds without a picked listener: two addresses at most
-              (the callback URL, and the interactive URL for the hardened split), spare callback
-              fronts, and the one path knob — registration's. Check-ins ride a fixed route and the
-              interactive stream rides its own, so no other path exists to set.
+              (the enroll + check-in URL, and the interactive URL for the hardened split), spare
+              enroll + check-in fronts, and the one path knob — registration's. Check-ins ride a
+              fixed route and the interactive stream rides its own, so no other path exists to set.
             </p>
             <label>
-              Callback URL (manual)
+              Enroll + check-in URL (manual)
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
@@ -515,7 +515,7 @@ export function PayloadBuildView({
                 disabled={!!listenerId}
                 title={
                   listenerId
-                    ? 'A callback front listener is picked, so its public endpoint is used. Choose "-- none: manual endpoint --" above to type one manually.'
+                    ? 'An enroll + check-in front listener is picked, so its public endpoint is used. Choose "-- none: manual endpoint --" above to type one manually.'
                     : 'The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere).'
                 }
               />
@@ -530,7 +530,7 @@ export function PayloadBuildView({
                 title={
                   beaconListenerId
                     ? 'An interactive front listener is picked, so its public endpoint is used.'
-                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins ride the callback front itself over the envelope POST cycle; name it only for the split-socket shape.'
+                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins ride the enroll + check-in address itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>
@@ -540,7 +540,7 @@ export function PayloadBuildView({
                 value={fallbackEndpoints}
                 onChange={(e) => setFallbackEndpoints(e.target.value)}
                 placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Spare callback fronts the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-front shape."
+                title="Backup enroll + check-in fronts the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-front shape."
               />
             </label>
             <label>
@@ -623,7 +623,7 @@ export function PayloadBuildView({
               <tr>
                 <th>Requested</th>
                 <th>Target</th>
-                <th>Front</th>
+                <th>Listener</th>
                 <th>State</th>
                 <th>Artifact</th>
                 <th></th>
@@ -643,18 +643,31 @@ export function PayloadBuildView({
                       </code>
                     </td>
                     <td>
-                      {front && (
+                      <span
+                        title={
+                          front
+                            ? `The engagement's ${front.transport} listener: ${job.endpoint} (enroll + check-in)`
+                            : `No listener serves this address (typed for a redirector): ${job.endpoint}`
+                        }
+                      >
+                        {front ? (
+                          <>
+                            {front.name} <span className="muted">({front.transport})</span> ·{' '}
+                            <code>{hostPortOf(job.endpoint)}</code>
+                          </>
+                        ) : (
+                          <>
+                            <code>{hostPortOf(job.endpoint)}</code>{' '}
+                            <span className="muted">manual</span>
+                          </>
+                        )}
+                      </span>
+                      {job.beaconEndpoint && (
                         <div
                           className="muted"
-                          title={`The ${front.transport} listener this build dials`}
+                          title="The socket the interactive stream dials (split-socket build)"
                         >
-                          via {front.name} ({front.transport})
-                        </div>
-                      )}
-                      <code>{job.endpoint}</code>
-                      {job.beaconEndpoint && (
-                        <div className="muted" title="The socket the check-in stream dials (split-socket build)">
-                          beacon <code>{job.beaconEndpoint}</code>
+                          interactive <code>{hostPortOf(job.beaconEndpoint)}</code>
                         </div>
                       )}
                     </td>
@@ -734,10 +747,11 @@ export function PayloadBuildView({
   )
 }
 
-// The traffic shape this build bakes, drawn from the current picks: one line
-// when check-ins ride the callback front, two when the interactive stream gets
-// its own mTLS socket. The form's words say what each field does; this says
-// what the target will see moving.
+// The traffic shape this build bakes, drawn from the current picks and named
+// with the fixed vocabulary: the behaviors each socket carries -- enroll +
+// check-in on the primary, interactive on its own mTLS socket when the build
+// splits. The form's words say what each field does; this says what the
+// target will see moving.
 function WireShape({ enroll, interactive }: { enroll: string; interactive: string | null }) {
   return (
     <div className="wire-shape" title="The traffic shape this build bakes">
@@ -746,13 +760,13 @@ function WireShape({ enroll, interactive }: { enroll: string; interactive: strin
       </span>
       <div className="wire-paths">
         <div className="wire-path">
-          <span className="wire-label">{interactive ? 'registration' : 'callback · registration + check-ins'}</span>
+          <span className="wire-label">{interactive ? 'enroll + check-in' : 'enroll + check-in + interactive'}</span>
           <span className="wire-arrow">→</span>
           <span className="wire-node">{enroll}</span>
         </div>
         {interactive && (
           <div className="wire-path">
-            <span className="wire-label">interactive stream · mTLS</span>
+            <span className="wire-label">interactive · mTLS</span>
             <span className="wire-arrow">⇉</span>
             <span className="wire-node">{interactive}</span>
           </div>

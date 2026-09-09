@@ -172,6 +172,16 @@ public class PayloadBuildTests
             Assert.Equal(1, row.TokenRemainingUses);
             Assert.NotNull(row.TokenExpiresAt);
 
+            // The build-parameter snapshot: what the form carried when the
+            // artifact was generated, read back from the library row.
+            Assert.NotNull(row.Build);
+            Assert.Equal("stream", row.Build!.Mode);
+            Assert.Equal(30, row.Build.SleepSeconds);
+            Assert.Equal(10, row.Build.JitterSeconds);
+            Assert.Equal(1, row.Build.TokenMaxUses);
+            Assert.Equal("None", row.Build.Envelope);
+            Assert.True(row.Build.CheckInProtection);
+
             // The join is live: revoking the baked credential removes the
             // token, and the next listing keeps the historical id but reads
             // no budget -- "no enrollments left" on the operator's row.

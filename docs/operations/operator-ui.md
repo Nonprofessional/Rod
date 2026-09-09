@@ -37,7 +37,43 @@ under a pseudo-terminal, so prompts and line editing appear and the pane's
 program. Where no pseudo-terminal wrapper exists (a stripped container,
 Windows before a ConPTY handler lands), the channel falls back to
 byte-transparent pipes: fully usable, but without echo or signal
-semantics.
+semantics. It opens as a **dialog** (the menu's "Interactive shell", the
+console's `interact`, or the fleet menu): every shell session the implant
+ever ran stays visible as a folded history block -- the transcript is the
+task's own record -- with a separator line above the live session marking
+each break. A shell does not survive its channel: when the operator closes
+stdin, the shell exits, or the idle window closes an abandoned session
+(default 10 minutes without operator input; `ROD_SHELL_IDLE_SECONDS`
+overrides for lab runs), the next shell starts fresh -- a new process in
+its home directory -- under the separator. Closing the dialog keeps a
+running session alive server-side; reopening continues it.
+
+## Naming -- the fixed vocabulary
+
+The three connection behaviors above are the whole vocabulary, and every
+address-carrying label names the behaviors it serves. These names are
+**locked**: they appear here, in the Build form, the Payloads library, and
+the listener form, and they do not drift per panel. Changing any of them is
+a deliberate act that updates this section first.
+
+- **Enroll + check-in front** -- the primary dial address a build bakes:
+  the listener the implant registers on once and checks in on forever.
+  The Build form's first field; the manual variant under Advanced is the
+  **Enroll + check-in URL**. The library's **Listener** column names the
+  same thing per artifact.
+- **Interactive front** / **Interactive URL** -- the mTLS socket that
+  carries the interactive stream when the build splits its traffic (a
+  cleartext front cannot carry it). Absent, interactive rides the same
+  TLS-terminated front as everything else.
+- **Fallback fronts** -- backup enroll + check-in addresses baked behind
+  the primary and walked in order when it burns.
+- **Public endpoint** -- a listener's own field: the address implants dial
+  (enroll + check-in, and interactive on TLS fronts). "Callback" appears
+  nowhere; it was retired as a synonym that meant three things.
+
+A **listener** is the server-side object; a **front** is the role an
+address plays in a build. Every HTTP-shaped listener can serve enroll +
+check-in; mTLS fronts additionally serve interactive.
 
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
@@ -62,10 +98,13 @@ the status dot and the last-seen column).
   30 s clock so relative stamps keep moving between live events. A stream
   that closes cleanly drops Online immediately; a stream that dies
   silently holds Online until the staleness sweep closes its session
-  (default 15 minutes of silence, swept every minute, configurable as
+  (default 15 minutes of silence, swept every minute -- adjustable at
+  runtime on the **Settings** page, boot-defaulted from
   `Sessions:Staleness:Threshold` / `SweepInterval`) -- the standfirst and
   the dot's hover text say so, and Last seen always tells the truth in the
-  meantime. Notes and
+  meantime. Devices group by the hostname reported at enroll, so two hosts
+  reporting the same hostname (cloned machines) share a group; the group
+  header's hover says so, and the rows underneath stay per-identity. Notes and
   retire live on the row, and everything else opens from its context menu
   (right-click or the three-dot button): shell commands, the file browser,
   the process browser, recon, persistence, collection -- each entry gated
@@ -77,7 +116,7 @@ the status dot and the last-seen column).
   bar naming the device, identity, and live state; a scrolling transcript of
   that implant's task history (each task a line with time, status tag, verb,
   and arguments; short output unfolds under the line, long output folds
-  behind a line count; the channel pane for interactive tasks opens in the
+  behind a line count; a channel task's pane opens in the
   same flow above the prompt); and a prompt at the bottom -- a plain line
   runs as a shell command, `help` lists the shortcuts (`interact`, `ps`,
   `kill`, `screenshot`, `hostenum`, `portscan`, `services`, `download`,
@@ -121,9 +160,13 @@ An engagement's C2 ingress. Each listener owns two addresses:
   its own field, defaulted per transport (https 443, mTLS 5443, http 5090,
   DNS 53, TCP 4444). SMB has no interface/port -- its bind is
   a bare pipe name.
-- **Public endpoint** -- the address *implants dial*, baked into payloads.
-  In production this is typically your redirector
-  ([redirectors.md](redirectors.md)); in dev it is usually the bind itself.
+- **Public endpoint** -- the address *implants dial* (enroll + check-in,
+  and interactive on TLS fronts), baked into payloads. The create form's
+  field of the same name takes a bare host, host:port, or full URL and
+  completes it (scheme from the transport, port from the bind); empty
+  derives it from the bind. In production this is typically your
+  redirector ([redirectors.md](redirectors.md)); in dev it is usually the
+  bind itself.
 
 Endpoint completion (HTTP-shaped transports only): an empty endpoint derives
 from the bind (`bind 10.1.2.3:8443` on https becomes
@@ -167,29 +210,32 @@ C2's own CA -- no system-trust assumptions.
 
 ## Build
 
-The main path is the mainstream shape: pick the **callback front** (the
-listener the implant calls home to) and the **target** (OS/arch; x86 pairs
-with Windows only), leave the rest at the defaults, and build. The artifact
-is a self-contained single-file executable with its enrollment credential
-baked in -- drop it on the target and run, zero arguments. A small diagram
-under the picks draws the traffic shape the build bakes and follows them
-live.
+The main path is the mainstream shape: pick the **Enroll + check-in front**
+(the listener the implant calls home to) and the **target** (OS/arch; x86
+pairs with Windows only), leave the rest at the defaults, and build. The
+artifact is a self-contained single-file executable with its enrollment
+credential baked in -- drop it on the target and run, zero arguments. A
+small diagram under the picks draws the traffic shape the build bakes and
+follows them live, labeled with the fixed vocabulary: which behaviors each
+socket carries.
 
-Two words carry the form: the **callback front** is where the implant calls
-home (it registers there once and checks in there for the rest of its
-life), and the **interactive front** is the optional second socket for live
-channels. Everything else -- "enroll", "check-in", "beacon" in the hover
-texts -- names the two moments inside that one relationship.
+The form's two addresses are the vocabulary's two roles: the **enroll +
+check-in front** is where the implant calls home (it registers there once
+and checks in there for the rest of its life), and the **interactive
+front** is the optional second socket for live channels. Everything else
+-- "enroll", "check-in" in the hover texts -- names the moments inside
+that one relationship.
 
 **Interactive front (mTLS)** is enabled when the picked front is cleartext
-`http`: check-ins cannot ride that socket, so the form offers the
-engagement's `mTLS` listener for the interactive stream -- the split-socket
-shape (registration one socket, interactive channel another). Left empty,
-the implant polls the callback front over the envelope POST cycle instead.
-An `https` front carries both halves itself and needs no split. The build
-API takes the same thing as `beaconListenerId`, or a typed
-`beaconEndpoint`, and refuses a cleartext callback endpoint with no beacon
-named -- that artifact would enroll and then sit offline forever.
+`http`: interactive channels cannot ride that socket, so the form offers
+the engagement's `mTLS` listener for the interactive stream -- the
+split-socket shape (enroll + check-in one socket, interactive another).
+Left empty, the implant polls the enroll + check-in front over the
+envelope POST cycle instead. An `https` front carries all three behaviors
+itself and needs no split. The build API takes the same thing as
+`beaconListenerId`, or a typed `beaconEndpoint`, and refuses a cleartext
+enroll endpoint with no interactive front named -- that artifact would
+enroll and then sit without tasking forever.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs
@@ -213,15 +259,15 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 
 **Advanced** (all defaulted server side; open only to change them):
 
-- **Callback URL (manual)** -- the dial address when you deliberately build
-  without naming a listener.
+- **Enroll + check-in URL (manual)** -- the dial address when you
+  deliberately build without naming a listener.
 - **Interactive URL (manual)** -- the https host the interactive stream
-  dials when it differs from the callback front (empty = check-ins ride the
-  callback front's envelope cycle); the typed-URL twin of the Interactive
-  front picker above.
-- **Fallback fronts** -- backup callback fronts baked in behind the primary
-  and dialed in order when it burns; they share the enroll path and the
-  fixed check-in route.
+  dials when it differs from the enroll + check-in front (empty = check-ins
+  ride the enroll + check-in address's envelope cycle); the typed-URL twin
+  of the Interactive front picker above.
+- **Fallback fronts** -- backup enroll + check-in fronts baked in behind
+  the primary and dialed in order when it burns; they share the enroll
+  path and the fixed check-in route.
 - **Enroll path** -- the URI path of the one-time registration POST. The
   only path knob: check-ins ride the fixed `/implants/beacon` route and the
   interactive stream rides the mTLS socket's own gRPC path, so no other path
@@ -256,18 +302,41 @@ each other.
 
 The durable library and the record of every build: every payload the
 engagement ever built, straight from the payload store -- restart-safe,
-unbounded by the build queue. Filter by class, language, target, dial front,
-or fingerprint. Each row shows the **front** it dials (the listener's name and
-transport when the baked endpoint matches one, the URL verbatim when it was
-typed for a redirector) and the **credential** column -- the baked token's use
-budget read live off the token store at list time: how many enrolls were spent
-out of the minted maximum, how many are left, and the window (an expired or
-revoked credential reads "no enrolls left"; on the in-memory dev store a fully
-spent token reads the same, because the store drops it at zero).
+unbounded by the build queue. Filter by class, language, target, listener,
+or fingerprint. Each row names the **Listener** it dials (the engagement
+listener's name, transport, and address when the baked endpoint matches
+one; the bare address with a "manual" tag when it was typed for a
+redirector this server does not serve) and shows the **Credential**
+column -- the baked token's use budget read live off the token store at
+list time: how many enrolls were spent out of the minted maximum, how many
+are left, and the window (an expired or revoked credential reads "no
+enrolls left"; on the in-memory dev store a fully spent token reads the
+same, because the store drops it at zero).
+The row's chevron unfolds the **build parameters** snapshotted at bake
+time: mode, check-in cadence and jitter, kill date, the credential's
+minted shape, enroll path, user agent, request timeout, enroll-body
+envelope, check-in protection, fallback fronts, and the interactive
+endpoint on a split build -- so "what did I build" never depends on
+remembering the form.
 **Download** the bytes again, **Revoke** to kill the baked credential (a
 deployed artifact that has not yet enrolled will not be able to), or
-**Delete** the payload -- the bytes and the row are gone, a stager fetching it
-404s from then on, and the deletion is an audited fact.
+**Delete** the payload -- the bytes and the row are gone, a stager
+fetching it 404s from then on, and the deletion is an audited fact.
+
+## Settings
+
+`#/settings`, beside Engagements in the sidebar -- operator-level runtime
+settings, server-wide rather than per-engagement. **Session presence**
+explains the fleet's offline behavior and adjusts it live: *Offline
+after* is how long a silent session holds its Online dot before the
+staleness sweep closes it (1 minute..24 hours; keep it above your
+implants' check-in interval or every quiet gap flaps offline), *Sweep
+every* is how often the check runs (10 seconds..1 hour). Saving applies
+on the next sweep pass -- no restart -- and the server persists the pair
+(`RuntimeSettings:FilePath`, default `runtime-settings.json` beside the
+server) so a restart remembers them; the `Sessions:Staleness` config
+section remains the boot default. Bounds violations refuse with the
+reason rather than clamping.
 
 ## Evidence panels
 

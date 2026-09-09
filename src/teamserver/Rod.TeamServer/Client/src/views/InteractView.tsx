@@ -17,6 +17,7 @@ import { FileBrowser } from '../components/FileBrowser'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { ProcessBrowser } from '../components/ProcessBrowser'
+import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { CHANNEL_VERBS, VERB_FORMS } from '../verbForms'
@@ -48,7 +49,7 @@ interface QuickCommand {
 
 const QUICK_HELP: readonly QuickCommand[] = [
   { usage: '‹command line›', note: 'runs as a shell command on the target' },
-  { usage: 'interact', note: 'open the interactive shell channel (a real terminal: PTY, Ctrl+C works)' },
+  { usage: 'interact', note: 'open the interactive shell dialog (a real terminal: PTY, Ctrl+C works; history survives)' },
   { usage: 'ps', note: 'list processes (the browser pane is in the menu)' },
   { usage: 'kill <pid>', note: 'terminate a process' },
   { usage: 'screenshot', note: 'capture the display' },
@@ -81,6 +82,10 @@ export function InteractView({
   // Output blocks the operator flipped against their default fold state.
   const [toggled, setToggled] = useState<Set<string>>(new Set())
   const [interactTask, setInteractTask] = useState<string | null>(null)
+  // The interactive-shell dialog: the menu's "Interactive shell" and the
+  // `interact` shortcut both open it. It owns the session lifecycle --
+  // continuing a live shell or starting a new one under the history.
+  const [shellOpen, setShellOpen] = useState(false)
   const [dialogVerb, setDialogVerb] = useState<string | null>(null)
   const [processes, setProcesses] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
@@ -123,6 +128,7 @@ export function InteractView({
   useEffect(() => {
     setToggled(new Set())
     setInteractTask(null)
+    setShellOpen(false)
   }, [engagementId, implantId])
 
   const loadOlder = useCallback(async () => {
@@ -199,11 +205,9 @@ export function InteractView({
         case 'help':
           setHint(QUICK_HELP.map((c) => `${c.usage} — ${c.note}`).join('    ·    '))
           return
-        case 'interact': {
-          const task = await issue('shell.interact', '')
-          setInteractTask(task.taskId)
+        case 'interact':
+          setShellOpen(true)
           return
-        }
         case 'shell':
           await issue('shell.exec', rest)
           return
@@ -289,12 +293,7 @@ export function InteractView({
 
   const menuEntries = implant
     ? implantMenuEntries(implant, {
-        onShell: () => {
-          void (async () => {
-            const task = await issue('shell.interact', '').catch(() => null)
-            if (task) setInteractTask(task.taskId)
-          })()
-        },
+        onShell: () => setShellOpen(true),
         onIssue: (verb) => {
           void issue(verb, '')
         },
@@ -427,6 +426,14 @@ export function InteractView({
 
       {menu.menu && (
         <ContextMenu x={menu.menu.x} y={menu.menu.y} entries={menuEntries} onClose={menu.close} />
+      )}
+      {shellOpen && implant && (
+        <ShellDialog
+          engagementId={engagementId}
+          implantId={implantId}
+          hostLabel={hostLabel}
+          onClose={() => setShellOpen(false)}
+        />
       )}
       {processes && implant && (
         <ProcessBrowser engagementId={engagementId} implantId={implantId} onClose={() => setProcesses(false)} />

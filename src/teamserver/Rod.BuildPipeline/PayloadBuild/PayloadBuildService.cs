@@ -76,6 +76,7 @@ public sealed class PayloadBuildService
             request.Stage2,
             request.TokenSecret,
             request.MintedTokenId,
+            request.TokenMaxUses,
             request.EnvelopeKeyId,
             request.EnvelopeKey);
 
@@ -119,8 +120,9 @@ public sealed class PayloadBuildService
 /// build bakes in; it is required for the stager class and ignored elsewhere.
 /// <see cref="TokenSecret"/> is the enrollment credential the build bakes in
 /// (the transport layer mints it and attaches it here); null leaves the
-/// artifact credential-free. <see cref="EnvelopeKeyId"/> and
-/// <see cref="EnvelopeKey"/> are the per-artifact AES-GCM envelope pair the
+/// artifact credential-free. <see cref="TokenMaxUses"/> rides beside it as the
+/// minted budget the library's build snapshot records. <see cref="EnvelopeKeyId"/>
+/// and <see cref="EnvelopeKey"/> are the per-artifact AES-GCM envelope pair the
 /// transport layer mints when the profile's envelope is AesGcm; null on every
 /// other envelope.
 /// </summary>
@@ -138,5 +140,6 @@ public sealed record BuildRequest(
     Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
     Guid? MintedTokenId = null,
+    int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null);

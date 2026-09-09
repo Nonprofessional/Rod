@@ -60,7 +60,23 @@ internal static class PayloadBuildRecorder
                 BeaconEndpoint: artifact.Params.Transport.BeaconEndpoint,
                 TokenId: artifact.Params.TokenId,
                 EnvelopeKeyId: artifact.Params.EnvelopeKeyId,
-                EnvelopeKey: artifact.Params.EnvelopeKey),
+                EnvelopeKey: artifact.Params.EnvelopeKey,
+                Build: new PayloadBuildProfile
+                {
+                    Mode = artifact.Params.Beacon.Mode,
+                    SleepSeconds = artifact.Params.Beacon.Sleep.TotalSeconds,
+                    JitterSeconds = artifact.Params.Beacon.Jitter.TotalSeconds,
+                    KillDate = artifact.Params.Beacon.KillDate,
+                    TokenMaxUses = artifact.Params.TokenMaxUses,
+                    EnrollPath = artifact.Params.Transport.EnrollPath,
+                    UserAgent = artifact.Params.Transport.UserAgent,
+                    RequestTimeoutSeconds = artifact.Params.Transport.RequestTimeout.TotalSeconds,
+                    Envelope = artifact.Params.Transport.Envelope.ToString(),
+                    CheckInProtection = artifact.Params.Transport.CheckInProtection,
+                    FallbackEndpoints = artifact.Params.Transport.FallbackEndpoints.Count == 0
+                        ? null
+                        : artifact.Params.Transport.FallbackEndpoints.ToArray(),
+                }),
             cancellationToken);
         await audit.AppendAsync(
             AuditEvent.Fact(

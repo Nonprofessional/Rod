@@ -176,7 +176,12 @@ public static class PayloadEndpoints
         // check-in body under it -- one key, minted once per build.
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
-        var request = parsed! with { TokenSecret = secret, MintedTokenId = tokenId.Value };
+        var request = parsed! with
+        {
+            TokenSecret = secret,
+            MintedTokenId = tokenId.Value,
+            TokenMaxUses = body.TokenMaxUses ?? 1,
+        };
         if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
@@ -326,7 +331,8 @@ public static class PayloadEndpoints
         string? BeaconEndpoint = null,
         int? TokenMaxUses = null,
         int? TokenRemainingUses = null,
-        DateTimeOffset? TokenExpiresAt = null)
+        DateTimeOffset? TokenExpiresAt = null,
+        PayloadBuildProfileResponse? Build = null)
     {
         public static PayloadSummaryResponse Of(
             Rod.Audit.PayloadRecord record,
@@ -344,7 +350,42 @@ public static class PayloadEndpoints
             BeaconEndpoint: record.BeaconEndpoint,
             TokenMaxUses: tokenState?.MaxUses,
             TokenRemainingUses: tokenState?.RemainingUses,
-            TokenExpiresAt: tokenState?.ExpiresAt);
+            TokenExpiresAt: tokenState?.ExpiresAt,
+            Build: PayloadBuildProfileResponse.Of(record.Build));
+    }
+
+    // The bake-time build parameters, as the library's detail view reads them.
+    // Null object and null fields alike mean "not recorded" -- old records
+    // predate the snapshot, and each field was the build's default when the
+    // operator left it empty.
+    public sealed record PayloadBuildProfileResponse(
+        string? Mode = null,
+        double? SleepSeconds = null,
+        double? JitterSeconds = null,
+        DateTimeOffset? KillDate = null,
+        int? TokenMaxUses = null,
+        string? EnrollPath = null,
+        string? UserAgent = null,
+        double? RequestTimeoutSeconds = null,
+        string? Envelope = null,
+        bool? CheckInProtection = null,
+        string[]? FallbackEndpoints = null)
+    {
+        public static PayloadBuildProfileResponse? Of(Rod.Audit.PayloadBuildProfile? profile) =>
+            profile is null
+                ? null
+                : new(
+                    profile.Mode,
+                    profile.SleepSeconds,
+                    profile.JitterSeconds,
+                    profile.KillDate,
+                    profile.TokenMaxUses,
+                    profile.EnrollPath,
+                    profile.UserAgent,
+                    profile.RequestTimeoutSeconds,
+                    profile.Envelope,
+                    profile.CheckInProtection,
+                    profile.FallbackEndpoints?.ToArray());
     }
 
     public sealed record Problem(string Error);

@@ -58,6 +58,7 @@ public sealed record BuildParams(
     Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
     Guid? TokenId = null,
+    int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null);
 

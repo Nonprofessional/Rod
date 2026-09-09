@@ -280,11 +280,11 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           </>
         )}
         <label>
-          Callback address
+          Public endpoint
           <input
             className="endpoint-input"
             placeholder="host, host:port, or URL — empty = the bind"
-            title="The address baked into payloads — what deployed implants dial back to (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
+            title="The address baked into payloads — what deployed implants enroll and check in on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
             value={publicEndpoint}
             onChange={(e) => setPublicEndpoint(e.target.value)}
           />

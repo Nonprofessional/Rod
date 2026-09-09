@@ -45,15 +45,17 @@ public sealed record SessionStalenessOptions(TimeSpan Threshold, TimeSpan SweepI
 
 /// <summary>
 /// The hosted staleness sweeper (architecture.md Sec 10.3): runs
-/// <see cref="SessionSweepService.SweepStaleAsync"/> once per
-/// <see cref="SessionStalenessOptions.SweepInterval"/> against the threshold, so
-/// a beacon stream that dies silently -- no clean close, no more frames -- stops
-/// holding its session Active forever. Closing the session is what drops the
-/// implant off the online roster; the beacon stream's own reader ends the
-/// connection on its next frame so a recovered implant re-handshakes and comes
-/// back online.
+/// <see cref="SessionSweepService.SweepStaleAsync"/> once per sweep interval
+/// against the threshold, so a beacon stream that dies silently -- no clean
+/// close, no more frames -- stops holding its session Active forever. Closing
+/// the session is what drops the implant off the online roster; the beacon
+/// stream's own reader ends the connection on its next frame so a recovered
+/// implant re-handshakes and comes back online.
 /// </summary>
 /// <remarks>
+/// Both the threshold and the interval are the live
+/// <see cref="SessionRuntimeSettings"/> values, read on every pass -- an
+/// operator's settings-page change applies on the next pass without a restart.
 /// The first sweep runs immediately at startup (a restarted teamserver should
 /// not wait a full interval before cleaning up the previous run's stale
 /// sessions), then the loop sleeps one interval between passes.
@@ -63,16 +65,16 @@ public sealed record SessionStalenessOptions(TimeSpan Threshold, TimeSpan SweepI
 public sealed class SessionStalenessSweeper : BackgroundService
 {
     private readonly SessionSweepService _sweep;
-    private readonly SessionStalenessOptions _options;
+    private readonly SessionRuntimeSettings _settings;
     private readonly TimeProvider _clock;
 
     public SessionStalenessSweeper(
         SessionSweepService sweep,
-        SessionStalenessOptions options,
+        SessionRuntimeSettings settings,
         TimeProvider clock)
     {
         _sweep = sweep;
-        _options = options;
+        _settings = settings;
         _clock = clock;
     }
 
@@ -89,19 +91,19 @@ public sealed class SessionStalenessSweeper : BackgroundService
                 return;
             }
 
-            await Task.Delay(_options.SweepInterval, stoppingToken);
+            await Task.Delay(_settings.Current.SweepInterval, stoppingToken);
         }
     }
 
     /// <summary>
     /// Runs one sweep pass: closes every Active session whose last-seen stamp is
-    /// older than the configured threshold, fanning each close out to connected
+    /// older than the current threshold, fanning each close out to connected
     /// operators. Returns the closed sessions.
     /// </summary>
     public Task<IReadOnlyList<Rod.CoreState.Sessions.Session>> SweepOnceAsync(
         CancellationToken cancellationToken = default)
     {
-        var cutoff = _clock.GetUtcNow() - _options.Threshold;
+        var cutoff = _clock.GetUtcNow() - _settings.Current.Threshold;
         return _sweep.SweepStaleAsync(cutoff, cancellationToken);
     }
 }
