@@ -601,9 +601,9 @@ export function PayloadBuildView({
                 value={tokenHours}
                 onChange={(e) => setTokenHours(e.target.value)}
                 placeholder="hours"
-                title="How long the baked credential stays redeemable. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or 30 days when there is none."
+                title="How long the baked credential can enroll NEW implants. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or a 30-day drop window when there is none. Enrollment is permanent — an implant that already enrolled checks in for life; this only gates copies that have not enrolled yet."
               />
-              <span className="field-help">empty = kill-date window (30 days when none)</span>
+              <span className="field-help">gates new enrolls only; empty = until the kill date, else a 30-day drop window</span>
             </label>
           </div>
         </details>

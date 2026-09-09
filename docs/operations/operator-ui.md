@@ -316,10 +316,14 @@ its kill date; beacon timing belongs to the Stage2 it fetches.
   TLS terminates early (a redirector, a fronting CDN) or on cleartext
   `http`. On direct `https` it is redundant -- TLS already encrypts the
   channel.
-- **Valid for (h)** -- how long the baked credential stays redeemable. Pairs
-  with *Max uses*: that caps how many enrolls, this caps for how long. Empty =
-  until the kill date, or 30 days when there is none (an open-ended implant is
-  no reason to leave a dropped credential redeemable for years).
+- **Valid for (h)** -- how long the baked credential can enroll **new**
+  implants. Pairs with *Max uses*: that caps how many enrolls, this caps for
+  how long. Empty = until the kill date, or a 30-day drop window when there
+  is none (an open-ended implant is no reason to leave a dropped credential
+  redeemable for years). Enrollment is permanent: an implant that enrolled
+  keeps checking in for the rest of its life whatever this window does --
+  the window (and the use budget) gate only copies of the binary that have
+  not enrolled yet.
 
 **Recent builds** is the job queue's status strip: builds run as background
 jobs, the strip polls while anything runs, and it shows the last five -- enough
