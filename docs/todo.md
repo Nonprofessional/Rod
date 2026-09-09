@@ -13,17 +13,3 @@ Lean is the standing default: an addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
-
-## Transports and identity (architecture.md Sec 8, Sec 9)
-
-The end state these items build toward, in one paragraph: the .NET implant
-carries exactly one web check-in client -- the envelope POST cycle, the
-shape every mainstream HTTP(S) C2 uses, polled on a jittered sleep --
-with authentication at the application layer under a per-artifact key.
-The `http` and `https` listeners are single-port and indistinguishable
-from ordinary web traffic (no TLS certificate request anywhere), the
-token stays enrollment-only, and tasking keeps its signature and replay
-nonces regardless of transport. `mTLS` is the dedicated interactive
-listener -- per-implant certificates, the persistent gRPC stream, live
-channels -- built against only when an engagement wants them. One source
-tree; the bake selects which transport modules compile in.
