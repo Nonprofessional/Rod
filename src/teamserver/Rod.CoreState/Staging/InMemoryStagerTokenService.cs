@@ -10,7 +10,7 @@ namespace Rod.CoreState.Staging;
 /// 32-byte crypto-random secret, returns the base64url plaintext once, and keeps
 /// only its SHA-256 hash so redeem can verify without ever storing the clear
 /// secret. Redeem checks the hash, refuses expired or spent tokens, and consumes
-/// one use on success.
+/// one use on success; a zero max-uses budget is unlimited and never consumes.
 /// </summary>
 public sealed class InMemoryStagerTokenService : IStagerTokenService
 {
@@ -71,11 +71,16 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         {
             var entry = FindForRead(secret, now);
 
-            var remaining = entry.Token.RemainingUses - 1;
-            if (remaining <= 0)
-                _stored.TryRemove(entry.Id, out _);
-            else
-                _stored[entry.Id] = entry.Token with { RemainingUses = remaining };
+            // An unlimited budget (max uses 0) never spends down: the row stays
+            // whole for every redeem until it expires or is revoked.
+            if (entry.Token.MaxUses != 0)
+            {
+                var remaining = entry.Token.RemainingUses - 1;
+                if (remaining <= 0)
+                    _stored.TryRemove(entry.Id, out _);
+                else
+                    _stored[entry.Id] = entry.Token with { RemainingUses = remaining };
+            }
 
             return Task.FromResult(new RedeemedStagerToken
             {
@@ -133,7 +138,9 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         if (now > entry.ExpiresAt)
             throw new StagerTokenRedeemException(
                 StagerTokenRedeemReason.Expired, "Stager token has expired.");
-        if (entry.RemainingUses <= 0)
+        // The spent refusal is a budgeted token's condition: an unlimited
+        // budget keeps RemainingUses at 0 as "not counted", never "spent".
+        if (entry.MaxUses != 0 && entry.RemainingUses <= 0)
             throw new StagerTokenRedeemException(
                 StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
 

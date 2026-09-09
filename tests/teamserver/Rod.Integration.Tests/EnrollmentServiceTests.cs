@@ -65,19 +65,22 @@ public class EnrollmentServiceTests
     }
 
     [Fact]
-    public async Task Enroll_RecordsTheKillDate_OnTheImplant()
+    public async Task Enroll_RecordsTheReportedKillDate_AndNullWhenOpenEnded()
     {
-        // The kill date is set by the service (architecture.md Sec 7), recorded on
-        // the implant and enforced later at handshake (architecture.md Sec 9) and
-        // in the implant itself. This pins that the service produces one and the
-        // implant entity carries it. The default window is 30 days from
-        // enrollment; assert it lands there so a silent change is caught.
+        // The kill date is the artifact's baked fuse, reported by the implant
+        // at enroll (architecture.md Sec 7): the record mirrors the artifact
+        // rather than inventing a window. A command that reports one records
+        // it; one that reports none (an open-ended build) records null.
         var (service, tokens, engagements) = NewService();
 
-        var result = await service.EnrollAsync(new EnrollCommand(await MintTokenAsync(engagements, tokens)));
+        var fuse = Now.AddDays(90);
+        var pinned = await service.EnrollAsync(new EnrollCommand(
+            await MintTokenAsync(engagements, tokens), KillDate: fuse));
+        var openEnded = await service.EnrollAsync(new EnrollCommand(
+            await MintTokenAsync(engagements, tokens)));
 
-        Assert.True(result.KillDate > Now);
-        Assert.Equal(Now.AddDays(30), result.KillDate);
+        Assert.Equal(fuse, pinned.KillDate);
+        Assert.Null(openEnded.KillDate);
     }
 
     private sealed class FakeClock : TimeProvider

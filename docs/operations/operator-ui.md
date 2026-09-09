@@ -94,19 +94,25 @@ one enrolled identity (class, kill date, lineage, lifecycle), and a
 the status dot and the last-seen column).
 
 - **Implants** -- the fleet in one table, one row per implant, grouped by
-  device with collapsible group headers (an OS mark and the hostname
-  flush-left with the column content, the collapse caret at the far right).
-  A toolbar rides the table: free-text search across the identity fields,
-  a state filter (online / offline / retired), a class filter, and column
+  device with collapsible group headers (an OS mark -- Windows, Apple, Linux,
+  or the neutral chip -- and the hostname flush-left with the column content,
+  the full OS description the implant reported at enroll beside it, the
+  collapse caret at the far right).
+  A toolbar rides the table: free-text search across the identity fields
+  (applied on Enter or its Search button), a state filter (online / offline /
+  retired), a class filter, and column
   sorting (implant id, last seen, kill date -- first click the natural
   direction, second flips, third returns to the default fleet order);
   past ten device groups the table paginates. The header row is always
   laid down, so an empty fleet (or a filter that matches nothing) reads as
   a table with a message, not an empty card. The row's dot is the session
-  (green while it lives, gray after) and the last-seen column reads the
+  (green while it lives, gray after), the **User** column is the account the
+  implant process runs under, and the last-seen column reads the
   freshest stamp -- the presence roster while online, the implant row's
   durable heartbeat after the beacon goes dark -- re-rendered on a quiet
-  30 s clock so relative stamps keep moving between live events. A stream
+  30 s clock so relative stamps keep moving between live events. The kill
+  date column shows the artifact's own fuse as reported at enroll, "none"
+  for open-ended builds. A stream
   that closes cleanly drops Online immediately; a stream that dies
   silently holds Online until the staleness sweep closes its session
   (default 15 minutes of silence, swept every minute -- adjustable at
@@ -192,8 +198,13 @@ pipe path / host:port) is required.
 Every listener is engagement-scoped and persisted -- a restart rebinds it with
 the same id -- and enrollment through its socket accepts only that
 engagement's tokens. **Repoint** swaps the public endpoint at runtime without
-touching the socket (a burned redirector is severed); **Delete** unbinds and
-forgets it.
+touching the socket (a burned redirector is severed). **Delete** is a
+two-step guard: the teamserver records which listener's socket carried each
+enrollment, and deleting a listener that live implants enrolled through
+refuses with the count (retired implants do not count) -- the operator UI
+turns that refusal into a second confirmation naming the dependents, and only
+the explicit confirm (or `?force=true` on the API) unbinds and forgets it.
+A listener nothing depends on dies in one confirmation.
 
 One transport caveat shapes the whole panel: **the interactive stream is
 gRPC (HTTP/2 over TLS) and cannot ride a cleartext socket** (Kestrel
@@ -251,7 +262,7 @@ thing as `beaconListenerId`, or a typed `beaconEndpoint`.
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs
 it -- the two-stage shape for size-sensitive delivery. A stager bakes only
-its expiry date; beacon timing belongs to the Stage2 it fetches.
+its kill date; beacon timing belongs to the Stage2 it fetches.
 
 **Beacon profile**:
 
@@ -261,12 +272,16 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 - **Check-in every / Randomize ±** -- the call-home cadence and the random
   slack added to every interval so check-ins are not clockwork. Defaults
   30 s / 10 s.
-- **Expiry date** -- the artifact's fuse. Past it the executable stops being
-  usable: a leftover copy refuses to run, and a live implant terminates at
-  its next check-in. Empty = 30 days from the build; it also bounds the baked
-  credential's window.
+- **Kill date** -- the artifact's optional fuse. Past it the executable stops
+  being usable: a leftover copy refuses to run, and a live implant terminates
+  at its next check-in. Empty = no fuse: the implant runs until retired -- the
+  long-haul default. A pinned date also bounds the baked credential's window
+  unless *Valid for* overrides it. The implant reports its baked date at
+  enroll, so the fleet's Kill date column shows the artifact's own fuse
+  (a dash for open-ended builds).
 - **Max uses** -- how many hosts the baked credential may enroll: one spend
-  per host, so copies of one executable need one use each. Default 1.
+  per host, so one executable can seed several machines until the budget runs
+  out. `0` = unlimited. Default 1.
 
 **Advanced** (all defaulted server side; open only to change them):
 
@@ -295,8 +310,10 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
   TLS terminates early (a redirector, a fronting CDN) or on cleartext
   `http`. On direct `https` it is redundant -- TLS already encrypts the
   channel.
-- **Credential window (h)** -- how long the baked credential stays
-  redeemable. Empty defaults to the artifact's expiry window.
+- **Valid for (h)** -- how long the baked credential stays redeemable. Pairs
+  with *Max uses*: that caps how many enrolls, this caps for how long. Empty =
+  until the kill date, or 30 days when there is none (an open-ended implant is
+  no reason to leave a dropped credential redeemable for years).
 
 **Recent builds** is the job queue's status strip: builds run as background
 jobs, the strip polls while anything runs, and it shows the last five -- enough
@@ -320,7 +337,7 @@ one; the bare address with a "manual" tag when it was typed for a
 redirector this server does not serve) and shows the **Credential**
 column -- the baked token's use budget read live off the token store at
 list time: how many enrolls were spent out of the minted maximum, how many
-are left, and the window (an expired or revoked credential reads "no
+are left (a zero budget reads "unlimited"), and the window (an expired or revoked credential reads "no
 enrolls left"; on the in-memory dev store a fully spent token reads the
 same, because the store drops it at zero).
 The row's chevron unfolds the **build parameters** snapshotted at bake
@@ -358,3 +375,30 @@ reason rather than clamping.
   chunks): pick a task to list, attach, and download its artifacts.
 - **Timeline** -- the same trail as a day-by-day narrative.
 - **Report** -- the whole engagement as a reproducible JSON/Markdown export.
+
+## Deferred work
+
+Design decisions recorded for later rounds; nothing here is built yet.
+
+### Three independent channels (enroll / check-in / interactive)
+
+Today enroll and check-in always share one listener (the Build form's single
+"Listener (enroll + check-in)" pick) and only interactive can split onto its
+own mTLS socket. The deferred shape generalizes the split: three channel
+picks, each with a "same as enroll + check-in" checkbox that is checked by
+default, so the common case stays one address and the operator only touches
+the rows they want to diverge:
+
+- **Enroll** -- the registration listener (always required).
+- **Check-in** -- a checkbox riding beside the enroll pick; checked means the
+  same listener (today's behavior), unchecked reveals its own listener select.
+- **Interactive** -- a checkbox riding beside the enroll pick; checked means
+  the same listener, unchecked reveals the mTLS select (only meaningful on a
+  cleartext front; the control disables where it cannot apply).
+
+Server side this needs a separately baked `checkInEndpoint` (the transport
+profile already models the split for interactive via `BeaconEndpoint`; the
+check-in route would gain the same), a listener-side decision about which
+check-in shapes each transport may serve, and the wire-shape diagram extended
+to three paths. Naming stays inside the fixed vocabulary: three behaviors,
+two nouns, behaviors in parentheses.

@@ -127,13 +127,21 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         if (entry is null)
             throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
 
-        // Atomic check-then-consume: the UPDATE decrements remaining_uses only
-        // when every precondition holds, so two concurrent redeems of a
-        // single-use token cannot both succeed. rowsAffected tells consume vs.
-        // refusal; the prior read distinguishes Expired from Spent.
+        // Atomic check-then-consume: the UPDATE matches only when every
+        // precondition holds, so two concurrent redeems of a single-use token
+        // cannot both succeed. An unlimited budget (max_uses 0) matches without
+        // decrementing -- the row stays whole for every redeem until it expires
+        // or is revoked. rowsAffected tells consume vs. refusal; the prior read
+        // distinguishes Expired from Spent.
         var rowsAffected = await db.StagerTokens
-            .Where(t => t.Hash == presentedHash && now <= t.ExpiresAt && t.RemainingUses > 0)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RemainingUses, t => t.RemainingUses - 1), cancellationToken);
+            .Where(t => t.Hash == presentedHash
+                && now <= t.ExpiresAt
+                && (t.MaxUses == 0 || t.RemainingUses > 0))
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(
+                    t => t.RemainingUses,
+                    t => t.MaxUses == 0 ? t.RemainingUses : t.RemainingUses - 1),
+                cancellationToken);
 
         if (rowsAffected == 1)
         {
@@ -215,7 +223,9 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
         if (now > entry.ExpiresAt)
             throw new StagerTokenRedeemException(StagerTokenRedeemReason.Expired, "Stager token has expired.");
-        if (entry.RemainingUses <= 0)
+        // The spent refusal is a budgeted token's condition: an unlimited
+        // budget keeps remaining_uses at 0 as "not counted", never "spent".
+        if (entry.MaxUses != 0 && entry.RemainingUses <= 0)
             throw new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
 
         return new RedeemedStagerToken

@@ -16,14 +16,21 @@ namespace Rod.Transport.Payloads;
 ///
 /// Defaults follow the artifact, not the manual mint's one-hour window: a
 /// single use (one artifact, one enrollment) inside the artifact's own kill
-/// window, resolved exactly as the build resolves it -- the credential lives
-/// as long as the artifact it rides and no longer. The mint is attributed to
-/// the engagement's owner (the service requires it; the owner authorizes the
+/// window when one is pinned -- the credential lives as long as the artifact
+/// it rides and no longer -- and 30 days on an open-ended build (no kill
+/// date), because an implant that may run for years is no reason to leave a
+/// dropped credential redeemable for them. The mint is attributed to the
+/// engagement's owner (the service requires it; the owner authorizes the
 /// deployment channel) while the build's own audit fact attributes the build
 /// to its requester -- together the trail names both.
 /// </summary>
 internal static class PayloadBuildTokenMinter
 {
+    // The fall-back window for an open-ended build (no kill date pinned): the
+    // credential stays redeemable for 30 days, independent of the implant's
+    // own unlimited run.
+    private static readonly TimeSpan DefaultLifetime = TimeSpan.FromDays(30);
+
     public static async Task<(string Secret, StagerTokenId Id)> MintAsync(
         Engagement engagement,
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
@@ -34,10 +41,15 @@ internal static class PayloadBuildTokenMinter
     {
         var now = clock.GetUtcNow();
         var maxUses = body.TokenMaxUses ?? 1;
+        // The window follows the artifact when one is pinned: the credential
+        // lives as long as the artifact it rides and no longer. An open-ended
+        // build (no kill date) keeps the 30-day collection default instead --
+        // an implant may run for years, but a dropped credential should not
+        // stay redeemable for them.
+        var killDate = PayloadBuildService.ResolveKillDate(now, body.KillDate);
         var lifetime = body.TokenLifetimeSeconds is { } seconds
             ? TimeSpan.FromSeconds(seconds)
-            : PayloadBuildService.ResolveKillDate(now, body.KillDate) - now;
-
+            : killDate - now ?? DefaultLifetime;
         var token = await tokens.MintAsync(engagement.Id, engagement.OwnerId, now, maxUses, lifetime, cancellationToken);
 
         // The same fact a manual mint records (architecture.md Sec 11): the

@@ -358,7 +358,7 @@ public class DotNetBuildUnitTests
         Assert.Equal("http://c2.example.test/implants/enroll", root.GetProperty("enrollURL").GetString());
         Assert.Equal(payloadId.ToString(), root.GetProperty("stage2PayloadId").GetString());
         Assert.Equal("abc123", root.GetProperty("stage2Sha256").GetString());
-        Assert.Equal(@params.Beacon.KillDate.ToString("O"), root.GetProperty("killDate").GetString());
+        Assert.Equal(@params.Beacon.KillDate!.Value.ToString("O"), root.GetProperty("killDate").GetString());
     }
 
     [Fact]

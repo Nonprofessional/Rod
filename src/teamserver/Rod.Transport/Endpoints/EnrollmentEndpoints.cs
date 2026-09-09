@@ -158,6 +158,24 @@ public static class EnrollmentEndpoints
             parentImplantId = new ImplantId(parentValue);
         }
 
+        // The kill date the artifact baked, as the implant reports it: the
+        // recorded fuse mirrors the artifact's own (an open-ended build reports
+        // nothing and records null). A malformed or already-passed date is a
+        // client mistake the record must not silently paper over.
+        DateTimeOffset? killDate = null;
+        if (!string.IsNullOrWhiteSpace(body.KillDate))
+        {
+            if (!DateTimeOffset.TryParse(
+                    body.KillDate, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
+            {
+                return Results.BadRequest(new Problem("KillDate is not a valid timestamp."));
+            }
+            if (parsed <= clock.GetUtcNow())
+                return Results.BadRequest(new Problem("KillDate has already passed."));
+            killDate = parsed;
+        }
+
         // The scope check before the token is spent: when the socket this
         // request arrived on belongs to one engagement, a token minted for
         // any other engagement is refused whole -- it keeps its uses for the
@@ -165,14 +183,20 @@ public static class EnrollmentEndpoints
         // operator front) refuses implant ingress outright (architecture.md
         // Sec 8). The verified token is kept: when the redeem below succeeds,
         // its id is what binds the enrollment to the build that minted it.
+        // The resolved listener is kept too: its id is the ingress stamp the
+        // implant record carries (what a listener deletion warns about).
         RedeemedStagerToken? presentedToken = null;
+        Guid? enrolledViaListenerId = null;
         try
         {
             presentedToken = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
-            if (!await TokenMatchesListenerScopeAsync(http, listeners, presentedToken, cancellationToken))
+            var ingress = await listeners.FindByLocalPortAsync(
+                http.HttpContext.Connection.LocalPort, cancellationToken);
+            if (ingress is not null && ingress.EngagementId != presentedToken.EngagementId)
                 return Results.Json(
                     new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
                     statusCode: StatusCodes.Status401Unauthorized);
+            enrolledViaListenerId = ingress?.Id.Value;
         }
         catch (StagerTokenRedeemException)
         {
@@ -186,7 +210,8 @@ public static class EnrollmentEndpoints
                 new EnrollCommand(
                     body.StagerTokenSecret, @class, clientPublicKey, parentImplantId,
                     CleanHostFact(body.Hostname), CleanHostFact(body.Os),
-                    CleanHostFact(body.Arch), CleanHostFact(body.Username)),
+                    CleanHostFact(body.Arch), CleanHostFact(body.Username),
+                    killDate, enrolledViaListenerId),
                 cancellationToken);
 
             // The enrollment is recorded (architecture.md Sec 11).
@@ -402,7 +427,8 @@ public static class EnrollmentEndpoints
         string? Hostname = null,
         string? Os = null,
         string? Arch = null,
-        string? Username = null);
+        string? Username = null,
+        string? KillDate = null);
 
     // A host fact is implant-reported free text: trim it, cap it, and drop it to
     // null when empty, so the stored device identity stays a bounded, honest

@@ -78,6 +78,63 @@ public class ListenerTests
     }
 
     [Fact]
+    public async Task ListenerDelete_GuardsLiveImplants_EnrolledThroughIt()
+    {
+        // The two-step delete: a listener that live implants enrolled through is
+        // load-bearing ingress, so deleting it refuses with the count until the
+        // caller forces. The enrollment also stamps which listener carried it
+        // and the kill date the implant reported (null when it reported none --
+        // the open-ended build).
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: ListenerTransport.Http,
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "http-guard", Transport: "http",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "http://c2.example.test"));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+
+        // One open-ended enrollment and one with a reported fuse, both through
+        // the listener's own socket so the ingress stamp lands.
+        var openSecret = await MintTokenAsync(env.Http, engagementId);
+        var fuse = DateTimeOffset.UtcNow.AddDays(45);
+        using var scoped = new HttpClient { BaseAddress = new Uri($"http://{listener.BindAddress}") };
+        var openEnroll = await scoped.PostAsJsonAsync("/implants/enroll",
+            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: openSecret));
+        openEnroll.EnsureSuccessStatusCode();
+        var fusedEnroll = await scoped.PostAsJsonAsync("/implants/enroll",
+            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: await MintTokenAsync(env.Http, engagementId), KillDate: fuse.ToString("O")));
+        fusedEnroll.EnsureSuccessStatusCode();
+
+        var implants = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
+            $"/engagements/{engagementId}/implants");
+        Assert.NotNull(implants);
+        Assert.All(implants!, i => Assert.Equal(listener!.Id, i.EnrolledViaListenerId));
+        Assert.Contains(implants!, i => i.KillDate is null);
+        Assert.Contains(implants!, i => i.KillDate == fuse);
+
+        // The guard: an unforced delete refuses and names the live dependents.
+        var refused = await env.Http.DeleteAsync($"/engagements/{engagementId}/listeners/{listener.Id}");
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        var problem = await refused.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        Assert.NotNull(problem);
+        Assert.Contains("2 live implants", problem!.Error);
+
+        // The force path: an explicit confirmation deletes anyway.
+        var forced = await env.Http.DeleteAsync($"/engagements/{engagementId}/listeners/{listener.Id}?force=true");
+        Assert.Equal(HttpStatusCode.NoContent, forced.StatusCode);
+    }
+
+    [Fact]
     public async Task MtlsListener_AcceptsImplantConnection_EndToEnd()
     {
         // An mTLS listener terminates mutual TLS using the implant CA and carries

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
 using Rod.Transport.Listeners;
 
@@ -145,11 +146,18 @@ public static class ListenerEndpoints
         }
     }
 
+    // Deleting a listener that live implants enrolled through cuts their
+    // ingress: they keep dialing an endpoint nobody serves and go dark. The
+    // guard counts those implants (retired ones are out of operation and do
+    // not count) and refuses with the count unless the caller forces -- the
+    // two-step delete the operator UI walks.
     private static async Task<IResult> DeleteListenerAsync(
         string engagementId,
         string id,
+        bool? force,
         ListenerManager manager,
         IListenerRegistry listeners,
+        IImplantRepository implants,
         CancellationToken cancellationToken)
     {
         var (error, engagementIdValue, listenerId) = Resolve(engagementId, id);
@@ -159,6 +167,24 @@ public static class ListenerEndpoints
         var listener = await listeners.FindAsync(listenerId, cancellationToken);
         if (!Owns(listener, engagementIdValue))
             return Results.NotFound(new Problem("Listener does not exist in this engagement."));
+
+        if (force is not true)
+        {
+            var enrolled = (await implants.ListByEngagementAsync(
+                    new EngagementId(engagementIdValue), cancellationToken))
+                .Where(i => i.EnrolledViaListenerId == listenerId.Value && !i.IsRetired)
+                .ToArray();
+            if (enrolled.Length > 0)
+            {
+                var names = string.Join(", ", enrolled
+                    .Select(i => i.Hostname ?? i.Id.ToString())
+                    .Take(3));
+                return Results.Conflict(new Problem(
+                    $"{enrolled.Length} live implant{(enrolled.Length == 1 ? "" : "s")} enrolled through listener " +
+                    $"'{listener!.Name}' ({names}{(enrolled.Length > 3 ? ", …" : "")}) lose this ingress and go " +
+                    "dark. Delete anyway with force=true."));
+            }
+        }
 
         await manager.RemoveAsync(listenerId, cancellationToken);
         return Results.NoContent();

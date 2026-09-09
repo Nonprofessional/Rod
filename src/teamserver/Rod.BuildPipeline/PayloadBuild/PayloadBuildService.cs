@@ -97,19 +97,16 @@ public sealed class PayloadBuildService
         };
     }
 
-    // The kill date defaults to a window from build time when the caller does not
-    // pin one; a pinned date wins. Enforced later as a self-termination check
-    //; here it is only baked into the artifact. Public because a build's baked
-    // token defaults to the same window: the credential lives exactly as long
-    // as the artifact it rides.
-    public static DateTimeOffset ResolveKillDate(DateTimeOffset now, DateTimeOffset? requested)
+    // The kill date is the artifact's optional time fuse: a pinned future date
+    // wins, and an unset (or past) one means none -- the open-ended long-haul
+    // posture. Public because a build's baked token defaults to the same
+    // window: the credential lives exactly as long as the artifact it rides.
+    public static DateTimeOffset? ResolveKillDate(DateTimeOffset now, DateTimeOffset? requested)
     {
         if (requested is { } pinned && pinned > now)
             return pinned;
-        return now + DefaultKillDateOffset;
+        return null;
     }
-
-    private static readonly TimeSpan DefaultKillDateOffset = TimeSpan.FromDays(30);
 }
 
 /// <summary>

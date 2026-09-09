@@ -1599,6 +1599,17 @@ tr.device-row:hover td {
   font-size: 11.5px;
 }
 
+/* The OS description is the full RuntimeInformation string -- kernel, distro,
+   release -- which can run long. It ellipsizes inside the device header and
+   the hover title carries the whole thing. */
+.device-meta.device-osline {
+  display: inline-block;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
 /* --- Context menu --------------------------------------------------------------------- */
 
 .context-menu {

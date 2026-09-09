@@ -64,6 +64,10 @@ internal sealed class EnrollRequest
     [JsonPropertyName("username")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Username { get; set; }
+
+    [JsonPropertyName("killDate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? KillDate { get; set; }
 }
 
 // Mirrors the teamserver's EnrollmentResponse: the issued leaf and CA chain,
@@ -172,6 +176,11 @@ internal static class C2
     /// teamserver records for fleet grouping. Null omits them (tests and any
     /// caller that has nothing to report).
     /// </param>
+    /// <param name="killDate">
+    /// The artifact's baked time fuse, reported at enroll so the teamserver's
+    /// record mirrors the artifact's own; null (an open-ended build) reports
+    /// nothing and records none.
+    /// </param>
     public static async Task<Enrollment> EnrollAsync(
         string enrollUrl,
         string stagerToken,
@@ -181,6 +190,7 @@ internal static class C2
         TransportProfile profile,
         string? implantClass = null,
         HostIdentity? host = null,
+        string? killDate = null,
         CancellationToken cancellationToken = default)
     {
         // Export the public half as a DER SubjectPublicKeyInfo -- exactly what
@@ -196,6 +206,7 @@ internal static class C2
             Os = host?.Os,
             Arch = host?.Arch,
             Username = host?.Username,
+            KillDate = killDate,
         };
 
         using var handler = new HttpClientHandler();

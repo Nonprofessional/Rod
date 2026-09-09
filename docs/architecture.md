@@ -225,14 +225,16 @@ complexity budget, and its evolution rules bind every future protocol change.
 
 A **profile** -- the check-in mode, beacon parameters (sleep, jitter, kill
 date), the transport profile, and the C2 endpoint list -- is embedded into the
-artifact at build time, so each implant is self-contained and standalone. This
+implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
 lost implant self-terminates at its kill date. No key material is baked: the
 implant's cryptographic identity is the keypair it generates itself at first
 run, bound to its engagement by the CA-signed leaf issued at enroll (Sec 9).
 What a captured artifact does carry is the enrollment credential the build
 minted for it (Sec 6): a deployment secret, not key material -- single-use by
-default, bounded by the artifact's own kill window, bound to its engagement's
+default (a zero max-uses budget is unlimited), bounded by the artifact's own
+kill window when one is pinned and 30 days when there is none, bound to its
+engagement's
 listener scope, revocable by id the moment it is known to have leaked. A build
 that mints nothing bakes nothing, and the credential never passes through an
 operator's hands.
@@ -244,7 +246,10 @@ The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
 land in the decoded artifact across the .NET and stub build units, so a
 profile that is silently dropped or defaulted fails the build-pipeline tests.
 
-The kill date is enforced on both sides of the wire (Sec 7). The teamserver
+The kill date is optional: unset (the default) bakes an open-ended artifact --
+the long-haul posture with no time fuse at all -- and the implant reports its
+baked date at enroll so the teamserver's record mirrors the artifact's own.
+It is enforced on both sides of the wire (Sec 7). The teamserver
 refuses to open a session for an implant whose kill date has passed, returning
 `HANDSHAKE_STATUS_KILL_DATE_EXPIRED` at handshake before any session or tasking
 is recorded; the implant itself refuses to start past its kill date and

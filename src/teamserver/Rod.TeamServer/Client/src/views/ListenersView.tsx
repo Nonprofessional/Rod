@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   type ListenerSummary,
   type NetworkInterfaceSummary,
+  ApiError,
   createListener,
   deleteListener,
   listListeners,
@@ -167,6 +168,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     }
   }
 
+  // The two-step delete. The first confirmation is the usual one; when live
+  // implants enrolled through the listener, the server refuses with a 409
+  // naming them, and the second confirmation (the server's own words) forces
+  // the delete. A listener nothing depends on dies in one step.
   const onDelete = async (l: ListenerSummary) => {
     if (!window.confirm(`Delete listener "${l.name}" (${l.bindAddress})? Its socket is unbound.`))
       return
@@ -175,6 +180,18 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       setError(null)
       await refresh()
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        if (!window.confirm(`${e.message}\n\nDelete anyway?`)) return
+        try {
+          await deleteListener(engagementId, l.id, true)
+          setError(null)
+          await refresh()
+          return
+        } catch (forced) {
+          setError(String(forced))
+          return
+        }
+      }
       setError(String(e))
     }
   }
@@ -184,9 +201,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       <h3>Listeners</h3>
       <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
         This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
-        dial. Pairing note: a cleartext HTTP front carries enrollment but not check-in streams
-        (those are gRPC over mTLS), so an HTTP listener wants an mTLS one beside it — the Build
-        form picks both up.
+        dial. Cleartext HTTP carries enroll + check-in over the sealed envelope POST; only the
+        interactive stream needs TLS, so an HTTPS/mTLS listener alone covers everything.
       </p>
 
       {/* The same labeled-grid shape as the Build form: every field carries
@@ -210,7 +226,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
               if (port !== '') setBindPort(port)
             }}
-            title="The wire this listener speaks. The cleartext HTTP transport carries enrollment and the operator API but not implant check-ins — the beacon is gRPC over mTLS, so pair an HTTP listener with an mTLS one (Build picks both up)."
+              title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST but no interactive stream — a build on it polls unless it names an mTLS listener for interactive."
           >
             {TRANSPORTS.map((t) => (
               <option key={t.value} value={t.value}>

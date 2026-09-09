@@ -466,12 +466,12 @@ export function PayloadBuildView({
             />
           </label>
           <label>
-            Expiry date
+            Kill date
             <input
               type="date"
               value={killDate}
               onChange={(e) => setKillDate(e.target.value)}
-              title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = 30 days from the build; it also bounds the baked credential's window."
+              title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = no fuse -- the implant runs until retired (the long-haul default). A date also caps the baked credential's window unless 'Valid for' overrides it."
             />
           </label>
           <label>
@@ -479,12 +479,12 @@ export function PayloadBuildView({
             <input
               value={tokenMaxUses}
               onChange={(e) => setTokenMaxUses(e.target.value)}
-              title="How many times this artifact's baked credential may enroll — one spend per host, so one copy per machine. Default 1. Revoke it in the payload library to kill a leaked artifact's credential."
+              title="How many hosts the baked credential may enroll -- one spend per host, so one artifact can seed several machines until the budget runs out. 0 = unlimited. Default 1. Revoke it in the payload library to kill a leaked artifact's credential."
             />
           </label>
           <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-            Call-home cadence, the artifact's expiry fuse, and the baked credential's use count —
-            hover each field for specifics.
+            Call-home cadence, the artifact's optional kill-date fuse, and the baked credential's
+            two caps (how many hosts, for how long) — hover each field for specifics.
           </p>
           {isStager && (
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
@@ -498,7 +498,7 @@ export function PayloadBuildView({
           open={advancedOpen || undefined}
           onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
         >
-          <summary>Advanced — wire shape and credential window</summary>
+          <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Manual overrides only, for builds without a picked listener: two addresses at most
@@ -595,12 +595,12 @@ export function PayloadBuildView({
               Protect check-ins
             </label>
             <label>
-              Credential window (h)
+              Valid for (h)
               <input
                 value={tokenHours}
                 onChange={(e) => setTokenHours(e.target.value)}
-                placeholder="expiry window"
-                title="How long the baked credential stays redeemable; empty defaults to the artifact's expiry window."
+                placeholder="hours"
+                title="How long the baked credential stays redeemable. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or 30 days when there is none."
               />
             </label>
           </div>

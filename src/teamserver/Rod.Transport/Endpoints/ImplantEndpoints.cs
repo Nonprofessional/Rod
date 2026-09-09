@@ -74,6 +74,10 @@ public static class ImplantEndpoints
                 Os: i.Os,
                 Arch: i.Arch,
                 Username: i.Username,
+                // The listener stamp renders in the same no-dash form the
+                // listener routes and listings use, so an operator can join
+                // the two by eye.
+                EnrolledViaListenerId: i.EnrolledViaListenerId?.ToString("N"),
                 LastSeenAt: i.LastSeenAt))
             .ToArray();
 
@@ -302,7 +306,8 @@ public static class ImplantEndpoints
         string ImplantId,
         string EngagementId,
         string Class,
-        DateTimeOffset KillDate,
+        // The artifact's time fuse as reported at enroll; null = open-ended.
+        DateTimeOffset? KillDate,
         DateTimeOffset CreatedAt,
         bool IsOnline,
         DateTimeOffset? RetiredAt,
@@ -311,6 +316,9 @@ public static class ImplantEndpoints
         string? Os = null,
         string? Arch = null,
         string? Username = null,
+        // The listener whose socket carried the enrollment, when the transport
+        // could attribute one -- what a listener deletion warns about.
+        string? EnrolledViaListenerId = null,
         // The durable heartbeat: when the teamserver last heard from the
         // implant, kept after the session is gone. While a session is active
         // the presence roster's stamp is the fresher one.

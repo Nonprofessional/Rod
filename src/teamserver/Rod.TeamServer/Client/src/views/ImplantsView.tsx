@@ -145,7 +145,10 @@ export function ImplantsView({
 
   // The toolbar: free text across the identity fields, the session/lifecycle
   // state, and the implant class. All client-side -- the fleet is one query's
-  // worth of rows, and filters must feel instant, not round-trip.
+  // worth of rows, and filters must feel instant, not round-trip. The text
+  // search commits on Enter or the Search button (the dropdowns stay live),
+  // so an accidental keystroke never blanks the table mid-read.
+  const [searchDraft, setSearchDraft] = useState('')
   const [search, setSearch] = useState('')
   const [stateFilter, setStateFilter] = useState('')
   const [classFilter, setClassFilter] = useState('')
@@ -192,6 +195,7 @@ export function ImplantsView({
     setNotesFor(null)
     setNotes([])
     setCollapsed(new Set())
+    setSearchDraft('')
     setSearch('')
     setStateFilter('')
     setClassFilter('')
@@ -261,7 +265,7 @@ export function ImplantsView({
         case 'seen':
           return (timeOf(seenOf(a)) - timeOf(seenOf(b))) * sort.dir
         case 'kill':
-          return (new Date(a.killDate).getTime() - new Date(b.killDate).getTime()) * sort.dir
+          return (timeOf(a.killDate) - timeOf(b.killDate)) * sort.dir
       }
     },
     [sort, seenOf],
@@ -417,9 +421,20 @@ export function ImplantsView({
         <input
           className="toolbar-search"
           placeholder="Search host, id, user, class…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchDraft}
+          onChange={(e) => setSearchDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setSearch(searchDraft)
+          }}
+          title="Free text across host, id, user, class, and OS. Enter or the Search button applies; the dropdown filters are live."
         />
+        <button
+          className="ghost"
+          onClick={() => setSearch(searchDraft)}
+          title="Apply the text search (Enter works too)"
+        >
+          Search
+        </button>
         <select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
@@ -451,6 +466,7 @@ export function ImplantsView({
               <tr>
                 <th>{sortHeader('id', 'Implant')}</th>
                 <th>Status</th>
+                <th>User</th>
                 <th>{sortHeader('seen', 'Last seen')}</th>
                 <th>{sortHeader('kill', 'Kill date')}</th>
                 <th>Parent</th>
@@ -460,7 +476,7 @@ export function ImplantsView({
           <tbody>
             {pageGroups.length === 0 && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="empty">
                     <Icon name="cpu" />
                     {implants.length === 0
@@ -477,12 +493,15 @@ export function ImplantsView({
                   onClick={() => toggleGroup(group.key)}
                 >
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     title="Devices are grouped by the hostname reported at enroll. Two hosts that report the same hostname (cloned machines, a shared image) share a group -- the implant count and the rows underneath stay per-identity, so nothing merges beyond the presentation."
                   >
                     <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
                     <strong>{group.hostname ?? 'unknown host'}</strong>
-                    <span className="device-meta">
+                    <span
+                      className="device-meta device-osline"
+                      title={group.os ?? undefined}
+                    >
                       {group.os || group.arch
                         ? [group.os, group.arch].filter(Boolean).join(' · ')
                         : 'no host facts reported'}
@@ -527,17 +546,14 @@ export function ImplantsView({
                             />{' '}
                             <code>{implant.implantId.slice(0, 8)}</code>{' '}
                             <span className="muted">{implant.class}</span>
-                            {implant.username && (
-                              <span className="muted" title="The account the implant runs under">
-                                {' '}
-                                as {implant.username}
-                              </span>
-                            )}
                           </td>
                           <td>
                             <StatusBadge
                               status={retired ? 'retired' : implant.isOnline ? 'online' : 'offline'}
                             />
+                          </td>
+                          <td title="The account the implant process runs under, as reported at enroll">
+                            {implant.username ?? <span className="muted">&mdash;</span>}
                           </td>
                           <td>
                             {lastSeen ? (
@@ -551,9 +567,18 @@ export function ImplantsView({
                             )}
                           </td>
                           <td>
-                            <span title={new Date(implant.killDate).toLocaleString()}>
-                              {new Date(implant.killDate).toLocaleDateString()}
-                            </span>
+                            {implant.killDate ? (
+                              <span title={new Date(implant.killDate).toLocaleString()}>
+                                {new Date(implant.killDate).toLocaleDateString()}
+                              </span>
+                            ) : (
+                              <span
+                                className="muted"
+                                title="No kill date baked -- the open-ended posture. The implant runs until retired; the teamserver never refuses it on time."
+                              >
+                                none
+                              </span>
+                            )}
                           </td>
                           <td>
                             {implant.parentImplantId ? (
@@ -591,7 +616,7 @@ export function ImplantsView({
                         </tr>
                         {notesFor === implant.implantId && (
                           <tr className="notes-row">
-                            <td colSpan={6}>
+                            <td colSpan={7}>
                               <div className="notes-panel">
                                 <ul className="notes-list">
                                   {notes.length === 0 ? (

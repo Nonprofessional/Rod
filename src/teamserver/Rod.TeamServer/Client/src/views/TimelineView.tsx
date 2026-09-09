@@ -49,6 +49,9 @@ export function TimelineView({ engagementId }: { engagementId: string }) {
   const [view, setView] = useState<'timeline' | 'markdown'>('timeline')
   const [kind, setKind] = useState(ALL)
   const [actor, setActor] = useState(ALL)
+  // The text filter commits on Enter or the Search button; the dropdowns stay
+  // live.
+  const [queryDraft, setQueryDraft] = useState('')
   const [query, setQuery] = useState('')
 
   const refresh = useCallback(async () => {
@@ -162,9 +165,20 @@ export function TimelineView({ engagementId }: { engagementId: string }) {
             <input
               className="filter-text"
               placeholder="Filter by verb, payload, outcome…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={queryDraft}
+              onChange={(e) => setQueryDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setQuery(queryDraft)
+              }}
+              title="Free text across verb, payload, and outcome. Enter or the Search button applies; the dropdown filters are live."
             />
+            <button
+              className="ghost"
+              onClick={() => setQuery(queryDraft)}
+              title="Apply the text filter (Enter works too)"
+            >
+              Search
+            </button>
           </>
         )}
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>

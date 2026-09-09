@@ -86,6 +86,36 @@ public class StagerTokenMultiUseTests
     }
 
     [Fact]
+    public async Task Zero_MaxUses_Is_Unlimited_And_Never_Spends_Down()
+    {
+        var h = await HarnessAsync();
+        var token = await h.Service.MintAsync(h.EngagementId, h.Owner, Now, maxUses: 0, lifetime: TimeSpan.FromHours(4));
+
+        // The unlimited budget: every redeem succeeds, the state stays 0/0
+        // ("not counted", never "spent"), and only the window or a revoke can
+        // stop it.
+        for (var i = 1; i <= 3; i++)
+        {
+            var redeemed = await h.Service.RedeemAsync(token.Secret, Now.AddMinutes(i));
+            Assert.Equal(h.EngagementId, redeemed.EngagementId);
+        }
+
+        var state = await h.Service.FindAsync(token.Id);
+        Assert.NotNull(state);
+        Assert.Equal(0, state!.MaxUses);
+        Assert.Equal(0, state.RemainingUses);
+
+        // Verify reads the same way -- unlimited is not the spent shape.
+        _ = await h.Service.VerifyAsync(token.Secret, Now.AddMinutes(4));
+
+        // Past the window the credential still dies: unlimited counts uses,
+        // not time.
+        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => h.Service.RedeemAsync(token.Secret, Now.AddHours(5)));
+        Assert.Equal(StagerTokenRedeemReason.Expired, ex.Reason);
+    }
+
+    [Fact]
     public async Task State_Reads_The_Budget_By_Id_And_Disappears_When_Spent()
     {
         var h = await HarnessAsync();

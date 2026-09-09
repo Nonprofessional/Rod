@@ -28,7 +28,11 @@ public sealed record StagerToken
     /// <summary>Hard expiry; the token is invalid after this instant.</summary>
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>How many times the token may be redeemed before it is spent.</summary>
+    /// <summary>
+    /// How many times the token may be redeemed before it is spent. Zero means
+    /// unlimited: the token never spends down and stays redeemable until it
+    /// expires or is revoked.
+    /// </summary>
     public required int MaxUses { get; init; }
 }
 
@@ -57,10 +61,15 @@ public sealed record StagerTokenState
     /// <summary>Hard expiry; the token is invalid after this instant.</summary>
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>How many times the token may be redeemed in total.</summary>
+    /// <summary>
+    /// How many times the token may be redeemed in total. Zero means unlimited.
+    /// </summary>
     public required int MaxUses { get; init; }
 
-    /// <summary>How many redeems remain before the token is spent.</summary>
+    /// <summary>
+    /// How many redeems remain before the token is spent. Zero on an unlimited
+    /// budget (<see cref="MaxUses"/> == 0) means "not counted", not "spent".
+    /// </summary>
     public required int RemainingUses { get; init; }
 }
 

@@ -37,7 +37,9 @@ export interface Implant {
   implantId: string
   engagementId: string
   class: string
-  killDate: string
+  // The artifact's time fuse as reported at enroll; null = open-ended (no
+  // fuse -- the implant runs until retired).
+  killDate: string | null
   createdAt: string
   isOnline: boolean
   retiredAt: string | null
@@ -48,6 +50,9 @@ export interface Implant {
   os: string | null
   arch: string | null
   username: string | null
+  // The listener whose socket carried the enrollment, when the transport
+  // could attribute one -- what a listener-deletion warning counts against.
+  enrolledViaListenerId: string | null
   // The durable heartbeat: when the teamserver last heard from this implant,
   // kept after the session is gone. Null when it never checked in past enroll.
   lastSeenAt: string | null
@@ -85,6 +90,17 @@ function notifySessionExpired(): void {
   window.dispatchEvent(new Event('rod-unauthorized'))
 }
 
+// A refused request with its status attached, so callers can branch on the
+// server's verdict (the listener-delete guard's 409) instead of parsing the
+// message text.
+export class ApiError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function jsonOrThrow<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`
@@ -98,7 +114,7 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
       notifySessionExpired()
       throw new SessionExpiredError(detail)
     }
-    throw new Error(detail)
+    throw new ApiError(detail, response.status)
   }
   // A 204 (and any empty body) carries nothing to parse -- the delete routes
   // answer that way, and json() on an empty body would turn success into a
@@ -842,9 +858,19 @@ export async function repointListener(
   )
 }
 
-export async function deleteListener(engagementId: string, listenerId: string): Promise<void> {
+// Deletes the listener. A listener live implants enrolled through refuses
+// with a 409 naming them; `force` is the explicit second confirmation that
+// deletes anyway.
+export async function deleteListener(
+  engagementId: string,
+  listenerId: string,
+  force = false,
+): Promise<void> {
   await jsonOrThrow<unknown>(
-    await fetch(`engagements/${engagementId}/listeners/${listenerId}`, { method: 'DELETE' }),
+    await fetch(
+      `engagements/${engagementId}/listeners/${listenerId}${force ? '?force=true' : ''}`,
+      { method: 'DELETE' },
+    ),
   )
 }
 

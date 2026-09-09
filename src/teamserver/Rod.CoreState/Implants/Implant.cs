@@ -4,10 +4,11 @@ namespace Rod.CoreState.Implants;
 
 /// <summary>
 /// An implant -- a short-lived, disposable payload enrolled into exactly one
-/// engagement (architecture.md Sec 5). Untrusted by default; carries a kill
-/// date and no key material -- its cryptographic identity is the keypair the
-/// implant generated itself, bound to its engagement by the CA-signed leaf at
-/// enroll (architecture.md Sec 9), and the entity is disposable with it.
+/// engagement (architecture.md Sec 5). Untrusted by default; carries an
+/// optional kill date (null = open-ended) and no key material -- its
+/// cryptographic identity is the keypair the implant generated itself, bound
+/// to its engagement by the CA-signed leaf at enroll (architecture.md Sec 9),
+/// and the entity is disposable with it.
 ///
 /// The kill date is enforced on both sides of the wire. Retirement marks an
 /// implant taken out of operation: a retired implant is refused at handshake and
@@ -25,7 +26,14 @@ public sealed class Implant
 {
     public ImplantId Id { get; }
     public EngagementId EngagementId { get; }
-    public DateTimeOffset KillDate { get; }
+
+    /// <summary>
+    /// The self-termination timestamp reported by the implant at enroll (its
+    /// baked time fuse), or null for an open-ended implant -- the long-haul
+    /// posture with no fuse at all. Enforced on both sides of the wire: the
+    /// implant self-terminates past it, and the teamserver refuses handshakes.
+    /// </summary>
+    public DateTimeOffset? KillDate { get; }
     public ImplantClass Class { get; }
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? RetiredAt { get; private set; }
@@ -69,6 +77,17 @@ public sealed class Implant
     public string? Username { get; }
 
     /// <summary>
+    /// The listener whose socket carried this enrollment, when the teamserver
+    /// could name it (the HTTP ingress resolves the listener from the local
+    /// port). It is the ingress the implant dialed -- what a listener deletion
+    /// warning counts against -- not a live routing fact: an implant keeps
+    /// checking in on whatever its baked endpoints resolve to. Null for
+    /// enrollments the transport could not attribute to one listener (the
+    /// in-memory harness, a shared-tier socket that predates the stamp).
+    /// </summary>
+    public Guid? EnrolledViaListenerId { get; }
+
+    /// <summary>
     /// When the teamserver last heard from this implant, whether or not a
     /// session is active now -- the durable heartbeat the operator list reads
     /// for an offline implant ("when did we last see this beacon"). Advanced
@@ -94,7 +113,7 @@ public sealed class Implant
     private Implant(
         ImplantId id,
         EngagementId engagementId,
-        DateTimeOffset killDate,
+        DateTimeOffset? killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy,
@@ -102,7 +121,8 @@ public sealed class Implant
         string? hostname = null,
         string? os = null,
         string? arch = null,
-        string? username = null)
+        string? username = null,
+        Guid? enrolledViaListenerId = null)
     {
         Id = id;
         EngagementId = engagementId;
@@ -115,6 +135,7 @@ public sealed class Implant
         Os = os;
         Arch = arch;
         Username = username;
+        EnrolledViaListenerId = enrolledViaListenerId;
     }
 
     /// <summary>
@@ -123,7 +144,8 @@ public sealed class Implant
     /// key material -- its cryptographic identity is the keypair it generated
     /// itself, bound to the engagement by the CA-signed leaf at enroll
     /// (architecture.md Sec 9), so there is nothing here to store or leak.
-    /// <paramref name="killDate"/> is the hard self-termination timestamp.
+    /// <paramref name="killDate"/> is the optional self-termination timestamp
+    /// (null = open-ended).
     /// <paramref name="deployedBy"/> is the operator who authorized the deployment
     /// (the token issuer); it defaults to unattributed so tests that do not care
     /// about attribution stay unchanged, while the production enrollment path
@@ -147,17 +169,19 @@ public sealed class Implant
     /// enrollment use case) is responsible for resolving and scope-checking the
     /// parent; this factory only records the linkage. <paramref name="deployedBy"/>
     /// is the operator who authorized the deployment; it defaults to unattributed
-    /// so tests that do not care about attribution stay unchanged.
+    /// so tests that do not care about attribution compile unchanged.
     ///
     /// The host fields (<paramref name="hostname"/>, <paramref name="os"/>,
     /// <paramref name="arch"/>, <paramref name="username"/>) are what the implant
     /// reported about the machine it runs on; all default to null so callers
     /// that do not know them (tests, pre-field clients) compile unchanged.
+    /// <paramref name="enrolledViaListenerId"/> is the listener whose socket carried
+    /// the enrollment, when the transport could name one.
     /// </summary>
     public static Implant EnrollChild(
         ImplantId id,
         EngagementId engagementId,
-        DateTimeOffset killDate,
+        DateTimeOffset? killDate,
         ImplantClass @class,
         DateTimeOffset createdAt,
         OperatorId deployedBy = default,
@@ -165,16 +189,17 @@ public sealed class Implant
         string? hostname = null,
         string? os = null,
         string? arch = null,
-        string? username = null)
+        string? username = null,
+        Guid? enrolledViaListenerId = null)
     {
-        if (killDate <= createdAt)
+        if (killDate is { } fuse && fuse <= createdAt)
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
         // A default ImplantId (Guid.Empty) is never a real parent; only a non-default
         // id or null is valid, so a caller cannot accidentally record an empty linkage.
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, enrolledViaListenerId);
     }
 
     /// <summary>

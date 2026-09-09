@@ -219,6 +219,80 @@ public class PayloadBuildTests
     }
 
     [Fact]
+    public async Task BuildPayload_RefusesAKillDateInThePast()
+    {
+        // A past fuse can only be a mistake -- the artifact would refuse to run
+        // the moment it landed -- so it is refused at parse time, before any
+        // build work, instead of silently baking a dead payload.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "DotNet",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "https://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: DateTimeOffset.UtcNow.AddDays(-1)));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [DotNetFact]
+    public async Task BuildPayload_MintsAnUnlimitedCredential_WhenMaxUsesIsZero()
+    {
+        // Zero max uses is the unlimited budget: the mint records it, the
+        // library join reads 0/0 ("not counted", never "spent"), and an
+        // open-ended build (no kill date) keeps the 30-day collection window
+        // -- an implant may run for years, a dropped credential should not
+        // stay redeemable for them.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "DotNet",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "https://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    TokenMaxUses: 0));
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var built = await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
+            Assert.NotNull(built);
+
+            var listed = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
+                $"/engagements/{engagementId}/payloads");
+            var row = Assert.Single(listed!);
+            Assert.Equal(built!.TokenId, row.TokenId);
+            Assert.Equal(0, row.TokenMaxUses);
+            Assert.Equal(0, row.TokenRemainingUses);
+            Assert.NotNull(row.TokenExpiresAt);
+            Assert.True(row.TokenExpiresAt!.Value <= DateTimeOffset.UtcNow.AddDays(31));
+            // The open-ended snapshot: no fuse recorded on the row.
+            Assert.Null(row.Build!.KillDate);
+        }
+    }
+
+    [Fact]
     public async Task BuiltPayload_IsInvisibleToAnotherEngagement()
     {
         var (client, host, _) = AuthenticatedHost.Create();

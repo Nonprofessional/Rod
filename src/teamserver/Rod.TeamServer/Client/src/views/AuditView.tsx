@@ -35,6 +35,9 @@ export function AuditView({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [kind, setKind] = useState(ALL_KINDS)
+  // The text search commits on Enter or the Search button; the kind dropdown
+  // stays live.
+  const [queryDraft, setQueryDraft] = useState('')
   const [query, setQuery] = useState('')
 
   const refresh = useCallback(async () => {
@@ -113,9 +116,20 @@ export function AuditView({
         <input
           className="filter-text"
           placeholder="Search verb, payload, outcome, operator…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          value={queryDraft}
+          onChange={(e) => setQueryDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setQuery(queryDraft)
+          }}
+          title="Free text across verb, payload, output, outcome, and operator. Enter or the Search button applies; the kind filter above is live."
         />
+        <button
+          className="ghost"
+          onClick={() => setQuery(queryDraft)}
+          title="Apply the text search (Enter works too)"
+        >
+          Search
+        </button>
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon name="refresh" />
           Refresh

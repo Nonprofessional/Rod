@@ -110,13 +110,20 @@ internal static class PayloadBuildRequestParser
             return (null, "Mode must be 'stream' or 'poll'.");
 
         // The baked token's scope rides the same request: how many implants
-        // the artifact's credential may enroll, and how long the mint stays
-        // redeemable. Absent values default at mint time (single use, the
-        // artifact's kill window).
-        if (body.TokenMaxUses is < 1 or > 10_000)
-            return (null, "TokenMaxUses must be between 1 and 10000.");
+        // the artifact's credential may enroll (0 = unlimited), and how long
+        // the mint stays redeemable. Absent values default at mint time
+        // (single use, the artifact's kill window).
+        if (body.TokenMaxUses is < 0 or > 10_000)
+            return (null, "TokenMaxUses must be between 0 (unlimited) and 10000.");
         if (body.TokenLifetimeSeconds is < 60 or > 2_592_000)
             return (null, "TokenLifetimeSeconds must be between 60 and 2592000 (30 days).");
+
+        // The kill date is the artifact's optional time fuse. A pinned date in
+        // the past can only be a mistake -- the artifact would refuse to run
+        // the moment it landed -- so it is refused here rather than silently
+        // baked; unset means open-ended (no fuse).
+        if (body.KillDate is { } pinned && pinned <= DateTimeOffset.UtcNow)
+            return (null, "KillDate must be in the future; leave it empty for an open-ended artifact.");
 
         // The stager output class (architecture.md Sec 6) references the
         // stage-2 payload it fetches at run time: resolve it here so the build

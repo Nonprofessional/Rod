@@ -35,6 +35,9 @@ function fmtBytes(size: number): string {
 export function PayloadsView({ engagementId }: { engagementId: string }) {
   const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
+  // The filter commits on Enter or the Search button, like every text search
+  // in the operator UI.
+  const [filterDraft, setFilterDraft] = useState('')
   const [filter, setFilter] = useState('')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -105,10 +108,20 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
         <input
           className="filter-text"
           placeholder="Filter (linux, Stage2, listener, fingerprint…)"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          title="Free text across class, language, target, listener, and fingerprint."
+          value={filterDraft}
+          onChange={(e) => setFilterDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setFilter(filterDraft)
+          }}
+          title="Free text across class, language, target, listener, and fingerprint. Enter or the Search button applies."
         />
+        <button
+          className="ghost"
+          onClick={() => setFilter(filterDraft)}
+          title="Apply the filter (Enter works too)"
+        >
+          Search
+        </button>
         <button className="ghost" onClick={() => void refresh()}>
           <Icon name="refresh" />
           Refresh
@@ -208,9 +221,17 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                                   p.tokenExpiresAt
                                     ? ` · expires ${new Date(p.tokenExpiresAt).toLocaleString()}`
                                     : ''
-                                } -- one spend per enrolled host`}
+                                } -- one spend per enrolled host; a zero budget is unlimited`}
                               >
-                                {used}/{p.tokenMaxUses} spent · {p.tokenRemainingUses} left
+                                {p.tokenMaxUses === 0 ? (
+                                  <>
+                                    unlimited{used > 0 ? ` · ${used} spent` : ''}
+                                  </>
+                                ) : (
+                                  <>
+                                    {used}/{p.tokenMaxUses} spent · {p.tokenRemainingUses} left
+                                  </>
+                                )}
                                 {expired ? ' · expired' : ''}
                                 {revoking === p.tokenId ? (
                                   ' (revoking…)'
@@ -299,13 +320,19 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
       payload.tokenId ? (
         <>
           token <code>{payload.tokenId.slice(0, 8)}</code>
-          {b?.tokenMaxUses != null ? ` · minted for ${b.tokenMaxUses} enroll${b.tokenMaxUses === 1 ? '' : 's'}` : ''}
+          {b?.tokenMaxUses != null
+            ? b.tokenMaxUses === 0
+              ? ' · unlimited uses'
+              : ` · max ${b.tokenMaxUses} enroll${b.tokenMaxUses === 1 ? '' : 's'}`
+            : ''}
           {payload.tokenExpiresAt
             ? ` · expires ${new Date(payload.tokenExpiresAt).toLocaleString()}`
             : ''}
-          {payload.tokenMaxUses != null && payload.tokenRemainingUses != null
-            ? ` · ${payload.tokenRemainingUses} left`
-            : ' · no enrolls left (spent, revoked, or swept)'}
+          {payload.tokenMaxUses === 0
+            ? ''
+            : payload.tokenMaxUses != null && payload.tokenRemainingUses != null
+              ? ` · ${payload.tokenRemainingUses} left`
+              : ' · no enrolls left (spent, revoked, or swept)'}
         </>
       ) : (
         'none baked'
@@ -321,7 +348,7 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
           ? `every ${b.sleepSeconds}s ± ${b.jitterSeconds ?? 0}s jitter`
           : 'defaults',
       ),
-      line('Kill date', b.killDate ? new Date(b.killDate).toLocaleString() : '30 days from build (default)'),
+      line('Kill date', b.killDate ? new Date(b.killDate).toLocaleString() : 'none (open-ended)'),
     )
     if (b.enrollPath) lines.push(line('Enroll path', <code>{b.enrollPath}</code>))
     if (b.userAgent) lines.push(line('User agent', <code>{b.userAgent}</code>))

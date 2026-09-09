@@ -24,6 +24,9 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.EngagementId)
             .HasConversion(IdConverters.EngagementId)
             .HasColumnName("engagement_id");
+        // The optional time fuse the artifact reported at enroll: null is the
+        // open-ended posture. Nullable CLR type -> nullable column; implants
+        // recorded before the change always carried a date, so no backfill.
         builder.Property(i => i.KillDate).HasColumnName("kill_date");
         // ImplantClass is an int column, matching the audit hash's (int)Kind form.
         builder.Property(i => i.Class).HasColumnName("class");
@@ -44,6 +47,9 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.Os).HasColumnName("os");
         builder.Property(i => i.Arch).HasColumnName("arch");
         builder.Property(i => i.Username).HasColumnName("username");
+        // The listener whose socket carried the enrollment, when the transport
+        // could attribute one; the listener-delete guard counts against it.
+        builder.Property(i => i.EnrolledViaListenerId).HasColumnName("enrolled_via_listener_id");
         // The durable heartbeat: when the teamserver last heard from this
         // implant, kept after the session is gone. Null for implants that
         // predate the stamp.

@@ -122,13 +122,14 @@ public sealed class HandshakeService
         // 4. Kill date (architecture.md Sec 7). A lost implant self-terminates at
         //    its baked-in kill date; the teamserver mirrors that here by refusing
         //    to open a session for an implant whose kill date has passed. The
-        //    implant entity carries the kill date set at enrollment; the wall
-        //    clock here is authoritative.
-        if (now > implant.KillDate)
+        //    implant entity carries the kill date its artifact reported at
+        //    enrollment -- null on an open-ended build, which never expires this
+        //    way; the wall clock here is authoritative.
+        if (implant.KillDate is { } killDate && now > killDate)
         {
             throw new HandshakeException(
                 HandshakeReason.KillDateExpired,
-                $"Implant {implant.Id} kill date {implant.KillDate:O} has passed.");
+                $"Implant {implant.Id} kill date {killDate:O} has passed.");
         }
 
         // 5. Retirement (architecture.md Sec 7). An implant taken out of

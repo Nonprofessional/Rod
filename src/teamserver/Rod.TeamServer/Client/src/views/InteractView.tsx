@@ -321,7 +321,11 @@ export function InteractView({
             {implant ? [implant.class, ...[implant.os, implant.arch].filter(Boolean)].join(' · ') : ''}
             {implant?.username ? ` · as ${implant.username}` : ''}
             {implant?.parentImplantId ? ` · parent ${implant.parentImplantId.slice(0, 8)}` : ''}
-            {implant ? ` · kill ${new Date(implant.killDate).toLocaleDateString()}` : ''}
+            {implant
+              ? implant.killDate
+                ? ` · kill ${new Date(implant.killDate).toLocaleDateString()}`
+                : ' · no kill date'
+              : ''}
           </span>
           <span className="console-live">
             {implant && (

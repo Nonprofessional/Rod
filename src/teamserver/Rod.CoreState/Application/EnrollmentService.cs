@@ -9,8 +9,9 @@ namespace Rod.CoreState.Application;
 
 /// <summary>
 /// The enrollment use case: a stager token is redeemed to bind a
-/// new implant to an engagement, the implant is recorded with a default kill
-/// date, and the CA issues a certificate binding
+/// new implant to an engagement, the implant is recorded with the kill date
+/// its baked profile reported (null when the artifact is open-ended), and the
+/// CA issues a certificate binding
 /// <c>(implant_id, engagement_id)</c> over the implant's own public key
 /// (architecture.md Sec 9). Orchestrates the
 /// core-state ports; holds no state of its own. Redeem failures propagate as
@@ -19,10 +20,6 @@ namespace Rod.CoreState.Application;
 /// </summary>
 public sealed class EnrollmentService
 {
-    // Skeleton defaults; these become per-request / profile inputs later
-    // (kill date is an concern; the value here only sets the recorded shape).
-    private static readonly TimeSpan DefaultKillDateOffset = TimeSpan.FromDays(30);
-
     private readonly IEngagementRepository _engagements;
     private readonly IStagerTokenService _stagerTokens;
     private readonly IImplantRepository _implants;
@@ -96,7 +93,10 @@ public sealed class EnrollmentService
             ? await ResolveParentAsync(parentId, redeemed.EngagementId, cancellationToken)
             : null;
 
-        // 4. Build the implant: default kill date. The implant carries no key
+        // 4. Build the implant. The kill date is the one the implant reported
+        //    from its baked profile -- the fuse the artifact carries is the fuse
+        //    the record shows, and a null (an open-ended build) records null
+        //    rather than an invented window. The implant carries no key
         //    material -- its identity is the keypair it generated itself, bound
         //    by the CA-signed leaf in step 5.
         //    EnrollChild records the parent when present; a null parent yields the
@@ -106,10 +106,9 @@ public sealed class EnrollmentService
         //    follow (a session opening, tasking) attribute to an accountable
         //    operator (architecture.md Sec 11).
         var implantId = ImplantId.New();
-        var killDate = now + DefaultKillDateOffset;
         var implant = Implant.EnrollChild(
-            implantId, redeemed.EngagementId, killDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
-            command.Hostname, command.Os, command.Arch, command.Username);
+            implantId, redeemed.EngagementId, command.KillDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
+            command.Hostname, command.Os, command.Arch, command.Username, command.EnrolledViaListenerId);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
@@ -123,7 +122,7 @@ public sealed class EnrollmentService
         return new EnrollmentResult(
             implant.Id,
             redeemed.EngagementId,
-            killDate,
+            command.KillDate,
             command.Class,
             issued.Leaf,
             issued.CaChain,
@@ -201,6 +200,12 @@ public sealed class EnrollmentService
 /// the machine it runs on -- the device dimension of the fleet. All default to
 /// null: an implant that does not report them (a pre-field client) enrolls the
 /// same way it always did.
+///
+/// <see cref="KillDate"/> is the artifact's baked time fuse as the implant
+/// reported it, and <see cref="EnrolledViaListenerId"/> the listener whose
+/// socket carried the request -- both transport-attributed facts the core just
+/// records; null on either means "not reported" (an open-ended build, an
+/// unattributable socket).
 /// </summary>
 public sealed record EnrollCommand(
     string StagerTokenSecret,
@@ -210,11 +215,14 @@ public sealed record EnrollCommand(
     string? Hostname = null,
     string? Os = null,
     string? Arch = null,
-    string? Username = null);
+    string? Username = null,
+    DateTimeOffset? KillDate = null,
+    Guid? EnrolledViaListenerId = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
-/// the recorded kill date, the bound certificate plus CA chain, the operator who
+/// the recorded kill date (null for an open-ended artifact), the bound
+/// certificate plus CA chain, the operator who
 /// deployed it (the
 /// token issuer, used to attribute the enrollment), the parent it was derived
 /// from (null for a top-level implant), the hostname it reported (null when
@@ -224,7 +232,7 @@ public sealed record EnrollCommand(
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
     EngagementId EngagementId,
-    DateTimeOffset KillDate,
+    DateTimeOffset? KillDate,
     ImplantClass Class,
     byte[] LeafCertificate,
     IReadOnlyList<byte[]> CaChain,

@@ -50,6 +50,9 @@ export function ProcessBrowser({
   onClose: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
+  // The filter commits on Enter or the Search button, like every text search
+  // in the operator UI.
+  const [filterDraft, setFilterDraft] = useState('')
   const [filter, setFilter] = useState('')
   const [killIssued, setKillIssued] = useState<Set<number>>(new Set())
   const now = useNow(30_000)
@@ -111,9 +114,20 @@ export function ProcessBrowser({
           <input
             className="filter-text"
             placeholder="Filter image or user…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            value={filterDraft}
+            onChange={(e) => setFilterDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setFilter(filterDraft)
+            }}
+            title="Free text across process image and user. Enter or the Search button applies."
           />
+          <button
+            className="ghost"
+            onClick={() => setFilter(filterDraft)}
+            title="Apply the filter (Enter works too)"
+          >
+            Search
+          </button>
           <button
             className="ghost"
             onClick={() => void ensureBrowse(engagementId, implantId, 'recon.ps', '', { force: true }).catch((e) => setError(String(e)))}
