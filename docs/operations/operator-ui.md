@@ -50,30 +50,41 @@ running session alive server-side; reopening continues it.
 
 ## Naming -- the fixed vocabulary
 
-The three connection behaviors above are the whole vocabulary, and every
-address-carrying label names the behaviors it serves. These names are
-**locked**: they appear here, in the Build form, the Payloads library, and
-the listener form, and they do not drift per panel. Changing any of them is
-a deliberate act that updates this section first.
+The three connection behaviors above are the whole vocabulary, and the two
+nouns are **listener** (the server-side object, created on the Listeners
+page) and its **public endpoint** (the address implants dial). Every
+address-carrying field names the noun it picks and, where it matters, the
+behaviors it carries in parentheses. These names are **locked**: they
+appear here, in the Build form, the Payloads library, and the listener
+form, and they do not drift per panel. Changing any of them is a
+deliberate act that updates this section first.
 
-- **Enroll + check-in front** -- the primary dial address a build bakes:
-  the listener the implant registers on once and checks in on forever.
-  The Build form's first field; the manual variant under Advanced is the
-  **Enroll + check-in URL**. The library's **Listener** column names the
-  same thing per artifact.
-- **Interactive front** / **Interactive URL** -- the mTLS socket that
-  carries the interactive stream when the build splits its traffic (a
-  cleartext front cannot carry it). Absent, interactive rides the same
-  TLS-terminated front as everything else.
-- **Fallback fronts** -- backup enroll + check-in addresses baked behind
-  the primary and walked in order when it burns.
-- **Public endpoint** -- a listener's own field: the address implants dial
-  (enroll + check-in, and interactive on TLS fronts). "Callback" appears
-  nowhere; it was retired as a synonym that meant three things.
+- **Listener (enroll + check-in)** -- the Build form's first field: the
+  listener whose public endpoint gets baked. The implant registers on it
+  once and checks in on it for the rest of its life, unless an interactive
+  listener is picked beside it. The Payloads library's **Listener** column
+  names the same thing per artifact.
+- **Interactive listener (mTLS)** -- the second slot: the listener whose
+  socket carries the interactive stream when the build splits its traffic
+  (a cleartext front cannot carry it). Absent, interactive rides the same
+  TLS-terminated listener as everything else.
+- **Public endpoint (enroll + check-in, manual)** /
+  **Public endpoint (interactive, manual)** -- the typed-address twins of
+  the two picks, under Advanced, for addresses this teamserver does not
+  serve (a redirector you control elsewhere).
+- **Fallback public endpoints** -- backup enroll + check-in addresses
+  baked behind the primary and walked in order when it burns.
+- **Public endpoint** -- the listener form's own field of the same name:
+  what the listener will be to implants. "Callback" appears nowhere; it
+  was retired as a synonym that meant three things.
 
-A **listener** is the server-side object; a **front** is the role an
-address plays in a build. Every HTTP-shaped listener can serve enroll +
-check-in; mTLS fronts additionally serve interactive.
+Transport labels in the listener form follow the same rule -- they name
+what each transport carries: HTTPS and mTLS carry **enroll + check-in +
+interactive** (one port; mTLS additionally enforces client certificates
+at the TLS layer), cleartext HTTP carries **enroll + check-in (poll)**
+over the envelope POST cycle but no interactive stream, and DNS/SMB/TCP
+are alternate reach and pivot links, not the payload ingress the Build
+form picks from.
 
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
@@ -184,25 +195,27 @@ engagement's tokens. **Repoint** swaps the public endpoint at runtime without
 touching the socket (a burned redirector is severed); **Delete** unbinds and
 forgets it.
 
-One transport caveat shapes the whole panel: **check-ins are gRPC (HTTP/2
-over mTLS) and cannot ride a cleartext socket** (Kestrel serves cleartext
-HTTP/2 only on an HTTP/2-only endpoint, which cannot also serve the HTTP/1.x
-enrollment). The shapes that follow from that:
+One transport caveat shapes the whole panel: **the interactive stream is
+gRPC (HTTP/2 over TLS) and cannot ride a cleartext socket** (Kestrel
+serves cleartext HTTP/2 only on an HTTP/2-only endpoint, which cannot also
+serve the HTTP/1.x enrollment). The shapes that follow from that:
 
 - **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
   the client certificate optional at the TLS layer -- enrollment rides the
-  socket on the stager token before any certificate exists, and the check-in
-  routes demand the enrolled certificate at the application layer. One
-  listener, one port, everything on it. Builds against it need no split.
-- **`HTTP` (cleartext) carries enrollment and stager fetch only.** A
-  cleartext check-in exists for envelope-speaking clients (POST check-ins,
-  identity by implant id -- the same anything-with-reach posture as
-  DNS/SMB/TCP), and the in-tree .NET implant does not speak it: build
-  against it with a beacon listener named (the split-socket shape) unless
-  your implant is a Tier-0 envelope client.
-- **`mTLS`** is the strict beacon-only socket (the certificate is demanded
-  at the TLS layer); pair one with an `HTTP` listener for enrollment when
-  you want the hard posture.
+  socket on the stager token before any certificate exists, and the
+  check-in routes demand the enrolled certificate at the application
+  layer. One listener, one port, everything on it: enroll + check-in +
+  interactive. Builds against it need no split.
+- **`HTTP` (cleartext) carries enroll + check-in over the envelope POST
+  cycle** (poll mode): every check-in body and its response seal as
+  AES-256-GCM under the per-artifact key -- the authentication cleartext
+  http lacks a TLS client certificate for. What it cannot carry is the
+  interactive stream: build against it with an interactive listener named
+  (the split-socket shape) when you want live channels.
+- **`mTLS`** is the strict posture: the client certificate is demanded at
+  the TLS layer itself. It carries enroll + check-in + interactive; pair
+  one with a cleartext `HTTP` listener for enrollment when you want
+  hard-mode entry.
 
 Every payload build pins the teamserver CA into the artifact, so the
 implant's first contact (enroll) validates the server it dials against the
@@ -210,32 +223,30 @@ C2's own CA -- no system-trust assumptions.
 
 ## Build
 
-The main path is the mainstream shape: pick the **Enroll + check-in front**
-(the listener the implant calls home to) and the **target** (OS/arch; x86
-pairs with Windows only), leave the rest at the defaults, and build. The
-artifact is a self-contained single-file executable with its enrollment
-credential baked in -- drop it on the target and run, zero arguments. A
-small diagram under the picks draws the traffic shape the build bakes and
-follows them live, labeled with the fixed vocabulary: which behaviors each
-socket carries.
+The main path is the mainstream shape: pick the **Listener (enroll +
+check-in)** and the **target** (OS/arch; x86 pairs with Windows only),
+leave the rest at the defaults, and build. The artifact is a
+self-contained single-file executable with its enrollment credential
+baked in -- drop it on the target and run, zero arguments. A small
+diagram under the picks draws the traffic shape the build bakes and
+follows them live, labeled with the fixed vocabulary: which behaviors
+each socket carries.
 
-The form's two addresses are the vocabulary's two roles: the **enroll +
-check-in front** is where the implant calls home (it registers there once
-and checks in there for the rest of its life), and the **interactive
-front** is the optional second socket for live channels. Everything else
--- "enroll", "check-in" in the hover texts -- names the moments inside
-that one relationship.
+The form's two picks are the vocabulary's two roles: the **enroll +
+check-in listener** is where the implant calls home (it registers there
+once and checks in there for the rest of its life), and the
+**interactive listener** is the optional second socket for live
+channels. Everything else -- "enroll", "check-in" in the hover texts --
+names the moments inside that one relationship.
 
-**Interactive front (mTLS)** is enabled when the picked front is cleartext
-`http`: interactive channels cannot ride that socket, so the form offers
-the engagement's `mTLS` listener for the interactive stream -- the
-split-socket shape (enroll + check-in one socket, interactive another).
-Left empty, the implant polls the enroll + check-in front over the
-envelope POST cycle instead. An `https` front carries all three behaviors
-itself and needs no split. The build API takes the same thing as
-`beaconListenerId`, or a typed `beaconEndpoint`, and refuses a cleartext
-enroll endpoint with no interactive front named -- that artifact would
-enroll and then sit without tasking forever.
+**Interactive listener (mTLS)** is enabled when the picked listener is
+cleartext `http`: interactive channels cannot ride that socket, so the
+form offers the engagement's `mTLS` listener for the interactive stream
+-- the split-socket shape (enroll + check-in one socket, interactive
+another). Left empty, the implant polls the enroll + check-in listener
+over the envelope POST cycle instead. An `https` listener carries all
+three behaviors itself and needs no split. The build API takes the same
+thing as `beaconListenerId`, or a typed `beaconEndpoint`.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs
@@ -259,15 +270,15 @@ its expiry date; beacon timing belongs to the Stage2 it fetches.
 
 **Advanced** (all defaulted server side; open only to change them):
 
-- **Enroll + check-in URL (manual)** -- the dial address when you
-  deliberately build without naming a listener.
-- **Interactive URL (manual)** -- the https host the interactive stream
-  dials when it differs from the enroll + check-in front (empty = check-ins
-  ride the enroll + check-in address's envelope cycle); the typed-URL twin
-  of the Interactive front picker above.
-- **Fallback fronts** -- backup enroll + check-in fronts baked in behind
-  the primary and dialed in order when it burns; they share the enroll
-  path and the fixed check-in route.
+- **Public endpoint (enroll + check-in, manual)** -- the dial address
+  when you deliberately build without naming a listener.
+- **Public endpoint (interactive, manual)** -- the mTLS host the
+  interactive stream dials when it differs from the enroll + check-in
+  address (empty = check-ins poll the enroll + check-in address's
+  envelope cycle); the typed twin of the Interactive listener pick above.
+- **Fallback public endpoints** -- backup enroll + check-in addresses
+  baked in behind the primary and dialed in order when it burns; they
+  share the enroll path and the fixed check-in route.
 - **Enroll path** -- the URI path of the one-time registration POST. The
   only path knob: check-ins ride the fixed `/implants/beacon` route and the
   interactive stream rides the mTLS socket's own gRPC path, so no other path

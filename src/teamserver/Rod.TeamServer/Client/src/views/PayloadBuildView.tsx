@@ -304,7 +304,7 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
-            Enroll + check-in front
+            Listener (enroll + check-in)
             <select
               value={listenerId}
               onChange={(e) => {
@@ -318,9 +318,9 @@ export function PayloadBuildView({
                 const next = listeners.find((l) => l.id === e.target.value)
                 if (next && next.transport !== 'http') setBeaconListenerId('')
               }}
-              title="The address the implant calls home to: it registers here once (enroll) and checks in here for the rest of its life, unless an interactive front is picked beside it. Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life, unless an interactive listener is picked beside it. Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
             >
-              <option value="">-- none: manual endpoint --</option>
+              <option value="">-- none: public endpoint under Advanced --</option>
               {listeners.map((l) =>
                 HTTP_INGRESS.has(l.transport) ? (
                   <option key={l.id} value={l.id}>
@@ -334,25 +334,25 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {/* Always mounted, disabled unless the callback front is cleartext --
-              the form's grid never reshuffles when a listener is picked. The
-              empty option carries the default (poll the callback front); the
-              full split rationale lives in the hover text. */}
+          {/* Always mounted, disabled unless the enroll + check-in listener is
+              cleartext -- the form's grid never reshuffles when a listener is
+              picked. The empty option carries the default (poll the same
+              front); the full split rationale lives in the hover text. */}
           <label>
-            Interactive front (mTLS)
+            Interactive listener (mTLS)
             <select
               value={offersBeaconSplit ? beaconListenerId : ''}
               disabled={!offersBeaconSplit}
               onChange={(e) => setBeaconListenerId(e.target.value)}
               title={
                 offersBeaconSplit
-                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the enroll + check-in front over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
-                  : 'A TLS-terminated front carries the enroll + check-in traffic and the interactive stream on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
+                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the enroll + check-in listener over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
+                  : 'A TLS-terminated listener carries the enroll + check-in traffic and the interactive stream on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
               }
             >
               {offersBeaconSplit ? (
                 <>
-                  <option value="">-- none: check-ins ride the enroll + check-in front (poll) --</option>
+                  <option value="">-- none: check-ins poll the enroll + check-in listener --</option>
                   {beaconCandidates.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name} ({l.transport} → {l.publicEndpoint})
@@ -360,7 +360,7 @@ export function PayloadBuildView({
                   ))}
                 </>
               ) : (
-                <option value="">-- same socket as the enroll + check-in front --</option>
+                <option value="">-- same listener as enroll + check-in --</option>
               )}
             </select>
           </label>
@@ -502,12 +502,13 @@ export function PayloadBuildView({
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Manual overrides only, for builds without a picked listener: two addresses at most
-              (the enroll + check-in URL, and the interactive URL for the hardened split), spare
-              enroll + check-in fronts, and the one path knob — registration's. Check-ins ride a
-              fixed route and the interactive stream rides its own, so no other path exists to set.
+              (the enroll + check-in public endpoint, and the interactive public endpoint for the
+              hardened split), backup enroll + check-in endpoints, and the one path knob —
+              registration's. Check-ins ride a fixed route and the interactive stream rides its
+              own, so no other path exists to set.
             </p>
             <label>
-              Enroll + check-in URL (manual)
+              Public endpoint (enroll + check-in, manual)
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
@@ -515,13 +516,13 @@ export function PayloadBuildView({
                 disabled={!!listenerId}
                 title={
                   listenerId
-                    ? 'An enroll + check-in front listener is picked, so its public endpoint is used. Choose "-- none: manual endpoint --" above to type one manually.'
+                    ? 'An enroll + check-in listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
                     : 'The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere).'
                 }
               />
             </label>
             <label>
-              Interactive URL (manual)
+              Public endpoint (interactive, manual)
               <input
                 value={beaconEndpoint}
                 onChange={(e) => setBeaconEndpoint(e.target.value)}
@@ -529,18 +530,18 @@ export function PayloadBuildView({
                 disabled={!!beaconListenerId}
                 title={
                   beaconListenerId
-                    ? 'An interactive front listener is picked, so its public endpoint is used.'
-                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins ride the enroll + check-in address itself over the envelope POST cycle; name it only for the split-socket shape.'
+                    ? 'An interactive listener is picked, so its public endpoint is used.'
+                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins poll the enroll + check-in address itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>
             <label>
-              Fallback fronts
+              Fallback public endpoints
               <input
                 value={fallbackEndpoints}
                 onChange={(e) => setFallbackEndpoints(e.target.value)}
                 placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Backup enroll + check-in fronts the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-front shape."
+                title="Backup enroll + check-in addresses the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-address shape."
               />
             </label>
             <label>

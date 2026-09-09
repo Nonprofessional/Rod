@@ -127,11 +127,6 @@ export function AuditView({
           <span className="spinner" />
           Loading audit trail…
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty">
-          <Icon name="list" />
-          No events recorded yet.
-        </div>
       ) : (
         <div className="table-wrap">
           <table>
@@ -147,6 +142,16 @@ export function AuditView({
               </tr>
             </thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty">
+                      <Icon name="list" />
+                      No events recorded yet.
+                    </div>
+                  </td>
+                </tr>
+              )}
               {[...filtered].reverse().map((e) => (
                 <tr key={e.eventId}>
                   <td>{new Date(e.at).toLocaleString()}</td>

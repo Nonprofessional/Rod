@@ -201,43 +201,46 @@ export function ArtifactsView({
 
       {error && <p className="error">{error}</p>}
 
-      {artifacts.length === 0 ? (
-        <div className="empty">
-          <Icon name="archive" />
-          No artifacts on this task.
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Content type</th>
+              <th>Size</th>
+              <th>Stored</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {artifacts.length === 0 && (
               <tr>
-                <th>Name</th>
-                <th>Content type</th>
-                <th>Size</th>
-                <th>Stored</th>
-                <th></th>
+                <td colSpan={5}>
+                  <div className="empty">
+                    <Icon name="archive" />
+                    No artifacts on this task.
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {artifacts.map((a) => (
-                <tr key={a.artifactId}>
-                  <td>{a.name}</td>
-                  <td>{a.contentType}</td>
-                  <td>{a.size}</td>
-                  <td>{new Date(a.storedAt).toLocaleString()}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="sm" onClick={() => void onDownload(a)}>
-                        Download
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            )}
+            {artifacts.map((a) => (
+              <tr key={a.artifactId}>
+                <td>{a.name}</td>
+                <td>{a.contentType}</td>
+                <td>{a.size}</td>
+                <td>{new Date(a.storedAt).toLocaleString()}</td>
+                <td>
+                  <div className="row-actions">
+                    <button className="sm" onClick={() => void onDownload(a)}>
+                      Download
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {artifactsCursor && (
         <div className="load-more">
           <button className="ghost" onClick={() => void loadOlderArtifacts()} disabled={busy}>

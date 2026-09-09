@@ -48,6 +48,10 @@ export function TaskLogView({
   const [verbFilter, setVerbFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [operatorFilter, setOperatorFilter] = useState('')
+  // The text search commits on Enter or the Search button (the dropdown
+  // filters above stay live): typing a long output fragment should not
+  // re-filter on every keystroke.
+  const [textDraft, setTextDraft] = useState('')
   const [textFilter, setTextFilter] = useState('')
 
   const refresh = useCallback(async () => {
@@ -194,9 +198,20 @@ export function TaskLogView({
         <input
           className="filter-text"
           placeholder="Search verb, arguments, output…"
-          value={textFilter}
-          onChange={(e) => setTextFilter(e.target.value)}
+          value={textDraft}
+          onChange={(e) => setTextDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') setTextFilter(textDraft)
+          }}
+          title="Free text across verb, arguments, and output. Enter or the Search button applies; the dropdown filters above are live."
         />
+        <button
+          className="ghost"
+          onClick={() => setTextFilter(textDraft)}
+          title="Apply the text search (Enter works too)"
+        >
+          Search
+        </button>
       </div>
 
       {interactTask && (
@@ -208,43 +223,46 @@ export function TaskLogView({
         />
       )}
 
-      {filtered.length === 0 ? (
-        <div className="empty">
-          <Icon name="inbox" />
-          {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the filters.'}
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Verb</th>
+              <th>Implant</th>
+              <th>Status</th>
+              <th>By</th>
+              <th>At</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && (
               <tr>
-                <th></th>
-                <th>Verb</th>
-                <th>Implant</th>
-                <th>Status</th>
-                <th>By</th>
-                <th>At</th>
-                <th></th>
+                <td colSpan={7}>
+                  <div className="empty">
+                    <Icon name="inbox" />
+                    {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the filters.'}
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {[...filtered].reverse().map((t) => (
-                <LogRow
-                  key={t.taskId}
-                  engagementId={engagementId}
-                  task={t}
-                  expanded={expanded.has(t.taskId)}
-                  onToggle={() => toggleExpanded(t.taskId)}
-                  onInteract={() =>
-                    setInteractTask(interactTask === t.taskId ? null : t.taskId)
-                  }
-                  interactOpen={interactTask === t.taskId}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            )}
+            {[...filtered].reverse().map((t) => (
+              <LogRow
+                key={t.taskId}
+                engagementId={engagementId}
+                task={t}
+                expanded={expanded.has(t.taskId)}
+                onToggle={() => toggleExpanded(t.taskId)}
+                onInteract={() =>
+                  setInteractTask(interactTask === t.taskId ? null : t.taskId)
+                }
+                interactOpen={interactTask === t.taskId}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
       {cursor && (
         <div className="load-more">
           <button className="ghost" onClick={() => void loadOlder()} disabled={loadingMore}>

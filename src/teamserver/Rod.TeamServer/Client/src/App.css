@@ -558,6 +558,16 @@ input[type='file']::file-selector-button {
   min-width: 180px;
 }
 
+/* A toolbar's text box takes the row's leftover width so its placeholder
+   reads whole; the row wraps (it already does) instead of squeezing the box.
+   Fixed-width boxes truncated their hints the moment the content column
+   grew. */
+.filter-text {
+  flex: 1 1 240px;
+  min-width: 220px;
+  max-width: 640px;
+}
+
 /* --- Cards ------------------------------------------------------------------ */
 
 .card {
@@ -2147,9 +2157,11 @@ label.checkbox-label {
 
 /* --- List filter field ---------------------------------------------------------------- */
 
-.filter-text {
-  width: 240px;
-  max-width: 40vw;
+/* The listener form's endpoint field takes a full row (the completion hint
+   in its placeholder is long): the grid places labels, so the span rides
+   the label and the box stretches with it. */
+.listener-form .endpoint-label {
+  grid-column: 1 / -1;
 }
 
 /* --- Payload build jobs ---------------------------------------------------------------- */
@@ -2228,14 +2240,6 @@ label.checkbox-label {
   gap: 6px 14px;
   align-items: center;
   font-size: 12px;
-}
-
-.listener-create .bind-port {
-  width: 72px;
-}
-
-.listener-create .endpoint-input {
-  flex: 1 1 230px;
 }
 
 /* --- Engagement timeline (story view) ------------------------------------------------------ */

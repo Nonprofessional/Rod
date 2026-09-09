@@ -32,13 +32,18 @@ import { StatusBadge } from '../components/StatusBadge'
 // (the retired https-envelope transport is deliberately absent -- envelope
 // check-ins ride the HTTPS listener now). SMB is the odd one out: its bind is
 // a bare pipe name, not interface + port.
+// Each label names what the transport carries, in the fixed vocabulary:
+// TLS-terminated fronts carry every behavior (enroll, check-in, interactive);
+// cleartext HTTP carries enroll + check-in over the envelope POST cycle but
+// no interactive stream; DNS/SMB/TCP are alternate reach and pivot links,
+// not the payload ingress the Build form picks from.
 const TRANSPORTS = [
-  { value: 'https', label: 'HTTPS — one port: enroll + check-ins', port: '443' },
-  { value: 'mtls', label: 'mTLS — gRPC over HTTP/2', port: '5443' },
-  { value: 'http', label: 'HTTP — cleartext; enroll only', port: '5090' },
-  { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
-  { value: 'smb', label: 'SMB — named pipe', port: '' },
-  { value: 'tcp', label: 'Raw TCP — framed messages', port: '4444' },
+  { value: 'https', label: 'HTTPS — one port: enroll + check-in + interactive', port: '443' },
+  { value: 'mtls', label: 'mTLS — client certs: enroll + check-in + interactive', port: '5443' },
+  { value: 'http', label: 'HTTP — cleartext: enroll + check-in (poll); no interactive', port: '5090' },
+  { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
+  { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
+  { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
 ]
 
 // Select values that are not reported addresses: the wildcard bind and the
@@ -279,7 +284,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </label>
           </>
         )}
-        <label>
+        <label className="endpoint-label">
           Public endpoint
           <input
             className="endpoint-input"
@@ -303,26 +308,31 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         </button>
       </div>
       {error && <p className="error">{error}</p>}
-      {listeners.length === 0 ? (
-        <div className="empty">
-          <Icon name="radio" />
-          No listeners for this engagement yet -- create the ingress its implants will dial.
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Transport</th>
+              <th>Bind</th>
+              <th>Public endpoint</th>
+              <th>State</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {listeners.length === 0 && (
               <tr>
-                <th>Name</th>
-                <th>Transport</th>
-                <th>Bind</th>
-                <th>Public endpoint</th>
-                <th>State</th>
-                <th></th>
+                <td colSpan={6}>
+                  <div className="empty">
+                    <Icon name="radio" />
+                    No listeners for this engagement yet -- create the ingress its implants will
+                    dial.
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {listeners.map((l) => (
+            )}
+            {listeners.map((l) => (
                 <tr key={l.id}>
                   <td>{l.name}</td>
                   <td>{l.transport}</td>
@@ -382,10 +392,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

@@ -115,29 +115,33 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
         </button>
       </div>
       {error && <p className="error">{error}</p>}
-      {payloads.length === 0 ? (
-        <div className="empty">
-          <Icon name="package" />
-          No payloads stored yet -- build one on the Build tab.
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Built</th>
+              <th>Class</th>
+              <th>Target</th>
+              <th>Listener</th>
+              <th>Credential</th>
+              <th>Size</th>
+              <th>Fingerprint</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {payloads.length === 0 && (
               <tr>
-                <th></th>
-                <th>Built</th>
-                <th>Class</th>
-                <th>Target</th>
-                <th>Listener</th>
-                <th>Credential</th>
-                <th>Size</th>
-                <th>Fingerprint</th>
-                <th></th>
+                <td colSpan={9}>
+                  <div className="empty">
+                    <Icon name="package" />
+                    No payloads stored yet -- build one on the Build tab.
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {payloads
+            )}
+            {payloads
                 .filter((p) => {
                   const q = filter.trim().toLowerCase()
                   if (!q) return true
@@ -273,10 +277,9 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                     </Fragment>
                   )
                 })}
-            </tbody>
-          </table>
-        </div>
-      )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

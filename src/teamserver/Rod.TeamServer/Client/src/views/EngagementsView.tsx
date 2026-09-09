@@ -180,11 +180,6 @@ export function EngagementsView() {
           <span className="spinner" />
           Loading engagements…
         </div>
-      ) : items.length === 0 ? (
-        <div className="empty">
-          <Icon name="globe" />
-          No engagements yet -- create one to begin.
-        </div>
       ) : (
         <div className="table-wrap">
           <table>
@@ -200,6 +195,16 @@ export function EngagementsView() {
               </tr>
             </thead>
             <tbody>
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty">
+                      <Icon name="globe" />
+                      No engagements yet -- create one to begin.
+                    </div>
+                  </td>
+                </tr>
+              )}
               {items.map((e) => {
                 const status = statusOf(e)
                 return (
