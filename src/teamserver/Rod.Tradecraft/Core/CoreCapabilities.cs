@@ -49,6 +49,15 @@ public static class CoreCapabilities
     /// <summary>Terminate one process on the target by its pid.</summary>
     public const string ProcKill = "proc.kill";
 
+    /// <summary>
+    /// Retune the live check-in cadence: the base sleep and its jitter,
+    /// applied from the target's next cycle. The runtime twin of the baked
+    /// check-in profile -- an operator can speed a fielded implant up for
+    /// live work (<c>0 0</c> checks in back-to-back, the interactive-as-poll
+    /// posture) or slow it down for long-haul quiet, with no rebuild.
+    /// </summary>
+    public const string BeaconSleep = "beacon.sleep";
+
     // The OPSEC attributes for the file verbs (architecture.md Sec 7): a push
     // lands bytes on the target's disk, a pull reads its filesystem.
     private static readonly IReadOnlyDictionary<string, string> WritesToDisk =
@@ -83,11 +92,12 @@ public static class CoreCapabilities
         CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
         CapabilityDescriptor.Of(FsList, CapabilityCategory.Core, "1.0", ReadsFilesystem),
         CapabilityDescriptor.Of(ProcKill, CapabilityCategory.Core, "1.0", KillsProcess),
+        CapabilityDescriptor.Of(BeaconSleep, CapabilityCategory.Core, "1.0"),
     };
 
     /// <summary>Every core verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        ShellExec, ShellInteract, FilePush, FilePull, FsList, ProcKill,
+        ShellExec, ShellInteract, FilePush, FilePull, FsList, ProcKill, BeaconSleep,
     };
 }

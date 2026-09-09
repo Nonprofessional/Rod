@@ -34,7 +34,7 @@ public class HandlerModuleSelectionTests : IDisposable
         Assert.Equal(
             new[]
             {
-                "shell.exec", "shell.interact", "tunnel.forward", "tunnel.socks",
+                "shell.exec", "shell.interact", "beacon.sleep", "tunnel.forward", "tunnel.socks",
                 "file.push", "file.pull", "fs.list", "proc.kill",
                 "recon.portscan", "recon.hostenum", "recon.service", "recon.ps",
                 "lateral.move", "lateral.token", "lateral.exec_remote",
@@ -59,6 +59,7 @@ public class HandlerModuleSelectionTests : IDisposable
         Assert.Equal(
             new[]
             {
+                "Internal/BeaconSleep.cs",
                 "Internal/Collect.cs",
                 "Internal/Exfil.cs",
                 "Internal/Files.cs",
@@ -86,6 +87,7 @@ public class HandlerModuleSelectionTests : IDisposable
         Assert.Equal(
             new[]
             {
+                "Internal/BeaconSleep.cs",
                 "Internal/Collect.cs",
                 "Internal/Exec.cs",
                 "Internal/Exfil.cs",
@@ -136,7 +138,7 @@ public class HandlerModuleSelectionTests : IDisposable
         Assert.True(File.Exists(Path.Combine(staging, "Internal", "Exec.cs")));
         foreach (var dropped in new[]
                  {
-                     "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
+                     "BeaconSleep.cs", "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
                      "InteractiveShell.cs", "TunnelForward.cs", "TunnelSocks.cs", "ScreenCapture.cs", "Png.cs",
                  })
             Assert.False(File.Exists(Path.Combine(staging, "Internal", dropped)), dropped + " must leave the compilation");
@@ -179,17 +181,19 @@ public class HandlerModuleSelectionTests : IDisposable
 
         foreach (var file in new[]
                  {
-                     "Exec.cs", "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
+                     "Exec.cs", "BeaconSleep.cs", "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
                      "InteractiveShell.cs", "TunnelForward.cs", "TunnelSocks.cs", "ScreenCapture.cs", "Png.cs",
                  })
             Assert.True(File.Exists(Path.Combine(staging, "Internal", file)), file + " must survive a full-class bake");
 
         // The full-class generation carries the stub's registrations,
         // including the enroll-capturing lateral.move, the staged arm, the
-        // file browser's listing verb, and every channel.
+        // file browser's listing verb, the cadence-capturing beacon.sleep,
+        // and every channel.
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "HandlerSelection.cs"));
         Assert.Contains("new CapabilityHandler(\"lateral.move\", args => Lateral.Move(args, enroll)),", selection);
         Assert.Contains("new CapabilityHandler(\"fs.list\", args => Files.List(args)),", selection);
+        Assert.Contains("new CapabilityHandler(\"beacon.sleep\", args => BeaconSleep.Set(args, cadence)),", selection);
         Assert.Contains("(\"file.push\", (args, data) => Files.PushStaged(args, data)),", selection);
         Assert.Contains("new(\"shell.interact\", (args, stream, ct) => InteractiveShell.RunAsync(args, stream, ct)),", selection);
     }
@@ -203,7 +207,7 @@ public class HandlerModuleSelectionTests : IDisposable
         Directory.CreateDirectory(Path.Combine(staging, "Internal"));
         foreach (var file in new[]
                  {
-                     "Exec.cs", "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
+                     "Exec.cs", "BeaconSleep.cs", "Files.cs", "Proc.cs", "Lateral.cs", "Persist.cs", "Collect.cs", "Exfil.cs",
                      "InteractiveShell.cs", "TunnelForward.cs", "TunnelSocks.cs", "ScreenCapture.cs", "Png.cs",
                      "HandlerSelection.cs",
                  })

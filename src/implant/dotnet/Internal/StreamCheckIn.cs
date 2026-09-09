@@ -28,5 +28,6 @@ internal static class StreamCheckIn
         setup.Enroll,
         setup.Config.ClassVerbs,
         setup.Log,
-        setup.Nonces);
+        setup.Nonces,
+        setup.Cadence);
 }

@@ -46,6 +46,7 @@ public static class ImplantClassCapabilities
             [ImplantClass.Stage2] = new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull", "fs.list", "proc.kill",
+                "beacon.sleep",
                 "tunnel.forward", "tunnel.socks",
                 "recon.portscan", "recon.hostenum", "recon.service", "recon.ps",
                 "lateral.move", "lateral.token", "lateral.exec_remote",

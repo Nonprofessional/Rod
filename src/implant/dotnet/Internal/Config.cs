@@ -405,7 +405,9 @@ internal sealed class Config
     // the env values come from the Go-shaped build contract, so the implant
     // accepts the same syntax across build units.
     // Falls back to the supplied default on any parse failure.
-    private static TimeSpan ParseGoDuration(string text, TimeSpan fallback)
+    // Internal for BeaconSleep, which parses the same Go-duration tokens the
+    // baked profile and the -sleep flag speak.
+    internal static TimeSpan ParseGoDuration(string text, TimeSpan fallback)
     {
         if (string.IsNullOrWhiteSpace(text))
             return fallback;

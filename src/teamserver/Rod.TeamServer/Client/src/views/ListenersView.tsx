@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   type ListenerSummary,
   type NetworkInterfaceSummary,
@@ -168,13 +168,33 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     }
   }
 
-  // The two-step delete. The first confirmation is the usual one; when live
-  // implants enrolled through the listener, the server refuses with a 409
-  // naming them, and the second confirmation (the server's own words) forces
-  // the delete. A listener nothing depends on dies in one step.
-  const onDelete = async (l: ListenerSummary) => {
-    if (!window.confirm(`Delete listener "${l.name}" (${l.bindAddress})? Its socket is unbound.`))
+  // The delete guard, in two layers. The button itself arms: the first click
+  // turns it into a "Confirm delete" that auto-reverts after a few seconds,
+  // so an accidental click never deletes anything. The armed click runs the
+  // delete; when live implants enrolled through the listener, the server
+  // refuses with a 409 naming them, and that message is the second
+  // confirmation -- only its explicit accept forces the delete.
+  const [armed, setArmed] = useState<string | null>(null)
+  const disarmTimer = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (disarmTimer.current !== null) window.clearTimeout(disarmTimer.current)
+    },
+    [],
+  )
+
+  const onArmDelete = (l: ListenerSummary) => {
+    if (armed === l.id) {
+      if (disarmTimer.current !== null) window.clearTimeout(disarmTimer.current)
+      setArmed(null)
+      void onDelete(l)
       return
+    }
+    setArmed(l.id)
+    disarmTimer.current = window.setTimeout(() => setArmed(null), 4000)
+  }
+
+  const onDelete = async (l: ListenerSummary) => {
     try {
       await deleteListener(engagementId, l.id)
       setError(null)
@@ -402,8 +422,16 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                     <StatusBadge status={l.state} />
                   </td>
                   <td>
-                    <button className="sm danger" onClick={() => void onDelete(l)}>
-                      Delete
+                    <button
+                      className={`sm danger${armed === l.id ? ' armed' : ''}`}
+                      onClick={() => onArmDelete(l)}
+                      title={
+                        armed === l.id
+                          ? 'Click again to delete — the button reverts on its own after a few seconds'
+                          : 'Delete this listener (two clicks: the first arms, the second deletes). A listener live implants enrolled through asks once more.'
+                      }
+                    >
+                      {armed === l.id ? 'Confirm delete' : 'Delete'}
                     </button>
                   </td>
                 </tr>

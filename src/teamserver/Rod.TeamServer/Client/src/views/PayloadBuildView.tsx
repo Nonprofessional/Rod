@@ -481,6 +481,7 @@ export function PayloadBuildView({
               onChange={(e) => setTokenMaxUses(e.target.value)}
               title="How many hosts the baked credential may enroll -- one spend per host, so one artifact can seed several machines until the budget runs out. 0 = unlimited. Default 1. Revoke it in the payload library to kill a leaked artifact's credential."
             />
+            <span className="field-help">0 = unlimited</span>
           </label>
           <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
             Call-home cadence, the artifact's optional kill-date fuse, and the baked credential's
@@ -602,6 +603,7 @@ export function PayloadBuildView({
                 placeholder="hours"
                 title="How long the baked credential stays redeemable. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or 30 days when there is none."
               />
+              <span className="field-help">empty = kill-date window (30 days when none)</span>
             </label>
           </div>
         </details>

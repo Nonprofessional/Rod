@@ -101,6 +101,26 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     fields: [{ key: 'pid', label: 'PID', type: 'number', required: true, placeholder: '4242' }],
     build: (values) => ({ arguments: text(values.pid) }),
   },
+  'beacon.sleep': {
+    title: 'Retune the check-in cadence',
+    fields: [
+      {
+        key: 'sleep',
+        label: 'Check-in every',
+        required: true,
+        placeholder: '10s, 5m, or bare seconds (0 = back-to-back)',
+        help: 'Go duration (30s, 5m) or bare seconds. 0 checks in continuously — the interactive-as-poll posture.',
+      },
+      {
+        key: 'jitter',
+        label: 'Randomize ±',
+        placeholder: '2s — empty keeps the current jitter',
+      },
+    ],
+    build: (values) => ({
+      arguments: [text(values.sleep), text(values.jitter)].filter(Boolean).join(' '),
+    }),
+  },
   'recon.portscan': {
     title: 'Scan ports on a host',
     fields: [

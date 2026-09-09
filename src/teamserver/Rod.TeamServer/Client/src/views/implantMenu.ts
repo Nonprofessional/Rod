@@ -16,6 +16,7 @@ import type { MenuEntry, MenuItem } from '../components/ContextMenu'
 const CLASS_VERBS: Record<string, readonly string[]> = {
   Stage2: [
     'shell.exec', 'shell.interact', 'file.push', 'file.pull', 'fs.list', 'proc.kill',
+    'beacon.sleep',
     'recon.portscan', 'recon.hostenum', 'recon.service', 'recon.ps',
     'lateral.move', 'lateral.token', 'lateral.exec_remote',
     'persist.install', 'persist.remove', 'persist.list',
@@ -67,6 +68,18 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
     entries.push({ kind: 'sep' })
   }
   entries.push(
+    { kind: 'label', label: 'Beacon' },
+    push(
+      {
+        kind: 'item',
+        label: 'Check-in interval',
+        icon: 'clock',
+        opensDialog: true,
+        title: 'beacon.sleep -- retune the live check-in cadence (e.g. 10s, 5m, or 0 0 for back-to-back, near-interactive polling)',
+        onSelect: () => actions.onDialog('beacon.sleep'),
+      },
+      'beacon.sleep',
+    ),
     { kind: 'label', label: 'Shell' },
     push(
       {

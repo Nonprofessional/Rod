@@ -204,11 +204,16 @@ internal sealed class HandlerRegistry
     /// reference set in the dev tree, the build class's reduced set in a
     /// generated artifact -- with <paramref name="additional"/> (an
     /// out-of-tree handler, or a test's stand-in) appended after the reference
-    /// set.
+    /// set. <paramref name="cadence"/> is the live check-in cadence the
+    /// beacon.sleep handler retunes; null leaves that verb refusing cleanly
+    /// (a dispatch path with no cadence to change).
     /// </summary>
-    public static HandlerRegistry Default(EnrollBundle? enroll = null, IEnumerable<ICapabilityHandler>? additional = null)
+    public static HandlerRegistry Default(
+        EnrollBundle? enroll = null,
+        Cadence? cadence = null,
+        IEnumerable<ICapabilityHandler>? additional = null)
     {
-        var handlers = new List<ICapabilityHandler>(HandlerSelection.Handlers(enroll));
+        var handlers = new List<ICapabilityHandler>(HandlerSelection.Handlers(enroll, cadence));
         if (additional is not null)
             handlers.AddRange(additional);
         return new HandlerRegistry(handlers, HandlerSelection.Staged, HandlerSelection.Channels);

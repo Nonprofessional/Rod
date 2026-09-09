@@ -456,6 +456,15 @@ button.danger:hover:not(:disabled) {
   border-color: var(--danger);
 }
 
+/* The armed half of a two-click delete: filled and waiting for the second
+   click, auto-reverting if the operator walks away. */
+button.danger.armed,
+button.danger.armed:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface);
+}
+
 button.sm {
   height: 26px;
   padding: 0 10px;

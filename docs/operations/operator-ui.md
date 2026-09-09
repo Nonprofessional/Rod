@@ -135,10 +135,14 @@ the status dot and the last-seen column).
   and arguments; short output unfolds under the line, long output folds
   behind a line count; a channel task's pane opens in the
   same flow above the prompt); and a prompt at the bottom -- a plain line
-  runs as a shell command, `help` lists the shortcuts (`interact`, `ps`,
-  `kill`, `screenshot`, `hostenum`, `portscan`, `services`, `download`,
-  `upload`, `files`, `raw`); `upload` opens the picker dialog, because its
-  argument is a local file. The transcript follows the newest line while
+  runs as a shell command, `help` lists the shortcuts (`interact`, `sleep`,
+  `ps`, `kill`, `screenshot`, `hostenum`, `portscan`, `services`,
+  `download`, `upload`, `files`, `raw`); `upload` opens the picker dialog,
+  because its argument is a local file. `sleep <interval> [jitter]` retunes
+  the live check-in cadence without a rebuild (Go durations or bare seconds;
+  `sleep 0 0` polls back-to-back -- the near-interactive posture over a poll
+  build), and the same verb rides the row menu's **Beacon → Check-in
+  interval** entry as a labeled dialog. The transcript follows the newest line while
   the operator is parked at the bottom and pins when they scroll up. The
   Advanced disclosure is the raw verb+arguments escape hatch, pinned to
   this implant.
@@ -198,13 +202,15 @@ pipe path / host:port) is required.
 Every listener is engagement-scoped and persisted -- a restart rebinds it with
 the same id -- and enrollment through its socket accepts only that
 engagement's tokens. **Repoint** swaps the public endpoint at runtime without
-touching the socket (a burned redirector is severed). **Delete** is a
-two-step guard: the teamserver records which listener's socket carried each
-enrollment, and deleting a listener that live implants enrolled through
-refuses with the count (retired implants do not count) -- the operator UI
-turns that refusal into a second confirmation naming the dependents, and only
-the explicit confirm (or `?force=true` on the API) unbinds and forgets it.
-A listener nothing depends on dies in one confirmation.
+touching the socket (a burned redirector is severed). **Delete** is guarded
+twice over: the button itself arms (first click turns it into a "Confirm
+delete" that reverts on its own after a few seconds), and the teamserver
+records which listener's socket carried each enrollment, refusing with the
+count when live implants enrolled through it (retired implants do not count)
+-- the operator UI turns that refusal into a final confirmation naming the
+dependents, and only its explicit accept (or `?force=true` on the API)
+unbinds and forgets the listener. A listener nothing depends on dies in two
+clicks and no dialogs.
 
 One transport caveat shapes the whole panel: **the interactive stream is
 gRPC (HTTP/2 over TLS) and cannot ride a cleartext socket** (Kestrel
@@ -402,3 +408,16 @@ check-in route would gain the same), a listener-side decision about which
 check-in shapes each transport may serve, and the wire-shape diagram extended
 to three paths. Naming stays inside the fixed vocabulary: three behaviors,
 two nouns, behaviors in parentheses.
+
+### Runtime kill-date changes
+
+The kill date is build-time only today: an optional fuse baked into the
+artifact, reported at enroll, enforced on both sides. Retire covers the
+"stop this implant now" need for a reachable implant, and the open-ended
+default (empty = no fuse) already covers long-haul control -- so the case
+for changing the fuse on a fielded implant is narrow: tightening it as a
+scheduled fail-safe, or extending one whose window is closing. The honest
+shape, if ever needed, is operator-controlled like retire: a row action
+sets the new date, the server records it (so its handshake gate agrees),
+and the change rides the next check-in as tasking the implant applies to
+its own fuse -- beacon.sleep's cadence control is the template.
