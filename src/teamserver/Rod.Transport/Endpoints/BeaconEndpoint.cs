@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Http;
@@ -12,7 +11,7 @@ using Rod.Transport.Channels;
 using Rod.V1;
 // The domain entity shares its name with the BCL Task. This file
 // uses Rod.CoreState.Tasks for the TaskService type but never
-// the Task entity by name, so pin Task to the BCL type the method signatures need.
+// the entity by name, so pin Task to the BCL type the method signatures need.
 using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Endpoints;
@@ -48,16 +47,8 @@ namespace Rod.Transport.Endpoints;
 internal sealed class BeaconEndpoint : Beacon.BeaconBase
 {
     private readonly HandshakeService _handshake;
-    private readonly ISessionRegistry _sessions;
-    private readonly TaskService _tasks;
     private readonly IAuditStore _audit;
-    private readonly TimeProvider _clock;
-    private readonly ITaskDispatchWake _wake;
-    private readonly LiveChannelHub _channels;
-    private readonly TaskRelayHub _relays;
-    private readonly SocksProxyHub _socks;
-    private readonly BeaconIngest _ingest;
-    private readonly BeaconTasking _tasking;
+    private readonly BeaconSessionRunner _runner;
 
     public BeaconEndpoint(
         HandshakeService handshake,
@@ -73,16 +64,12 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         BeaconTasking tasking)
     {
         _handshake = handshake;
-        _sessions = sessions;
-        _tasks = tasks;
         _audit = audit;
-        _clock = clock;
-        _wake = wake;
-        _channels = channels;
-        _relays = relays;
-        _socks = socks;
-        _ingest = ingest;
-        _tasking = tasking;
+        // The transport-agnostic session loop this endpoint hands its adapted
+        // gRPC reader and writer to: everything between the handshake and the
+        // stream's end is the frame paths' business, not the transport's.
+        _runner = new BeaconSessionRunner(
+            sessions, tasks, clock, wake, channels, relays, socks, ingest, tasking);
     }
 
     public override async Task CheckIn(
@@ -161,214 +148,18 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             handshake.SessionId,
             handshake.DeployedBy,
             handshakeRequest.Capabilities);
-        await RunSessionAsync(sessionContext, requestStream, responseStream, context.CancellationToken);
-    }
 
-    // The tasking session: a reader draining result frames and a
-    // writer pushing queued tasks downstream, run concurrently. Concurrency is
-    // required because tasks enter the queue out-of-band -- an operator POSTs
-    // them over HTTP, not over this stream -- so the writer must sit ready on
-    // the dispatch wake even while the reader is blocked awaiting the next
-    // result. A strictly sequential read-then-dispatch would deadlock: the
-    // reader blocks on a result the implant never sends because the task that
-    // prompts it is still queued.
-    //
-    // gRPC allows only one outstanding write per stream; the writer is the sole
-    // caller of WriteAsync here, so there is no contention. Either loop ending
-    // (clean client close in the reader, cancellation) ends the session; the
-    // offline finally above runs regardless.
-    private async Task RunSessionAsync(
-        BeaconSessionContext session,
-        IAsyncStreamReader<Frame> requestStream,
-        IServerStreamWriter<Frame> responseStream,
-        CancellationToken cancellationToken)
-    {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        // This stream's connection share of the shared frame ingest: the exfil
-        // reassembly buffers and channel decoders live and die with the stream.
-        var connection = _ingest.OpenConnection();
-        // Per-stream staged-pull queue: the reader accepts the implant's
-        // demands (architecture.md Sec 10, the typed arm) and the writer --
-        // the stream's sole WriteAsync caller -- streams the demanded bytes
-        // downstream. The dispatch wake doubles as the handoff: a demand
-        // releases the implant's wake, so the parked writer wakes and drains.
-        var pulls = new ConcurrentQueue<Guid>();
-        // The stream's channel sink (architecture.md Sec 10.3, the streaming
-        // task shape): the operator input route enqueues onto it over HTTP and
-        // the writer drains it downstream as ChannelInput frames. Registered
-        // in the hub for the implant's lifetime of this stream; the using
-        // detaches it on stream end, leaving a newer stream's registration
-        // alone.
-        var inputs = new BeaconChannelSink(_wake, session.Implant);
-        using var attached = _channels.Attach(session.Implant, inputs);
-        var reader = ReadResultsAsync(session, connection, requestStream, pulls, linked);
-        var writer = DispatchTasksAsync(session, pulls, inputs, responseStream, linked.Token);
-
-        // Whichever finishes first cancels the other. The writer only ever ends
-        // via cancellation (its loop runs for the session), so swallow the
-        // cancellation that follows; other exceptions surface and are rethrown.
-        await await Task.WhenAny(reader, writer);
-        linked.Cancel();
-        try
-        {
-            await Task.WhenAll(reader, writer);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected: the cancelled loop unwinds through the wake wait.
-        }
-
-        // The stream is gone, and a channel is session-scoped (architecture.md
-        // Sec 10.3): any relay bridged onto this implant's channels dies with
-        // it, so the operator-side tool's connection ends instead of staring
-        // at a listener nothing more will cross.
-        _relays.CloseImplant(session.Implant, "the implant's beacon stream ended");
-        _socks.CloseImplant(session.Implant, "the implant's beacon stream ended");
-    }
-
-    // Reader: await each upstream frame, capture it into the task and append the
-    // audit event, or -- when the frame is an ExfilChunk -- reassemble and store
-    // the artifact. Each frame also advances the session's last-seen stamp, so
-    // the presence roster reflects real activity, not just stream open/close.
-    // Ends on a clean client close (MoveNext returns false); throws on an abort.
-    private async Task ReadResultsAsync(
-        BeaconSessionContext session,
-        BeaconConnectionIngest connection,
-        IAsyncStreamReader<Frame> requestStream,
-        ConcurrentQueue<Guid> stagedPulls,
-        CancellationTokenSource linked)
-    {
-        var cancellationToken = linked.Token;
-        while (await requestStream.MoveNext(cancellationToken))
-        {
-            await _sessions.TouchAsync(
-                session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
-
-            // The session may have been closed out from under this stream -- the
-            // staleness sweep, or a reconnect that opened a newer session for the
-            // implant. TouchAsync is a no-op then, so every later frame would
-            // keep refreshing a session this stream no longer holds; end the
-            // stream instead so the implant reconnects and re-handshakes (its
-            // beacon loop treats a dropped stream as a normal reconnect).
-            var active = await _sessions.GetActiveAsync(session.Implant, cancellationToken);
-            if (active is null || active.Id != session.SessionId)
-            {
-                linked.Cancel();
-                return;
-            }
-
-            await connection.IngestAsync(
-                session,
-                requestStream.Current,
-                stagedPullSink: taskId =>
-                {
-                    stagedPulls.Enqueue(taskId.Value);
-                    _wake.Release(session.Implant);
-                },
-                cancellationToken);
-        }
-    }
-
-    // Writer: push queued tasks downstream the moment they are queued, and
-    // stream staged payloads the moment they are demanded. Operators task
-    // implants over HTTP at any moment, so this loops for the life of the
-    // session rather than draining once. Each iteration claims first --
-    // covering tasks queued before the stream opened and dispatches returned
-    // to the queue by a failed write -- drains any staged pulls the reader
-    // accepted, then parks on the per-implant dispatch wake, which TaskService
-    // releases on every accepted enqueue and the reader releases on every
-    // demand. No poll: a queued task is pushed on release, and an idle stream
-    // claims nothing (architecture.md Sec 10.3).
-    private async Task DispatchTasksAsync(
-        BeaconSessionContext session,
-        ConcurrentQueue<Guid> stagedPulls,
-        BeaconChannelSink inputs,
-        IServerStreamWriter<Frame> responseStream,
-        CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await DispatchNextAsync(session.Implant, responseStream, cancellationToken);
-            await StreamStagedPullsAsync(stagedPulls, responseStream, cancellationToken);
-            await StreamChannelInputsAsync(inputs, responseStream, cancellationToken);
-            await _wake.WaitAsync(session.Implant, cancellationToken);
-        }
-    }
-
-    // Drains the operator input the route queued onto this stream's sink, one
-    // ChannelInput frame per unit (architecture.md Sec 10.3): the streaming
-    // counterpart of DispatchNextAsync. The route validated the task before
-    // enqueueing; this is pure transport -- frame the bytes and write them to
-    // the implant that runs the channel.
-    private static async Task StreamChannelInputsAsync(
-        BeaconChannelSink inputs,
-        IServerStreamWriter<Frame> responseStream,
-        CancellationToken cancellationToken)
-    {
-        while (inputs.TryDequeue(out var unit))
-        {
-            var input = new ChannelInput
-            {
-                TaskId = new TaskId(unit.TaskId).ToString(),
-                Eof = unit.Eof,
-            };
-            if (unit.Data.Length > 0)
-                input.Data = ByteString.CopyFrom(unit.Data);
-            await responseStream.WriteAsync(
-                new Frame
-                {
-                    Payload = ByteString.CopyFrom(input.ToByteArray()),
-                    Kind = FrameKind.ChannelInput,
-                },
-                cancellationToken);
-        }
-    }
-
-    // Pulls the next queued task for the implant -- widened to the Pivot
-    // children it fronts (architecture.md Sec 5.2): a fronted child's task is
-    // claimed here, marked with the child's id on the frame, and executed by
-    // this stream on the child's behalf. A no-op write when nothing is queued.
-    private async Task DispatchNextAsync(
-        ImplantId implant,
-        IServerStreamWriter<Frame> responseStream,
-        CancellationToken cancellationToken)
-    {
-        var dispatched = await _tasks.DispatchNextAsync(
-            implant, cancellationToken, includeFronted: true);
-        if (dispatched is null)
-            return;
-
-        var frame = _tasking.MarshalFrame(dispatched, implant);
-
-        // Write downstream first: the dispatch audit records a task the implant
-        // actually received. When the write fails, the task returns to the queue
-        // so a later check-in redelivers it -- a task whose frame never left the
-        // server must not strand in Dispatched (architecture.md Sec 10.3).
-        try
-        {
-            await responseStream.WriteAsync(frame);
-        }
-        catch
-        {
-            await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
-            throw;
-        }
-
-        await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
-    }
-
-    // Streams every demanded staged payload downstream, one StagedChunk run
-    // per demand (architecture.md Sec 10, the typed arm).
-    private async Task StreamStagedPullsAsync(
-        ConcurrentQueue<Guid> stagedPulls,
-        IServerStreamWriter<Frame> responseStream,
-        CancellationToken cancellationToken)
-    {
-        while (stagedPulls.TryDequeue(out var taskIdValue))
-        {
-            foreach (var frame in await _tasking.StagedChunkRunAsync(taskIdValue, cancellationToken))
-                await responseStream.WriteAsync(frame, cancellationToken);
-        }
+        // The gRPC adapters for the transport-agnostic session loop: MoveNext
+        // and Current become "the next frame or null on a clean close",
+        // WriteAsync becomes the frame writer. The loop and its frame paths
+        // (results ingest, dispatch push, staged pulls, channel input) are the
+        // shared core's (BeaconSessionRunner); only the transport plumbing --
+        // and the single-writer discipline gRPC demands of it -- is here.
+        await _runner.RunAsync(
+            sessionContext,
+            async ct => await requestStream.MoveNext(ct) ? requestStream.Current : null,
+            (frame, ct) => responseStream.WriteAsync(frame, ct),
+            context.CancellationToken);
     }
 
     private async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
