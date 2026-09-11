@@ -18,7 +18,7 @@ the code win and this file is a bug.
 
 ### Endpoints
 
-A deployment exposes three implant-facing endpoints (listener configuration,
+A deployment exposes four implant-facing endpoints (listener configuration,
 architecture.md Sec 8):
 
 | Purpose | Transport | Route |
@@ -26,6 +26,7 @@ architecture.md Sec 8):
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
 | Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
 | Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
+| Beacon / tasking (WebSocket) | Plain HTTP(S) upgrade, key-authenticated | `GET /implants/beacon/stream` |
 
 The enroll listener accepts plain JSON with no client certificate -- the
 implant authenticates with the one-use stager token, not a cert it does not
@@ -198,6 +199,43 @@ The key is standard base64 of `keyId(16) || key(32)` in the baked profile's
 authentication -- the web transports request no TLS client certificate at
 all -- and the seal is the confidentiality: over cleartext `http`, everything
 past the TLS-less wire is still ciphertext to a listener.
+
+### The WebSocket beacon (the web posture's stream)
+
+`GET /implants/beacon/stream` against any web listener -- the same route
+family as enroll and the envelope, upgraded to a WebSocket. This is the web
+posture's interactive shape: the same live session the gRPC stream runs
+(server-push tasking the moment it is queued, `ChannelInput` frames flowing
+down while a channel runs) over a socket any HTTP client runtime can open,
+with the envelope's own authentication -- no gRPC stack, no TLS client
+certificate anywhere.
+
+The message grammar is the envelope's body grammar, message-shaped:
+
+- **First client message:** exactly the envelope check-in's request body --
+  the sealed envelope (or the lab build's raw framed sequence) whose
+  plaintext is a fresh counter ahead of the handshake `Frame` first, then
+  any `TaskResult`, `ExfilChunk`, `StagedPull`, and `ChannelOutput` frames.
+  The same key-posture gates apply: a key-bound implant must seal under
+  exactly its bound key, and the counter must clear the accepted floor.
+- **First server message:** the envelope check-in's response shape -- the
+  `HandshakeResponse` frame first (sealed when the client sealed; a non-OK
+  status is the only frame and the connection ends, permanent as on every
+  transport).
+- **Every later message, both directions:** the same sealed-or-plaintext
+  body, minus the handshake. The server sends one frame per message -- a
+  pushed `TaskRequest`, a `StagedChunk` run, a `ChannelInput` unit -- and
+  reads whatever delimited sequence a client batches. Each client message
+  burns its own counter, exactly like a POST.
+
+The connection is the session's carrier, not the session: a disconnect ends
+the channel halves with it (channels are session-scoped, as on the gRPC
+stream) but the session itself stays live -- reconnect, re-handshake, and
+the queue continues. The frame contents, the handshake order, the signature
+and replay-nonce discipline, and the staged/channel grammar are identical to
+the gRPC stream's -- only the carriage changes. An implant that implements
+the envelope needs a WebSocket client, a protobuf codec, and AES-256-GCM --
+the same bar the envelope sets, plus the socket.
 
 ### Task results and bulk data
 
