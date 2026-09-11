@@ -13,23 +13,37 @@ namespace Rod.CoreState.Transports;
 
 /// <summary>
 /// Whether a check-in carrier can run a task that behaves as a live channel
-/// (architecture.md Sec 10.3): a channel's input half needs a stream the
-/// server can write to while the task runs, so only a carrier that holds one
-/// may claim the channel verbs.
+/// (architecture.md Sec 10.3): a channel's input half needs a writer the
+/// server can push to while the task runs. A native carrier holds one for
+/// the connection's life; a degraded carrier is a poll shape that opts into
+/// the store-and-forward discipline instead -- operator input parks until
+/// the next check-in delivers it, output batches the same way, and the
+/// channel's latency is the check-in interval (the deliberate, named
+/// tradeoff, never a silent one).
 /// </summary>
 public enum ChannelSupport
 {
     /// <summary>
     /// The carrier holds a live stream for the connection's life (the gRPC
-    /// beacon stream): channel tasks claim natively, their input and output
-    /// riding the stream that carried the task.
+    /// beacon stream, the WebSocket beacon): channel tasks claim natively,
+    /// their input and output riding the stream that carried the task.
     /// </summary>
     Native,
 
     /// <summary>
-    /// The carrier is a poll shape -- one request, response, or datagram per
-    /// check-in, no writer to push on: a channel task is requeued untouched
-    /// for a native carrier to claim.
+    /// The carrier is a poll shape whose unit can carry channel traffic both
+    /// ways (the envelope's request and response bodies): a channel verb may
+    /// claim against it when the implant opted into the degraded discipline
+    /// -- the admission the dispatch path takes from the session's
+    /// advertisement, so a poll build that never opted in keeps the
+    /// queue-for-a-native-carrier behavior.
+    /// </summary>
+    Degraded,
+
+    /// <summary>
+    /// The carrier is a poll shape whose unit cannot carry channel traffic
+    /// (a datagram budget): a channel task is requeued untouched for a
+    /// capable carrier to claim.
     /// </summary>
     None,
 }
@@ -90,17 +104,18 @@ public static class TransportCapabilities
     /// <summary>The gRPC beacon stream: the native channel carrier.</summary>
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
-    /// <summary>The plain-HTTP envelope POST cycle: poll only.</summary>
-    public static readonly CarrierCapabilities Envelope = new(ChannelSupport.None);
+    /// <summary>The plain-HTTP envelope POST cycle: degraded channels by opt-in.</summary>
+    public static readonly CarrierCapabilities Envelope = new(ChannelSupport.Degraded);
 
     /// <summary>The DNS TXT datagram check-in: poll only, datagram-sized.</summary>
     public static readonly CarrierCapabilities Dns = new(ChannelSupport.None);
 
     /// <summary>
     /// The self-delimited message framing the named-pipe and raw-TCP
-    /// listeners share: one connection is one poll check-in.
+    /// listeners share: one connection is one poll check-in, degraded
+    /// channels by opt-in -- the same bodies the envelope carries.
     /// </summary>
-    public static readonly CarrierCapabilities MessagePipe = new(ChannelSupport.None);
+    public static readonly CarrierCapabilities MessagePipe = new(ChannelSupport.Degraded);
 
     // Keyed by carrier wire name so a carrier the core does not know can
     // declare itself without editing this file; case-insensitive because the
@@ -147,18 +162,25 @@ public static class TransportCapabilities
 
     /// <summary>
     /// Whether a dispatched task fits this carrier's check-in: a channel verb
-    /// needs a carrier that holds a live stream, and the marshaled task must
-    /// fit the carrier's per-response budget. The channel deferral wins over
-    /// size, so the reason an operator reads never depends on which bound the
-    /// task tripped first.
+    /// needs a carrier that holds a live stream -- or, on a degraded carrier,
+    /// the implant's opt-in, which the dispatch path passes as
+    /// <paramref name="degradedChannels"/> (the session's advertisement) --
+    /// and the marshaled task must fit the carrier's per-response budget.
+    /// The channel deferral wins over size, so the reason an operator reads
+    /// never depends on which bound the task tripped first.
     /// </summary>
     public static ClaimDecision EvaluateClaim(
         CarrierCapabilities carrier,
         string verb,
         int wireSize,
-        int maxBytes)
+        int maxBytes,
+        bool degradedChannels = false)
     {
-        if (ChannelVerbs.IsChannelVerb(verb) && carrier.Channels != ChannelSupport.Native)
+        if (ChannelVerbs.IsChannelVerb(verb)
+            && carrier.Channels == ChannelSupport.None
+            || ChannelVerbs.IsChannelVerb(verb)
+                && carrier.Channels == ChannelSupport.Degraded
+                && !degradedChannels)
             return ClaimDecision.NeedsLiveChannel;
         if (wireSize > maxBytes)
             return ClaimDecision.Oversize;

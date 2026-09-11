@@ -30,6 +30,43 @@ public class TransportCapabilitiesTests
     }
 
     [Fact]
+    public void EvaluateClaim_ClaimsAChannelVerbOnADegradedCarrierWithTheOptIn()
+    {
+        // The store-and-forward discipline, admitted only when the implant
+        // opted in (the session's advertisement the dispatch path passes).
+        var decision = TransportCapabilities.EvaluateClaim(
+            TransportCapabilities.Envelope, ChannelVerbs.ShellInteract,
+            wireSize: 100, maxBytes: 200, degradedChannels: true);
+
+        Assert.Equal(ClaimDecision.Claim, decision);
+    }
+
+    [Fact]
+    public void EvaluateClaim_DefersAChannelVerbOnADegradedCarrierWithoutTheOptIn()
+    {
+        var decision = TransportCapabilities.EvaluateClaim(
+            TransportCapabilities.MessagePipe, ChannelVerbs.TunnelSocks,
+            wireSize: 100, maxBytes: 200, degradedChannels: false);
+
+        Assert.Equal(ClaimDecision.NeedsLiveChannel, decision);
+    }
+
+    [Fact]
+    public void EvaluateClaim_ANativeCarrierIgnoresTheDegradedOptIn()
+    {
+        // The opt-in only widens poll carriers; the native carrier's claim is
+        // the same either way.
+        var withoutOptIn = TransportCapabilities.EvaluateClaim(
+            TransportCapabilities.BeaconStream, ChannelVerbs.ShellInteract, wireSize: 100, maxBytes: 200);
+        var withOptIn = TransportCapabilities.EvaluateClaim(
+            TransportCapabilities.BeaconStream, ChannelVerbs.ShellInteract,
+            wireSize: 100, maxBytes: 200, degradedChannels: true);
+
+        Assert.Equal(ClaimDecision.Claim, withoutOptIn);
+        Assert.Equal(withoutOptIn, withOptIn);
+    }
+
+    [Fact]
     public void EvaluateClaim_ClaimsAChannelVerbOnTheNativeCarrier()
     {
         var decision = TransportCapabilities.EvaluateClaim(
