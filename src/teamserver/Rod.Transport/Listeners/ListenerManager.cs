@@ -139,22 +139,21 @@ public sealed class ListenerManager
     /// </summary>
     public async Task<Listener?> RestoreAsync(ListenerDefinition definition, CancellationToken cancellationToken = default)
     {
-        // The stored transport parses from its wire name ("mtls") or the enum
-        // name, case-insensitively, dashes ignored. The retired https-envelope
-        // entry maps to its nearest surviving transport, Mtls -- the bind and
-        // the mTLS termination it always shared -- so a definition saved
-        // before the retirement rebinds under its migrated shape instead of
-        // dying as unknown.
-        var normalized = definition.Transport.Trim().Replace("-", "");
-        ListenerTransport transport;
-        if (normalized.Equals("httpsenvelope", StringComparison.OrdinalIgnoreCase))
+        // The stored transport is the wire name a provider registered under,
+        // case-insensitive. The retired https-envelope entry maps to its
+        // nearest surviving transport, Mtls -- the bind and the mTLS
+        // termination it always shared -- so a definition saved before the
+        // retirement rebinds under its migrated shape instead of dying as
+        // unknown.
+        var transport = definition.Transport.Trim();
+        if (transport.Replace("-", "").Equals("httpsenvelope", StringComparison.OrdinalIgnoreCase))
         {
-            transport = ListenerTransport.Mtls;
+            transport = "mtls";
             _logger.LogInformation(
                 "Stored listener {ListenerId} ({Name}) carries the retired https-envelope transport; rebinding as mtls.",
                 definition.Id, definition.Name);
         }
-        else if (!Enum.TryParse<ListenerTransport>(normalized, ignoreCase: true, out transport))
+        else if (TransportProviders.Find(transport) is null)
         {
             _logger.LogWarning(
                 "Stored listener {ListenerId} carries unknown transport '{Transport}'; skipped.",
@@ -198,9 +197,9 @@ public sealed class ListenerManager
         // validation, the reservation, and the bind body itself. An unknown
         // name is a malformed request -- the registry is the authority for
         // what a runtime listener may name.
-        var provider = TransportProviders.Find(config.Transport.WireName())
+        var provider = TransportProviders.Find(config.Transport)
             ?? throw new ArgumentException(
-                $"Transport {config.Transport} is not supported for runtime listeners.", nameof(config));
+                $"Transport '{config.Transport}' is not supported for runtime listeners.", nameof(config));
         try
         {
             provider.Validate(config);
@@ -214,7 +213,7 @@ public sealed class ListenerManager
 
         // The same non-loopback plain-HTTP warning the startup path logs: a
         // deliberate posture choice, named rather than silent.
-        if (config.Transport == ListenerTransport.Http)
+        if (string.Equals(config.Transport, "http", StringComparison.OrdinalIgnoreCase))
         {
             var (host, _) = TransportHost.ParseBindAddress(config.BindAddress);
             if (!IPAddress.IsLoopback(host))
@@ -280,7 +279,7 @@ public sealed class ListenerManager
             listener.Id.Value,
             listener.EngagementId!.Value,
             listener.Name,
-            listener.Transport.WireName(),
+            listener.Transport,
             listener.BindAddress,
             listener.PublicEndpoint,
             listener.CreatedAt,

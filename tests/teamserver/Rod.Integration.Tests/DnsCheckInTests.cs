@@ -172,7 +172,7 @@ public class DnsCheckInTests
         // not) surface that tier.
         var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
         Assert.Contains(await registry.ListAsync(), l =>
-            l.Transport == ListenerTransport.Dns
+            l.Transport == "dns"
             && l.State == ListenerState.Running
             && l.PublicEndpoint == Zone);
 
@@ -370,8 +370,8 @@ public class DnsCheckInTests
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodListeners(new List<ListenerConfig>
                     {
-                        new("test-mtls", ListenerTransport.Mtls, $"127.0.0.1:{env.MtlsPort}", $"127.0.0.1:{env.MtlsPort}"),
-                        new("test-dns", ListenerTransport.Dns, $"127.0.0.1:{env.DnsPort}", Zone),
+                        new("test-mtls", "mtls", $"127.0.0.1:{env.MtlsPort}", $"127.0.0.1:{env.MtlsPort}"),
+                        new("test-dns", "dns", $"127.0.0.1:{env.DnsPort}", Zone),
                     })
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();

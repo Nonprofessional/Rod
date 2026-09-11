@@ -40,7 +40,7 @@ public class ListenerTests
         // implant enrolls through the listener.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
 
@@ -87,7 +87,7 @@ public class ListenerTests
         // the open-ended build).
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
 
@@ -144,7 +144,7 @@ public class ListenerTests
         // here through a named listener populated via UseRodListeners.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "mtls-1",
-            Transport: ListenerTransport.Mtls,
+            Transport: "mtls",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "https://c2.example.test"));
 
@@ -185,7 +185,7 @@ public class ListenerTests
         // string verbatim, so this is the UI's name too.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
 
@@ -212,7 +212,7 @@ public class ListenerTests
         // the socket -- swapping it (a different redirector) never touches the bind.
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
 
@@ -240,7 +240,7 @@ public class ListenerTests
     }
 
     private static ListenerConfig DefaultHttpListener()
-        => new("http-default", ListenerTransport.Http, $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
+        => new("http-default", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
 
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
@@ -319,8 +319,8 @@ public class ListenerTests
 
             // Pick free ports up front so the config's bind addresses match the
             // sockets Kestrel opens, and so tests can dial them.
-            var httpListener = listeners.FirstOrDefault(l => l.Transport == ListenerTransport.Http);
-            var mtlsListener = listeners.FirstOrDefault(l => l.Transport == ListenerTransport.Mtls);
+            var httpListener = listeners.FirstOrDefault(l => l.Transport == "http");
+            var mtlsListener = listeners.FirstOrDefault(l => l.Transport == "mtls");
             var rewritten = new List<ListenerConfig>();
             if (httpListener is not null)
             {
@@ -337,7 +337,7 @@ public class ListenerTests
             // way when it is host:port shaped (envelope, DNS, raw TCP); a pipe
             // name is kept as configured.
             foreach (var other in listeners.Where(
-                l => l.Transport is not (ListenerTransport.Http or ListenerTransport.Mtls)))
+                l => l.Transport is not ("http" or "mtls")))
             {
                 var bind = other.BindAddress.Contains(':', StringComparison.Ordinal)
                     ? $"127.0.0.1:{TestSupport.GetFreeTcpPort()}"

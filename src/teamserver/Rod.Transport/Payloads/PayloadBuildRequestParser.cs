@@ -6,6 +6,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.Transport.Listeners;
+using Rod.Transport.Listeners.Providers;
 
 namespace Rod.Transport.Payloads;
 
@@ -183,7 +184,7 @@ internal static class PayloadBuildRequestParser
     // for a typed endpoint) -- the fact the beacon resolution below needs, so
     // a derived check-in matches the front it rides: an mTLS front carries
     // the gRPC stream, a web front the envelope POST cycle.
-    private static async Task<(string? Value, ListenerTransport? Transport, string? Error)> ResolveEndpointAsync(
+    private static async Task<(string? Value, string? Transport, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
         IListenerRegistry listeners,
@@ -208,10 +209,9 @@ internal static class PayloadBuildRequestParser
                 "ListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
         if (listener.EngagementId != engagementId)
             return (null, null, "ListenerId names another engagement's listener.");
-        if (listener.Transport is not (ListenerTransport.Http or ListenerTransport.Https
-            or ListenerTransport.Mtls))
+        if (TransportProviders.Find(listener.Transport) is not KestrelEndpointProvider)
             return (null, null,
-                $"The {listener.Transport.ToString().ToLowerInvariant()} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
+                $"The {listener.Transport} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
 
         // The public endpoint may be the bare host:port redirector shape; the
         // listener's transport names the scheme the implant dials.
@@ -219,7 +219,7 @@ internal static class PayloadBuildRequestParser
         if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
             && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
             return (publicEndpoint, listener.Transport, null);
-        var scheme = listener.Transport == ListenerTransport.Http ? "http" : "https";
+        var scheme = TransportProviders.Find(listener.Transport)?.PublicEndpointScheme ?? "https";
         return ($"{scheme}://{publicEndpoint}", listener.Transport, null);
     }
 
@@ -235,7 +235,7 @@ internal static class PayloadBuildRequestParser
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
-        ListenerTransport? enrollTransport,
+        string? enrollTransport,
         string? enrollEndpoint,
         EngagementId engagementId,
         IListenerRegistry listeners,
@@ -259,9 +259,9 @@ internal static class PayloadBuildRequestParser
                 return (null, "BeaconListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
             if (listener.EngagementId != engagementId)
                 return (null, "BeaconListenerId names another engagement's listener.");
-            if (listener.Transport != ListenerTransport.Mtls)
+            if (TransportProviders.Find(listener.Transport)?.ServesNativeChannel != true)
                 return (null,
-                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport.WireName()} listener cannot carry it. Name the mTLS listener.");
+                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport} listener cannot carry it. Name the mTLS listener.");
 
             return (BeaconAuthority(listener.PublicEndpoint), null);
         }
@@ -275,7 +275,7 @@ internal static class PayloadBuildRequestParser
             return (BeaconAuthority(trimmed), null);
         }
 
-        if (enrollTransport == ListenerTransport.Mtls && enrollEndpoint is { } front)
+        if (TransportProviders.Find(enrollTransport)?.ServesNativeChannel == true && enrollEndpoint is { } front)
             return (BeaconAuthority(front), null);
         return (null, (string?)null);
     }

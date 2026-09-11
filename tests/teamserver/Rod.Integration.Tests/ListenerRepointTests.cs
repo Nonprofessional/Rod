@@ -149,7 +149,7 @@ public class ListenerRepointTests
                 {
                     new ListenerConfig(
                         Name: "operator-http",
-                        Transport: ListenerTransport.Http,
+                        Transport: "http",
                         BindAddress: httpBind,
                         PublicEndpoint: "http://localhost:5080"),
                 }))

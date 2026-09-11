@@ -7,6 +7,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
 using Rod.Transport.Listeners;
+using Rod.Transport.Listeners.Providers;
 
 namespace Rod.Transport.Endpoints;
 
@@ -47,10 +48,11 @@ public static class ListenerEndpoints
     {
         if (string.IsNullOrWhiteSpace(body.Name))
             return Results.BadRequest(new Problem("Listener name is required."));
-        if (!TryParseTransport(body.Transport, out var transport))
+        var provider = TransportProviders.Find(body.Transport?.Trim());
+        if (provider is null)
             return Results.BadRequest(new Problem(
                 "Transport is not recognized. Use one of: " +
-                string.Join(", ", Enum.GetValues<ListenerTransport>().Select(t => t.WireName())) + "."));
+                string.Join(", ", TransportProviders.Names()) + "."));
         if (string.IsNullOrWhiteSpace(body.BindAddress))
             return Results.BadRequest(new Problem("Bind address is required."));
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -70,10 +72,9 @@ public static class ListenerEndpoints
         // zone or pipe path is not a function of the bind -- so they require
         // it spelled out.
         string publicEndpoint;
-        if (transport is ListenerTransport.Http or ListenerTransport.Https
-            or ListenerTransport.Mtls)
+        if (provider is KestrelEndpointProvider)
         {
-            var derived = DeriveHttpPublicEndpoint(transport, body.BindAddress.Trim(), body.PublicEndpoint);
+            var derived = DeriveHttpPublicEndpoint(provider, body.BindAddress.Trim(), body.PublicEndpoint);
             if (derived is not null)
             {
                 publicEndpoint = derived;
@@ -94,32 +95,33 @@ public static class ListenerEndpoints
                 }
                 publicEndpoint = "";
             }
-            else if (IsAbsoluteHttpUrl(body.PublicEndpoint.Trim()))
+            else if (PublicEndpointShapes.IsAbsoluteHttpUrl(body.PublicEndpoint.Trim()))
             {
                 // A complete endpoint with an underivable bind: the manager's
                 // bind validation names the real problem (a 400 with its
                 // message), so fall through instead of blaming the endpoint.
                 publicEndpoint = body.PublicEndpoint.Trim();
             }
-            else if (IsHostPort(body.PublicEndpoint.Trim()))
+            else if (PublicEndpointShapes.IsHostPort(body.PublicEndpoint.Trim()))
             {
                 // The same completion the derivation applies, kept for the
                 // underivable-bind fall-through so a host:port never rides
                 // into builds scheme-less.
-                publicEndpoint = $"{SchemeOf(transport)}://{body.PublicEndpoint.Trim()}";
+                publicEndpoint = $"{provider.PublicEndpointScheme}://{body.PublicEndpoint.Trim()}";
             }
             else
             {
-                return Results.BadRequest(new Problem(PublicEndpointRule(transport, body.PublicEndpoint ?? "")));
+                return Results.BadRequest(new Problem(
+                    provider.DescribePublicEndpointRule(body.PublicEndpoint ?? "")));
             }
         }
         else
         {
             if (string.IsNullOrWhiteSpace(body.PublicEndpoint))
                 return Results.BadRequest(new Problem(
-                    $"Public endpoint is required for the {transport.WireName()} transport: the zone or path implants dial cannot be derived from the bind."));
-            if (!IsAcceptablePublicEndpoint(transport, body.PublicEndpoint))
-                return Results.BadRequest(new Problem(PublicEndpointRule(transport, body.PublicEndpoint)));
+                    $"Public endpoint is required for the {provider.Transport} transport: the zone or path implants dial cannot be derived from the bind."));
+            if (!provider.AcceptsPublicEndpoint(body.PublicEndpoint))
+                return Results.BadRequest(new Problem(provider.DescribePublicEndpointRule(body.PublicEndpoint)));
             publicEndpoint = body.PublicEndpoint.Trim();
         }
 
@@ -127,7 +129,7 @@ public static class ListenerEndpoints
         {
             var listener = await manager.CreateAsync(
                 new ListenerConfig(
-                    body.Name.Trim(), transport, body.BindAddress.Trim(), publicEndpoint,
+                    body.Name.Trim(), provider.Transport, body.BindAddress.Trim(), publicEndpoint,
                     new EngagementId(engagementValue)),
                 cancellationToken);
 
@@ -247,10 +249,11 @@ public static class ListenerEndpoints
         // repoint never demands more typing than a create and the roster
         // keeps one uniform shape.
         var endpoint = body.PublicEndpoint.Trim();
-        if (!IsAbsoluteHttpUrl(endpoint))
+        if (!PublicEndpointShapes.IsAbsoluteHttpUrl(endpoint))
         {
-            var completed = IsHostPort(endpoint)
-                ? $"{SchemeOf(existing.Transport)}://{endpoint}"
+            var scheme = TransportProviders.Find(existing.Transport)?.PublicEndpointScheme ?? "https";
+            var completed = PublicEndpointShapes.IsHostPort(endpoint)
+                ? $"{scheme}://{endpoint}"
                 : CompleteBareHost(existing, endpoint);
             if (completed is null)
                 return Results.BadRequest(new Problem(
@@ -275,7 +278,7 @@ public static class ListenerEndpoints
                 listener!.Id.Value,
                 listener.EngagementId!.Value,
                 listener.Name,
-                listener.Transport.WireName(),
+                listener.Transport,
                 listener.BindAddress,
                 listener.PublicEndpoint,
                 listener.CreatedAt,
@@ -283,20 +286,6 @@ public static class ListenerEndpoints
             cancellationToken);
 
         return Results.Ok(Response.Of(listener));
-    }
-
-    // The transport parses from the wire's kebab name ("mtls") or the enum
-    // name, case-insensitively -- the listing renders kebab, so the create
-    // form speaks the same shape it reads back.
-    private static bool TryParseTransport(string? text, out ListenerTransport transport)
-    {
-        if (text is not null
-            && Enum.TryParse<ListenerTransport>(text.Replace("-", ""), ignoreCase: true, out transport))
-        {
-            return true;
-        }
-        transport = default;
-        return false;
     }
 
     // Shared id resolution for the scoped routes: both ids parse or the
@@ -317,31 +306,6 @@ public static class ListenerEndpoints
     private static bool Owns(Listener? listener, Guid engagementId)
         => listener?.EngagementId == new EngagementId(engagementId);
 
-    // A public endpoint's two complete-ish shapes: an absolute http(s) URL is
-    // already what a payload build bakes; a bare host:port is the redirector
-    // front, completed with the transport's scheme before it is stored. A
-    // DNS name or literal IP with a port is enough; no scheme-less bare host,
-    // because nothing downstream can guess a port.
-    private static bool IsPublicEndpoint(string text)
-        => IsAbsoluteHttpUrl(text) || IsHostPort(text);
-
-    private static bool IsAbsoluteHttpUrl(string text)
-        => Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
-
-    private static bool IsHostPort(string text)
-    {
-        var value = text.Trim();
-        var colon = value.LastIndexOf(':');
-        if (colon <= 0 || colon == value.Length - 1)
-            return false;
-        if (!int.TryParse(value[(colon + 1)..], out var port) || port is < 1 or > 65535)
-            return false;
-        var host = value[..colon];
-        return host.Length > 0
-            && host.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_');
-    }
-
     // The create-time completion for the HTTP-shaped transports: blank
     // derives the whole endpoint from the bind (implants dial this server
     // directly -- the no-redirector shape), a bare hostname takes the
@@ -350,7 +314,7 @@ public static class ListenerEndpoints
     // verbatim. Returns null when nothing honest can be derived (a wildcard
     // bind has no dialable name) or the value is not a dialable shape at all.
     private static string? DeriveHttpPublicEndpoint(
-        ListenerTransport transport, string bindAddress, string? publicEndpoint)
+        ITransportProvider provider, string bindAddress, string? publicEndpoint)
     {
         (IPAddress Host, int Port) bind;
         try
@@ -370,17 +334,17 @@ public static class ListenerEndpoints
         {
             if (IsWildcard(bind.Host))
                 return null;
-            return $"{SchemeOf(transport)}://{HostText(bind.Host)}:{bind.Port}";
+            return $"{provider.PublicEndpointScheme}://{HostText(bind.Host)}:{bind.Port}";
         }
 
-        if (IsAbsoluteHttpUrl(value))
+        if (PublicEndpointShapes.IsAbsoluteHttpUrl(value))
             return value;
 
-        if (IsHostPort(value))
-            return $"{SchemeOf(transport)}://{value}";
+        if (PublicEndpointShapes.IsHostPort(value))
+            return $"{provider.PublicEndpointScheme}://{value}";
 
-        if (IsBareHost(value))
-            return $"{SchemeOf(transport)}://{value}:{bind.Port}";
+        if (PublicEndpointShapes.IsBareHost(value))
+            return $"{provider.PublicEndpointScheme}://{value}:{bind.Port}";
 
         return null;
     }
@@ -388,12 +352,12 @@ public static class ListenerEndpoints
     // The repoint-time completion: a bare hostname takes the listener's
     // transport scheme and its own bind port.
     private static string? CompleteBareHost(Listener listener, string endpoint)
-        => IsBareHost(endpoint)
-            ? $"{SchemeOf(listener.Transport)}://{endpoint}:{BindPortOf(listener.BindAddress)}"
+    {
+        var scheme = TransportProviders.Find(listener.Transport)?.PublicEndpointScheme ?? "https";
+        return PublicEndpointShapes.IsBareHost(endpoint)
+            ? $"{scheme}://{endpoint}:{BindPortOf(listener.BindAddress)}"
             : null;
-
-    private static string SchemeOf(ListenerTransport transport)
-        => transport == ListenerTransport.Http ? "http" : "https";
+    }
 
     // A wildcard bind covers every interface, which is a legitimate way to
     // open the socket -- but it names no single address, so nothing can dial
@@ -426,56 +390,11 @@ public static class ListenerEndpoints
         return int.TryParse(bindAddress[(colon + 1)..], out var port) ? port : 0;
     }
 
-    // A hostname without a port: host characters and at least one letter --
-    // the letter requirement keeps an all-digits typo (a port typed alone)
-    // from reading as a dialable name.
-    private static bool IsBareHost(string value)
-        => value.Length > 0
-            && value.Any(char.IsLetter)
-            && value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_');
-
-    // The create-time check is transport-shaped: the HTTP transports dial an
-    // endpoint (IsPublicEndpoint), the DNS listener answers a zone (a bare
-    // domain), and the SMB listener serves a pipe path. The pipe and raw-TCP
-    // transports accept the same host-shaped forms as their deployment docs.
-    private static bool IsAcceptablePublicEndpoint(ListenerTransport transport, string text)
-    {
-        var value = text.Trim().TrimEnd('.');
-        if (value.Length == 0)
-            return false;
-
-        return transport switch
-        {
-            ListenerTransport.Http or ListenerTransport.Mtls
-                => IsPublicEndpoint(text),
-            // A zone or pipe path: letters, digits, dots, hyphens, and the
-            // Windows pipe prefix's backslashes.
-            ListenerTransport.Dns
-                => value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-'),
-            ListenerTransport.Smb
-                => value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '\\' or '_'),
-            ListenerTransport.Tcp
-                => value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or ':' or '_'),
-            _ => false,
-        };
-    }
-
-    // One sentence naming the accepted shapes, so the refusal teaches.
-    private static string PublicEndpointRule(ListenerTransport transport, string got) => transport switch
-    {
-        ListenerTransport.Dns => $"Public endpoint must be the DNS zone this listener answers for (e.g. c2.example.test), got '{got}'.",
-        ListenerTransport.Smb => $"Public endpoint must be the pipe path implants dial (e.g. \\\\host\\pipe\\name), got '{got}'.",
-        ListenerTransport.Tcp => $"Public endpoint must be the host:port implants dial (e.g. 203.0.113.10:443), got '{got}'.",
-        _ => "Public endpoint accepts an absolute http(s) URL, a host:port pair, or a bare hostname "
-            + "-- each is completed with the transport's scheme (and this listener's port for a bare "
-            + $"hostname); it may also be left empty, which dials the bind itself. got '{got}'.",
-    };
-
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     /// <summary>
     /// Request to create one of this engagement's listeners. The transport
-    /// names the <see cref="ListenerTransport"/> (case-insensitive); the bind
+    /// names a registered provider's wire name (case-insensitive); the bind
     /// address is the socket this server opens (host:port for every network
     /// transport, a bare pipe name for SMB); the public endpoint is the
     /// address implants dial. The engagement comes from the route, never the
@@ -509,10 +428,10 @@ public static class ListenerEndpoints
             => new(
                 l.Id.ToString(),
                 l.Name,
-                // The stable kebab-case wire name (a multi-word transport
-                // carries its dashes), which the listing and the operator UI
+                // The transport's wire name (the registry key a provider
+                // registered under), which the listing and the operator UI
                 // render verbatim.
-                l.Transport.WireName(),
+                l.Transport,
                 l.BindAddress,
                 l.PublicEndpoint,
                 l.State.ToString().ToLowerInvariant(),

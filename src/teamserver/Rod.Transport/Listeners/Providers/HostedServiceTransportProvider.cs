@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Rod.CoreState.Listeners;
+using Rod.CoreState.Transports;
 
 namespace Rod.Transport.Listeners.Providers;
 
@@ -19,13 +20,30 @@ public enum BindReservation
     TcpPort,
 }
 
+/// <summary>The dial shape a socket-owning transport's public endpoint takes.</summary>
+public enum PublicEndpointShape
+{
+    /// <summary>A DNS zone the listener answers for (e.g. c2.example.test).</summary>
+    DnsZone,
+
+    /// <summary>The pipe path implants dial (e.g. \\host\pipe\name).</summary>
+    PipePath,
+
+    /// <summary>The host:port implants dial (e.g. 203.0.113.10:443).</summary>
+    HostPort,
+}
+
 /// <summary>
 /// The address shape and port reservation a socket-owning transport binds
 /// with: whether the bind address is a bare pipe name (validated as one,
 /// reserved not at all) or a host:port pair (validated as one, reserved over
-/// UDP or TCP per the socket the transport opens).
+/// UDP or TCP per the socket the transport opens), and the dial shape its
+/// public endpoint takes.
 /// </summary>
-public sealed record HostedBindShape(BindReservation Reservation, bool BarePipeName);
+public sealed record HostedBindShape(
+    BindReservation Reservation,
+    bool BarePipeName,
+    PublicEndpointShape EndpointShape);
 
 /// <summary>
 /// The socket-owning family's provider: each listener runs as a per-listener
@@ -47,16 +65,50 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
     private readonly HostedBindShape _shape;
     private readonly ListenerServiceFactory _factory;
 
-    /// <summary>Initializes a provider serving <paramref name="transport"/> with the given shape and service factory.</summary>
-    public HostedServiceTransportProvider(string transport, HostedBindShape shape, ListenerServiceFactory factory)
+    /// <summary>Initializes a provider serving <paramref name="transport"/> with the given shape, carriers, and service factory.</summary>
+    public HostedServiceTransportProvider(
+        string transport, HostedBindShape shape, IReadOnlyList<string> carriers, ListenerServiceFactory factory)
     {
         Transport = transport;
         _shape = shape;
+        Carriers = carriers;
         _factory = factory;
     }
 
     /// <summary>The listener transport this provider serves, by wire name.</summary>
     public string Transport { get; }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> Carriers { get; }
+
+    /// <inheritdoc />
+    public bool ServesNativeChannel
+        => Carriers.Any(carrier => TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native);
+
+    /// <inheritdoc />
+    public string PublicEndpointScheme => "https";
+
+    /// <inheritdoc />
+    public bool AcceptsPublicEndpoint(string text)
+    {
+        var value = text.Trim().TrimEnd('.');
+        if (value.Length == 0)
+            return false;
+        return _shape.EndpointShape switch
+        {
+            PublicEndpointShape.DnsZone => PublicEndpointShapes.IsDnsZone(value),
+            PublicEndpointShape.PipePath => PublicEndpointShapes.IsPipePath(value),
+            _ => PublicEndpointShapes.IsSocketDial(value),
+        };
+    }
+
+    /// <inheritdoc />
+    public string DescribePublicEndpointRule(string got) => _shape.EndpointShape switch
+    {
+        PublicEndpointShape.DnsZone => $"Public endpoint must be the DNS zone this listener answers for (e.g. c2.example.test), got '{got}'.",
+        PublicEndpointShape.PipePath => $"Public endpoint must be the pipe path implants dial (e.g. \\\\host\\pipe\\name), got '{got}'.",
+        _ => $"Public endpoint must be the host:port implants dial (e.g. 203.0.113.10:443), got '{got}'.",
+    };
 
     /// <summary>
     /// Rejects a malformed bind address: a pipe-named transport refuses a
@@ -94,6 +146,15 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
                 return;
         }
     }
+
+    /// <summary>
+    /// Builds one listener's hosted service -- the construction the runtime
+    /// bind performs and the startup path registers share, so a transport's
+    /// service wiring lives in exactly one place.
+    /// </summary>
+    public IHostedService CreateService(
+        IServiceProvider services, IListenerRegistry registry, Listener listener)
+        => _factory(services, registry, listener);
 
     /// <inheritdoc />
     public async Task<BoundListener> BindAsync(TransportBindContext context, CancellationToken cancellationToken)

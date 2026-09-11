@@ -73,7 +73,7 @@ if (listenerConfigs is null || listenerConfigs.Count == 0)
 {
     listenerConfigs = new List<ListenerConfig>
     {
-        new("operator-http", ListenerTransport.Http, "127.0.0.1:5080", "http://localhost:5080"),
+        new("operator-http", "http", "127.0.0.1:5080", "http://localhost:5080"),
     };
 }
 builder.WebHost.UseRodListeners(listenerConfigs);

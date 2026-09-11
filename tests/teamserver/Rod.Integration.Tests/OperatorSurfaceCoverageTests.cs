@@ -240,7 +240,7 @@ public class OperatorSurfaceCoverageTests
             var listener = Listener.Define(
                 ListenerId.New(),
                 "engagement-front",
-                ListenerTransport.Http,
+                "http",
                 "127.0.0.1:5080",
                 "https://redirect-old.example.test",
                 clock.GetUtcNow(),

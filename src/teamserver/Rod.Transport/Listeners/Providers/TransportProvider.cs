@@ -24,6 +24,47 @@ public interface ITransportProvider
     string Transport { get; }
 
     /// <summary>
+    /// The check-in carriers this transport serves, by their wire names (the
+    /// registry the core-state capability table keys). The build pipeline
+    /// reads this to decide whether a listener may be named as a beacon -- a
+    /// carrier with native channel support makes it claimable -- and the
+    /// capability story stays one table's answer instead of a second
+    /// transport-to-carrier map somewhere else.
+    /// </summary>
+    IReadOnlyList<string> Carriers { get; }
+
+    /// <summary>
+    /// Whether one of this transport's carriers holds a live stream (native
+    /// channel support): the listener may be named as a build's beacon.
+    /// </summary>
+    bool ServesNativeChannel { get; }
+
+    /// <summary>
+    /// The scheme a public endpoint completes with when the operator supplies
+    /// a bare host or host:port ("http" or "https" for the URL-dialing
+    /// family). The socket-owning transports never dial URLs, but their
+    /// endpoints still complete with the TLS default the HTTP family's
+    /// non-plain members use.
+    /// </summary>
+    string PublicEndpointScheme { get; }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> is an acceptable public endpoint for
+    /// this transport -- the address implants are told to dial, whose shape
+    /// the transport defines (an absolute http(s) URL or host:port for the
+    /// web family, a zone, a pipe path, a host:port for the socket-owning
+    /// ones).
+    /// </summary>
+    bool AcceptsPublicEndpoint(string text);
+
+    /// <summary>
+    /// One sentence naming the public endpoint shapes this transport accepts,
+    /// for a refusal that teaches. <paramref name="got"/> is the rejected
+    /// value.
+    /// </summary>
+    string DescribePublicEndpointRule(string got);
+
+    /// <summary>
     /// Rejects a malformed bind address for this transport's shape. Throws
     /// <see cref="InvalidOperationException"/> -- the caller maps it to the
     /// 400-class "operator mistake" refusal.

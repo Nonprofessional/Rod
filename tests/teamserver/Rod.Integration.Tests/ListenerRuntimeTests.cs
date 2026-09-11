@@ -48,7 +48,7 @@ public class ListenerRuntimeTests
         var extraPort = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -110,7 +110,7 @@ public class ListenerRuntimeTests
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -185,7 +185,7 @@ public class ListenerRuntimeTests
         var scopedPort = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -228,7 +228,7 @@ public class ListenerRuntimeTests
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -248,7 +248,7 @@ public class ListenerRuntimeTests
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -265,7 +265,11 @@ public class ListenerRuntimeTests
         Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
         var problem = await created.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
         Assert.NotNull(problem);
-        Assert.Contains("http, https, mtls, dns, smb, tcp", problem!.Error);
+        // The refusal names the registered transports -- each in-tree member
+        // appears, whatever order the registry lists or what later
+        // registrations a test suite has added around them.
+        foreach (var transport in new[] { "http", "https", "mtls", "dns", "smb", "tcp" })
+            Assert.Contains(transport, problem!.Error);
 
         // A definition saved before the retirement runs the restore path (what
         // a restart runs per definition) and rebinds under its migrated shape:
@@ -279,12 +283,12 @@ public class ListenerRuntimeTests
         var manager = env.Host.Services.GetRequiredService<ListenerManager>();
         var restored = await manager.RestoreAsync(definition);
         Assert.NotNull(restored);
-        Assert.Equal(ListenerTransport.Mtls, restored!.Transport);
+        Assert.Equal("mtls", restored!.Transport);
 
         var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
         var bound = await registry.FindAsync(new ListenerId(definition.Id));
         Assert.NotNull(bound);
-        Assert.Equal(ListenerTransport.Mtls, bound!.Transport);
+        Assert.Equal("mtls", bound!.Transport);
         Assert.Equal("running", bound.State.ToString().ToLowerInvariant());
 
         // The migrated shape is a real socket: the port accepts connections.
@@ -300,7 +304,7 @@ public class ListenerRuntimeTests
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -334,7 +338,7 @@ public class ListenerRuntimeTests
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -366,7 +370,7 @@ public class ListenerRuntimeTests
         var taken = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{taken}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -394,7 +398,7 @@ public class ListenerRuntimeTests
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -428,7 +432,7 @@ public class ListenerRuntimeTests
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);
@@ -520,7 +524,7 @@ public class ListenerRuntimeTests
     {
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             Name: "operator-http",
-            Transport: ListenerTransport.Http,
+            Transport: "http",
             BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
             PublicEndpoint: "http://localhost:5080"));
         await AuthenticatedHost.LoginAsync(env.Http);

@@ -44,6 +44,25 @@ public class TransportProvidersTests
         Assert.Null(TransportProviders.Find("carrier-not-registered"));
     }
 
+    [Theory]
+    [InlineData("http", false)]
+    [InlineData("https", false)]
+    [InlineData("mtls", true)]
+    [InlineData("dns", false)]
+    [InlineData("smb", false)]
+    [InlineData("tcp", false)]
+    public void Carriers_DeclareTheNativeChannelTruthPerTransport(string transport, bool servesNative)
+    {
+        // The build parser's beacon rule reads this: only the transport whose
+        // carriers include the beacon stream may be named as a build's beacon.
+        var provider = TransportProviders.Find(transport);
+
+        Assert.NotNull(provider);
+        Assert.Equal(servesNative, provider!.ServesNativeChannel);
+        if (servesNative)
+            Assert.Contains(provider.Carriers, c => c == "beacon-stream");
+    }
+
     [Fact]
     public void Register_DeclaresATransportTheCoreDoesNotKnow()
     {
@@ -77,6 +96,16 @@ public class TransportProvidersTests
     private sealed class StubTransportProvider(string transport) : ITransportProvider
     {
         public string Transport { get; } = transport;
+
+        public IReadOnlyList<string> Carriers => Array.Empty<string>();
+
+        public bool ServesNativeChannel => false;
+
+        public string PublicEndpointScheme => "https";
+
+        public bool AcceptsPublicEndpoint(string text) => true;
+
+        public string DescribePublicEndpointRule(string got) => $"No rule; a registry stub never binds ({got}).";
 
         public void Validate(ListenerConfig config)
         {

@@ -23,6 +23,7 @@ using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.Dns;
+using Rod.Transport.Listeners.Providers;
 using Rod.Transport.Listeners.Streams;
 using Rod.Transport.Payloads;
 
@@ -341,7 +342,7 @@ public static class TransportHost
     /// it on the implant-facing endpoint. The CA is resolved from the DI container
     /// at connection time via <see cref="KestrelServerOptions.ApplicationServices"/>.
     /// Kept for the existing mTLS tests; <see cref="UseRodListeners"/> is the
-    /// general path and an <see cref="ListenerTransport.Mtls"/> entry routes
+    /// general path and an <c>mtls</c> entry routes
     /// through the same <see cref="ConfigureMtlsHttps"/> helper.
     /// </remarks>
     public static IWebHostBuilder UseRodMtls(this IWebHostBuilder builder, int httpsPort)
@@ -355,12 +356,14 @@ public static class TransportHost
 
     /// <summary>
     /// Binds one socket per configured listener (, architecture.md Sec 8)
-    /// and registers each into the <see cref="IListenerRegistry"/>. Each entry picks
-    /// its transport: <see cref="ListenerTransport.Http"/> opens a plain socket;
-    /// <see cref="ListenerTransport.Mtls"/> opens an HTTPS socket that terminates
-    /// mutual TLS using the configured implant CA. The bind address (what Kestrel
-    /// opens) and the public endpoint (what implants dial -- typically a redirector)
-    /// are independent, so a burned redirector is replaced without touching this.
+    /// and registers each into the <see cref="IListenerRegistry"/>. Each entry
+    /// names its transport by wire name and the provider registry resolves the
+    /// bind: an HTTP-family entry opens a Kestrel socket under its TLS posture
+    /// (the mTLS entry terminating mutual TLS on the configured implant CA),
+    /// a socket-owning entry runs its hosted service. The bind address (what
+    /// Kestrel opens) and the public endpoint (what implants dial -- typically
+    /// a redirector) are independent, so a burned redirector is replaced
+    /// without touching this.
     /// </summary>
     /// <remarks>
     /// The registry is resolved from the DI container at host start
@@ -372,59 +375,42 @@ public static class TransportHost
         IReadOnlyList<ListenerConfig> listeners,
         TimeProvider? clock = null)
     {
-        // DNS entries do not ride Kestrel: they are UDP datagram services,
-        // registered as hosted services on the container the web host builds.
-        // The bridge (sessions, tasking, audit composition) is one singleton
-        // shared by every DNS entry; each entry's service binds its socket and
-        // registers itself into the listener registry, the same
-        // bind-then-register shape the Kestrel path follows.
-        var dnsEntries = listeners.Where(l => l.Transport == ListenerTransport.Dns).ToArray();
-        if (dnsEntries.Length > 0)
-        {
-            builder.ConfigureServices(services =>
-            {
-                foreach (var entry in dnsEntries)
-                    services.AddHostedService(sp => new DnsListenerService(
-                        Listener.Define(
-                            ListenerId.New(), entry.Name, entry.Transport,
-                            entry.BindAddress, entry.PublicEndpoint,
-                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
-                        sp.GetRequiredService<DnsBeaconBridge>(),
-                        sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>()));
-            });
-        }
+        // Every entry's transport resolves through the provider registry, the
+        // same authority the runtime create answers to: an unknown name fails
+        // the boot loudly (a configuration typo must not surface as a listener
+        // that never binds), and the provider's canonical wire name is what
+        // the listener record carries.
+        var entries = listeners
+            .Select(config => (Config: config, Provider: TransportProviders.Find(config.Transport)
+                ?? throw new InvalidOperationException(
+                    $"Unknown listener transport '{config.Transport}' in the startup Listeners section.")))
+            .ToList();
 
-        // The named-pipe and raw-TCP entries ride Kestrel no more than DNS
-        // does: they are duplex-stream services, one hosted service per entry
-        // sharing one StreamBeaconBridge (the transport-blind check-in flow
-        // both carry). Each entry's service binds its pipe or socket and
-        // registers itself into the listener registry, the same
-        // bind-then-register shape every transport follows.
-        var smbEntries = listeners.Where(l => l.Transport == ListenerTransport.Smb).ToArray();
-        var tcpEntries = listeners.Where(l => l.Transport == ListenerTransport.Tcp).ToArray();
-        if (smbEntries.Length > 0 || tcpEntries.Length > 0)
+        // The socket-owning transports do not ride Kestrel: they are hosted
+        // services, one per entry, built by each provider's factory. Each
+        // entry's service binds its socket and registers itself into the
+        // listener registry, the same bind-then-register shape the Kestrel
+        // path follows.
+        var hostedEntries = entries.Where(e => e.Provider is HostedServiceTransportProvider).ToArray();
+        if (hostedEntries.Length > 0)
         {
             builder.ConfigureServices(services =>
             {
-                foreach (var entry in smbEntries)
-                    services.AddHostedService(sp => new SmbListenerService(
-                        Listener.Define(
-                            ListenerId.New(), entry.Name, entry.Transport,
-                            entry.BindAddress, entry.PublicEndpoint,
-                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
-                        sp.GetRequiredService<StreamBeaconBridge>(),
+                foreach (var (config, provider) in hostedEntries)
+                {
+                    var hosted = (HostedServiceTransportProvider)provider;
+                    // A plain IHostedService registration, not AddHostedService:
+                    // the factory's return type is the interface (each
+                    // provider's own service type), and TryAddEnumerable keys
+                    // on the implementation type it would never see.
+                    services.AddSingleton<IHostedService>(sp => hosted.CreateService(
+                        sp,
                         sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>()));
-                foreach (var entry in tcpEntries)
-                    services.AddHostedService(sp => new TcpListenerService(
                         Listener.Define(
-                            ListenerId.New(), entry.Name, entry.Transport,
-                            entry.BindAddress, entry.PublicEndpoint,
-                            sp.GetRequiredService<TimeProvider>().GetUtcNow()),
-                        sp.GetRequiredService<StreamBeaconBridge>(),
-                        sp.GetRequiredService<IListenerRegistry>(),
-                        sp.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>()));
+                            ListenerId.New(), config.Name, provider.Transport,
+                            config.BindAddress, config.PublicEndpoint,
+                            sp.GetRequiredService<TimeProvider>().GetUtcNow())));
+                }
             });
         }
 
@@ -433,14 +419,11 @@ public static class TransportHost
             var registry = kestrel.ApplicationServices.GetRequiredService<IListenerRegistry>();
             var now = (clock ?? TimeProvider.System).GetUtcNow();
 
-            foreach (var config in listeners)
+            foreach (var (config, provider) in entries)
             {
-                // The DNS, named-pipe, and raw-TCP listeners own their sockets
-                // in their hosted services; Kestrel sees only the HTTP-shaped
-                // transports.
-                if (config.Transport is ListenerTransport.Dns
-                    or ListenerTransport.Smb
-                    or ListenerTransport.Tcp)
+                // The socket-owning transports own their sockets in their
+                // hosted services; Kestrel sees only the HTTP family.
+                if (provider is not KestrelEndpointProvider kestrelProvider)
                     continue;
 
                 var (host, port) = ParseBindAddress(config.BindAddress);
@@ -452,7 +435,7 @@ public static class TransportHost
                 // A non-loopback bind is a deliberate TLS-terminating-edge
                 // deployment at best; name the tradeoff at startup so the
                 // choice is visible, not silent.
-                if (config.Transport == ListenerTransport.Http && !IPAddress.IsLoopback(host))
+                if (kestrelProvider.Posture.Scheme == "http" && !IPAddress.IsLoopback(host))
                 {
                     kestrel.ApplicationServices.GetRequiredService<ILoggerFactory>()
                         .CreateLogger("Rod.Transport.TransportHost")
@@ -465,17 +448,19 @@ public static class TransportHost
                 }
 
                 var listener = Listener.Define(
-                    ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint, now);
+                    ListenerId.New(), config.Name, provider.Transport, config.BindAddress, config.PublicEndpoint, now);
 
                 // Bind first; register only once the socket is configured. The
                 // listener's State moves to Running inside RegisterAsync.
                 kestrel.Listen(host, port, listen =>
                 {
-                    // The mTLS listener terminates the client certificate the
-                    // enrolled implants present: required at the TLS layer,
-                    // validated chain-to-CA on the same CA-issued server leaf
-                    // every TLS endpoint presents (architecture.md Sec 8).
-                    if (config.Transport == ListenerTransport.Mtls)
+                    // The startup tier's TLS termination is code-bound per the
+                    // in-tree shapes: the mTLS listener terminates the client
+                    // certificate the enrolled implants present, required at
+                    // the TLS layer and validated chain-to-CA on the same
+                    // CA-issued server leaf every TLS endpoint presents
+                    // (architecture.md Sec 8).
+                    if (string.Equals(provider.Transport, "mtls", StringComparison.OrdinalIgnoreCase))
                         ConfigureMtlsHttps(listen, kestrel);
                     // The single-port https listener never requests a client
                     // certificate: a TLS CertificateRequest is itself a
@@ -485,7 +470,7 @@ public static class TransportHost
                     // handshake carries a certificate exchange only for the
                     // server identity -- indistinguishable from ordinary web
                     // traffic (architecture.md Sec 8/9).
-                    if (config.Transport == ListenerTransport.Https)
+                    if (string.Equals(provider.Transport, "https", StringComparison.OrdinalIgnoreCase))
                         ConfigureHttps(listen, kestrel);
                 });
 

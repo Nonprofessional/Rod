@@ -40,7 +40,7 @@ public class StreamCheckInTests
     {
         var pipeName = $"rod-test-{Guid.NewGuid():N}";
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            "test-smb", ListenerTransport.Smb, pipeName, $@"\\host\pipe\{pipeName}"));
+            "test-smb", "smb", pipeName, $@"\\host\pipe\{pipeName}"));
 
         await CheckInAndCompleteATaskAsync(
             env,
@@ -59,7 +59,7 @@ public class StreamCheckInTests
     {
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            "test-tcp", ListenerTransport.Tcp, $"127.0.0.1:{port}", $"10.0.0.5:{port}"));
+            "test-tcp", "tcp", $"127.0.0.1:{port}", $"10.0.0.5:{port}"));
 
         await CheckInAndCompleteATaskAsync(
             env,
@@ -103,7 +103,7 @@ public class StreamCheckInTests
         await WaitUntilAsync(async () =>
         {
             entry = (await registry.ListAsync()).SingleOrDefault(l =>
-                string.Equals(l.Transport.WireName(), expectedTransport, StringComparison.OrdinalIgnoreCase));
+                string.Equals(l.Transport, expectedTransport, StringComparison.OrdinalIgnoreCase));
             return entry is not null;
         });
         Assert.NotNull(entry);

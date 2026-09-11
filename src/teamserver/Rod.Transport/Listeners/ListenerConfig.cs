@@ -9,6 +9,12 @@ namespace Rod.Transport.Listeners;
 /// is not a <see cref="Listener"/> until the host (or the manager) has bound
 /// the socket and registered the result.
 /// </summary>
+/// <param name="Transport">
+/// The transport this listener terminates, by its wire name (the registry key
+/// a provider registers under). Validated against the provider registry at
+/// every entry -- the runtime create, the startup section, the restore -- so a
+/// transport added later is nameable without this shape changing.
+/// </param>
 /// <param name="EngagementId">
 /// The engagement this listener answers for. Required on a runtime create --
 /// an engagement's ingress is its own, and enrollment through it checks the
@@ -18,7 +24,7 @@ namespace Rod.Transport.Listeners;
 /// </param>
 public sealed record ListenerConfig(
     string Name,
-    ListenerTransport Transport,
+    string Transport,
     string BindAddress,
     string PublicEndpoint,
     EngagementId? EngagementId = null);

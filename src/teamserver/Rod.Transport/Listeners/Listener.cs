@@ -27,7 +27,15 @@ public sealed class Listener
 {
     public ListenerId Id { get; }
     public string Name { get; }
-    public ListenerTransport Transport { get; }
+
+    /// <summary>
+    /// The transport this listener terminates, by its wire name (the registry
+    /// key a provider registers under -- "http", "https", "mtls", "dns",
+    /// "smb", "tcp", or a later transport's own name). A string, not a closed
+    /// enumeration: the registry is the authority for what a listener may
+    /// name, so a transport added later needs no edit here.
+    /// </summary>
+    public string Transport { get; }
     public string BindAddress { get; }
     public string PublicEndpoint { get; private set; }
 
@@ -41,7 +49,7 @@ public sealed class Listener
     private Listener(
         ListenerId id,
         string name,
-        ListenerTransport transport,
+        string transport,
         string bindAddress,
         string publicEndpoint,
         EngagementId? engagementId,
@@ -66,7 +74,7 @@ public sealed class Listener
     public static Listener Define(
         ListenerId id,
         string name,
-        ListenerTransport transport,
+        string transport,
         string bindAddress,
         string publicEndpoint,
         DateTimeOffset at,

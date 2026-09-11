@@ -16,7 +16,7 @@ namespace Rod.Transport.Listeners.Dns;
 
 /// <summary>
 /// Serves one DNS listener entry's datagrams. Registered by
-/// <c>UseRodListeners</c> for every <see cref="ListenerTransport.Dns"/>
+/// <c>UseRodListeners</c> for every dns entry
 /// entry; UDP-bound, single receive loop, one task per datagram. The entry
 /// becomes a registry listener once its socket is bound -- the same
 /// bind-then-register shape the Kestrel path follows.

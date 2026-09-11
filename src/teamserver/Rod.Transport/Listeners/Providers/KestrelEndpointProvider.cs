@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Logging;
 using Rod.CoreState.Listeners;
+using Rod.CoreState.Transports;
 using KestrelClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode;
 
 namespace Rod.Transport.Listeners.Providers;
@@ -48,10 +49,11 @@ public sealed class KestrelEndpointProvider : ITransportProvider
     private static readonly TimeSpan BindProbeInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>Initializes a provider serving <paramref name="transport"/> under <paramref name="posture"/>.</summary>
-    public KestrelEndpointProvider(string transport, ListenerTlsPosture posture)
+    public KestrelEndpointProvider(string transport, ListenerTlsPosture posture, IReadOnlyList<string> carriers)
     {
         Transport = transport;
         Posture = posture;
+        Carriers = carriers;
     }
 
     /// <summary>The listener transport this provider serves, by wire name.</summary>
@@ -59,6 +61,26 @@ public sealed class KestrelEndpointProvider : ITransportProvider
 
     /// <summary>The TLS posture every endpoint this provider publishes carries.</summary>
     public ListenerTlsPosture Posture { get; }
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> Carriers { get; }
+
+    /// <inheritdoc />
+    public bool ServesNativeChannel
+        => Carriers.Any(carrier => TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native);
+
+    /// <inheritdoc />
+    public string PublicEndpointScheme => Posture.Scheme;
+
+    /// <inheritdoc />
+    public bool AcceptsPublicEndpoint(string text)
+        => PublicEndpointShapes.IsWebDial(text);
+
+    /// <inheritdoc />
+    public string DescribePublicEndpointRule(string got)
+        => $"Public endpoint accepts an absolute http(s) URL, a host:port pair, or a bare hostname "
+            + "-- each is completed with the transport's scheme (and this listener's port for a bare "
+            + $"hostname); got '{got}'.";
 
     /// <summary>The bind address shape is the shared host:port parse.</summary>
     public void Validate(ListenerConfig config)

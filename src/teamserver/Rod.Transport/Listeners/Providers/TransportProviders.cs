@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Rod.CoreState.Transports;
 using Rod.Transport.Listeners.Dns;
 using Rod.Transport.Listeners.Streams;
 
@@ -27,29 +28,38 @@ public static class TransportProviders
         // The HTTP family: one publication shape, three TLS postures -- the
         // plain loopback dev posture, the single-port app-key https shape,
         // and the client-certificate-asking mTLS shape (architecture.md
-        // Sec 8/9).
-        Register(new KestrelEndpointProvider("http", ListenerTlsPosture.Plain));
-        Register(new KestrelEndpointProvider("https", ListenerTlsPosture.ServerTls));
-        Register(new KestrelEndpointProvider("mtls", ListenerTlsPosture.MutualAsk));
+        // Sec 8/9). The web fronts serve the envelope carrier; the mTLS
+        // shape additionally serves the beacon stream, the native channel
+        // carrier.
+        Register(new KestrelEndpointProvider("http", ListenerTlsPosture.Plain,
+            new[] { TransportCapabilities.EnvelopeName }));
+        Register(new KestrelEndpointProvider("https", ListenerTlsPosture.ServerTls,
+            new[] { TransportCapabilities.EnvelopeName }));
+        Register(new KestrelEndpointProvider("mtls", ListenerTlsPosture.MutualAsk,
+            new[] { TransportCapabilities.BeaconStreamName, TransportCapabilities.EnvelopeName }));
 
         // The socket-owning family: a datagram reservation and a bare pipe
-        // name's absence of one, per each transport's socket.
+        // name's absence of one, per each transport's socket -- and each its
+        // own public endpoint dial shape (a zone, a pipe path, a host:port).
         Register(new HostedServiceTransportProvider("dns",
-            new HostedBindShape(BindReservation.UdpPort, BarePipeName: false),
+            new HostedBindShape(BindReservation.UdpPort, BarePipeName: false, PublicEndpointShape.DnsZone),
+            new[] { TransportCapabilities.DnsName },
             (services, registry, listener) => new DnsListenerService(
                 listener,
                 services.GetRequiredService<DnsBeaconBridge>(),
                 registry,
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>())));
         Register(new HostedServiceTransportProvider("smb",
-            new HostedBindShape(BindReservation.None, BarePipeName: true),
+            new HostedBindShape(BindReservation.None, BarePipeName: true, PublicEndpointShape.PipePath),
+            new[] { TransportCapabilities.MessagePipeName },
             (services, registry, listener) => new SmbListenerService(
                 listener,
                 services.GetRequiredService<StreamBeaconBridge>(),
                 registry,
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>())));
         Register(new HostedServiceTransportProvider("tcp",
-            new HostedBindShape(BindReservation.TcpPort, BarePipeName: false),
+            new HostedBindShape(BindReservation.TcpPort, BarePipeName: false, PublicEndpointShape.HostPort),
+            new[] { TransportCapabilities.MessagePipeName },
             (services, registry, listener) => new TcpListenerService(
                 listener,
                 services.GetRequiredService<StreamBeaconBridge>(),
@@ -77,12 +87,19 @@ public static class TransportProviders
 
     /// <summary>
     /// The provider serving <paramref name="transport"/>'s wire name, or null
-    /// when nothing registered it -- the caller decides whether that is a
-    /// refusal (a create naming an unknown transport) or a skip (a stored
-    /// definition that predates the registry).
+    /// when nothing registered it (including no name at all) -- the caller
+    /// decides whether that is a refusal (a create naming an unknown
+    /// transport) or a skip (a stored definition that predates the registry).
     /// </summary>
-    public static ITransportProvider? Find(string transport)
+    public static ITransportProvider? Find(string? transport)
         => !string.IsNullOrWhiteSpace(transport) && Providers.TryGetValue(transport, out var found)
             ? found
             : null;
+
+    /// <summary>
+    /// Every registered transport's wire name, sorted: the set an operator
+    /// may name on a create, for refusal messages and listings alike.
+    /// </summary>
+    public static IReadOnlyList<string> Names()
+        => Providers.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
 }
