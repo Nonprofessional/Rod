@@ -414,6 +414,7 @@ public static class TaskEndpoints
         ITaskRepository tasks,
         IImplantRepository implants,
         LiveChannelHub channels,
+        Rod.Transport.Channels.DegradedChannelHub degraded,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -450,16 +451,29 @@ public static class TaskEndpoints
                 new Problem("The task's channel is not live: it is queued or already completed."));
 
         // The hub reaches the implant's live beacon stream. No sink (or a full
-        // one) means the channel cannot take this input right now -- report it
-        // rather than queueing bytes no stream will drain. A pivot child's
-        // channel has no sink of its own (Sec 5.2): its input rides the
-        // fronting parent's stream, so a child that holds no sink routes
-        // through its parent.
+        // one) means the channel cannot take this input right now -- unless
+        // the implant opted into the degraded discipline, whose parking queue
+        // is the poll carrier's sink and whose check-in cycle is its pump. A
+        // pivot child's channel has no sink of its own (Sec 5.2): its input
+        // rides the fronting parent's stream, so a child that holds no sink
+        // routes through its parent.
         if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
         {
             var target = await implants.FindAsync(task.ImplantId, cancellationToken);
-            if (target is not { Class: ImplantClass.Pivot, ParentImplantId: { } fronting }
-                || !channels.TryEnqueue(fronting, taskValue, data, body.Eof))
+            if (target is { Class: ImplantClass.Pivot, ParentImplantId: { } fronting }
+                && channels.TryEnqueue(fronting, taskValue, data, body.Eof))
+            {
+                // Rode the fronting parent's live stream.
+            }
+            else if (target is not { Class: ImplantClass.Pivot }
+                && await degraded.TryEnqueueAsync(
+                    task.ImplantId, new TaskId(taskValue), data, body.Eof, cancellationToken))
+            {
+                // Parked for the implant's next poll check-in: the input
+                // lands when the cycle delivers it, not instantly -- the
+                // degraded discipline the implant opted into.
+            }
+            else
             {
                 return Results.Conflict(
                     new Problem("The implant's beacon stream is not accepting channel input."));

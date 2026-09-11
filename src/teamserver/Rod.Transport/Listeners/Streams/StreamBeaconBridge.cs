@@ -6,6 +6,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
 using Rod.CoreState.Transports;
+using Rod.Transport.Channels;
 using Rod.Transport.Endpoints;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
@@ -58,6 +59,7 @@ internal sealed class StreamBeaconBridge
     private readonly BeaconTasking _tasking;
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
+    private readonly DegradedChannelHub _degraded;
 
     public StreamBeaconBridge(
         HandshakeService handshake,
@@ -66,7 +68,8 @@ internal sealed class StreamBeaconBridge
         BeaconIngest ingest,
         BeaconTasking tasking,
         IAuditStore audit,
-        TimeProvider clock)
+        TimeProvider clock,
+        DegradedChannelHub degraded)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -75,6 +78,7 @@ internal sealed class StreamBeaconBridge
         _tasking = tasking;
         _audit = audit;
         _clock = clock;
+        _degraded = degraded;
     }
 
     /// <summary>
@@ -186,11 +190,11 @@ internal sealed class StreamBeaconBridge
                 outbound.AddRange(await _tasking.StagedChunkRunAsync(pull.Value, cancellationToken));
 
             // Dispatch queued tasking while the budget lasts. The claim
-            // evaluation every poll carrier runs decides what fits: the
-            // message pipe declares no channel support, so a channel task is
-            // requeued untouched and ends the drain (architecture.md
-            // Sec 10.3) -- it parks at the queue head for a stream transport
-            // to claim.
+            // evaluation every poll carrier runs decides what fits: a channel
+            // verb claims only under the degraded discipline -- the
+            // session's opt-in -- and without it parks at the queue head for
+            // a stream transport to claim (architecture.md Sec 10.3).
+            var degraded = session.Capabilities.Contains(DegradedChannelHub.Capability);
             var budget = MaxDispatchBytes;
             while (true)
             {
@@ -202,7 +206,7 @@ internal sealed class StreamBeaconBridge
                 var wireSize = EnvelopeFraming.WireSize(frame);
 
                 if (TransportCapabilities.EvaluateClaim(
-                        TransportCapabilities.MessagePipe, dispatched.Verb, wireSize, budget)
+                        TransportCapabilities.MessagePipe, dispatched.Verb, wireSize, budget, degraded)
                     != ClaimDecision.Claim)
                 {
                     await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
@@ -212,6 +216,16 @@ internal sealed class StreamBeaconBridge
                 budget -= wireSize;
                 outbound.Add(frame);
                 await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
+            }
+
+            // The store-and-forward half, the envelope's own: parked operator
+            // input rides after the tasking as ChannelInput frames within the
+            // budget the tasking left, and the sweep closes channels the
+            // implant stopped collecting.
+            if (degraded)
+            {
+                await _degraded.SweepIdleAsync(cancellationToken);
+                outbound.AddRange(_degraded.Drain(session.Implant, budget));
             }
 
             await StreamCheckInFraming.WriteMessageAsync(

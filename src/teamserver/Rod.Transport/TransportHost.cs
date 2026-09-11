@@ -240,6 +240,11 @@ public static class TransportHost
         // one POST is one poll check-in, the same frames the gRPC stream
         // carries as delimited sequences in ordinary request/response bodies.
         services.AddSingleton<Endpoints.EnvelopeBeaconCheckIn>();
+        // The store-and-forward half of the degraded channel discipline
+        // (architecture.md Sec 10.3): the parking queue operator input waits
+        // in against a poll-carrier implant that opted in, drained into its
+        // check-in responses. Singleton like the live sink hub it mirrors.
+        services.AddSingleton<Channels.DegradedChannelHub>();
         // The WebSocket beacon stream (architecture.md Sec 8, the web
         // posture's interactive tier): the same session the gRPC stream runs,
         // over a WebSocket on the plain-HTTP listener family, authenticated
