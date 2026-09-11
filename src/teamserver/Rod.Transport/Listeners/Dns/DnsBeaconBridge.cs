@@ -6,6 +6,7 @@ using Rod.CoreState.Application;
 using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
+using Rod.CoreState.Transports;
 using Rod.Transport.Endpoints;
 // The domain entity shares its name with the BCL Task; this file uses the
 // Rod.CoreState.Tasks types (TaskId, TaskOutcome, TaskCompleted) but never the
@@ -88,23 +89,16 @@ internal sealed class DnsBeaconBridge
         if (dispatched is null)
             return null;
 
-        // A streaming task is a channel on the beacon stream that carried it
-        // (architecture.md Sec 10.3): its input rides ChannelInput frames and
-        // its output streams back as ChannelOutput. A datagram poll has no
-        // stream to run a channel on, so a channel task is requeued untouched
-        // for a stream transport to claim -- the same handback an oversized
-        // task gets below.
-        if (ChannelVerbs.IsChannelVerb(dispatched.Verb))
-        {
-            await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
-            return null;
-        }
-
         var marshaled = _tasking.BuildSignedRequest(dispatched).ToByteArray();
-        if (marshaled.Length > MaxTaskRequestBytes)
+
+        // The claim evaluation every poll carrier runs (architecture.md
+        // Sec 10.3): DNS declares no channel support and a datagram-sized
+        // budget, so a channel task or one too large for a TXT answer is
+        // requeued untouched for a stream transport to claim.
+        if (TransportCapabilities.EvaluateClaim(
+                TransportCapabilities.Dns, dispatched.Verb, marshaled.Length, MaxTaskRequestBytes)
+            != ClaimDecision.Claim)
         {
-            // Too big for a datagram answer: hand it back to the queue so a
-            // stream transport claims it (architecture.md Sec 10.3).
             await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
             return null;
         }

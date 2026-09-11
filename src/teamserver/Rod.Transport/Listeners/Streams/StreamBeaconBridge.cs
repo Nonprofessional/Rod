@@ -5,6 +5,7 @@ using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
+using Rod.CoreState.Transports;
 using Rod.Transport.Endpoints;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
@@ -184,11 +185,12 @@ internal sealed class StreamBeaconBridge
             foreach (var pull in stagedPulls)
                 outbound.AddRange(await _tasking.StagedChunkRunAsync(pull.Value, cancellationToken));
 
-            // Dispatch queued tasking while the budget lasts. A channel task
-            // is requeued untouched and ends the drain: its channel needs a
-            // live stream for the input half (architecture.md Sec 10.3), the
-            // same rule the envelope and DNS transports apply, so it parks at
-            // the queue head for a stream transport to claim.
+            // Dispatch queued tasking while the budget lasts. The claim
+            // evaluation every poll carrier runs decides what fits: the
+            // message pipe declares no channel support, so a channel task is
+            // requeued untouched and ends the drain (architecture.md
+            // Sec 10.3) -- it parks at the queue head for a stream transport
+            // to claim.
             var budget = MaxDispatchBytes;
             while (true)
             {
@@ -199,7 +201,9 @@ internal sealed class StreamBeaconBridge
                 var frame = _tasking.MarshalFrame(dispatched);
                 var wireSize = EnvelopeFraming.WireSize(frame);
 
-                if (ChannelVerbs.IsChannelVerb(dispatched.Verb) || wireSize > budget)
+                if (TransportCapabilities.EvaluateClaim(
+                        TransportCapabilities.MessagePipe, dispatched.Verb, wireSize, budget)
+                    != ClaimDecision.Claim)
                 {
                     await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
                     break;

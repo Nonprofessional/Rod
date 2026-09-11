@@ -9,6 +9,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.Tasks;
+using Rod.CoreState.Transports;
 using Rod.Transport.Payloads;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
@@ -291,11 +292,11 @@ internal sealed class EnvelopeBeaconCheckIn
         foreach (var pull in stagedPulls)
             outbound.AddRange(await _tasking.StagedChunkRunAsync(pull.Value, cancellationToken));
 
-        // Dispatch queued tasking while the budget lasts. A channel task is
-        // requeued untouched and ends the drain: its channel needs a live
-        // stream for the input half (architecture.md Sec 10.3), the same rule
-        // the DNS transport applies, so it parks at the queue head for a
-        // stream transport to claim.
+        // Dispatch queued tasking while the budget lasts. The claim
+        // evaluation every poll carrier runs decides what fits: the envelope
+        // declares no channel support, so a channel task is requeued
+        // untouched and ends the drain (architecture.md Sec 10.3) -- it parks
+        // at the queue head for a stream transport to claim.
         var budget = MaxDispatchBytes;
         while (true)
         {
@@ -306,7 +307,9 @@ internal sealed class EnvelopeBeaconCheckIn
             var frame = _tasking.MarshalFrame(dispatched);
             var wireSize = EnvelopeFraming.WireSize(frame);
 
-            if (ChannelVerbs.IsChannelVerb(dispatched.Verb) || wireSize > budget)
+            if (TransportCapabilities.EvaluateClaim(
+                    TransportCapabilities.Envelope, dispatched.Verb, wireSize, budget)
+                != ClaimDecision.Claim)
             {
                 await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
                 break;
