@@ -19,14 +19,15 @@ namespace Rod.Transport.Listeners;
 /// transport's fingerprint rule (architecture.md Sec 8/9) -- leaves it unset,
 /// which is <c>NoCertificate</c>: no request at all.
 /// </summary>
-internal sealed class DynamicEndpointsConfiguration
+public sealed class DynamicEndpointsConfiguration
 {
     private readonly PushableProvider _provider = new();
 
     /// <summary>The Kestrel section the manager writes endpoint entries into.</summary>
     public IConfiguration KestrelSection { get; }
 
-    internal DynamicEndpointsConfiguration()
+    /// <summary>Initializes the push-only source; the host hands its section to Kestrel's reloader.</summary>
+    public DynamicEndpointsConfiguration()
     {
         var root = new ConfigurationRoot(new IConfigurationProvider[] { _provider });
         KestrelSection = root.GetSection("Kestrel");

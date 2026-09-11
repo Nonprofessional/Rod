@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Sockets;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,30 +8,34 @@ using Microsoft.Extensions.Logging;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Pki;
-using Rod.Transport.Listeners.Dns;
-using Rod.Transport.Listeners.Streams;
+using Rod.Transport.Listeners.Providers;
 
 namespace Rod.Transport.Listeners;
 
 /// <summary>
 /// Runtime listener management: create and remove C2 ingress while the
 /// teamserver serves, the operator-API counterpart to the startup
-/// <c>Listeners</c> configuration (architecture.md Sec 8). Two mechanics sit
-/// behind one shape:
+/// <c>Listeners</c> configuration (architecture.md Sec 8). The manager owns
+/// the shared create/remove flow -- validation mapping, port reservation,
+/// engagement scoping, persistence, the runtime roster -- and delegates each
+/// transport's bind to its provider (<see cref="TransportProviders"/>, keyed
+/// by wire name). Two provider shapes cover the in-tree six:
 ///
-/// - The HTTP-shaped transports (<c>Http</c>, <c>Https</c>, <c>Mtls</c>)
-///   ride Kestrel's endpoint-configuration reloader: the manager publishes the
-///   bind address as an endpoint URL into a push-only configuration source the
+/// - <see cref="KestrelEndpointProvider"/>: the HTTP family
+///   (<c>Http</c>, <c>Https</c>, <c>Mtls</c>) rides Kestrel's
+///   endpoint-configuration reloader -- the provider publishes the bind
+///   address as an endpoint URL into a push-only configuration source the
 ///   host registered with <c>KestrelServerOptions.Configure(..., reloadOnChange:
-///   true)</c>, and Kestrel binds (create) or drains and unbinds (remove) the
-///   socket in response. A create confirms the bind by probing the port before
-///   reporting the listener as running -- the reloader's errors are logs, not
-///   exceptions, so the manager observes the outcome instead of assuming it.
+///   true)</c> and Kestrel binds (create) or drains and unbinds (remove) the
+///   socket in response, under the transport's TLS posture. A create confirms
+///   the bind by probing the port before reporting the listener as running --
+///   the reloader's errors are logs, not exceptions, so the provider observes
+///   the outcome instead of assuming it.
 ///
-/// - The stream transports (<c>Dns</c>, <c>Smb</c>, <c>Tcp</c>) own their
-///   sockets in per-listener hosted services; the manager starts and stops one
-///   service per listener on demand, the same services the startup path
-///   registers.
+/// - <see cref="HostedServiceTransportProvider"/>: the socket-owning
+///   transports (<c>Dns</c>, <c>Smb</c>, <c>Tcp</c>) run their sockets in
+///   per-listener hosted services; the provider starts and stops one service
+///   per listener on demand, the same services the startup path registers.
 ///
 /// Runtime listeners are engagement-scoped: each create names the engagement
 /// the listener answers for, and its definition is persisted once the socket
@@ -43,11 +46,6 @@ namespace Rod.Transport.Listeners;
 /// </summary>
 public sealed class ListenerManager
 {
-    // How long a created HTTP-shaped endpoint gets before its port must accept
-    // a connection; covers the reloader's asynchronous bind.
-    private static readonly TimeSpan BindProbeTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan BindProbeInterval = TimeSpan.FromMilliseconds(100);
-
     private readonly IServiceProvider _services;
     private readonly IListenerRegistry _listeners;
     private readonly IListenerStore _definitions;
@@ -90,7 +88,8 @@ public sealed class ListenerManager
     /// <c>ConfigureHttpsDefaults</c> runs for every endpoint alike and would
     /// flatten the one HTTPS knob the transports differ on, so each published
     /// endpoint carries its own per-endpoint <c>ClientCertificateMode</c> in
-    /// the configuration (see <see cref="CreateHttpListenerAsync"/>): the
+    /// the configuration (the provider's
+    /// <see cref="Providers.ListenerTlsPosture">TLS posture</see>): the
     /// mTLS-shaped listeners request the certificate, and every other TLS
     /// endpoint -- the https transport's fingerprint rule, no request at all
     /// -- leaves it at the Kestrel default.
@@ -194,16 +193,24 @@ public sealed class ListenerManager
         // ArgumentException to say so. The port reservation that follows
         // stays an InvalidOperationException -- a bind refused for an address
         // in use is a conflict (409), not a malformed request.
+        // The provider serving the transport's wire name owns everything the
+        // bind needs beyond the shared reservation flow below: the shape
+        // validation, the reservation, and the bind body itself. An unknown
+        // name is a malformed request -- the registry is the authority for
+        // what a runtime listener may name.
+        var provider = TransportProviders.Find(config.Transport.WireName())
+            ?? throw new ArgumentException(
+                $"Transport {config.Transport} is not supported for runtime listeners.", nameof(config));
         try
         {
-            ValidateBindShape(config);
+            provider.Validate(config);
         }
         catch (InvalidOperationException ex)
         {
             throw new ArgumentException(ex.Message, nameof(config));
         }
 
-        ReserveBind(config);
+        provider.ReserveBind(config);
 
         // The same non-loopback plain-HTTP warning the startup path logs: a
         // deliberate posture choice, named rather than silent.
@@ -221,16 +228,11 @@ public sealed class ListenerManager
             }
         }
 
-        return config.Transport switch
-        {
-            ListenerTransport.Http or ListenerTransport.Https
-                or ListenerTransport.Mtls
-                => await CreateHttpListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
-            ListenerTransport.Dns or ListenerTransport.Smb or ListenerTransport.Tcp
-                => await CreateStreamListenerAsync(config, id, cancellationToken).ConfigureAwait(false),
-            _ => throw new ArgumentException(
-                $"Transport {config.Transport} is not supported for runtime listeners.", nameof(config)),
-        };
+        var bound = await provider.BindAsync(
+            new TransportBindContext(config, id, _services, _listeners, _endpoints, _clock, _logger),
+            cancellationToken).ConfigureAwait(false);
+        _runtime[bound.Listener.Id] = new RuntimeEntry(bound.Listener, bound.Service);
+        return bound.Listener;
     }
 
     /// <summary>
@@ -262,7 +264,7 @@ public sealed class ListenerManager
             // The Kestrel reloader drains and unbinds the endpoint on its own
             // schedule (seconds); the registry entry goes now so the roster
             // stops reporting it immediately.
-            _endpoints.WithdrawEndpoint(EndpointKey(listener));
+            _endpoints.WithdrawEndpoint(KestrelEndpointProvider.EndpointKey(listener));
         }
 
         await _listeners.RemoveAsync(listener, cancellationToken).ConfigureAwait(false);
@@ -271,130 +273,6 @@ public sealed class ListenerManager
             "Runtime listener {ListenerId} ({Name}) removed.", listener, entry.Listener.Name);
         return true;
     }
-
-    private async Task<Listener> CreateHttpListenerAsync(
-        ListenerConfig config, ListenerId? id, CancellationToken cancellationToken)
-    {
-        var (host, port) = TransportHost.ParseBindAddress(config.BindAddress);
-
-        // The TLS-shaped transports publish an https URL; the HTTPS defaults
-        // the host registered carry the CA-backed termination, and the
-        // endpoint's own configuration entry names the certificate mode the
-        // transport needs: the mTLS-shaped listeners request the client
-        // certificate (enrollment still rides the same socket certificate-less,
-        // so the request is optional at TLS and demanded at the application
-        // layer), while the https transport publishes none -- the Kestrel
-        // default never asks, the fingerprint rule the https posture is built
-        // on (architecture.md Sec 8/9).
-        var scheme = config.Transport == ListenerTransport.Http ? "http" : "https";
-        var clientCertificateMode = config.Transport == ListenerTransport.Mtls
-            ? nameof(ClientCertificateMode.AllowCertificate)
-            : null;
-        var listener = Listener.Define(
-            id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
-            _clock.GetUtcNow(), config.EngagementId);
-
-        _endpoints.PublishEndpoint(EndpointKey(listener.Id), $"{scheme}://{config.BindAddress}", clientCertificateMode);
-
-        // The reloader binds asynchronously and reports failures only to the
-        // log, so observe the outcome: the port must start accepting within
-        // the probe window, else roll the entry back and refuse the create.
-        if (!await WaitForAcceptingAsync(host, port, cancellationToken).ConfigureAwait(false))
-        {
-            _endpoints.WithdrawEndpoint(EndpointKey(listener.Id));
-            throw new InvalidOperationException(
-                $"Listener '{config.Name}' could not bind {config.BindAddress}: the socket never opened "
-                + "(the address is likely in use); see the teamserver log.");
-        }
-
-        await _listeners.RegisterAsync(listener, cancellationToken).ConfigureAwait(false);
-        _runtime[listener.Id] = new RuntimeEntry(listener, null);
-        _logger.LogInformation(
-            "Runtime listener {Name} ({Transport}) bound on {BindAddress} for {PublicEndpoint}.",
-            config.Name, config.Transport, config.BindAddress, config.PublicEndpoint);
-        return listener;
-    }
-
-    private async Task<Listener> CreateStreamListenerAsync(
-        ListenerConfig config, ListenerId? id, CancellationToken cancellationToken)
-    {
-        var listener = Listener.Define(
-            id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
-            _clock.GetUtcNow(), config.EngagementId);
-
-        // The same per-entry services the startup path registers, started on
-        // demand: each binds its socket and registers the aggregate itself --
-        // bind-then-register, the shape every transport follows.
-        IHostedService service = config.Transport switch
-        {
-            ListenerTransport.Dns => new DnsListenerService(
-                listener,
-                _services.GetRequiredService<DnsBeaconBridge>(),
-                _listeners,
-                _services.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>()),
-            ListenerTransport.Smb => new SmbListenerService(
-                listener,
-                _services.GetRequiredService<StreamBeaconBridge>(),
-                _listeners,
-                _services.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>()),
-            ListenerTransport.Tcp => new TcpListenerService(
-                listener,
-                _services.GetRequiredService<StreamBeaconBridge>(),
-                _listeners,
-                _services.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>()),
-            _ => throw new ArgumentException(
-                $"Transport {config.Transport} is not a stream transport.", nameof(config)),
-        };
-
-        try
-        {
-            await service.StartAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Runtime listener '{Name}' failed to bind {BindAddress}.", config.Name, config.BindAddress);
-            throw new InvalidOperationException(
-                $"Listener '{config.Name}' could not bind {config.BindAddress}: {ex.Message}");
-        }
-
-        // The service registers itself into the registry once its socket is
-        // bound; the create answer waits for that registration so "running"
-        // means listening, not "scheduled to listen".
-        var registrationDeadline = _clock.GetUtcNow() + TimeSpan.FromSeconds(2);
-        while (await _listeners.FindAsync(listener.Id, cancellationToken).ConfigureAwait(false) is null)
-        {
-            if (_clock.GetUtcNow() > registrationDeadline)
-            {
-                await StopQuietlyAsync(service).ConfigureAwait(false);
-                throw new InvalidOperationException(
-                    $"Listener '{config.Name}' could not bind {config.BindAddress}: the service never registered its socket.");
-            }
-            await Task.Delay(BindProbeInterval, cancellationToken).ConfigureAwait(false);
-        }
-
-        _runtime[listener.Id] = new RuntimeEntry(listener, service);
-        _logger.LogInformation(
-            "Runtime listener {Name} ({Transport}) bound on {BindAddress} for {PublicEndpoint}.",
-            config.Name, config.Transport, config.BindAddress, config.PublicEndpoint);
-        return listener;
-    }
-
-    private static async Task StopQuietlyAsync(IHostedService service)
-    {
-        try
-        {
-            await service.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // Best effort: the service never served; the create is refused
-            // regardless.
-        }
-    }
-
-    // The endpoint key under Kestrel:Endpoints. The listener id, not the name:
-    // names can repeat or carry characters configuration keys would rather not.
-    private static string EndpointKey(ListenerId listener) => $"rod-{listener.Value:N}";
 
     // The persisted shape of a bound, engagement-scoped listener.
     private static ListenerDefinition DefinitionOf(Listener listener)
@@ -407,81 +285,4 @@ public sealed class ListenerManager
             listener.PublicEndpoint,
             listener.CreatedAt,
             listener.RepointedAt);
-
-    // Pre-create validation for the bind address shape, per transport. The
-    // host:port shapes parse exactly as the startup path parses them.
-    private static void ValidateBindShape(ListenerConfig config)
-    {
-        if (config.Transport == ListenerTransport.Smb)
-        {
-            // A bare pipe name; the pipe server creates it on bind.
-            if (config.BindAddress.Contains(':', StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    $"SMB bind address '{config.BindAddress}' is a bare pipe name, not host:port.");
-            return;
-        }
-
-        _ = TransportHost.ParseBindAddress(config.BindAddress);
-    }
-
-    // Reserves the TCP-shaped bind's port exclusively for a moment, so a bind
-    // that would collide with a live socket (another listener, or anything
-    // else on the host) is refused up front -- the Kestrel reloader reports
-    // its bind failures only to the log, and nothing downstream could tell
-    // the create from a silent no-op. The moment between release and the real
-    // bind is the usual check-then-act window; operator tooling, not a lock,
-    // is the right answer at this layer.
-    private static void ReserveBind(ListenerConfig config)
-    {
-        if (config.Transport == ListenerTransport.Smb)
-            return;
-
-        var (host, port) = TransportHost.ParseBindAddress(config.BindAddress);
-
-        if (config.Transport == ListenerTransport.Dns)
-        {
-            using var udp = new UdpClient(new IPEndPoint(host, port));
-            return;
-        }
-
-        var reserveHost = host.Equals(IPAddress.Any) || host.Equals(IPAddress.IPv6Any) ? IPAddress.Loopback : host;
-        var reserve = new TcpListener(reserveHost, port);
-        try
-        {
-            reserve.Start();
-        }
-        catch (SocketException)
-        {
-            throw new InvalidOperationException(
-                $"Listener '{config.Name}' could not bind {config.BindAddress}: the address is already in use.");
-        }
-        finally
-        {
-            reserve.Stop();
-        }
-    }
-
-    // Polls until the address accepts a TCP connection, the observable form of
-    // "the reloader bound it". A wildcard bind is probed on loopback -- the
-    // socket any wildcard bind necessarily covers.
-    private async Task<bool> WaitForAcceptingAsync(IPAddress host, int port, CancellationToken cancellationToken)
-    {
-        var probeHost = host.Equals(IPAddress.Any) || host.Equals(IPAddress.IPv6Any) ? IPAddress.Loopback : host;
-        var deadline = _clock.GetUtcNow() + BindProbeTimeout;
-        while (_clock.GetUtcNow() < deadline)
-        {
-            try
-            {
-                using var probe = new TcpClient();
-                await probe.ConnectAsync(probeHost, port, cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-            catch (SocketException)
-            {
-                // Not accepting yet; retry after the interval.
-            }
-            await Task.Delay(BindProbeInterval, cancellationToken).ConfigureAwait(false);
-        }
-        return false;
-    }
 }
