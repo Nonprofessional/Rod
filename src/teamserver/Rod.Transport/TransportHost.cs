@@ -240,6 +240,11 @@ public static class TransportHost
         // one POST is one poll check-in, the same frames the gRPC stream
         // carries as delimited sequences in ordinary request/response bodies.
         services.AddSingleton<Endpoints.EnvelopeBeaconCheckIn>();
+        // The WebSocket beacon stream (architecture.md Sec 8, the web
+        // posture's interactive tier): the same session the gRPC stream runs,
+        // over a WebSocket on the plain-HTTP listener family, authenticated
+        // and sealed the way the envelope check-in is.
+        services.AddSingleton<Endpoints.WebSocketBeaconStream>();
 
         // Session staleness sweep (architecture.md Sec 10.3): the live values
         // are always registered -- the settings endpoints read them and the
@@ -666,6 +671,10 @@ public static class TransportHost
         // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,
         // so only an mTLS-terminated listener ever serves it.
         app.MapEnvelopeBeaconEndpoints();
+        // The WebSocket beacon stream: the web posture's live channel, the
+        // same session the gRPC stream runs over the envelope's own auth and
+        // frame grammar.
+        app.MapWebSocketBeaconEndpoints();
         // A trivial health probe so the listener is observably up.
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
         return app;
@@ -705,6 +714,7 @@ public static class TransportHost
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
         endpoints.MapEnvelopeBeaconEndpoints();
+        endpoints.MapWebSocketBeaconEndpoints();
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
     }
 

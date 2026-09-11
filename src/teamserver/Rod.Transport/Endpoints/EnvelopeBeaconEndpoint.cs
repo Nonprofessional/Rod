@@ -224,7 +224,8 @@ internal sealed class EnvelopeBeaconCheckIn
         // cleartext gRPC stream and the DNS/SMB/TCP transports document). Over
         // TLS with neither, there is no identity to offer and the handshake
         // refuses the unknown implant.
-        var (response, handshake) = await TryHandshakeAsync(identity, handshakeRequest, isSealed || !http.Request.IsHttps);
+        var (response, handshake) = await TryHandshakeAsync(
+            _handshake, identity, handshakeRequest, isSealed || !http.Request.IsHttps);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return Reply(new[] { HandshakeFrame(response) });
 
@@ -337,13 +338,13 @@ internal sealed class EnvelopeBeaconCheckIn
     /// magic-prefixed envelope, and a sealed body names a key id only the
     /// build could have baked.
     /// </summary>
-    private static Guid? TryReadSealedKeyId(byte[] body, out string sealedText)
+    internal static Guid? TryReadSealedKeyId(byte[] body, out string sealedText)
     {
         sealedText = Encoding.UTF8.GetString(body).Trim();
         return AesGcmEnvelope.TryReadKeyId(sealedText);
     }
 
-    private static bool TryParseHandshake(Frame frame, out HandshakeRequest request)
+    internal static bool TryParseHandshake(Frame frame, out HandshakeRequest request)
     {
         try
         {
@@ -357,14 +358,18 @@ internal sealed class EnvelopeBeaconCheckIn
         }
     }
 
-    private async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
+    // Shared with the WebSocket stream's handshake (the same service call and
+    // status mapping over a different transport); static so both endpoints
+    // reach it without sharing state.
+    internal static async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
+        HandshakeService handshake,
         ClientIdentity? identity,
         HandshakeRequest request,
         bool cleartextFallback)
     {
         try
         {
-            var result = await _handshake.HandshakeAsync(
+            var result = await handshake.HandshakeAsync(
                 new HandshakeCommand(
                     ImplantId: identity?.ImplantId
                         ?? (cleartextFallback && ImplantId.TryParse(request.ImplantId, out var byId) ? byId : default),
@@ -391,7 +396,7 @@ internal sealed class EnvelopeBeaconCheckIn
         }
     }
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
+    internal static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
         => new()
         {
             Status = status,
@@ -400,7 +405,7 @@ internal sealed class EnvelopeBeaconCheckIn
             ReplayNonces = replayNonces,
         };
 
-    private static Frame HandshakeFrame(HandshakeResponse response)
+    internal static Frame HandshakeFrame(HandshakeResponse response)
         => new() { Payload = ByteString.CopyFrom(response.ToByteArray()) };
 
     public sealed record Problem(string Error);
