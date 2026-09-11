@@ -172,7 +172,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
             var modules = CheckInModules.None;
             if (!isStager)
             {
-                modules = TransportModuleSelection.Select(@params.Transport);
+                modules = TransportModuleSelection.Select(@params.Transport, @params.Beacon.Mode);
                 TransportModuleSelection.Apply(stagingDir, modules);
             }
 

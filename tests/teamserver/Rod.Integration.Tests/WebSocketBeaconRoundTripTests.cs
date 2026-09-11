@@ -36,7 +36,7 @@ public class WebSocketBeaconRoundTripTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var (secret, _) = await MintStagerTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             using var implant = await WsImplant.ConnectAsync(host, implantId);
@@ -90,7 +90,7 @@ public class WebSocketBeaconRoundTripTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var (secret, _) = await MintStagerTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             using var implant = await WsImplant.ConnectAsync(host, implantId);
@@ -130,6 +130,56 @@ public class WebSocketBeaconRoundTripTests
         }
     }
 
+    [Fact]
+    public async Task FromScratchImplant_HandshakesSealedUnderTheArtifactKey()
+    {
+        // The default build shape: check-ins sealed under the per-artifact
+        // key. The harness stands in a payload record carrying the key, the
+        // enroll binds it, and the WebSocket handshake rides as the sealed
+        // envelope's first message -- the acceptance shape the https front
+        // bakes.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+
+            var key = new byte[32];
+            var keyId = Guid.NewGuid();
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                rng.GetBytes(key);
+            var payloads = host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+            await payloads.SaveAsync(new Rod.Audit.PayloadRecord(
+                PayloadId: Guid.NewGuid(),
+                EngagementId: Guid.Parse(engagementId),
+                Class: "Stage2",
+                Language: "dotnet",
+                ContentType: "application/octet-stream",
+                Fingerprint: "sha256:" + new string('a', 64),
+                Content: Array.Empty<byte>(),
+                Size: 0,
+                BuiltAt: DateTimeOffset.UtcNow,
+                TokenId: tokenId,
+                EnvelopeKeyId: keyId,
+                EnvelopeKey: key));
+
+            var implantId = await EnrollAsync(client, secret);
+            using var implant = await WsImplant.ConnectSealedAsync(host, implantId, keyId, key);
+            var handshake = await implant.ReceiveHandshakeAsync();
+            Assert.Equal(HandshakeStatus.Ok, handshake.Status);
+
+            // The session pushes sealed tasking whole.
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new { ImplantId = implantId, Verb = "shell.exec", Arguments = "echo sealed-ws" });
+            issued.EnsureSuccessStatusCode();
+            var request = TaskRequest.Parser.ParseFrom(await implant.ReceiveSingleFrameAsync());
+            Assert.Equal("shell.exec", request.Verb);
+        }
+    }
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",
@@ -139,12 +189,13 @@ public class WebSocketBeaconRoundTripTests
         return created!.EngagementId;
     }
 
-    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    private static async Task<(string Secret, Guid TokenId)> MintStagerTokenAsync(
+        HttpClient client, string engagementId)
     {
         var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
         response.EnsureSuccessStatusCode();
         var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
-        return token!.Secret;
+        return (token!.Secret, Guid.Parse(token.StagerTokenId));
     }
 
     private static async Task<string> EnrollAsync(HttpClient client, string secret)
@@ -182,33 +233,48 @@ public class WebSocketBeaconRoundTripTests
     }
 
     // The from-scratch WebSocket implant: the envelope's varint frame codec
-    // over the socket's messages, nothing else.
+    // over the socket's messages, nothing else. Optionally sealed under the
+    // per-artifact key with the same wire shapes the built artifact bakes.
     private sealed class WsImplant : IDisposable
     {
         private readonly System.Net.WebSockets.WebSocket _ws;
+        private (Guid KeyId, byte[] Key)? _seal;
+        private long _counter;
 
         private WsImplant(System.Net.WebSockets.WebSocket ws) => _ws = ws;
 
         public static async Task<WsImplant> ConnectAsync(IHost host, string implantId)
         {
+            var (implant, _) = await ConnectCoreAsync(host, implantId, seal: null);
+            return implant;
+        }
+
+        public static async Task<WsImplant> ConnectSealedAsync(
+            IHost host, string implantId, Guid keyId, byte[] key)
+            => (await ConnectCoreAsync(host, implantId, (keyId, key))).Item1;
+
+        private static async Task<(WsImplant, System.Net.WebSockets.WebSocket)> ConnectCoreAsync(
+            IHost host, string implantId, (Guid KeyId, byte[] Key)? seal)
+        {
             var server = host.GetTestServer();
             var wsClient = server.CreateWebSocketClient();
             var ws = await wsClient.ConnectAsync(
                 new Uri(server.BaseAddress, WebSocketBeaconEndpoints.Route), CancellationToken.None);
-            var implant = new WsImplant(ws);
+            var implant = new WsImplant(ws) { _seal = seal };
 
-            // The implant speaks first: the handshake frame, plaintext -- the
-            // lab posture on the cleartext test host.
+            // The implant speaks first: the handshake frame -- the envelope's
+            // request-body shape, sealed when the bake carried a key.
+            var handshake = new HandshakeRequest
+            {
+                Version = new ProtocolVersion { Major = 1 },
+                ImplantId = implantId,
+                Capabilities = { "shell.exec", ChannelVerbs.ShellInteract },
+            };
             await implant.SendFramesAsync(new[] { new Frame
             {
-                Payload = ByteString.CopyFrom(new HandshakeRequest
-                {
-                    Version = new ProtocolVersion { Major = 1 },
-                    ImplantId = implantId,
-                    Capabilities = { "shell.exec", ChannelVerbs.ShellInteract },
-                }.ToByteArray()),
+                Payload = ByteString.CopyFrom(handshake.ToByteArray()),
             } });
-            return implant;
+            return (implant, ws);
         }
 
         public async Task<HandshakeResponse> ReceiveHandshakeAsync()
@@ -225,10 +291,24 @@ public class WebSocketBeaconRoundTripTests
 
         public async Task SendFramesAsync(IReadOnlyList<Frame> frames)
         {
-            var payload = Encode(frames);
-            await _ws.SendAsync(
-                payload, System.Net.WebSockets.WebSocketMessageType.Binary,
-                endOfMessage: true, CancellationToken.None);
+            var encoded = Encode(frames);
+            byte[] payload;
+            System.Net.WebSockets.WebSocketMessageType type;
+            if (_seal is { } seal)
+            {
+                var plaintext = new byte[8 + encoded.Length];
+                System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_counter);
+                encoded.AsSpan().CopyTo(plaintext.AsSpan(8));
+                payload = System.Text.Encoding.UTF8.GetBytes(Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
+                    plaintext, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad));
+                type = System.Net.WebSockets.WebSocketMessageType.Text;
+            }
+            else
+            {
+                payload = encoded;
+                type = System.Net.WebSockets.WebSocketMessageType.Binary;
+            }
+            await _ws.SendAsync(payload, type, endOfMessage: true, CancellationToken.None);
         }
 
         public void Dispose() => _ws.Dispose();
@@ -245,7 +325,17 @@ public class WebSocketBeaconRoundTripTests
                     throw new InvalidOperationException("The stream closed under the test.");
                 message.Write(buffer, 0, received.Count);
                 if (received.EndOfMessage)
-                    return message.ToArray();
+                {
+                    var body = message.ToArray();
+                    if (_seal is { } seal)
+                    {
+                        var text = System.Text.Encoding.UTF8.GetString(body).Trim();
+                        body = Rod.Transport.Payloads.AesGcmEnvelope.TryUnwrap(
+                            text, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInResponseAad)
+                            ?? throw new InvalidOperationException("A sealed message did not verify.");
+                    }
+                    return body;
+                }
             }
         }
 

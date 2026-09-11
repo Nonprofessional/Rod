@@ -259,11 +259,16 @@ internal static class PayloadBuildRequestParser
                 return (null, "BeaconListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
             if (listener.EngagementId != engagementId)
                 return (null, "BeaconListenerId names another engagement's listener.");
-            if (TransportProviders.Find(listener.Transport)?.ServesNativeChannel != true)
+            var beaconProvider = TransportProviders.Find(listener.Transport);
+            if (beaconProvider?.ServesNativeChannel != true)
                 return (null,
-                    $"The beacon is the gRPC stream over mTLS; the {listener.Transport} listener cannot carry it. Name the mTLS listener.");
-
-            return (BeaconAuthority(listener.PublicEndpoint), null);
+                    $"The beacon is a live stream and the {listener.Transport} listener carries none; name the mTLS listener or a web listener.");
+            // The baked beacon URL's shape is the client the artifact dials: the
+            // mTLS shape's gRPC stream dials the bare authority, the web family's
+            // WebSocket beacon hangs off the schemed front itself.
+            if (beaconProvider is KestrelEndpointProvider { Posture: ListenerTlsPosture mutual } && mutual == ListenerTlsPosture.MutualAsk)
+                return (BeaconAuthority(listener.PublicEndpoint), null);
+            return (listener.PublicEndpoint, null);
         }
 
         if (body.BeaconEndpoint is { } beaconEndpoint)
@@ -275,7 +280,16 @@ internal static class PayloadBuildRequestParser
             return (BeaconAuthority(trimmed), null);
         }
 
-        if (TransportProviders.Find(enrollTransport)?.ServesNativeChannel == true && enrollEndpoint is { } front)
+        // The derived single-front bake names the beacon only when the front's
+        // own socket IS the stream's socket -- the mTLS shape, whose gRPC
+        // stream dials the bare authority. A web front's native carrier is the
+        // WebSocket beacon hanging off the schemed front, which the single-port
+        // shape already dials without a split: the beacon stays unnamed and the
+        // baked mode picks the client.
+        if (enrollTransport is not null
+            && TransportProviders.Find(enrollTransport) is KestrelEndpointProvider { Posture: ListenerTlsPosture frontMutual }
+            && frontMutual == ListenerTlsPosture.MutualAsk
+            && enrollEndpoint is { } front)
             return (BeaconAuthority(front), null);
         return (null, (string?)null);
     }

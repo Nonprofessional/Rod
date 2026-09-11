@@ -313,7 +313,7 @@ internal sealed class Beacon : ICheckInClient
         // routes to them. Both die with the stream: the finally cancels every
         // channel and waits out its pumps.
         var writeGate = new SemaphoreSlim(1, 1);
-        var liveChannels = new ConcurrentDictionary<string, LiveChannel>();
+        var liveChannels = new ConcurrentDictionary<string, BeaconLiveChannel>();
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
@@ -518,12 +518,12 @@ internal sealed class Beacon : ICheckInClient
     private void StartChannel(
         AsyncDuplexStreamingCall<Frame, Frame> call,
         SemaphoreSlim writeGate,
-        ConcurrentDictionary<string, LiveChannel> liveChannels,
+        ConcurrentDictionary<string, BeaconLiveChannel> liveChannels,
         TaskRequest task,
         CapabilityChannelHandler handler,
         CancellationToken lifetime)
     {
-        var channel = new LiveChannel(
+        var channel = new BeaconLiveChannel(
             task.TaskId,
             (frame, ct) => WriteFrameAsync(call, writeGate, frame, ct));
         liveChannels[task.TaskId] = channel;
@@ -538,8 +538,8 @@ internal sealed class Beacon : ICheckInClient
     private async Task DeliverChannelAsync(
         AsyncDuplexStreamingCall<Frame, Frame> call,
         SemaphoreSlim writeGate,
-        ConcurrentDictionary<string, LiveChannel> liveChannels,
-        LiveChannel channel,
+        ConcurrentDictionary<string, BeaconLiveChannel> liveChannels,
+        BeaconLiveChannel channel,
         TaskRequest task,
         CapabilityChannelHandler handler,
         CancellationToken lifetime)
@@ -566,7 +566,7 @@ internal sealed class Beacon : ICheckInClient
     // a channel that already ended, or input that raced the stream.
     private void RouteChannelInput(
         Frame frame,
-        ConcurrentDictionary<string, LiveChannel> liveChannels)
+        ConcurrentDictionary<string, BeaconLiveChannel> liveChannels)
     {
         ChannelInput input;
         try
@@ -593,56 +593,9 @@ internal sealed class Beacon : ICheckInClient
     // ChannelInput frames into, the write binding that streams output chunks
     // upstream through the stream's write gate, and the delivery task that
     // reports the handler's final TaskResult. Implements IChannelStream, so
-    // the handler never touches the transport (architecture.md Sec 10.3).
-    private sealed class LiveChannel : IChannelStream
-    {
-        // The input queue bound: operator input arrives at typing speed, and a
-        // channel whose shell cannot drain it is stuck -- dropping a queued
-        // keystroke is not an option, so a full queue fails the write and the
-        // input is logged dropped rather than silently buffered without bound.
-        private const int MaxQueuedInputs = 128;
-
-        private readonly string _taskId;
-        private readonly Func<Frame, CancellationToken, ValueTask> _writeFrame;
-        private readonly System.Threading.Channels.Channel<(byte[]? Data, bool Eof)> _input =
-            System.Threading.Channels.Channel.CreateBounded<(byte[]? Data, bool Eof)>(MaxQueuedInputs);
-
-        public LiveChannel(string taskId, Func<Frame, CancellationToken, ValueTask> writeFrame)
-        {
-            _taskId = taskId;
-            _writeFrame = writeFrame;
-        }
-
-        /// <summary>The delivery task reporting this channel's final TaskResult.</summary>
-        public Task Delivery { get; set; } = Task.CompletedTask;
-
-        public async ValueTask WriteOutputAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
-        {
-            var output = new ChannelOutput
-            {
-                TaskId = _taskId,
-                Data = ByteString.CopyFrom(data.Span),
-            };
-            await _writeFrame(
-                new Frame
-                {
-                    Payload = ByteString.CopyFrom(output.ToByteArray()),
-                    Kind = FrameKind.ChannelOutput,
-                },
-                cancellationToken);
-        }
-
-        public ValueTask<(byte[]? Data, bool Eof)> ReadInputAsync(CancellationToken cancellationToken)
-            => _input.Reader.ReadAsync(cancellationToken);
-
-        // Hands one routed input frame to the handler's parked read. Returns
-        // false when the queue is full; the router logs the drop.
-        public bool Receive(byte[] data, bool eof) => _input.Writer.TryWrite((data, eof));
-
-        // Completes the input side so a parked read unblocks instead of
-        // waiting on input that will never come.
-        public void CompleteInput() => _input.Writer.TryComplete();
-    }
+    // the handler never touches the transport (architecture.md Sec 10.3) --
+    // the shared BeaconLiveChannel, extracted so the WebSocket stream client
+    // binds the same shape to its own writer.
 
     // How long a poll-mode read waits for the next downstream frame before
     // deciding the queue is drained. The server pushes tasking the moment it

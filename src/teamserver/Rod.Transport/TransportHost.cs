@@ -771,6 +771,12 @@ public static class TransportHost
                 configureServices?.Invoke(services);
             })
             .Configure(app => app
+                // The WebSocket beacon's upgrade support: AcceptWebSocketAsync
+                // needs the middleware on a real Kestrel bind (the TestServer
+                // harness upgrades without it, which is why the gap only
+                // shows on a socket). No options: the beacon route owns its
+                // own keep-alive and buffer discipline.
+                .UseWebSockets()
                 .UseRouting()
                 .UseAuthentication()
                 .UseAuthorization()

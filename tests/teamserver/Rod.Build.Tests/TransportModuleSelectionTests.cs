@@ -24,14 +24,29 @@ public class TransportModuleSelectionTests : IDisposable
     [Fact]
     public void Select_AWebFrontWithoutABeaconSplit_CompilesTheWebCycleOnly()
     {
-        // The mainstream single-port shape: an http(s) enroll front with no
-        // named beacon endpoint derives a schemed beacon URL, so the walk is
-        // web-only and the stream module (the gRPC client) never compiles.
+        // The mainstream single-port shape on the poll cadence: an http(s)
+        // enroll front with no named beacon endpoint derives a schemed beacon
+        // URL, so the walk is web-only and neither stream module (the gRPC
+        // client, the WebSocket client) ever compiles.
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon");
 
-        var modules = TransportModuleSelection.Select(profile);
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
 
         Assert.Equal(CheckInModules.Web, modules);
+        Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
+    public void Select_AWebFrontOnStreamMode_CompilesTheWebSocketStreamOnly()
+    {
+        // The web posture's interactive tier: the same schemed walk, with the
+        // baked mode holding the connection open -- the WebSocket client
+        // compiles and neither the POST cycle nor the gRPC client does.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon");
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+
+        Assert.Equal(CheckInModules.WebSocket, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -39,34 +54,52 @@ public class TransportModuleSelectionTests : IDisposable
     public void Select_AnMtlsBeaconAuthority_CompilesTheStreamOnly()
     {
         // The named-beacon shape: the parser bakes the mTLS socket as a bare
-        // host:port, so the walk is stream-only and the web cycle never
-        // compiles.
+        // host:port, so the walk is stream-only and the mode never picks a
+        // web client.
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
         {
             BeaconEndpoint = "c2.example.test:8443",
         };
 
-        var modules = TransportModuleSelection.Select(profile);
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
 
         Assert.Equal(CheckInModules.Stream, modules);
         Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
     [Fact]
-    public void Select_AMixedWalk_KeepsBothClients()
+    public void Select_AMixedWalk_KeepsEveryClientItCanDial()
     {
         // A stream primary with a web fallback crosses shapes mid-run when
-        // the primary burns: both clients must compile or the walk strands
-        // the artifact on the fallback's front.
+        // the primary burns: the gRPC client and the fallback's client must
+        // both compile or the walk strands the artifact on the fallback's
+        // front -- on a poll bake that fallback client is the POST cycle.
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
         {
             BeaconEndpoint = "c2.example.test:8443",
             FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
         };
 
-        var modules = TransportModuleSelection.Select(profile);
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
 
         Assert.Equal(CheckInModules.Web | CheckInModules.Stream, modules);
+        Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
+    public void Select_AMixedWalkOnStreamMode_KeepsTheWebSocketFallback()
+    {
+        // The same crossing walk on a stream bake: the fallback's schemed URL
+        // dials the WebSocket client when the walk reaches it.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "c2.example.test:8443",
+            FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+
+        Assert.Equal(CheckInModules.WebSocket | CheckInModules.Stream, modules);
         Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -85,7 +118,7 @@ public class TransportModuleSelectionTests : IDisposable
             },
         };
 
-        var modules = TransportModuleSelection.Select(profile);
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
 
         Assert.Equal(CheckInModules.Web, modules);
     }
@@ -94,15 +127,15 @@ public class TransportModuleSelectionTests : IDisposable
     public void Select_AMisshapenSchemedBeaconEndpoint_IsTheWebCycle()
     {
         // The classifier follows the URL's own shape, not why it was named:
-        // a schemed beacon endpoint runs the envelope cycle at run time, so
-        // the trim must keep the web module for it (hand-built params can
+        // a schemed beacon endpoint runs a web client at run time, so the
+        // trim must keep the mode's web module for it (hand-built params can
         // carry one even though the parser bares every named beacon).
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
         {
             BeaconEndpoint = "https://front.example.test",
         };
 
-        var modules = TransportModuleSelection.Select(profile);
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
 
         Assert.Equal(CheckInModules.Web, modules);
     }

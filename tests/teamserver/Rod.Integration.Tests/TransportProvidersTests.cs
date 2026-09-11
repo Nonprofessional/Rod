@@ -45,16 +45,18 @@ public class TransportProvidersTests
     }
 
     [Theory]
-    [InlineData("http", false)]
-    [InlineData("https", false)]
+    [InlineData("http", true)]
+    [InlineData("https", true)]
     [InlineData("mtls", true)]
     [InlineData("dns", false)]
     [InlineData("smb", false)]
     [InlineData("tcp", false)]
     public void Carriers_DeclareTheNativeChannelTruthPerTransport(string transport, bool servesNative)
     {
-        // The build parser's beacon rule reads this: only the transport whose
-        // carriers include the beacon stream may be named as a build's beacon.
+        // The build parser's beacon rule reads this: a transport whose
+        // carriers include a native one may be named as a build's beacon --
+        // the mTLS socket's gRPC stream and the web family's WebSocket
+        // beacon both hold live channels; the socket-owning polls do not.
         var provider = TransportProviders.Find(transport);
 
         Assert.NotNull(provider);

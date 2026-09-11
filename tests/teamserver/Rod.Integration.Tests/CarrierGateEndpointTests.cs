@@ -75,6 +75,32 @@ public class CarrierGateEndpointTests
     }
 
     [Fact]
+    public async Task ChannelVerb_IsIssued_ForAStreamModeWebBuild()
+    {
+        // The web posture's interactive tier: a stream-mode build against a
+        // web front dials the WebSocket beacon, so the baked mode stamps the
+        // native carrier and the channel verb is claimable without any
+        // split-socket naming.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            await SavePayloadAsync(host, tokenId, engagementId,
+                endpoint: "https://front.example.com:8443", beaconEndpoint: null, mode: "stream");
+            var implantId = await EnrollAsync(client, secret);
+
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
+
+            issued.EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
     public async Task ChannelVerb_IsIssued_WhenNoBuildProfileResolved()
     {
         // A manually minted token names no payload, so the carrier set stays
@@ -125,14 +151,15 @@ public class CarrierGateEndpointTests
     }
 
     // The enroll-side derivation reads the payload record the token resolves
-    // (Endpoint, BeaconEndpoint, the build profile's fallbacks); the fields it
-    // does not read are filler.
+    // (Endpoint, BeaconEndpoint, the build profile's mode and fallbacks);
+    // the fields it does not read are filler.
     private static async Task SavePayloadAsync(
         IHost host,
         Guid tokenId,
         string engagementId,
         string endpoint,
-        string? beaconEndpoint)
+        string? beaconEndpoint,
+        string? mode = null)
     {
         var payloads = host.Services.GetRequiredService<IPayloadStore>();
         await payloads.SaveAsync(new PayloadRecord(
@@ -147,6 +174,7 @@ public class CarrierGateEndpointTests
             BuiltAt: DateTimeOffset.UtcNow,
             Endpoint: endpoint,
             BeaconEndpoint: beaconEndpoint,
-            TokenId: tokenId));
+            TokenId: tokenId,
+            Build: mode is null ? null : new PayloadBuildProfile { Mode = mode }));
     }
 }

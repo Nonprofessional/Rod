@@ -558,11 +558,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   transport-independent. The web family additionally serves the WebSocket
   beacon (`GET /implants/beacon/stream`, extending/implants.md): the same
   live session the gRPC stream runs, over the envelope's own auth and frame
-  grammar, so a from-scratch web implant can hold the interactive channel
-  without a gRPC stack; the http/https transports do not yet declare the
-  beacon-stream carrier for issuance gating (the reference implant's
-  WebSocket client is the remaining step), so the mTLS listener remains the
-  only listener a build may name as its beacon today.
+  grammar, so a web-fronted implant holds the interactive tier without a
+  gRPC stack -- the reference implant's stream-mode web build dials it, and
+  a poll-mode build keeps the envelope POST cycle. The http/https transports
+  declare the beacon-stream carrier for issuance gating alongside mTLS, so
+  any of the three may be named as a build's beacon.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
   it: the operator API and UI in the clear, and check-ins identified by the

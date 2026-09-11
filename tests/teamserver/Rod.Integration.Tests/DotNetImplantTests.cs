@@ -828,9 +828,12 @@ public class DotNetImplantTests
             try
             {
                 var httpsStderr = new StringBuilder();
+                var httpsStdout = new StringBuilder();
                 var httpsImplant = StartBuiltArtifact(artifactPath);
                 httpsImplant.ErrorDataReceived += (_, e) => { if (e.Data is not null) httpsStderr.AppendLine(e.Data); };
+                httpsImplant.OutputDataReceived += (_, e) => { if (e.Data is not null) httpsStdout.AppendLine(e.Data); };
                 httpsImplant.BeginErrorReadLine();
+                httpsImplant.BeginOutputReadLine();
                 using (httpsImplant)
                 {
                     try
@@ -839,8 +842,21 @@ public class DotNetImplantTests
                         // implant lingers active on the roster until the staleness
                         // sweep (minutes away), so "some implant is online" is not
                         // enough -- wait for this leg's own identity to appear.
-                        var implantId = await WaitForNewImplantOnlineAsync(
-                            env, engagementId, firstLegImplantId, deadline: TimeSpan.FromSeconds(60), httpsStderr);
+                        string implantId;
+                        try
+                        {
+                            implantId = await WaitForNewImplantOnlineAsync(
+                                env, engagementId, firstLegImplantId, deadline: TimeSpan.FromSeconds(60), httpsStderr);
+                        }
+                        catch (TimeoutException)
+                        {
+                            // Give the async pumps a beat to land the last lines,
+                            // then surface both pipes -- the artifact narrates to
+                            // whichever stream its baked profile wired.
+                            await Task.Delay(500);
+                            throw new TimeoutException("The https-front implant never appeared online. Implant stderr:\n"
+                                + httpsStderr + "\nImplant stdout:\n" + httpsStdout);
+                        }
                         TaskBody task;
                         try
                         {
@@ -849,7 +865,8 @@ public class DotNetImplantTests
                         }
                         catch (TimeoutException)
                         {
-                            throw new TimeoutException("The https-front task never completed. Implant stderr:\n" + httpsStderr);
+                            throw new TimeoutException("The https-front task never completed. Implant stderr:\n" + httpsStderr
+                                + "\nImplant stdout:\n" + httpsStdout);
                         }
                         Assert.Equal("Succeeded", task.Outcome);
                         Assert.Contains("rod-envelope-https", task.Output);
