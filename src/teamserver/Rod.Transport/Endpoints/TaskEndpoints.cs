@@ -161,6 +161,7 @@ public static class TaskEndpoints
             return ex.Reason switch
             {
                 TaskRejectionReason.UnsupportedVerbForClass
+                or TaskRejectionReason.NoChannelCarrier
                 or TaskRejectionReason.ImplantRetired
                 or TaskRejectionReason.EngagementClosed
                     => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),

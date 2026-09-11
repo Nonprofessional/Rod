@@ -129,6 +129,14 @@ public enum TaskRejectionReason
     /// </summary>
     UnsupportedVerbForClass,
 
+    /// <summary>
+    /// The verb runs as a live channel and none of the implant's baked
+    /// carriers holds a stream to run one on (architecture.md Sec 10.3): the
+    /// task could queue but never be claimed. Refused at issuance so the
+    /// operator reads the cause instead of watching a task sit queued.
+    /// </summary>
+    NoChannelCarrier,
+
     /// <summary>The implant id matched no enrolled implant.</summary>
     UnknownImplant,
 

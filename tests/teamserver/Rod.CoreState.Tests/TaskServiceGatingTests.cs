@@ -120,6 +120,88 @@ public class TaskServiceGatingTests
         Assert.Equal(TaskRejectionReason.ImplantRetired, ex.Reason);
     }
 
+    // An implant stamped with its build's baked carrier set (the enrollment
+    // derivation), for the carrier-gate checks below.
+    private static async Task<Implant> EnrollWithCarriersAsync(
+        InMemoryImplantRepository implants,
+        EngagementId engagement,
+        IReadOnlyList<string>? carriers)
+    {
+        var implant = Implant.EnrollChild(
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now,
+            carriers: carriers);
+        await implants.SaveAsync(implant);
+        return implant;
+    }
+
+    [Fact]
+    public async Task IssueAsync_RejectsAChannelVerbWhenNoBakedCarrierHoldsAStream()
+    {
+        // The carrier gate (architecture.md Sec 10.3): an envelope-only
+        // artifact can never claim a channel task, so the refusal lands at
+        // issuance instead of leaving the task queued forever.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(implants, engagement, new[] { "envelope" });
+        var service = NewService(implants);
+
+        var ex = await Assert.ThrowsAsync<TaskRejectedException>(
+            () => service.IssueAsync(
+                new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.interact", "")));
+
+        Assert.Equal(TaskRejectionReason.NoChannelCarrier, ex.Reason);
+    }
+
+    [Fact]
+    public async Task IssueAsync_AllowsAChannelVerbWhenABakedCarrierHoldsAStream()
+    {
+        // The split-socket bake: the beacon entry dials the stream, so the
+        // channel verb is claimable even though the enroll front envelopes.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(
+            implants, engagement, new[] { "envelope", "beacon-stream" });
+        var service = NewService(implants);
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.interact", ""));
+
+        Assert.Equal("shell.interact", issued.Verb);
+    }
+
+    [Fact]
+    public async Task IssueAsync_AllowsAChannelVerbWhenCarriersAreUndeclared()
+    {
+        // Null is the permissive shape (a legacy implant, an unrecognized
+        // build): the dispatch-time claim evaluation alone decides, exactly
+        // as before the stamp existed.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(implants, engagement, carriers: null);
+        var service = NewService(implants);
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "tunnel.forward", "10.0.0.1 80"));
+
+        Assert.Equal("tunnel.forward", issued.Verb);
+    }
+
+    [Fact]
+    public async Task IssueAsync_AllowsOneShotTaskingOnAnEnvelopeOnlyImplant()
+    {
+        // The carrier gate touches channel verbs only: one-shot tasking is
+        // exactly as dispatchable over the envelope as it ever was.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(implants, engagement, new[] { "envelope" });
+        var service = NewService(implants);
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.exec", "whoami"));
+
+        Assert.Equal("shell.exec", issued.Verb);
+    }
+
     [Fact]
     public async Task IssueAsync_DefaultResolverIsTheStrictClassTable()
     {

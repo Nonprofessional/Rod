@@ -204,6 +204,16 @@ public static class EnrollmentEndpoints
             // produces the precise refused-once-more status below.
         }
 
+        // The build the token was minted for, resolved once for everything
+        // the enrollment reads off it: the check-in key binding below, and
+        // the baked carrier set stamped onto the implant -- the derivation
+        // task issuance gates channel verbs on. A token the pre-check could
+        // not verify has no build here; the redeem inside EnrollAsync is
+        // what refuses that enroll.
+        var build = presentedToken is null
+            ? null
+            : await payloads.FindByTokenAsync(presentedToken.Id.Value, cancellationToken);
+
         try
         {
             var enrolled = await service.EnrollAsync(
@@ -211,7 +221,7 @@ public static class EnrollmentEndpoints
                     body.StagerTokenSecret, @class, clientPublicKey, parentImplantId,
                     CleanHostFact(body.Hostname), CleanHostFact(body.Os),
                     CleanHostFact(body.Arch), CleanHostFact(body.Username),
-                    killDate, enrolledViaListenerId),
+                    killDate, enrolledViaListenerId, BakedCarriers.From(build)),
                 cancellationToken);
 
             // The enrollment is recorded (architecture.md Sec 11).
@@ -241,7 +251,7 @@ public static class EnrollmentEndpoints
             // both build paths mint -- names the artifact, and the artifact
             // names the key. From here the implant's envelope check-ins seal
             // under that key; a plaintext body from it is refused.
-            await BindCheckInKeyAsync(enrolled, presentedToken, payloads, checkInKeys, cancellationToken);
+            BindCheckInKeyAsync(enrolled, build, checkInKeys);
 
             var response = new EnrollmentResponse(
                 EnrollStatus.Ok,
@@ -309,19 +319,14 @@ public static class EnrollmentEndpoints
     // downgrade to plaintext frames. A manually minted token names no
     // payload and leaves the implant unbound: its sealed check-ins still
     // authenticate by the key id every sealed body prefixes, but a plaintext
-    // check-in is not refused. A null token means the pre-check could not
-    // verify it; the redeem inside EnrollAsync is what refused the enroll.
-    private static async Task BindCheckInKeyAsync(
+    // check-in is not refused. The build record arrives already resolved (the
+    // carrier derivation above read the same one); null means no build.
+    private static void BindCheckInKeyAsync(
         EnrollmentResult enrolled,
-        RedeemedStagerToken? token,
-        IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
-        CancellationToken cancellationToken)
+        PayloadRecord? build,
+        EnvelopeCheckInKeys checkInKeys)
     {
-        if (token is null)
-            return;
-        var carrier = await payloads.FindByTokenAsync(token.Id.Value, cancellationToken);
-        if (carrier?.EnvelopeKeyId is { } keyId && carrier.EnvelopeKey is { } key)
+        if (build?.EnvelopeKeyId is { } keyId && build.EnvelopeKey is { } key)
             checkInKeys.Bind(enrolled.ImplantId, keyId, key);
     }
 

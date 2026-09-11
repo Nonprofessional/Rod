@@ -108,7 +108,8 @@ public sealed class EnrollmentService
         var implantId = ImplantId.New();
         var implant = Implant.EnrollChild(
             implantId, redeemed.EngagementId, command.KillDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
-            command.Hostname, command.Os, command.Arch, command.Username, command.EnrolledViaListenerId);
+            command.Hostname, command.Os, command.Arch, command.Username, command.EnrolledViaListenerId,
+            command.Carriers);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
@@ -206,6 +207,11 @@ public sealed class EnrollmentService
 /// socket carried the request -- both transport-attributed facts the core just
 /// records; null on either means "not reported" (an open-ended build, an
 /// unattributable socket).
+///
+/// <see cref="Carriers"/> is the baked carrier set derived from the redeemed
+/// token's build (the URL-shape rule over its transport profile), stamped once
+/// at enroll; null means no build profile resolved or its endpoint shapes were
+/// unrecognized -- the permissive shape either way.
 /// </summary>
 public sealed record EnrollCommand(
     string StagerTokenSecret,
@@ -217,7 +223,8 @@ public sealed record EnrollCommand(
     string? Arch = null,
     string? Username = null,
     DateTimeOffset? KillDate = null,
-    Guid? EnrolledViaListenerId = null);
+    Guid? EnrolledViaListenerId = null,
+    IReadOnlyList<string>? Carriers = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,

@@ -75,6 +75,18 @@ public enum ClaimDecision
 /// </summary>
 public static class TransportCapabilities
 {
+    /// <summary>The wire name of <see cref="BeaconStream"/>.</summary>
+    public const string BeaconStreamName = "beacon-stream";
+
+    /// <summary>The wire name of <see cref="Envelope"/>.</summary>
+    public const string EnvelopeName = "envelope";
+
+    /// <summary>The wire name of <see cref="Dns"/>.</summary>
+    public const string DnsName = "dns";
+
+    /// <summary>The wire name of <see cref="MessagePipe"/>.</summary>
+    public const string MessagePipeName = "message-pipe";
+
     /// <summary>The gRPC beacon stream: the native channel carrier.</summary>
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
@@ -96,10 +108,10 @@ public static class TransportCapabilities
     private static readonly ConcurrentDictionary<string, CarrierCapabilities> Carriers =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["beacon-stream"] = BeaconStream,
-            ["envelope"] = Envelope,
-            ["dns"] = Dns,
-            ["message-pipe"] = MessagePipe,
+            [BeaconStreamName] = BeaconStream,
+            [EnvelopeName] = Envelope,
+            [DnsName] = Dns,
+            [MessagePipeName] = MessagePipe,
         };
 
     /// <summary>

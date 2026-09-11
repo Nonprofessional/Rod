@@ -3,6 +3,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Live;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
+using Rod.CoreState.Transports;
 // The domain entity shares its name with System.Threading.Tasks.Task. Pin it
 // here so the service's own Task type wins; the BCL type is reached by its full
 // name where the methods below return it.
@@ -181,6 +182,26 @@ public sealed class TaskService
                 TaskRejectionReason.UnsupportedVerbForClass,
                 $"Verb '{command.Verb}' is not in the {implant.Class} reduced verb set " +
                 "and no capability module is registered for it.");
+        }
+
+        // The carrier gate (architecture.md Sec 8, Sec 10.3): a channel verb
+        // needs an implant whose baked carriers include a native one -- the
+        // artifact dials what its build baked, and the enrollment stamped the
+        // carrier set from that build. Refusing here replaces the old shape
+        // where the task queued forever, deferred by every poll carrier that
+        // claimed around it. Null is the permissive shape (a legacy implant, a
+        // build whose endpoint shapes the derivation did not recognize): the
+        // dispatch-time claim evaluation alone decides, exactly as before the
+        // stamp existed.
+        if (ChannelVerbs.IsChannelVerb(command.Verb)
+            && implant.Carriers is { Count: > 0 }
+            && !HoldsLiveChannel(implant.Carriers))
+        {
+            throw new TaskRejectedException(
+                TaskRejectionReason.NoChannelCarrier,
+                $"Implant {implant.Id} checks in over {string.Join(", ", implant.Carriers)}; " +
+                "no baked carrier holds a live stream, so a channel task could never be " +
+                "claimed. Name the mTLS beacon listener in the build to add one.");
         }
 
         // The engagement's rules-of-engagement scope is the last gate before
@@ -489,6 +510,19 @@ public sealed class TaskService
             task.Output!,
             task.Outcome!.Value,
             task.CompletedAt!.Value);
+    }
+
+    // The carrier gate's half of the question: does any baked carrier hold a
+    // live stream? Read through the capability table so a carrier registered
+    // later answers the same way dispatch will claim it.
+    private static bool HoldsLiveChannel(IReadOnlyList<string> carriers)
+    {
+        foreach (var carrier in carriers)
+        {
+            if (TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native)
+                return true;
+        }
+        return false;
     }
 }
 

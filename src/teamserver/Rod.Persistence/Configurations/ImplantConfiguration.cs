@@ -54,6 +54,22 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         // implant, kept after the session is gone. Null for implants that
         // predate the stamp.
         builder.Property(i => i.LastSeenAt).HasColumnName("last_seen_at");
+        // The baked carrier set derived at enroll from the build's transport
+        // profile: JSON text, the names in bake order. Null for implants that
+        // predate the stamp and for builds whose endpoint shapes the
+        // derivation does not recognize -- the permissive shape either way.
+        builder.Property(i => i.Carriers)
+            .HasColumnName("carriers")
+            .HasConversion(
+                carriers => System.Text.Json.JsonSerializer.Serialize(
+                    carriers == null ? Array.Empty<string>() : carriers.ToArray()),
+                value => System.Text.Json.JsonSerializer.Deserialize<string[]>(value)
+                    ?? Array.Empty<string>())
+            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<IReadOnlyList<string>>(
+                (a, b) => (a == null && b == null)
+                    || (a != null && b != null && a.SequenceEqual(b)),
+                c => c == null ? 0 : c.Aggregate(0, (h, s) => h * 31 + s.GetHashCode(StringComparison.Ordinal)),
+                c => c == null ? Array.Empty<string>() : c.ToArray()));
         // IsRetired is a computed expression; never mapped.
 
         // Engagement scoping is structural: index the engagement column so

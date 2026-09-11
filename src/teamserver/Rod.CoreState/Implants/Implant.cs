@@ -88,6 +88,18 @@ public sealed class Implant
     public Guid? EnrolledViaListenerId { get; }
 
     /// <summary>
+    /// The carrier names the artifact's baked endpoints dial, derived at enroll
+    /// from the build's transport profile (the URL-shape rule: a schemed
+    /// http(s) endpoint is the envelope POST cycle, a bare beacon authority is
+    /// the gRPC stream). The issuance gate reads it to refuse a channel task
+    /// no baked carrier could ever claim (architecture.md Sec 10.3). Null is
+    /// the permissive shape -- an implant enrolled before the stamp, or a
+    /// build whose endpoint shapes the rule does not recognize -- where the
+    /// dispatch-time claim evaluation alone decides, as it always did.
+    /// </summary>
+    public IReadOnlyList<string>? Carriers { get; }
+
+    /// <summary>
     /// When the teamserver last heard from this implant, whether or not a
     /// session is active now -- the durable heartbeat the operator list reads
     /// for an offline implant ("when did we last see this beacon"). Advanced
@@ -122,7 +134,8 @@ public sealed class Implant
         string? os = null,
         string? arch = null,
         string? username = null,
-        Guid? enrolledViaListenerId = null)
+        Guid? enrolledViaListenerId = null,
+        IReadOnlyList<string>? carriers = null)
     {
         Id = id;
         EngagementId = engagementId;
@@ -136,6 +149,7 @@ public sealed class Implant
         Arch = arch;
         Username = username;
         EnrolledViaListenerId = enrolledViaListenerId;
+        Carriers = carriers;
     }
 
     /// <summary>
@@ -177,6 +191,8 @@ public sealed class Implant
     /// that do not know them (tests, pre-field clients) compile unchanged.
     /// <paramref name="enrolledViaListenerId"/> is the listener whose socket carried
     /// the enrollment, when the transport could name one.
+    /// <paramref name="carriers"/> is the baked carrier set the enrollment derived
+    /// from the build's transport profile; null leaves it undeclared.
     /// </summary>
     public static Implant EnrollChild(
         ImplantId id,
@@ -190,7 +206,8 @@ public sealed class Implant
         string? os = null,
         string? arch = null,
         string? username = null,
-        Guid? enrolledViaListenerId = null)
+        Guid? enrolledViaListenerId = null,
+        IReadOnlyList<string>? carriers = null)
     {
         if (killDate is { } fuse && fuse <= createdAt)
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
@@ -199,7 +216,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, enrolledViaListenerId);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, enrolledViaListenerId, carriers);
     }
 
     /// <summary>
