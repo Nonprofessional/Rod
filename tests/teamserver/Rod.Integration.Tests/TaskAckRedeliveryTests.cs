@@ -1,0 +1,388 @@
+using System.Net.Http.Json;
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Google.Protobuf;
+using Grpc.Core;
+using Grpc.Net.Client;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Rod.CoreState;
+using Rod.CoreState.Implants;
+using Rod.CoreState.Pki;
+using Rod.Transport;
+using Rod.V1;
+
+namespace Rod.Integration.Tests;
+
+/// <summary>
+/// Acceptance for the receive-ack arm (architecture.md Sec 10.3 -- the
+/// dispatch strand on a dying stream): a claimed task whose frame was written
+/// into a closing connection used to mark Dispatched and never redeliver --
+/// the failed-write requeue covered only the write, and below the result no
+/// delivery evidence existed. The arm adds a TaskAck frame (the implant acks a
+/// parsed task before executing it), negotiates it at handshake so unupgraded
+/// implants keep today's semantics, requeues ack-less dispatches at stream
+/// end, and makes duplicate results idempotent (first result wins). The
+/// acceptance criterion is the todo's own: a task whose frame rides a stream
+/// that dies before the ack is redelivered on the next check-in, and an
+/// implant that already held it re-acks without running it twice. The implant
+/// here is a minimal in-process client that mirrors the reference ledger's
+/// re-ack posture, so the slice stays about the server's negotiation,
+/// requeue, and first-wins discipline.
+/// </summary>
+public class TaskAckRedeliveryTests
+{
+    [Fact]
+    public async Task AcklessDispatch_OnDyingStream_IsRedeliveredOnTheNextCheckIn()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (implant, leaf, key) = await env.EnrollImplantAsync();
+
+        string taskId;
+        using (var first = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true))
+        {
+            Assert.True(first.AcksEcho);
+
+            var (issued, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo strand");
+            taskId = issued;
+            var original = await first.ReadTaskAsync();
+            Assert.Equal(taskId, original.TaskId);
+
+            // The stream dies before the ack: the connection closes holding a
+            // dispatch the server never saw evidence for.
+        }
+
+        // The next check-in redelivers it: the stream's end returned the
+        // ack-less dispatch to the queue, and the reconnect's writer claims
+        // from it.
+        using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
+        var redelivered = await second.ReadTaskAsync();
+        Assert.Equal(taskId, redelivered.TaskId);
+
+        // An implant that already held it re-acks without running it twice,
+        // then reports the outcome; the strand closes on the task itself.
+        await second.AckAsync(redelivered.TaskId);
+        await second.ReportAsync(redelivered, TaskOutcome.Succeeded, "strand closed");
+        var done = await env.WaitUntilTaskCompletesAsync(implant.EngagementId, redelivered.TaskId);
+        Assert.Equal("Succeeded", done!.Outcome);
+    }
+
+    [Fact]
+    public async Task AckedDispatch_OnDyingStream_IsNotRedelivered()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (implant, leaf, key) = await env.EnrollImplantAsync();
+
+        string taskId;
+        using (var first = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true))
+        {
+            var (issued, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo held");
+            taskId = issued;
+            var task = await first.ReadTaskAsync();
+            Assert.Equal(taskId, task.TaskId);
+
+            // The ack crossed before the stream died: the server holds
+            // delivery evidence, so the dispatch stands and the result --
+            // whenever the implant next reports it -- is what completes it.
+            await first.AckAsync(taskId);
+        }
+
+        using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
+        Assert.False(await second.TaskArrivesAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal("Dispatched", (await env.GetTaskAsync(implant.EngagementId, taskId))!.Status);
+
+        await second.ReportIdAsync(taskId, TaskOutcome.Succeeded, "reported after the reconnect");
+        var done = await env.WaitUntilTaskCompletesAsync(implant.EngagementId, taskId);
+        Assert.Equal("Succeeded", done!.Outcome);
+    }
+
+    [Fact]
+    public async Task UnadvertisedImplant_KeepsTodaysDispatchSemantics()
+    {
+        // The evolution rules (extending/implants.md): no new mandatory work
+        // on the task path. An implant that does not advertise the arm never
+        // gets a requeue -- a written frame counts as delivered, exactly as
+        // before the arm existed -- and a later handshake on the same implant
+        // negotiates fresh (the arm is per handshake, never sticky).
+        await using var env = await TestEnv.StartAsync();
+        var (implant, leaf, key) = await env.EnrollImplantAsync();
+
+        string taskId;
+        using (var first = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: false))
+        {
+            Assert.False(first.AcksEcho);
+            var (issued, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo legacy");
+            taskId = issued;
+            var task = await first.ReadTaskAsync();
+            Assert.Equal(taskId, task.TaskId);
+        }
+
+        using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: false);
+        Assert.False(await second.TaskArrivesAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal("Dispatched", (await env.GetTaskAsync(implant.EngagementId, taskId))!.Status);
+
+        // The same implant may adopt the arm on its next handshake: the
+        // negotiation is per connection, so a stream-mode artifact that
+        // upgrades mid-run gets the arm exactly where it asked for it.
+        using var third = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
+        Assert.True(third.AcksEcho);
+        await third.ReportIdAsync(taskId, TaskOutcome.Succeeded, "closed on an ack-negotiating stream");
+        var done = await env.WaitUntilTaskCompletesAsync(implant.EngagementId, taskId);
+        Assert.Equal("Succeeded", done!.Outcome);
+    }
+
+    [Fact]
+    public async Task DuplicateResult_IsIdempotent_FirstWins()
+    {
+        // The retransmission tolerance the arm requires: an implant resends a
+        // cached result after a stream death, and either the original or the
+        // resend may land first -- never both. A second result for a
+        // completed task changes nothing.
+        await using var env = await TestEnv.StartAsync();
+        var (implant, leaf, key) = await env.EnrollImplantAsync();
+        using var connection = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
+
+        var (taskId, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo once");
+        var task = await connection.ReadTaskAsync();
+        await connection.AckAsync(taskId);
+        await connection.ReportAsync(task, TaskOutcome.Succeeded, "the first answer");
+        var done = await env.WaitUntilTaskCompletesAsync(implant.EngagementId, taskId);
+        Assert.Equal("the first answer", done!.Output);
+
+        await connection.ReportAsync(task, TaskOutcome.Failed, "a late duplicate with different content");
+        await Task.Delay(500);
+        var reread = await env.GetTaskAsync(implant.EngagementId, taskId);
+        Assert.Equal("the first answer", reread!.Output);
+        Assert.Equal("Succeeded", reread.Outcome);
+    }
+
+    /// <summary>
+    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// plain-HTTP operator API -- the same harness shape the replay-nonce
+    /// acceptance uses.
+    /// </summary>
+    private sealed class TestEnv : IAsyncDisposable
+    {
+        public IHost Host { get; private set; } = null!;
+        public HttpClient Http { get; private set; } = null!;
+        public int MtlsPort { get; private set; }
+        public int HttpPort { get; private set; }
+
+        public static async Task<TestEnv> StartAsync()
+        {
+            var env = new TestEnv();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
+            env.MtlsPort = TestSupport.GetFreeTcpPort();
+
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
+                .ConfigureWebHost(webBuilder => webBuilder
+                    .UseRodMtls(env.MtlsPort)
+                    .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
+                .Build();
+            await env.Host.StartAsync();
+
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
+            return env;
+        }
+
+        public async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa Key)> EnrollImplantAsync()
+        {
+            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>();
+            var implants = Host.Services.GetRequiredService<IImplantRepository>();
+            var clock = Host.Services.GetRequiredService<TimeProvider>();
+            var now = clock.GetUtcNow();
+            var implant = Implant.Enroll(
+                ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Stage2, now);
+            await implants.SaveAsync(implant);
+
+            var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var issued = await ca.IssueWithKeyAsync(
+                new ImplantCertificateSubject(implant.Id, implant.EngagementId), key, CancellationToken.None);
+            return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), key);
+        }
+
+        public async Task<BeaconConnection> ConnectBeaconAsync(
+            Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseTaskAcks)
+            => await BeaconConnection.OpenAsync(this, implant, leaf, key, advertiseTaskAcks);
+
+        public async Task<(string TaskId, string Verb)> IssueTaskAsync(
+            Implant implant, string verb, string arguments)
+        {
+            var issued = await Http.PostAsJsonAsync(
+                $"/engagements/{implant.EngagementId}/tasks",
+                new { ImplantId = implant.Id.ToString(), Verb = verb, Arguments = arguments });
+            issued.EnsureSuccessStatusCode();
+            var body = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+            Assert.NotNull(body);
+            return (body!.TaskId, body.Verb);
+        }
+
+        public async Task<TaskBody?> GetTaskAsync(EngagementId engagementId, string taskId)
+            => await Http.GetFromJsonAsync<TaskBody>(
+                $"/engagements/{engagementId}/tasks/{taskId}");
+
+        public async Task<TaskBody?> WaitUntilTaskCompletesAsync(EngagementId engagementId, string taskId)
+        {
+            var end = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+            while (DateTimeOffset.UtcNow < end)
+            {
+                var task = await GetTaskAsync(engagementId, taskId);
+                if (task is { Status: "Completed" })
+                    return task;
+                await Task.Delay(250);
+            }
+            throw new TimeoutException($"Task {taskId} did not complete within the deadline.");
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Http?.Dispose();
+            if (Host is not null)
+                await Host.StopAsync();
+            Host?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The minimal in-process implant: mTLS gRPC check-in with the handshake
+    /// (optionally advertising the receive-ack arm), the ack frame, and result
+    /// reporting. It never executes tasking -- the suite is about the server's
+    /// requeue, negotiation, and first-wins discipline.
+    /// </summary>
+    private sealed class BeaconConnection : IDisposable
+    {
+        public bool AcksEcho { get; private set; }
+
+        private readonly GrpcChannel _channel;
+        private readonly AsyncDuplexStreamingCall<Frame, Frame> _call;
+
+        private BeaconConnection(
+            GrpcChannel channel, AsyncDuplexStreamingCall<Frame, Frame> call, bool acksEcho)
+        {
+            _channel = channel;
+            _call = call;
+            AcksEcho = acksEcho;
+        }
+
+        public static async Task<BeaconConnection> OpenAsync(
+            TestEnv env, Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseTaskAcks)
+        {
+            var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>()
+                .GetCaCertificate();
+            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, key);
+            var handler = new SocketsHttpHandler
+            {
+                SslOptions = new SslClientAuthenticationOptions
+                {
+                    ClientCertificates = new X509CertificateCollection { leafWithKey },
+                    RemoteCertificateValidationCallback = (_, cert, chain, _) =>
+                    {
+                        if (cert is null || chain is null)
+                            return false;
+                        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+                        chain.ChainPolicy.ExtraStore.Add(ca);
+                        return chain.Build((X509Certificate2)cert)
+                            && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
+                    },
+                },
+            };
+            var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{env.MtlsPort}",
+                new GrpcChannelOptions { HttpHandler = handler, DisposeHttpClient = true });
+            var call = new Beacon.BeaconClient(channel).CheckIn();
+
+            var handshake = new HandshakeRequest
+            {
+                Version = new ProtocolVersion { Major = 1, Minor = 0 },
+                ImplantId = implant.Id.ToString(),
+                TaskAcks = advertiseTaskAcks,
+            };
+            handshake.Capabilities.Add("shell.exec");
+            await call.RequestStream.WriteAsync(new Frame
+            {
+                Payload = ByteString.CopyFrom(handshake.ToByteArray()),
+            });
+
+            Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
+            var response = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+            Assert.Equal(HandshakeStatus.Ok, response.Status);
+            return new BeaconConnection(channel, call, response.TaskAcks);
+        }
+
+        /// <summary>Awaits the next dispatched task frame.</summary>
+        public async Task<TaskRequest> ReadTaskAsync()
+        {
+            Assert.True(await _call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
+            return TaskRequest.Parser.ParseFrom(_call.ResponseStream.Current.Payload);
+        }
+
+        /// <summary>
+        /// Whether any tasking arrives within the window -- the negative
+        /// assertion the no-redelivery cases hang on. Waits without a linked
+        /// token: grpc-dotnet ties MoveNext's token to the whole call, so a
+        /// deadline token would cancel the connection out from under the
+        /// assertions that follow.
+        /// </summary>
+        public async Task<bool> TaskArrivesAsync(TimeSpan window)
+        {
+            var move = _call.ResponseStream.MoveNext(CancellationToken.None);
+            var winner = await System.Threading.Tasks.Task.WhenAny(move, System.Threading.Tasks.Task.Delay(window));
+            if (winner != move)
+                return false;
+            return await move;
+        }
+
+        /// <summary>The receive-ack: delivery evidence for one parsed task.</summary>
+        public async Task AckAsync(string taskId)
+            => await _call.RequestStream.WriteAsync(new Frame
+            {
+                Kind = FrameKind.TaskAck,
+                Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
+            });
+
+        public async Task ReportAsync(TaskRequest task, TaskOutcome outcome, string output)
+            => await ReportIdAsync(task.TaskId, outcome, output);
+
+        public async Task ReportIdAsync(string taskId, TaskOutcome outcome, string output)
+            => await _call.RequestStream.WriteAsync(new Frame
+            {
+                Kind = FrameKind.TaskResult,
+                Payload = ByteString.CopyFrom(new TaskResult
+                {
+                    TaskId = taskId,
+                    Outcome = outcome,
+                    Output = output,
+                }.ToByteArray()),
+            });
+
+        public void Dispose()
+        {
+            try { _call.RequestStream.CompleteAsync().GetAwaiter().GetResult(); } catch { }
+            _call.Dispose();
+            _channel.Dispose();
+        }
+    }
+
+    private sealed class TaskIssuedBody
+    {
+        public string TaskId { get; set; } = "";
+        public string Verb { get; set; } = "";
+    }
+
+    private sealed class TaskBody
+    {
+        public string Status { get; set; } = "";
+        public string? Output { get; set; }
+        public string? Outcome { get; set; }
+    }
+}

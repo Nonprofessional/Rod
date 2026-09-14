@@ -157,4 +157,62 @@ public class FrameRoundTrip
         Assert.Equal(1, restored.Version.Major);
         Assert.Equal("eng-7", restored.EngagementId);
     }
+
+    // The receive-ack arm (architecture.md Sec 10.3 -- the dispatch strand):
+    // the optional handshake advertisement and its echo, plus the ack frame
+    // itself. The unset case is the evolution rule -- an implant that never
+    // advertises leaves the field absent, and a server that does not echo
+    // leaves the response absent, so each side sees exactly the semantics it
+    // asked for.
+
+    [Fact]
+    public void Handshake_TaskAcks_RoundTrip()
+    {
+        var advertised = new HandshakeRequest
+        {
+            Version = new ProtocolVersion { Major = 1, Minor = 0 },
+            ImplantId = "imp-42",
+            TaskAcks = true,
+        };
+        var restoredAdvertised = HandshakeRequest.Parser.ParseFrom(advertised.ToByteArray());
+        Assert.True(restoredAdvertised.HasTaskAcks);
+        Assert.True(restoredAdvertised.TaskAcks);
+
+        var silent = new HandshakeRequest
+        {
+            Version = new ProtocolVersion { Major = 1, Minor = 0 },
+            ImplantId = "imp-42",
+        };
+        var restoredSilent = HandshakeRequest.Parser.ParseFrom(silent.ToByteArray());
+        Assert.False(restoredSilent.HasTaskAcks);
+
+        var echoed = new HandshakeResponse
+        {
+            Status = HandshakeStatus.Ok,
+            TaskAcks = true,
+        };
+        var restoredEcho = HandshakeResponse.Parser.ParseFrom(echoed.ToByteArray());
+        Assert.True(restoredEcho.HasTaskAcks);
+        Assert.True(restoredEcho.TaskAcks);
+
+        var unechoed = new HandshakeResponse { Status = HandshakeStatus.Ok };
+        var restoredUnechoed = HandshakeResponse.Parser.ParseFrom(unechoed.ToByteArray());
+        Assert.False(restoredUnechoed.HasTaskAcks);
+    }
+
+    [Fact]
+    public void TaskAck_RoundTrips()
+    {
+        var original = new Frame
+        {
+            Kind = FrameKind.TaskAck,
+            Payload = ByteString.CopyFrom(new TaskAck { TaskId = "t-1" }.ToByteArray()),
+        };
+
+        var restoredFrame = Frame.Parser.ParseFrom(original.ToByteArray());
+        Assert.Equal(FrameKind.TaskAck, restoredFrame.Kind);
+
+        var restored = TaskAck.Parser.ParseFrom(restoredFrame.Payload);
+        Assert.Equal("t-1", restored.TaskId);
+    }
 }

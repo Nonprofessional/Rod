@@ -80,6 +80,14 @@ beacon-nameable; everything downstream -- the parser's beacon rule, the
 issuance gate, the enrollment's baked-carrier stamp -- reads the table, so
 no other edit is needed for that half.
 
+The same split decides the dispatch strand (architecture.md Sec 10.3): a
+transport that runs its check-ins through `BeaconSessionRunner` -- the live
+session shape -- carries the receive-ack ledger for free, requeueing
+ack-less dispatches when the stream ends; a poll shape answers whole or
+not at all, keeps no ack ledger, and accepts the `TaskAck` frame inertly
+through the shared ingest. Both read the one wire contract; neither edits
+core state.
+
 ## Identity and auth
 
 A transport declares which of the three identity models its check-ins

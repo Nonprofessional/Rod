@@ -231,7 +231,8 @@ internal sealed class WebSocketBeaconStream
             handshake.EngagementId,
             handshake.SessionId,
             handshake.DeployedBy,
-            handshakeRequest.Capabilities);
+            handshakeRequest.Capabilities,
+            handshake.TaskAcks);
 
         // The same session guard the envelope applies: a session closed out
         // from under this handshake ends the stream before the loop starts,

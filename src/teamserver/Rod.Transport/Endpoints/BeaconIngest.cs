@@ -30,13 +30,18 @@ namespace Rod.Transport.Endpoints;
 /// the implant is not on the task the way it is on TaskCompleted). Capabilities
 /// are the advertised verb set, re-passed to each session touch so the
 /// last-seen refresh never clobbers the handshake advertisement.
+/// <see cref="TaskAcks"/> carries the handshake's receive-ack negotiation
+/// (architecture.md Sec 10.3): a stream whose handshake echoed the arm counts
+/// its dispatches delivered only once their acks cross, and requeues the
+/// ack-less remainder when the stream ends.
 /// </summary>
 internal sealed record BeaconSessionContext(
     ImplantId Implant,
     EngagementId EngagementId,
     SessionId SessionId,
     OperatorId OperatorId,
-    IReadOnlyCollection<string> Capabilities);
+    IReadOnlyCollection<string> Capabilities,
+    bool TaskAcks = false);
 
 /// <summary>
 /// Ingests upstream beacon frames -- task results, exfil chunks, staged pulls,
@@ -167,17 +172,25 @@ internal sealed class BeaconConnectionIngest
     /// payload to the caller's sink (each transport answers demands its own
     /// way -- the stream queues them for its dispatch writer, an envelope
     /// check-in answers them in the same response); CHANNEL_OUTPUT appends a
-    /// streaming task's chunk onto its transcript. Non-result, non-exfil
-    /// frames are ignored (keepalives, etc.).
+    /// streaming task's chunk onto its transcript; TASK_ACK hands the
+    /// implant's receive-ack to the caller's sink (architecture.md Sec 10.3 --
+    /// the dispatch strand). Non-result, non-exfil frames are ignored
+    /// (keepalives, etc.).
     /// </summary>
     /// <param name="stagedPullSink">
     /// Receives each validated staged-pull demand. Called only for a pull whose
     /// task belongs to this session's implant and holds a staged payload.
     /// </param>
+    /// <param name="taskAckSink">
+    /// Receives each validated receive-ack. Called only for an ack whose task
+    /// belongs on this session's stream and is still Dispatched; a transport
+    /// with no ack ledger of its own (the poll carriers) passes a no-op.
+    /// </param>
     public async Task IngestAsync(
         BeaconSessionContext session,
         Frame frame,
         Action<TaskId> stagedPullSink,
+        Action<TaskId> taskAckSink,
         CancellationToken cancellationToken)
     {
         switch (frame.Kind)
@@ -191,12 +204,53 @@ internal sealed class BeaconConnectionIngest
             case FrameKind.ChannelOutput:
                 await HandleChannelOutputAsync(session, frame, cancellationToken);
                 return;
+            case FrameKind.TaskAck:
+                await HandleTaskAckAsync(session, frame, taskAckSink, cancellationToken);
+                return;
             case FrameKind.TaskResult:
             case FrameKind.Unspecified:
             default:
                 await HandleTaskResultAsync(session, frame, cancellationToken);
                 return;
         }
+    }
+
+    // A TaskAck frame (architecture.md Sec 10.3 -- the dispatch strand): the
+    // implant parsed the task's frame, which is the delivery evidence the
+    // server below the result never had. The task must belong on this
+    // session's stream -- the same ownership rule every upstream path holds --
+    // and still be Dispatched; an ack for a completed task is a late straggler
+    // with nothing left to clear, and an ack for a foreign task is dropped
+    // rather than handed to the sink. The task's own lifecycle is untouched:
+    // the ack is delivery evidence, not a transition.
+    private async Task HandleTaskAckAsync(
+        BeaconSessionContext session,
+        Frame frame,
+        Action<TaskId> taskAckSink,
+        CancellationToken cancellationToken)
+    {
+        TaskAck ack;
+        try
+        {
+            ack = TaskAck.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            return;
+        }
+
+        if (!TaskId.TryParse(ack.TaskId, out var taskId))
+            return;
+
+        var task = await _taskRecords.FindAsync(taskId, cancellationToken);
+        if (task is null
+            || task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched
+            || !await BelongsToSessionAsync(task, session, cancellationToken))
+        {
+            return;
+        }
+
+        taskAckSink(task.Id);
     }
 
     // A TaskResult frame: capture the outcome into the task and append the audit

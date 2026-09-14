@@ -217,6 +217,29 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         }
     }
 
+    public System.Threading.Tasks.Task<Task?> CompleteAsync(
+        TaskId id,
+        string output,
+        TaskOutcome outcome,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        // The completion runs under the claim lock for the same one-way
+        // serialization the retraction gets: a duplicate result racing the
+        // original sees the Completed status and loses, so the first result
+        // wins (architecture.md Sec 10.3 -- the receive-ack arm's
+        // retransmission tolerance).
+        lock (_claimLock)
+        {
+            if (!_tasks.TryGetValue(id, out var task) || task.Status != TaskStatus.Dispatched)
+                return System.Threading.Tasks.Task.FromResult<Task?>(null);
+
+            task.Complete(output, outcome, at);
+            _tasks[id] = task;
+            return System.Threading.Tasks.Task.FromResult<Task?>(task);
+        }
+    }
+
     // The per-implant replay-nonce counters (architecture.md Sec 9 -- tasking
     // replay nonces). Monotonic for the implant's life in this process, across
     // sessions and transports. Per-process by design here: the in-memory

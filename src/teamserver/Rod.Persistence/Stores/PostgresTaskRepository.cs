@@ -283,6 +283,51 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         return task;
     }
 
+    public async System.Threading.Tasks.Task<Task?> CompleteAsync(
+        TaskId id,
+        string output,
+        TaskOutcome outcome,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // The completion takes the same row lock the retraction takes, for the
+        // same reason: a duplicate result racing the original serializes here,
+        // and the loser reads the Completed status and stands down -- the first
+        // result wins (architecture.md Sec 10.3). The entity's own Complete
+        // refuses anything but Dispatched, so the transition itself carries the
+        // one-way guarantee the lock serializes.
+        var completedId = await db.Database.SqlQuery<Guid>($"""
+            SELECT task_id AS "Value"
+            FROM tasks
+            WHERE task_id = {id.Value}
+            FOR UPDATE
+            """).FirstOrDefaultAsync(cancellationToken);
+
+        if (completedId == Guid.Empty)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        var task = await db.Tasks.FirstAsync(t => t.Id == id, cancellationToken);
+        if (task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched)
+        {
+            // A prior result already completed it (or it never left the queue).
+            // Null, not the untouched task: the caller treats a lost race as a
+            // duplicate to drop, and has no use for the state it lost to.
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        task.Complete(output, outcome, at);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return task;
+    }
+
     public async System.Threading.Tasks.Task<ulong> NextNonceAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default)

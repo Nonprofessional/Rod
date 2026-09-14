@@ -153,7 +153,8 @@ internal sealed class StreamBeaconBridge
                 handshake.EngagementId,
                 handshake.SessionId,
                 handshake.DeployedBy,
-                handshakeRequest.Capabilities);
+                handshakeRequest.Capabilities,
+                handshake.TaskAcks);
 
             // One presence touch per check-in, then the session guard: if the
             // session this handshake holds was closed out from under it, stop
@@ -171,7 +172,11 @@ internal sealed class StreamBeaconBridge
 
             // Ingest the request's remaining frames (results, exfil chunks,
             // staged pulls, channel output) through the shared composition,
-            // collecting validated staged demands for the response.
+            // collecting validated staged demands for the response. Receive
+            // acks from a negotiated implant are accepted and handed to a
+            // no-op sink: a poll carrier keeps no ack ledger -- one connection
+            // is one check-in, answered whole or not at all -- so the arm's
+            // requeue never applies on this path (architecture.md Sec 10.3).
             var connection = _ingest.OpenConnection();
             var stagedPulls = new List<TaskId>();
             for (var i = 1; i < frames.Count; i++)
@@ -180,6 +185,7 @@ internal sealed class StreamBeaconBridge
                     session,
                     frames[i],
                     stagedPullSink: stagedPulls.Add,
+                    taskAckSink: static _ => { },
                     cancellationToken);
             }
 
@@ -278,9 +284,12 @@ internal sealed class StreamBeaconBridge
                     // binding is the id-alone posture, and the enrolled,
                     // kill-date, and retired gates still apply.
                     CertificateEngagementId: null,
-                    ReplayNonces: request.ReplayNonces),
+                    ReplayNonces: request.ReplayNonces,
+                    TaskAcks: request.TaskAcks),
                 CancellationToken.None);
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
+            return (Response(
+                HandshakeStatus.Ok, result.EngagementId.ToString(),
+                result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
@@ -297,13 +306,15 @@ internal sealed class StreamBeaconBridge
         }
     }
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
+    private static HandshakeResponse Response(
+        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks = false)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
             ReplayNonces = replayNonces,
+            TaskAcks = taskAcks,
         };
 
     private static Frame HandshakeFrame(HandshakeResponse response)

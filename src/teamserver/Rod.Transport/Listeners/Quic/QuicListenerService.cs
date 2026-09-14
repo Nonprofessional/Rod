@@ -286,7 +286,8 @@ internal sealed class QuicListenerService : BackgroundService
                 handshake.EngagementId,
                 handshake.SessionId,
                 handshake.DeployedBy,
-                handshakeRequest.Capabilities);
+                handshakeRequest.Capabilities,
+                handshake.TaskAcks);
 
             // One presence touch, then the session guard: if the session this
             // handshake holds was closed out from under it, stop after the
@@ -365,9 +366,12 @@ internal sealed class QuicListenerService : BackgroundService
                     // binding is the id-alone posture, and the enrolled,
                     // kill-date, and retired gates still apply.
                     CertificateEngagementId: null,
-                    ReplayNonces: request.ReplayNonces),
+                    ReplayNonces: request.ReplayNonces,
+                    TaskAcks: request.TaskAcks),
                 CancellationToken.None);
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
+            return (Response(
+                HandshakeStatus.Ok, result.EngagementId.ToString(),
+                result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
@@ -384,13 +388,15 @@ internal sealed class QuicListenerService : BackgroundService
         }
     }
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
+    private static HandshakeResponse Response(
+        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks = false)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
             ReplayNonces = replayNonces,
+            TaskAcks = taskAcks,
         };
 
     private static Frame HandshakeFrame(HandshakeResponse response)

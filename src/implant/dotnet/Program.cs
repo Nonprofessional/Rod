@@ -114,11 +114,16 @@ internal static class ImplantApp
         // loop re-selects whenever a client yields its run, so the walk's
         // current entry always decides.
         var nonces = new TaskNonceTracker();
+        // The held-task ledger (architecture.md Sec 10.3 -- the dispatch
+        // strand): the dedup and result cache behind the receive-ack arm,
+        // shared the same way, so a task dispatched on one carrier and
+        // redelivered on another is recognized either way.
+        var held = new HeldTaskLedger();
         // The live cadence: starts at the baked sleep/jitter pair, retunable at
         // run time through the beacon.sleep verb (shared by every check-in
         // client covering this run).
         var cadence = new Cadence(config.Sleep, config.Jitter);
-        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, log, cadence);
+        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, held, log, cadence);
         var clients = TransportSelection.CreateClients(setup);
         try
         {

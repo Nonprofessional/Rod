@@ -1233,6 +1233,32 @@ before it parks, so tasks queued while no stream was open are picked up on
 connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
 
+**The dispatch strand.** A written frame used to count as delivered, and below
+the result no delivery evidence existed: a claimed task whose frame rode a
+stream that died stayed Dispatched forever, because the failed-write requeue
+covers only the write. The receive-ack arm closes that strand. An implant
+whose handshake advertised `task_acks` gets the arm echoed, acks every parsed
+`TaskRequest` with a `TaskAck` frame before executing it, and the live stream
+transports (the gRPC stream, the WebSocket beacon, QUIC) hold each dispatched
+task in a per-stream ledger until its ack crosses -- a stream that ends
+holding an ack-less dispatch returns it to the queue, so the task rides the
+next check-in instead of stranding. Delivery is then at-least-once, and the
+implant makes that safe: it recognizes a task it already held (a bounded
+per-run ledger of parsed ids), re-acks it without running it twice, and
+re-sends its cached result when the original delivery died with a stream.
+Duplicate results are idempotent on the server -- the completion transition
+is atomic in the task store, so the first result wins and a retransmit
+changes nothing -- which is also what makes an eager implant safe: either the
+original or the resend may land, never both. The negotiation is deliberately
+per handshake, never sticky on the implant the way the replay-nonce flag is
+(Sec 9): a handshake that stops advertising must drop the arm, or the server
+would requeue dispatches an unupgraded implant already ran. Unupgraded
+implants never advertise and keep today's semantics exactly -- a written
+frame counts as delivered, a lost result leaves the task Dispatched -- and
+the poll carriers (DNS, the plain-HTTP envelope, the pipe/TCP check-ins)
+keep their own posture: their response is answered whole or not at all, they
+hold no ack ledger, and an ack they receive is accepted and inert.
+
 A queued task can be retracted before the implant wakes:
 `POST /engagements/{engagementId}/tasks/{taskId}:cancel` takes the operator's
 own tasking back (the shell command issued in error, the target that went

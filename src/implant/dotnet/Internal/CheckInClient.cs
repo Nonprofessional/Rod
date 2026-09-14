@@ -52,11 +52,11 @@ internal interface ICheckInClient
 /// Everything a check-in client is constructed from: the parsed config (the
 /// check-in mode, kill date, verb set, transport profile), the enrollment it
 /// checks in under, the enroll bundle a derived child reuses, the egress
-/// walk, replay-nonce state, and narration log shared by every client
-/// covering one run, and the live cadence the clients sleep on -- mutable at
-/// run time by the beacon.sleep verb, so every client covering the run
-/// retunes together. One record so the generated transport selection can hand
-/// each compiled-in client the same setup.
+/// walk, replay-nonce state, the held-task ledger, and narration log shared
+/// by every client covering one run, and the live cadence the clients sleep
+/// on -- mutable at run time by the beacon.sleep verb, so every client
+/// covering the run retunes together. One record so the generated transport
+/// selection can hand each compiled-in client the same setup.
 /// </summary>
 internal sealed record CheckInSetup(
     Config Config,
@@ -64,6 +64,7 @@ internal sealed record CheckInSetup(
     EnrollBundle Enroll,
     EgressEndpoints Egress,
     TaskNonceTracker Nonces,
+    HeldTaskLedger Held,
     TextWriter Log,
     Cadence Cadence);
 

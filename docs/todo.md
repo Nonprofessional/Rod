@@ -20,17 +20,3 @@ The transport layer now runs on the published contract
 ([extending/transports.md](extending/transports.md)): a transport
 registers a provider and its carriers, and edits no core. The items below
 are the open ends of that surface and the gaps an engagement can hit.
-
-- [ ] **Close the dispatch strand on a dying stream.** A claimed task
-      whose frame was written into a closing connection marks
-      Dispatched and never redelivers: the requeue covers only the
-      failed write (architecture.md Sec 10.3), and below the result no
-      delivery evidence exists -- the server cannot tell a frame the
-      implant parsed from one that died with the connection. Add a
-      receive-ack frame to the wire contract (the implant acks a
-      parsed task before executing it), negotiate it at handshake so
-      unupgraded implants keep today's semantics, requeue ack-less
-      dispatches at stream end, and make duplicate results idempotent
-      (first result wins). _AC:_ a task whose frame rides a stream that
-      dies before the ack is redelivered on the next check-in, and an
-      implant that already held it re-acks without running it twice.

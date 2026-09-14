@@ -482,10 +482,14 @@ public sealed class TaskService
     }
 
     /// <summary>
-    /// Captures the implant's result into the task and completes it. Throws
-    /// <see cref="InvalidOperationException"/> if the task is not in Dispatched.
-    /// Returns the completed view so the caller (the transport) can build the
-    /// audit event from it.
+    /// Captures the implant's result into the task and completes it. The
+    /// transition is atomic in the repository, so a duplicate result -- the
+    /// receive-ack arm makes retransmits a normal occurrence (architecture.md
+    /// Sec 10.3) -- loses the race and the first result wins. Throws
+    /// <see cref="InvalidOperationException"/> if the task is unknown or no
+    /// longer Dispatched (a prior result already completed it). Returns the
+    /// completed view so the caller (the transport) can build the audit event
+    /// from it.
     /// </summary>
     public async System.Threading.Tasks.Task<TaskCompleted> RecordResultAsync(
         TaskId id,
@@ -493,12 +497,9 @@ public sealed class TaskService
         TaskOutcome outcome,
         CancellationToken cancellationToken = default)
     {
-        var task = await _tasks.FindAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Task {id} is not known.");
-
-        var now = _clock.GetUtcNow();
-        task.Complete(output, outcome, now);
-        await _tasks.SaveAsync(task, cancellationToken);
+        var task = await _tasks.CompleteAsync(id, output, outcome, _clock.GetUtcNow(), cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Task {id} is not known or is no longer dispatched; the first result stands.");
 
         return new TaskCompleted(
             task.Id,

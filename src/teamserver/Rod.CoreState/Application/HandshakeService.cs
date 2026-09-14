@@ -190,10 +190,23 @@ public sealed class HandshakeService
             await _implants.SaveAsync(implant, cancellationToken);
         }
 
+        // 7b. Receive-ack negotiation (architecture.md Sec 10.3 -- the dispatch
+        //     strand on a dying stream). Unlike the replay-nonce arm this is
+        //     strictly per handshake, never sticky on the implant: the
+        //     dangerous direction differs. A sticky replay-nonce flag only
+        //     ever strengthens tasking, but a sticky ack expectation would
+        //     make the server requeue dispatches for a handshake that stopped
+        //     acking -- an unupgraded implant's already-run tasks, delivered
+        //     again. The arm lives exactly as long as the handshake that
+        //     advertised it, so the stream that tracks acks is the stream the
+        //     implant promised them on.
+        var taskAcks = command.TaskAcks;
+
         return new HandshakeResult(
             session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now,
             ReusedSession: priorActive is not null,
-            ReplayNonces: replayNonces);
+            ReplayNonces: replayNonces,
+            TaskAcks: taskAcks);
     }
 }
 
@@ -212,6 +225,9 @@ public sealed class HandshakeService
 /// <see cref="ReplayNonces"/> is the implant's advertisement of the tasking
 /// replay-nonce arm (architecture.md Sec 9); the service makes it sticky on the
 /// implant and reports the effective state back on the result.
+/// <see cref="TaskAcks"/> is the implant's advertisement of the receive-ack arm
+/// (architecture.md Sec 10.3): the advertisement of this handshake only, not a
+/// sticky implant flag -- see HandshakeAsync for why the two arms differ.
 /// </summary>
 public sealed record HandshakeCommand(
     ImplantId ImplantId,
@@ -219,7 +235,8 @@ public sealed record HandshakeCommand(
     int MinorVersion,
     IReadOnlyCollection<string> Capabilities,
     EngagementId? CertificateEngagementId,
-    bool ReplayNonces = false);
+    bool ReplayNonces = false,
+    bool TaskAcks = false);
 
 /// <summary>
 /// Result of a successful handshake: the session the implant holds (freshly
@@ -231,7 +248,9 @@ public sealed record HandshakeCommand(
 /// written only for a new one. The transport echoes the engagement id back so
 /// the implant can confirm its binding. <see cref="ReplayNonces"/> is the
 /// effective replay-nonce state for this implant (sticky once advertised), for
-/// the transport to echo on the handshake response.
+/// the transport to echo on the handshake response. <see cref="TaskAcks"/> is
+/// the receive-ack state for this handshake (never sticky), for the transport
+/// to echo so the stream knows whether to count acks.
 /// </summary>
 public sealed record HandshakeResult(
     SessionId SessionId,
@@ -240,4 +259,5 @@ public sealed record HandshakeResult(
     OperatorId DeployedBy,
     DateTimeOffset At,
     bool ReusedSession = false,
-    bool ReplayNonces = false);
+    bool ReplayNonces = false,
+    bool TaskAcks = false);

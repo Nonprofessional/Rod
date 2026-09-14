@@ -106,7 +106,8 @@ chunk anything larger.
 
 1. The implant speaks first: one `Frame` whose payload is a `HandshakeRequest`
    (protocol version `1.0`, the implant id, the advertised verb list, and
-   optionally the replay-nonce advertisement -- see the signature section).
+   optionally the replay-nonce and receive-ack advertisements -- see the
+   signature section and the dispatch strand below).
 2. The server answers with one `Frame` whose payload is a `HandshakeResponse`.
    `status` must be `1` (`OK`); anything else is **permanent for this
    artifact** -- terminate rather than retry:
@@ -114,8 +115,9 @@ chunk anything larger.
    `5` kill date expired, `6` implant retired.
 3. Thereafter the stream carries tasking downstream (`TaskRequest` payloads,
    no kind set -- discriminate positionally after the handshake) and results
-   upstream (`TaskResult` with `kind = FRAME_KIND_TASK_RESULT`, `ExfilChunk`
-   with `kind = FRAME_KIND_EXFIL_CHUNK`, `StagedPull` with
+   upstream (`TaskResult` with `kind = FRAME_KIND_TASK_RESULT`, `TaskAck`
+   with `kind = FRAME_KIND_TASK_ACK` (the receive-ack arm below),
+   `ExfilChunk` with `kind = FRAME_KIND_EXFIL_CHUNK`, `StagedPull` with
    `kind = FRAME_KIND_STAGED_PULL`, `ChannelOutput` with
    `kind = FRAME_KIND_CHANNEL_OUTPUT`). An upstream frame with `kind`
    unset is tolerated as a `TaskResult` (legacy shape). One downstream frame
@@ -125,6 +127,24 @@ chunk anything larger.
    for kindless frames. The server routes a `ChannelInput` only to an implant
    whose handshake advertised the channel verb, so an implant that never
    opted in never receives a kind-bearing downstream frame.
+
+**The dispatch strand (receive acks).** Set `task_acks` in the handshake and
+the server echoes it: from then on, ack every parsed `TaskRequest` with a
+`TaskAck` frame (its `task_id`) *before* executing it. The ack is delivery
+evidence, not execution evidence -- it says the frame crossed intact. A
+stream that dies before the ack makes the server redeliver the task on the
+next check-in, so delivery is at-least-once and the implant owes two things:
+recognize a task id it already parsed (re-ack it, never run it twice), and
+re-send a cached result when the original delivery died with a stream -- the
+server records first-wins, so a duplicate result is a no-op there. The
+negotiation is per handshake by design: stop advertising and the arm is off
+for that connection, keeping an unupgraded pair on today's semantics (a
+written frame counts as delivered). Over the poll carriers (the envelope,
+the pipe/TCP check-ins) the ack rides the next request body and the server
+accepts it inertly -- those carriers answer whole or not at all and never
+requeue on acks; the dedup still pays, because a task requeued by a dead
+stream can be redelivered over any carrier the run lands on. DNS carries no
+ack at all (no handshake rides it).
 
 **Using the stream:** hold it open for the session (stream mode -- the
 interactive shape, server pushes tasking the moment it is queued) or run
@@ -145,7 +165,8 @@ per-artifact key the build baked (below). One POST is one poll check-in:
 - **Request body:** the sealed envelope (or, on a lab build with check-in
   protection off, the raw framed sequence) whose plaintext is a strictly
   increasing 8-byte big-endian counter ahead of the handshake `Frame` first,
-  then any `TaskResult`, `ExfilChunk`, `StagedPull`, and `ChannelOutput`
+  then any `TaskResult`, `TaskAck`, `ExfilChunk`, `StagedPull`, and
+  `ChannelOutput`
   frames. The server's caps are 2 MiB per frame, 1024 frames, and 16 MiB per
   wire body (the frames inside a sealed body ride a ~3/4 share of that --
   base64 overhead): an oversized frame, count, or body answers `413`,
@@ -581,6 +602,10 @@ Adopt per deployment need; absence degrades the feature, not interop:
   `shell.interact` Failed on its own grammar ("unknown verb" or a one-shot
   refusal), and the server never routes a `ChannelInput` to an implant that
   did not advertise the verb.
+- **Receive acks** -- the dispatch strand above (architecture.md Sec 10.3):
+  the `task_acks` handshake advertisement and the `TaskAck` frame. An
+  implant without it never advertises, never acks, and keeps today's
+  dispatch semantics exactly -- a written frame counts as delivered.
 - **DNS check-ins** -- the TXT-query grammar above, for egress-restricted
   targets where only DNS leaves the network. Absence is graceful: an implant
   without it simply beacons over the stream transports.

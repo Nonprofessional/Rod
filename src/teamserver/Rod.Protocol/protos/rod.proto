@@ -57,6 +57,16 @@ enum FrameKind {
   // Operator input for a live task channel, server to implant: the downstream
   // half of the streaming task shape. The only kind-bearing downstream frame.
   FRAME_KIND_CHANNEL_INPUT = 5;
+  // The implant's receive-ack for a dispatched task (architecture.md Sec
+  // 10.3 -- the dispatch strand): sent the moment a TaskRequest is parsed,
+  // before the task executes, so the server holds delivery evidence above
+  // the result. A stream that ends holding a dispatch whose ack never
+  // arrived requeues the task for the next check-in; a redelivered task the
+  // implant already holds is re-acked without running twice. Negotiated at
+  // handshake (HandshakeRequest.task_acks) -- an implant that never
+  // advertised keeps today's dispatch semantics, and the server never waits
+  // on an ack it was not promised.
+  FRAME_KIND_TASK_ACK = 6;
 }
 
 message Frame {
@@ -145,6 +155,19 @@ message ChannelInput {
   bool eof = 3;
 }
 
+// The implant's receive-ack for one dispatched task, sent upstream as kind
+// FRAME_KIND_TASK_ACK the moment the TaskRequest is parsed and before the task
+// executes (architecture.md Sec 10.3 -- the dispatch strand). The ack is
+// delivery evidence, not execution evidence: it says the frame crossed intact,
+// not that the verb ran -- the TaskResult remains the outcome record, and
+// either may die with a stream the other survived. task_id echoes the
+// TaskRequest it answers; a fronted task's ack rides the fronting parent's
+// stream. Unsigned like every upstream frame: it rides the authenticated
+// channel the TaskRequest arrived on.
+message TaskAck {
+  string task_id = 1;
+}
+
 // Enrollment outcome, mapped from the stager-token redeem result
 // (architecture.md Sec.9). The transport endpoint maps each redeem failure to a
 // distinct status so an implant gets an actionable reason, not just "no".
@@ -193,6 +216,18 @@ message HandshakeRequest {
   // replay_nonces on the HandshakeResponse and stamps each dispatched task
   // with a per-implant monotonic task_nonce covered by the signature.
   optional bool replay_nonces = 4;
+  // The implant's opt-in to the receive-ack arm (architecture.md Sec 10.3 --
+  // the dispatch strand on a dying stream): absent or false, dispatch keeps
+  // today's semantics exactly -- a written frame counts as delivered and a
+  // lost result leaves the task Dispatched -- so a Tier 0 implant
+  // interoperates unchanged. Set, the server echoes task_acks on the
+  // HandshakeResponse and expects a TaskAck for every dispatched TaskRequest
+  // on that stream; a stream that ends holding an ack-less dispatch requeues
+  // it, so the task rides the next check-in instead of stranding. The
+  // negotiation is per handshake, deliberately not sticky: unlike
+  // replay_nonces, a handshake that stops advertising must drop the arm, or
+  // the server would requeue dispatches an unupgraded implant already ran.
+  optional bool task_acks = 5;
 }
 
 // Outcome of the handshake. OK means presence is recorded and the stream is
@@ -229,6 +264,14 @@ message HandshakeResponse {
   // request without the arm -- the fallback that keeps older pairs
   // interoperating.
   optional bool replay_nonces = 4;
+  // Echoed true when the server accepted the implant's task_acks
+  // advertisement (HandshakeRequest.task_acks): from this handshake on, the
+  // stream counts a dispatch as delivered only once its TaskAck crossed, and
+  // requeues the ack-less remainder at stream end. Absent when the implant
+  // did not advertise -- the arm never lands on a stream that did not ask
+  // for it, and a result for a task this server never requeued is recorded
+  // first-wins so a retransmitting implant cannot double-count.
+  optional bool task_acks = 5;
 }
 
 // Tasking over the CheckIn stream. After the handshake the stream

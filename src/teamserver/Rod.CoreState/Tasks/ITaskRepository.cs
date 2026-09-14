@@ -120,6 +120,26 @@ public interface ITaskRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically completes a dispatched task (architecture.md Sec 10.3):
+    /// records the implant's result and marks it Completed at
+    /// <paramref name="at"/>, with the same one-way serialization
+    /// <see cref="ClaimNextPendingAsync"/> gives a dispatch -- so a duplicate
+    /// result loses the race and the first one wins. Returns the completed
+    /// task when this call performed the transition, null when the task is
+    /// unknown or no longer Dispatched (a prior result already completed it).
+    /// The receive-ack arm makes retransmitted results a normal occurrence
+    /// rather than an error -- an implant resends a cached result after a
+    /// stream death, and either the original or the resend may land first,
+    /// never both.
+    /// </summary>
+    System.Threading.Tasks.Task<Task?> CompleteAsync(
+        TaskId id,
+        string output,
+        TaskOutcome outcome,
+        DateTimeOffset at,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Atomically reserves and persists the next per-implant replay nonce
     /// (architecture.md Sec 9 -- tasking replay nonces): returns 1 the first
     /// time and monotonically increases after, so a negotiating implant never

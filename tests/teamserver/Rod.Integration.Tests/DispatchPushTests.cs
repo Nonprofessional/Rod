@@ -167,6 +167,11 @@ public class DispatchPushTests
             TaskId id, DateTimeOffset at, CancellationToken cancellationToken = default)
             => _inner.CancelAsync(id, at, cancellationToken);
 
+        public System.Threading.Tasks.Task<Rod.CoreState.Tasks.Task?> CompleteAsync(
+            TaskId id, string output, Rod.CoreState.Tasks.TaskOutcome outcome, DateTimeOffset at,
+            CancellationToken cancellationToken = default)
+            => _inner.CompleteAsync(id, output, outcome, at, cancellationToken);
+
         public System.Threading.Tasks.Task<ulong> NextNonceAsync(
             ImplantId implant, CancellationToken cancellationToken = default)
             => _inner.NextNonceAsync(implant, cancellationToken);

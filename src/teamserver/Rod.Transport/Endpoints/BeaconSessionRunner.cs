@@ -111,8 +111,16 @@ internal sealed class BeaconSessionRunner
         // alone.
         var inputs = new BeaconChannelSink(_wake, session.Implant);
         using var attached = _channels.Attach(session.Implant, inputs);
-        var reader = ReadResultsAsync(session, connection, read, pulls, linked);
-        var writer = DispatchTasksAsync(session, pulls, inputs, write, linked.Token);
+        // This stream's ack-less dispatch ledger (architecture.md Sec 10.3 --
+        // the dispatch strand on a dying stream): the writer adds each
+        // dispatched task the handshake's receive-ack negotiation covers, the
+        // reader clears each as its ack crosses, and whatever survives to the
+        // stream's end is requeued below -- a task whose frame died with the
+        // connection rides the next check-in instead of stranding Dispatched.
+        // Concurrent because the writer adds while the reader clears.
+        var unacked = new ConcurrentDictionary<TaskId, byte>();
+        var reader = ReadResultsAsync(session, connection, read, pulls, unacked, linked);
+        var writer = DispatchTasksAsync(session, pulls, inputs, write, unacked, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
         // via cancellation (its loop runs for the session), so swallow the
@@ -126,6 +134,28 @@ internal sealed class BeaconSessionRunner
         catch (OperationCanceledException)
         {
             // Expected: the cancelled loop unwinds through the wake wait.
+        }
+
+        // The stream is gone: close the dispatch strand it carried. Every
+        // dispatch still holding no ack is returned to the queue, so the
+        // implant's next check-in redelivers it -- the at-least-once trade the
+        // arm negotiated, safe because a redelivered task an implant already
+        // held is re-acked without running twice. A task that completed in the
+        // race (its result crossed on another stream after its ack died with
+        // this one) refuses the requeue and stands completed: the first result
+        // wins. Streams whose handshake did not negotiate the arm hold nothing
+        // here -- a written frame counts as delivered, today's semantics.
+        foreach (var pending in unacked.Keys)
+        {
+            try
+            {
+                await _tasks.RequeueAsync(pending, CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // The task left Dispatched between the ledger check and here
+                // (completed on an overlapping stream); its result stands.
+            }
         }
 
         // The stream is gone, and a channel is session-scoped (architecture.md
@@ -146,6 +176,7 @@ internal sealed class BeaconSessionRunner
         BeaconConnectionIngest connection,
         BeaconFrameReader read,
         ConcurrentQueue<Guid> stagedPulls,
+        ConcurrentDictionary<TaskId, byte> unacked,
         CancellationTokenSource linked)
     {
         var cancellationToken = linked.Token;
@@ -175,6 +206,7 @@ internal sealed class BeaconSessionRunner
                     stagedPulls.Enqueue(taskId.Value);
                     _wake.Release(session.Implant);
                 },
+                taskAckSink: taskId => unacked.TryRemove(taskId, out _),
                 cancellationToken);
         }
     }
@@ -194,11 +226,12 @@ internal sealed class BeaconSessionRunner
         ConcurrentQueue<Guid> stagedPulls,
         BeaconChannelSink inputs,
         BeaconFrameWriter write,
+        ConcurrentDictionary<TaskId, byte> unacked,
         CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await DispatchNextAsync(session.Implant, write, cancellationToken);
+            await DispatchNextAsync(session, write, unacked, cancellationToken);
             await StreamStagedPullsAsync(stagedPulls, write, cancellationToken);
             await StreamChannelInputsAsync(inputs, write, cancellationToken);
             await _wake.WaitAsync(session.Implant, cancellationToken);
@@ -238,17 +271,20 @@ internal sealed class BeaconSessionRunner
     // children it fronts (architecture.md Sec 5.2): a fronted child's task is
     // claimed here, marked with the child's id on the frame, and executed by
     // this stream on the child's behalf. A no-op write when nothing is queued.
+    // A dispatch the handshake's receive-ack negotiation covers enters the
+    // stream's ack-less ledger here, and leaves it only through its ack.
     private async Task DispatchNextAsync(
-        ImplantId implant,
+        BeaconSessionContext session,
         BeaconFrameWriter write,
+        ConcurrentDictionary<TaskId, byte> unacked,
         CancellationToken cancellationToken)
     {
         var dispatched = await _tasks.DispatchNextAsync(
-            implant, cancellationToken, includeFronted: true);
+            session.Implant, cancellationToken, includeFronted: true);
         if (dispatched is null)
             return;
 
-        var frame = _tasking.MarshalFrame(dispatched, implant);
+        var frame = _tasking.MarshalFrame(dispatched, session.Implant);
 
         // Write downstream first: the dispatch audit records a task the implant
         // actually received. When the write fails, the task returns to the queue
@@ -265,6 +301,8 @@ internal sealed class BeaconSessionRunner
         }
 
         await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
+        if (session.TaskAcks)
+            unacked[dispatched.TaskId] = 0;
     }
 
     // Streams every demanded staged payload downstream, one StagedChunk run

@@ -262,7 +262,8 @@ internal sealed class EnvelopeBeaconCheckIn
             handshake.EngagementId,
             handshake.SessionId,
             handshake.DeployedBy,
-            handshakeRequest.Capabilities);
+            handshakeRequest.Capabilities,
+            handshake.TaskAcks);
 
         // One presence touch per check-in -- a POST is the poll-cadence unit
         // here, not the individual frame. Then the stream's session guard: if
@@ -278,7 +279,11 @@ internal sealed class EnvelopeBeaconCheckIn
 
         // Ingest the request's remaining frames (results, exfil chunks, staged
         // pulls, channel output) through the shared composition, collecting
-        // validated staged demands for the response.
+        // validated staged demands for the response. The receive-ack frames a
+        // negotiated implant sends are accepted here and handed to a no-op
+        // sink: a poll carrier keeps no ack ledger -- its check-in either
+        // completed whole or answered nothing -- so the arm's requeue never
+        // applies on this path (architecture.md Sec 10.3).
         var connection = _ingest.OpenConnection();
         var stagedPulls = new List<TaskId>();
         for (var i = 1; i < frames.Count; i++)
@@ -287,6 +292,7 @@ internal sealed class EnvelopeBeaconCheckIn
                 session,
                 frames[i],
                 stagedPullSink: stagedPulls.Add,
+                taskAckSink: static _ => { },
                 cancellationToken);
         }
 
@@ -391,9 +397,12 @@ internal sealed class EnvelopeBeaconCheckIn
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
                     CertificateEngagementId: identity?.EngagementId,
-                    ReplayNonces: request.ReplayNonces),
+                    ReplayNonces: request.ReplayNonces,
+                    TaskAcks: request.TaskAcks),
                 CancellationToken.None);
-            return (Response(HandshakeStatus.Ok, result.EngagementId.ToString(), result.ReplayNonces), result);
+            return (Response(
+                HandshakeStatus.Ok, result.EngagementId.ToString(),
+                result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
@@ -406,17 +415,19 @@ internal sealed class EnvelopeBeaconCheckIn
                 HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
                 _ => HandshakeStatus.Unspecified,
             };
-            return (Response(status, engagementId: null, replayNonces: false), Handshake: null);
+            return (Response(status, engagementId: null, replayNonces: false, taskAcks: false), Handshake: null);
         }
     }
 
-    internal static HandshakeResponse Response(HandshakeStatus status, string? engagementId, bool replayNonces)
+    internal static HandshakeResponse Response(
+        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks = false)
         => new()
         {
             Status = status,
             Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
             EngagementId = engagementId ?? string.Empty,
             ReplayNonces = replayNonces,
+            TaskAcks = taskAcks,
         };
 
     internal static Frame HandshakeFrame(HandshakeResponse response)
