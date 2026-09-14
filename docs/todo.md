@@ -13,3 +13,42 @@ Lean is the standing default: an addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
+
+## Transports and identity (architecture.md Sec 8, Sec 9)
+
+The transport layer now runs on the published contract
+([extending/transports.md](extending/transports.md)): a transport
+registers a provider and its carriers, and edits no core. The items below
+are the open ends of that surface and the gaps an engagement can hit.
+
+- [ ] **Add the QUIC check-in transport.** An engagement whose egress
+      passes UDP/443 (where HTTP/3-era traffic lives) but blocks TCP has
+      no shape today: the socket-owning family covers TCP, the pipe, and
+      the datagram, not the QUIC stream. Build it as the duplex variant
+      of the socket-owning family through the published contract
+      (System.Net.Quic listener, the self-delimited message framing over
+      its streams), declare its carriers honestly -- duplex means native
+      channels -- and give it the web-posture TLS story a QUIC front
+      needs. _AC:_ a `quic` listener entry created through the operator
+      API carries a check-in end to end, with the provider registration
+      as the only core-side change.
+
+- [ ] **Resolve the https enrollment-ingress gap.** The local-port
+      lookup that stamps an enrollment's listener matches only `http`
+      and `mtls` listeners, so an enrollment arriving on an `https`
+      listener resolves no ingress: the implant record carries no
+      listener id (the listener-delete guard misses it) and the token's
+      engagement-scope check against the socket is skipped. Widen the
+      match to the Kestrel family that serves enrollment, or name why
+      `https` is excluded. _AC:_ an enrollment through an `https`
+      listener records its listener id, and a foreign engagement's token
+      is refused on that socket.
+
+- [ ] **Unify or document the two mTLS bind postures.** The
+      startup-configured mTLS endpoint requires the client certificate
+      at the TLS layer; a runtime-created mTLS listener requests it
+      optionally and enforces the binding at the application layer. Two
+      postures for one transport is a decision that has not been made:
+      pick one (or name both as deliberate tiers) and write the rule
+      into Sec 8/9. _AC:_ both bind paths enforce the documented
+      posture, and the doc names exactly one rule.
