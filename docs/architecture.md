@@ -437,16 +437,10 @@ recorded.**
   HTTP and carries no check-in clients.
 - **The bake trims each build to the verbs it runs.** The class's verb set
   (Sec 5.2) is the server's authority for what an artifact may run, and the
-  unit compiles exactly that set's handlers: the reference registrations sit
-  behind a selection seam the bake rewrites to name only the class's verbs
-  (Sec 5.3), and the unused handler sources leave the staging copy whole --
-  the same whole-file trim the transport selection applies. A reduced class
-  is therefore a genuinely reduced binary -- less surface, less size, one
-  less forensic confession -- while a class carrying every verb (stage-2)
-  builds exactly as before. Out-of-tree handlers follow their verb through
-  the overlay: a gated verb the class withholds stays out with its source,
-  and the ungated or unknown verbs ride every build. The stager tree is
-  never trimmed: a stage-1 loader carries no handlers.
+  unit compiles exactly that set's handlers -- the whole-file trim Sec 5.3
+  describes (the selection-seam rewrite, the reduced binary, the overlay's
+  verbs riding every build). The stager tree is never trimmed: a stage-1
+  loader carries no handlers.
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
@@ -675,10 +669,9 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   runs the envelope POST cycle on that port -- the mainstream single-port web
   posture, the build's derived default for `Http`/`Https` fronts -- while a
   bare host:port dials the mTLS gRPC stream (what a named mTLS beacon
-  listener bakes). The pick is also compile-time: the bake compiles in only
-  the check-in modules the walk's URL shapes can dial, so a web-front
-  artifact carries no gRPC client code at all and an mTLS artifact keeps the
-  stream (Sec 6, the transport trim). A build against a web front therefore
+  listener bakes). The pick is also compile-time: the bake trims each build
+  to the check-in modules its walk can dial (Sec 6, the transport trim).
+  A build against a web front therefore
   needs no beacon split; naming the mTLS listener as the beacon stays the
   hardened option for an engagement that wants the interactive stream.
   Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable
@@ -778,12 +771,9 @@ fleet-wide code execution. Security is a first-class concern.
   subject DN and no custom OID exists: a GUID common name with an unknown
   extension is itself a toolchain fingerprint, on the wire and in host
   forensics, while URI-SAN identity is the shape legitimate service
-  certificates use. One bind posture serves every mTLS endpoint, however it
-  came to exist -- the startup configuration's bind and a runtime-created
-  listener alike: the endpoint asks each connection for the client
-  certificate and refuses one that does not chain to the CA in the handshake,
-  but never demands one there, because enrollment rides the same socket and
-  precedes any leaf. Possession is enforced where identity is consumed: over
+  certificates use. Every mTLS endpoint carries the one ask-and-validate
+  bind posture Sec 8 defines, however it came to exist. Possession is
+  enforced where identity is consumed: over
   TLS the beacon resolves the implant from the certificate alone, so a
   certificate-less connection completes TLS, reaches only what every front
   serves (enrollment answers on its token), and opens no session.
@@ -929,11 +919,9 @@ fleet-wide code execution. Security is a first-class concern.
   revoked generation's sessions. Revocation is not recorded in the audit
   trail: the trail is engagement-scoped and an operator credential is global
   state, so it has no engagement to live in.
-- **Kill-date enforcement.** The teamserver refuses to open a session for an
-  implant past its baked-in kill date (the handshake returns
-  `HANDSHAKE_STATUS_KILL_DATE_EXPIRED`), and the implant self-terminates past it
-  on startup and each beacon cycle -- a lost implant cannot stay live past its
-  date even if it ignores its own check.
+- **Kill-date enforcement.** Both sides refuse past the baked date, the
+  discipline Sec 5.1 defines: the teamserver at handshake, the implant at
+  startup and each beacon cycle.
 - **Audit trail.** Every privileged action produces an immutable, hash-chained
   `AuditEvent`. Tampering breaks the chain (Sec. 11).
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
