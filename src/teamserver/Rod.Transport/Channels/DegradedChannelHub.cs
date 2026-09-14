@@ -135,7 +135,10 @@ internal sealed class DegradedChannelHub
                 {
                     var input = new ChannelInput
                     {
-                        TaskId = taskId.ToString(),
+                        // The wire's task-id shape: the marshaled TaskRequest
+                        // carries the id hyphen-less, and the implant keys its
+                        // live channels by exactly that string.
+                        TaskId = taskId.ToString("N"),
                         Eof = unit.Eof,
                     };
                     if (unit.Data.Length > 0)

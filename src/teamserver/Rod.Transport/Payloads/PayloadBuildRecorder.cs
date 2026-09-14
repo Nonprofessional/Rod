@@ -64,6 +64,7 @@ internal static class PayloadBuildRecorder
                 Build: new PayloadBuildProfile
                 {
                     Mode = artifact.Params.Beacon.Mode,
+                    DegradedChannels = artifact.Params.Beacon.DegradedChannels,
                     SleepSeconds = artifact.Params.Beacon.Sleep.TotalSeconds,
                     JitterSeconds = artifact.Params.Beacon.Jitter.TotalSeconds,
                     KillDate = artifact.Params.Beacon.KillDate,

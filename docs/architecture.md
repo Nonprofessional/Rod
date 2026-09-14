@@ -1244,7 +1244,16 @@ construction: it lives on the beacon stream that carried its TaskRequest, so
 a dropped stream kills the shell or the tunnel (the implant's write gate and
 channel lifetime see to that) and the task stays dispatched -- and DNS never
 claims a channel task at all, because a datagram poll has no stream to carry
-the input half. The reference implant's shell channel wires the platform
+the input half. The poll carriers have a third answer, the degraded
+discipline: a build that opts in (`degradedChannels`) has its artifact
+advertise the store-and-forward capability, and the interactive verbs then
+claim over its envelope check-ins -- operator input parks server-side
+(DegradedChannelHub, bounded per task) and rides the next cycle's response,
+the handler's output batches upstream, and a channel the implant stops
+collecting closes itself with a timeout result. The tradeoff is named at
+the bake, never silent: while a channel is open, the interactive traffic
+runs at the check-in cadence, every keystroke costing up to one interval
+each way. The reference implant's shell channel wires the platform
 shell's stdio pipes -- the documented, mainstream mechanism, no pseudo-terminal
 allocation: without a tty the shell runs without prompt or line editing, and
 a PTY-backed handler is a drop-in over the same byte-transparent channel

@@ -168,12 +168,26 @@ per-artifact key the build baked (below). One POST is one poll check-in:
   a no-op server-side).
 - **The envelope's bounds:** an artifact's `ExfilChunk` run must begin and
   end inside one request body (the reassembler is per-request), and a
-  channel task (`shell.interact`) is never claimed over the envelope -- its
-  input half needs a live stream, so it stays queued until a stream
-  transport claims it, the same rule the DNS transport applies.
+  channel task (`shell.interact`) is never claimed over the envelope unless
+  the bake opted into the degraded discipline (below) -- without it, the
+  task stays queued until a stream transport claims it, the same rule the
+  DNS transport applies.
 
-The frame contents, the handshake order, the signature discipline, and the
-result/chunk grammar are identical to the stream's -- only the carriage
+**The degraded channel discipline (opt-in).** A poll-mode build may carry
+`degradedChannels: true`: the artifact then advertises the `channels.poll`
+capability in its handshake, and the interactive verbs claim over its
+envelope cycles -- operator input parks server-side and rides the next
+check-in's response as `ChannelInput` frames, the implant's
+`ChannelOutput` and the channel's final `TaskResult` batch upstream like
+any other frames, and a channel the implant stops collecting closes with
+a timeout `TaskResult` instead of sitting dispatched. The tradeoff is
+named, not silent: while a channel is open, the interactive traffic rides
+at the check-in cadence -- every keystroke costs up to one interval down
+and one interval back. A poll build without the opt-in keeps the
+live-stream-only behavior exactly.
+
+The frame contents, the handshake order, the signature discipline, and
+the result/chunk grammar are identical to the stream's -- only the carriage
 changes. An implant that implements the envelope needs an HTTP client, a
 protobuf codec, and AES-256-GCM, nothing else.
 

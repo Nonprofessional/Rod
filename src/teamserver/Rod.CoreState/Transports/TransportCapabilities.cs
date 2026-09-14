@@ -101,6 +101,16 @@ public static class TransportCapabilities
     /// <summary>The wire name of <see cref="MessagePipe"/>.</summary>
     public const string MessagePipeName = "message-pipe";
 
+    /// <summary>
+    /// The wire name of the degraded-channels opt-in marker: not a carrier a
+    /// transport serves, but the stamp an enrollment derives off a build
+    /// that baked the flag -- it stands for "this artifact's poll carriers
+    /// carry channel traffic by the store-and-forward discipline," which the
+    /// issuance gate reads as claimable and the dispatch path checks against
+    /// the live advertisement.
+    /// </summary>
+    public const string DegradedChannelsName = "channels-degraded";
+
     /// <summary>The gRPC beacon stream: the native channel carrier.</summary>
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
@@ -127,6 +137,7 @@ public static class TransportCapabilities
             [EnvelopeName] = Envelope,
             [DnsName] = Dns,
             [MessagePipeName] = MessagePipe,
+            [DegradedChannelsName] = new CarrierCapabilities(ChannelSupport.Degraded),
         };
 
     /// <summary>

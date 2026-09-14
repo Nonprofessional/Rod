@@ -187,6 +187,24 @@ public class TaskServiceGatingTests
     }
 
     [Fact]
+    public async Task IssueAsync_AllowsAChannelVerbWhenTheBakeOptedIntoDegradedChannels()
+    {
+        // The degraded marker the enrollment derives off a
+        // degraded-channels bake: the poll carriers claim channel verbs
+        // under the store-and-forward discipline, so the gate passes.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(
+            implants, engagement, new[] { "envelope", "channels-degraded" });
+        var service = NewService(implants);
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.interact", ""));
+
+        Assert.Equal("shell.interact", issued.Verb);
+    }
+
+    [Fact]
     public async Task IssueAsync_AllowsOneShotTaskingOnAnEnvelopeOnlyImplant()
     {
         // The carrier gate touches channel verbs only: one-shot tasking is

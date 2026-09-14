@@ -153,11 +153,21 @@ public sealed record TransportProfile(
 /// long-haul posture where the implant runs until it is retired or the
 /// operator rebuilds it, with no time fuse at all.
 /// </param>
+/// <param name="DegradedChannels">
+/// The opt-in for the degraded channel discipline (architecture.md
+/// Sec 10.3): a poll-mode artifact that carries it advertises the
+/// store-and-forward capability, so the interactive verbs claim over its
+/// check-ins -- input parks and rides the next cycle, at the cycle's
+/// latency. The deliberate, named tradeoff: a channel open over a poll
+/// carrier pulls the cadence toward back-to-back while it runs. Defaults
+/// to false.
+/// </param>
 public sealed record BeaconProfile(
     TimeSpan Sleep,
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
-    string Mode = "stream");
+    string Mode = "stream",
+    bool DegradedChannels = false);
 
 /// <summary>
 /// The target the artifact is built for. Build params are produced at request

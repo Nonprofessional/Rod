@@ -122,6 +122,32 @@ public class CarrierGateEndpointTests
         }
     }
 
+    [Fact]
+    public async Task ChannelVerb_IsIssued_ForADegradedChannelsBake()
+    {
+        // The degraded opt-in: a poll-mode web build that baked the flag
+        // stamps the marker carrier, so the channel verbs are issuable
+        // against its poll cadence without any stream at all.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            await SavePayloadAsync(host, tokenId, engagementId,
+                endpoint: "https://front.example.com:8443", beaconEndpoint: null,
+                mode: "poll", degradedChannels: true);
+            var implantId = await EnrollAsync(client, secret);
+
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
+
+            issued.EnsureSuccessStatusCode();
+        }
+    }
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",
@@ -159,7 +185,8 @@ public class CarrierGateEndpointTests
         string engagementId,
         string endpoint,
         string? beaconEndpoint,
-        string? mode = null)
+        string? mode = null,
+        bool degradedChannels = false)
     {
         var payloads = host.Services.GetRequiredService<IPayloadStore>();
         await payloads.SaveAsync(new PayloadRecord(
@@ -175,6 +202,12 @@ public class CarrierGateEndpointTests
             Endpoint: endpoint,
             BeaconEndpoint: beaconEndpoint,
             TokenId: tokenId,
-            Build: mode is null ? null : new PayloadBuildProfile { Mode = mode }));
+            Build: mode is null && !degradedChannels
+                ? null
+                : new PayloadBuildProfile
+                {
+                    Mode = mode,
+                    DegradedChannels = degradedChannels ? true : null,
+                }));
     }
 }

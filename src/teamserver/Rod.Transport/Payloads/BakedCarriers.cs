@@ -54,11 +54,16 @@ public static class BakedCarriers
 
         // A stream-mode web build holds the WebSocket beacon open on its
         // front (the web posture's interactive tier), so the baked mode adds
-        // the native carrier a web-front artifact actually dials. Poll-mode
-        // and modeless records (an old build, a manual token) keep the
+        // the native carrier a web-front artifact actually dials. A
+        // degraded-channels bake opts its poll carriers into the
+        // store-and-forward discipline, so the flag adds the marker the
+        // issuance gate reads as claimable-at-cycle-latency. Poll-mode and
+        // modeless records (an old build, a manual token) keep the
         // envelope-only answer -- the conservative direction either way.
         if (string.Equals(payload.Build?.Mode, "stream", StringComparison.OrdinalIgnoreCase))
             Add(names, TransportCapabilities.BeaconStreamName);
+        if (payload.Build?.DegradedChannels == true)
+            Add(names, TransportCapabilities.DegradedChannelsName);
 
         return names.Count == 0 ? null : names;
     }

