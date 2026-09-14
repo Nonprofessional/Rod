@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using Rod.CoreState;
 using Rod.CoreState.Implants;
 
 namespace Rod.BuildPipeline.PayloadBuild;
@@ -365,7 +366,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
         if (@params.TokenSecret is { } tokenSecret)
             map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);
-        return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
+        return Base64Url.Encode(Encoding.UTF8.GetBytes(json));
     }
 
     // Renders the profile's custom headers as a JSON-object value (a
@@ -412,7 +413,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
         if (@params.TokenSecret is { } tokenSecret)
             map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);
-        return Base64UrlCodec.Encode(Encoding.UTF8.GetBytes(json));
+        return Base64Url.Encode(Encoding.UTF8.GetBytes(json));
     }
 
     // Materializes the generated BakedProfile.cs source from a baked profile. The

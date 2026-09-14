@@ -118,5 +118,4 @@ public static class DnsOverHttpsEndpoints
         return colon >= 0 && int.TryParse(bindAddress[(colon + 1)..], out var port) ? port : 0;
     }
 
-    public sealed record Problem(string Error);
 }

@@ -238,7 +238,7 @@ public class FileAuditStoreTests
     }
 
     [Fact]
-    public async Task Find_ReturnsTheChainedEvent_ByExactId()
+    public async Task Append_StampsTheChainHash_TheTrailReadsBackStamped()
     {
         using var dir = new TempDir();
         var store = new FileAuditStore(Options(dir.Path));
@@ -248,10 +248,8 @@ public class FileAuditStoreTests
 
         await store.AppendAsync(fact);
 
-        var found = await store.FindAsync(fact.EventId);
-        Assert.NotNull(found);
-        Assert.NotEmpty(found!.Hash);
-        Assert.Null(await store.FindAsync(Guid.NewGuid()));
+        var found = (await store.ListAsync(engagement)).Single(e => e.EventId == fact.EventId);
+        Assert.NotEmpty(found.Hash);
     }
 
     // The  property: a fresh store over the same directory recovers each
@@ -345,7 +343,6 @@ public class FileAuditStoreTests
         var store = new FileAuditStore(Options(dir.Path));
 
         Assert.Empty(await store.ListAsync(Guid.NewGuid()));
-        Assert.Null(await store.FindAsync(Guid.NewGuid()));
     }
 
     // The first append creates the data directory if it does not already exist.

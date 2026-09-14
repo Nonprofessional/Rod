@@ -447,7 +447,7 @@ public class ListenerRuntimeTests
                 BindAddress: $"127.0.0.1:{port}",
                 PublicEndpoint: $"127.0.0.1:{port}"));
         Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
-        var problem = await created.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        var problem = await created.Content.ReadFromJsonAsync<Problem>();
         Assert.NotNull(problem);
         // The refusal names the registered transports -- each in-tree member
         // appears, whatever order the registry lists or what later
@@ -641,7 +641,7 @@ public class ListenerRuntimeTests
                 Name: "wild", Transport: "http",
                 BindAddress: $"0.0.0.0:{TestSupport.GetFreeTcpPort()}", PublicEndpoint: ""));
         Assert.Equal(HttpStatusCode.BadRequest, wildcard.StatusCode);
-        var wildcardBody = await wildcard.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        var wildcardBody = await wildcard.Content.ReadFromJsonAsync<Problem>();
         Assert.Contains("wildcard", wildcardBody!.Error);
 
         // A bare hostname takes the transport's scheme and the listener's own

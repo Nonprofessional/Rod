@@ -87,5 +87,4 @@ public static class PresenceEndpoints
                 LastSeenAt: s.LastSeenAt);
     }
 
-    public sealed record Problem(string Error);
 }

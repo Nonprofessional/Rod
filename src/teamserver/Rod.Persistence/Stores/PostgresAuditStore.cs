@@ -89,12 +89,6 @@ internal sealed class PostgresAuditStore : IAuditStore
         await tx.CommitAsync(cancellationToken);
     }
 
-    public async Task<AuditEvent?> FindAsync(Guid eventId, CancellationToken cancellationToken = default)
-    {
-        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        return await db.AuditEvents.AsNoTracking().FirstOrDefaultAsync(e => e.EventId == eventId, cancellationToken);
-    }
-
     public async Task<IReadOnlyList<AuditEvent>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);

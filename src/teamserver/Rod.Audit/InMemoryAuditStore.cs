@@ -53,12 +53,6 @@ public sealed class InMemoryAuditStore : IAuditStore
         return Task.CompletedTask;
     }
 
-    public Task<AuditEvent?> FindAsync(Guid eventId, CancellationToken cancellationToken = default)
-    {
-        _events.TryGetValue(eventId, out var found);
-        return Task.FromResult(found);
-    }
-
     public Task<IReadOnlyList<AuditEvent>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         // The listing reads snapshot under the append lock: an unlocked

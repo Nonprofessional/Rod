@@ -460,7 +460,6 @@ public static class EnrollmentEndpoints
         return string.Join(' ', parts);
     }
 
-    public sealed record Problem(string Error);
 
     /// <summary>
     /// Mirrors the wire <see cref="Rod.V1.EnrollResponse"/>. <see cref="Status"/>

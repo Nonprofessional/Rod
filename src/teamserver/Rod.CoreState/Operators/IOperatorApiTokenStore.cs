@@ -104,7 +104,7 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
         CancellationToken cancellationToken = default)
     {
         var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var secret = Base64Url(secretBytes);
+        var secret = Base64Url.Encode(secretBytes);
         var tokenId = OperatorApiTokenId.New();
         _tokens[tokenId] = new Stored(operatorId, SHA256.HashData(secretBytes), at);
         return Task.FromResult(new MintedOperatorApiToken(tokenId, operatorId, secret, at));
@@ -117,7 +117,7 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
         byte[] presented;
         try
         {
-            presented = FromBase64Url(secret);
+            presented = Base64Url.Decode(secret);
         }
         catch (FormatException)
         {
@@ -155,19 +155,5 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
             .Select(pair => new OperatorApiTokenRecord(pair.Key, operatorId, pair.Value.CreatedAt))
             .ToArray();
         return Task.FromResult<IReadOnlyList<OperatorApiTokenRecord>>(rows);
-    }
-
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static byte[] FromBase64Url(string text)
-    {
-        var padded = text.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
     }
 }

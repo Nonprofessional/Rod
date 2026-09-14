@@ -116,7 +116,7 @@ internal sealed class StreamBeaconBridge
                 || !TryParseHandshake(frames[0], out handshakeRequest)
                 || !ImplantId.TryParse(handshakeRequest.ImplantId, out var implantId))
             {
-                await RespondAsync(stream, Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false), stoppingToken);
+                await RespondAsync(stream, BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false), stoppingToken);
                 return;
             }
 
@@ -130,23 +130,7 @@ internal sealed class StreamBeaconBridge
             // A genuinely new session is recorded; a reused one (every
             // check-in after the first) is not, the same flood guard the
             // stream and the envelope apply (architecture.md Sec 10.3, Sec 11).
-            if (!handshake.ReusedSession)
-            {
-                await _audit.AppendAsync(
-                    AuditEvent.Fact(
-                        eventId: Guid.NewGuid(),
-                        engagementId: handshake.EngagementId.Value,
-                        operatorId: handshake.DeployedBy.Value,
-                        implantId: handshake.ImplantId.Value,
-                        taskId: Guid.Empty,
-                        verb: "handshake",
-                        kind: AuditEventKind.SessionOpened,
-                        payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
-                        output: null,
-                        outcome: handshake.SessionId.ToString(),
-                        at: handshake.At),
-                    CancellationToken.None);
-            }
+            await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
 
             var session = new BeaconSessionContext(
                 implantId,
@@ -287,35 +271,16 @@ internal sealed class StreamBeaconBridge
                     ReplayNonces: request.ReplayNonces,
                     TaskAcks: request.TaskAcks),
                 CancellationToken.None);
-            return (Response(
+            return (BeaconHandshake.Response(
                 HandshakeStatus.Ok, result.EngagementId.ToString(),
                 result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
-            var status = ex.Reason switch
-            {
-                HandshakeReason.UnknownImplant => HandshakeStatus.UnknownImplant,
-                HandshakeReason.VersionMismatch => HandshakeStatus.VersionMismatch,
-                HandshakeReason.IdentityMismatch => HandshakeStatus.IdentityMismatch,
-                HandshakeReason.KillDateExpired => HandshakeStatus.KillDateExpired,
-                HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
-                _ => HandshakeStatus.Unspecified,
-            };
-            return (Response(status, engagementId: null, replayNonces: false), Handshake: null);
+            return (BeaconHandshake.Response(
+                BeaconHandshake.MapStatus(ex.Reason), engagementId: null, replayNonces: false), Handshake: null);
         }
     }
-
-    private static HandshakeResponse Response(
-        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks = false)
-        => new()
-        {
-            Status = status,
-            Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
-            EngagementId = engagementId ?? string.Empty,
-            ReplayNonces = replayNonces,
-            TaskAcks = taskAcks,
-        };
 
     private static Frame HandshakeFrame(HandshakeResponse response)
         => new() { Payload = ByteString.CopyFrom(response.ToByteArray()) };

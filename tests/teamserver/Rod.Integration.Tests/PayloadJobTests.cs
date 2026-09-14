@@ -113,7 +113,7 @@ public class PayloadJobTests
             $"/engagements/{engagementId}/payload-jobs",
             Request() with { TargetOs = "linux", TargetArch = "x86" });
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-        var problem = await refused.Content.ReadFromJsonAsync<PayloadJobEndpoints.Problem>();
+        var problem = await refused.Content.ReadFromJsonAsync<Problem>();
         Assert.Contains("x86", problem!.Error);
 
         var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(

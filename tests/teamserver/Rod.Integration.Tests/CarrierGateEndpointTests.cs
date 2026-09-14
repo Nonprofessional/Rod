@@ -38,7 +38,7 @@ public class CarrierGateEndpointTests
                 new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
 
             Assert.Equal(HttpStatusCode.UnprocessableEntity, issued.StatusCode);
-            var problem = await issued.Content.ReadFromJsonAsync<EngagementEndpoints.Problem>();
+            var problem = await issued.Content.ReadFromJsonAsync<Problem>();
             Assert.NotNull(problem);
             Assert.Contains("carrier", problem!.Error, StringComparison.OrdinalIgnoreCase);
 

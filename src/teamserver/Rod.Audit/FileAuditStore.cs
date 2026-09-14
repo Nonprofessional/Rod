@@ -107,17 +107,6 @@ public sealed class FileAuditStore : IAuditStore
         return Task.CompletedTask;
     }
 
-    public async Task<AuditEvent?> FindAsync(Guid eventId, CancellationToken cancellationToken = default)
-    {
-        await foreach (var @event in ReadAllAsync(cancellationToken).ConfigureAwait(false))
-        {
-            if (@event.EventId == eventId)
-                return @event;
-        }
-
-        return null;
-    }
-
     public async Task<IReadOnlyList<AuditEvent>> ForTaskAsync(Guid taskId, CancellationToken cancellationToken = default)
     {
         var matches = new List<AuditEvent>();

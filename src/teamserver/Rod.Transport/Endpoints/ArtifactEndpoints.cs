@@ -226,5 +226,4 @@ public static class ArtifactEndpoints
                 artifact.StoredAt);
     }
 
-    public sealed record Problem(string Error);
 }

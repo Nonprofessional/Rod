@@ -472,5 +472,4 @@ public static class EngagementEndpoints
         DateTimeOffset ExpiresAt,
         int MaxUses);
 
-    public sealed record Problem(string Error);
 }

@@ -442,5 +442,4 @@ public static class ListenerEndpoints
                 l.RepointedAt);
     }
 
-    public sealed record Problem(string Error);
 }

@@ -125,7 +125,7 @@ public class ListenerTests
         // The guard: an unforced delete refuses and names the live dependents.
         var refused = await env.Http.DeleteAsync($"/engagements/{engagementId}/listeners/{listener.Id}");
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
-        var problem = await refused.Content.ReadFromJsonAsync<ListenerEndpoints.Problem>();
+        var problem = await refused.Content.ReadFromJsonAsync<Problem>();
         Assert.NotNull(problem);
         Assert.Contains("2 live implants", problem!.Error);
 

@@ -65,5 +65,4 @@ public static class SettingsEndpoints
             values.SweepInterval.TotalMinutes);
     }
 
-    public sealed record Problem(string Error);
 }

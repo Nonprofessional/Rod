@@ -774,5 +774,4 @@ public static class TaskEndpoints
                 e.At);
     }
 
-    public sealed record Problem(string Error);
 }

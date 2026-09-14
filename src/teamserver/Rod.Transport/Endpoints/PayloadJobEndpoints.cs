@@ -172,5 +172,4 @@ public static class PayloadJobEndpoints
             job.Artifact);
     }
 
-    public sealed record Problem(string Error);
 }

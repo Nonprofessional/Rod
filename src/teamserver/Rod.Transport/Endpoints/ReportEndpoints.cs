@@ -702,4 +702,3 @@ public sealed record EngagementReport(
     IReadOnlyList<ReportArtifactIndexEntry> Artifacts,
     IReadOnlyList<TimelineEntry> Timeline);
 
-internal sealed record Problem(string Error);

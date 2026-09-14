@@ -358,5 +358,4 @@ public static class ImplantEndpoints
         bool JustRetired,
         string? ClosedSession);
 
-    public sealed record Problem(string Error);
 }

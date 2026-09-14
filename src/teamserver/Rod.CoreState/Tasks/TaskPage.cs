@@ -25,7 +25,7 @@ public static class TaskPageCursor
     private const string Prefix = "seq:";
 
     public static string Encode(long enqueueSequence)
-        => Base64Url(Encoding.UTF8.GetBytes(Prefix + enqueueSequence));
+        => Base64Url.Encode(Encoding.UTF8.GetBytes(Prefix + enqueueSequence));
 
     /// <summary>True when <paramref name="cursor"/> decodes to a sequence.</summary>
     public static bool TryDecode(string? cursor, out long enqueueSequence)
@@ -36,7 +36,7 @@ public static class TaskPageCursor
 
         try
         {
-            var text = Encoding.UTF8.GetString(FromBase64Url(cursor));
+            var text = Encoding.UTF8.GetString(Base64Url.Decode(cursor));
             if (!text.StartsWith(Prefix, StringComparison.Ordinal)
                 || !long.TryParse(text.AsSpan(Prefix.Length), out enqueueSequence))
             {
@@ -49,15 +49,5 @@ public static class TaskPageCursor
         {
             return false;
         }
-    }
-
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static byte[] FromBase64Url(string text)
-    {
-        var padded = text.Replace('-', '+').Replace('_', '/');
-        padded += new string('=', (4 - padded.Length % 4) % 4);
-        return Convert.FromBase64String(padded);
     }
 }

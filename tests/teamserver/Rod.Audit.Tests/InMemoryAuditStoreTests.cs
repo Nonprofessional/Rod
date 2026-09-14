@@ -246,7 +246,7 @@ public class InMemoryAuditStoreTests
     }
 
     [Fact]
-    public async Task Find_ReturnsTheChainedEvent_ByExactId()
+    public async Task Append_StampsTheChainHash_TheTrailReadsBackStamped()
     {
         var store = new InMemoryAuditStore();
         var engagement = Guid.NewGuid();
@@ -255,11 +255,9 @@ public class InMemoryAuditStoreTests
 
         await store.AppendAsync(fact);
 
-        var found = await store.FindAsync(fact.EventId);
-        Assert.NotNull(found);
+        var found = (await store.ListAsync(engagement)).Single(e => e.EventId == fact.EventId);
         // The stored event carries the stamped hashes, not the empty ones the
         // fact was built with.
-        Assert.NotEmpty(found!.Hash);
-        Assert.Null(await store.FindAsync(Guid.NewGuid()));
+        Assert.NotEmpty(found.Hash);
     }
 }

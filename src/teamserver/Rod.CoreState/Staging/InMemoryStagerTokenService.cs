@@ -52,7 +52,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         {
             Id = id,
             EngagementId = engagementId,
-            Secret = Base64Url(secretBytes),
+            Secret = Base64Url.Encode(secretBytes),
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
@@ -122,7 +122,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         byte[] presentedHash;
         try
         {
-            presentedHash = SHA256.HashData(FromBase64Url(secret));
+            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
         }
         catch (FormatException)
         {
@@ -145,27 +145,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
                 StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
 
         return (entryId, entry);
-    }
-
-    // RFC 4648 base64url without padding -- URL-safe for transport.
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
-
-    // Inverse of Base64Url: re-add padding the decoder requires.
-    private static byte[] FromBase64Url(string value)
-    {
-        var padded = value.Replace('-', '+').Replace('_', '/');
-        padded = (padded.Length % 4) switch
-        {
-            2 => padded + "==",
-            3 => padded + "=",
-            0 => padded,
-            _ => throw new FormatException("Invalid base64url length."),
-        };
-        return Convert.FromBase64String(padded);
     }
 
     public Task<bool> RevokeAsync(StagerTokenId id, CancellationToken cancellationToken = default)

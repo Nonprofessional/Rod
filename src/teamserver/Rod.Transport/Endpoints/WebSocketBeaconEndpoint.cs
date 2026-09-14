@@ -139,7 +139,7 @@ internal sealed class WebSocketBeaconStream
                 // under: the raw unspecified refusal leaks only the status.
                 await SendFramesAsync(ws, sealedBody: false,
                     new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
-                        EnvelopeBeaconCheckIn.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
+                        BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                     sealedKey, linked.Token);
                 return;
             }
@@ -165,7 +165,7 @@ internal sealed class WebSocketBeaconStream
         if (frames.Count == 0 || !EnvelopeBeaconCheckIn.TryParseHandshake(frames[0], out var handshakeRequest))
         {
             await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
-                EnvelopeBeaconCheckIn.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
+                BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                 sealedKey, linked.Token);
             return;
         }
@@ -180,7 +180,7 @@ internal sealed class WebSocketBeaconStream
                 if (!isSealed || sealedKey.KeyId != bound.KeyId)
                 {
                     await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
-                        EnvelopeBeaconCheckIn.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
+                        BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                         sealedKey, linked.Token);
                     return;
                 }
@@ -188,7 +188,7 @@ internal sealed class WebSocketBeaconStream
             if (isSealed && !_checkInKeys.Accept(sealedImplant, checkInCounter))
             {
                 await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
-                    EnvelopeBeaconCheckIn.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
+                    BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                     sealedKey, linked.Token);
                 return;
             }
@@ -208,23 +208,7 @@ internal sealed class WebSocketBeaconStream
         // A genuinely new session is recorded; a reused one is not -- the same
         // flood guard the envelope and the gRPC stream apply
         // (architecture.md Sec 10.3, Sec 11).
-        if (!handshake.ReusedSession)
-        {
-            await _audit.AppendAsync(
-                AuditEvent.Fact(
-                    eventId: Guid.NewGuid(),
-                    engagementId: handshake.EngagementId.Value,
-                    operatorId: handshake.DeployedBy.Value,
-                    implantId: handshake.ImplantId.Value,
-                    taskId: Guid.Empty,
-                    verb: "handshake",
-                    kind: AuditEventKind.SessionOpened,
-                    payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
-                    output: null,
-                    outcome: handshake.SessionId.ToString(),
-                    at: handshake.At),
-                CancellationToken.None);
-        }
+        await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
 
         var session = new BeaconSessionContext(
             handshake.ImplantId,

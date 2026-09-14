@@ -90,7 +90,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         {
             Id = id,
             EngagementId = engagementId,
-            Secret = Base64Url(secretBytes),
+            Secret = Base64Url.Encode(secretBytes),
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
@@ -108,7 +108,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         byte[] presentedHash;
         try
         {
-            presentedHash = SHA256.HashData(FromBase64Url(secret));
+            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
         }
         catch (FormatException)
         {
@@ -208,7 +208,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         byte[] presentedHash;
         try
         {
-            presentedHash = SHA256.HashData(FromBase64Url(secret));
+            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
         }
         catch (FormatException)
         {
@@ -234,26 +234,5 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             EngagementId = entry.EngagementId,
             IssuedBy = entry.IssuedBy,
         };
-    }
-
-    // RFC 4648 base64url without padding -- URL-safe for transport.
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
-
-    // Inverse of Base64Url: re-add padding the decoder requires.
-    private static byte[] FromBase64Url(string value)
-    {
-        var padded = value.Replace('-', '+').Replace('_', '/');
-        padded = (padded.Length % 4) switch
-        {
-            2 => padded + "==",
-            3 => padded + "=",
-            0 => padded,
-            _ => throw new FormatException("Invalid base64url length."),
-        };
-        return Convert.FromBase64String(padded);
     }
 }

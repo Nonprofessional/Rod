@@ -118,5 +118,4 @@ public static class AuditEndpoints
         AuditEventEntry[] Items,
         string? NextCursor);
 
-    public sealed record Problem(string Error);
 }

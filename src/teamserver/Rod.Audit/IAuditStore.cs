@@ -23,9 +23,6 @@ public interface IAuditStore
     /// </summary>
     Task AppendAsync(AuditEvent @event, CancellationToken cancellationToken = default);
 
-    /// <summary>An event's full trail entry, or null when no event has that id.</summary>
-    Task<AuditEvent?> FindAsync(Guid eventId, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// Events for a task, oldest first -- the attributed record of what an
     /// implant was told to do and what came back.

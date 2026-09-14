@@ -298,5 +298,4 @@ public static class CloseoutEndpoints
 
     public sealed record EngagementReopenedResponse(string EngagementId, DateTimeOffset UnfrozenAt);
 
-    public sealed record Problem(string Error);
 }

@@ -27,7 +27,7 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
         // The mint itself is the in-memory shape (fresh random bytes, digest
         // computed alongside); the row is what persists here.
         var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var secret = Base64Url(secretBytes);
+        var secret = Base64Url.Encode(secretBytes);
         var tokenId = OperatorApiTokenId.New();
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -50,7 +50,7 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
         byte[] presented;
         try
         {
-            presented = FromBase64Url(secret);
+            presented = Base64Url.Decode(secret);
         }
         catch (FormatException)
         {
@@ -88,19 +88,5 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
             .OrderBy(t => t.CreatedAt)
             .ToArrayAsync(cancellationToken);
         return rows.Select(r => new OperatorApiTokenRecord(r.TokenId, r.OperatorId, r.CreatedAt)).ToArray();
-    }
-
-    private static string Base64Url(byte[] bytes)
-        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    private static byte[] FromBase64Url(string text)
-    {
-        var padded = text.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
-        {
-            case 2: padded += "=="; break;
-            case 3: padded += "="; break;
-        }
-        return Convert.FromBase64String(padded);
     }
 }

@@ -391,5 +391,4 @@ public static class PayloadEndpoints
                     profile.FallbackEndpoints?.ToArray());
     }
 
-    public sealed record Problem(string Error);
 }

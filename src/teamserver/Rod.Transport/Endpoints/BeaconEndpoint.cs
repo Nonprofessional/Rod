@@ -93,7 +93,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         {
             // The first payload was not a recognizable handshake request.
             await WriteHandshakeAsync(responseStream,
-                Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false, taskAcks: false));
+                BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false));
             return;
         }
 
@@ -107,30 +107,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
         var implant = ResolveIdentity(handshakeRequest, httpContext, ClientCertificateIdentity.Read(httpContext)).ImplantId;
 
-        // A genuinely new session is recorded (architecture.md Sec 11). A
-        // reused one (a reconnect -- a poll check-in or a flapped stream) is
-        // not: the session entity and its SessionOpened record already exist,
-        // and a poll cadence must not flood the engagement trail. A handshake
-        // is implant-initiated, so the event is attributed to the operator who
-        // deployed the implant (handshake.DeployedBy); the payload carries the
-        // negotiated protocol version and the outcome the session id.
-        if (!handshake.ReusedSession)
-        {
-            await _audit.AppendAsync(
-                AuditEvent.Fact(
-                    eventId: Guid.NewGuid(),
-                    engagementId: handshake.EngagementId.Value,
-                    operatorId: handshake.DeployedBy.Value,
-                    implantId: handshake.ImplantId.Value,
-                    taskId: Guid.Empty,
-                    verb: "handshake",
-                    kind: AuditEventKind.SessionOpened,
-                    payload: $"{handshakeRequest.Version?.Major ?? 0}.{handshakeRequest.Version?.Minor ?? 0}",
-                    output: null,
-                    outcome: handshake.SessionId.ToString(),
-                    at: handshake.At),
-                CancellationToken.None);
-        }
+        await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
 
         // 3. The session is now live and the stream is the tasking channel. Hold
         // it open, draining results and pushing queued tasks. The stream
@@ -199,22 +176,14 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             // carries (architecture.md Sec 11). The replay-nonce and receive-ack
             // states ride the response echo so the implant knows its verification
             // posture and whether to ack parsed tasking.
-            return (Response(
+            return (BeaconHandshake.Response(
                 HandshakeStatus.Ok, result.EngagementId.ToString(),
                 result.ReplayNonces, result.TaskAcks), result);
         }
         catch (HandshakeException ex)
         {
-            var status = ex.Reason switch
-            {
-                HandshakeReason.UnknownImplant => HandshakeStatus.UnknownImplant,
-                HandshakeReason.VersionMismatch => HandshakeStatus.VersionMismatch,
-                HandshakeReason.IdentityMismatch => HandshakeStatus.IdentityMismatch,
-                HandshakeReason.KillDateExpired => HandshakeStatus.KillDateExpired,
-                HandshakeReason.ImplantRetired => HandshakeStatus.ImplantRetired,
-                _ => HandshakeStatus.Unspecified,
-            };
-            return (Response(status, engagementId: null, replayNonces: false, taskAcks: false), Handshake: null);
+            return (BeaconHandshake.Response(
+                BeaconHandshake.MapStatus(ex.Reason), engagementId: null, replayNonces: false), Handshake: null);
         }
     }
 
@@ -236,17 +205,6 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
 
     private static ImplantId? ParseImplantId(string? text)
         => ImplantId.TryParse(text, out var id) ? id : null;
-
-    private static HandshakeResponse Response(
-        HandshakeStatus status, string? engagementId, bool replayNonces, bool taskAcks)
-        => new()
-        {
-            Status = status,
-            Version = new ProtocolVersion { Major = ProtocolVersions.Major, Minor = ProtocolVersions.Minor },
-            EngagementId = engagementId ?? string.Empty,
-            ReplayNonces = replayNonces,
-            TaskAcks = taskAcks,
-        };
 
     private static Task WriteHandshakeAsync(IServerStreamWriter<Frame> stream, HandshakeResponse response)
     {
