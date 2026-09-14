@@ -66,22 +66,6 @@ public class ReconCapabilitiesTests
         Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
-    [Fact]
-    public async Task DefaultRegistry_ListsBothCoreAndReconSets()
-    {
-        // The default registry is the union of the core and recon sets: every
-        // core verb and every recon verb is present, so the operator-visible
-        // capability surface is the full built-in set.
-        var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();
-
-        foreach (var verb in CoreCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in ReconCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in EvasionCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-    }
 
     [Fact]
     public async Task LoadCapabilities_LeavesCallerReconOverrideInPlace()

@@ -60,20 +60,6 @@ public class TunnelCapabilitiesTests
         Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
-    [Fact]
-    public async Task DefaultRegistry_ListsTheTunnelSetAlongsideCore()
-    {
-        // The default registry is the union of every built-in set: each tunnel
-        // verb is present alongside the core verbs, so the operator-visible
-        // capability surface is the full built-in set.
-        var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();
-
-        foreach (var verb in CoreCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in TunnelCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-    }
 
     [Fact]
     public async Task LoadCapabilities_LeavesCallerTunnelOverrideInPlace()

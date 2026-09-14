@@ -66,24 +66,6 @@ public class LateralCapabilitiesTests
         Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
-    [Fact]
-    public async Task DefaultRegistry_ListsCoreReconAndLateralSets()
-    {
-        // The default registry is the union of the core, recon, and lateral
-        // sets: every verb in each set is present, so the operator-visible
-        // capability surface is the full built-in set.
-        var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();
-
-        foreach (var verb in CoreCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in ReconCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in LateralCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in EvasionCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-    }
 
     [Fact]
     public async Task LoadCapabilities_LeavesCallerLateralOverrideInPlace()

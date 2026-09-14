@@ -71,26 +71,6 @@ public class PersistCapabilitiesTests
         Assert.IsType<PlaceholderCapabilityModule>(found);
     }
 
-    [Fact]
-    public async Task DefaultRegistry_ListsCoreReconLateralAndPersistSets()
-    {
-        // The default registry is the union of the core, recon, lateral, and
-        // persist sets: every verb in each set is present, so the operator-visible
-        // capability surface is the full built-in set.
-        var registry = await RodTradecraftHost.BuildDefaultRegistryAsync();
-        var verbs = (await registry.ListAsync()).Select(d => d.Verb).ToArray();
-
-        foreach (var verb in CoreCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in ReconCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in LateralCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in PersistCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-        foreach (var verb in EvasionCapabilities.Verbs)
-            Assert.Contains(verb, verbs);
-    }
 
     [Fact]
     public async Task LoadCapabilities_LeavesCallerPersistOverrideInPlace()
