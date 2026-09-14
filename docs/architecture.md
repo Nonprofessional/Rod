@@ -553,7 +553,9 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   handshake is indistinguishable from an ordinary website's -- enrollment
   rides the stager token and check-ins ride the sealed envelope under the
   per-artifact key, both authenticated at the application layer), **mTLS**,
-  **DNS**, **SMB** (named pipe), and **raw TCP** are implemented. Transport
+  **DNS**, **SMB** (named pipe), **raw TCP**, and **DoH** (the DNS grammar
+  over RFC 8484 HTTPS bodies -- the egress-restricted carrier behind a shape
+  a restricted network already allows) are implemented. Transport
   choice is a profile/deployment concern; the protocol semantics are
   transport-independent. The web family additionally serves the WebSocket
   beacon (`GET /implants/beacon/stream`, extending/implants.md): the same

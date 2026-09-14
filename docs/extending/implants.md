@@ -367,6 +367,18 @@ opened on a handshake-capable transport first -- DNS refreshes presence
 Tier 1 posture: verify the signature before executing anything received over
 DNS.
 
+**The DoH carriage (RFC 8484).** A `doh` listener entry answers the same
+grammar over HTTPS: the DNS wire message rides an HTTP body -- `GET
+/dns-query?dns=<urlsafe-base64>` or `POST /dns-query` with
+`application/dns-message` -- and the response is the same wire message the
+UDP socket would return. The entry's public endpoint is its zone, the UDP
+listener's model; the arrival port resolves which `doh` listener answers,
+and a socket no `doh` listener owns returns an ordinary 404. The TLS
+posture is the single-port https shape (no client certificate request --
+a resolver front must not fingerprint), and the identity tradeoff is
+DNS's own: id alone, session opened elsewhere, signatures verified. The
+carriage changes; the answer never does.
+
 ### Tasking signature verification (Tier 1, recommended)
 
 Every dispatched `TaskRequest` carries an RSASSA-PSS/SHA-256 signature made by

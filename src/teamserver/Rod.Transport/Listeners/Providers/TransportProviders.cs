@@ -66,6 +66,15 @@ public static class TransportProviders
                 services.GetRequiredService<StreamBeaconBridge>(),
                 registry,
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>())));
+
+        // The DNS grammar's second carriage (RFC 8484): the same TXT
+        // check-in wire the UDP listener answers, as DNS wire messages over
+        // an HTTPS body -- the egress-restricted carrier behind a shape a
+        // restricted network already allows. The single-port TLS posture
+        // (no client certificate anywhere); the public endpoint is the zone
+        // it answers for, the UDP listener's model.
+        Register(new KestrelEndpointProvider("doh", ListenerTlsPosture.ServerTls,
+            new[] { TransportCapabilities.DnsName }, PublicEndpointShape.DnsZone));
     }
 
     /// <summary>

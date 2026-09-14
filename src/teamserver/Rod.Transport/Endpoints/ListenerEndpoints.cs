@@ -72,7 +72,10 @@ public static class ListenerEndpoints
         // zone or pipe path is not a function of the bind -- so they require
         // it spelled out.
         string publicEndpoint;
-        if (provider is KestrelEndpointProvider)
+        // Only the web-dial Kestrel family derives its endpoint from the
+        // bind; a zone-shaped Kestrel transport (DoH) requires the zone
+        // spelled out, exactly like the socket-owning zone transport.
+        if (provider is KestrelEndpointProvider { EndpointShape: PublicEndpointShape.WebDial })
         {
             var derived = DeriveHttpPublicEndpoint(provider, body.BindAddress.Trim(), body.PublicEndpoint);
             if (derived is not null)

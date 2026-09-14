@@ -24,7 +24,7 @@ namespace Rod.Transport.Listeners.Dns;
 internal sealed class DnsListenerService : BackgroundService
 {
     private readonly Listener _listener;
-    private readonly DnsBeaconBridge _bridge;
+    private readonly DnsCheckInAnswerer _answerer;
     private readonly IListenerRegistry _listeners;
     private readonly ILogger<DnsListenerService> _logger;
 
@@ -35,7 +35,9 @@ internal sealed class DnsListenerService : BackgroundService
         ILogger<DnsListenerService> logger)
     {
         _listener = listener;
-        _bridge = bridge;
+        // The shared answer core: the same wire grammar the DoH route serves
+        // over HTTP bodies, behind this service's UDP socket.
+        _answerer = new DnsCheckInAnswerer(listener.PublicEndpoint, bridge, logger, listener.Name);
         _listeners = listeners;
         _logger = logger;
     }
@@ -76,7 +78,7 @@ internal sealed class DnsListenerService : BackgroundService
 
     private async Task AnswerAsync(UdpClient udp, UdpReceiveResult datagram, CancellationToken cancellationToken)
     {
-        var (response, questionName) = await AnswerAsync(datagram.Buffer, cancellationToken);
+        var response = await _answerer.AnswerAsync(datagram.Buffer, cancellationToken);
         try
         {
             await udp.SendAsync(response, response.Length, datagram.RemoteEndPoint);
@@ -86,90 +88,7 @@ internal sealed class DnsListenerService : BackgroundService
             // The client vanished or the listener is stopping; the datagram
             // is disposable -- the implant's next check-in retries.
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "DNS listener {Name} failed answering {Question}.", _listener.Name, questionName);
-        }
     }
-
-    /// <summary>
-    /// Builds the response datagram for one query: a poll or result chunk
-    /// under the zone gets the check-in treatment; anything else in the zone
-    /// is NXDOMAIN; a query for another zone entirely is REFUSED (rcode 5) --
-    /// this listener is not an open resolver. Fully async: the bridge calls
-    /// (a task claim, an audit append) are awaited, never blocked on -- a
-    /// blocked answer thread is a thread pool thread, and enough of those is
-    /// exactly the starvation the Kestrel heartbeat warns about.
-    /// </summary>
-    private async Task<(byte[] Response, string QuestionName)> AnswerAsync(
-        byte[] query, CancellationToken cancellationToken)
-    {
-        var questionName = "";
-        var parsed = DnsCodec.ParseQuery(query);
-        if (parsed?.Question is not { } question)
-            return (EmptyResponse(parsed?.Id ?? 0, responseCode: 1), questionName); // FORMERR
-
-        questionName = question.Name;
-        var zone = _listener.PublicEndpoint.TrimEnd('.').ToLowerInvariant();
-        var name = question.Name.ToLowerInvariant();
-
-        // Only TXT check-ins under our zone; no recursion, no other records.
-        if (!name.EndsWith(zone, StringComparison.Ordinal))
-            return (EmptyResponse(parsed.Id, responseCode: 5), questionName); // REFUSED: not our zone
-
-        if (question.Type != DnsCodec.TxtType)
-            return (EmptyResponse(parsed.Id, responseCode: 3), questionName); // NXDOMAIN: TXT only
-
-        var response = new DnsMessage
-        {
-            Id = parsed.Id,
-            IsResponse = true,
-            Question = question,
-            ResponseCode = 0,
-        };
-
-        try
-        {
-            if (DnsCheckInNames.TryParsePoll(name, zone) is { } poll)
-            {
-                var marshaled = await _bridge.PollAsync(poll.Implant, cancellationToken);
-                if (marshaled is not null)
-                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(marshaled)));
-            }
-            else if (DnsCheckInNames.TryParseResult(name, zone) is { } chunk)
-            {
-                await _bridge.ResultChunkAsync(
-                    chunk.Implant, chunk.Task, chunk.Outcome, chunk.Sequence, chunk.Terminal, chunk.Chunk,
-                    cancellationToken);
-            }
-            else
-            {
-                response.ResponseCode = 3; // NXDOMAIN: in-zone but not a check-in
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "DNS listener {Name} failed a check-in for {Question}.", _listener.Name, questionName);
-            return (EmptyResponse(parsed.Id, responseCode: 2), questionName); // SERVFAIL
-        }
-
-        return (DnsCodec.EncodeResponse(response), questionName);
-    }
-
-    private static DnsTxtAnswer TxtAnswer(string name, string encoded)
-    {
-        // Split the base32 payload into TXT strings of at most 200 chars: the
-        // record's strings concatenate back into one payload on the implant
-        // side, and the split keeps any single string well under the 255-byte
-        // TXT limit with the EDNS0 budget in mind.
-        var strings = new List<string>();
-        for (var offset = 0; offset < encoded.Length; offset += 200)
-            strings.Add(encoded.Substring(offset, Math.Min(200, encoded.Length - offset)));
-        return new DnsTxtAnswer(name, strings);
-    }
-
-    private static byte[] EmptyResponse(ushort id, ushort responseCode)
-        => DnsCodec.EncodeResponse(new DnsMessage { Id = id, IsResponse = true, ResponseCode = responseCode });
 
     // Parses "host:port" for the UDP bind; accepts an IP (v4/v6) or "*" for
     // any interface -- the same shapes the Kestrel listener path accepts.

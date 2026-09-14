@@ -20,9 +20,15 @@ public enum BindReservation
     TcpPort,
 }
 
-/// <summary>The dial shape a socket-owning transport's public endpoint takes.</summary>
+/// <summary>The dial shape a transport's public endpoint takes.</summary>
 public enum PublicEndpointShape
 {
+    /// <summary>
+    /// An absolute http(s) URL, host:port pair, or bare hostname -- the web
+    /// family's dial, completed with the transport's scheme.
+    /// </summary>
+    WebDial,
+
     /// <summary>A DNS zone the listener answers for (e.g. c2.example.test).</summary>
     DnsZone,
 

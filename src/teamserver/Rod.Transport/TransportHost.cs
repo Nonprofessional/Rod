@@ -472,15 +472,18 @@ public static class TransportHost
                     // (architecture.md Sec 8).
                     if (string.Equals(provider.Transport, "mtls", StringComparison.OrdinalIgnoreCase))
                         ConfigureMtlsHttps(listen, kestrel);
-                    // The single-port https listener never requests a client
+                    // The single-port https shapes never request a client
                     // certificate: a TLS CertificateRequest is itself a
                     // fingerprint (an ordinary website never asks the visitor
                     // for one), and check-ins authenticate at the application
                     // layer under the per-artifact key the build baked. The
                     // handshake carries a certificate exchange only for the
                     // server identity -- indistinguishable from ordinary web
-                    // traffic (architecture.md Sec 8/9).
-                    if (string.Equals(provider.Transport, "https", StringComparison.OrdinalIgnoreCase))
+                    // traffic (architecture.md Sec 8/9). DoH rides the same
+                    // posture: the DNS grammar identifies by id alone, and
+                    // the TLS shape must not fingerprint the resolver front.
+                    if (string.Equals(provider.Transport, "https", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(provider.Transport, "doh", StringComparison.OrdinalIgnoreCase))
                         ConfigureHttps(listen, kestrel);
                 });
 
@@ -680,6 +683,9 @@ public static class TransportHost
         // same session the gRPC stream runs over the envelope's own auth and
         // frame grammar.
         app.MapWebSocketBeaconEndpoints();
+        // DNS-over-HTTPS: the DNS grammar's second carriage, served by the
+        // doh listener that owns the arriving port.
+        app.MapDnsOverHttpsEndpoints();
         // A trivial health probe so the listener is observably up.
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
         return app;
@@ -720,6 +726,7 @@ public static class TransportHost
         endpoints.MapGrpcService<BeaconEndpoint>();
         endpoints.MapEnvelopeBeaconEndpoints();
         endpoints.MapWebSocketBeaconEndpoints();
+        endpoints.MapDnsOverHttpsEndpoints();
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
     }
 

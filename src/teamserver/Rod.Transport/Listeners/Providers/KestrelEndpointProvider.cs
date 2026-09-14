@@ -48,12 +48,22 @@ public sealed class KestrelEndpointProvider : ITransportProvider
     private static readonly TimeSpan BindProbeTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BindProbeInterval = TimeSpan.FromMilliseconds(100);
 
-    /// <summary>Initializes a provider serving <paramref name="transport"/> under <paramref name="posture"/>.</summary>
-    public KestrelEndpointProvider(string transport, ListenerTlsPosture posture, IReadOnlyList<string> carriers)
+    /// <summary>
+    /// Initializes a provider serving <paramref name="transport"/> under
+    /// <paramref name="posture"/>. The public endpoint defaults to the web
+    /// dial; a Kestrel-riding transport whose dial is another shape (DoH
+    /// answers for a DNS zone) names it.
+    /// </summary>
+    public KestrelEndpointProvider(
+        string transport,
+        ListenerTlsPosture posture,
+        IReadOnlyList<string> carriers,
+        PublicEndpointShape endpointShape = PublicEndpointShape.WebDial)
     {
         Transport = transport;
         Posture = posture;
         Carriers = carriers;
+        EndpointShape = endpointShape;
     }
 
     /// <summary>The listener transport this provider serves, by wire name.</summary>
@@ -61,6 +71,9 @@ public sealed class KestrelEndpointProvider : ITransportProvider
 
     /// <summary>The TLS posture every endpoint this provider publishes carries.</summary>
     public ListenerTlsPosture Posture { get; }
+
+    /// <summary>The dial shape this transport's public endpoint takes.</summary>
+    public PublicEndpointShape EndpointShape { get; }
 
     /// <inheritdoc />
     public IReadOnlyList<string> Carriers { get; }
@@ -74,13 +87,17 @@ public sealed class KestrelEndpointProvider : ITransportProvider
 
     /// <inheritdoc />
     public bool AcceptsPublicEndpoint(string text)
-        => PublicEndpointShapes.IsWebDial(text);
+        => EndpointShape == PublicEndpointShape.DnsZone
+            ? PublicEndpointShapes.IsDnsZone(text.Trim().TrimEnd('.'))
+            : PublicEndpointShapes.IsWebDial(text);
 
     /// <inheritdoc />
     public string DescribePublicEndpointRule(string got)
-        => $"Public endpoint accepts an absolute http(s) URL, a host:port pair, or a bare hostname "
-            + "-- each is completed with the transport's scheme (and this listener's port for a bare "
-            + $"hostname); got '{got}'.";
+        => EndpointShape == PublicEndpointShape.DnsZone
+            ? $"Public endpoint must be the DNS zone this listener answers for (e.g. c2.example.test), got '{got}'."
+            : $"Public endpoint accepts an absolute http(s) URL, a host:port pair, or a bare hostname "
+                + "-- each is completed with the transport's scheme (and this listener's port for a bare "
+                + $"hostname); got '{got}'.";
 
     /// <summary>The bind address shape is the shared host:port parse.</summary>
     public void Validate(ListenerConfig config)
