@@ -179,7 +179,7 @@ An engagement's C2 ingress. Each listener owns two addresses:
   interfaces (the dropdown is built from `GET /network/interfaces`): one NIC,
   the all-interfaces wildcard (`0.0.0.0`), or a custom address; the port is
   its own field, defaulted per transport (https 443, mTLS 5443, http 5090,
-  DNS 53, TCP 4444). SMB has no interface/port -- its bind is
+  DNS 53, TCP 4444, QUIC 443). SMB has no interface/port -- its bind is
   a bare pipe name.
 - **Public endpoint** -- the address *implants dial* (enroll + check-in,
   and interactive on TLS fronts), baked into payloads. The create form's

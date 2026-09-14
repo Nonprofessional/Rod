@@ -13,10 +13,3 @@ Lean is the standing default: an addition must say what an engagement
 cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
-
-## Transports and identity (architecture.md Sec 8, Sec 9)
-
-The transport layer now runs on the published contract
-([extending/transports.md](extending/transports.md)): a transport
-registers a provider and its carriers, and edits no core. The items below
-are the open ends of that surface and the gaps an engagement can hit.

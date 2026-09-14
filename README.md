@@ -130,8 +130,11 @@ dotnet run --project src/teamserver/Rod.TeamServer
    and bakes it in, so the artifact deploys with zero run-time arguments and
    enrolls on run. A source-tree dev implant skips the build: mint a token
    through the API (`POST /engagements/{id}/stager-tokens`) and run
-   `src/implant/dotnet` with `-enroll-url ... -token ...`. The full walk, with
-   acceptance evidence, is [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
+   `src/implant/dotnet` with `-enroll-url <the engagement listener's
+   endpoint>/implants/enroll -token ...` -- the operator front refuses
+   implant ingress, so the URL names the listener created above. The full
+   walk, with acceptance evidence, is
+   [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
 
 Configuration is opt-in sections of `appsettings.json`:
 

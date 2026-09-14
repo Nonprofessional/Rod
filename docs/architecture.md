@@ -148,7 +148,8 @@ in-house. The dependency rule is enforced by architecture tests.
   and infra flexibility. No engagement state, no business logic. (Sec. 8.)
   The in-tree reference forwarder ships (`src/redirector/dotnet/`): an opaque
   L4 TCP splice published as a single static binary. Together with the
-  server-side rotation path -- listener repoint (`POST /listeners/{id}:repoint`)
+  server-side rotation path -- listener repoint
+  (`POST /engagements/{engagementId}/listeners/{id}:repoint`)
   and retire with their audit writes -- a burned redirector is swapped
   end to end; see [operations/redirectors.md](operations/redirectors.md).
 - **Operator UI.** The web front end; lives in the teamserver project.
@@ -288,8 +289,9 @@ Implants differ by purpose, not by a "managed device flavor":
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
 inner ring both the build pipeline and the tradecraft layer read). Stage-2
-carries the full core set (shell, both-direction file transfer, and process
-termination) plus the
+carries the full core set (one-shot and interactive shell execution,
+both-direction file transfer, directory listing, process termination, and
+the beacon's own sleep control) plus the
 tunnel set, the recon set, the lateral set, the persist set, the collect set,
 and the exfil set (tunneling and process control join stage-2's core
 operations, and recon,
@@ -609,7 +611,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - **Listener and public endpoint are decoupled, and the endpoint is repointable
   at runtime.** A redirector fronts the listener; a burned redirector is replaced
   without touching the backend by repointing the listener's public endpoint
-  (`POST /listeners/{id}:repoint`). The Kestrel bind is untouched; the old
+  (`POST /engagements/{engagementId}/listeners/{id}:repoint`). The Kestrel
+  bind is untouched; the old
   endpoint simply no longer resolves to any listener, which severs it. This
   decoupling is what makes disposable infrastructure practical. The in-tree
   reference redirector -- an opaque L4 TCP forwarder published as a Native AOT
@@ -993,7 +996,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 
 | Category | Example verbs | Summary |
 |----------|---------------|---------|
-| **core** | `shell.exec`, `file.push`, `file.pull`, `proc.kill` | The mandatory-to-useful baseline: command execution, file transfer in both directions, and process termination. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm); `proc.kill` ends one process by pid, carrying a `kills-process` OPSEC flag for the picker to badge. |
+| **core** | `shell.exec`, `shell.interact`, `file.push`, `file.pull`, `fs.list`, `proc.kill`, `beacon.sleep` | The mandatory-to-useful baseline: command execution (one-shot and interactive), file transfer in both directions, directory listing, process termination, and retiming the beacon's own cadence. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm); `fs.list` lists a directory for the file browser; `proc.kill` ends one process by pid, carrying a `kills-process` OPSEC flag for the picker to badge; `beacon.sleep` retunes the live check-in cadence (sleep and jitter) from the next cycle. |
 | **recon** | `recon.portscan`, `recon.hostenum`, `recon.service`, `recon.ps` | Target and network reconnaissance. `recon.ps` lists the local host's live processes -- pid, ppid, user, image. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
@@ -1320,10 +1323,13 @@ the handler's output batches upstream, and a channel the implant stops
 collecting closes itself with a timeout result. The tradeoff is named at
 the bake, never silent: while a channel is open, the interactive traffic
 runs at the check-in cadence, every keystroke costing up to one interval
-each way. The reference implant's shell channel wires the platform
-shell's stdio pipes -- the documented, mainstream mechanism, no pseudo-terminal
-allocation: without a tty the shell runs without prompt or line editing, and
-a PTY-backed handler is a drop-in over the same byte-transparent channel
+each way. The reference implant's shell channel runs the platform shell
+under a pseudo-terminal on Unix -- the documented `script` wrapper -- so the
+channel behaves like a real terminal: prompt, line editing, and the
+interrupt byte becoming SIGINT for the foreground program. Where no PTY
+wrapper exists (a stripped container, Windows pending ConPTY) it falls back
+to the plain pipes shape -- byte-transparent, no prompt or line editing --
+and a richer PTY handler is a drop-in over the same byte-transparent channel
 contract. Its tunnel channel bridges the same contract to a TCP connection
 of the implant's own -- the byte transparency is what lets one channel shape
 carry stdio and sockets alike. The same transparency carries the tunnel's
@@ -1383,7 +1389,9 @@ scrape.
   plus the event/artifact counts. The close-out path is ordered:
   **freeze** (`:freeze`) stops new tasking, enrollments, and token mints so the
   trail is final -- in-flight results still land, and re-export before retire
-  carries them; **export** builds and verifies the package server-side before it
+  carries them; a mistaken freeze is reversible before retirement
+  (`:unfreeze` reopens the engagement); **export** builds and verifies the
+  package server-side before it
   leaves; **retire** (`:retire`) completes the close-out, terminal, and is
   refused on an open engagement so the export cannot be skipped. Each step is an
   audited operator event (`EngagementFrozen`, `EvidenceExported`, whose outcome
@@ -1498,8 +1506,7 @@ pressure is how the line erodes.
   contracts**: the core defines their interfaces, registration, dispatch, and
   data models; the concrete tradecraft is supplied as separate, opt-in,
   out-of-tree modules the operator deploys. The core ships none of it.
-- All use assumes an authorized context; see
- .
+- All use assumes an authorized context; see [SECURITY.md](../SECURITY.md).
 
 ## 14. Capability bar (design aspiration)
 

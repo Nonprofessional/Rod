@@ -67,12 +67,18 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
 ## The dev loop
 
 1. Log in at the UI (or `POST /operators/login`).
-2. Create an engagement; mint a stager token.
+2. Create an engagement; create its listener (the engagement's own implant
+   ingress -- the operator front refuses enrollments): `POST
+   /engagements/{id}/listeners` with `{"name": "dev", "transport": "Http",
+   "bindAddress": "127.0.0.1:8080"}` (the public endpoint derives from the
+   bind on the web-shaped transports); mint a stager token. The UI path is
+   the engagement's Listeners panel.
 3. Build a payload for it (class, target OS/arch, beacon profile, malleable
    transport) and download the artifact from the payload store.
 4. Run the reference implant for a quick end-to-end check:
    `dotnet run --project src/implant/dotnet -- -enroll-url
-   http://127.0.0.1:5080/implants/enroll -token <secret>`, or add `-mode poll`
+   http://127.0.0.1:8080/implants/enroll -token <secret>` -- the address is
+   the listener from step 2, not the operator front -- or add `-mode poll`
    for the low-and-slow cadence. It appears in the implants list (grouped
    under the host it reported at enroll), takes tasking, and its results land
    in the audit trail.
@@ -134,7 +140,7 @@ standard `Section__Key` mapping):
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
 | `Operators:Initial` | The first loginable account, provisioned idempotently at startup (`Handle`, `DisplayName`, `Password`). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Development: the built-in `operator`/`operator` account. Production: **no account** -- a server configured without one has no login. |
-| `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Mtls`, `Dns`, `Smb`, `Tcp`, or `Quic`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and check-ins on the sealed envelope under the per-artifact key, both halves on one socket), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS/Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture; `Quic` binds a UDP socket under TLS 1.3 (needs libmsquic on Linux) and serves the live check-in stream, no enrollment. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
+| `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Mtls`, `Dns`, `Doh`, `Smb`, `Tcp`, or `Quic`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and check-ins on the sealed envelope under the per-artifact key, both halves on one socket; `Doh` carries the DNS grammar over RFC 8484 HTTPS bodies and, like `Dns`, takes the zone as its public endpoint), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT check-ins live under). mTLS/Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture; `Quic` binds a UDP socket under TLS 1.3 (needs libmsquic on Linux) and serves the live check-in stream, no enrollment. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
 | `Pki` | An externally provisioned engagement CA as PEM files (`CaCertificatePath`, `CaPrivateKeyPath`, optional `CaPrivateKeyPassphrase`) -- production leaf issuance. Unparseable or mismatched material fails at startup, not at the first enrollment. RSA only. | The self-signed dev CA (key lives in process -- not for production). |
@@ -388,6 +394,8 @@ session cookie:
 ```
 # 1. Freeze: the engagement stops accepting new tasking, enrollments, and
 #    token mints, so its trail is final. In-flight results still land.
+#    A mistaken freeze is reversible before retirement:
+#    POST .../engagements/<id>:unfreeze reopens the engagement.
 curl -s -b jar.txt -X POST http://<operator listener>/engagements/<id>:freeze
 
 # 2. Export: one ZIP with audit.jsonl (the full hash-chained trail),

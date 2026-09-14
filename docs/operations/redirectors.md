@@ -140,7 +140,8 @@ openssl s_client -connect 203.0.113.10:443 -servername <expected-host>
 # is transparent at L4).
 ```
 
-From the teamserver side, `GET /listeners` shows the listener's `publicEndpoint`
+From the teamserver side, `GET /engagements/{engagementId}/listeners` shows
+the listener's `publicEndpoint`
 pointing at the redirector and `state` healthy. New implants enrolled against the
 redirector's endpoint should open sessions.
 
@@ -156,7 +157,7 @@ redirector is swapped **end to end**, not just in the registry. The flow:
 2. **Repoint the listener** to B. The teamserver-side half:
 
    ```
-   POST /listeners/{id}:repoint
+   POST /engagements/{engagementId}/listeners/{id}:repoint
    Content-Type: application/json
 
    { "publicEndpoint": "198.51.100.20:443" }

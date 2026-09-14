@@ -22,8 +22,9 @@ A transport is three declarations, not a switch arm:
    registered: an unregistered name answers "no channels" and binds
    nothing.
 
-The in-tree seven (`http`, `https`, `mtls`, `dns`, `smb`, `tcp`, `quic`)
-register in the static constructors and are the reference implementations.
+The in-tree eight (`http`, `https`, `mtls`, `dns`, `smb`, `tcp`, `quic`,
+`doh`) register in the static constructors and are the reference
+implementations.
 The listener record, the operator API, the persistence, and the restore path
 all speak the wire name -- a registered transport is nameable the moment it
 registers, with no core edits.

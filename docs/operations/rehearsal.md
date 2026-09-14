@@ -133,7 +133,8 @@ misconfigured listener -- that is the acceptance for step zero.
 7. **Burn a front**: stop the primary redirector. The implant's check-ins
    fail and the baked egress walk advances to the fallback front -- it
    returns to the roster with no operator action. Then repoint the
-   listener (`POST /listeners/{id}:repoint` with the fallback front) so
+   listener (`POST /engagements/{engagementId}/listeners/{id}:repoint` with
+   the fallback front) so
    the server-side record names the live front and the burned one is
    severed. No backend restart, no bind change.
 8. **Tear down to report**: retire the implant

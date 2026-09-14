@@ -8,8 +8,9 @@ namespace Rod.Transport.Listeners;
 /// create binds for one engagement (enrollment through it checks the
 /// presented token against <see cref="EngagementId"/>), and the startup-
 /// configuration tier -- the operator front and any deliberately shared
-/// ingress -- which leaves <see cref="EngagementId"/> null and serves any
-/// engagement the stager token itself names. A redirector fronts a listener;
+/// ingress -- which leaves <see cref="EngagementId"/> null and carries no
+/// implant ingress at all: enrollment and the stage-2 fetch are refused on
+/// it outright. A redirector fronts a listener;
 /// a burned redirector is replaced without touching the backend.
 ///
 /// The listener decouples the address Kestrel opens (<see cref="BindAddress"/>) from
@@ -31,7 +32,8 @@ public sealed class Listener
     /// <summary>
     /// The transport this listener terminates, by its wire name (the registry
     /// key a provider registers under -- "http", "https", "mtls", "dns",
-    /// "smb", "tcp", or a later transport's own name). A string, not a closed
+    /// "smb", "tcp", "quic", "doh", or a later transport's own name). A
+    /// string, not a closed
     /// enumeration: the registry is the authority for what a listener may
     /// name, so a transport added later needs no edit here.
     /// </summary>
