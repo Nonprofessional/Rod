@@ -14,9 +14,9 @@ namespace Rod.Implant.Tests;
 public class BeaconSleepTests
 {
     [Theory]
-    [InlineData("10s", 10, 0)]          // Go duration, jitter kept
-    [InlineData("30", 30, 0)]           // bare seconds
-    [InlineData("1m30s", 90, 0)]        // compound Go duration
+    [InlineData("10s", 10, 10)]         // Go duration, jitter kept
+    [InlineData("30", 30, 10)]          // bare seconds, jitter kept
+    [InlineData("1m30s", 90, 10)]       // compound Go duration, jitter kept
     [InlineData("10s 2s", 10, 2)]       // sleep + jitter
     [InlineData("0 0", 0, 0)]           // the interactive-as-poll posture
     [InlineData("500ms 100ms", 0.5, 0.1)]
