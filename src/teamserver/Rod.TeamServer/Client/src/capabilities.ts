@@ -10,7 +10,7 @@ import { type CapabilityDescriptor, listCapabilities } from './api'
 // lifecycle (recon -> lateral -> persist -> collect -> exfil), then tunneling,
 // then the two sensitive contract categories last. Categories returned by the
 // server but not listed here fall through to the end in their natural order.
-export const CATEGORY_ORDER: readonly string[] = [
+const CATEGORY_ORDER: readonly string[] = [
   'Core',
   'Recon',
   'Lateral',
@@ -22,7 +22,7 @@ export const CATEGORY_ORDER: readonly string[] = [
   'Exploit',
 ]
 
-export function categoryRank(category: string): number {
+function categoryRank(category: string): number {
   const index = CATEGORY_ORDER.indexOf(category)
   return index === -1 ? CATEGORY_ORDER.length : index
 }
@@ -41,7 +41,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   Exploit: 'Exploit (contract)',
 }
 
-export function categoryLabel(category: string): string {
+function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category
 }
 
@@ -53,7 +53,7 @@ export interface CapabilityGroup {
 
 // Groups the catalog into ordered categories for the picker. Stable within a
 // group by verb (alphabetical) so the list does not reshuffle on re-fetch.
-export function groupByCategory(descriptors: CapabilityDescriptor[]): CapabilityGroup[] {
+function groupByCategory(descriptors: CapabilityDescriptor[]): CapabilityGroup[] {
   const buckets = new Map<string, CapabilityDescriptor[]>()
   for (const d of descriptors) {
     const list = buckets.get(d.category) ?? []

@@ -84,7 +84,7 @@ export interface Problem {
 // The session cookie expired or was revoked mid-use. The shell listens for the
 // unauthorized event and returns to the login view; a view's inline error text
 // is not enough when every subsequent call will 401.
-export class SessionExpiredError extends Error {}
+class SessionExpiredError extends Error {}
 
 function notifySessionExpired(): void {
   window.dispatchEvent(new Event('rod-unauthorized'))
@@ -234,10 +234,6 @@ export async function issueTask(
 // service -- the trail stays as the durable account, so "delete" here means
 // retiring, not erasing. A mistaken freeze is walked back with unfreeze until
 // retirement completes.
-
-export async function getEngagement(engagementId: string): Promise<Engagement> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}`))
-}
 
 export async function editEngagement(
   engagementId: string,
@@ -958,16 +954,6 @@ export interface BuildPayloadResult {
   // The id of the enrollment credential baked into the artifact, when the
   // build minted one -- enough to revoke it, never the secret itself.
   tokenId: string | null
-}
-
-export async function buildPayload(engagementId: string, input: BuildPayloadInput): Promise<BuildPayloadResult> {
-  return jsonOrThrow(
-    await fetch(`engagements/${engagementId}/payloads`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(input),
-    }),
-  )
 }
 
 // --- Background payload builds ---------------------------------

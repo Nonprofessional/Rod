@@ -227,17 +227,6 @@ export const VERB_FORMS: Record<string, VerbForm> = {
   },
 }
 
-// Verbs that need no arguments at all: the menu issues them directly (a
-// confirm for the risky ones) instead of opening an empty form.
-export const ZERO_ARG_VERBS: readonly string[] = [
-  'recon.ps',
-  'recon.hostenum',
-  'collect.screenshot',
-  'persist.list',
-  'exfil.stage',
-  'tunnel.socks',
-]
-
 // The verbs whose tasks run as live channels (the server's ChannelVerbs is the
 // authority; the operator UI keeps this mirror so a channel task can offer its
 // input pane). The input route refuses anything else server-side.

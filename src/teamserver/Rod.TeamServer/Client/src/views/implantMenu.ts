@@ -29,7 +29,7 @@ const CLASS_VERBS: Record<string, readonly string[]> = {
   Pivot: ['tunnel.forward', 'tunnel.socks'],
 }
 
-export function classVerbs(klass: string): ReadonlySet<string> {
+function classVerbs(klass: string): ReadonlySet<string> {
   return new Set(CLASS_VERBS[klass] ?? [])
 }
 

@@ -93,15 +93,6 @@ async function pollInFlight() {
   if (changed) notify()
 }
 
-export function getCachedBrowse(
-  engagementId: string,
-  implantId: string,
-  verb: string,
-  args: string,
-): BrowseEntry | undefined {
-  return entries.get(keyOf(engagementId, implantId, verb, args))
-}
-
 export function browseInFlight(entry: BrowseEntry | undefined): boolean {
   return !!entry && IN_FLIGHT.has(entry.status)
 }
