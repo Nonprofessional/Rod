@@ -49,11 +49,13 @@ public interface IListenerRegistry
     Task<bool> RemoveAsync(ListenerId listener, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The HTTP-shaped listener bound to the local port a request arrived on,
-    /// or null when none matches (the request rode a socket the registry does
-    /// not know, or a stream transport). This is how enrollment finds the
-    /// engagement-scoped listener that received it -- the scope check compares
-    /// the listener's engagement against the presented token's.
+    /// The HTTP-family (Kestrel-riding) listener bound to the local port a
+    /// request arrived on, or null when none matches (the request rode a
+    /// socket the registry does not know, or a socket-owning transport). This
+    /// is how enrollment finds the engagement-scoped listener that received
+    /// it -- the scope check compares the listener's engagement against the
+    /// presented token's, and the listener's id is the ingress stamp the
+    /// implant record carries.
     /// </summary>
     Task<Listener?> FindByLocalPortAsync(int port, CancellationToken cancellationToken = default);
 }

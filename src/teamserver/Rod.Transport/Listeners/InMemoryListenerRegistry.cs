@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Rod.Transport.Listeners.Providers;
 
 namespace Rod.Transport.Listeners;
 
@@ -62,14 +63,16 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
 
     public Task<Listener?> FindByLocalPortAsync(int port, CancellationToken cancellationToken = default)
     {
-        // The HTTP-shaped listeners carry host:port binds; the first whose
-        // port matches is the listener the request arrived on. (Stream
-        // transports never serve HTTP enrollment, so their bind shapes are
-        // skipped by the parse.)
+        // The Kestrel-riding family carries host:port binds and serves the
+        // HTTP routes -- enrollment included -- on whatever socket it opens,
+        // so the provider registry's shape decides the match: http, https,
+        // mtls, and doh today, and any later Kestrel-riding registration
+        // without an edit here. The socket-owning family (dns, smb, tcp,
+        // quic) never serves HTTP enrollment, so its bind shapes are skipped.
         Listener? found = null;
         foreach (var listener in _listeners.Values)
         {
-            if (listener.Transport is not ("http" or "mtls"))
+            if (TransportProviders.Find(listener.Transport) is not KestrelEndpointProvider)
                 continue;
             if (!TryParsePort(listener.BindAddress, out var bindPort) || bindPort != port)
                 continue;

@@ -4,7 +4,9 @@ using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
+using Rod.CoreState.Staging;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -177,6 +179,89 @@ public class ListenerRuntimeTests
         var frames = ParseFrames(await beacon.Content.ReadAsByteArrayAsync());
         var handshake = Rod.V1.HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
         Assert.Equal(Rod.V1.HandshakeStatus.VersionMismatch, handshake.Status);
+    }
+
+    [Fact]
+    public async Task HttpsListener_Enrollment_StampsItsListenerId_AndRefusesAForeignEngagementsToken()
+    {
+        // The enrollment-ingress lookup once matched only the http and mtls
+        // wire names, so an enrollment riding an https listener resolved no
+        // ingress: the implant record carried no listener id (the delete
+        // guard could not see it) and the token's engagement-scope check
+        // against the socket was skipped. Both halves of that gap are pinned
+        // here, over the same certificate-less TLS shape the test above
+        // rides.
+        var port = TestSupport.GetFreeTcpPort();
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: "http",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+        await AuthenticatedHost.LoginAsync(env.Http);
+
+        // Two engagements; the https listener belongs to the first.
+        var owning = await CreateEngagementAsync(env.Http);
+        var foreign = await CreateEngagementAsync(env.Http);
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{owning}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "scoped-https",
+                Transport: "https",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+
+        // A client that trusts only the teamserver's own CA -- the TLS shape
+        // a fresh implant's enroll client has.
+        var ca = env.Host.Services
+            .GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>()
+            .GetCaCertificate();
+        using var handler = new SocketsHttpHandler
+        {
+            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
+                {
+                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+                    chain!.ChainPolicy.VerificationFlags =
+                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    chain!.ChainPolicy.ExtraStore.Add(ca);
+                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
+                    return leaf is not null
+                        && chain.Build(leaf)
+                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
+                },
+            },
+        };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
+
+        // The foreign engagement's token is refused on the scoped socket --
+        // whole, its single use intact for the listener it was minted for.
+        var foreignSecret = await MintTokenAsync(env.Http, foreign);
+        var refused = await client.PostAsJsonAsync("/implants/enroll",
+            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignSecret, Class: null));
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
+        Assert.True(EngagementId.TryParse(foreign, out var foreignId));
+        var redeemed = await tokens.RedeemAsync(foreignSecret, DateTimeOffset.UtcNow.AddMinutes(1));
+        Assert.Equal(foreignId, redeemed.EngagementId);
+
+        // The owning engagement's token enrolls through the same socket, and
+        // the implant record carries the https listener's id -- the ingress
+        // stamp the listener-delete guard counts.
+        var owningSecret = await MintTokenAsync(env.Http, owning);
+        var enrolled = await client.PostAsJsonAsync("/implants/enroll",
+            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: owningSecret, Class: null));
+        enrolled.EnsureSuccessStatusCode();
+        var body = await enrolled.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
+        Assert.NotNull(body);
+        Assert.True(Guid.TryParse(body!.ImplantId, out var implantValue));
+
+        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
+        var record = await implants.FindAsync(new ImplantId(implantValue));
+        Assert.NotNull(record);
+        Assert.Equal(listener!.Id, record!.EnrolledViaListenerId?.ToString("N"));
     }
 
     [Fact]
