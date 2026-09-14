@@ -304,9 +304,20 @@ internal sealed class Config
           -mode string         check-in mode: stream (persistent) or poll (default stream)
           -kill-date string    RFC3339 kill date past which the implant exits
           -ca-cert string      optional PEM file pinning the teamserver CA to trust
+          -enroll-path string  transport profile: the URI path enroll posts to
+          -user-agent string   transport profile: the User-Agent enroll presents
+          -envelope string     transport profile: envelope shaping the enroll body
+                               (base64)
+          -request-timeout duration
+                               transport profile: per-request HTTP timeout
           -quiet               silence the progress narration on stderr (default false)
 
-        Each flag falls back to the matching ROD_* environment variable.
+        Each flag falls back to the matching ROD_* environment variable
+        (ROD_ENROLL_URL, ROD_BEACON_URL, ROD_FALLBACK_ENROLL_URLS as JSON,
+        ROD_STAGER_TOKEN, ROD_SLEEP, ROD_JITTER, ROD_MODE, ROD_KILL_DATE,
+        ROD_CA_CERT, ROD_ENROLL_PATH, ROD_USER_AGENT, ROD_HEADERS as JSON,
+        ROD_ENVELOPE, ROD_REQUEST_TIMEOUT, ROD_VERBS, ROD_QUIET, ROD_ENVELOPE_KEY,
+        ROD_CHECKIN_ENVELOPE, ROD_DEGRADED_CHANNELS, ROD_SHELL_IDLE_SECONDS).
         """;
 
     // Validates the check-in mode; anything but stream/poll is a usage error

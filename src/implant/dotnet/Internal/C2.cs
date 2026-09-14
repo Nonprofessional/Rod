@@ -144,14 +144,6 @@ internal sealed class Enrollment
 /// </remarks>
 internal static class C2
 {
-    public static async Task<Enrollment> EnrollAsync(
-        string enrollUrl,
-        string stagerToken,
-        ECDsa privateKey,
-        X509Certificate2Collection? serverCAs,
-        CancellationToken cancellationToken = default)
-        => await EnrollAsync(enrollUrl, stagerToken, parentImplantId: null, privateKey, serverCAs, new TransportProfile(), cancellationToken: cancellationToken);
-
     /// <summary>
     /// Enrolls and applies the malleable transport profile to the enroll request
     /// (architecture.md Sec 7): the profile's User-Agent and headers are set

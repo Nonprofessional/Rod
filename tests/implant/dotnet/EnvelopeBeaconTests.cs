@@ -106,27 +106,27 @@ public class EnvelopeBeaconTests
         // versa, so neither direction's ciphertext can be reflected.
         var baked = Convert.ToBase64String(
             Guid.NewGuid().ToByteArray().Concat(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToArray());
-        var parsed = EnvelopeBeacon.ParseBakedKey(baked);
+        var parsed = EnvelopeWire.ParseBakedKey(baked);
         Assert.NotNull(parsed);
         var (keyId, keyMaterial) = parsed!.Value;
 
         var plaintext = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f };
 
-        var request = EnvelopeBeacon.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-v1");
-        var response = EnvelopeBeacon.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-response-v1");
+        var request = EnvelopeWire.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-v1");
+        var response = EnvelopeWire.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-response-v1");
 
-        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-v1"));
-        Assert.Equal(plaintext, EnvelopeBeacon.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-v1"));
+        Assert.Equal(plaintext, EnvelopeWire.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-v1"));
+        Assert.Equal(plaintext, EnvelopeWire.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-response-v1"));
+        Assert.Null(EnvelopeWire.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-response-v1"));
+        Assert.Null(EnvelopeWire.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-v1"));
 
         // Tampered bytes never open, and a foreign key never opens the seal.
         var tampered = (byte[])request.Clone();
         tampered[^2] = (byte)(tampered[^2] ^ 0x01);
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(tampered, keyId, keyMaterial, "rod-checkin-v1"));
-        var other = EnvelopeBeacon.ParseBakedKey(Convert.ToBase64String(
+        Assert.Null(EnvelopeWire.TryOpenCheckInBody(tampered, keyId, keyMaterial, "rod-checkin-v1"));
+        var other = EnvelopeWire.ParseBakedKey(Convert.ToBase64String(
             Guid.NewGuid().ToByteArray().Concat(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToArray()));
-        Assert.Null(EnvelopeBeacon.TryOpenCheckInBody(
+        Assert.Null(EnvelopeWire.TryOpenCheckInBody(
             request, other!.Value.KeyId, other.Value.Key, "rod-checkin-v1"));
     }
 
@@ -136,9 +136,9 @@ public class EnvelopeBeaconTests
         // A bad bake falls back to the plaintext frame rather than checking
         // in undecodably: the key parse refuses the wrong length and junk
         // base64 alike.
-        Assert.Null(EnvelopeBeacon.ParseBakedKey(""));
-        Assert.Null(EnvelopeBeacon.ParseBakedKey("not-base64!!"));
-        Assert.Null(EnvelopeBeacon.ParseBakedKey(Convert.ToBase64String(new byte[8])));
+        Assert.Null(EnvelopeWire.ParseBakedKey(""));
+        Assert.Null(EnvelopeWire.ParseBakedKey("not-base64!!"));
+        Assert.Null(EnvelopeWire.ParseBakedKey(Convert.ToBase64String(new byte[8])));
     }
 
     [Fact]

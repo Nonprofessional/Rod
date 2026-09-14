@@ -118,27 +118,6 @@ internal sealed class HeldTaskLedger
     }
 
     /// <summary>
-    /// The cached outcome of a held task, when it completed and its delivery
-    /// has not been marked. Delivered results stay silent here: this is the
-    /// post-connection sweep's read, which re-sends only what may not have
-    /// landed rather than spamming every cached result on every reconnect.
-    /// </summary>
-    public bool TryGetUndelivered(string taskId, out TaskOutcome outcome, out string output)
-    {
-        lock (_gate)
-        {
-            outcome = TaskOutcome.Unspecified;
-            output = string.Empty;
-            if (!_held.TryGetValue(taskId, out var entry) || !entry.Completed || entry.Delivered)
-                return false;
-
-            outcome = entry.Outcome;
-            output = entry.Output;
-            return true;
-        }
-    }
-
-    /// <summary>
     /// Marks a cached result as written on the live connection. The mark is
     /// an assumption, not a confirmation -- see <see cref="InvalidateDeliveries"/>.
     /// </summary>

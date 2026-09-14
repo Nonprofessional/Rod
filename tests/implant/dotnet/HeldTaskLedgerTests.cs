@@ -22,7 +22,7 @@ public class HeldTaskLedgerTests
 
         // A held id with no cached result is a task that is running (or died
         // with its channel): nothing to re-send, but never a re-run.
-        Assert.False(ledger.TryGetUndelivered("t-1", out _, out _));
+        Assert.Empty(ledger.Undelivered());
     }
 
     [Fact]
@@ -32,21 +32,21 @@ public class HeldTaskLedgerTests
         ledger.Hold("t-1");
         ledger.Remember("t-1", TaskOutcome.Succeeded, "ran once");
 
-        Assert.True(ledger.TryGetUndelivered("t-1", out var outcome, out var output));
-        Assert.Equal(TaskOutcome.Succeeded, outcome);
-        Assert.Equal("ran once", output);
+        var cached = Assert.Single(ledger.Undelivered());
+        Assert.Equal(TaskOutcome.Succeeded, cached.Outcome);
+        Assert.Equal("ran once", cached.Output);
 
         // The write landed on a connection that lived to send it: the cached
         // result goes silent for the post-connection sweep, so a reconnect
         // does not re-send every cached result it holds.
         ledger.MarkDelivered("t-1");
-        Assert.False(ledger.TryGetUndelivered("t-1", out _, out _));
+        Assert.Empty(ledger.Undelivered());
 
         // The connection died after all: the marks clear wholesale and the
         // result re-sends on the next one.
         ledger.InvalidateDeliveries();
-        Assert.True(ledger.TryGetUndelivered("t-1", out _, out var resent));
-        Assert.Equal("ran once", resent);
+        var resent = Assert.Single(ledger.Undelivered());
+        Assert.Equal("ran once", resent.Output);
     }
 
     [Fact]

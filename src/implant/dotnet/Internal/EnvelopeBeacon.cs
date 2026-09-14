@@ -181,7 +181,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
         _seal = transport is { SealsCheckIns: true }
-            ? ParseBakedKey(transport.EnvelopeKey)
+            ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
         _mode = mode;
         _degradedChannels = degradedChannels;
@@ -362,7 +362,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             var plaintext = new byte[CounterBytes + encoded.Length];
             BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
             encoded.AsSpan().CopyTo(plaintext.AsSpan(CounterBytes));
-            postBody = SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad);
+            postBody = EnvelopeWire.SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad);
             contentType = "text/plain";
         }
         else
@@ -382,7 +382,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             // A sealed cycle answers sealed: a body that does not verify
             // under the key this artifact carries is a dropped cycle, not a
             // parse -- nothing inside it is acted on.
-            responseBytes = TryOpenCheckInBody(responseBytes, open.KeyId, open.Key, CheckInResponseAad)
+            responseBytes = EnvelopeWire.TryOpenCheckInBody(responseBytes, open.KeyId, open.Key, CheckInResponseAad)
                 ?? throw new InvalidOperationException("check-in response did not verify under the baked key");
         }
 
@@ -742,9 +742,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         }
     }
 
-    private static Frame ResultFrame(TaskRequest task, TaskOutcome outcome, string output)
-        => ResultFrame(task.TaskId, outcome, output);
-
     private static Frame ResultFrame(string taskId, TaskOutcome outcome, string output)
         => new()
         {
@@ -788,24 +785,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // never be reflected as a response and vice versa.
     private const string CheckInRequestAad = "rod-checkin-v1";
     private const string CheckInResponseAad = "rod-checkin-response-v1";
-
-    // Splits the baked envelope key (standard base64 of keyId(16) || key(32))
-    // into its halves. Delegates to the shared EnvelopeWire, the seal every
-    // web client carries; internal for the unit tests, which pin the baked
-    // key shape.
-    internal static (byte[] KeyId, byte[] Key)? ParseBakedKey(string baked)
-        => EnvelopeWire.ParseBakedKey(baked);
-
-    // The sealed check-in wire shape, delegated to the shared EnvelopeWire.
-    // Internal for the unit tests, which pin the sealed wire shape.
-    internal static byte[] SealCheckInBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
-        => EnvelopeWire.SealCheckInBody(plaintext, keyId, key, aad);
-
-    // Opens what SealCheckInBody sealed, delegated to the shared
-    // EnvelopeWire. Internal for the unit tests, which pin the sealed wire
-    // shape.
-    internal static byte[]? TryOpenCheckInBody(byte[] body, byte[] keyId, byte[] key, string aad)
-        => EnvelopeWire.TryOpenCheckInBody(body, keyId, key, aad);
 
     // One client per cycle, mirroring the gRPC beacon's per-cycle channel:
     // the walk's current entry decides the shape -- https pins the teamserver
