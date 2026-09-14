@@ -167,8 +167,8 @@ internal static class Persist
                 // would parse as unknown schtasks switches. Embedded quotes in
                 // the payload are doubled, the escape CommandLineToArgvW
                 // consumes inside a quoted argument.
-                var (scOutcome, scOut) = RunCaptured(
-                    "schtasks", $"/create /tn {Quote(name)} /tr {Quote(payload)} /sc onlogon /f");
+                var (scOutcome, scOut) = NativeCommand.RunCaptured(
+                    "schtasks", $"/create /tn {NativeCommand.Quote(name)} /tr {NativeCommand.Quote(payload)} /sc onlogon /f");
                 if (scOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install schtasks {name}: {scOut}");
                 return (TaskOutcome.Succeeded, $"installed schtasks {name} -> {payload}");
@@ -177,8 +177,8 @@ internal static class Persist
                 // the space after the flag name is required by sc's argv quirk,
                 // and the path is quoted so a payload with spaces stays one
                 // argument.
-                var (svcOutcome, svcOut) = RunCaptured(
-                    "sc", $"create {Quote(name)} binPath= {Quote(payload)} start= auto");
+                var (svcOutcome, svcOut) = NativeCommand.RunCaptured(
+                    "sc", $"create {NativeCommand.Quote(name)} binPath= {NativeCommand.Quote(payload)} start= auto");
                 if (svcOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install service {name}: {svcOut}");
                 return (TaskOutcome.Succeeded, $"installed service {name} -> {payload}");
@@ -209,7 +209,7 @@ internal static class Persist
                     return (TaskOutcome.Failed, $"remove runkey {name}: {ex.Message}");
                 }
             case "schtasks":
-                var (scOutcome, scOut) = RunCaptured("schtasks", $"/delete /tn {Quote(name)} /f");
+                var (scOutcome, scOut) = NativeCommand.RunCaptured("schtasks", $"/delete /tn {NativeCommand.Quote(name)} /f");
                 if (scOutcome == TaskOutcome.Failed
                     && scOut.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
                     return (TaskOutcome.Succeeded, $"removed schtasks {name} (already absent)");
@@ -217,7 +217,7 @@ internal static class Persist
                     return (TaskOutcome.Failed, $"remove schtasks {name}: {scOut}");
                 return (TaskOutcome.Succeeded, $"removed schtasks {name}");
             case "service":
-                var (svcOutcome, svcOut) = RunCaptured("sc", $"delete {Quote(name)}");
+                var (svcOutcome, svcOut) = NativeCommand.RunCaptured("sc", $"delete {NativeCommand.Quote(name)}");
                 if (svcOutcome == TaskOutcome.Failed
                     && svcOut.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
                     return (TaskOutcome.Succeeded, $"removed service {name} (already absent)");
@@ -257,7 +257,7 @@ internal static class Persist
                 }
                 yield break;
             case "schtasks":
-                var (scOutcome, scOut) = RunCaptured("schtasks", "/query /fo csv /nh");
+                var (scOutcome, scOut) = NativeCommand.RunCaptured("schtasks", "/query /fo csv /nh");
                 if (scOutcome == TaskOutcome.Failed)
                     yield break;
                 foreach (var line in scOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -275,7 +275,7 @@ internal static class Persist
                 }
                 yield break;
             case "service":
-                var (svcOutcome, svcOut) = RunCaptured("sc", "query type= service state= all");
+                var (svcOutcome, svcOut) = NativeCommand.RunCaptured("sc", "query type= service state= all");
                 if (svcOutcome == TaskOutcome.Failed)
                     yield break;
                 foreach (var line in svcOut.Split('\n', StringSplitOptions.RemoveEmptyEntries))
@@ -312,7 +312,7 @@ internal static class Persist
                 if (HasCronLine(current, marker))
                     return (TaskOutcome.Succeeded, $"installed cron {name} (already present)");
                 var updated = current + marker + "\n" + payload + "\n";
-                var (cronOutcome, cronOut) = RunCapturedWithStdin("crontab", "-", updated);
+                var (cronOutcome, cronOut) = NativeCommand.RunCapturedWithStdin("crontab", "-", updated);
                 if (cronOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install cron {name}: {cronOut}");
                 return (TaskOutcome.Succeeded, $"installed cron {name} -> {payload}");
@@ -337,7 +337,7 @@ internal static class Persist
                 {
                     return (TaskOutcome.Failed, $"install systemd {name}: write: {ex.Message}");
                 }
-                var (drOutcome, drOut) = RunCaptured("systemctl", "--user daemon-reload");
+                var (drOutcome, drOut) = NativeCommand.RunCaptured("systemctl", "--user daemon-reload");
                 if (drOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"install systemd {name}: daemon-reload: {drOut}");
                 return (TaskOutcome.Succeeded, $"installed systemd {name} -> {path}");
@@ -356,7 +356,7 @@ internal static class Persist
                 if (!HasCronLine(current, $"# Rod:{name}"))
                     return (TaskOutcome.Succeeded, $"removed cron {name} (already absent)");
                 var updated = RemoveCronBlock(current, name);
-                var (cronOutcome, cronOut) = RunCapturedWithStdin("crontab", "-", updated);
+                var (cronOutcome, cronOut) = NativeCommand.RunCapturedWithStdin("crontab", "-", updated);
                 if (cronOutcome == TaskOutcome.Failed)
                     return (TaskOutcome.Failed, $"remove cron {name}: {cronOut}");
                 return (TaskOutcome.Succeeded, $"removed cron {name}");
@@ -372,7 +372,7 @@ internal static class Persist
                 {
                     return (TaskOutcome.Failed, $"remove systemd {name}: {ex.Message}");
                 }
-                _ = RunCaptured("systemctl", "--user daemon-reload");
+                _ = NativeCommand.RunCaptured("systemctl", "--user daemon-reload");
                 return (TaskOutcome.Succeeded, $"removed systemd {name}");
         }
         return (TaskOutcome.Failed, $"persist.remove: unreachable mechanism {mechanism}");
@@ -417,7 +417,7 @@ internal static class Persist
     // crontab" so install proceeds with a clean append and list reports nothing.
     private static string ReadCrontab()
     {
-        var (outcome, output) = RunCaptured("crontab", "-l");
+        var (outcome, output) = NativeCommand.RunCaptured("crontab", "-l");
         if (outcome == TaskOutcome.Failed)
             return "";
         if (output.Contains("no crontab for", StringComparison.OrdinalIgnoreCase))
@@ -504,7 +504,7 @@ internal static class Persist
         mechanism = string.Empty;
         name = string.Empty;
         payload = string.Empty;
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length < 3)
             return false;
         mechanism = fields[0];
@@ -519,7 +519,7 @@ internal static class Persist
     {
         mechanism = string.Empty;
         name = string.Empty;
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length != 2)
             return false;
         mechanism = fields[0];
@@ -529,96 +529,4 @@ internal static class Persist
 
     private static bool IsKnownMechanism(string m)
         => Array.Exists(Mechanisms, known => known == m);
-
-    // Quotes one native-tool argument value: wrapped in double quotes with any
-    // embedded quote doubled, the form CommandLineToArgvW decodes back to the
-    // original string.
-    private static string Quote(string value)
-        => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-
-    // --- Process helpers ----------------------------------------------------
-
-    // Runs a platform command, capturing combined stdout/stderr. A non-zero exit
-    // is Failed with the output captured so the operator sees the cause.
-    private static (TaskOutcome Outcome, string Output) RunCaptured(string fileName, string arguments)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process is null)
-                return (TaskOutcome.Failed, $"failed to start {fileName}");
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            var output = ComposeOutput(stdout, stderr);
-            if (process.ExitCode != 0)
-                return (TaskOutcome.Failed, output.Length > 0 ? output : $"exit code {process.ExitCode}");
-            return (TaskOutcome.Succeeded, output);
-        }
-        catch (Exception ex)
-        {
-            return (TaskOutcome.Failed, ex.Message);
-        }
-    }
-
-    // Runs a platform command with the given stdin body, capturing combined
-    // stdout/stderr. Used by the cron path to feed the new crontab through
-    // `crontab -`.
-    private static (TaskOutcome Outcome, string Output) RunCapturedWithStdin(
-        string fileName, string arguments, string stdin)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process is null)
-                return (TaskOutcome.Failed, $"failed to start {fileName}");
-            process.StandardInput.Write(stdin);
-            process.StandardInput.Close();
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            var output = ComposeOutput(stdout, stderr);
-            if (process.ExitCode != 0)
-                return (TaskOutcome.Failed, output.Length > 0 ? output : $"exit code {process.ExitCode}");
-            return (TaskOutcome.Succeeded, output);
-        }
-        catch (Exception ex)
-        {
-            return (TaskOutcome.Failed, ex.Message);
-        }
-    }
-
-    // Joins stdout and stderr on a newline so a Failed outcome shows both.
-    private static string ComposeOutput(string stdout, string stderr)
-    {
-        if (stdout.Length == 0)
-            return stderr;
-        if (stderr.Length == 0)
-            return stdout;
-        return stdout + "\n" + stderr;
-    }
-
-    private static class StringSeparators
-    {
-        public static readonly char[] Space = { ' ' };
-    }
 }

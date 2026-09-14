@@ -81,7 +81,7 @@ internal static class Core
 
             // The process has exited, so both drains have completed (the pipes
             // closed); the sync wait below never blocks.
-            var output = ComposeOutput(stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+            var output = NativeCommand.ComposeOutput(stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
             if (process.ExitCode != 0)
                 return (TaskOutcome.Failed, output.Length > 0 ? output : $"exit code {process.ExitCode}");
             return (TaskOutcome.Succeeded, output);
@@ -188,17 +188,6 @@ internal static class Core
     internal static (string Shell, string Flag) PlatformShell()
         => OperatingSystem.IsWindows() ? ("cmd.exe", "/c") : ("sh", "-c");
 
-    // Joins stdout and stderr on a newline so a Failed outcome shows both, and a
-    // Succeeded outcome carries whatever the shell printed.
-    private static string ComposeOutput(string stdout, string stderr)
-    {
-        if (stdout.Length == 0)
-            return stderr;
-        if (stderr.Length == 0)
-            return stdout;
-        return stdout + "\n" + stderr;
-    }
-
     // Splits "<host> <start-end>" and validates the range. Ports stay in
     // [1, 65535] and start <= end; the second token uses a hyphen separator to
     // match the documented argument format.
@@ -207,7 +196,7 @@ internal static class Core
         host = string.Empty;
         startPort = 0;
         endPort = 0;
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length != 2)
             return false;
         var range = fields[1].Split('-');
@@ -226,7 +215,7 @@ internal static class Core
     {
         host = string.Empty;
         ports = Array.Empty<int>();
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length != 2)
             return false;
         var tokens = fields[1].Split(',');
@@ -326,9 +315,4 @@ internal static class Core
 
     // The inclusive TCP port range.
     private static bool IsValidPort(int port) => port is >= 1 and <= 65535;
-
-    private static class StringSeparators
-    {
-        public static readonly char[] Space = { ' ' };
-    }
 }

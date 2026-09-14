@@ -83,13 +83,8 @@ internal static class Exfil
             "(no local staging area; use file.pull or exfil.push to stream on demand)",
             Array.Empty<ExfilChunk>());
 
-    // The size of each ExfilChunk data payload for files streamed out of band;
-    // the shared chunker slices at this size (0-origin sequences, terminal on
-    // the last chunk) so the server reassembles strictly by sequence.
-    private const int ChunkSize = 512 * 1024; // 512 KiB
-
     private static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
-        => Chunking.ChunkFile(name, contentType, data, ChunkSize);
+        => Chunking.ChunkFile(name, contentType, data, Chunking.StreamChunkBytes);
 
     // Splits "<name> <path>" into the two parts. The path keeps its internal
     // whitespace; only the first token is the name. Returns false when no

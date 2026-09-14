@@ -45,11 +45,6 @@ internal static class Files
     // frame budget with protobuf overhead to spare.
     private const int MaxPushBytes = 1 << 20; // 1 MiB
 
-    // The size of each ExfilChunk data payload for files streamed out of band.
-    // Kept well under the gRPC frame ceiling so a marshaled Frame still fits
-    // with room to spare.
-    private const int ChunkSize = 512 * 1024; // 512 KiB
-
     /// <summary>
     /// Reads the file at the given path off the target. Small files return
     /// Succeeded with the contents in the output string; large files return
@@ -275,9 +270,9 @@ internal static class Files
         return (TaskOutcome.Succeeded, $"wrote {data.Length} bytes to {path}");
     }
 
-    // Slices a byte buffer into ExfilChunk frames of ChunkSize via the shared
+    // Slices a byte buffer into ExfilChunk frames via the shared
     // chunker (0-origin sequences, terminal on the last chunk); the server
     // reassembles strictly by sequence and flushes on the terminal frame.
     internal static IReadOnlyList<ExfilChunk> ChunkFile(string name, string contentType, byte[] data)
-        => Chunking.ChunkFile(name, contentType, data, ChunkSize);
+        => Chunking.ChunkFile(name, contentType, data, Chunking.StreamChunkBytes);
 }

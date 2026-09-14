@@ -111,7 +111,7 @@ internal static class Lateral
                 "lateral.token is a Windows access-token capability; not supported on this OS");
         }
 
-        return RunCaptured("whoami", "/user /groups /priv");
+        return NativeCommand.RunCaptured("whoami", "/user /groups /priv");
     }
 
     /// <summary>
@@ -132,7 +132,7 @@ internal static class Lateral
 
         if (OperatingSystem.IsWindows())
             return RunRemoteScheduledTask(host, command);
-        return RunCaptured("ssh", $"{host} {command}");
+        return NativeCommand.RunCaptured("ssh", $"{host} {command}");
     }
 
     // Creates, runs, and deletes a one-shot scheduled task on the remote host,
@@ -148,68 +148,20 @@ internal static class Lateral
         // spaces, so a multi-word command would parse as unknown schtasks
         // switches. Embedded quotes are doubled, the escape CommandLineToArgvW
         // consumes inside a quoted argument.
-        var (createOutcome, createOutput) = RunCaptured(
-            "schtasks", $"/create /s {host} /tn {taskName} /tr {Quote(command)} /sc once /st 00:00 /f");
+        var (createOutcome, createOutput) = NativeCommand.RunCaptured(
+            "schtasks", $"/create /s {host} /tn {taskName} /tr {NativeCommand.Quote(command)} /sc once /st 00:00 /f");
         if (createOutcome == TaskOutcome.Failed)
             return (TaskOutcome.Failed, $"create remote task {taskName} on {host}: {createOutput}");
 
-        var (runOutcome, runOutput) = RunCaptured("schtasks", $"/run /s {host} /tn {taskName}");
+        var (runOutcome, runOutput) = NativeCommand.RunCaptured("schtasks", $"/run /s {host} /tn {taskName}");
         if (runOutcome == TaskOutcome.Failed)
         {
-            _ = RunCaptured("schtasks", $"/delete /s {host} /tn {taskName} /f");
+            _ = NativeCommand.RunCaptured("schtasks", $"/delete /s {host} /tn {taskName} /f");
             return (TaskOutcome.Failed, $"run remote task {taskName} on {host}: {runOutput}");
         }
 
-        _ = RunCaptured("schtasks", $"/delete /s {host} /tn {taskName} /f");
+        _ = NativeCommand.RunCaptured("schtasks", $"/delete /s {host} /tn {taskName} /f");
         return (TaskOutcome.Succeeded, $"ran {command} on {host} via task {taskName}");
-    }
-
-    // Quotes one schtasks argument value: wrapped in double quotes with any
-    // embedded quote doubled, the form CommandLineToArgvW decodes back to the
-    // original string.
-    private static string Quote(string value)
-        => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-
-    // Runs a platform command, capturing combined stdout/stderr. A non-zero exit
-    // is Failed with the output captured so the operator sees the cause.
-    private static (TaskOutcome Outcome, string Output) RunCaptured(string fileName, string arguments)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        try
-        {
-            using var process = Process.Start(psi);
-            if (process is null)
-                return (TaskOutcome.Failed, $"failed to start {fileName}");
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-            var output = ComposeOutput(stdout, stderr);
-            if (process.ExitCode != 0)
-                return (TaskOutcome.Failed, output.Length > 0 ? output : $"exit code {process.ExitCode}");
-            return (TaskOutcome.Succeeded, output);
-        }
-        catch (Exception ex)
-        {
-            return (TaskOutcome.Failed, ex.Message);
-        }
-    }
-
-    // Joins stdout and stderr on a newline so a Failed outcome shows both.
-    private static string ComposeOutput(string stdout, string stderr)
-    {
-        if (stdout.Length == 0)
-            return stderr;
-        if (stderr.Length == 0)
-            return stdout;
-        return stdout + "\n" + stderr;
     }
 
     // Splits "<host> <command...>" into the host and the command string. The
@@ -219,7 +171,7 @@ internal static class Lateral
     {
         host = string.Empty;
         command = string.Empty;
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length < 2)
             return false;
         host = fields[0];
@@ -234,17 +186,12 @@ internal static class Lateral
     {
         token = string.Empty;
         @class = null;
-        var fields = arguments.Split(StringSeparators.Space, StringSplitOptions.RemoveEmptyEntries);
+        var fields = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length is 0 or > 2)
             return false;
         token = fields[0];
         if (fields.Length == 2)
             @class = fields[1];
         return true;
-    }
-
-    private static class StringSeparators
-    {
-        public static readonly char[] Space = { ' ' };
     }
 }
