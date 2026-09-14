@@ -127,6 +127,18 @@ public class EngagementLoopTests
         await callA.RequestStream.CompleteAsync();
         channelA.Dispose();
 
+        // Wait out the dead stream's server-side teardown before seeding the
+        // queue. The moment the probes enqueue, the dispatch wake releases --
+        // and a writer still unwinding from stream A could claim one and write
+        // it into the closing connection: dispatched on the server, received
+        // nowhere, and the drain below then waits on a frame that never comes.
+        // The staleness sweep closing the session (threshold 2s) strictly
+        // follows the runner's unwind, so an empty session roster proves no
+        // writer from stream A remains to race the seeds.
+        await WaitUntilAsync(
+            async () => await sessions.GetActiveAsync(implant.Id, CancellationToken.None) is null,
+            timeout: TimeSpan.FromSeconds(20));
+
         // --- Phase 3: seeded history walked through paginated listings. ---
         for (var i = 0; i < 5; i++)
         {
