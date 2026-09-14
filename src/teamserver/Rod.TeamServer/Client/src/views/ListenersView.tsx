@@ -45,6 +45,7 @@ const TRANSPORTS = [
   { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
   { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
   { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
+  { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive beacon; no enroll', port: '443' },
 ]
 
 // Select values that are not reported addresses: the wildcard bind and the

@@ -69,15 +69,28 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
     private static readonly TimeSpan RegistrationPollInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly HostedBindShape _shape;
+    private readonly string _publicEndpointScheme;
     private readonly ListenerServiceFactory _factory;
 
-    /// <summary>Initializes a provider serving <paramref name="transport"/> with the given shape, carriers, and service factory.</summary>
+    /// <summary>
+    /// Initializes a provider serving <paramref name="transport"/> with the
+    /// given shape, carriers, and service factory. The public endpoint scheme
+    /// defaults to the TLS shape the HTTP family's non-plain members use; a
+    /// transport whose dial is a scheme of its own (the QUIC stream's
+    /// <c>quic://</c>) names it, and the operator surface completes bare
+    /// endpoints with it.
+    /// </summary>
     public HostedServiceTransportProvider(
-        string transport, HostedBindShape shape, IReadOnlyList<string> carriers, ListenerServiceFactory factory)
+        string transport,
+        HostedBindShape shape,
+        IReadOnlyList<string> carriers,
+        ListenerServiceFactory factory,
+        string? publicEndpointScheme = null)
     {
         Transport = transport;
         _shape = shape;
         Carriers = carriers;
+        _publicEndpointScheme = publicEndpointScheme ?? "https";
         _factory = factory;
     }
 
@@ -92,7 +105,7 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
         => Carriers.Any(carrier => TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native);
 
     /// <inheritdoc />
-    public string PublicEndpointScheme => "https";
+    public string PublicEndpointScheme => _publicEndpointScheme;
 
     /// <inheritdoc />
     public bool AcceptsPublicEndpoint(string text)

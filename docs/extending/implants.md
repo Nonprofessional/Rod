@@ -18,7 +18,7 @@ the code win and this file is a bug.
 
 ### Endpoints
 
-A deployment exposes four implant-facing endpoints (listener configuration,
+A deployment exposes five implant-facing endpoints (listener configuration,
 architecture.md Sec 8):
 
 | Purpose | Transport | Route |
@@ -27,16 +27,17 @@ architecture.md Sec 8):
 | Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
 | Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
 | Beacon / tasking (WebSocket) | Plain HTTP(S) upgrade, key-authenticated | `GET /implants/beacon/stream` |
+| Beacon / tasking (QUIC stream) | QUIC (TLS 1.3), handshake-identified | `quic://host:port`, ALPN `rod1` |
 
 The enroll listener accepts plain JSON with no client certificate -- the
 implant authenticates with the one-use stager token, not a cert it does not
 have yet. The stream listener requires a client certificate that chains to
 the engagement CA (enrollment is what mints it); the envelope route is the
 web transports' poll shape, authenticated by the per-artifact key the build
-baked -- no TLS client certificate anywhere on it. The two beacon shapes
-carry the same frames -- the stream is the interactive shape (server-push
-tasking, live channels), the envelope the poll shape that needs no gRPC
-stack.
+baked -- no TLS client certificate anywhere on it. The beacon shapes carry
+the same frames -- the streams (gRPC, WebSocket, QUIC) are the interactive
+shape (server-push tasking, live channels), the envelope the poll shape that
+needs no gRPC stack.
 
 ### TLS shape
 
@@ -339,6 +340,53 @@ tasking keeps the full signature posture -- verify it exactly like a
 stream-delivered task. A channel task is never dispatched over a stream
 check-in (its input half needs the long-lived gRPC stream); oversized or
 malformed messages drop the connection without an answer.
+
+### The QUIC stream (UDP egress, the duplex socket transport)
+
+The QUIC listener carries the live session over a QUIC connection -- for
+egress that passes UDP/443 (where HTTP/3-era traffic lives) but blocks TCP.
+It is the interactive tier over a datagram egress: server-push tasking the
+moment it is queued, `ChannelInput` frames flowing down while a channel
+runs, the same session the gRPC stream and the WebSocket beacon hold. A
+build names a QUIC listener as its beacon and the baked endpoint carries the
+transport's own scheme (`quic://host:port`) -- the dial shape picks the
+client, and there is no poll cycle to bake (a poll-mode build naming a QUIC
+beacon is refused at build time).
+
+The carriage is one connection, one client-initiated bidirectional stream,
+one session:
+
+1. Dial the entry's public endpoint over QUIC with ALPN `rod1`, TLS 1.3,
+   pinning chain-to-CA exactly like every other dial (the QUIC front
+   presents the engagement CA's server leaf and requests no client
+   certificate -- the web posture's fingerprint rule; QUIC cannot ride
+   cleartext at all).
+2. Open one bidirectional stream and speak first: one message -- a varint
+   byte length, then the envelope's delimited frame sequence with the
+   handshake `Frame` alone (any further frames in the message are ingested
+   as upstream traffic, the envelope's order).
+3. Read one response message: the same shape, the handshake response frame
+   first. A non-OK status is the only frame and the connection ends,
+   permanent as on every transport.
+4. Hold the stream: every later message is the same delimited sequence, one
+   frame per message downstream (a pushed `TaskRequest`, a `StagedChunk`
+   run, a `ChannelInput` unit) and whatever sequence the implant batches
+   upstream (results, exfil chunks, staged pulls, channel output).
+5. On a drop, reconnect and re-handshake: the session survives the
+   connection server-side, the same reconnect semantics the other stream
+   clients keep. Send QUIC keep-alives (the reference client pings every
+   30s) -- the listener drops a connection silent past two minutes.
+
+The identity is the certificate-less posture the pipe and raw TCP carry: no
+client certificate is requested anywhere, so the implant is identified by
+the id in its handshake, with the enrolled, kill-date, and retired gates
+applying in full; dispatched tasking keeps the complete signature posture.
+The message budget is the envelope's wire-body cap (16 MiB); a malformed or
+oversized message drops the connection without an answer. The transport
+needs a QUIC stack on the host (one ships with current Windows and macOS;
+Linux needs libmsquic) -- the listener refuses its bind without one and the
+reference client terminates with the cause. Channels are session-scoped as
+on every stream: the connection's end closes the channel halves with it.
 
 ### DNS check-ins (Tier 2, the egress-restricted transport)
 

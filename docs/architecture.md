@@ -553,18 +553,20 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   handshake is indistinguishable from an ordinary website's -- enrollment
   rides the stager token and check-ins ride the sealed envelope under the
   per-artifact key, both authenticated at the application layer), **mTLS**,
-  **DNS**, **SMB** (named pipe), **raw TCP**, and **DoH** (the DNS grammar
-  over RFC 8484 HTTPS bodies -- the egress-restricted carrier behind a shape
-  a restricted network already allows) are implemented. Transport
-  choice is a profile/deployment concern; the protocol semantics are
-  transport-independent. The web family additionally serves the WebSocket
-  beacon (`GET /implants/beacon/stream`, extending/implants.md): the same
-  live session the gRPC stream runs, over the envelope's own auth and frame
-  grammar, so a web-fronted implant holds the interactive tier without a
-  gRPC stack -- the reference implant's stream-mode web build dials it, and
-  a poll-mode build keeps the envelope POST cycle. The http/https transports
-  declare the beacon-stream carrier for issuance gating alongside mTLS, so
-  any of the three may be named as a build's beacon.
+  **DNS**, **SMB** (named pipe), **raw TCP**, **QUIC** (the duplex socket
+  transport for egress that passes UDP/443 but blocks TCP), and **DoH** (the
+  DNS grammar over RFC 8484 HTTPS bodies -- the egress-restricted carrier
+  behind a shape a restricted network already allows) are implemented.
+  Transport choice is a profile/deployment concern; the protocol semantics
+  are transport-independent. The web family additionally serves the
+  WebSocket beacon (`GET /implants/beacon/stream`,
+  extending/implants.md): the same live session the gRPC stream runs, over
+  the envelope's own auth and frame grammar, so a web-fronted implant holds
+  the interactive tier without a gRPC stack -- the reference implant's
+  stream-mode web build dials it, and a poll-mode build keeps the envelope
+  POST cycle. The http/https transports declare the beacon-stream carrier
+  for issuance gating alongside mTLS and quic, so any of the four may be
+  named as a build's beacon.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
   it: the operator API and UI in the clear, and check-ins identified by the
@@ -705,6 +707,31 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   transport follows (`StreamBeaconBridge` is the transport-blind check-in
   flow both share); the wire grammar is the stream check-in contract
   ([extending/implants.md](extending/implants.md)).
+- **QUIC is the duplex socket transport: the interactive tier over a UDP
+  egress.** An engagement whose egress passes UDP/443 (where HTTP/3-era
+  traffic lives) but blocks TCP has no shape among the stream listeners, so
+  the socket-owning family gained its duplex variant: a `quic` listener owns
+  a UDP socket, terminates TLS 1.3 with the CA-issued server leaf every TLS
+  front shares, and requests no client certificate anywhere -- the web
+  posture's fingerprint rule, which QUIC needs anyway (it cannot ride
+  cleartext). One connection is one live session (not the family's
+  one-connection-one-poll): the implant opens a single bidirectional stream,
+  speaks the pipe/TCP self-delimited message framing over it, and the shared
+  `BeaconSessionRunner` holds the session -- server-push tasking the moment
+  it is queued, live channels for the streaming verbs. That duplex truth is
+  declared where it is read: the transport serves the native `beacon-stream`
+  carrier, so a quic listener is beacon-nameable, the build bakes its dial
+  as the transport's own scheme (`quic://host:port` -- the URL shape picks
+  the artifact's check-in client, and the bake-time trim compiles the QUIC
+  module for exactly that shape), and a poll-mode build naming it is refused
+  (the session has no poll cycle). The identity is the certificate-less
+  family posture -- the implant id in the handshake inside the encrypted
+  transport, with the enrolled, kill-date, and retired gates in full; the
+  TLS layer authenticates the server to the implant (chain-to-CA pinned),
+  not the implant to the server. The wire grammar is the QUIC stream
+  contract ([extending/implants.md](extending/implants.md)); the transport
+  needs a host QUIC stack (libmsquic on Linux), and the bind refuses with
+  the named cause when the host carries none.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
   channel and the HTTPS enroll request carry through end to end. It is L4, not

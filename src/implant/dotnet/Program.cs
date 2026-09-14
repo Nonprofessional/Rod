@@ -104,7 +104,8 @@ internal static class ImplantApp
         // The check-in clients follow the egress walk's URL shape
         // (architecture.md Sec 8): a web entry -- an http(s):// beacon URL --
         // runs the envelope POST cycle on that port; a bare host:port runs
-        // the mTLS gRPC stream. Which modules exist at all is the baked
+        // the mTLS gRPC stream; a quic:// entry runs the QUIC stream. Which
+        // modules exist at all is the baked
         // transport selection -- a build compiles only the clients its walk
         // can dial (Sec 8, the bake-time transport trim). Every client
         // shares the replay-nonce floor (Sec 9) and, through the one enroll

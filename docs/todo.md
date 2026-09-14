@@ -21,18 +21,6 @@ The transport layer now runs on the published contract
 registers a provider and its carriers, and edits no core. The items below
 are the open ends of that surface and the gaps an engagement can hit.
 
-- [ ] **Add the QUIC check-in transport.** An engagement whose egress
-      passes UDP/443 (where HTTP/3-era traffic lives) but blocks TCP has
-      no shape today: the socket-owning family covers TCP, the pipe, and
-      the datagram, not the QUIC stream. Build it as the duplex variant
-      of the socket-owning family through the published contract
-      (System.Net.Quic listener, the self-delimited message framing over
-      its streams), declare its carriers honestly -- duplex means native
-      channels -- and give it the web-posture TLS story a QUIC front
-      needs. _AC:_ a `quic` listener entry created through the operator
-      API carries a check-in end to end, with the provider registration
-      as the only core-side change.
-
 - [ ] **Resolve the https enrollment-ingress gap.** The local-port
       lookup that stamps an enrollment's listener matches only `http`
       and `mtls` listeners, so an enrollment arriving on an `https`

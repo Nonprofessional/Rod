@@ -65,6 +65,16 @@ jobs:
         run: dotnet restore Rod.slnx
       - name: Build
         run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: Install libmsquic
+        # System.Net.Quic needs libmsquic on Linux, and the QUIC transport
+        # acceptance (QuicBeaconRoundTripTests) dials a real listener. Ubuntu
+        # carries it only in Microsoft's prod repo; the runner image ships
+        # none, so the QUIC tests would fail without this. The repo list is
+        # keyed to the image's own version so an ubuntu-latest bump follows.
+        run: |
+          curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/keyrings/microsoft.asc >/dev/null
+          curl -sSL "https://packages.microsoft.com/config/ubuntu/$(. /etc/os-release && echo $VERSION_ID)/prod.list" | sudo tee /etc/apt/sources.list.d/microsoft-prod.list >/dev/null
+          sudo apt-get update && sudo apt-get install -y libmsquic
       - name: Test
         id: test_first
         # Blame-hang turns a silent hang into a five-minute failure that dumps

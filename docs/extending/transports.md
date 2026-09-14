@@ -22,10 +22,10 @@ A transport is three declarations, not a switch arm:
    registered: an unregistered name answers "no channels" and binds
    nothing.
 
-The in-tree six (`http`, `https`, `mtls`, `dns`, `smb`, `tcp`) register in
-the static constructors and are the reference implementations. The listener
-record, the operator API, the persistence, and the restore path all speak
-the wire name -- a registered transport is nameable the moment it
+The in-tree seven (`http`, `https`, `mtls`, `dns`, `smb`, `tcp`, `quic`)
+register in the static constructors and are the reference implementations.
+The listener record, the operator API, the persistence, and the restore path
+all speak the wire name -- a registered transport is nameable the moment it
 registers, with no core edits.
 
 ## The provider contract
@@ -89,8 +89,10 @@ carry, by construction rather than by registry entry:
   handshake checks the `(implant_id, engagement_id)` binding.
 - **Application-layer key** (the web family): the per-artifact key seals
   the check-in bodies; possession is the authentication.
-- **Id alone** (the DNS/SMB/TCP family): the egress-restricted tradeoff,
-  documented in the contract per transport.
+- **Id alone** (the DNS/SMB/TCP/QUIC family): the egress-restricted
+  tradeoff, documented in the contract per transport -- QUIC pairs it with
+  server-side TLS (chain-to-CA pinned), so the transport is encrypted even
+  though the implant itself is not certificate-authenticated.
 
 A new transport picks one and says so in its XML docs and its
 `extending/implants.md` section; the wire contract is the product, and the

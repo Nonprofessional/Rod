@@ -91,24 +91,25 @@ internal static class PayloadBuildRequestParser
             }
         }
 
-        // The check-in the baked artifact runs: named, the mTLS socket the
-        // gRPC stream dials; derived, whatever the enroll front implies -- an
-        // http(s) front carries the envelope POST cycle on its own port (the
-        // mainstream single-port shape), an mTLS front the stream on the same
-        // socket.
-        var beacon = await ResolveBeaconAsync(body, @class, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
-        if (beacon.Error is { } beaconRefusal)
-            return (null, beaconRefusal);
-
         // The check-in mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow check-ins). A typo
         // must not silently build the interactive shape for an operator who
-        // asked for low-and-slow, so anything else is a 400.
+        // asked for low-and-slow, so anything else is a 400. Parsed before the
+        // beacon: a transport whose beacon has no poll cycle refuses the pair.
         var mode = body.Mode?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(mode))
             mode = "stream";
         if (mode is not ("stream" or "poll"))
             return (null, "Mode must be 'stream' or 'poll'.");
+
+        // The check-in the baked artifact runs: named, the mTLS socket the
+        // gRPC stream dials; derived, whatever the enroll front implies -- an
+        // http(s) front carries the envelope POST cycle on its own port (the
+        // mainstream single-port shape), an mTLS front the stream on the same
+        // socket.
+        var beacon = await ResolveBeaconAsync(body, @class, mode, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
+        if (beacon.Error is { } beaconRefusal)
+            return (null, beaconRefusal);
 
         // The baked token's scope rides the same request: how many implants
         // the artifact's credential may enroll (0 = unlimited), and how long
@@ -232,10 +233,14 @@ internal static class PayloadBuildRequestParser
     // an mTLS front carries the gRPC stream on the same socket, every web
     // front (http, https, or a typed http(s) URL) the envelope POST cycle on
     // its own port -- the mainstream single-port shape, no split required.
-    // Stagers never check in, so beacon fields are refused on their builds.
+    // A socket-owning native dial (the QUIC stream) completes its bare
+    // public endpoint with the transport's own scheme, the URL shape the
+    // artifact's check-in client picks by. Stagers never check in, so beacon
+    // fields are refused on their builds.
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
+        string mode,
         string? enrollTransport,
         string? enrollEndpoint,
         EngagementId engagementId,
@@ -269,7 +274,22 @@ internal static class PayloadBuildRequestParser
             // WebSocket beacon hangs off the schemed front itself.
             if (beaconProvider is KestrelEndpointProvider { Posture: ListenerTlsPosture mutual } && mutual == ListenerTlsPosture.MutualAsk)
                 return (BeaconAuthority(listener.PublicEndpoint), null);
-            return (listener.PublicEndpoint, null);
+            if (beaconProvider is KestrelEndpointProvider)
+                return (listener.PublicEndpoint, null);
+            // A socket-owning native dial (the QUIC stream): the session holds
+            // the stream for the connection's life, so it has no poll cycle to
+            // bake, and the bare host:port public endpoint completes with the
+            // transport's own scheme -- the URL shape the artifact's check-in
+            // client picks by.
+            if (mode == "poll")
+                return (null,
+                    $"The {listener.Transport} beacon holds one live session and has no poll cycle; "
+                    + "build it mode 'stream', or name a web front for the envelope cycle.");
+            var quicEndpoint = listener.PublicEndpoint.Trim();
+            if (Uri.TryCreate(quicEndpoint, UriKind.Absolute, out var quicDial)
+                && quicDial.Scheme == beaconProvider.PublicEndpointScheme)
+                return (quicEndpoint, null);
+            return ($"{beaconProvider.PublicEndpointScheme}://{quicEndpoint}", null);
         }
 
         if (body.BeaconEndpoint is { } beaconEndpoint)
