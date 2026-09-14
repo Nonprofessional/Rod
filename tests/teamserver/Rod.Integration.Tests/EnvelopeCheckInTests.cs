@@ -331,16 +331,7 @@ public class EnvelopeCheckInTests
         {
             SslOptions = new SslClientAuthenticationOptions
             {
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is not X509Certificate2 || chain is null)
-                        return false;
-                    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert)
-                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                },
+                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
             },
         };
         using var client = new HttpClient(handler) { BaseAddress = new Uri(env.MtlsBaseAddress) };

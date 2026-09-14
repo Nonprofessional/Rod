@@ -285,16 +285,7 @@ public class TaskAckRedeliveryTests
                 SslOptions = new SslClientAuthenticationOptions
                 {
                     ClientCertificates = new X509CertificateCollection { leafWithKey },
-                    RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                    {
-                        if (cert is null || chain is null)
-                            return false;
-                        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                        chain.ChainPolicy.ExtraStore.Add(ca);
-                        return chain.Build((X509Certificate2)cert)
-                            && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                    },
+                    RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
                 },
             };
             var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{env.MtlsPort}",

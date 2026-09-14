@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -14,6 +15,23 @@ namespace Rod.Integration.Tests;
 /// </summary>
 internal static class TestSupport
 {
+    /// <summary>
+    /// The CA-pinning server validation every TLS test client uses: chain to
+    /// the pinned CA with revocation and unknown-CA relaxed (the dev authority
+    /// is self-signed), and the chain's root thumbprint compared against the
+    /// pinned CA so a chain to any other root fails.
+    /// </summary>
+    public static RemoteCertificateValidationCallback PinTo(X509Certificate2 ca)
+        => (_, cert, chain, _) =>
+        {
+            if (cert is not X509Certificate2 leaf || chain is null)
+                return false;
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+            chain.ChainPolicy.ExtraStore.Add(ca);
+            return chain.Build(leaf) && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
+        };
+
     /// <summary>
     /// True when the dotnet SDK is reachable on PATH. The in-tree .NET build/test
     /// path requires it to publish and run the reference .NET implant; tests that

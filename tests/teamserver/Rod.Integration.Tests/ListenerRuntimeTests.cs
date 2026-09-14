@@ -146,17 +146,7 @@ public class ListenerRuntimeTests
             {
                 ClientCertificates =
                     new System.Security.Cryptography.X509Certificates.X509CertificateCollection { offered },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags =
-                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
-                    return leaf is not null
-                        && chain.Build(leaf)
-                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                },
+                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
             },
         };
         using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
@@ -218,17 +208,7 @@ public class ListenerRuntimeTests
         {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags =
-                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
-                    return leaf is not null
-                        && chain.Build(leaf)
-                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                },
+                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
             },
         };
         using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
@@ -261,17 +241,7 @@ public class ListenerRuntimeTests
             {
                 ClientCertificates =
                     new System.Security.Cryptography.X509Certificates.X509CertificateCollection { offered },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags =
-                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
-                    return leaf is not null
-                        && chain.Build(leaf)
-                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                },
+                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
             },
         };
         using var refused = new HttpClient(offeredHandler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
@@ -320,17 +290,7 @@ public class ListenerRuntimeTests
         {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions
             {
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags =
-                        System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    var leaf = cert as System.Security.Cryptography.X509Certificates.X509Certificate2;
-                    return leaf is not null
-                        && chain.Build(leaf)
-                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-                },
+                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
             },
         };
         using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
