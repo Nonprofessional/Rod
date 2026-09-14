@@ -63,14 +63,23 @@ internal static class TestSupport
     internal static CancellationToken BeaconDeadline()
         => new CancellationTokenSource(TimeSpan.FromSeconds(90)).Token;
 
-    // Hands out distinct loopback ports for test listeners. The per-file probe
-    // this replaces (bind :0, read the port, release, let Kestrel rebind later)
+    // Hands out distinct ports for test listeners. The per-file probe this
+    // replaces (bind :0, read the port, release, let Kestrel rebind later)
     // handed the same released port to two TestEnvs racing in parallel test
     // classes, and one Kestrel bind then died with "address already in use".
-    // A process-wide counter never repeats a port; the probe only skips ports
-    // something outside this process already holds.
+    // A process-wide counter never repeats a port, the probe skips ports
+    // something outside this process already holds, and the range stays below
+    // the ephemeral zone: the old 20k-60k march ran straight through the
+    // range the kernel and Docker (the Postgres fixture's container port
+    // mappings) allocate ephemeral ports from, so an ephemeral allocation
+    // could land on a handed-out port inside the probe-to-bind window and
+    // kill the Kestrel bind with "address already in use" -- exactly the two
+    // bind failures the Sep 14 CI run hit in its first Test attempt.
     private static readonly object PortGate = new();
-    private static int _nextPort = Random.Shared.Next(20_000, 40_000);
+    // Strictly below 32768, where the Linux ephemeral port range begins.
+    private const int PortCeiling = 32_760;
+    private const int PortFloor = 20_000;
+    private static int _nextPort = Random.Shared.Next(PortFloor, PortCeiling);
 
     internal static int GetFreeTcpPort()
     {
@@ -81,25 +90,25 @@ internal static class TestSupport
             for (var attempt = 0; attempt < 200; attempt++)
             {
                 var port = _nextPort;
-                _nextPort = port >= 60_000 ? 20_000 : port + 1;
+                _nextPort = port >= PortCeiling ? PortFloor : port + 1;
 
-                var listener = new TcpListener(IPAddress.Loopback, port);
+                // Probe the any-address shape the mTLS listener binds: a
+                // dual-mode [::] bind claims the IPv4 port too, while the
+                // 127.0.0.1 probe this replaces stayed blind to IPv6 holders.
+                using var probe = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
+                probe.DualMode = true;
                 try
                 {
-                    listener.Start();
+                    probe.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
                     return port;
                 }
                 catch (SocketException e) when (e.SocketErrorCode == SocketError.AddressAlreadyInUse)
                 {
                     // Held by something outside the test process; take the next.
                 }
-                finally
-                {
-                    listener.Stop();
-                }
             }
 
-            throw new InvalidOperationException("No bindable loopback port found in 200 attempts.");
+            throw new InvalidOperationException("No bindable port found in 200 attempts.");
         }
     }
 
