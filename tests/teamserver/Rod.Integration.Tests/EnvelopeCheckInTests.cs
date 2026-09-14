@@ -316,6 +316,47 @@ public class EnvelopeCheckInTests
     }
 
     [Fact]
+    public async Task Envelope_OverStartupMtlsWithoutCertificate_AnswersTheRefusedHandshake()
+    {
+        // The same refusal over the startup-bound mTLS socket (the
+        // UseRodMtls tier), pinning the one mTLS posture on the other bind
+        // path (architecture.md Sec 9): the endpoint asks for the client
+        // certificate and never demands one in-handshake, so the
+        // certificate-less client completes TLS and is turned away where
+        // identity is consumed -- over TLS the beacon resolves the implant
+        // from the certificate alone, and this body carries none.
+        await using var env = await TestEnv.StartAsync();
+        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
+        using var handler = new SocketsHttpHandler
+        {
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
+                {
+                    if (cert is not X509Certificate2 || chain is null)
+                        return false;
+                    chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    chain.ChainPolicy.ExtraStore.Add(ca);
+                    return chain.Build((X509Certificate2)cert)
+                        && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
+                },
+            },
+        };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(env.MtlsBaseAddress) };
+
+        // One zero-length frame, the cleartext test's shape: the refused
+        // handshake answers in the response envelope, never a TLS-layer
+        // refusal -- the connection itself completed.
+        var response = await client.PostAsync(
+            "/implants/beacon", new ByteArrayContent(new byte[] { 0x00 }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var frames = ScratchImplant.Parse(await response.Content.ReadAsByteArrayAsync());
+        var handshake = HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
+        Assert.Equal(HandshakeStatus.VersionMismatch, handshake.Status);
+    }
+
+    [Fact]
     public async Task Envelope_CleartextCheckIn_IdentifiesByTheHandshakeId()
     {
         // The pure-HTTP posture: an implant with an HTTP client and no

@@ -21,15 +21,6 @@ The transport layer now runs on the published contract
 registers a provider and its carriers, and edits no core. The items below
 are the open ends of that surface and the gaps an engagement can hit.
 
-- [ ] **Unify or document the two mTLS bind postures.** The
-      startup-configured mTLS endpoint requires the client certificate
-      at the TLS layer; a runtime-created mTLS listener requests it
-      optionally and enforces the binding at the application layer. Two
-      postures for one transport is a decision that has not been made:
-      pick one (or name both as deliberate tiers) and write the rule
-      into Sec 8/9. _AC:_ both bind paths enforce the documented
-      posture, and the doc names exactly one rule.
-
 - [ ] **Close the dispatch strand on a dying stream.** A claimed task
       whose frame was written into a closing connection marks
       Dispatched and never redelivers: the requeue covers only the

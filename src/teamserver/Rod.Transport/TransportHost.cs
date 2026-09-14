@@ -342,9 +342,11 @@ public static class TransportHost
     /// <summary>
     /// Configures Kestrel to terminate mTLS using the configured implant CA
     /// (architecture.md Sec 9): the server presents the CA-issued server leaf
-    /// and requires a client certificate
-    /// that chains to the CA. Implant leaves are accepted; anything else is
-    /// refused at the TLS layer, before any beacon handler runs.
+    /// and asks for a client certificate, refusing one that does not chain to
+    /// the CA in the handshake. A connection without one still completes TLS
+    /// -- enrollment rides the same socket and precedes any leaf -- and is
+    /// turned away where identity is consumed: over TLS the beacon opens no
+    /// session without the certificate.
     /// </summary>
     /// <remarks>
     /// Opt-in: existing TestServer-based tests and the operator API keep working
@@ -465,11 +467,11 @@ public static class TransportHost
                 kestrel.Listen(host, port, listen =>
                 {
                     // The startup tier's TLS termination is code-bound per the
-                    // in-tree shapes: the mTLS listener terminates the client
-                    // certificate the enrolled implants present, required at
-                    // the TLS layer and validated chain-to-CA on the same
-                    // CA-issued server leaf every TLS endpoint presents
-                    // (architecture.md Sec 8).
+                    // in-tree shapes: the mTLS listener asks for the client
+                    // certificate and validates it chain-to-CA on the same
+                    // CA-issued server leaf every TLS endpoint presents -- the
+                    // one mTLS posture (architecture.md Sec 9), identical to
+                    // the one a runtime-created mTLS listener binds.
                     if (string.Equals(provider.Transport, "mtls", StringComparison.OrdinalIgnoreCase))
                         ConfigureMtlsHttps(listen, kestrel);
                     // The single-port https shapes never request a client
@@ -504,8 +506,14 @@ public static class TransportHost
     }
 
     // Applies the mTLS HTTPS configuration shared by UseRodMtls and the Mtls
-    // listener: the authority's server leaf presents as the server identity, a
-    // client certificate is required, and it must chain to the CA.
+    // listener: the authority's server leaf presents as the server identity,
+    // the client certificate is asked for, and one that does not chain to the
+    // CA is refused in the handshake. It is never demanded there -- enrollment
+    // rides the same socket and precedes any leaf -- so possession is enforced
+    // where identity is consumed: over TLS the beacon resolves the implant
+    // from the certificate alone, and a certificate-less handshake opens no
+    // session (architecture.md Sec 9, the one mTLS posture: the startup bind
+    // and a runtime-created listener enforce exactly this).
     // ApplicationServices resolves the authority per connection.
     private static void ConfigureMtlsHttps(ListenOptions listen, KestrelServerOptions kestrel)
     {
@@ -519,8 +527,10 @@ public static class TransportHost
             // validation).
             https.ServerCertificateSelector = (_, _) =>
                 kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
+            // The same mode the runtime path publishes as data
+            // (ListenerTlsPosture.MutualAsk): ask and validate, never require.
             https.ClientCertificateMode =
-                Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.RequireCertificate;
+                Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
             https.ClientCertificateValidation = (cert, chain, errors) =>
                 ClientCertificateChainsToCa(cert, chain, kestrel.ApplicationServices);
             https.CheckCertificateRevocation = false;

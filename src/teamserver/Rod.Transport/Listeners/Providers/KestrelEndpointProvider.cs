@@ -26,7 +26,13 @@ public sealed record ListenerTlsPosture(string Scheme, string? ClientCertificate
     /// <summary>TLS with no client-certificate request: the app-key identity.</summary>
     public static readonly ListenerTlsPosture ServerTls = new("https", null);
 
-    /// <summary>TLS that asks for the client certificate: the mTLS shape.</summary>
+    /// <summary>
+    /// TLS that asks for the client certificate and validates it chain-to-CA,
+    /// never demanding one in-handshake -- enrollment rides the same socket
+    /// and precedes any leaf, so the requirement lands where identity is
+    /// consumed. The mTLS shape, and the one posture every mTLS endpoint
+    /// binds: the startup bind enforces the same mode (architecture.md Sec 9).
+    /// </summary>
     public static readonly ListenerTlsPosture MutualAsk =
         new("https", nameof(KestrelClientCertificateMode.AllowCertificate));
 }

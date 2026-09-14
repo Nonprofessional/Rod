@@ -552,8 +552,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   shape: one TLS socket that requests no client certificate anywhere, so the
   handshake is indistinguishable from an ordinary website's -- enrollment
   rides the stager token and check-ins ride the sealed envelope under the
-  per-artifact key, both authenticated at the application layer), **mTLS**,
-  **DNS**, **SMB** (named pipe), **raw TCP**, **QUIC** (the duplex socket
+  per-artifact key, both authenticated at the application layer), **mTLS**
+  (one bind posture on every mTLS endpoint, startup-bound or created at
+  runtime: ask for the client certificate, refuse one that does not chain to
+  the CA in the handshake, never demand one there -- enrollment precedes the
+  leaf, and the requirement lands where identity is consumed; Sec 9), **DNS**,
+  **SMB** (named pipe), **raw TCP**, **QUIC** (the duplex socket
   transport for egress that passes UDP/443 but blocks TCP), and **DoH** (the
   DNS grammar over RFC 8484 HTTPS bodies -- the egress-restricted carrier
   behind a shape a restricted network already allows) are implemented.
@@ -771,7 +775,15 @@ fleet-wide code execution. Security is a first-class concern.
   subject DN and no custom OID exists: a GUID common name with an unknown
   extension is itself a toolchain fingerprint, on the wire and in host
   forensics, while URI-SAN identity is the shape legitimate service
-  certificates use.
+  certificates use. One bind posture serves every mTLS endpoint, however it
+  came to exist -- the startup configuration's bind and a runtime-created
+  listener alike: the endpoint asks each connection for the client
+  certificate and refuses one that does not chain to the CA in the handshake,
+  but never demands one there, because enrollment rides the same socket and
+  precedes any leaf. Possession is enforced where identity is consumed: over
+  TLS the beacon resolves the implant from the certificate alone, so a
+  certificate-less connection completes TLS, reaches only what every front
+  serves (enrollment answers on its token), and opens no session.
 - **Check-in keys.** The web transports authenticate implants at the
   application layer, not the TLS layer -- a TLS `CertificateRequest` is
   itself a fingerprint (an ordinary website never asks the visitor for one),

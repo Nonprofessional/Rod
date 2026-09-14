@@ -85,8 +85,11 @@ no other edit is needed for that half.
 A transport declares which of the three identity models its check-ins
 carry, by construction rather than by registry entry:
 
-- **Client certificate** (the mTLS shape): the TLS layer asks, the
-  handshake checks the `(implant_id, engagement_id)` binding.
+- **Client certificate** (the mTLS shape): the TLS layer asks -- a presented
+  certificate must chain to the CA, and none is demanded in-handshake
+  (enrollment precedes the leaf) -- so the handshake's
+  `(implant_id, engagement_id)` check is the enforcement: a certificate-less
+  connection completes TLS but opens no session.
 - **Application-layer key** (the web family): the per-artifact key seals
   the check-in bodies; possession is the authentication.
 - **Id alone** (the DNS/SMB/TCP/QUIC family): the egress-restricted
