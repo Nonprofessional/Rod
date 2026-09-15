@@ -267,7 +267,16 @@ Implants differ by purpose, not by a "managed device flavor":
 - **Stager** -- a tiny stage-1 loader that fetches a stage-2 implant. Separate
   generation output class.
 - **Web-shell class** -- a script placed in a web root, bound to the web
-  transport; code execution over HTTP, no interactive PTY.
+  transport; code execution over HTTP, no interactive PTY. The endpoint is
+  operator-initiated in every phase: registration creates the class's
+  anchor implant row directly (no enrollment, no handshake, no session --
+  the register action itself is the engagement binding), and execution is
+  the operator's request driving one adapter round trip synchronously
+  (Sec 10.3's exception). The connection profile (URL, protocol adapter,
+  POST parameter, encoder pair) is the side table of the anchor row; the
+  protocol adapter registry carries the in-tree open family (AntSword's
+  eval one-liner) and leaves any other family to out-of-tree tradecraft
+  (Sec 13).
 - **Ephemeral** -- a short-lived, TTL'd implant from a one-liner bootstrap; for
   one-off execution and temporary access.
 - **Pivot** -- an implant that represents hosts which cannot run their own
@@ -1252,6 +1261,18 @@ loop in the writer path. The wake is a hint, not a ledger: the writer claims
 before it parks, so tasks queued while no stream was open are picked up on
 connect without relying on the wake, and a stale permit costs one empty claim,
 never a lost task.
+
+**The synchronous exception.** A WebShell-class implant (Sec 5.2) never opens
+a session, so no dispatch writer exists to claim its tasks: the operator's
+execution request itself plays the beacon -- issue, claim, one protocol-adapter
+round trip, record result, each with the audit beats the stream path makes.
+The task therefore never parks queued (a failed round trip completes it
+failed), and the claim the route makes is the only claimer there is; the
+lifecycle, the audit arc, and the timeline read exactly like a beacon's
+capture. This is the third claim exception beside the channel rules -- a
+channel task is not claimed over DNS (a datagram poll carries no stream) nor
+over the envelope (its input half needs one) -- and it needs no gate of its
+own: with no session there is no stream to claim from, by construction.
 
 **The dispatch strand.** A written frame used to count as delivered, and below
 the result no delivery evidence existed: a claimed task whose frame rode a
