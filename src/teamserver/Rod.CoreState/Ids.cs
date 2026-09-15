@@ -136,3 +136,31 @@ public readonly record struct SessionId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies a caught reverse-shell session -- one accepted no-protocol
+/// connection on a shellcatch listener in its engagement (architecture.md
+/// Sec 8). Disposable with the engagement.
+/// </summary>
+public readonly record struct ShellSessionId(Guid Value)
+{
+    public static ShellSessionId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a shell session id from its string form. Accepts both the
+    /// compact "N" format produced by <see cref="ToString"/> and the
+    /// hyphenated Guid form; returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out ShellSessionId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new ShellSessionId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
