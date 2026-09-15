@@ -296,4 +296,33 @@ public enum AuditEventKind
     /// shell session id.
     /// </summary>
     ShellSessionInput,
+
+    /// <summary>
+    /// An operator registered a web-shell endpoint into the engagement
+    /// (architecture.md Sec 5.2's Web-shell class): a script already placed
+    /// in a target's web root, bound to the engagement by the register
+    /// action itself. The payload carries the URL and protocol adapter; the
+    /// outcome is the WebShell-class implant id the endpoint is anchored
+    /// to. The connection password is not recorded -- the script that
+    /// carries it lives on the target, and the trail records the fact of
+    /// the binding, not the credential.
+    /// </summary>
+    WebShellRegistered,
+
+    /// <summary>
+    /// An operator removed a web-shell endpoint: the connection profile is
+    /// gone and the anchor implant row retired with its history readable
+    /// (architecture.md Sec 7's shape). The payload carries the URL; the
+    /// outcome is the implant id.
+    /// </summary>
+    WebShellRemoved,
+
+    /// <summary>
+    /// An operator probed a web-shell endpoint -- the one-request health
+    /// check that stands in for a beacon's liveness answer. The payload
+    /// carries the outcome (ok, latency, or the refusal reason); the
+    /// outcome is the implant id. A probe executes a marker echo on the
+    /// target, so it is recorded like any other operator action.
+    /// </summary>
+    WebShellProbed,
 }

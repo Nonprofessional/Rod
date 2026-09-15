@@ -124,6 +124,15 @@ public static class TransportHost
         // of the implant session registry above; the in-memory default
         // pairs with a Postgres adapter when the durable host swaps in.
         services.AddSingleton<IShellSessionRegistry, InMemoryShellSessionRegistry>();
+        // Web-shell endpoints (architecture.md Sec 5.2's Web-shell class):
+        // the register use case and its profile store, anchored on
+        // WebShell-class implant rows. Execution rides the normal task
+        // lifecycle from the web-shell routes; the adapter round trips get
+        // their own named client so the budget and redirects stay
+        // endpoint-shaped, not operator-API-shaped.
+        services.AddSingleton<CoreState.WebShells.IWebShellProfileRepository, CoreState.WebShells.InMemoryWebShellProfileRepository>();
+        services.AddSingleton<CoreState.Application.WebShellService>();
+        services.AddHttpClient("webshells");
         // The shellcatch hub (architecture.md Sec 8): the rendezvous between
         // the operator shell routes and the listener service's held
         // connections, keyed by shell session id -- the shell-facing analog
@@ -670,6 +679,9 @@ public static class TransportHost
         // The engagement's caught reverse shells: the shellcatch surface's
         // roster and console routes.
         app.MapShellSessionEndpoints();
+        // The engagement's web-shell endpoints: the register/list routes and
+        // the synchronous execution arc.
+        app.MapWebShellEndpoints();
         // The host's bindable interfaces: the read view behind the listener
         // form's bind dropdown.
         app.MapNetworkEndpoints();
@@ -725,6 +737,9 @@ public static class TransportHost
         // The engagement's caught reverse shells: the shellcatch surface's
         // roster and console routes.
         endpoints.MapShellSessionEndpoints();
+        // The engagement's web-shell endpoints: the register/list routes and
+        // the synchronous execution arc.
+        endpoints.MapWebShellEndpoints();
         // The host's bindable interfaces: the read view behind the listener
         // form's bind dropdown.
         endpoints.MapNetworkEndpoints();
