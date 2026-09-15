@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
+using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Operators;
 using Rod.CoreState.ShellSessions;
@@ -238,6 +239,7 @@ public static class ShellSessionEndpoints
         IListenerStore listenerStore,
         IPayloadStore payloads,
         IStagerTokenService tokens,
+        IEngagementRepository engagements,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -246,6 +248,8 @@ public static class ShellSessionEndpoints
             engagementId, id, sessions, cancellationToken);
         if (scope is null)
             return failure!;
+        if (await engagements.FindAsync(scope.Engagement, cancellationToken) is not { } engagement)
+            return Results.NotFound(new Problem("Engagement does not exist."));
 
         var operatorId = user.TryGetOperatorId();
         if (operatorId is null)
@@ -275,18 +279,19 @@ public static class ShellSessionEndpoints
         // verifies it, the enrollment spends it) and short-lived.
         var at = clock.GetUtcNow();
         var token = await tokens.MintAsync(
-            scope.Engagement, operatorId.Value, at,
-            maxUses: 1, lifetime: TimeSpan.FromMinutes(30), cancellationToken);
+            scope.Engagement, engagement.OwnerId, at,
+            maxUses: 1, lifetime: TimeSpan.FromMinutes(30),
+            originShellSession: scope.Session.Id, cancellationToken: cancellationToken);
         await audit.AppendAsync(
             AuditEvent.Fact(
                 eventId: Guid.NewGuid(),
                 engagementId: scope.Engagement.Value,
-                operatorId: operatorId.Value.Value,
+                operatorId: engagement.OwnerId.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
                 verb: "mint-stager-token",
                 kind: AuditEventKind.StagerTokenMinted,
-                payload: $"origin=shell-upgrade shell={scope.Session.Id} uses=1 lifetime=30m",
+                payload: $"origin=shell-upgrade shell={scope.Session.Id} requestedBy={operatorId.Value} uses=1 lifetime=30m",
                 output: null,
                 outcome: token.Id.ToString(),
                 at),

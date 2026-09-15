@@ -214,7 +214,13 @@ internal sealed class ShellCatchListenerService : BackgroundService
         else
             await _sessions.MarkLostAsync(shell.Session.Id, at);
 
-        await RecordEndedAsync(shell, engagement, at);
+        // The end record reads the stored session, not the open-time
+        // reference: the durable registry hands back detached copies, and
+        // the stamps and guess the record cites are the stored ones. The
+        // in-memory default resolves the same reference, so this costs it
+        // nothing.
+        var ended = await _sessions.FindAsync(shell.Session.Id, stoppingToken) ?? shell.Session;
+        await RecordEndedAsync(shell, ended, engagement, at);
     }
 
     private async Task RecordOpenedAsync(CaughtShell shell, EngagementId engagement)
@@ -242,7 +248,8 @@ internal sealed class ShellCatchListenerService : BackgroundService
                 at));
     }
 
-    private async Task RecordEndedAsync(CaughtShell shell, EngagementId engagement, DateTimeOffset at)
+    private async Task RecordEndedAsync(
+        CaughtShell shell, ShellSession ended, EngagementId engagement, DateTimeOffset at)
     {
         var status = shell.ClosedByOperator ? "closed" : "lost";
         await _audit.AppendAsync(
@@ -254,17 +261,17 @@ internal sealed class ShellCatchListenerService : BackgroundService
                 taskId: Guid.Empty,
                 verb: "shell.session.ended",
                 kind: AuditEventKind.ShellSessionEnded,
-                payload: $"status={status} lastInput={FormatStamp(shell.Session.LastInputAt)} "
-                    + $"lastOutput={FormatStamp(shell.Session.LastOutputAt)}",
+                payload: $"status={status} lastInput={FormatStamp(ended.LastInputAt)} "
+                    + $"lastOutput={FormatStamp(ended.LastOutputAt)}",
                 output: null,
-                outcome: shell.Session.Id.ToString(),
+                outcome: ended.Id.ToString(),
                 at));
         await _live.PublishAsync(
             LiveEvent.ShellSession(
                 engagement,
                 LiveEventKind.ShellSessionEnded,
                 JsonSerializer.Serialize(new ShellLivePayload(
-                    shell.Session.Id.ToString(), status, shell.RemoteAddress, shell.Session.Os)),
+                    ended.Id.ToString(), status, shell.RemoteAddress, ended.Os)),
                 at));
     }
 

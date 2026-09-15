@@ -37,6 +37,9 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.ParentImplantId)
             .HasConversion(IdConverters.ImplantId)
             .HasColumnName("parent_implant_id");
+        builder.Property(i => i.OriginShellSessionId)
+            .HasConversion(IdConverters.ShellSessionId)
+            .HasColumnName("origin_shell_session");
         builder.Property(i => i.RetiredAt).HasColumnName("retired_at");
         // The sticky replay-nonce negotiation flag (architecture.md Sec 9);
         // false for implants that predate the arm, which never advertised it.

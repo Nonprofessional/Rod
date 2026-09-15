@@ -82,7 +82,8 @@ public sealed class EngagementService
         }
 
         var token = await _stagerTokens.MintAsync(
-            engagement.Id, engagement.OwnerId, now, command.MaxUses, command.Lifetime, cancellationToken);
+            engagement.Id, engagement.OwnerId, now, command.MaxUses, command.Lifetime,
+            cancellationToken: cancellationToken);
 
         return new StagerTokenMinted(
             token.Id,

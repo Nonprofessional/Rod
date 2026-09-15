@@ -36,6 +36,9 @@ internal static class IdConverters
     public static ValueConverter<SessionId, Guid> SessionId { get; } =
         new(id => id.Value, value => new SessionId(value));
 
+    public static ValueConverter<ShellSessionId, Guid> ShellSessionId { get; } =
+        new(id => id.Value, value => new ShellSessionId(value));
+
     public static ValueConverter<Rod.CoreState.Operators.OperatorApiTokenId, Guid> OperatorApiTokenId { get; } =
         new(id => id.Value, value => new Rod.CoreState.Operators.OperatorApiTokenId(value));
 }

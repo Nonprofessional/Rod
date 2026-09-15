@@ -8,6 +8,8 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.ShellSessions;
+using Rod.CoreState.WebShells;
 using Rod.CoreState.Staging;
 using Rod.CoreState.Tasks;
 using Rod.Persistence.Stores;
@@ -86,6 +88,11 @@ public static class RodPersistenceHost
         services.Replace(ServiceDescriptor.Singleton<ISessionRegistry>(sp => new LastSeenSessionRegistry(
             new PostgresSessionRegistry(sp.GetRequiredService<IDbContextFactory<RodPersistenceDbContext>>()),
             sp.GetRequiredService<IImplantRepository>())));
+        // The caught reverse-shell registry and the web-shell profile
+        // store: the durable twins, so the engagement's shell history and
+        // endpoint registrations survive a restart.
+        services.Replace(ServiceDescriptor.Singleton<IShellSessionRegistry, Stores.PostgresShellSessionRegistry>());
+        services.Replace(ServiceDescriptor.Singleton<CoreState.WebShells.IWebShellProfileRepository, Stores.PostgresWebShellProfileRepository>());
         services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
         services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
         // Engagement-scoped listener definitions: the durable pair so a restart

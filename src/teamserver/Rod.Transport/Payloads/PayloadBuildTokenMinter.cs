@@ -50,7 +50,7 @@ internal static class PayloadBuildTokenMinter
         var lifetime = body.TokenLifetimeSeconds is { } seconds
             ? TimeSpan.FromSeconds(seconds)
             : killDate - now ?? DefaultLifetime;
-        var token = await tokens.MintAsync(engagement.Id, engagement.OwnerId, now, maxUses, lifetime, cancellationToken);
+        var token = await tokens.MintAsync(engagement.Id, engagement.OwnerId, now, maxUses, lifetime, cancellationToken: cancellationToken);
 
         // The same fact a manual mint records (architecture.md Sec 11): the
         // payload names the baked shape so the trail shows this token never

@@ -34,6 +34,14 @@ public sealed record StagerToken
     /// expires or is revoked.
     /// </summary>
     public required int MaxUses { get; init; }
+
+    /// <summary>
+    /// The caught shell session an upgrade render minted this token for, when
+    /// it did (architecture.md Sec 8): the enrollment that redeems the token
+    /// binds the new implant back to the shell it grew out of. Null on every
+    /// other mint -- the field is provenance, never authority.
+    /// </summary>
+    public ShellSessionId? OriginShellSession { get; init; }
 }
 
 /// <summary>
@@ -89,6 +97,13 @@ public sealed record RedeemedStagerToken
 
     /// <summary>The engagement this token grants initial access to.</summary>
     public required EngagementId EngagementId { get; init; }
+
+    /// <summary>
+    /// The caught shell session the minted token's upgrade render belongs to,
+    /// when it does (architecture.md Sec 8): the enrollment binds the new
+    /// implant back to the shell it grew out of.
+    /// </summary>
+    public ShellSessionId? OriginShellSession { get; init; }
 
     /// <summary>
     /// The operator who minted the redeemed token -- the authorizing deployer.

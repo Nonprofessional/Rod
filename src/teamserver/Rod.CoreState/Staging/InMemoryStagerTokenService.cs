@@ -31,6 +31,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset issuedAt,
         int? maxUses = null,
         TimeSpan? lifetime = null,
+        ShellSessionId? originShellSession = null,
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
@@ -46,7 +47,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         var id = StagerTokenId.New();
 
         _stored[id] = new StoredToken(
-            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt, effectiveMaxUses, effectiveMaxUses);
+            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt, effectiveMaxUses, effectiveMaxUses, originShellSession);
 
         return new StagerToken
         {
@@ -57,6 +58,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
             MaxUses = effectiveMaxUses,
+            OriginShellSession = originShellSession,
         };
     }
 
@@ -87,6 +89,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
                 Id = entry.Id,
                 EngagementId = entry.Token.EngagementId,
                 IssuedBy = entry.Token.IssuedBy,
+                OriginShellSession = entry.Token.OriginShellSession,
             });
         }
     }
@@ -108,6 +111,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
                 Id = entry.Id,
                 EngagementId = entry.Token.EngagementId,
                 IssuedBy = entry.Token.IssuedBy,
+                OriginShellSession = entry.Token.OriginShellSession,
             });
         }
     }
@@ -180,5 +184,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset IssuedAt,
         DateTimeOffset ExpiresAt,
         int MaxUses,
-        int RemainingUses);
+        int RemainingUses,
+        ShellSessionId? OriginShellSession = null);
 }

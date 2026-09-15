@@ -34,6 +34,8 @@ public sealed class RodPersistenceDbContext : DbContext
     public DbSet<Engagement> Engagements => Set<Engagement>();
     public DbSet<Implant> Implants => Set<Implant>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<Rod.CoreState.ShellSessions.ShellSession> ShellSessions => Set<Rod.CoreState.ShellSessions.ShellSession>();
+    public DbSet<Rod.CoreState.WebShells.WebShellProfile> WebShellProfiles => Set<Rod.CoreState.WebShells.WebShellProfile>();
     public DbSet<Task> Tasks => Set<Task>();
     internal DbSet<StoredImplantTaskNonce> ImplantTaskNonces => Set<StoredImplantTaskNonce>();
     internal DbSet<StoredStagerToken> StagerTokens => Set<StoredStagerToken>();
