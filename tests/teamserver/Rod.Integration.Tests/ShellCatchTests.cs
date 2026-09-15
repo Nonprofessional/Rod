@@ -303,6 +303,79 @@ public class ShellCatchTests
 
     private sealed record ShellInputDto(string Text);
 
+    [Fact]
+    public async Task UpgradeRoute_RendersFetchAndRunLaunchers_AgainstTheEngagementsWebListener()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var engagement = new EngagementId(Guid.Parse(engagementId));
+
+        // The web front the stage-2 fetch rides, plus the catcher.
+        var httpPort = TestSupport.GetFreeTcpPort();
+        var webListener = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-http",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{httpPort}",
+                PublicEndpoint: "http://stage.example.test"));
+        webListener.EnsureSuccessStatusCode();
+        var catchPort = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-shellcatch",
+                Transport: "shellcatch",
+                BindAddress: $"127.0.0.1:{catchPort}",
+                PublicEndpoint: $"10.0.0.5:{catchPort}"));
+        created.EnsureSuccessStatusCode();
+
+        // A built stage-2 payload in the store, so the render has something
+        // to grow into without paying for a real build here.
+        var payloads = env.Host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+        var payloadId = Guid.NewGuid();
+        await payloads.SaveAsync(new Rod.Audit.PayloadRecord(
+            payloadId, engagement.Value, "Stage2", "dotnet", "application/octet-stream",
+            "sha256:test", [1, 2, 3], 3, DateTimeOffset.UtcNow, Target: "linux-x64"));
+
+        using var peer = new TcpClient();
+        await peer.ConnectAsync(IPAddress.Loopback, catchPort);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        ShellDto[] listed;
+        do
+        {
+            listed = await env.Http.GetFromJsonAsync<ShellDto[]>(
+                $"/engagements/{engagementId}/shells") ?? [];
+            await Task.Delay(50);
+        }
+        while (listed.Length == 0 && DateTime.UtcNow < deadline);
+        var sessionId = Assert.Single(listed).SessionId;
+
+        var upgrade = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:upgrade",
+            new { });
+        upgrade.EnsureSuccessStatusCode();
+        var rendered = await upgrade.Content.ReadFromJsonAsync<ShellUpgradeDto>();
+        Assert.NotNull(rendered);
+        Assert.Equal(payloadId.ToString("N"), rendered!.PayloadId);
+        Assert.Equal(
+            $"http://stage.example.test/implants/stage2/{payloadId:N}",
+            rendered.Url);
+        Assert.False(string.IsNullOrEmpty(rendered.TokenSecret));
+        Assert.Contains(rendered.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(rendered.Url));
+        Assert.Contains(rendered.Launchers, l => l.Id == "unix-wget");
+        Assert.Contains(rendered.Launchers, l => l.Id == "windows-powershell");
+        Assert.All(rendered.Launchers, l => Assert.Contains(rendered.TokenSecret, l.Command));
+    }
+
+    private sealed record ShellUpgradeDto(
+        string PayloadId,
+        string Url,
+        string TokenSecret,
+        DateTimeOffset TokenExpiresAt,
+        IReadOnlyList<ShellLauncherDto> Launchers);
+
+    private sealed record ShellLauncherDto(string Id, string Os, string Command);
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",

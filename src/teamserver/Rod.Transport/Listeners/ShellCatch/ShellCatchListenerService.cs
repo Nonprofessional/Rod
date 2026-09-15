@@ -202,6 +202,12 @@ internal sealed class ShellCatchListenerService : BackgroundService
             // shell.
         }
 
+        // The shell leaves the hub the moment its socket dies -- the routes
+        // must not resolve a shell whose read side is gone, whatever the
+        // durable marking's timing. The marking and the end records follow;
+        // the serve path's finally re-removes harmlessly.
+        _hub.Remove(shell.Session.Id);
+
         var at = _clock.GetUtcNow();
         if (shell.ClosedByOperator)
             await _sessions.CloseAsync(shell.Session.Id, at);
