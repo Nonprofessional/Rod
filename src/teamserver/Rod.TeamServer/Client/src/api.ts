@@ -1012,6 +1012,31 @@ export async function listWebShells(engagementId: string): Promise<WebShell[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/webshells`))
 }
 
+export interface GeneratedWebShellScript {
+  payloadId: string
+  adapterId: string
+  scriptLanguage: string
+  password: string
+  script: string
+  fingerprint: string
+}
+
+// Generates a web-shell script with its credential baked in, decoupled from
+// any endpoint: prepare the artifact first, place it, register the URL later.
+// The script lands in the payload store like any build.
+export async function generateWebShellScript(
+  engagementId: string,
+  password?: string,
+): Promise<GeneratedWebShellScript> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/webshells/scripts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: password ?? null }),
+    }),
+  )
+}
+
 export async function registerWebShell(
   engagementId: string,
   input: RegisterWebShellInput,

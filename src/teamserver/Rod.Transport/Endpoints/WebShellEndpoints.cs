@@ -1,3 +1,4 @@
+using System.Text;
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -43,6 +44,7 @@ public static class WebShellEndpoints
         group.MapDelete("/{implantId}", RemoveWebShellAsync).WithName(nameof(RemoveWebShellAsync));
         group.MapPost("/{implantId}:test", ProbeWebShellAsync).WithName(nameof(ProbeWebShellAsync));
         group.MapPost("/{implantId}:exec", ExecuteWebShellAsync).WithName(nameof(ExecuteWebShellAsync));
+        group.MapPost("/scripts", GenerateScriptAsync).WithName(nameof(GenerateScriptAsync));
 
         return endpoints;
     }
@@ -309,6 +311,79 @@ public static class WebShellEndpoints
     private static string Truncate(string text)
         => text.Length <= 160 ? text : text[..160] + "…";
 
+    // Standalone generation (the classic managers' workflow): render a
+    // script with its credential baked in, without any endpoint to register.
+    // The script lands in the payload store like any build -- fingerprinted,
+    // attributed, re-downloadable -- so preparing artifacts ahead of an
+    // operation is a first-class flow. The connection password is generated
+    // when unsupplied; the audit fact names the adapter and never the
+    // credential.
+    private static async Task<IResult> GenerateScriptAsync(
+        string engagementId,
+        GenerateWebShellScriptRequest body,
+        ClaimsPrincipal user,
+        IPayloadStore payloads,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!EngagementId.TryParse(engagementId, out var engagement))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+
+        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "antsword-php");
+        if (adapter is null)
+            return Results.BadRequest(new Problem(
+                "Protocol adapter is not recognized. Use one of: " + string.Join(", ", WebShellAdapters.Names()) + "."));
+
+        var password = string.IsNullOrWhiteSpace(body.Password)
+            ? WebShellAdapters.RandomToken(6, 12)
+            : body.Password.Trim();
+        var script = adapter.RenderScript(password);
+        var content = Encoding.UTF8.GetBytes(script);
+        var payloadId = Guid.NewGuid();
+        var at = clock.GetUtcNow();
+        var fingerprint = Rod.BuildPipeline.PayloadBuild.ArtifactFingerprint.Of(content);
+
+        await payloads.SaveAsync(
+            new PayloadRecord(
+                payloadId,
+                engagement.Value,
+                "WebShell",
+                adapter.ScriptLanguage,
+                "text/plain",
+                fingerprint,
+                content,
+                content.Length,
+                at,
+                Target: adapter.Id),
+            cancellationToken);
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagement.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "payload.build",
+                kind: AuditEventKind.PayloadBuilt,
+                payload: $"{adapter.ScriptLanguage}:webshell adapter={adapter.Id} password=baked",
+                output: null,
+                outcome: fingerprint,
+                at),
+            cancellationToken);
+
+        return Results.Ok(new WebShellScriptResponse(
+            payloadId.ToString("N"),
+            adapter.Id,
+            adapter.ScriptLanguage,
+            password,
+            script,
+            fingerprint));
+    }
+
     // One adapter round trip: encode, POST the form, decode the framed
     // answer. The failure modes collapse to (false, latency, detail) --
     // refused connection, non-2xx answer, or an answer that does not carry
@@ -484,6 +559,25 @@ public sealed record RegisterWebShellRequest(
 
 /// <summary>One command for a web-shell endpoint to run synchronously.</summary>
 public sealed record ExecuteWebShellRequest(string Command);
+
+/// <summary>
+/// Generates a web-shell script with its credential baked in, decoupled from
+/// any endpoint: prepare the artifact first, place it, register the reachable
+/// URL whenever it exists.
+/// </summary>
+public sealed record GenerateWebShellScriptRequest(string? AdapterId = null, string? Password = null);
+
+/// <summary>
+/// The generated script: where it is stored (the payload id and fingerprint)
+/// and the connection password it was baked with.
+/// </summary>
+public sealed record WebShellScriptResponse(
+    string PayloadId,
+    string AdapterId,
+    string ScriptLanguage,
+    string Password,
+    string Script,
+    string Fingerprint);
 
 /// <summary>The synchronous execution's answer: the task id and its completed outcome.</summary>
 public sealed record ExecuteWebShellResponse(string TaskId, string Output, string Outcome, long ElapsedMs);

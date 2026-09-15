@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  type GeneratedWebShellScript,
   type RegisteredWebShell,
   type WebShell,
   ApiError,
   executeWebShell,
+  generateWebShellScript,
   listWebShells,
   probeWebShell,
   registerWebShell,
@@ -33,6 +35,7 @@ export function WebShellsView({
   const [registerPassword, setRegisterPassword] = useState('')
   const [registering, setRegistering] = useState(false)
   const [placed, setPlaced] = useState<RegisteredWebShell | null>(null)
+  const [generated, setGenerated] = useState<GeneratedWebShellScript | null>(null)
   const [copied, setCopied] = useState(false)
 
   const refresh = useCallback(async () => {
@@ -58,10 +61,32 @@ export function WebShellsView({
         password: registerPassword || undefined,
       })
       setPlaced(registered)
+      setGenerated(null)
       setRegisterUrl('')
       setRegisterPassword('')
       setError(null)
       await refresh()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e))
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  // Generation decoupled from registration: the same credential field, no
+  // URL required -- prepare the artifact first, place it, register later.
+  const onGenerate = async () => {
+    if (registering) return
+    setRegistering(true)
+    try {
+      const script = await generateWebShellScript(
+        engagementId,
+        registerPassword || undefined,
+      )
+      setGenerated(script)
+      setPlaced(null)
+      setRegisterPassword('')
+      setError(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
@@ -90,10 +115,9 @@ export function WebShellsView({
     }
   }
 
-  const copyScript = async () => {
-    if (!placed) return
+  const copyScript = async (script: string) => {
     try {
-      await navigator.clipboard.writeText(placed.script)
+      await navigator.clipboard.writeText(script)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -128,6 +152,15 @@ export function WebShellsView({
         <button className="primary sm" type="submit" disabled={registering || !registerUrl}>
           Register
         </button>
+        <button
+          className="ghost sm"
+          type="button"
+          onClick={() => void onGenerate()}
+          disabled={registering}
+          title="Generate the script now and register the reachable URL later"
+        >
+          Generate
+        </button>
       </form>
 
       {placed && (
@@ -139,7 +172,22 @@ export function WebShellsView({
           </p>
           <div className="upgrade-launcher">
             <code className="upgrade-command">{placed.script}</code>
-            <button className="ghost sm" onClick={() => void copyScript()}>
+            <button className="ghost sm" onClick={() => void copyScript(placed.script)}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+      {generated && (
+        <div className="upgrade-panel">
+          <p>
+            Generated and stored as payload <code>{generated.payloadId.slice(0, 8)}</code> (also
+            under Payloads). The connection password is <code>{generated.password}</code>; register
+            the reachable URL whenever the script is placed.
+          </p>
+          <div className="upgrade-launcher">
+            <code className="upgrade-command">{generated.script}</code>
+            <button className="ghost sm" onClick={() => void copyScript(generated.script)}>
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
