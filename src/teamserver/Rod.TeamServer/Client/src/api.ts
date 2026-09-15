@@ -979,6 +979,98 @@ export async function upgradeShell(
   )
 }
 
+// --- Web-shell endpoints --------------------------------------
+//
+// The engagement's web-shell endpoints: scripts placed in targets' web
+// roots, bound to the engagement by registration and driven by their
+// protocol adapter. Execution is synchronous -- the request itself plays
+// the beacon -- and lands as a normal task on the anchor implant row.
+
+export interface WebShell {
+  implantId: string
+  url: string
+  adapterId: string
+  password: string
+  scriptLanguage: string
+  retired: boolean
+  registeredAt: string
+  lastProbeAt: string | null
+  lastProbeOk: boolean | null
+}
+
+export interface RegisteredWebShell extends WebShell {
+  script: string
+}
+
+export interface RegisterWebShellInput {
+  url: string
+  adapterId?: string
+  password?: string
+}
+
+export async function listWebShells(engagementId: string): Promise<WebShell[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/webshells`))
+}
+
+export async function registerWebShell(
+  engagementId: string,
+  input: RegisterWebShellInput,
+): Promise<RegisteredWebShell> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/webshells`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        url: input.url,
+        adapterId: input.adapterId ?? null,
+        password: input.password ?? null,
+      }),
+    }),
+  )
+}
+
+export async function removeWebShell(engagementId: string, implantId: string): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/webshells/${implantId}`, { method: 'DELETE' }),
+  )
+}
+
+export interface WebShellProbe {
+  ok: boolean
+  latencyMs: number
+  detail?: string | null
+}
+
+export async function probeWebShell(
+  engagementId: string,
+  implantId: string,
+): Promise<WebShellProbe> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/webshells/${implantId}:test`, { method: 'POST' }),
+  )
+}
+
+export interface WebShellExecution {
+  taskId: string
+  output: string
+  outcome: string
+  elapsedMs: number
+}
+
+export async function executeWebShell(
+  engagementId: string,
+  implantId: string,
+  command: string,
+): Promise<WebShellExecution> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/webshells/${implantId}:exec`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ command }),
+    }),
+  )
+}
+
 
 // --- Online implant roster (presence) -------------------------
 //

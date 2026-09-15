@@ -18,6 +18,7 @@ import { PayloadBuildView } from './PayloadBuildView'
 import { PayloadsView } from './PayloadsView'
 import { ReportView } from './ReportView'
 import { ShellsView } from './ShellsView'
+import { WebShellsView } from './WebShellsView'
 import { TaskLogView } from './TaskLogView'
 import { TimelineView } from './TimelineView'
 
@@ -148,6 +149,7 @@ export function EngagementView({
         <ImplantsView engagementId={engagementId} onlineTick={tick} onlineImplants={onlineImplants} />
       )}
       {tab === 'shells' && <ShellsView engagementId={engagementId} onlineTick={tick} />}
+      {tab === 'webshells' && <WebShellsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'audit' && <AuditView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'artifacts' && (
         <ArtifactsView engagementId={engagementId} onlineTick={tick} />

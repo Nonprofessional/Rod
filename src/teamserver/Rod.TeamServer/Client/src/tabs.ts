@@ -11,6 +11,7 @@ export type TabId =
   | 'tasking'
   | 'implants'
   | 'shells'
+  | 'webshells'
   | 'audit'
   | 'artifacts'
   | 'timeline'
@@ -37,6 +38,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     items: [
       { id: 'implants', label: 'Implants', icon: 'cpu' },
       { id: 'shells', label: 'Shells', icon: 'terminal' },
+      { id: 'webshells', label: 'Web shells', icon: 'globe' },
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
     ],
   },
