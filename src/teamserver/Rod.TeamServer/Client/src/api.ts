@@ -407,6 +407,8 @@ export interface EngagementStreamHandlers {
   onChannelOutput?: (taskId: string, chunk: string) => void
   onSessionOpened?: (implantId: string, payload: string) => void
   onSessionClosed?: (implantId: string, payload: string) => void
+  onShellSessionOpened?: (payload: string) => void
+  onShellSessionEnded?: (payload: string) => void
   onError?: (event: Event) => void
 }
 
@@ -463,6 +465,14 @@ export function subscribeToEngagement(
   source.addEventListener('SessionClosed', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onSessionClosed?.(payload?.implantId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('ShellSessionOpened', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onShellSessionOpened?.(payload?.payload ?? '')
+  })
+  source.addEventListener('ShellSessionEnded', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onShellSessionEnded?.(payload?.payload ?? '')
   })
   source.onerror = (e) => handlers.onError?.(e)
 
@@ -869,6 +879,106 @@ export async function deleteListener(
     ),
   )
 }
+
+// --- Caught reverse shells (shellcatch) -----------------------
+//
+// The engagement's caught shells: connections a shellcatch listener holds
+// that speak no Rod protocol. The roster reads the session registry; the
+// console reads output by cursor (a long poll parks server-side until the
+// next chunk), and input/close/upgrade are the operator actions over the
+// held socket.
+
+export interface ShellSession {
+  sessionId: string
+  status: 'live' | 'lost' | 'closed'
+  os: 'unknown' | 'windowscmd' | 'windowspowershell' | 'unixshell'
+  remoteAddress: string
+  openedAt: string
+  lastInputAt: string | null
+  lastOutputAt: string | null
+  endedAt: string | null
+  upgradedImplantId: string | null
+}
+
+export async function listShells(engagementId: string): Promise<ShellSession[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/shells`))
+}
+
+export interface ShellOutputChunk {
+  sequence: number
+  at: string
+  text: string
+}
+
+export interface ShellOutput {
+  latestSequence: number
+  chunks: ShellOutputChunk[]
+}
+
+// Reads the shell's output after a cursor. The server parks the request
+// until new output exists (bounded ~20s), so a console keeps one request in
+// flight instead of a spinning poll.
+export async function readShellOutput(
+  engagementId: string,
+  sessionId: string,
+  after: number,
+): Promise<ShellOutput> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/shells/${sessionId}/output?after=${after}`),
+  )
+}
+
+export async function sendShellInput(
+  engagementId: string,
+  sessionId: string,
+  text: string,
+): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/shells/${sessionId}:input`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }),
+  )
+}
+
+export async function closeShell(engagementId: string, sessionId: string): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/shells/${sessionId}:close`, { method: 'POST' }),
+  )
+}
+
+export interface ShellLauncher {
+  id: string
+  os: string
+  command: string
+}
+
+export interface ShellUpgrade {
+  payloadId: string
+  url: string
+  tokenSecret: string
+  tokenExpiresAt: string
+  launchers: ShellLauncher[]
+}
+
+// Renders the paste-ready launchers that grow the shell into a real implant
+// (a single-use stager token is minted server-side; the paste itself is the
+// operator's action through the input route).
+export async function upgradeShell(
+  engagementId: string,
+  sessionId: string,
+  payloadId?: string,
+): Promise<ShellUpgrade> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/shells/${sessionId}:upgrade`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payloadId: payloadId ?? null }),
+    }),
+  )
+}
+
 
 // --- Online implant roster (presence) -------------------------
 //

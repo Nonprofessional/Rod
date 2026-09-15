@@ -17,6 +17,7 @@ import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
 import { PayloadsView } from './PayloadsView'
 import { ReportView } from './ReportView'
+import { ShellsView } from './ShellsView'
 import { TaskLogView } from './TaskLogView'
 import { TimelineView } from './TimelineView'
 
@@ -84,6 +85,8 @@ export function EngagementView({
       onTaskCancelled: () => setTick((t) => t + 1),
       onSessionOpened: () => setTick((t) => t + 1),
       onSessionClosed: () => setTick((t) => t + 1),
+      onShellSessionOpened: () => setTick((t) => t + 1),
+      onShellSessionEnded: () => setTick((t) => t + 1),
     })
     return close
   }, [engagementId])
@@ -144,6 +147,7 @@ export function EngagementView({
       {tab === 'implants' && !implantId && (
         <ImplantsView engagementId={engagementId} onlineTick={tick} onlineImplants={onlineImplants} />
       )}
+      {tab === 'shells' && <ShellsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'audit' && <AuditView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'artifacts' && (
         <ArtifactsView engagementId={engagementId} onlineTick={tick} />
