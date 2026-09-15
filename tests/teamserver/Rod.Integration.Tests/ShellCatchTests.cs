@@ -185,6 +185,124 @@ public class ShellCatchTests
         Assert.Equal("id\n", System.Text.Encoding.UTF8.GetString(buffer, 0, read));
     }
 
+    [Fact]
+    public async Task ShellRoutes_ListReadInputClose_OverTheOperatorApi()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-shellcatch",
+                Transport: "shellcatch",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"10.0.0.5:{port}"));
+        created.EnsureSuccessStatusCode();
+
+        using var peer = new TcpClient();
+        await peer.ConnectAsync(IPAddress.Loopback, port);
+        await peer.GetStream().WriteAsync("user@target:~$ "u8.ToArray());
+
+        // The roster lists the caught shell.
+        ShellDto[] listed;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        do
+        {
+            listed = await env.Http.GetFromJsonAsync<ShellDto[]>(
+                $"/engagements/{engagementId}/shells") ?? [];
+            await Task.Delay(50);
+        }
+        while (listed.Length == 0 && DateTime.UtcNow < deadline);
+        var shell = Assert.Single(listed);
+        Assert.Equal("live", shell.Status);
+        var sessionId = shell.SessionId;
+
+        // The output read returns the banner chunks with a cursor; a read
+        // caught up to the tip returns the same latest sequence without
+        // waiting for more (chunks exist, so no long poll).
+        ShellOutputDto? output;
+        do
+        {
+            output = await env.Http.GetFromJsonAsync<ShellOutputDto>(
+                $"/engagements/{engagementId}/shells/{sessionId}/output?after=0");
+            await Task.Delay(50);
+        }
+        while ((output?.Chunks.Count ?? 0) == 0 && DateTime.UtcNow < deadline);
+        Assert.NotNull(output);
+        Assert.Contains("user@target:~$", string.Concat(output!.Chunks.Select(c => c.Text)));
+
+        // Operator input rides the operator API down the socket.
+        var sent = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:input",
+            new ShellInputDto("whoami"));
+        sent.EnsureSuccessStatusCode();
+        var buffer = new byte[64];
+        var read = await peer.GetStream().ReadAsync(buffer, Timeout());
+        Assert.Equal("whoami\n", System.Text.Encoding.UTF8.GetString(buffer, 0, read));
+
+        // The close route ends the shell as an operator action.
+        var closed = await env.Http.PostAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:close", content: null);
+        Assert.Equal(HttpStatusCode.Accepted, closed.StatusCode);
+
+        var sessions = env.Host.Services.GetRequiredService<IShellSessionRegistry>();
+        await WaitForAsync(
+            () => sessions.FindAsync(ShellSessionId.TryParse(sessionId, out var id) ? id : default),
+            session => session?.Status == ShellSessionStatus.Closed,
+            "the operator close to be honored");
+    }
+
+    [Fact]
+    public async Task ShellRoutes_RefuseAForeignEngagement()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var otherEngagementId = await CreateEngagementAsync(env.Http);
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-shellcatch",
+                Transport: "shellcatch",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"10.0.0.5:{port}"));
+        created.EnsureSuccessStatusCode();
+
+        using var peer = new TcpClient();
+        await peer.ConnectAsync(IPAddress.Loopback, port);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        ShellDto[] listed;
+        do
+        {
+            listed = await env.Http.GetFromJsonAsync<ShellDto[]>(
+                $"/engagements/{engagementId}/shells") ?? [];
+            await Task.Delay(50);
+        }
+        while (listed.Length == 0 && DateTime.UtcNow < deadline);
+        var sessionId = Assert.Single(listed).SessionId;
+
+        // A foreign engagement's roster is empty and its scoped reads
+        // refuse the session as unknown -- engagement isolation reads the
+        // same here as everywhere else.
+        var foreignList = await env.Http.GetFromJsonAsync<ShellDto[]>(
+            $"/engagements/{otherEngagementId}/shells");
+        Assert.Empty(foreignList!);
+        var foreignGet = await env.Http.GetAsync(
+            $"/engagements/{otherEngagementId}/shells/{sessionId}");
+        Assert.Equal(HttpStatusCode.NotFound, foreignGet.StatusCode);
+    }
+
+    private sealed record ShellDto(
+        string SessionId, string Status, string Os, string RemoteAddress);
+
+    private sealed record ShellOutputDto(long LatestSequence, IReadOnlyList<ShellChunkDto> Chunks);
+
+    private sealed record ShellChunkDto(long Sequence, DateTimeOffset At, string Text);
+
+    private sealed record ShellInputDto(string Text);
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",

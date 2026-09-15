@@ -667,6 +667,9 @@ public static class TransportHost
         app.MapEnrollmentEndpoints();
         app.MapImplantEndpoints();
         app.MapListenerEndpoints();
+        // The engagement's caught reverse shells: the shellcatch surface's
+        // roster and console routes.
+        app.MapShellSessionEndpoints();
         // The host's bindable interfaces: the read view behind the listener
         // form's bind dropdown.
         app.MapNetworkEndpoints();
@@ -719,6 +722,9 @@ public static class TransportHost
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
         endpoints.MapListenerEndpoints();
+        // The engagement's caught reverse shells: the shellcatch surface's
+        // roster and console routes.
+        endpoints.MapShellSessionEndpoints();
         // The host's bindable interfaces: the read view behind the listener
         // form's bind dropdown.
         endpoints.MapNetworkEndpoints();
