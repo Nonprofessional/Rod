@@ -18,6 +18,7 @@ using Rod.CoreState.Live;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.ShellSessions;
 using Rod.CoreState.Staging;
 using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
@@ -118,6 +119,16 @@ public static class TransportHost
         services.AddSingleton<ISessionRegistry>(sp => new LastSeenSessionRegistry(
             new InMemorySessionRegistry(),
             sp.GetRequiredService<IImplantRepository>()));
+        // Shell sessions (architecture.md Sec 8, the shellcatch transport):
+        // the caught reverse-shell registry, the anonymous-arrival sibling
+        // of the implant session registry above; the in-memory default
+        // pairs with a Postgres adapter when the durable host swaps in.
+        services.AddSingleton<IShellSessionRegistry, InMemoryShellSessionRegistry>();
+        // The shellcatch hub (architecture.md Sec 8): the rendezvous between
+        // the operator shell routes and the listener service's held
+        // connections, keyed by shell session id -- the shell-facing analog
+        // of the live channel hub below.
+        services.AddSingleton<Listeners.ShellCatch.ShellCatchHub>();
         services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
         // Task-queue wake (architecture.md Sec 10.3): TaskService releases it
         // on every accepted enqueue and the beacon writer parks on it, so a

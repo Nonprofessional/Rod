@@ -5,13 +5,16 @@ using Rod.Audit;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Pki;
+using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.ShellSessions;
 using Rod.CoreState.Tasks;
 using Rod.CoreState.Transports;
 using Rod.Transport.Channels;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners.Dns;
 using Rod.Transport.Listeners.Quic;
+using Rod.Transport.Listeners.ShellCatch;
 using Rod.Transport.Listeners.Streams;
 
 namespace Rod.Transport.Listeners.Providers;
@@ -112,6 +115,25 @@ public static class TransportProviders
         // it answers for, the UDP listener's model.
         Register(new KestrelEndpointProvider("doh", ListenerTlsPosture.ServerTls,
             new[] { TransportCapabilities.DnsName }, PublicEndpointShape.DnsZone));
+
+        // The stream family's catcher: a TCP socket that holds connections
+        // speaking no Rod protocol at all (architecture.md Sec 8) -- the
+        // reverse shells an operator's one-liners dial home over. It serves
+        // no check-in carrier (nothing here is implant ingress, so a build
+        // may never name it as a beacon), and its public endpoint is the
+        // bare host:port the one-liners dial, the family's dial shape.
+        Register(new HostedServiceTransportProvider("shellcatch",
+            new HostedBindShape(BindReservation.TcpPort, BarePipeName: false, PublicEndpointShape.HostPort),
+            Array.Empty<string>(),
+            (services, registry, listener) => new ShellCatchListenerService(
+                listener,
+                services.GetRequiredService<ShellCatchHub>(),
+                services.GetRequiredService<IShellSessionRegistry>(),
+                services.GetRequiredService<ILiveEventBus>(),
+                services.GetRequiredService<IAuditStore>(),
+                registry,
+                services.GetRequiredService<TimeProvider>(),
+                services.GetRequiredService<ILoggerFactory>().CreateLogger<ShellCatchListenerService>())));
     }
 
     /// <summary>

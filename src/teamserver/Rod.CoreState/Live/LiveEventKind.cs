@@ -73,4 +73,22 @@ public enum LiveEventKind
     /// <see cref="SessionClosed"/>.
     /// </summary>
     SessionOpened,
+
+    /// <summary>
+    /// A shellcatch listener accepted a reverse-shell connection
+    /// (architecture.md Sec 8). Connected operators refresh the shell roster
+    /// on it -- the shell-facing mirror of <see cref="SessionOpened"/>. The
+    /// payload carries the shell session id, remote address, and listener;
+    /// output itself is not fanned out per chunk (the console reads the
+    /// shell's output log directly), so the stream stays roster-paced.
+    /// </summary>
+    ShellSessionOpened,
+
+    /// <summary>
+    /// A caught shell left the live roster -- lost to the network or closed
+    /// by an operator (architecture.md Sec 8). The shell-facing mirror of
+    /// <see cref="SessionClosed"/>; the payload carries the shell session id
+    /// and how it ended.
+    /// </summary>
+    ShellSessionEnded,
 }

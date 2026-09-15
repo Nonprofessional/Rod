@@ -258,4 +258,42 @@ public enum AuditEventKind
     /// record moved, not every draft of it.
     /// </summary>
     EngagementUpdated,
+
+    /// <summary>
+    /// A shellcatch listener accepted a reverse-shell connection
+    /// (architecture.md Sec 8). The peer speaks no Rod protocol and carries
+    /// no identity, so the event is scoped by the engagement-bound listener
+    /// it landed on. System-initiated (the accept), so it is attributed to
+    /// the null operator. The payload carries the remote address, the
+    /// listener, and the fingerprint once guessed; the outcome is the new
+    /// shell session id.
+    /// </summary>
+    ShellSessionOpened,
+
+    /// <summary>
+    /// A caught shell session ended on its own -- the peer vanished, the
+    /// shell exited, or the socket died (Lost). System-initiated, so it is
+    /// attributed to the null operator; an operator's deliberate close is
+    /// its own operator-attributed <see cref="ShellSessionClosed"/> event.
+    /// The payload carries the last-input/output stamps; the outcome is the
+    /// shell session id.
+    /// </summary>
+    ShellSessionEnded,
+
+    /// <summary>
+    /// An operator closed a caught shell deliberately. Operator-attributed;
+    /// the outcome is the shell session id. The socket's unblock and the
+    /// session's Closed marking follow from the pump honoring the close.
+    /// </summary>
+    ShellSessionClosed,
+
+    /// <summary>
+    /// An operator wrote input to a caught shell (architecture.md Sec 8).
+    /// Operator-attributed and precise per submission, unlike output (which
+    /// flows unsolicited and is summarized on the session's end events):
+    /// input is the operator's own action against the target and is recorded
+    /// exactly. The payload carries the submitted text; the outcome is the
+    /// shell session id.
+    /// </summary>
+    ShellSessionInput,
 }

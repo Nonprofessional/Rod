@@ -140,4 +140,18 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.SessionOpened, deployedBy, implantId, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a shell-session event -- a caught reverse shell joining or
+    /// leaving the live roster (architecture.md Sec 8). System-initiated
+    /// either way (the accept, the socket's end), so it is attributed to
+    /// the null operator; no implant or task is involved, and the payload
+    /// carries the shell session id and what happened.
+    /// </summary>
+    public static LiveEvent ShellSession(
+        EngagementId engagement,
+        LiveEventKind kind,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, kind, OperatorId.Empty, ImplantId: null, TaskId: null, payload, at);
 }
