@@ -732,6 +732,35 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   contract ([extending/implants.md](extending/implants.md)); the transport
   needs a host QUIC stack (libmsquic on Linux), and the bind refuses with
   the named cause when the host carries none.
+- **The shellcatch transport holds caught reverse shells.** Where the TCP
+  listener serves check-ins -- one connection, one rod.v1 exchange,
+  closed -- the shellcatch listener (`"shellcatch"`) accepts connections
+  that speak no Rod protocol at all: the peer is whatever reverse-shell
+  one-liner the operator ran on the target (nc, a bash `/dev/tcp` pipe, a
+  perl or python snippet), it never enrolls and carries no identity, so
+  the catch is scoped the only way an anonymous arrival can be -- by the
+  engagement-bound listener it landed on. The connection is held (not
+  one-exchange-per-connection): output flows onto a bounded,
+  sequence-coursed log the operator console long-polls by cursor, the
+  first output chunks are fingerprinted server-side into an OS/shell
+  guess that never downgrades, operator input rides the audited input
+  route down the socket, and the ending is attributed to who ended it
+  (Lost when the peer goes away, Closed when an operator asks). The
+  shell session registry is the anonymous-arrival sibling of the implant
+  session registry, engagement-scoped the same way by construction. The
+  shell leaves the hub the moment its socket dies, before the durable
+  marking, so no route resolves a dead socket. An upgrade render is
+  advisory: it mints the engagement a single-use stager token and returns
+  paste-ready one-liners (the standard fetch-credential-run stager shape
+  against the engagement's web listener) -- the paste is the operator's
+  action through the input route, not a server-side write into the
+  session. Shellcatch serves no check-in carrier -- nothing here is
+  implant ingress, and a build may never name it as a beacon. The
+  exposure is inherent and named: a shellcatch port accepts whoever
+  reaches it (the one-liner carries no secret); the mitigations are a
+  fronting redirector's source allow-list, a non-default port, and a
+  short-lived listener -- the same infrastructure discipline every
+  ingress follows.
 - Redirectors forward opaque payloads. The in-tree reference is an opaque L4 TCP
   forwarder (Native AOT) that never terminates transport, so the mTLS beacon
   channel and the HTTPS enroll request carry through end to end. It is L4, not
