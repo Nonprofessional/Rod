@@ -70,6 +70,38 @@ public class TaskAckRedeliveryTests
     }
 
     [Fact]
+    public async Task AcklessDispatch_OnAbortedStream_IsRedeliveredOnTheNextCheckIn()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (implant, leaf, key) = await env.EnrollImplantAsync();
+
+        string taskId;
+        using (var first = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true))
+        {
+            var (issued, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo abort-strand");
+            taskId = issued;
+            var original = await first.ReadTaskAsync();
+            Assert.Equal(taskId, original.TaskId);
+
+            // The connection aborts holding the dispatch: no complete, no
+            // ack. The server's read fails rather than ending cleanly -- the
+            // death shape that used to skip the strand close and strand the
+            // dispatch in Dispatched forever.
+            first.Abort();
+        }
+
+        // The reconnect redelivers it all the same.
+        using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
+        var redelivered = await second.ReadTaskAsync();
+        Assert.Equal(taskId, redelivered.TaskId);
+
+        await second.AckAsync(redelivered.TaskId);
+        await second.ReportAsync(redelivered, TaskOutcome.Succeeded, "abort strand closed");
+        var done = await env.WaitUntilTaskCompletesAsync(implant.EngagementId, redelivered.TaskId);
+        Assert.Equal("Succeeded", done!.Outcome);
+    }
+
+    [Fact]
     public async Task AckedDispatch_OnDyingStream_IsNotRedelivered()
     {
         await using var env = await TestEnv.StartAsync();
@@ -87,6 +119,13 @@ public class TaskAckRedeliveryTests
             // delivery evidence, so the dispatch stands and the result --
             // whenever the implant next reports it -- is what completes it.
             await first.AckAsync(taskId);
+
+            // The ack must actually cross: CompleteAsync orders the frames,
+            // but the server drains them asynchronously, and an ack it never
+            // read leaves the dispatch in the strand -- redelivered, by
+            // design, on the reconnect. The settle gives the server its read
+            // cycle before the close takes the stream away.
+            await System.Threading.Tasks.Task.Delay(500);
         }
 
         using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
@@ -359,6 +398,17 @@ public class TaskAckRedeliveryTests
         public void Dispose()
         {
             try { _call.RequestStream.CompleteAsync().GetAwaiter().GetResult(); } catch { }
+            _call.Dispose();
+            _channel.Dispose();
+        }
+
+        /// <summary>
+        /// Kills the connection without the graceful complete -- the abort
+        /// shape a network drop takes, where the server's read fails rather
+        /// than ending cleanly.
+        /// </summary>
+        public void Abort()
+        {
             _call.Dispose();
             _channel.Dispose();
         }

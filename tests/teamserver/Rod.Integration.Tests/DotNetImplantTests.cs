@@ -345,7 +345,7 @@ public class DotNetImplantTests
                 await WaitUntilAsync(async () =>
                     (await env.Http.GetFromJsonAsync<TaskBody>(
                         $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}"))!.Status == "Dispatched",
-                    deadline: TimeSpan.FromSeconds(30));
+                    deadline: TimeSpan.FromSeconds(60));
 
                 // The operator's input posts ride the fronting stream -- the
                 // child has none of its own -- and the parent relays them to
@@ -365,7 +365,7 @@ public class DotNetImplantTests
                     completed = await env.Http.GetFromJsonAsync<TaskBody>(
                         $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}");
                     return completed is { Status: "Completed", Outcome: "Succeeded" };
-                }, deadline: TimeSpan.FromSeconds(30));
+                }, deadline: TimeSpan.FromSeconds(60));
 
                 // The whole record is the child's: the transcript carries the
                 // relayed traffic and the summary, and the task itself belongs

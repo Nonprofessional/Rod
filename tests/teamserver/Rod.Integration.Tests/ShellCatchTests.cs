@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using Microsoft.AspNetCore.Hosting;
@@ -204,7 +205,11 @@ public class ShellCatchTests
         await peer.ConnectAsync(IPAddress.Loopback, port);
         await peer.GetStream().WriteAsync("user@target:~$ "u8.ToArray());
 
-        // The roster lists the caught shell.
+        // The roster lists the caught shell. It is identified by the peer's
+        // own ephemeral port, not by cardinality: under a loaded parallel
+        // suite a stray connection can land on the catch port too (the
+        // free-port picker's TOCTOU), and only this peer's session matters.
+        var peerPort = ((IPEndPoint)peer.Client.LocalEndPoint!).Port;
         ShellDto[] listed;
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
         do
@@ -213,8 +218,9 @@ public class ShellCatchTests
                 $"/engagements/{engagementId}/shells") ?? [];
             await Task.Delay(50);
         }
-        while (listed.Length == 0 && DateTime.UtcNow < deadline);
-        var shell = Assert.Single(listed);
+        while (!listed.Any(s => s.RemoteAddress.EndsWith($":{peerPort}"))
+            && DateTime.UtcNow < deadline);
+        var shell = Assert.Single(listed, s => s.RemoteAddress.EndsWith($":{peerPort}"));
         Assert.Equal("live", shell.Status);
         var sessionId = shell.SessionId;
 
@@ -237,9 +243,14 @@ public class ShellCatchTests
             $"/engagements/{engagementId}/shells/{sessionId}:input",
             new ShellInputDto("whoami"));
         sent.EnsureSuccessStatusCode();
+        var received = new StringBuilder();
         var buffer = new byte[64];
-        var read = await peer.GetStream().ReadAsync(buffer, Timeout());
-        Assert.Equal("whoami\n", System.Text.Encoding.UTF8.GetString(buffer, 0, read));
+        while (received.Length == 0 || !received.ToString().EndsWith("\n"))
+        {
+            var read = await peer.GetStream().ReadAsync(buffer, Timeout());
+            received.Append(System.Text.Encoding.UTF8.GetString(buffer, 0, read));
+        }
+        Assert.Equal("whoami\n", received.ToString());
 
         // The close route ends the shell as an operator action.
         var closed = await env.Http.PostAsync(

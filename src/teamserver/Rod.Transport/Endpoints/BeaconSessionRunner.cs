@@ -123,9 +123,13 @@ internal sealed class BeaconSessionRunner
         var writer = DispatchTasksAsync(session, pulls, inputs, write, unacked, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
-        // via cancellation (its loop runs for the session), so swallow the
-        // cancellation that follows; other exceptions surface and are rethrown.
-        await await Task.WhenAny(reader, writer);
+        // via cancellation (its loop runs for the session). How the first
+        // loop ended is held back -- an aborted read is precisely the death
+        // the dispatch strand below exists for, and rethrowing here (the old
+        // shape) skipped the strand close entirely, stranding every ack-less
+        // dispatch in Dispatched. The fault rethrows after the unwind, with
+        // its original stack.
+        var ended = await Task.WhenAny(reader, writer);
         linked.Cancel();
         try
         {
@@ -134,6 +138,11 @@ internal sealed class BeaconSessionRunner
         catch (OperationCanceledException)
         {
             // Expected: the cancelled loop unwinds through the wake wait.
+        }
+        catch
+        {
+            // The same fault the held-back rethrow below carries; it is
+            // observed here only so WhenAll does not hide it.
         }
 
         // The stream is gone: close the dispatch strand it carried. Every
@@ -164,6 +173,11 @@ internal sealed class BeaconSessionRunner
         // at a listener nothing more will cross.
         _relays.CloseImplant(session.Implant, "the implant's beacon stream ended");
         _socks.CloseImplant(session.Implant, "the implant's beacon stream ended");
+
+        // Surface how the stream ended, exactly as the first-completed loop
+        // saw it -- after the strand closed, never instead of it.
+        if (ended.IsFaulted)
+            await ended;
     }
 
     // Reader: await each upstream frame, capture it into the task and append the
