@@ -8,14 +8,17 @@ namespace Rod.Transport.WebShells;
 /// The per-request markers (<see cref="TagStart"/>/<see cref="TagEnd"/>)
 /// ride on the request because the request itself bakes them into the
 /// payload it sends -- the classic managers' shape, where the shell only
-/// evaluates what arrives and the client frames its own answers -- so the
-/// decoder on the response side reads the same pair back.
+/// evaluates what arrives and the client frames its own answers -- so
+/// the decoder on the response side reads the same pair back. The
+/// credential rides along for the families that seal: a Rod-native
+/// request decrypts its answer under the same key it encrypted with.
 /// </summary>
 public sealed record WebShellRequest(
     string Url,
     IReadOnlyDictionary<string, string> Form,
     string TagStart,
-    string TagEnd);
+    string TagEnd,
+    string Credential);
 
 /// <summary>
 /// A web-shell protocol adapter (architecture.md Sec 5.2's Web-shell
@@ -23,17 +26,19 @@ public sealed record WebShellRequest(
 /// The adapter knows no HTTP, no tasks, and no engagement -- it turns a
 /// command into a form and a response body into text, which keeps every
 /// protocol family independently testable and keeps the out-of-tree
-/// boundary clean: an adapter for a closed-source tool's protocol plugs in
-/// as a module without the core learning anything about it
-/// (architecture.md Sec 13).
+/// boundary clean: an adapter for anything else plugs in as a module
+/// without the core learning anything about it (architecture.md Sec 13).
 ///
-/// The in-tree family is the open, documented one (AntSword's eval
-/// one-liner, MIT); adapters for anything else arrive out-of-tree through
-/// the tradecraft layer's registration path.
+/// The in-tree families are the Rod-native one (a one-line script whose
+/// 256-bit baked key seals the channel as AES-256-GCM) and the
+/// AntSword-compatible eval family (MIT, kept as interop for scripts
+/// placed for other managers); adapters for closed-source tools'
+/// protocols arrive out-of-tree through the tradecraft layer's
+/// registration path.
 /// </summary>
 public interface IWebShellProtocolAdapter
 {
-    /// <summary>The adapter's registry id (e.g. <c>antsword-php</c>).</summary>
+    /// <summary>The adapter's registry id (e.g. <c>rod-php</c>).</summary>
     string Id { get; }
 
     /// <summary>The script language the generated one-liner is written in.</summary>
@@ -44,6 +49,28 @@ public interface IWebShellProtocolAdapter
 
     /// <summary>The response decoder this adapter implements.</summary>
     string DefaultDecoder { get; }
+
+    /// <summary>
+    /// A fresh credential for this family -- the connection password the
+    /// classic managers use, or the 256-bit key the sealed families bake
+    /// into the script. Called when a register or generate request names
+    /// no credential of its own.
+    /// </summary>
+    string GenerateCredential();
+
+    /// <summary>
+    /// Whether a caller-supplied credential is usable by this family --
+    /// any token for the password families, a base64 256-bit key for the
+    /// sealed ones. Registration and generation check this so a malformed
+    /// credential is refused before a broken script is ever placed.
+    /// </summary>
+    bool IsValidCredential(string credential);
+
+    /// <summary>
+    /// A noun phrase naming the credential shape this family accepts, for
+    /// refusal messages ("the base64 of a 256-bit key", "a short token").
+    /// </summary>
+    string CredentialHint { get; }
 
     /// <summary>
     /// Renders the script an operator places in the target's web root --
@@ -84,6 +111,7 @@ public static class WebShellAdapters
 
     static WebShellAdapters()
     {
+        Register(new RodPhpAdapter());
         Register(new AntSwordPhpAdapter());
     }
 

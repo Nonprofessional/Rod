@@ -83,17 +83,21 @@ public static class WebShellEndpoints
             return Results.BadRequest(new Problem("The web-shell URL must be an absolute http(s) address."));
         }
 
-        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "antsword-php");
+        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "rod-php");
         if (adapter is null)
             return Results.BadRequest(new Problem(
                 "Protocol adapter is not recognized. Use one of: " + string.Join(", ", WebShellAdapters.Names()) + "."));
 
-        // The POST parameter is the shared secret of the classic managers;
-        // an unsupplied one is generated so a placed script and its profile
-        // always agree.
+        // The credential is whatever the family's placed script carries --
+        // a connection password for the classic managers, the baked key for
+        // the sealed families; an unsupplied one is generated so a placed
+        // script and its profile always agree.
         var password = string.IsNullOrWhiteSpace(body.Password)
-            ? WebShellAdapters.RandomToken(6, 12)
+            ? adapter.GenerateCredential()
             : body.Password.Trim();
+        if (!adapter.IsValidCredential(password))
+            return Results.BadRequest(new Problem(
+                $"The {adapter.Id} credential is not usable ({adapter.CredentialHint}); leave it empty to generate one."));
         var encoder = string.IsNullOrWhiteSpace(body.Encoder) ? adapter.DefaultEncoder : body.Encoder.Trim();
         var decoder = string.IsNullOrWhiteSpace(body.Decoder) ? adapter.DefaultDecoder : body.Decoder.Trim();
 
@@ -315,9 +319,9 @@ public static class WebShellEndpoints
     // script with its credential baked in, without any endpoint to register.
     // The script lands in the payload store like any build -- fingerprinted,
     // attributed, re-downloadable -- so preparing artifacts ahead of an
-    // operation is a first-class flow. The connection password is generated
-    // when unsupplied; the audit fact names the adapter and never the
-    // credential.
+    // operation is a first-class flow. The credential (the family's
+    // connection password or baked key) is generated when unsupplied; the
+    // audit fact names the adapter and never the credential.
     private static async Task<IResult> GenerateScriptAsync(
         string engagementId,
         GenerateWebShellScriptRequest body,
@@ -333,14 +337,17 @@ public static class WebShellEndpoints
         if (operatorId is null)
             return Results.Unauthorized();
 
-        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "antsword-php");
+        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "rod-php");
         if (adapter is null)
             return Results.BadRequest(new Problem(
                 "Protocol adapter is not recognized. Use one of: " + string.Join(", ", WebShellAdapters.Names()) + "."));
 
         var password = string.IsNullOrWhiteSpace(body.Password)
-            ? WebShellAdapters.RandomToken(6, 12)
+            ? adapter.GenerateCredential()
             : body.Password.Trim();
+        if (!adapter.IsValidCredential(password))
+            return Results.BadRequest(new Problem(
+                $"The {adapter.Id} credential is not usable ({adapter.CredentialHint}); leave it empty to generate one."));
         var script = adapter.RenderScript(password);
         var content = Encoding.UTF8.GetBytes(script);
         var payloadId = Guid.NewGuid();
