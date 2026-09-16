@@ -18,8 +18,9 @@ and the UI uses them precisely:
   the next cycle. All ordinary operations (shell commands, file transfers,
   process listings, screenshots) ride check-ins.
 - **Interactive** -- not "everything else": it is the on-demand live channel
-  (`shell.interact`, tunnels) held open over the mTLS stream for real-time
-  typing. An implant that never opens one still fully operates through
+  (`shell.interact`, tunnels) held open over the stream for real-time
+  typing -- the gRPC stream on mTLS, the WebSocket beacon on a web front.
+  An implant that never opens one still fully operates through
   check-ins.
 
 Two builds of that contact cadence: **poll** mode makes each check-in a
@@ -66,8 +67,10 @@ deliberate act that updates this section first.
   names the same thing per artifact.
 - **Interactive listener (mTLS)** -- the second slot: the listener whose
   socket carries the interactive stream when the build splits its traffic
-  (a cleartext front cannot carry it). Absent, interactive rides the same
-  TLS-terminated listener as everything else.
+  (the hardened option on a cleartext front). Absent, interactive rides
+  the same listener as everything else -- the gRPC stream on mTLS, the
+  WebSocket beacon on a web front (sealed frames under the per-artifact
+  key, cleartext included).
 - **Public endpoint (enroll + check-in, manual)** /
   **Public endpoint (interactive, manual)** -- the typed-address twins of
   the two picks, under Advanced, for addresses this teamserver does not
@@ -81,10 +84,12 @@ deliberate act that updates this section first.
 Transport labels in the listener form follow the same rule -- they name
 what each transport carries: HTTPS and mTLS carry **enroll + check-in +
 interactive** (one port; mTLS additionally enforces client certificates
-at the TLS layer), cleartext HTTP carries **enroll + check-in (poll)**
-over the envelope POST cycle but no interactive stream, and DNS/SMB/TCP
-are alternate reach and pivot links, not the payload ingress the Build
-form picks from.
+at the TLS layer), cleartext HTTP carries **enroll + check-in** over the
+envelope POST cycle and the **interactive** WebSocket beacon beside it
+(sealed frames under the per-artifact key), and DNS/DoH/QUIC/SMB/TCP are
+alternate reach and pivot links, not the payload ingress the Build form
+picks from. QUIC carries check-in + interactive but no enroll -- an
+implant enrolls on a web front and holds its session over QUIC.
 
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
@@ -182,7 +187,7 @@ An engagement's C2 ingress. Each listener owns two addresses:
   DNS 53, TCP 4444, QUIC 443). SMB has no interface/port -- its bind is
   a bare pipe name.
 - **Public endpoint** -- the address *implants dial* (enroll + check-in,
-  and interactive on TLS fronts), baked into payloads. The create form's
+  and interactive), baked into payloads. The create form's
   field of the same name takes a bare host, host:port, or full URL and
   completes it (scheme from the transport, port from the bind); empty
   derives it from the bind. In production this is typically your
@@ -200,9 +205,10 @@ hostname. DNS, SMB, and TCP cannot derive at all; their endpoint (zone /
 pipe path / host:port) is required.
 
 The transport dropdown is grouped by role -- payload ingress (https, mTLS,
-http), alternate reach & pivots (DNS, QUIC, SMB, TCP), catchers (shellcatch)
--- and the form opens on https: the one-port posture that carries every
-behavior, so the untouched default is already the recommended shape.
+http), alternate reach & pivots (DNS, DoH, QUIC, SMB, TCP), catchers
+(shellcatch) -- and the form opens on https: the one-port posture that
+carries every behavior, so the untouched default is already the recommended
+shape.
 
 Every listener is engagement-scoped and persisted -- a restart rebinds it with
 the same id -- and enrollment through its socket accepts only that

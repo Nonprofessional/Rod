@@ -39,9 +39,10 @@ import { StatusBadge } from '../components/StatusBadge'
 // port.
 // Each label names what the transport carries, in the fixed vocabulary:
 // TLS-terminated fronts carry every behavior (enroll, check-in, interactive);
-// cleartext HTTP carries enroll + check-in over the envelope POST cycle but
-// no interactive stream; DNS/QUIC/SMB/TCP are alternate reach and pivot
-// links, not the payload ingress the Build form picks from.
+// cleartext HTTP carries enroll + check-in over the envelope POST cycle and
+// the interactive WebSocket beacon beside it; DNS/DoH/QUIC/SMB/TCP are
+// alternate reach and pivot links, not the payload ingress the Build form
+// picks from.
 interface TransportOption {
   value: string
   label: string
@@ -57,14 +58,15 @@ const TRANSPORT_GROUPS: readonly {
     transports: [
       { value: 'https', label: 'HTTPS — one port: enroll + check-in + interactive', port: '443' },
       { value: 'mtls', label: 'mTLS — client certs: enroll + check-in + interactive', port: '5443' },
-      { value: 'http', label: 'HTTP — cleartext: enroll + check-in (poll); no interactive', port: '5090' },
+      { value: 'http', label: 'HTTP — cleartext: enroll + check-in; interactive over the WebSocket beacon', port: '5090' },
     ],
   },
   {
     label: 'Alternate reach & pivots',
     transports: [
       { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
-      { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive beacon; no enroll', port: '443' },
+      { value: 'doh', label: 'DoH — DNS over HTTPS: alternate reach, not payload ingress', port: '443' },
+      { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive; no enroll — pair with a web front', port: '443' },
       { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
       { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
     ],
@@ -261,8 +263,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       <h3>Listeners</h3>
       <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
         This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
-        dial. Cleartext HTTP carries enroll + check-in over the sealed envelope POST; only the
-        interactive stream needs TLS, so an HTTPS/mTLS listener alone covers everything.
+        dial. Every web front carries enroll + check-in and, over the WebSocket beacon, the
+        interactive stream too; HTTPS/mTLS remain the recommended posture, cleartext HTTP the lab
+        one.
       </p>
 
       {/* The same labeled-grid shape as the Build form: every field carries
@@ -286,7 +289,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
               if (port !== '') setBindPort(port)
             }}
-              title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST but no interactive stream — a build on it polls unless it names an mTLS listener for interactive."
+              title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST and the interactive WebSocket beacon beside it (sealed frames, so cleartext carries confidential content). DNS/DoH/QUIC/SMB/TCP are alternate reach and pivot links — an implant enrolls on a web front and reaches them beside it."
           >
             {TRANSPORT_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
