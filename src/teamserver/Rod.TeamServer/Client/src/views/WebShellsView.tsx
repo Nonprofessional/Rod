@@ -12,14 +12,17 @@ import {
   removeWebShell,
 } from '../api'
 import { StatusBadge } from '../components/StatusBadge'
+import { Icon } from '../components/Icons'
 
 // The engagement's web-shell endpoints: scripts placed in targets' web
 // roots, bound to the engagement by registration. The roster reads the
 // profile (url, adapter, probe stamps); registering an endpoint answers
 // with the one-liner to place, so the operator can drop the script and
-// connect in one flow. The console is line-oriented -- each submitted line
-// is one synchronous execution whose output appends to the transcript --
-// because a web-shell has no live stream; the task log carries the durable
+// connect in one flow, and standalone generation answers with the same
+// script stored as a payload -- copyable here, downloadable as the stored
+// artifact. The console is line-oriented -- each submitted line is one
+// synchronous execution whose output appends to the transcript -- because
+// a web-shell has no live stream; the task log carries the durable
 // history of every command.
 export function WebShellsView({
   engagementId,
@@ -190,13 +193,18 @@ export function WebShellsView({
             <button className="ghost sm" onClick={() => void copyScript(generated.script)}>
               {copied ? 'Copied' : 'Copy'}
             </button>
+            <a
+              className="download-link"
+              href={`engagements/${engagementId}/payloads/${generated.payloadId}`}
+              download
+            >
+              Download
+            </a>
           </div>
         </div>
       )}
 
-      {shells.length === 0 ? (
-        <p className="muted">No web-shell endpoints registered yet.</p>
-      ) : (
+      <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -209,6 +217,17 @@ export function WebShellsView({
             </tr>
           </thead>
           <tbody>
+            {shells.length === 0 && (
+              <tr>
+                <td colSpan={6}>
+                  <div className="empty">
+                    <Icon name="globe" />
+                    No web-shell endpoints registered yet -- register a URL above or generate a
+                    script to place.
+                  </div>
+                </td>
+              </tr>
+            )}
             {shells.map((shell) => (
               <tr
                 key={shell.implantId}
@@ -255,7 +274,7 @@ export function WebShellsView({
             ))}
           </tbody>
         </table>
-      )}
+      </div>
 
       {selected && (
         <WebShellConsole engagementId={engagementId} shell={selected} onRan={() => void refresh()} />
