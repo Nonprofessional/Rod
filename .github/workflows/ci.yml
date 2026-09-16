@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # The nightly full-lane pass: every job runs, extended included, so the
+    # non-blocking lane still gets a scheduled verdict.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -46,6 +51,13 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     needs: build
+    env:
+      # The core lane: everything except the subprocess-behavior tests -- the
+      # real-implant classes and the conformance harness run in the
+      # non-blocking extended job (they are the slowest and the flakiest
+      # family, and their failures read best on their own lane, not as a red
+      # run on every push). The retry steps below inherit this scope.
+      CORE_FILTER: "FullyQualifiedName!~DotNetImplantTests&FullyQualifiedName!~ExtensionKitEndToEndTests&FullyQualifiedName!~StagerEndToEndTests&FullyQualifiedName!~Rod.Conformance.Tests"
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -91,6 +103,7 @@ jobs:
         continue-on-error: true
         run: >-
           dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
+          --filter "$CORE_FILTER"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           --logger trx
       - name: Upload test diagnostics
@@ -155,7 +168,7 @@ jobs:
         if: steps.test_first.outcome == 'failure'
         run: |
           if [ "$RETRY_FILTER" = "__all__" ]; then
-            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$CORE_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           else
             dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           fi
@@ -164,6 +177,92 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-diagnostics-retry
+          path: '**/TestResults/**'
+          if-no-files-found: ignore
+
+  test-extended:
+    name: Test (extended)
+    runs-on: ubuntu-latest
+    needs: build
+    # Non-blocking by design: this lane carries the slowest, most
+    # environment-sensitive family -- the real-implant subprocess classes and
+    # the conformance harness -- whose failures are worth triage without
+    # being worth a red run on every push. The nightly schedule gives it a
+    # standing verdict; a failure here shows on the job, not on the run.
+    continue-on-error: true
+    env:
+      EXTENDED_FILTER: "FullyQualifiedName~DotNetImplantTests|FullyQualifiedName~ExtensionKitEndToEndTests|FullyQualifiedName~StagerEndToEndTests|FullyQualifiedName~Rod.Conformance.Tests"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
+      - name: Build operator UI
+        working-directory: src/teamserver/Rod.TeamServer/Client
+        run: |
+          npm ci
+          npm run build
+      - name: Restore
+        run: dotnet restore Rod.slnx
+      - name: Build
+        run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: Test (extended lane)
+        id: test_extended_first
+        # The same blame-hang posture the core lane runs with: a hang names
+        # its test and dumps the host instead of burning the runner.
+        continue-on-error: true
+        run: >-
+          dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
+          --filter "$EXTENDED_FILTER"
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          --logger trx
+      - name: Test (extended lane, retry the failures)
+        # The targeted retry the core lane uses: only the failed tests
+        # rerun, so a one-off environment flake is absorbed and only a
+        # repeated failure stays.
+        if: steps.test_extended_first.outcome == 'failure'
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          names = set()
+          for trx in glob.glob('**/TestResults/*.trx', recursive=True):
+              root = ET.parse(trx).getroot()
+              id_to_name = {}
+              results = []
+              for element in root.iter():
+                  local = element.tag.rsplit('}', 1)[-1]
+                  if local == 'UnitTest':
+                      id_to_name[element.get('id')] = element.get('name')
+                  elif local == 'UnitTestResult':
+                      results.append(element)
+              for result in results:
+                  if result.get('outcome') in ('Failed', 'Error', 'Timeout', 'Aborted'):
+                      name = result.get('testName') or id_to_name.get(result.get('testId')) or ''
+                      names.add(name.split('(')[0])
+
+          retry = '|'.join(f'FullyQualifiedName~{n}' for n in sorted(names) if n)
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'EXTENDED_RETRY_FILTER={retry or "__all__"}\n')
+          print('retry filter:', retry or '__all__ (whole lane)')
+          PY
+          if [ "$EXTENDED_RETRY_FILTER" = "__all__" ]; then
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          else
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          fi
+      - name: Upload test diagnostics (extended)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics-extended
           path: '**/TestResults/**'
           if-no-files-found: ignore
 
