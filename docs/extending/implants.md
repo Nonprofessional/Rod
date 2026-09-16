@@ -434,7 +434,11 @@ DNS. An implant is identified by its id alone, and its session must have been
 opened on a handshake-capable transport first -- DNS refreshes presence
 (`last-seen`), it does not create sessions. Downstream tasking keeps the full
 Tier 1 posture: verify the signature before executing anything received over
-DNS.
+DNS. The reference implant's DNS client dials a beacon URL of the shape
+`dns://<resolver-host>[:<port>]/<zone>` -- the resolver is the listener
+itself (v1 dials it directly; a build naming a DNS listener bakes the
+listener's bind, and a wildcard bind is refused with that fix), and queries
+through recursive resolvers arrive with a system-resolver dialer.
 
 **The DoH carriage (RFC 8484).** A `doh` listener entry answers the same
 grammar over HTTPS: the DNS wire message rides an HTTP body -- `GET
@@ -608,7 +612,10 @@ Adopt per deployment need; absence degrades the feature, not interop:
   dispatch semantics exactly -- a written frame counts as delivered.
 - **DNS check-ins** -- the TXT-query grammar above, for egress-restricted
   targets where only DNS leaves the network. Absence is graceful: an implant
-  without it simply beacons over the stream transports.
+  without it simply beacons over the stream transports. The reference
+  implant carries the client: a `dns://` entry in its baked egress walk
+  runs it (a named DNS beacon or a dns-schemed fallback), a build with no
+  dns-schemed entry compiles without it.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
   headers, timeout, and base64 body envelope shape the enroll request.
 - **Child derivation** -- the parent-naming enroll flow behind

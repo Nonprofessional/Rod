@@ -179,6 +179,14 @@ export function PayloadBuildView({
     () => listeners.filter((l) => HTTP_INGRESS.has(l.transport)),
     [listeners],
   )
+  // The DNS pairing shape (architecture.md Sec 8): check-ins step down to
+  // a DNS listener's TXT carrier while enrollment keeps riding the web
+  // front -- offered only when the engagement runs one.
+  const dnsCarriers = useMemo(
+    () => listeners.filter((l) => l.transport === 'dns'),
+    [listeners],
+  )
+  const [carrierId, setCarrierId] = useState('')
   useEffect(() => {
     if (preselected.current || listeners.length === 0 || listenerId) return
     if (pickable.length === 1) setListenerId(pickable[0].id)
@@ -247,7 +255,7 @@ export function PayloadBuildView({
         listenerId: listenerId || null,
         endpoint: !listenerId && endpoint ? endpoint : null,
         stage2PayloadId: isStager ? stage2PayloadId : null,
-        beaconListenerId: null,
+        beaconListenerId: carrierId || null,
         beaconEndpoint: null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
         enrollPath: enrollPath || null,
@@ -337,6 +345,23 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
+          {dnsCarriers.length > 0 && (
+            <label>
+              Check-in carrier
+              <select
+                value={carrierId}
+                onChange={(e) => setCarrierId(e.target.value)}
+                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier -- check-ins step down to it (presence, short tasking, chunked results; no channels, no staged transfers), while enrollment keeps riding the web front above. The implant dials the listener's own bind as its resolver."
+              >
+                <option value="">-- same front as enrollment --</option>
+                {dnsCarriers.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} (dns · zone {l.publicEndpoint})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Class
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>

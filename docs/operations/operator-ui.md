@@ -264,7 +264,11 @@ front -- the gRPC stream on mTLS, the WebSocket beacon on a web front,
 sealed frames under the per-artifact key. Everything else -- "enroll",
 "check-in" in the hover texts -- names the moments inside that one
 relationship. (The build API still accepts a `beaconListenerId` for the
-split-socket shape; the form no longer offers one.)
+split-socket shape; the form no longer offers one.) When the engagement
+runs a DNS listener, a **Check-in carrier** pick pairs it: check-ins step
+down to the TXT carrier (presence, short tasking, chunked results; no
+channels, no staged transfers) while enrollment keeps riding the web
+front, the degraded shape architecture.md Sec 8 documents.
 
 The card's toggle switches to the tab's second artifact kind:
 **Webshell script** renders a placement script with its credential baked
