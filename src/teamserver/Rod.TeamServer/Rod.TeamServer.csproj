@@ -40,17 +40,26 @@
     <RodStampBuildInfo>true</RodStampBuildInfo>
   </PropertyGroup>
 
-  <!-- Fresh-clone convenience: the built operator UI is gitignored, so the first
-       build of this project needs Node to produce wwwroot/index.html. When the
-       bundle is missing, build the SPA with npm before the .NET build packages
-       it. npm is probed first so a backend-only checkout without Node still
-       builds; the root route then answers with a plain explanation instead of
-       a broken UI (Program.cs). -->
-  <Target Name="EnsureOperatorUiBundle" BeforeTargets="Build" Condition="!Exists('wwwroot/index.html')">
+  <!-- The built operator UI is gitignored, so this project's build produces
+       wwwroot/index.html with npm. The target is incremental in MSBuild's own
+       terms: Inputs are the SPA's sources, Output the bundle, so it runs
+       exactly when the bundle is missing or older than any source. The first
+       build of a fresh clone, and every build after the sources moved (a
+       pull, an edit) both refresh the frontend a plain `dotnet run` serves;
+       nothing having changed costs no npm at all. npm is probed first so a
+       backend-only checkout without Node still builds; the root route then
+       answers with a plain explanation instead of a broken UI (Program.cs). -->
+  <ItemGroup>
+    <RodClientSources Include="Client/src/**/*.ts;Client/src/**/*.tsx;Client/src/**/*.css;Client/*.json;Client/*.ts;Client/*.html" />
+  </ItemGroup>
+  <Target Name="EnsureOperatorUiBundle" BeforeTargets="Build" Inputs="@(RodClientSources)" Outputs="wwwroot/index.html">
     <Exec Command="npm --version" IgnoreExitCode="true" ConsoleToMSBuild="true" StandardOutputImportance="low">
       <Output TaskParameter="ExitCode" PropertyName="_RodNpmProbe" />
     </Exec>
-    <Exec Condition="'$(_RodNpmProbe)' == '0'" Command="npm ci &amp;&amp; npm run build" WorkingDirectory="Client" ConsoleToMSBuild="true" />
+    <!-- npm ci restores node_modules only when it is absent: the frequent
+         case (sources moved, deps installed) pays just the vite build. -->
+    <Exec Condition="'$(_RodNpmProbe)' == '0' and !Exists('Client/node_modules')" Command="npm ci" WorkingDirectory="Client" ConsoleToMSBuild="true" />
+    <Exec Condition="'$(_RodNpmProbe)' == '0'" Command="npm run build" WorkingDirectory="Client" ConsoleToMSBuild="true" />
     <Message Condition="'$(_RodNpmProbe)' != '0'" Importance="high" Text="Operator UI bundle not found (wwwroot/index.html) and npm is not on PATH; the server will run API-only. Build it with npm ci &amp;&amp; npm run build in src/teamserver/Rod.TeamServer/Client." />
   </Target>
 
