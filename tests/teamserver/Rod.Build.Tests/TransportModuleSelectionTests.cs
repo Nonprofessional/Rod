@@ -211,6 +211,22 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Registry_EveryModulesFiles_ExistInTheImplantTree()
+    {
+        // A descriptor naming a file the tree does not carry would delete
+        // nothing, compile nothing, and fail the build far from the cause;
+        // pin the contract where the registry and the tree meet.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "src", "implant", "dotnet")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        var tree = Path.Combine(dir!.FullName, "src", "implant", "dotnet");
+        foreach (var descriptor in CheckInModuleRegistry.All)
+            foreach (var file in descriptor.Files)
+                Assert.True(File.Exists(Path.Combine(tree, file)), $"the {descriptor.Module} descriptor names a file the implant tree does not carry: {file}");
+    }
+
+    [Fact]
     public void Apply_WebOnly_RemovesTheStreamModuleWhole_AndWritesTheSelection()
     {
         var staging = StageModuleFiles();

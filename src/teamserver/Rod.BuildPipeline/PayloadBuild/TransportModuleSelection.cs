@@ -13,14 +13,8 @@ public static class CheckInModes
 }
 
 /// <summary>
-/// The check-in modules a build compiles in (architecture.md Sec 8): the
-/// envelope POST cycle for web-front entries on a poll-mode bake, the
-/// WebSocket stream for web-front entries on a stream-mode bake, the mTLS
-/// gRPC stream for bare host:port entries, and the QUIC stream for
-/// quic-schemed entries. The egress walk the profile bakes decides the
-/// shapes and the baked mode picks the web client -- an artifact carries
-/// exactly the transports its walk and mode can dial, so a poll web build
-/// ships no WebSocket client and a stream web build ships no POST cycle.
+/// The check-in modules a build compiles in (architecture.md Sec 8): one
+/// flag per implant-side client the bake-time trim can include.
 /// </summary>
 [Flags]
 public enum CheckInModules
@@ -63,13 +57,87 @@ public enum CheckInModules
 }
 
 /// <summary>
+/// One check-in module's bake-time descriptor: everything the trim needs to
+/// know about a carrier's implant-side client -- which module flag it is,
+/// which source files carry it in the implant tree, which beacon URL shapes
+/// (and mode) it serves, and the factory line the generated transport
+/// selection names. A carrier arriving later registers a descriptor here
+/// instead of editing switches; the same shape is the seam an out-of-tree
+/// carrier contributes through (its provider on the server side, its module
+/// descriptor and sources on the implant side).
+/// </summary>
+public sealed record CheckInModuleDescriptor(
+    CheckInModules Module,
+    string[] Files,
+    Func<string, string, bool> Serves,
+    string FactoryLine);
+
+/// <summary>
+/// The registered check-in modules. Matching order is load-bearing: the
+/// shapes are disjoint except the stream descriptor's bare host:port
+/// fallthrough, which must sit last so a schemed or quic or dns entry never
+/// falls into it.
+/// </summary>
+public static class CheckInModuleRegistry
+{
+    private static readonly CheckInModuleDescriptor[] Descriptors =
+    {
+        new(
+            CheckInModules.Web,
+            ["Internal/EnvelopeBeacon.cs", "Internal/WebCheckIn.cs"],
+            (url, mode) => IsWebBeaconUrl(url) && mode != CheckInModes.Stream,
+            "        WebCheckIn.Create(setup),"),
+        new(
+            CheckInModules.WebSocket,
+            ["Internal/WsBeacon.cs"],
+            (url, mode) => IsWebBeaconUrl(url) && mode == CheckInModes.Stream,
+            "        WsCheckIn.Create(setup),"),
+        new(
+            CheckInModules.Quic,
+            ["Internal/QuicCheckIn.cs"],
+            (url, _) => IsQuicBeaconUrl(url),
+            "        QuicCheckIn.Create(setup),"),
+        new(
+            CheckInModules.Dns,
+            ["Internal/DnsCheckIn.cs"],
+            (url, _) => IsDnsBeaconUrl(url),
+            "        DnsCheckIn.Create(setup),"),
+        new(
+            CheckInModules.Stream,
+            ["Internal/Beacon.cs", "Internal/StreamCheckIn.cs"],
+            (_, _) => true,
+            "        StreamCheckIn.Create(setup),"),
+    };
+
+    public static IReadOnlyList<CheckInModuleDescriptor> All => Descriptors;
+
+    // The implant's BeaconUrl.IsWeb, mirrored: a beacon URL naming a web
+    // front (a schemed http(s) URL) carries the envelope POST cycle or the
+    // WebSocket beacon by the baked mode. Kept in textual lockstep with the
+    // implant's predicate -- the wire-side test pins both.
+    private static bool IsWebBeaconUrl(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+           || beaconUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+    // The implant's BeaconUrl.IsQuic, mirrored: a quic-schemed beacon URL is
+    // the QUIC stream's dial shape. Kept in textual lockstep with the
+    // implant's predicate -- the wire-side test pins both.
+    private static bool IsQuicBeaconUrl(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
+
+    // The implant's BeaconUrl.IsDns, mirrored: a dns-schemed beacon URL is
+    // the DNS carrier's dial shape (a resolver and a zone). Kept in textual
+    // lockstep with the implant's predicate -- the wire-side test pins both.
+    private static bool IsDnsBeaconUrl(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("dns://", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// The bake-time transport trim (architecture.md Sec 6, Sec 8): selects
 /// which check-in modules an implant-class build compiles and rewrites the
-/// staging copy accordingly. The selection rule mirrors the implant's own
-/// run-time discriminator exactly -- a walk entry whose beacon URL is a
-/// schemed http(s) front runs the envelope POST cycle, a bare host:port runs
-/// the mTLS gRPC stream, a quic-schemed URL runs the QUIC stream -- applied
-/// to every entry the profile bakes (the primary plus each fallback), so the
+/// staging copy accordingly. The selection walks the registry's descriptors
+/// per egress entry -- the first descriptor whose shape (and mode) serves
+/// the URL claims it -- applied to the primary and each fallback, so the
 /// compiled set is precisely the set of shapes the artifact can dial and
 /// never smaller.
 /// </summary>
@@ -87,60 +155,15 @@ public enum CheckInModules
 /// </remarks>
 public static class TransportModuleSelection
 {
-    // The web module's whole source files, relative to the implant tree root.
-    private static readonly string[] WebModuleFiles =
-    {
-        "Internal/EnvelopeBeacon.cs",
-        "Internal/WebCheckIn.cs",
-    };
-
-    // The stream module's whole source files, relative to the implant tree
-    // root.
-    private static readonly string[] StreamModuleFiles =
-    {
-        "Internal/Beacon.cs",
-        "Internal/StreamCheckIn.cs",
-    };
-
-    // The WebSocket stream module's whole source files (the client and its
-    // factory ride one file), relative to the implant tree root.
-    private static readonly string[] WebSocketModuleFiles =
-    {
-        "Internal/WsBeacon.cs",
-    };
-
-    // The QUIC stream module's whole source files (the client, its wire
-    // adapter, and the factory ride one file), relative to the implant tree
-    // root.
-    private static readonly string[] QuicModuleFiles =
-    {
-        "Internal/QuicCheckIn.cs",
-    };
-
-    // The DNS module's whole source files (the client, its dial and codec,
-    // and the name grammar ride one file), relative to the implant tree
-    // root.
-    private static readonly string[] DnsModuleFiles =
-    {
-        "Internal/DnsCheckIn.cs",
-    };
-
-    // The generated selection replaces this checked-in stub, relative to the
-    // implant tree root. The stub names every module so the dev tree runs
-    // against any URL shape.
-    private const string SelectionFile = "Internal/TransportSelection.cs";
-
     /// <summary>
     /// Selects the check-in modules a profile's baked egress walk needs: the
     /// primary entry's beacon URL (the named beacon endpoint, else the one
     /// derived from the enroll endpoint -- the same value
     /// <c>RenderBakedProfile</c> bakes as <c>beaconURL</c>) plus each
-    /// fallback's derived URL, classified by the implant's own shape rules,
-    /// with the baked mode splitting the web shape -- stream dials the
-    /// WebSocket beacon, poll runs the envelope POST cycle. A walk that can
-    /// cross shapes (a stream primary with web fallbacks) keeps every client
-    /// it can dial, so no bake ever strands the artifact on an entry it
-    /// cannot run.
+    /// fallback's derived URL, each claimed by the first registry descriptor
+    /// that serves its shape (and mode). A walk that can cross shapes (a
+    /// stream primary with web fallbacks) keeps every client it can dial, so
+    /// no bake ever strands the artifact on an entry it cannot run.
     /// </summary>
     public static CheckInModules Select(TransportProfile profile, string mode)
     {
@@ -152,14 +175,13 @@ public static class TransportModuleSelection
 
         void Consider(string beaconUrl)
         {
-            if (IsWebBeaconUrl(beaconUrl))
-                modules |= mode == CheckInModes.Stream ? CheckInModules.WebSocket : CheckInModules.Web;
-            else if (IsQuicBeaconUrl(beaconUrl))
-                modules |= CheckInModules.Quic;
-            else if (IsDnsBeaconUrl(beaconUrl))
-                modules |= CheckInModules.Dns;
-            else
-                modules |= CheckInModules.Stream;
+            foreach (var descriptor in CheckInModuleRegistry.All)
+            {
+                if (!descriptor.Serves(beaconUrl, mode))
+                    continue;
+                modules |= descriptor.Module;
+                return;
+            }
         }
     }
 
@@ -173,9 +195,9 @@ public static class TransportModuleSelection
 
     /// <summary>
     /// Rewrites the staging copy of the implant tree to carry exactly the
-    /// selected modules: the unselected modules' source files are deleted
-    /// whole, and the generated TransportSelection replaces the checked-in
-    /// stub naming only the compiled factories. A set of
+    /// selected modules: each unselected descriptor's source files are
+    /// deleted whole, and the generated TransportSelection replaces the
+    /// checked-in stub naming only the compiled factories. A set of
     /// <see cref="CheckInModules.None"/> is refused -- a primary entry always
     /// exists, so an empty set means the caller, not the profile, is wrong.
     /// </summary>
@@ -185,54 +207,34 @@ public static class TransportModuleSelection
             throw new InvalidOperationException(
                 "A build must compile at least one check-in module; the egress walk's primary entry always has a shape.");
 
-        if (!NeedsGrpcClient(modules))
+        foreach (var descriptor in CheckInModuleRegistry.All)
         {
-            foreach (var file in StreamModuleFiles)
-                File.Delete(Path.Combine(stagingDir, file));
-        }
-        if ((modules & CheckInModules.Web) == 0)
-        {
-            foreach (var file in WebModuleFiles)
-                File.Delete(Path.Combine(stagingDir, file));
-        }
-        if ((modules & CheckInModules.WebSocket) == 0)
-        {
-            foreach (var file in WebSocketModuleFiles)
-                File.Delete(Path.Combine(stagingDir, file));
-        }
-        if ((modules & CheckInModules.Quic) == 0)
-        {
-            foreach (var file in QuicModuleFiles)
-                File.Delete(Path.Combine(stagingDir, file));
-        }
-        if ((modules & CheckInModules.Dns) == 0)
-        {
-            foreach (var file in DnsModuleFiles)
+            if ((modules & descriptor.Module) != 0)
+                continue;
+            foreach (var file in descriptor.Files)
                 File.Delete(Path.Combine(stagingDir, file));
         }
 
         File.WriteAllText(Path.Combine(stagingDir, SelectionFile), RenderSelection(modules));
     }
 
+    // The generated selection replaces this checked-in stub, relative to the
+    // implant tree root. The stub names every module so the dev tree runs
+    // against any URL shape.
+    private const string SelectionFile = "Internal/TransportSelection.cs";
+
     // Renders the per-build TransportSelection: same shape as the checked-in
-    // stub, naming only the compiled factories. The implant's Program hands
-    // this array to its check-in coordinator, which picks per URL shape and
-    // mode at run time -- with one module compiled the pick is constant, with
-    // several (a shape-crossing walk) it follows the walk exactly as the dev
-    // tree does.
+    // stub, naming only the compiled factories in registry order. The
+    // implant's Program hands this array to its check-in coordinator, which
+    // picks per URL shape and mode at run time -- with one module compiled
+    // the pick is constant, with several (a shape-crossing walk) it follows
+    // the walk exactly as the dev tree does.
     private static string RenderSelection(CheckInModules modules)
     {
         var factories = new List<string>();
-        if ((modules & CheckInModules.Web) != 0)
-            factories.Add("        WebCheckIn.Create(setup),");
-        if ((modules & CheckInModules.WebSocket) != 0)
-            factories.Add("        WsCheckIn.Create(setup),");
-        if (NeedsGrpcClient(modules))
-            factories.Add("        StreamCheckIn.Create(setup),");
-        if ((modules & CheckInModules.Quic) != 0)
-            factories.Add("        QuicCheckIn.Create(setup),");
-        if ((modules & CheckInModules.Dns) != 0)
-            factories.Add("        DnsCheckIn.Create(setup),");
+        foreach (var descriptor in CheckInModuleRegistry.All)
+            if ((modules & descriptor.Module) != 0)
+                factories.Add(descriptor.FactoryLine);
         return
             "// <auto-generated> Generated by Rod.DotNetBuildUnit at build time.\n"
             + "// The check-in modules this artifact compiles (architecture.md Sec 8),\n"
@@ -246,24 +248,4 @@ public static class TransportModuleSelection
             + "    ];\n"
             + "}\n";
     }
-
-    // The implant's BeaconUrl.IsWeb, mirrored: a beacon URL naming a web
-    // front (a schemed http(s) URL) carries the envelope POST cycle; a bare
-    // host:port is the mTLS stream's dial shape. Kept in textual lockstep
-    // with the implant's predicate -- the wire-side test pins both.
-    private static bool IsWebBeaconUrl(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-           || beaconUrl.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-
-    // The implant's BeaconUrl.IsQuic, mirrored: a quic-schemed beacon URL is
-    // the QUIC stream's dial shape. Kept in textual lockstep with the
-    // implant's predicate -- the wire-side test pins both.
-    private static bool IsQuicBeaconUrl(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
-
-    // The implant's BeaconUrl.IsDns, mirrored: a dns-schemed beacon URL is
-    // the DNS carrier's dial shape (a resolver and a zone). Kept in textual
-    // lockstep with the implant's predicate -- the wire-side test pins both.
-    private static bool IsDnsBeaconUrl(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("dns://", StringComparison.OrdinalIgnoreCase);
 }
