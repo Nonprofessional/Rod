@@ -171,6 +171,7 @@ export function WebShellsView({
             <option value="rod-php">Sealed (Rod, PHP)</option>
             <option value="rod-jsp">Sealed (Rod, JSP)</option>
             <option value="eval-php">One-liner (PHP)</option>
+            <option value="eval-aspx">One-liner (ASPX)</option>
           </select>
         )}
         {!claim && (

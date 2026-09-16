@@ -12,6 +12,7 @@ import { type GeneratedWebShellScript, ApiError, generateWebShellScript } from '
 const LANGUAGES = [
   { id: 'php', label: 'PHP' },
   { id: 'jsp', label: 'JSP' },
+  { id: 'aspx', label: 'ASPX' },
 ]
 
 const ENCRYPTIONS = [
@@ -30,7 +31,7 @@ const ENCRYPTIONS = [
 ]
 
 function adapterFor(language: string, encryption: string): string {
-  if (encryption === 'oneliner') return 'eval-php'
+  if (encryption === 'oneliner') return language === 'aspx' ? 'eval-aspx' : 'eval-php'
   return language === 'jsp' ? 'rod-jsp' : 'rod-php'
 }
 
@@ -87,9 +88,10 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
               value={language}
               onChange={(e) => {
                 setLanguage(e.target.value)
-                // The one-liner family renders PHP only today; picking
+                // The one-liner family renders PHP and ASPX today; picking
                 // another language falls back to the sealed shape.
-                if (e.target.value !== 'php' && encryption === 'oneliner') setEncryption('sealed')
+                if (e.target.value !== 'php' && e.target.value !== 'aspx' && encryption === 'oneliner')
+                  setEncryption('sealed')
               }}
               title="The language the placed script is written in. The wire protocol is the same shape in every language this list grows."
             >
@@ -108,9 +110,13 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
               title="The channel's protection. Sealed is this tool's own protocol: every request and answer wrapped as AES-256-GCM under a 256-bit key baked into the script, so nothing on the wire names the command or the output (PHP needs the openssl extension; JSP needs javax.crypto, which every container ships). The one-liner is the universal eval shape -- the placed script any manager drives, base64 on the wire, gated by the connection password."
             >
               {ENCRYPTIONS.map((e) => (
-                <option key={e.id} value={e.id} disabled={e.id === 'oneliner' && language !== 'php'}>
+                <option
+                  key={e.id}
+                  value={e.id}
+                  disabled={e.id === 'oneliner' && !['php', 'aspx'].includes(language)}
+                >
                   {e.label}
-                  {e.id === 'oneliner' && language !== 'php' ? ' (PHP only)' : ''}
+                  {e.id === 'oneliner' && !['php', 'aspx'].includes(language) ? ' (PHP / ASPX)' : ''}
                 </option>
               ))}
             </select>

