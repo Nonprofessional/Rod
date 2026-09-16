@@ -27,31 +27,62 @@ import { StatusBadge } from '../components/StatusBadge'
 // per transport. The public endpoint stays free text -- it names the redirector
 // implants dial, which is a fact about the target network, not this host.
 
-// The transports the create form offers, with the default port each one takes
-// and the wire it rides named in the label. The server validates for real;
-// this list only keeps the form from offering shapes the server would refuse
-// (the retired https-envelope transport is deliberately absent -- envelope
-// check-ins ride the HTTPS listener now). SMB is the odd one out: its bind is
-// a bare pipe name, not interface + port.
+// The transports the create form offers, grouped the way the fixed
+// vocabulary already sorts them -- payload ingress first (the group a build
+// names), alternate reach and pivot links next, the catcher last -- so the
+// dropdown reads as three choices instead of eight rows. Each entry carries
+// the default port it takes and names the wire it rides in the label. The
+// server validates for real; this list only keeps the form from offering
+// shapes the server would refuse (the retired https-envelope transport is
+// deliberately absent -- envelope check-ins ride the HTTPS listener now).
+// SMB is the odd one out: its bind is a bare pipe name, not interface +
+// port.
 // Each label names what the transport carries, in the fixed vocabulary:
 // TLS-terminated fronts carry every behavior (enroll, check-in, interactive);
 // cleartext HTTP carries enroll + check-in over the envelope POST cycle but
-// no interactive stream; DNS/SMB/TCP are alternate reach and pivot links,
-// not the payload ingress the Build form picks from.
-const TRANSPORTS = [
-  { value: 'https', label: 'HTTPS — one port: enroll + check-in + interactive', port: '443' },
-  { value: 'mtls', label: 'mTLS — client certs: enroll + check-in + interactive', port: '5443' },
-  { value: 'http', label: 'HTTP — cleartext: enroll + check-in (poll); no interactive', port: '5090' },
-  { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
-  { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
-  { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
-  { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive beacon; no enroll', port: '443' },
+// no interactive stream; DNS/QUIC/SMB/TCP are alternate reach and pivot
+// links, not the payload ingress the Build form picks from.
+interface TransportOption {
+  value: string
+  label: string
+  port: string
+}
+
+const TRANSPORT_GROUPS: readonly {
+  label: string
+  transports: readonly TransportOption[]
+}[] = [
   {
-    value: 'shellcatch',
-    label: 'Shellcatch — holds caught reverse shells; no implant ingress',
-    port: '4445',
+    label: 'Payload ingress',
+    transports: [
+      { value: 'https', label: 'HTTPS — one port: enroll + check-in + interactive', port: '443' },
+      { value: 'mtls', label: 'mTLS — client certs: enroll + check-in + interactive', port: '5443' },
+      { value: 'http', label: 'HTTP — cleartext: enroll + check-in (poll); no interactive', port: '5090' },
+    ],
+  },
+  {
+    label: 'Alternate reach & pivots',
+    transports: [
+      { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
+      { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive beacon; no enroll', port: '443' },
+      { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
+      { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
+    ],
+  },
+  {
+    label: 'Catchers',
+    transports: [
+      {
+        value: 'shellcatch',
+        label: 'Shellcatch — holds caught reverse shells; no implant ingress',
+        port: '4445',
+      },
+    ],
   },
 ]
+
+// The flat view of the groups, for the port default a transport change sets.
+const TRANSPORTS = TRANSPORT_GROUPS.flatMap((g) => g.transports)
 
 // Select values that are not reported addresses: the wildcard bind and the
 // custom-host escape hatch.
@@ -78,11 +109,14 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // port; the interface select is built from the host's reported interfaces
   // with the wildcard and a custom entry riding along.
   const [name, setName] = useState('')
-  const [transport, setTransport] = useState('http')
+  // The form opens on https: the one-port posture that carries every
+  // behavior, so the untouched default is already the shape the guidance
+  // recommends. Cleartext http stays a deliberate pick, not a default.
+  const [transport, setTransport] = useState('https')
   const [interfaces, setInterfaces] = useState<NetworkInterfaceSummary[]>([])
   const [bindInterface, setBindInterface] = useState('')
   const [customHost, setCustomHost] = useState('')
-  const [bindPort, setBindPort] = useState('5090')
+  const [bindPort, setBindPort] = useState('443')
   const [pipeName, setPipeName] = useState('')
   const [publicEndpoint, setPublicEndpoint] = useState('')
   const isSmb = transport === 'smb'
@@ -254,10 +288,14 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             }}
               title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST but no interactive stream — a build on it polls unless it names an mTLS listener for interactive."
           >
-            {TRANSPORTS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
+            {TRANSPORT_GROUPS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.transports.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -317,7 +355,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               Bind port
               <input
                 className="bind-port"
-                placeholder="5090"
+                placeholder="443"
                 value={bindPort}
                 onChange={(e) => setBindPort(e.target.value)}
                 title="The port this listener opens"

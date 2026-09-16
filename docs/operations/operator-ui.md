@@ -193,11 +193,16 @@ Endpoint completion (HTTP-shaped transports only): an empty endpoint derives
 from the bind (`bind 10.1.2.3:8443` on https becomes
 `https://10.1.2.3:8443`); a bare hostname (`redirect.example`) takes the
 transport's scheme and the listener's own port; a `host:port` pair takes the
-transport's scheme; a complete URL passes through. The stored form is always
-a full URL, so the roster and every build read one uniform shape. A wildcard
+transport's scheme; a complete URL passes through. The stored form is always a
+full URL, so the roster and every build read one uniform shape. A wildcard
 bind (`0.0.0.0`) names no dialable address, so it cannot derive -- give it a
 hostname. DNS, SMB, and TCP cannot derive at all; their endpoint (zone /
 pipe path / host:port) is required.
+
+The transport dropdown is grouped by role -- payload ingress (https, mTLS,
+http), alternate reach & pivots (DNS, QUIC, SMB, TCP), catchers (shellcatch)
+-- and the form opens on https: the one-port posture that carries every
+behavior, so the untouched default is already the recommended shape.
 
 Every listener is engagement-scoped and persisted -- a restart rebinds it with
 the same id -- and enrollment through its socket accepts only that
