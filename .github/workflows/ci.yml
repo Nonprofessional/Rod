@@ -86,10 +86,13 @@ jobs:
         # Full dumps (not mini) so `dotnet-dump analyze -c dumpasync` can name
         # the suspended state machine on the CI side the way the local repro
         # did: a hung beacon read is invisible to thread stacks.
+        # The trx log is what the targeted retry below reads: the first
+        # attempt's failures decide what the retry runs.
         continue-on-error: true
         run: >-
           dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          --logger trx
       - name: Upload test diagnostics
         # The blame collector writes the hang dump and the test sequence (its
         # last entry names the hung test) under TestResults; they only survive
@@ -100,16 +103,62 @@ jobs:
           name: test-diagnostics-first-attempt
           path: '**/TestResults/**'
           if-no-files-found: ignore
-      - name: Test (retry once)
-        # The Test job hit an xUnit/VSTest runner-level hang where the assembly
-        # runner waits for a completion that never arrives: the hang dump shows
-        # every test finished and no thread running test code (Sep 1; twice in
-        # August). Blame-hang bounds it with evidence; the retry absorbs the
-        # rare lost run. A real failure fails both attempts and stays red.
+      - name: Collect the first attempt's failures
+        # The targeted retry's input: the failed tests' names out of the first
+        # attempt's trx logs, as a dotnet-test filter. Nothing parseable (a
+        # runner-level hang with no results) leaves the sentinel, and the
+        # retry below falls back to the whole suite -- the old shape, kept for
+        # the hang class it absorbed.
         if: steps.test_first.outcome == 'failure'
-        run: >-
-          dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          names = set()
+          for trx in glob.glob('**/TestResults/*.trx', recursive=True):
+              root = ET.parse(trx).getroot()
+              # The trx schema carries an XML namespace; matching on the
+              # namespace-stripped local name keeps the lookup immune to its
+              # version suffix (ElementTree's iter has no wildcard form).
+              id_to_name = {}
+              results = []
+              for element in root.iter():
+                  local = element.tag.rsplit('}', 1)[-1]
+                  if local == 'UnitTest':
+                      id_to_name[element.get('id')] = element.get('name')
+                  elif local == 'UnitTestResult':
+                      results.append(element)
+              for result in results:
+                  if result.get('outcome') in ('Failed', 'Error', 'Timeout', 'Aborted'):
+                      name = result.get('testName') or id_to_name.get(result.get('testId')) or ''
+                      # Theory cases carry their arguments in the display name;
+                      # the bare method name still selects every case.
+                      names.add(name.split('(')[0])
+
+          retry = '|'.join(f'FullyQualifiedName~{n}' for n in sorted(names) if n)
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'RETRY_FILTER={retry or "__all__"}\n')
+          print('retry filter:', retry or '__all__ (whole suite)')
+          PY
+      - name: Test (retry the failures)
+        # The retry is targeted, not whole-suite: the suite's real-network
+        # end-to-end tests carry timing races that fail independently under a
+        # constrained runner -- a whole-suite retry let flake A fail the first
+        # attempt and flake B fail the second and the job went red on neither
+        # twice. Rerunning only the first attempt's failures means the job
+        # stays red only when the SAME test fails twice in a row -- a real
+        # regression -- while an independent one-off flake is absorbed. The
+        # sentinel keeps the whole-suite fallback for the hang class with no
+        # parseable results.
+        if: steps.test_first.outcome == 'failure'
+        run: |
+          if [ "$RETRY_FILTER" = "__all__" ]; then
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          else
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          fi
       - name: Upload test diagnostics (retry)
         if: failure()
         uses: actions/upload-artifact@v4
