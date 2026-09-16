@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ApiError,
+  type ListenerSummary,
   type ShellSession,
   type ShellUpgrade,
   closeShell,
@@ -15,15 +16,18 @@ import { StatusBadge } from './StatusBadge'
 // so one request stays in flight instead of a spinning poll -- with typing
 // posted through the input route and the close route ending the shell as an
 // operator action. The upgrade button renders the paste-ready launchers
-// that grow the shell into a real implant; the paste itself is the
-// operator's, through this same input line.
+// that grow the shell into a real implant (naming the web front the fetch
+// rides when several exist); the paste itself is the operator's, through
+// this same input line.
 export function ShellConsole({
   engagementId,
   shell,
+  webListeners,
   onEnded,
 }: {
   engagementId: string
   shell: ShellSession
+  webListeners: ListenerSummary[]
   onEnded: () => void
 }) {
   const [transcript, setTranscript] = useState('')
@@ -31,6 +35,7 @@ export function ShellConsole({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [upgrade, setUpgrade] = useState<ShellUpgrade | null>(null)
+  const [upgradeListenerId, setUpgradeListenerId] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
   const transcriptRef = useRef<HTMLPreElement>(null)
   // The output cursor survives re-renders; the console never re-reads what
@@ -128,10 +133,12 @@ export function ShellConsole({
   const onUpgrade = async () => {
     setBusy(true)
     try {
-      setUpgrade(await upgradeShell(engagementId, shell.sessionId))
+      setUpgrade(
+        await upgradeShell(engagementId, shell.sessionId, undefined, upgradeListenerId || undefined),
+      )
       setError(null)
     } catch (e) {
-      setError(String(e))
+      setError(e instanceof ApiError ? e.message : String(e))
     } finally {
       setBusy(false)
     }
@@ -198,6 +205,23 @@ export function ShellConsole({
             Paste one of these into the shell to grow it into an enrolled implant. The credential is
             single-use and expires <time>{new Date(upgrade.tokenExpiresAt).toLocaleTimeString()}</time>.
           </p>
+          {webListeners.length > 1 && (
+            <div className="upgrade-launcher">
+              <code>fetch via</code>
+              <select
+                value={upgradeListenerId}
+                onChange={(e) => setUpgradeListenerId(e.target.value)}
+                title="Which web listener's front the stage-2 fetch rides. Auto prefers https over mTLS over cleartext; name one when the fetch must cross a specific redirector."
+              >
+                <option value="">auto — hardened front preferred</option>
+                {webListeners.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.transport} → {l.publicEndpoint})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {upgrade.launchers.map((launcher) => (
             <div key={launcher.id} className="upgrade-launcher">
               <code>{launcher.id}</code>

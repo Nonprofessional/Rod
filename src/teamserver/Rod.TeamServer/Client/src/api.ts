@@ -969,12 +969,16 @@ export async function upgradeShell(
   engagementId: string,
   sessionId: string,
   payloadId?: string,
+  listenerId?: string,
 ): Promise<ShellUpgrade> {
   return jsonOrThrow(
     await fetch(`engagements/${engagementId}/shells/${sessionId}:upgrade`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ payloadId: payloadId ?? null }),
+      body: JSON.stringify({
+        payloadId: payloadId ?? null,
+        listenerId: listenerId ?? null,
+      }),
     }),
   )
 }
@@ -1006,6 +1010,7 @@ export interface RegisterWebShellInput {
   url: string
   adapterId?: string
   password?: string
+  payloadId?: string
 }
 
 export async function listWebShells(engagementId: string): Promise<WebShell[]> {

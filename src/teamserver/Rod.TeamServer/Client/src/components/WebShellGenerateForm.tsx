@@ -7,25 +7,32 @@ import { type GeneratedWebShellScript, ApiError, generateWebShellScript } from '
 // Web shells when it exists. The picks compose: a language, and the
 // encryption the channel carries -- the Rod family's AES-256-GCM seal
 // under a baked 256-bit key, or the universal one-liner (the classic
-// eval shape every manager drives, base64 on the wire, password-gated).
-const LANGUAGES = [{ id: 'php', label: 'PHP' }]
+// eval shape every manager drives, base64 on the wire, password-gated;
+// PHP only, the language the one-liner family renders today).
+const LANGUAGES = [
+  { id: 'php', label: 'PHP' },
+  { id: 'jsp', label: 'JSP' },
+]
 
 const ENCRYPTIONS = [
   {
     id: 'sealed',
-    adapter: 'rod-php',
     label: 'AES-256-GCM sealed — own protocol, 256-bit key baked at generation',
     credentialLabel: 'Connection key',
     credentialPlaceholder: 'leave empty — a 256-bit key is generated',
   },
   {
     id: 'oneliner',
-    adapter: 'eval-php',
     label: 'One-liner — universal eval shape, base64 wire, password-gated',
     credentialLabel: 'Connection password',
     credentialPlaceholder: 'connection password (optional)',
   },
 ]
+
+function adapterFor(language: string, encryption: string): string {
+  if (encryption === 'oneliner') return 'eval-php'
+  return language === 'jsp' ? 'rod-jsp' : 'rod-php'
+}
 
 export function WebShellGenerateForm({ engagementId }: { engagementId: string }) {
   const [language, setLanguage] = useState('php')
@@ -46,7 +53,7 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
     try {
       const script = await generateWebShellScript(
         engagementId,
-        shape.adapter,
+        adapterFor(language, encryption),
         credential || undefined,
       )
       setGenerated(script)
@@ -78,7 +85,12 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
             Language
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => {
+                setLanguage(e.target.value)
+                // The one-liner family renders PHP only today; picking
+                // another language falls back to the sealed shape.
+                if (e.target.value !== 'php' && encryption === 'oneliner') setEncryption('sealed')
+              }}
               title="The language the placed script is written in. The wire protocol is the same shape in every language this list grows."
             >
               {LANGUAGES.map((l) => (
@@ -93,11 +105,12 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
             <select
               value={encryption}
               onChange={(e) => setEncryption(e.target.value)}
-              title="The channel's protection. Sealed is this tool's own protocol: every request and answer wrapped as AES-256-GCM under a 256-bit key baked into the script, so nothing on the wire names the command or the output (needs the openssl extension). The one-liner is the universal eval shape -- the placed script any manager drives, base64 on the wire, gated by the connection password."
+              title="The channel's protection. Sealed is this tool's own protocol: every request and answer wrapped as AES-256-GCM under a 256-bit key baked into the script, so nothing on the wire names the command or the output (PHP needs the openssl extension; JSP needs javax.crypto, which every container ships). The one-liner is the universal eval shape -- the placed script any manager drives, base64 on the wire, gated by the connection password."
             >
               {ENCRYPTIONS.map((e) => (
-                <option key={e.id} value={e.id}>
+                <option key={e.id} value={e.id} disabled={e.id === 'oneliner' && language !== 'php'}>
                   {e.label}
+                  {e.id === 'oneliner' && language !== 'php' ? ' (PHP only)' : ''}
                 </option>
               ))}
             </select>

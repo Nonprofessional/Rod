@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  type PayloadSummary,
   type RegisteredWebShell,
   type WebShell,
   ApiError,
   executeWebShell,
+  listPayloads,
   listWebShells,
   probeWebShell,
   registerWebShell,
@@ -35,11 +37,14 @@ export function WebShellsView({
   const [registerUrl, setRegisterUrl] = useState('')
   const [registerAdapter, setRegisterAdapter] = useState('rod-php')
   const [registerPassword, setRegisterPassword] = useState('')
+  const [claimId, setClaimId] = useState('')
+  const [scripts, setScripts] = useState<PayloadSummary[]>([])
   const [registering, setRegistering] = useState(false)
   const [placed, setPlaced] = useState<RegisteredWebShell | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const isRod = registerAdapter.startsWith('rod-')
+  const claim = scripts.find((s) => s.artifactId === claimId) ?? null
+  const isRod = (claim ? claim.target : registerAdapter)?.startsWith('rod-')
 
   const refresh = useCallback(async () => {
     try {
@@ -54,6 +59,19 @@ export function WebShellsView({
     void refresh()
   }, [refresh, onlineTick])
 
+  // The generated web-shell scripts, for the register form's claim pick:
+  // naming one supplies the family and the credential from the stored
+  // script, so a baked key never travels through the operator's clipboard.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setScripts((await listPayloads(engagementId)).filter((p) => p.class === 'WebShell'))
+      } catch {
+        // Claiming stays unavailable; pasting the credential still works.
+      }
+    })()
+  }, [engagementId, onlineTick])
+
   const onRegister = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!registerUrl || registering) return
@@ -61,12 +79,14 @@ export function WebShellsView({
     try {
       const registered = await registerWebShell(engagementId, {
         url: registerUrl,
-        adapterId: registerAdapter,
-        password: registerPassword || undefined,
+        adapterId: claim ? undefined : registerAdapter,
+        password: claim ? undefined : registerPassword || undefined,
+        payloadId: claim?.artifactId,
       })
       setPlaced(registered)
       setRegisterUrl('')
       setRegisterPassword('')
+      setClaimId('')
       setError(null)
       await refresh()
     } catch (e) {
@@ -121,12 +141,20 @@ export function WebShellsView({
 
       <form className="task-form" onSubmit={onRegister}>
         <select
-          value={registerAdapter}
-          onChange={(e) => setRegisterAdapter(e.target.value)}
-          title="The protocol the placed script speaks -- the sealed Rod family (AES-256-GCM under a baked key) or the universal one-liner (the classic eval shape any manager drives)."
+          value={claimId}
+          onChange={(e) => setClaimId(e.target.value)}
+          disabled={scripts.length === 0}
+          title="Claim a generated script (under Build): the family and the credential come from the stored payload, no key copying. With none claimed, the family and credential are picked by hand below."
         >
-          <option value="rod-php">Sealed (Rod, PHP)</option>
-          <option value="eval-php">One-liner (PHP)</option>
+          <option value="">
+            {scripts.length === 0 ? 'no generated scripts yet' : 'paste credential (no claim)'}
+          </option>
+          {scripts.map((s) => (
+            <option key={s.artifactId} value={s.artifactId}>
+              claim {s.target} · {s.fingerprint.slice(0, 8)} ·{' '}
+              {new Date(s.builtAt).toLocaleDateString()}
+            </option>
+          ))}
         </select>
         <input
           className="wide"
@@ -134,18 +162,31 @@ export function WebShellsView({
           value={registerUrl}
           onChange={(e) => setRegisterUrl(e.target.value)}
         />
-        <input
-          placeholder={
-            isRod ? 'connection key (from the generated script)' : 'connection password (optional)'
-          }
-          title={
-            isRod
-              ? 'The 256-bit key baked into the generated script (shown when it was generated under Build). Leave empty and registration mints a fresh script with a new key.'
-              : 'The POST parameter the eval one-liner answers to. Leave empty and one is generated.'
-          }
-          value={registerPassword}
-          onChange={(e) => setRegisterPassword(e.target.value)}
-        />
+        {!claim && (
+          <select
+            value={registerAdapter}
+            onChange={(e) => setRegisterAdapter(e.target.value)}
+            title="The protocol the placed script speaks -- the sealed Rod family (AES-256-GCM under a baked key; PHP or JSP) or the universal one-liner (the classic eval shape any manager drives)."
+          >
+            <option value="rod-php">Sealed (Rod, PHP)</option>
+            <option value="rod-jsp">Sealed (Rod, JSP)</option>
+            <option value="eval-php">One-liner (PHP)</option>
+          </select>
+        )}
+        {!claim && (
+          <input
+            placeholder={
+              isRod ? 'connection key (from the generated script)' : 'connection password (optional)'
+            }
+            title={
+              isRod
+                ? 'The 256-bit key baked into the generated script (shown when it was generated under Build, and in the Payloads detail). Leave empty and registration mints a fresh script with a new key.'
+                : 'The POST parameter the eval one-liner answers to. Leave empty and one is generated.'
+            }
+            value={registerPassword}
+            onChange={(e) => setRegisterPassword(e.target.value)}
+          />
+        )}
         <button className="primary sm" type="submit" disabled={registering || !registerUrl}>
           Register
         </button>

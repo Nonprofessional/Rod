@@ -29,8 +29,10 @@ import { StatusBadge } from '../components/StatusBadge'
 
 // The transports the create form offers, grouped the way the fixed
 // vocabulary already sorts them -- payload ingress first (the group a build
-// names), alternate reach and pivot links next, the catcher last -- so the
-// dropdown reads as three choices instead of eight rows. Each entry carries
+// names), the catcher last -- so the dropdown reads as two choices instead
+// of eight rows. The alternate-reach family (DNS, DoH, QUIC, SMB, TCP)
+// rides behind the form's egress disclosure: niche answers to specific
+// egress problems, not transports an operator browses. Each entry carries
 // the default port it takes and names the wire it rides in the label. The
 // server validates for real; this list only keeps the form from offering
 // shapes the server would refuse (the retired https-envelope transport is
@@ -61,30 +63,34 @@ const TRANSPORT_GROUPS: readonly {
       { value: 'http', label: 'HTTP — cleartext: enroll + check-in; interactive over the WebSocket beacon', port: '5090' },
     ],
   },
-  {
-    label: 'Alternate reach & pivots',
-    transports: [
-      { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
-      { value: 'doh', label: 'DoH — DNS over HTTPS: alternate reach, not payload ingress', port: '443' },
-      { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive; no enroll — pair with a web front', port: '443' },
-      { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
-      { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
-    ],
-  },
-  {
-    label: 'Catchers',
-    transports: [
-      {
-        value: 'shellcatch',
-        label: 'Shellcatch — holds caught reverse shells; no implant ingress',
-        port: '4445',
-      },
-    ],
-  },
 ]
 
+const EGRESS_GROUP = {
+  label: 'Alternate reach & pivots',
+  transports: [
+    { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
+    { value: 'doh', label: 'DoH — DNS over HTTPS: alternate reach, not payload ingress', port: '443' },
+    { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive; no enroll — pair with a web front', port: '443' },
+    { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
+    { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
+  ],
+} satisfies { label: string; transports: readonly TransportOption[] }
+
+const CATCHERS_GROUP = {
+  label: 'Catchers',
+  transports: [
+    {
+      value: 'shellcatch',
+      label: 'Shellcatch — holds caught reverse shells; no implant ingress',
+      port: '4445',
+    },
+  ],
+} satisfies { label: string; transports: readonly TransportOption[] }
+
 // The flat view of the groups, for the port default a transport change sets.
-const TRANSPORTS = TRANSPORT_GROUPS.flatMap((g) => g.transports)
+const TRANSPORTS = [...TRANSPORT_GROUPS, EGRESS_GROUP, CATCHERS_GROUP].flatMap((g) => g.transports)
+
+const EGRESS_TRANSPORTS = new Set(EGRESS_GROUP.transports.map((t) => t.value))
 
 // Select values that are not reported addresses: the wildcard bind and the
 // custom-host escape hatch.
@@ -115,6 +121,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // behavior, so the untouched default is already the shape the guidance
   // recommends. Cleartext http stays a deliberate pick, not a default.
   const [transport, setTransport] = useState('https')
+  // The egress disclosure: the alternate-reach family hides until asked
+  // for, so the dropdown browses the two groups an operator wants daily.
+  const [showEgress, setShowEgress] = useState(false)
   const [interfaces, setInterfaces] = useState<NetworkInterfaceSummary[]>([])
   const [bindInterface, setBindInterface] = useState('')
   const [customHost, setCustomHost] = useState('')
@@ -314,7 +323,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
               if (port !== '') setBindPort(port)
             }}
-              title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST and the interactive WebSocket beacon beside it (sealed frames, so cleartext carries confidential content). DNS/DoH/QUIC/SMB/TCP are alternate reach and pivot links — an implant enrolls on a web front and reaches them beside it."
+            title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST and the interactive WebSocket beacon beside it (sealed frames, so cleartext carries confidential content). The egress family below the fold is alternate reach and pivot links — an implant enrolls on a web front and reaches them beside it."
           >
             {TRANSPORT_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -325,7 +334,42 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                 ))}
               </optgroup>
             ))}
+            {showEgress && (
+              <optgroup label={EGRESS_GROUP.label}>
+                {EGRESS_GROUP.transports.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label={CATCHERS_GROUP.label}>
+              {CATCHERS_GROUP.transports.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </optgroup>
           </select>
+        </label>
+        <label
+          className="checkbox-label"
+          title="DNS, DoH, QUIC, SMB, and raw TCP listeners: answers to specific egress problems (only DNS leaves, UDP passes but TCP does not, pivot links inside a network), not transports an operator browses. Show them when one is the answer."
+        >
+          <input
+            type="checkbox"
+            checked={showEgress}
+            onChange={(e) => {
+              setShowEgress(e.target.checked)
+              // Hiding the family cannot leave one of its transports
+              // selected: fall back to the default posture.
+              if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
+                setTransport('https')
+                setBindPort('443')
+              }
+            }}
+          />
+          Egress &amp; pivots
         </label>
         {isSmb ? (
           <label>

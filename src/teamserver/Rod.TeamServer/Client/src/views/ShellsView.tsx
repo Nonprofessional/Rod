@@ -79,6 +79,7 @@ export function ShellsView({
 }) {
   const [shells, setShells] = useState<ShellSession[]>([])
   const [catchers, setCatchers] = useState<ListenerSummary[]>([])
+  const [webListeners, setWebListeners] = useState<ListenerSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
@@ -96,13 +97,16 @@ export function ShellsView({
     void refresh()
   }, [refresh, onlineTick])
 
-  // The shellcatch listeners, for the catch one-liners: loaded with the
-  // roster's tick rather than the slow poll -- listeners change rarely, and
-  // the panels only need to exist, not to reconcile.
+  // The shellcatch listeners (the catch one-liners) and the web listeners
+  // (the console's upgrade fetch fronts): loaded with the roster's tick
+  // rather than the slow poll -- listeners change rarely, and the panels
+  // only need to exist, not to reconcile.
   useEffect(() => {
     void (async () => {
       try {
-        setCatchers((await listListeners(engagementId)).filter((l) => l.transport === 'shellcatch'))
+        const all = await listListeners(engagementId)
+        setCatchers(all.filter((l) => l.transport === 'shellcatch'))
+        setWebListeners(all.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)))
       } catch {
         // A failed load leaves the panels absent; the roster above still works.
       }
@@ -246,7 +250,12 @@ export function ShellsView({
         </table>
       </div>
       {selected && (
-        <ShellConsole engagementId={engagementId} shell={selected} onEnded={onEnded} />
+        <ShellConsole
+          engagementId={engagementId}
+          shell={selected}
+          webListeners={webListeners}
+          onEnded={onEnded}
+        />
       )}
     </section>
   )
