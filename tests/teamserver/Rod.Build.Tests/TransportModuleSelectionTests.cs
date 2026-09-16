@@ -85,6 +85,41 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Select_ADnsBeacon_CompilesTheDnsClientOnly()
+    {
+        // The DNS pairing shape: the enroll front stays web while the named
+        // beacon is the dns-schemed dial, so the walk compiles the TXT
+        // carrier's client and nothing else, whatever the mode.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "dns://10.9.8.7:53/c2.example.test",
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+
+        Assert.Equal(CheckInModules.Dns, modules);
+        Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
+    public void Select_ADnsBeaconWithWebFallbacks_KeepsTheFallbackClient()
+    {
+        // A dns primary with web fallbacks crosses shapes when the resolver
+        // burns: the DNS client and the fallback's client must both compile
+        // or the walk strands the artifact on the fallback's front.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "dns://10.9.8.7:53/c2.example.test",
+            FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+
+        Assert.Equal(CheckInModules.Dns | CheckInModules.Web, modules);
+        Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
+    }
+
+    [Fact]
     public void Select_AQuicPrimaryWithWebFallbacks_KeepsTheFallbackClient()
     {
         // A quic primary with web fallbacks crosses shapes when the primary
