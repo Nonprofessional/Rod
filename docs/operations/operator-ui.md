@@ -90,7 +90,11 @@ a **device** is the host an implant reported at enroll (hostname, OS/arch,
 account -- recorded on the implant, grouped in the fleet), an **implant** is
 one enrolled identity (class, kill date, lineage, lifecycle), and a
 **session** is the live connection (at most one per implant; its state is
-the status dot and the last-seen column).
+the status dot and the last-seen column). A session whose last check-in
+rode the DNS carrier wears a **degraded · dns** note beside its status dot
+-- the degraded-mode contract (architecture.md Sec 8): presence, short
+tasking, and chunked results only, channel tasks queued until a stream
+carrier returns.
 
 - **Implants** -- the fleet in one table, one row per implant, grouped by
   device with collapsible group headers (an OS mark -- Windows, Apple, Linux,

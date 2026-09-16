@@ -45,9 +45,10 @@ public sealed class LastSeenSessionRegistry : ISessionRegistry
         ImplantId implant,
         IReadOnlyCollection<string> capabilities,
         DateTimeOffset at,
+        string? carrier = null,
         CancellationToken cancellationToken = default)
     {
-        await _inner.TouchAsync(implant, capabilities, at, cancellationToken);
+        await _inner.TouchAsync(implant, capabilities, at, carrier, cancellationToken);
         await NoteSeenAsync(implant, at, cancellationToken);
     }
 

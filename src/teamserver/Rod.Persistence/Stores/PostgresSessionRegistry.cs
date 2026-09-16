@@ -66,6 +66,7 @@ internal sealed class PostgresSessionRegistry : ISessionRegistry
         ImplantId implant,
         IReadOnlyCollection<string> capabilities,
         DateTimeOffset at,
+        string? carrier = null,
         CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -77,7 +78,7 @@ internal sealed class PostgresSessionRegistry : ISessionRegistry
         if (active is null)
             return;
 
-        active.Touch(capabilities, at);
+        active.Touch(capabilities, at, carrier);
         await db.SaveChangesAsync(cancellationToken);
     }
 

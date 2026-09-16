@@ -47,11 +47,12 @@ public sealed class InMemorySessionRegistry : ISessionRegistry
         ImplantId implant,
         IReadOnlyCollection<string> capabilities,
         DateTimeOffset at,
+        string? carrier = null,
         CancellationToken cancellationToken = default)
     {
         var active = _sessions.Values.FirstOrDefault(s =>
             s.ImplantId == implant && s.Status == SessionStatus.Active);
-        active?.Touch(capabilities, at);
+        active?.Touch(capabilities, at, carrier);
         return Task.CompletedTask;
     }
 

@@ -254,7 +254,7 @@ internal sealed class EnvelopeBeaconCheckIn
         // the session this handshake holds was closed out from under it, stop
         // after the handshake response so the implant re-handshakes on its
         // next cycle.
-        await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
+        await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), "web", cancellationToken);
         var active = await _sessions.GetActiveAsync(session.Implant, cancellationToken);
         if (active is null || active.Id != session.SessionId)
             return Reply(new[] { HandshakeFrame(response) });

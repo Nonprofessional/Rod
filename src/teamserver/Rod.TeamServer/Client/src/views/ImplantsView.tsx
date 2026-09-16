@@ -551,6 +551,15 @@ export function ImplantsView({
                             <StatusBadge
                               status={retired ? 'retired' : implant.isOnline ? 'online' : 'offline'}
                             />
+                            {implant.isOnline && implant.lastCarrier === 'dns' && (
+                              <span
+                                className="muted"
+                                title="The degraded-mode contract: this session's last check-in rode the DNS carrier -- presence, short tasking, and chunked results only. Channel tasks stay queued until a stream carrier returns."
+                              >
+                                {' '}
+                                degraded · dns
+                              </span>
+                            )}
                           </td>
                           <td title="The account the implant process runs under, as reported at enroll">
                             {implant.username ?? <span className="muted">&mdash;</span>}

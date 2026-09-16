@@ -59,6 +59,7 @@ public static class ImplantEndpoints
         var enrolled = await implants.ListByEngagementAsync(engagementKey, cancellationToken);
         var online = await sessions.ListActiveAsync(engagementKey, cancellationToken);
         var onlineById = online.Select(s => s.ImplantId).ToHashSet();
+        var sessionById = online.ToDictionary(s => s.ImplantId);
 
         var body = enrolled
             .Select(i => new ImplantResponse(
@@ -78,7 +79,11 @@ public static class ImplantEndpoints
                 // listener routes and listings use, so an operator can join
                 // the two by eye.
                 EnrolledViaListenerId: i.EnrolledViaListenerId?.ToString("N"),
-                LastSeenAt: i.LastSeenAt))
+                LastSeenAt: i.LastSeenAt,
+                // The degraded-mode contract (architecture.md Sec 8): the
+                // carrier the live session's last check-in rode, null when
+                // none recorded -- the posture's default, not degraded.
+                LastCarrier: sessionById.GetValueOrDefault(i.Id)?.LastCarrier))
             .ToArray();
 
         return Results.Ok(body);
@@ -322,7 +327,11 @@ public static class ImplantEndpoints
         // The durable heartbeat: when the teamserver last heard from the
         // implant, kept after the session is gone. While a session is active
         // the presence roster's stamp is the fresher one.
-        DateTimeOffset? LastSeenAt = null);
+        DateTimeOffset? LastSeenAt = null,
+        // The carrier the live session's last check-in rode (the degraded
+        // vocabulary on Session.LastCarrier); null while offline or when no
+        // check-in recorded one.
+        string? LastCarrier = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,

@@ -91,11 +91,16 @@ public class SessionRegistryTests
         await registry.OpenAsync(implant, new[] { "shell.exec" }, Now);
 
         await registry.TouchAsync(implant.Id, new[] { "file.push" }, Now.AddSeconds(30));
+        await registry.TouchAsync(implant.Id, new[] { "file.push" }, Now.AddSeconds(60), "dns");
 
         var active = await registry.GetActiveAsync(implant.Id);
         Assert.NotNull(active);
         Assert.Equal(new[] { "file.push" }, active!.Capabilities);
-        Assert.Equal(Now.AddSeconds(30), active.LastSeenAt);
+        Assert.Equal(Now.AddSeconds(60), active.LastSeenAt);
+        // The degraded-mode contract: the carrier the last check-in rode.
+        // A touch that records none keeps the last recorded one -- a legacy
+        // caller must not erase what a carrier-carrying check-in wrote.
+        Assert.Equal("dns", active.LastCarrier);
     }
 
     [Fact]

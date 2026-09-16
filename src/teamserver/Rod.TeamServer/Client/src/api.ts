@@ -56,6 +56,10 @@ export interface Implant {
   // The durable heartbeat: when the teamserver last heard from this implant,
   // kept after the session is gone. Null when it never checked in past enroll.
   lastSeenAt: string | null
+  // The carrier the live session's last check-in rode (the degraded-mode
+  // vocabulary: web, grpc, quic, dns, pipe); 'dns' is the constrained
+  // carrier. Null while offline or when no check-in recorded one.
+  lastCarrier: string | null
 }
 
 export interface Task {

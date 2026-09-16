@@ -54,6 +54,9 @@ internal sealed class SessionConfiguration : IEntityTypeConfiguration<Session>
             .HasColumnName("capabilities");
         builder.Property(s => s.StartedAt).HasColumnName("started_at");
         builder.Property(s => s.LastSeenAt).HasColumnName("last_seen_at");
+        // The degraded-mode contract's carrier stamp: the transport the
+        // last check-in rode, null when none recorded.
+        builder.Property(s => s.LastCarrier).HasColumnName("last_carrier");
         builder.Property(s => s.EndedAt).HasColumnName("ended_at");
         builder.Property(s => s.Status).HasColumnName("status");
 

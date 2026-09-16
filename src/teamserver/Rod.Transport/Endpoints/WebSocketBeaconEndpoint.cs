@@ -221,7 +221,7 @@ internal sealed class WebSocketBeaconStream
         // The same session guard the envelope applies: a session closed out
         // from under this handshake ends the stream before the loop starts,
         // so the implant re-handshakes on its reconnect.
-        await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), linked.Token);
+        await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), "web", linked.Token);
         var active = await _sessions.GetActiveAsync(session.Implant, linked.Token);
         if (active is null || active.Id != session.SessionId)
             return;

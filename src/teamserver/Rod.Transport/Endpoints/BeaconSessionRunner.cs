@@ -197,7 +197,7 @@ internal sealed class BeaconSessionRunner
         while (await read(cancellationToken) is { } frame)
         {
             await _sessions.TouchAsync(
-                session.Implant, session.Capabilities, _clock.GetUtcNow(), cancellationToken);
+                session.Implant, session.Capabilities, _clock.GetUtcNow(), "grpc", cancellationToken);
 
             // The session may have been closed out from under this stream -- the
             // staleness sweep, or a reconnect that opened a newer session for the

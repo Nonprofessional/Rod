@@ -276,7 +276,7 @@ internal sealed class QuicListenerService : BackgroundService
             // One presence touch, then the session guard: if the session this
             // handshake holds was closed out from under it, stop after the
             // handshake response so the implant re-handshakes on its reconnect.
-            await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), stoppingToken);
+            await _sessions.TouchAsync(session.Implant, session.Capabilities, _clock.GetUtcNow(), "quic", stoppingToken);
             var active = await _sessions.GetActiveAsync(session.Implant, stoppingToken);
             await RespondAsync(stream, response, stoppingToken);
             if (active is null || active.Id != session.SessionId)

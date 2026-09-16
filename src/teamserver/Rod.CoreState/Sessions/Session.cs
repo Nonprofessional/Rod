@@ -28,6 +28,18 @@ public sealed class Session
     public DateTimeOffset? EndedAt { get; private set; }
     public SessionStatus Status { get; private set; }
 
+    /// <summary>
+    /// The carrier the session's last check-in rode (the degraded-mode
+    /// contract, architecture.md Sec 8), in the fixed vocabulary: "web"
+    /// (the envelope POST cycle or the WebSocket beacon), "grpc" (the mTLS
+    /// stream), "quic", "dns", "pipe" (the SMB/TCP pivot stream). Null
+    /// means no check-in recorded one -- the operator surface reads it as
+    /// the posture's default, not degraded. "dns" is the constrained
+    /// carrier: presence, short tasking, chunked results; the roster
+    /// badges it so a queued channel task has its visible why.
+    /// </summary>
+    public string? LastCarrier { get; private set; }
+
     private Session(
         SessionId id,
         ImplantId implantId,
@@ -67,7 +79,7 @@ public sealed class Session
     /// capabilities. Called on each handshake/keepalive. Only legal while Active;
     /// a closed session no longer holds a live connection to refresh.
     /// </summary>
-    public void Touch(IReadOnlyCollection<string> capabilities, DateTimeOffset at)
+    public void Touch(IReadOnlyCollection<string> capabilities, DateTimeOffset at, string? carrier = null)
     {
         if (Status != SessionStatus.Active)
             throw new InvalidOperationException($"Session {Id} cannot be touched from {Status}.");
@@ -76,6 +88,8 @@ public sealed class Session
             ? Array.Empty<string>()
             : capabilities.ToArray();
         LastSeenAt = at;
+        if (carrier is not null)
+            LastCarrier = carrier;
     }
 
     /// <summary>

@@ -613,7 +613,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and a session must have been opened on a handshake-capable transport before
   DNS can refresh it. Downstream tasking keeps the full Sec 9 posture -- the
   TaskRequest carries the same command signature, and a DNS-delivered task
-  verifies exactly like a stream-delivered one.
+  verifies exactly like a stream-delivered one. The degraded-mode contract
+  rides the session record: every check-in stamps the carrier it rode (web,
+  grpc, quic, dns, pipe), the roster badges a dns-carried session as
+  degraded, and a task the carrier cannot serve stays queued with its
+  visible why -- capability is a property of the carrier at runtime, not of
+  the artifact.
 - An implant is always the **connection initiator** (reverse connection). The
   teamserver and redirectors never dial targets.
 - **Listener and public endpoint are decoupled, and the endpoint is repointable
