@@ -334,6 +334,11 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
               ? ` · ${payload.tokenRemainingUses} left`
               : ' · no enrolls left (spent, revoked, or swept)'}
         </>
+      ) : payload.class === 'WebShell' && payload.credential ? (
+        <>
+          {payload.target?.startsWith('rod-') ? 'connection key' : 'connection password'}{' '}
+          <code>{payload.credential}</code>
+        </>
       ) : (
         'none baked'
       ),

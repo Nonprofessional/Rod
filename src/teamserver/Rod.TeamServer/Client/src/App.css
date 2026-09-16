@@ -1226,6 +1226,27 @@ a:hover {
   margin-top: 12px;
 }
 
+/* The shells roster's catch disclosures: one collapsed line per shellcatch
+   listener (the roster stays the page), the one-liners one click away.
+   Same quiet shape as the build form's advanced disclosure. */
+.catch-details {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: 8px 14px;
+  margin-bottom: 4px;
+}
+
+.catch-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.catch-details .upgrade-panel {
+  margin-top: 10px;
+}
+
 /* --- Report columns ---------------------------------------------------------------------- */
 
 .report-cols {

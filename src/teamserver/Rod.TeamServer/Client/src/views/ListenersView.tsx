@@ -180,6 +180,31 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     }
   }
 
+  // Proposes the public endpoint from the current picks: the dialable host
+  // (the chosen interface, or the host's first dialable NIC when the bind
+  // is the wildcard), the bind port, and the transport's own scheme where
+  // one applies. A redirector replaces it later -- this fills the common
+  // no-redirector shape so the field never blocks on typing.
+  const onFillEndpoint = () => {
+    if (isSmb || transport === 'dns' || transport === 'doh') return
+    const host =
+      bindInterface === CUSTOM
+        ? customHost.trim()
+        : bindInterface === '' || bindInterface === ALL_INTERFACES
+          ? (interfaces.find((i) => !i.address.startsWith('127.') && !i.address.includes(':'))
+              ?.address ?? '127.0.0.1')
+          : bindInterface
+    if (!host || !bindPort.trim()) return
+    const dial = hostPort(host, bindPort.trim())
+    setPublicEndpoint(
+      transport === 'quic'
+        ? `quic://${dial}`
+        : transport === 'tcp' || transport === 'shellcatch'
+          ? dial
+          : `${transport === 'http' ? 'http' : 'https'}://${dial}`,
+    )
+  }
+
   const onCreate = async (event: React.FormEvent) => {
     event.preventDefault()
     // An unresolved interface (the list never loaded, or no default picked
@@ -378,6 +403,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           />
         </label>
         <div className="listener-form-actions">
+          <button
+            className="ghost"
+            type="button"
+            onClick={onFillEndpoint}
+            disabled={isSmb || transport === 'dns' || transport === 'doh'}
+            title="Compose the public endpoint from the picks above: the dialable host (the interface, or the host's first dialable NIC for a wildcard bind), the bind port, and this transport's scheme. A redirector replaces it later."
+          >
+            Fill endpoint
+          </button>
           <button className="primary" type="submit" disabled={busy}>
             Create
           </button>

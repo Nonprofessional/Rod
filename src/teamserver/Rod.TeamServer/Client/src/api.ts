@@ -1259,6 +1259,10 @@ export interface PayloadSummary {
   tokenMaxUses: number | null
   tokenRemainingUses: number | null
   tokenExpiresAt: string | null
+  // A generated web-shell script's connection credential, read back out of
+  // the stored script by its family's adapter; null for every other
+  // artifact class.
+  credential: string | null
   // The bake-time build parameters; null on payloads built before the
   // snapshot existed, null fields inside mean "the build's default".
   build: PayloadBuildProfile | null

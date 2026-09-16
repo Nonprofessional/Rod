@@ -150,22 +150,30 @@ export function ShellsView({
         const launchers = catchLaunchers(listener.publicEndpoint)
         if (launchers.length === 0) return null
         return (
-          <div key={listener.id} className="upgrade-panel">
-            <p>
-              Paste one of these on the target to land a shell on <code>{listener.name}</code> (
-              <code>{listener.publicEndpoint}</code>) — the listener's public endpoint, the address
-              the target dials.
-            </p>
-            {launchers.map((launcher) => (
-              <div key={launcher.id} className="upgrade-launcher">
-                <code>{launcher.id}</code>
-                <code className="upgrade-command">{launcher.command}</code>
-                <button className="ghost sm" onClick={() => void copy(launcher.id, launcher.command)}>
-                  {copied === launcher.id ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            ))}
-          </div>
+          <details key={listener.id} className="catch-details">
+            <summary title="The paste-ready reverse-shell one-liners for this listener's public endpoint — expand to copy one">
+              Catch on <code>{listener.name}</code> · <code>{listener.publicEndpoint}</code>
+              <span className="muted"> — {launchers.length} one-liners</span>
+            </summary>
+            <div className="upgrade-panel">
+              <p>
+                Paste one of these on the target; the shell lands in the roster below. The address
+                is the listener's public endpoint — what the target dials.
+              </p>
+              {launchers.map((launcher) => (
+                <div key={launcher.id} className="upgrade-launcher">
+                  <code>{launcher.id}</code>
+                  <code className="upgrade-command">{launcher.command}</code>
+                  <button
+                    className="ghost sm"
+                    onClick={() => void copy(launcher.id, launcher.command)}
+                  >
+                    {copied === launcher.id ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
         )
       })}
 
@@ -189,7 +197,7 @@ export function ShellsView({
                   <div className="empty">
                     <Icon name="terminal" />
                     {catchers.length > 0
-                      ? 'No shells caught yet -- paste one of the catch one-liners above on the target.'
+                      ? 'No shells caught yet -- open a catch panel above and paste a one-liner on the target.'
                       : 'No shells caught yet -- create a shellcatch listener under Listeners first.'}
                   </div>
                 </td>

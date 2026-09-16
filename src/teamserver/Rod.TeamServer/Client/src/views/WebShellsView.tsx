@@ -123,10 +123,10 @@ export function WebShellsView({
         <select
           value={registerAdapter}
           onChange={(e) => setRegisterAdapter(e.target.value)}
-          title="The protocol family the placed script speaks -- the Rod family (this tool's own: one line, AES-256-GCM sealed under a baked 256-bit key) or the AntSword eval family (interop with scripts placed for other managers)."
+          title="The protocol the placed script speaks -- the sealed Rod family (AES-256-GCM under a baked key) or the universal one-liner (the classic eval shape any manager drives)."
         >
-          <option value="rod-php">Rod (PHP)</option>
-          <option value="antsword-php">AntSword eval (PHP)</option>
+          <option value="rod-php">Sealed (Rod, PHP)</option>
+          <option value="eval-php">One-liner (PHP)</option>
         </select>
         <input
           className="wide"
