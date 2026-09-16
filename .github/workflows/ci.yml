@@ -213,10 +213,28 @@ jobs:
         # filter's note) dials a real listener. Ubuntu carries it only in
         # Microsoft's prod repo; the runner image ships none. The repo list is
         # keyed to the image's own version so an ubuntu-latest bump follows.
+        #
+        # The floating latest (2.6.1 as of 2026-09) regressed the TLS
+        # handshake System.Net.Quic rides (QUIC_STATUS_TLS_ERROR everywhere;
+        # local runs against 2.4.16 stay green), so the pin prefers the
+        # newest 2.4.x the repo still carries and prints what was available
+        # -- the madison listing doubles as the diagnostic for picking a
+        # newer pin once a fixed release ships. No 2.4.x left in the repo
+        # falls back to latest rather than failing the install.
         run: |
           curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/keyrings/microsoft.asc >/dev/null
           curl -sSL "https://packages.microsoft.com/config/ubuntu/$(. /etc/os-release && echo $VERSION_ID)/prod.list" | sudo tee /etc/apt/sources.list.d/microsoft-prod.list >/dev/null
-          sudo apt-get update && sudo apt-get install -y libmsquic
+          sudo apt-get update
+          echo "libmsquic versions available:"
+          apt-cache madison libmsquic
+          PINNED="$(apt-cache madison libmsquic | awk '{print $3}' | grep '^2\.4\.' | head -1)"
+          if [ -n "$PINNED" ]; then
+            echo "pinning libmsquic=$PINNED (2.4 line: known-good against the 2.6 TLS regression)"
+            sudo apt-get install -y "libmsquic=$PINNED"
+          else
+            echo "no 2.4.x in the repo; installing latest"
+            sudo apt-get install -y libmsquic
+          fi
       - name: Test (extended lane)
         id: test_extended_first
         # The same blame-hang posture the core lane runs with: a hang names
@@ -227,10 +245,10 @@ jobs:
           --filter "$EXTENDED_FILTER"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           --logger trx
-      - name: Test (extended lane, retry the failures)
-        # The targeted retry the core lane uses: only the failed tests
-        # rerun, so a one-off environment flake is absorbed and only a
-        # repeated failure stays.
+      - name: Collect the extended lane's failures
+        # The targeted retry's input, as its own step: a GITHUB_ENV write
+        # only reaches later steps, so collecting inside the retry step
+        # left the filter empty and the retry ran the whole suite.
         if: steps.test_extended_first.outcome == 'failure'
         run: |
           python3 - <<'PY'
@@ -259,6 +277,13 @@ jobs:
               env.write(f'EXTENDED_RETRY_FILTER={retry or "__all__"}\n')
           print('retry filter:', retry or '__all__ (whole lane)')
           PY
+      - name: Test (extended lane, retry the failures)
+        # The targeted retry the core lane uses: only the failed tests
+        # rerun, so a one-off environment flake is absorbed and only a
+        # repeated failure stays. The sentinel keeps the whole-lane
+        # fallback.
+        if: steps.test_extended_first.outcome == 'failure'
+        run: |
           if [ "$EXTENDED_RETRY_FILTER" = "__all__" ]; then
             dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           else
