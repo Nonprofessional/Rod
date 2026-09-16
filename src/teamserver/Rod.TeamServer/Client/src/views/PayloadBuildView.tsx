@@ -123,24 +123,14 @@ export function PayloadBuildView({
   const beaconCandidates = listeners.filter((l) => l.transport === 'mtls')
 
   // The interactive front in play, whichever way it was named: a picked mTLS
-  // listener, the manual endpoint under Advanced, or none (check-ins ride the
-  // callback front itself). This is what the traffic diagram draws and what
-  // gates stream mode.
+  // listener, the manual endpoint under Advanced, or none (check-ins ride
+  // the callback front itself). This is what the traffic diagram draws.
   const interactiveFront =
     !isStager && enrollIsPlainHttp
       ? listeners.find((l) => l.id === beaconListenerId)
         ? `${listeners.find((l) => l.id === beaconListenerId)!.name} (mTLS)`
         : beaconEndpoint.trim() || null
       : null
-
-  // Stream mode needs an mTLS path to hold open: a TLS-terminated front, or
-  // an explicit interactive front beside a cleartext one. A cleartext front
-  // with no interactive front is poll-only, and the form says so instead of
-  // offering a mode the build cannot honor.
-  const streamAvailable = !enrollIsPlainHttp || interactiveFront !== null
-  useEffect(() => {
-    if (!streamAvailable && mode === 'stream') setMode('poll')
-  }, [streamAvailable, mode])
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -336,8 +326,8 @@ export function PayloadBuildView({
           </label>
           {/* Always mounted, disabled unless the enroll + check-in listener is
               cleartext -- the form's grid never reshuffles when a listener is
-              picked. The empty option carries the default (poll the same
-              front); the full split rationale lives in the hover text. */}
+              picked. The empty option carries the default (check-ins ride the
+              same front); the full split rationale lives in the hover text. */}
           <label>
             Interactive listener (mTLS)
             <select
@@ -346,13 +336,13 @@ export function PayloadBuildView({
               onChange={(e) => setBeaconListenerId(e.target.value)}
               title={
                 offersBeaconSplit
-                  ? 'A cleartext front cannot carry the interactive stream. Leave empty and the implant polls the enroll + check-in listener over the envelope POST cycle; pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
+                  ? 'Leave empty and the implant checks in on this same front -- stream mode holds the WebSocket beacon open on it (sealed frames under the per-artifact key), poll mode cycles envelope POSTs. Pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
                   : 'A TLS-terminated listener carries the enroll + check-in traffic and the interactive stream on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
               }
             >
               {offersBeaconSplit ? (
                 <>
-                  <option value="">-- none: check-ins poll the enroll + check-in listener --</option>
+                  <option value="">-- none: check-ins ride the enroll + check-in front --</option>
                   {beaconCandidates.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name} ({l.transport} → {l.publicEndpoint})
@@ -436,18 +426,11 @@ export function PayloadBuildView({
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value)}
-              title="How the artifact checks in. Poll posts one envelope per interval over the web front; stream holds the mTLS connection open for interactive channels and needs a TLS path -- a TLS-terminated front or a picked interactive front."
+              title="How the artifact checks in. Poll posts one envelope per interval over the web front; stream holds one connection open for interactive channels -- the WebSocket beacon on a web front (sealed frames under the per-artifact key, cleartext included) or the gRPC stream on mTLS."
             >
-              <option value="stream" disabled={!streamAvailable}>
-                stream — persistent (interactive, mTLS)
-              </option>
+              <option value="stream">stream — persistent (interactive)</option>
               <option value="poll">poll — check in and sleep</option>
             </select>
-            {!streamAvailable && (
-              <span className="field-help">
-                Stream needs TLS: pick a TLS front or an interactive front above.
-              </span>
-            )}
           </label>
           <label>
             Check-in every (s)
