@@ -72,9 +72,10 @@ internal sealed record CheckInSetup(
 /// The beacon URL shapes (architecture.md Sec 8): a schemed http(s) URL
 /// names a web front whose check-in the envelope POST cycle carries; a bare
 /// host:port is the mTLS socket the gRPC stream dials; a quic-schemed URL
-/// is the QUIC stream's dial. Shared by the clients and the coordinator,
-/// and mirrored by the build unit when it selects which transport modules a
-/// build compiles.
+/// is the QUIC stream's dial; a dns-schemed URL is the DNS carrier's dial
+/// -- a resolver and a zone (dns://resolver[:port]/zone). Shared by the
+/// clients and the coordinator, and mirrored by the build unit when it
+/// selects which transport modules a build compiles.
 /// </summary>
 internal static class BeaconUrl
 {
@@ -84,6 +85,9 @@ internal static class BeaconUrl
 
     public static bool IsQuic(string beaconUrl)
         => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsDns(string beaconUrl)
+        => beaconUrl.Trim().StartsWith("dns://", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
