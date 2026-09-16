@@ -1023,16 +1023,19 @@ export interface GeneratedWebShellScript {
 
 // Generates a web-shell script with its credential baked in, decoupled from
 // any endpoint: prepare the artifact first, place it, register the URL later.
-// The script lands in the payload store like any build.
+// The script lands in the payload store like any build. The credential is
+// the family's own -- the baked key for the sealed Rod family, the
+// connection password for the classic managers.
 export async function generateWebShellScript(
   engagementId: string,
+  adapterId?: string,
   password?: string,
 ): Promise<GeneratedWebShellScript> {
   return jsonOrThrow(
     await fetch(`engagements/${engagementId}/webshells/scripts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: password ?? null }),
+      body: JSON.stringify({ adapterId: adapterId ?? null, password: password ?? null }),
     }),
   )
 }

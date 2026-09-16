@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  type GeneratedWebShellScript,
   type RegisteredWebShell,
   type WebShell,
   ApiError,
   executeWebShell,
-  generateWebShellScript,
   listWebShells,
   probeWebShell,
   registerWebShell,
@@ -15,15 +13,15 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Icon } from '../components/Icons'
 
 // The engagement's web-shell endpoints: scripts placed in targets' web
-// roots, bound to the engagement by registration. The roster reads the
-// profile (url, adapter, probe stamps); registering an endpoint answers
-// with the one-liner to place, so the operator can drop the script and
-// connect in one flow, and standalone generation answers with the same
-// script stored as a payload -- copyable here, downloadable as the stored
-// artifact. The console is line-oriented -- each submitted line is one
-// synchronous execution whose output appends to the transcript -- because
-// a web-shell has no live stream; the task log carries the durable
-// history of every command.
+// roots, bound to the engagement by registration. The scripts themselves
+// generate under Build (the Webshell script half of that tab); this view is
+// the operating side -- register the reachable URL with its credential,
+// probe, run. The roster reads the profile (url, adapter, probe stamps);
+// registering an endpoint answers with the one-liner to place, so the
+// operator can drop the script and connect in one flow. The console is
+// line-oriented -- each submitted line is one synchronous execution whose
+// output appends to the transcript -- because a web-shell has no live
+// stream; the task log carries the durable history of every command.
 export function WebShellsView({
   engagementId,
   onlineTick,
@@ -35,11 +33,13 @@ export function WebShellsView({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [registerUrl, setRegisterUrl] = useState('')
+  const [registerAdapter, setRegisterAdapter] = useState('rod-php')
   const [registerPassword, setRegisterPassword] = useState('')
   const [registering, setRegistering] = useState(false)
   const [placed, setPlaced] = useState<RegisteredWebShell | null>(null)
-  const [generated, setGenerated] = useState<GeneratedWebShellScript | null>(null)
   const [copied, setCopied] = useState(false)
+
+  const isRod = registerAdapter.startsWith('rod-')
 
   const refresh = useCallback(async () => {
     try {
@@ -61,35 +61,14 @@ export function WebShellsView({
     try {
       const registered = await registerWebShell(engagementId, {
         url: registerUrl,
+        adapterId: registerAdapter,
         password: registerPassword || undefined,
       })
       setPlaced(registered)
-      setGenerated(null)
       setRegisterUrl('')
       setRegisterPassword('')
       setError(null)
       await refresh()
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e))
-    } finally {
-      setRegistering(false)
-    }
-  }
-
-  // Generation decoupled from registration: the same credential field, no
-  // URL required -- prepare the artifact first, place it, register later.
-  const onGenerate = async () => {
-    if (registering) return
-    setRegistering(true)
-    try {
-      const script = await generateWebShellScript(
-        engagementId,
-        registerPassword || undefined,
-      )
-      setGenerated(script)
-      setPlaced(null)
-      setRegisterPassword('')
-      setError(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
@@ -136,11 +115,19 @@ export function WebShellsView({
       <p className="muted">
         Scripts placed in targets' web roots, bound to this engagement by registration. A
         web-shell never enrolls; execution is synchronous and lands on the task log like any
-        other tasking. The in-tree protocol is the open AntSword eval family.
+        other tasking. Generate the script under Build; register it here once placed.
       </p>
       {error && <p className="error">{error}</p>}
 
       <form className="task-form" onSubmit={onRegister}>
+        <select
+          value={registerAdapter}
+          onChange={(e) => setRegisterAdapter(e.target.value)}
+          title="The protocol family the placed script speaks -- the Rod family (this tool's own: one line, AES-256-GCM sealed under a baked 256-bit key) or the AntSword eval family (interop with scripts placed for other managers)."
+        >
+          <option value="rod-php">Rod (PHP)</option>
+          <option value="antsword-php">AntSword eval (PHP)</option>
+        </select>
         <input
           className="wide"
           placeholder="https://target.example.test/uploads/cmd.php"
@@ -148,28 +135,26 @@ export function WebShellsView({
           onChange={(e) => setRegisterUrl(e.target.value)}
         />
         <input
-          placeholder="connection password (optional)"
+          placeholder={
+            isRod ? 'connection key (from the generated script)' : 'connection password (optional)'
+          }
+          title={
+            isRod
+              ? 'The 256-bit key baked into the generated script (shown when it was generated under Build). Leave empty and registration mints a fresh script with a new key.'
+              : 'The POST parameter the eval one-liner answers to. Leave empty and one is generated.'
+          }
           value={registerPassword}
           onChange={(e) => setRegisterPassword(e.target.value)}
         />
         <button className="primary sm" type="submit" disabled={registering || !registerUrl}>
           Register
         </button>
-        <button
-          className="ghost sm"
-          type="button"
-          onClick={() => void onGenerate()}
-          disabled={registering}
-          title="Generate the script now and register the reachable URL later"
-        >
-          Generate
-        </button>
       </form>
 
       {placed && (
         <div className="upgrade-panel">
           <p>
-            Place this one-liner in the target's web root (the connection password is{' '}
+            Place this one-liner in the target's web root (the connection credential is{' '}
             <code>{placed.password}</code>), then register the reachable URL if you have not
             already.
           </p>
@@ -178,28 +163,6 @@ export function WebShellsView({
             <button className="ghost sm" onClick={() => void copyScript(placed.script)}>
               {copied ? 'Copied' : 'Copy'}
             </button>
-          </div>
-        </div>
-      )}
-      {generated && (
-        <div className="upgrade-panel">
-          <p>
-            Generated and stored as payload <code>{generated.payloadId.slice(0, 8)}</code> (also
-            under Payloads). The connection password is <code>{generated.password}</code>; register
-            the reachable URL whenever the script is placed.
-          </p>
-          <div className="upgrade-launcher">
-            <code className="upgrade-command">{generated.script}</code>
-            <button className="ghost sm" onClick={() => void copyScript(generated.script)}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-            <a
-              className="download-link"
-              href={`engagements/${engagementId}/payloads/${generated.payloadId}`}
-              download
-            >
-              Download
-            </a>
           </div>
         </div>
       )}

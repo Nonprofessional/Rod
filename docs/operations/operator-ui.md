@@ -62,19 +62,13 @@ deliberate act that updates this section first.
 
 - **Listener (enroll + check-in)** -- the Build form's first field: the
   listener whose public endpoint gets baked. The implant registers on it
-  once and checks in on it for the rest of its life, unless an interactive
-  listener is picked beside it. The Payloads library's **Listener** column
-  names the same thing per artifact.
-- **Interactive listener (mTLS)** -- the second slot: the listener whose
-  socket carries the interactive stream when the build splits its traffic
-  (the hardened option on a cleartext front). Absent, interactive rides
-  the same listener as everything else -- the gRPC stream on mTLS, the
-  WebSocket beacon on a web front (sealed frames under the per-artifact
-  key, cleartext included).
-- **Public endpoint (enroll + check-in, manual)** /
-  **Public endpoint (interactive, manual)** -- the typed-address twins of
-  the two picks, under Advanced, for addresses this teamserver does not
-  serve (a redirector you control elsewhere).
+  once and checks in on it for the rest of its life, interactive riding
+  the same front (the gRPC stream on mTLS, the WebSocket beacon on a web
+  front). The Payloads library's **Listener** column names the same thing
+  per artifact.
+- **Public endpoint (enroll + check-in, manual)** -- the typed-address
+  twin of the pick, under Advanced, for an address this teamserver does
+  not serve (a redirector you control elsewhere).
 - **Fallback public endpoints** -- backup enroll + check-in addresses
   baked behind the primary and walked in order when it burns.
 - **Public endpoint** -- the listener form's own field of the same name:
@@ -263,21 +257,24 @@ diagram under the picks draws the traffic shape the build bakes and
 follows them live, labeled with the fixed vocabulary: which behaviors
 each socket carries.
 
-The form's two picks are the vocabulary's two roles: the **enroll +
-check-in listener** is where the implant calls home (it registers there
-once and checks in there for the rest of its life), and the
-**interactive listener** is the optional second socket for live
-channels. Everything else -- "enroll", "check-in" in the hover texts --
-names the moments inside that one relationship.
+The form's pick is the vocabulary's core role: the **enroll + check-in
+listener** is where the implant calls home (it registers there once and
+checks in there for the rest of its life), interactive riding the same
+front -- the gRPC stream on mTLS, the WebSocket beacon on a web front,
+sealed frames under the per-artifact key. Everything else -- "enroll",
+"check-in" in the hover texts -- names the moments inside that one
+relationship. (The build API still accepts a `beaconListenerId` for the
+split-socket shape; the form no longer offers one.)
 
-**Interactive listener (mTLS)** is enabled when the picked listener is
-cleartext `http`: interactive channels cannot ride that socket, so the
-form offers the engagement's `mTLS` listener for the interactive stream
--- the split-socket shape (enroll + check-in one socket, interactive
-another). Left empty, the implant polls the enroll + check-in listener
-over the envelope POST cycle instead. An `https` listener carries all
-three behaviors itself and needs no split. The build API takes the same
-thing as `beaconListenerId`, or a typed `beaconEndpoint`.
+The card's toggle switches to the tab's second artifact kind:
+**Webshell script** renders a placement script with its credential baked
+in -- the Rod family (this tool's own: one line, sealed end to end as
+AES-256-GCM under a 256-bit key baked at generation) by default, the
+AntSword eval family for interop with scripts placed for other managers.
+Generation is instant (no job queue): the answer shows the credential and
+the script with Copy and Download, the artifact lands in the payload
+store like any build, and the reachable URL is registered under Web
+shells once the script is placed.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs

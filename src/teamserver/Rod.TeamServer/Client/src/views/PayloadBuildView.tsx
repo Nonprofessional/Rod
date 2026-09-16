@@ -11,16 +11,21 @@ import {
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
+import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 
-// The payload-build panel. The main path is the mainstream shape (Cobalt
-// Strike's package dialog, Sliver's generate): name the listener the implant
-// dials and the target it runs on, leave everything else at its default, and
-// build -- the artifact is a self-contained executable with its enrollment
-// credential baked in, so "drop it on the target and run" needs no arguments.
-// Everything an operator sets rarely -- the malleable wire knobs (fallbacks,
-// paths, headers-adjacent fields, envelope), the manual endpoint, and the
+// The payload-build panel -- the artifact factory's operator face. The main
+// path is the mainstream shape (Cobalt Strike's package dialog, Sliver's
+// generate): name the listener the implant dials and the target it runs on,
+// leave everything else at its default, and build -- the artifact is a
+// self-contained executable with its enrollment credential baked in, so
+// "drop it on the target and run" needs no arguments. Everything an
+// operator sets rarely -- the malleable wire knobs (fallbacks, paths,
+// headers-adjacent fields, envelope), the manual endpoint, and the
 // credential window -- folds into the Advanced disclosure, defaulted server
-// side, so the form never makes an operator read a knob they will not touch.
+// side, so the form never makes an operator read a knob they will not
+// touch. The tab's second artifact kind is the web-shell script: the same
+// prepare-then-place flow as the classic managers, rendered by the
+// WebShellGenerateForm beside the implant form under one toggle.
 //
 // The form offers only what the pipeline actually delivers: the in-tree .NET
 // unit (no language picker for units that are not registered), the Stage2 and
@@ -30,7 +35,9 @@ import { StatusBadge } from '../components/StatusBadge'
 // listeners appear greyed out), and the arch set the toolchain bundles a
 // runtime for (x86 only pairs with Windows). A stager names the completed
 // Stage-2 artifact it fetches, so that select lists the finished Stage2 builds
-// below.
+// below. Interactive needs no second listener: every web front carries the
+// WebSocket beacon (stream mode holds it open; the API still accepts a named
+// beacon listener for the split-socket shape the form no longer offers).
 //
 // The build runs as a server-side job: submitting queues it and returns
 // immediately; the recent-builds list below is the in-process view of the
@@ -69,16 +76,17 @@ export function PayloadBuildView({
 }: {
   engagementId: string
 }) {
+  // The tab's two artifact kinds share the card: the implant build form
+  // (the pipeline's jobs) and the web-shell script generator (instant
+  // render, no job). One toggle, one mental model -- this is where
+  // artifacts are made.
+  const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
   const [klass, setKlass] = useState('Stage2')
   const [stage2PayloadId, setStage2PayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
-  // The socket the check-in stream dials when the build takes the hardened
-  // split: an mTLS front beside the callback front. Empty means the check-in
-  // rides the callback front's own envelope cycle.
-  const [beaconListenerId, setBeaconListenerId] = useState('')
   const [mode, setMode] = useState('stream')
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
@@ -99,7 +107,6 @@ export function PayloadBuildView({
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
   const [endpoint, setEndpoint] = useState('')
-  const [beaconEndpoint, setBeaconEndpoint] = useState('')
   const [fallbackEndpoints, setFallbackEndpoints] = useState('')
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
@@ -110,27 +117,10 @@ export function PayloadBuildView({
 
   const isStager = klass === 'Stager'
 
-  // Every web front carries its own check-ins: the envelope POST cycle rides
-  // the same socket enrollment does, so no build needs a beacon split. The
-  // split-socket shape -- enroll on a web front, the interactive gRPC stream
-  // on an mTLS listener -- stays available as the hardened option, offered on
-  // the cleartext front where an operator most often wants it.
+  // Every web front carries its own check-ins -- the envelope POST cycle
+  // for poll, the WebSocket beacon for stream -- so one listener is always
+  // the whole story and the form offers no split.
   const selectedListener = listeners.find((l) => l.id === listenerId)
-  const enrollIsPlainHttp = selectedListener
-    ? selectedListener.transport === 'http'
-    : /^http:\/\//i.test(endpoint.trim())
-  const offersBeaconSplit = !isStager && enrollIsPlainHttp
-  const beaconCandidates = listeners.filter((l) => l.transport === 'mtls')
-
-  // The interactive front in play, whichever way it was named: a picked mTLS
-  // listener, the manual endpoint under Advanced, or none (check-ins ride
-  // the callback front itself). This is what the traffic diagram draws.
-  const interactiveFront =
-    !isStager && enrollIsPlainHttp
-      ? listeners.find((l) => l.id === beaconListenerId)
-        ? `${listeners.find((l) => l.id === beaconListenerId)!.name} (mTLS)`
-        : beaconEndpoint.trim() || null
-      : null
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -257,10 +247,8 @@ export function PayloadBuildView({
         listenerId: listenerId || null,
         endpoint: !listenerId && endpoint ? endpoint : null,
         stage2PayloadId: isStager ? stage2PayloadId : null,
-        beaconListenerId: !isStager && beaconListenerId ? beaconListenerId : null,
-        beaconEndpoint: !isStager && !beaconListenerId && beaconEndpoint.trim()
-          ? beaconEndpoint.trim()
-          : null,
+        beaconListenerId: null,
+        beaconEndpoint: null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
@@ -286,11 +274,41 @@ export function PayloadBuildView({
 
   return (
     <div className="card">
-      <h3>Build payload</h3>
-      <p className="muted" title="A self-contained executable with its enrollment credential baked in — drop it and run. Every knob is baked at generation.">
-        Pick a listener and a target, leave the rest at the defaults.
-      </p>
-      <form className="build-form" onSubmit={onBuild}>
+      {/* The artifact-kind toggle: the implant pipeline and the web-shell
+          generator share this card -- one place that makes drop-on-target
+          artifacts. */}
+      <div className="inline-form">
+        <button
+          className={artifact === 'implant' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setArtifact('implant')}
+          title="A self-contained executable with its enrollment credential baked in, built by the server-side pipeline."
+        >
+          Implant
+        </button>
+        <button
+          className={artifact === 'webshell' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setArtifact('webshell')}
+          title="A placement script with its credential baked in, rendered instantly for a target's web root."
+        >
+          Webshell script
+        </button>
+      </div>
+      {artifact === 'webshell' ? (
+        <>
+          <h3>Generate web-shell script</h3>
+          <p className="muted">
+            A placement script with its credential baked in — generate here, drop it in the
+            target's web root, register the reachable URL under Web shells.
+          </p>
+          <WebShellGenerateForm engagementId={engagementId} />
+        </>
+      ) : (
+        <>
+          <h3>Build payload</h3>
+          <p className="muted" title="A self-contained executable with its enrollment credential baked in — drop it and run. Every knob is baked at generation.">
+            Pick a listener and a target, leave the rest at the defaults.
+          </p>
+          <form className="build-form" onSubmit={onBuild}>
         <fieldset>
           <legend>Target</legend>
           <label>
@@ -302,13 +320,8 @@ export function PayloadBuildView({
                 // Choosing the manual option is choosing to type an endpoint:
                 // open the section it lives in.
                 if (e.target.value === '') setAdvancedOpen(true)
-                // A TLS-terminated listener carries enroll and beacon on one
-                // socket; a beacon picked for a previous cleartext front
-                // would silently split a build that does not need it.
-                const next = listeners.find((l) => l.id === e.target.value)
-                if (next && next.transport !== 'http') setBeaconListenerId('')
               }}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life, unless an interactive listener is picked beside it. Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life -- interactive rides the same front (the WebSocket beacon on stream builds). Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
             >
               <option value="">-- none: public endpoint under Advanced --</option>
               {listeners.map((l) =>
@@ -321,36 +334,6 @@ export function PayloadBuildView({
                     {l.name} ({l.transport} — not HTTP ingress)
                   </option>
                 ),
-              )}
-            </select>
-          </label>
-          {/* Always mounted, disabled unless the enroll + check-in listener is
-              cleartext -- the form's grid never reshuffles when a listener is
-              picked. The empty option carries the default (check-ins ride the
-              same front); the full split rationale lives in the hover text. */}
-          <label>
-            Interactive listener (mTLS)
-            <select
-              value={offersBeaconSplit ? beaconListenerId : ''}
-              disabled={!offersBeaconSplit}
-              onChange={(e) => setBeaconListenerId(e.target.value)}
-              title={
-                offersBeaconSplit
-                  ? 'Leave empty and the implant checks in on this same front -- stream mode holds the WebSocket beacon open on it (sealed frames under the per-artifact key), poll mode cycles envelope POSTs. Pick the mTLS listener for the hardened split-socket shape -- the interactive gRPC stream (live channels) on its own TLS socket.'
-                  : 'A TLS-terminated listener carries the enroll + check-in traffic and the interactive stream on the same socket, so no interactive split applies. Pick a cleartext http front to offer one.'
-              }
-            >
-              {offersBeaconSplit ? (
-                <>
-                  <option value="">-- none: check-ins ride the enroll + check-in front --</option>
-                  {beaconCandidates.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} ({l.transport} → {l.publicEndpoint})
-                    </option>
-                  ))}
-                </>
-              ) : (
-                <option value="">-- same listener as enroll + check-in --</option>
               )}
             </select>
           </label>
@@ -409,14 +392,13 @@ export function PayloadBuildView({
             </select>
           </label>
           {/* The traffic picture reads after the fields it summarizes: one
-              socket, or two when the interactive stream gets its own. */}
+              socket carries everything the build dials. */}
           <WireShape
             enroll={
               selectedListener
                 ? `${selectedListener.name} (${selectedListener.transport})`
                 : endpoint.trim() || 'manual endpoint'
             }
-            interactive={interactiveFront}
           />
         </fieldset>
         <fieldset disabled={isStager}>
@@ -485,11 +467,10 @@ export function PayloadBuildView({
           <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Manual overrides only, for builds without a picked listener: two addresses at most
-              (the enroll + check-in public endpoint, and the interactive public endpoint for the
-              hardened split), backup enroll + check-in endpoints, and the one path knob —
-              registration's. Check-ins ride a fixed route and the interactive stream rides its
-              own, so no other path exists to set.
+              Manual overrides only, for builds without a picked listener: the enroll + check-in
+              public endpoint, backup enroll + check-in endpoints, and the one path knob --
+              registration's. Check-ins ride a fixed route and the interactive stream rides the
+              same front's WebSocket beacon, so no other address or path exists to set.
             </p>
             <label>
               Public endpoint (enroll + check-in, manual)
@@ -502,20 +483,6 @@ export function PayloadBuildView({
                   listenerId
                     ? 'An enroll + check-in listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
                     : 'The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere).'
-                }
-              />
-            </label>
-            <label>
-              Public endpoint (interactive, manual)
-              <input
-                value={beaconEndpoint}
-                onChange={(e) => setBeaconEndpoint(e.target.value)}
-                placeholder="https://mtls.example.test"
-                disabled={!!beaconListenerId}
-                title={
-                  beaconListenerId
-                    ? 'An interactive listener is picked, so its public endpoint is used.'
-                    : 'The mTLS socket the interactive stream dials, typed instead of picking a listener. Leave empty and check-ins poll the enroll + check-in address itself over the envelope POST cycle; name it only for the split-socket shape.'
                 }
               />
             </label>
@@ -725,6 +692,8 @@ export function PayloadBuildView({
           )}
         </div>
       )}
+      </>
+      )}
 
       <p className="muted">
         Finished payloads live on in the <a href={`#/engagements/${engagementId}/payloads`}>Payloads</a> tab.
@@ -733,12 +702,12 @@ export function PayloadBuildView({
   )
 }
 
-// The traffic shape this build bakes, drawn from the current picks and named
-// with the fixed vocabulary: the behaviors each socket carries -- enroll +
-// check-in on the primary, interactive on its own mTLS socket when the build
-// splits. The form's words say what each field does; this says what the
-// target will see moving.
-function WireShape({ enroll, interactive }: { enroll: string; interactive: string | null }) {
+// The traffic shape this build bakes, drawn from the current picks: every
+// behavior the artifact dials -- enroll, check-in, and (stream mode) the
+// interactive WebSocket beacon -- rides the one named front. The form's
+// words say what each field does; this says what the target will see
+// moving.
+function WireShape({ enroll }: { enroll: string }) {
   return (
     <div className="wire-shape" title="The traffic shape this build bakes">
       <span className="wire-node">
@@ -746,17 +715,10 @@ function WireShape({ enroll, interactive }: { enroll: string; interactive: strin
       </span>
       <div className="wire-paths">
         <div className="wire-path">
-          <span className="wire-label">{interactive ? 'enroll + check-in' : 'enroll + check-in + interactive'}</span>
+          <span className="wire-label">enroll + check-in + interactive</span>
           <span className="wire-arrow">→</span>
           <span className="wire-node">{enroll}</span>
         </div>
-        {interactive && (
-          <div className="wire-path">
-            <span className="wire-label">interactive · mTLS</span>
-            <span className="wire-arrow">⇉</span>
-            <span className="wire-node">{interactive}</span>
-          </div>
-        )}
       </div>
     </div>
   )
