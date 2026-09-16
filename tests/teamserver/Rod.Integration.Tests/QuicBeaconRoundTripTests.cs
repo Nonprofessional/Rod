@@ -37,7 +37,7 @@ namespace Rod.Integration.Tests;
 /// </summary>
 public class QuicBeaconRoundTripTests
 {
-    [Fact]
+    [QuicFact]
     public async Task AQuicListenerEntry_CreatedThroughTheOperatorApi_CarriesACheckInEndToEnd()
     {
         var (client, host, _) = AuthenticatedHost.Create();
@@ -108,7 +108,7 @@ public class QuicBeaconRoundTripTests
         }
     }
 
-    [Fact]
+    [QuicFact]
     public async Task TheQuicStream_HoldsTheInteractiveChannel()
     {
         // The duplex point: the channel verbs run live over the QUIC stream.
@@ -173,7 +173,7 @@ public class QuicBeaconRoundTripTests
         }
     }
 
-    [Fact]
+    [QuicFact]
     public async Task ABuildNamingAQuicBeacon_BakesTheQuicDial()
     {
         // The issuance half of the honest carrier declaration: a quic
