@@ -256,14 +256,30 @@ public static class ShellSessionEndpoints
             return Results.Unauthorized();
 
         // The stage-2 fetch rides the engagement's web listeners, so the
-        // URL needs one to exist. Prefer the hardened members when several
-        // are bound; any web front serves the route.
-        var webListener = (await listenerStore.ListAsync(cancellationToken))
+        // URL needs one to exist. The operator may name the front the
+        // fetch should use (several listeners, one specific redirector);
+        // unnamed, the hardened members are preferred over cleartext.
+        var webListeners = (await listenerStore.ListAsync(cancellationToken))
             .Where(l => l.EngagementId == scope.Engagement && IsWebTransport(l.Transport))
-            .OrderByDescending(l => l.Transport == "https")
-            .ThenByDescending(l => l.Transport == "mtls")
-            .ThenBy(l => l.CreatedAt)
-            .FirstOrDefault();
+            .ToList();
+        ListenerDefinition? webListener;
+        if (body?.ListenerId is { } namedListener)
+        {
+            webListener = Guid.TryParse(namedListener, out var named)
+                ? webListeners.FirstOrDefault(l => l.Id == named)
+                : null;
+            if (webListener is null)
+                return Results.BadRequest(new Problem(
+                    "ListenerId does not name one of this engagement's HTTP(S) listeners."));
+        }
+        else
+        {
+            webListener = webListeners
+                .OrderByDescending(l => l.Transport == "https")
+                .ThenByDescending(l => l.Transport == "mtls")
+                .ThenBy(l => l.CreatedAt)
+                .FirstOrDefault();
+        }
         if (webListener is null)
             return Results.BadRequest(new Problem(
                 "The engagement has no HTTP(S) listener to serve the stage-2 fetch; create one first."));
@@ -380,10 +396,12 @@ public static class ShellSessionEndpoints
 }
 
 /// <summary>
-/// Names the stage-2 payload a shell should grow into; omitted, the
-/// engagement's newest build stands in.
+/// Names the stage-2 payload a shell should grow into (omitted, the
+/// engagement's newest build stands in) and optionally the web listener
+/// whose front the fetch should ride (omitted, the hardened members are
+/// preferred).
 /// </summary>
-public sealed record ShellUpgradeRequest(string? PayloadId);
+public sealed record ShellUpgradeRequest(string? PayloadId, string? ListenerId = null);
 
 /// <summary>
 /// The rendered upgrade for one caught shell: the stage-2 fetch URL, the

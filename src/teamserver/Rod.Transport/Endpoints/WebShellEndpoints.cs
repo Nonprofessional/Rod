@@ -66,6 +66,7 @@ public static class WebShellEndpoints
         RegisterWebShellRequest body,
         ClaimsPrincipal user,
         WebShellService service,
+        Rod.Audit.IPayloadStore payloads,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -83,21 +84,42 @@ public static class WebShellEndpoints
             return Results.BadRequest(new Problem("The web-shell URL must be an absolute http(s) address."));
         }
 
-        var adapter = WebShellAdapters.Find(body.AdapterId?.Trim() ?? "rod-php");
+        // A generated script may be claimed by its payload id: the family
+        // and the credential read back out of the stored script, so the
+        // operator never copies a key by hand. The claim must name a
+        // WebShell-class payload of this engagement.
+        Rod.Audit.PayloadRecord? claimed = null;
+        string? claimedScript = null;
+        if (body.PayloadId is { } claimedText)
+        {
+            if (!Guid.TryParse(claimedText.Trim(), out var claimedValue)
+                || await payloads.FindAsync(claimedValue, engagement.Value, cancellationToken) is not { } found
+                || found.Class != "WebShell")
+            {
+                return Results.BadRequest(new Problem(
+                    "PayloadId does not name one of this engagement's generated web-shell scripts."));
+            }
+            claimed = found;
+            claimedScript = Encoding.UTF8.GetString(found.Content);
+        }
+
+        var adapter = WebShellAdapters.Find(
+            body.AdapterId?.Trim() ?? claimed?.Target ?? "rod-php");
         if (adapter is null)
             return Results.BadRequest(new Problem(
                 "Protocol adapter is not recognized. Use one of: " + string.Join(", ", WebShellAdapters.Names()) + "."));
 
         // The credential is whatever the family's placed script carries --
-        // a connection password for the classic managers, the baked key for
-        // the sealed families; an unsupplied one is generated so a placed
-        // script and its profile always agree.
+        // a connection password for the one-liner family, the baked key for
+        // the sealed ones. A claim supplies it from the stored script;
+        // otherwise an unsupplied one is generated so a placed script and
+        // its profile always agree.
         var password = string.IsNullOrWhiteSpace(body.Password)
-            ? adapter.GenerateCredential()
+            ? claimedScript is { } script ? adapter.ReadCredentialFromScript(script) : adapter.GenerateCredential()
             : body.Password.Trim();
-        if (!adapter.IsValidCredential(password))
+        if (password is null || !adapter.IsValidCredential(password))
             return Results.BadRequest(new Problem(
-                $"The {adapter.Id} credential is not usable ({adapter.CredentialHint}); leave it empty to generate one."));
+                $"The {adapter.Id} credential is not usable ({adapter.CredentialHint}); leave it empty or claim the generated payload."));
         var encoder = string.IsNullOrWhiteSpace(body.Encoder) ? adapter.DefaultEncoder : body.Encoder.Trim();
         var decoder = string.IsNullOrWhiteSpace(body.Decoder) ? adapter.DefaultDecoder : body.Decoder.Trim();
 
@@ -556,13 +578,17 @@ public static class WebShellEndpoints
     }
 }
 
-/// <summary>Registers a web-shell endpoint; the script renders from the resolved adapter.</summary>
+/// <summary>
+/// Registers a web-shell endpoint; the script renders from the resolved
+/// adapter, or the credential is claimed from a generated payload.
+/// </summary>
 public sealed record RegisterWebShellRequest(
     string Url,
     string? AdapterId = null,
     string? Password = null,
     string? Encoder = null,
-    string? Decoder = null);
+    string? Decoder = null,
+    string? PayloadId = null);
 
 /// <summary>One command for a web-shell endpoint to run synchronously.</summary>
 public sealed record ExecuteWebShellRequest(string Command);
