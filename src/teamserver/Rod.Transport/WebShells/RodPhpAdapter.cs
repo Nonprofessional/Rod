@@ -14,10 +14,10 @@ namespace Rod.Transport.WebShells;
 /// wire names the command or the output and a wrong key answers nothing.
 ///
 /// The command runs through the standard, documented process functions --
-/// the same PATH setup and read pipe the AntSword family's template uses,
-/// because that part is just how PHP runs a command. No function-fallback
-/// chains and no bypass logic: those belong to out-of-tree tradecraft
-/// (architecture.md Sec 13).
+/// the same PATH setup and read pipe the one-liner family's template
+/// uses, because that part is just how PHP runs a command. No
+/// function-fallback chains and no bypass logic: those belong to
+/// out-of-tree tradecraft (architecture.md Sec 13).
 /// </summary>
 public sealed class RodPhpAdapter : IWebShellProtocolAdapter
 {
@@ -46,6 +46,17 @@ public sealed class RodPhpAdapter : IWebShellProtocolAdapter
     }
 
     public string CredentialHint => "the base64 of a 256-bit key";
+
+    public string? ReadCredentialFromScript(string script)
+    {
+        const string prefix = "base64_decode('";
+        var start = script.IndexOf(prefix, StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+        var from = start + prefix.Length;
+        var end = script.IndexOf("')", from, StringComparison.Ordinal);
+        return end < 0 ? null : script[from..end];
+    }
 
     public string RenderScript(string credential)
         => Script.Replace(KeyPlaceholder, credential);

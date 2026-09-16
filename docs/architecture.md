@@ -277,9 +277,11 @@ Implants differ by purpose, not by a "managed device flavor":
   protocol adapter registry carries the two in-tree families -- the
   Rod-native one (a one-line placed script whose baked 256-bit key seals
   the channel as AES-256-GCM in both directions; the credential is that
-  key, not a password) and the AntSword-compatible eval family (MIT, kept
-  as interop for scripts placed for other managers) -- and leaves any
-  other family to out-of-tree tradecraft (Sec 13).
+  key, not a password) and the universal one-liner eval family (the
+  classic `@eval($_POST[...])` shape every manager drives; scripts placed
+  by hand or by another tool answer it because the one-liner itself is
+  universal) -- and leaves any other family to out-of-tree tradecraft
+  (Sec 13).
 - **Ephemeral** -- a short-lived, TTL'd implant from a one-liner bootstrap; for
   one-off execution and temporary access.
 - **Pivot** -- an implant that represents hosts which cannot run their own

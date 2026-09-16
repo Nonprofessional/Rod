@@ -40,7 +40,7 @@ public class WebShellServiceTests
 
         var (implant, profile) = await service.RegisterAsync(
             engagement.Id, "https://web.example.test/up.php", "web.example.test",
-            "antsword-php", "connect", "base64", "base64",
+            "eval-php", "connect", "base64", "base64",
             new OperatorId(Guid.NewGuid()));
 
         Assert.Equal(ImplantClass.WebShell, implant.Class);
@@ -51,7 +51,7 @@ public class WebShellServiceTests
 
         Assert.Equal(implant.Id, profile.ImplantId);
         Assert.Equal("https://web.example.test/up.php", profile.Url);
-        Assert.Equal("antsword-php", profile.AdapterId);
+        Assert.Equal("eval-php", profile.AdapterId);
         Assert.Equal("connect", profile.Password);
         Assert.Null(profile.LastProbeAt);
         Assert.Null(profile.LastProbeOk);
@@ -64,7 +64,7 @@ public class WebShellServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RegisterAsync(
             EngagementId.New(), "https://web.example.test/up.php", "web.example.test",
-            "antsword-php", "connect", "base64", "base64",
+            "eval-php", "connect", "base64", "base64",
             new OperatorId(Guid.NewGuid())));
     }
 
@@ -77,7 +77,7 @@ public class WebShellServiceTests
         var service = NewService(engagements);
         var (implant, _) = await service.RegisterAsync(
             engagement.Id, "https://web.example.test/up.php", "web.example.test",
-            "antsword-php", "connect", "base64", "base64",
+            "eval-php", "connect", "base64", "base64",
             new OperatorId(Guid.NewGuid()));
 
         var found = await service.FindAsync(engagement.Id, implant.Id);
@@ -102,7 +102,7 @@ public class WebShellServiceTests
         var service = NewService(engagements);
         var (implant, _) = await service.RegisterAsync(
             engagement.Id, "https://web.example.test/up.php", "web.example.test",
-            "antsword-php", "connect", "base64", "base64",
+            "eval-php", "connect", "base64", "base64",
             new OperatorId(Guid.NewGuid()));
 
         Assert.True(await service.RemoveAsync(engagement.Id, implant.Id));
@@ -122,7 +122,7 @@ public class WebShellServiceTests
         var service = NewService(engagements);
         var (implant, _) = await service.RegisterAsync(
             engagement.Id, "https://web.example.test/up.php", "web.example.test",
-            "antsword-php", "connect", "base64", "base64",
+            "eval-php", "connect", "base64", "base64",
             new OperatorId(Guid.NewGuid()));
 
         await service.NoteProbeAsync(engagement.Id, implant.Id, ok: true);

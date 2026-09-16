@@ -30,7 +30,7 @@ public sealed record WebShellProfile
 
     /// <summary>
     /// The protocol adapter that drives the script, by its registry id
-    /// (e.g. <c>antsword-php</c>). The transport layer owns the registry;
+    /// (e.g. <c>rod-php</c>). The transport layer owns the registry;
     /// the profile stores the choice.
     /// </summary>
     public required string AdapterId { get; init; }

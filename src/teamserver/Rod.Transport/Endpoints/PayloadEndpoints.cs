@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -10,6 +11,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.Transport.Payloads;
+using Rod.Transport.WebShells;
 
 namespace Rod.Transport.Endpoints;
 
@@ -72,9 +74,23 @@ public static class PayloadEndpoints
             Rod.CoreState.Staging.StagerTokenState? tokenState = null;
             if (record.TokenId is { } tokenId)
                 tokenState = await tokens.FindAsync(new StagerTokenId(tokenId), cancellationToken);
-            summaries.Add(PayloadSummaryResponse.Of(record, tokenState));
+            summaries.Add(PayloadSummaryResponse.Of(record, tokenState, WebShellCredentialOf(record)));
         }
         return Results.Ok(summaries);
+    }
+
+    // A generated web-shell script's connection credential, read back out
+    // of the stored script by the family's adapter -- the library's way of
+    // answering "what was the key" long after the generate panel closed,
+    // without storing the credential anywhere but the script itself.
+    // Null for every other artifact class and for a script whose family is
+    // no longer registered.
+    private static string? WebShellCredentialOf(Rod.Audit.PayloadRecord record)
+    {
+        if (record.Class != "WebShell")
+            return null;
+        var adapter = WebShellAdapters.Find(record.Target);
+        return adapter?.ReadCredentialFromScript(Encoding.UTF8.GetString(record.Content));
     }
 
     // Deletes a stored payload: the bytes and the library entry are gone and a
@@ -333,11 +349,13 @@ public static class PayloadEndpoints
         int? TokenMaxUses = null,
         int? TokenRemainingUses = null,
         DateTimeOffset? TokenExpiresAt = null,
-        PayloadBuildProfileResponse? Build = null)
+        PayloadBuildProfileResponse? Build = null,
+        string? Credential = null)
     {
         public static PayloadSummaryResponse Of(
             Rod.Audit.PayloadRecord record,
-            Rod.CoreState.Staging.StagerTokenState? tokenState = null) => new(
+            Rod.CoreState.Staging.StagerTokenState? tokenState = null,
+            string? credential = null) => new(
             record.PayloadId.ToString(),
             record.Class,
             record.Language,
@@ -352,7 +370,8 @@ public static class PayloadEndpoints
             TokenMaxUses: tokenState?.MaxUses,
             TokenRemainingUses: tokenState?.RemainingUses,
             TokenExpiresAt: tokenState?.ExpiresAt,
-            Build: PayloadBuildProfileResponse.Of(record.Build));
+            Build: PayloadBuildProfileResponse.Of(record.Build),
+            Credential: credential);
     }
 
     // The bake-time build parameters, as the library's detail view reads them.
