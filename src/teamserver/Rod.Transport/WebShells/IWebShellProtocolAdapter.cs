@@ -121,6 +121,7 @@ public static class WebShellAdapters
     static WebShellAdapters()
     {
         Register(new RodPhpAdapter());
+        Register(new RodJspAdapter());
         Register(new EvalPhpAdapter());
     }
 

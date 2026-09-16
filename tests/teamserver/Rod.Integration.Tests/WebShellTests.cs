@@ -94,6 +94,19 @@ public class WebShellTests
     }
 
     [Fact]
+    public void RodJspAdapter_RendersASealedPageCarryingTheBakedKey()
+    {
+        var adapter = new RodJspAdapter();
+        var key = adapter.GenerateCredential();
+
+        var script = adapter.RenderScript(key);
+
+        Assert.StartsWith("<%@", script);
+        Assert.Contains($"decode(\"{key}\")", script);
+        Assert.Equal(key, adapter.ReadCredentialFromScript(script));
+    }
+
+    [Fact]
     public void Adapter_RendersTheEvalOneLiner()
     {
         var adapter = new EvalPhpAdapter();
