@@ -434,11 +434,15 @@ DNS. An implant is identified by its id alone, and its session must have been
 opened on a handshake-capable transport first -- DNS refreshes presence
 (`last-seen`), it does not create sessions. Downstream tasking keeps the full
 Tier 1 posture: verify the signature before executing anything received over
-DNS. The reference implant's DNS client dials a beacon URL of the shape
-`dns://<resolver-host>[:<port>]/<zone>` -- the resolver is the listener
-itself (v1 dials it directly; a build naming a DNS listener bakes the
-listener's bind, and a wildcard bind is refused with that fix), and queries
-through recursive resolvers arrive with a system-resolver dialer.
+DNS. The reference implant's DNS client dials a beacon URL of the shapes
+`dns://<resolver-host>[:<port>]/<zone>` (the resolver is the listener
+itself; a build naming a DNS listener bakes the listener's bind, and a
+wildcard bind is refused with that fix), `dns://<zone>` (the host's own
+configured resolver -- the production shape for a delegated zone, the
+queries riding whatever DNS server the host uses), and
+`doh://<resolver-host>[:<port>]/<zone>` (the DoH carriage, RFC 8484: the
+same wire message riding an HTTPS POST body to /dns-query, TLS anchored to
+the enrolled CA chain -- DNS-shaped traffic that blends as HTTPS).
 
 **The DoH carriage (RFC 8484).** A `doh` listener entry answers the same
 grammar over HTTPS: the DNS wire message rides an HTTP body -- `GET

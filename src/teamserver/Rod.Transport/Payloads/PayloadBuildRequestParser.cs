@@ -266,21 +266,23 @@ internal static class PayloadBuildRequestParser
             if (listener.EngagementId != engagementId)
                 return (null, "BeaconListenerId names another engagement's listener.");
             var beaconProvider = TransportProviders.Find(listener.Transport);
-            // The DNS carrier (architecture.md Sec 8): no native channel, a
-            // TXT poll cycle -- the beacon names the listener's own bind as
-            // the resolver plus its zone, the dial shape the implant's DNS
-            // client parses. A wildcard bind names no dialable resolver, so
-            // it is refused with the fix rather than baked as one.
-            if (listener.Transport == "dns")
+            // The DNS family's carriers (architecture.md Sec 8): no native
+            // channel, a TXT poll cycle over raw UDP or RFC 8484 HTTPS --
+            // the beacon names the listener's own bind as the resolver plus
+            // its zone, the dial shape the implant's DNS client parses. A
+            // wildcard bind names no dialable resolver, so it is refused
+            // with the fix rather than baked as one.
+            if (listener.Transport is "dns" or "doh")
             {
+                var scheme = listener.Transport == "doh" ? "doh" : "dns";
                 var zone = listener.PublicEndpoint.Trim().TrimEnd('.').ToLowerInvariant();
                 var bind = listener.BindAddress.Trim();
                 if (bind.StartsWith("0.0.0.0:") || bind.StartsWith("[::]:") || bind.StartsWith(":::"))
                     return (null,
-                        "A wildcard-bound DNS listener names no resolver an implant can dial; bind it "
+                        $"A wildcard-bound {scheme} listener names no resolver an implant can dial; bind it "
                         + "to a concrete interface, or type the dial manually under Advanced "
-                        + $"(dns://resolver:53/{(zone.Length > 0 ? zone : "zone")}).");
-                return ($"dns://{bind}/{zone}", null);
+                        + $"({scheme}://resolver:{(scheme == "doh" ? "443" : "53")}/{(zone.Length > 0 ? zone : "zone")}).");
+                return ($"{scheme}://{bind}/{zone}", null);
             }
             if (beaconProvider?.ServesNativeChannel != true)
                 return (null,
@@ -311,16 +313,18 @@ internal static class PayloadBuildRequestParser
         if (body.BeaconEndpoint is { } beaconEndpoint)
         {
             var trimmed = beaconEndpoint.Trim();
-            // The DNS carrier's manual dial: a resolver and a zone
-            // (dns://resolver[:port]/zone), the shape the implant's DNS
-            // client parses -- anything else is the mTLS socket's https.
-            if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase))
+            // The DNS family's manual dials: a resolver and a zone
+            // (dns://resolver[:port]/zone, doh://resolver[:port]/zone), or
+            // a bare zone (dns://zone) for the system resolver -- the
+            // shapes the implant's DNS client parses. Anything else is the
+            // mTLS socket's https.
+            if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+                || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
             {
-                var rest = trimmed["dns://".Length..];
-                var slash = rest.IndexOf('/');
-                if (slash <= 0 || slash == rest.Length - 1)
+                var rest = trimmed[(trimmed.IndexOf("://", StringComparison.Ordinal) + 3)..];
+                if (rest.Length == 0)
                     return (null,
-                        $"A dns:// beacon endpoint names a resolver and a zone (dns://resolver:53/zone), got '{beaconEndpoint}'.");
+                        $"A dns/doh beacon endpoint names a resolver and a zone (dns://resolver:53/zone, doh://resolver:443/zone) or a bare zone (dns://zone), got '{beaconEndpoint}'.");
                 return (trimmed, null);
             }
             if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)

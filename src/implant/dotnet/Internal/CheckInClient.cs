@@ -87,7 +87,11 @@ internal static class BeaconUrl
         => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsDns(string beaconUrl)
-        => beaconUrl.Trim().StartsWith("dns://", StringComparison.OrdinalIgnoreCase);
+    {
+        var trimmed = beaconUrl.Trim();
+        return trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+               || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

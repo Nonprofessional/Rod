@@ -102,6 +102,21 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Select_ADohBeacon_CompilesTheDnsClientOnly()
+    {
+        // The DoH carriage: the same grammar over HTTPS, so the dns module
+        // serves a doh-schemed dial exactly like a dns-schemed one.
+        var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            BeaconEndpoint = "doh://10.9.8.7:443/c2.example.test",
+        };
+
+        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+
+        Assert.Equal(CheckInModules.Dns, modules);
+    }
+
+    [Fact]
     public void Select_ADnsBeaconWithWebFallbacks_KeepsTheFallbackClient()
     {
         // A dns primary with web fallbacks crosses shapes when the resolver

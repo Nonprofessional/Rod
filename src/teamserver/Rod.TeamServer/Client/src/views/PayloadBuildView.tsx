@@ -179,11 +179,12 @@ export function PayloadBuildView({
     () => listeners.filter((l) => HTTP_INGRESS.has(l.transport)),
     [listeners],
   )
-  // The DNS pairing shape (architecture.md Sec 8): check-ins step down to
-  // a DNS listener's TXT carrier while enrollment keeps riding the web
-  // front -- offered only when the engagement runs one.
+  // The DNS family's pairing shape (architecture.md Sec 8): check-ins step
+  // down to a DNS listener's TXT carrier (raw UDP, or the same grammar
+  // over RFC 8484 HTTPS on a DoH listener) while enrollment keeps riding
+  // the web front -- offered when the engagement runs one.
   const dnsCarriers = useMemo(
-    () => listeners.filter((l) => l.transport === 'dns'),
+    () => listeners.filter((l) => l.transport === 'dns' || l.transport === 'doh'),
     [listeners],
   )
   const [carrierId, setCarrierId] = useState('')
@@ -351,12 +352,12 @@ export function PayloadBuildView({
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier -- check-ins step down to it (presence, short tasking, chunked results; no channels, no staged transfers), while enrollment keeps riding the web front above. The implant dials the listener's own bind as its resolver."
+                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier over UDP. A DoH listener: the same grammar over HTTPS (RFC 8484) -- DNS-shaped traffic that blends as HTTPS. Either way enrollment keeps riding the web front above (presence, short tasking, chunked results; no channels, no staged transfers), and the implant dials the listener's own bind as its resolver."
               >
                 <option value="">-- same front as enrollment --</option>
                 {dnsCarriers.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name} (dns · zone {l.publicEndpoint})
+                    {l.name} ({l.transport} · zone {l.publicEndpoint})
                   </option>
                 ))}
               </select>
