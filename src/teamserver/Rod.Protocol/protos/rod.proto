@@ -67,6 +67,22 @@ enum FrameKind {
   // advertised keeps today's dispatch semantics, and the server never waits
   // on an ack it was not promised.
   FRAME_KIND_TASK_ACK = 6;
+  // The enroll request, upstream on the QUIC stream's opening exchange
+  // (architecture.md Sec 8 -- enrollment over QUIC): carried as the first
+  // frame of the first message where a handshake would sit, so one
+  // connection can carry enroll-then-session. The payload is an
+  // EnrollRequest -- the JSON enroll body promoted into the frame grammar.
+  // Kind-bearing because the server must branch between it and the
+  // HandshakeRequest without nested try-parse, the same rule every new
+  // upstream type follows.
+  FRAME_KIND_ENROLL_REQUEST = 7;
+  // The enroll answer, downstream on the same opening exchange: the
+  // EnrollResponse the web route carries as JSON, as a frame. A non-OK
+  // status ends the connection (no identity exists to hold a session); an
+  // OK status is followed immediately by the ordinary handshake on the
+  // same stream. The only kind-bearing downstream frame besides
+  // ChannelInput.
+  FRAME_KIND_ENROLL_RESPONSE = 8;
 }
 
 message Frame {
@@ -179,6 +195,30 @@ enum EnrollStatus {
   ENROLL_STATUS_SPENT = 4;
 }
 
+// The enrollment request. The web enroll route carries this body as JSON
+// (camelCase keys, base64 certificate material); the QUIC opening exchange
+// carries the same fields as this frame payload (architecture.md Sec 8 --
+// enrollment over QUIC, the JSON body promoted into the frame grammar).
+// stager_token_secret is the deployment credential the enrollment redeems;
+// class names an implant class (empty defaults server-side); public_key is
+// the implant's own DER SubjectPublicKeyInfo the CA signs a leaf over (the
+// implant keeps its private half, architecture.md Sec 9); parent_implant_id
+// derives a child; the host fields are the implant's report about the
+// machine it runs on; kill_date is the artifact's baked time fuse as the
+// implant reported it, RFC 3339. Strings left empty mean "not supplied",
+// the same nullability the JSON body's omitted keys carry.
+message EnrollRequest {
+  string stager_token_secret = 1;
+  string class = 2;
+  bytes public_key = 3;
+  string parent_implant_id = 4;
+  string hostname = 5;
+  string os = 6;
+  string arch = 7;
+  string username = 8;
+  string kill_date = 9;
+}
+
 // The enrollment response. On OK, carries the newly issued
 // implant id, its engagement, and the bound leaf certificate plus the CA chain
 // the implant needs. On failure, the ids/cert fields are empty and only status
@@ -186,6 +226,15 @@ enum EnrollStatus {
 // parent (architecture.md Sec 10.1): it echoes the parent recorded server-side
 // so a derived implant can confirm its lineage. A top-level enroll leaves it
 // unset.
+//
+// envelope_key_id and envelope_key carry the per-artifact check-in key the
+// enrollment bound (architecture.md Sec 8/9) on the QUIC frame exchange,
+// present when the redeemed token's build minted one: the QUIC-enrolled
+// artifact receives at enroll the key its listener-side binding demands, so a
+// walk that later crosses onto a web front seals under it. The web JSON
+// response never carries them -- its artifacts hold the key from the bake.
+// The key id is the 16-byte GUID and the key the 32-byte AES-256 key, the same
+// packed halves the baked envelope key carries as base64.
 message EnrollResponse {
   EnrollStatus status = 1;
   string implant_id = 2;
@@ -193,6 +242,8 @@ message EnrollResponse {
   bytes leaf_certificate = 4;
   repeated bytes ca_chain = 5;
   optional string parent_implant_id = 6;
+  optional bytes envelope_key_id = 7;
+  optional bytes envelope_key = 8;
 }
 
 // Handshake on the CheckIn stream. The implant's first Frame's

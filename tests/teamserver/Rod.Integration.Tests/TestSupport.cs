@@ -171,6 +171,35 @@ internal static class TestSupport
         }
     }
 
+    // The UDP sibling of GetFreeTcpPort: the same process-wide counter and
+    // probe discipline (below the ephemeral zone, skip held ports) for the
+    // quic listener's datagram socket.
+    internal static int GetFreeUdpPort()
+    {
+        lock (PortGate)
+        {
+            for (var attempt = 0; attempt < 200; attempt++)
+            {
+                var port = _nextPort;
+                _nextPort = port >= PortCeiling ? PortFloor : port + 1;
+
+                using var probe = new Socket(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp);
+                probe.DualMode = true;
+                try
+                {
+                    probe.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
+                    return port;
+                }
+                catch (SocketException e) when (e.SocketErrorCode == SocketError.AddressAlreadyInUse)
+                {
+                    // Held by something outside the test process; take the next.
+                }
+            }
+
+            throw new InvalidOperationException("No bindable UDP port found in 200 attempts.");
+        }
+    }
+
     // Pairs an enrolled leaf with its private key for the in-process beacon
     // client. Windows cannot present a certificate whose key exists only as an
     // ephemeral in-memory handle (the same SChannel constraint the teamserver's

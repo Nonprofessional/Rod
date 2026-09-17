@@ -78,7 +78,7 @@ internal static class PayloadBuildRequestParser
             return (null, refusal);
         if (endpoint.Value is { } dialable && !IsDialableEndpoint(dialable))
             return (null,
-                $"Endpoint must be an absolute http(s) URL the implant can dial, got '{dialable}'.");
+                $"Endpoint must be an absolute http(s) or quic URL the implant can dial, got '{dialable}'.");
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             foreach (var fallback in fallbacks)
@@ -87,7 +87,7 @@ internal static class PayloadBuildRequestParser
                     continue;
                 if (!IsDialableEndpoint(fallback))
                     return (null,
-                        $"Each fallback endpoint must be an absolute http(s) URL, got '{fallback}'.");
+                        $"Each fallback endpoint must be an absolute http(s) or quic URL, got '{fallback}'.");
             }
         }
 
@@ -180,12 +180,13 @@ internal static class PayloadBuildRequestParser
 
     // Resolves the endpoint the baked artifact dials: the listener's public
     // endpoint when the request names one (refusing anything that is not this
-    // engagement's own HTTP-shaped listener), the typed endpoint otherwise.
-    // The refusal is returned as a string; the value is null only when the
+    // engagement's own HTTP-shaped or quic listener), the typed endpoint
+    // otherwise. The refusal is returned as a string; the value is null only when the
     // error is set. Transport reports the named listener's transport (null
     // for a typed endpoint) -- the fact the beacon resolution below needs, so
     // a derived check-in matches the front it rides: an mTLS front carries
-    // the gRPC stream, a web front the envelope POST cycle.
+    // the gRPC stream, a web front the envelope POST cycle, a quic front
+    // its own session dial.
     private static async Task<(string? Value, string? Transport, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
@@ -211,9 +212,23 @@ internal static class PayloadBuildRequestParser
                 "ListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
         if (listener.EngagementId != engagementId)
             return (null, null, "ListenerId names another engagement's listener.");
+
+        // The quic listener is enroll-nameable (architecture.md Sec 8,
+        // enrollment over QUIC): its opening stream carries the enroll
+        // exchange the web route's JSON body also carries, so a build may
+        // name it and the baked enroll endpoint is the transport's own dial
+        // -- the same scheme completion the quic beacon arm applies.
+        if (listener.Transport == "quic")
+        {
+            var quicEnroll = listener.PublicEndpoint.Trim();
+            if (Uri.TryCreate(quicEnroll, UriKind.Absolute, out var quicDial) && quicDial.Scheme == "quic")
+                return (quicEnroll, listener.Transport, null);
+            return ($"quic://{quicEnroll}", listener.Transport, null);
+        }
+
         if (TransportProviders.Find(listener.Transport) is not KestrelEndpointProvider)
             return (null, null,
-                $"The {listener.Transport} transport does not serve http(s) enrollment; build against an HTTP-shaped listener.");
+                $"The {listener.Transport} transport does not serve enrollment; build against an HTTP-shaped listener or a quic listener.");
 
         // The public endpoint may be the bare host:port redirector shape; the
         // listener's transport names the scheme the implant dials.
@@ -338,7 +353,14 @@ internal static class PayloadBuildRequestParser
         // stream dials the bare authority. A web front's native carrier is the
         // WebSocket beacon hanging off the schemed front, which the single-port
         // shape already dials without a split: the beacon stays unnamed and the
-        // baked mode picks the client.
+        // baked mode picks the client. A quic front's derived beacon is its
+        // own session dial (the quic-schemed enroll endpoint carries no path
+        // to strip), so the poll refusal the named-beacon arm gives applies
+        // here too: the session has no poll cycle.
+        if (enrollTransport == "quic" && mode == "poll")
+            return (null,
+                "The quic beacon holds one live session and has no poll cycle; "
+                + "build it mode 'stream', or name a web front for the envelope cycle.");
         if (enrollTransport is not null
             && TransportProviders.Find(enrollTransport) is KestrelEndpointProvider { Posture: ListenerTlsPosture frontMutual }
             && frontMutual == ListenerTlsPosture.MutualAsk
@@ -445,11 +467,14 @@ internal static class PayloadBuildRequestParser
             ? TimeSpan.FromSeconds(Math.Min(value, MaxDurationSeconds))
             : fallback;
 
-    // An endpoint the implant can dial: an absolute http(s) URL. The implant's
-    // egress walk treats every entry as a URL (enroll over the scheme, beacon
-    // host from the authority), so a bare host or a typo'd scheme strands the
+    // An endpoint the implant can dial: an absolute http(s) URL, or the QUIC
+    // dial (architecture.md Sec 8, enrollment over QUIC -- a quic-schemed
+    // enroll endpoint runs the frame exchange, and the egress walk treats
+    // every entry as a URL). A bare host or a typo'd scheme strands the
     // payload on target.
     private static bool IsDialableEndpoint(string text)
         => Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+            && (uri.Scheme == Uri.UriSchemeHttp
+                || uri.Scheme == Uri.UriSchemeHttps
+                || uri.Scheme.Equals("quic", StringComparison.OrdinalIgnoreCase));
 }

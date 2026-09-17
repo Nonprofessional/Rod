@@ -86,6 +86,9 @@ public static class TransportProviders
         // URL shape the artifact's check-in client picks by. The carrier is
         // the native stream carrier: one connection is one live session
         // (server-push tasking, live channels), not the family's poll cycle.
+        // The opening stream also carries enrollment (Sec 8, enrollment over
+        // QUIC), so the service drives the same shared enrollment flow the
+        // web route drives, scoped by the listener's own engagement.
         Register(new HostedServiceTransportProvider("quic",
             new HostedBindShape(BindReservation.UdpPort, BarePipeName: false, PublicEndpointShape.HostPort),
             new[] { TransportCapabilities.BeaconStreamName },
@@ -104,6 +107,10 @@ public static class TransportProviders
                 services.GetRequiredService<BeaconTasking>(),
                 services.GetRequiredService<IImplantCertificateAuthority>(),
                 registry,
+                services.GetRequiredService<EnrollmentService>(),
+                services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>(),
+                services.GetRequiredService<IPayloadStore>(),
+                services.GetRequiredService<Endpoints.EnvelopeCheckInKeys>(),
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<QuicListenerService>()),
             publicEndpointScheme: "quic"));
 

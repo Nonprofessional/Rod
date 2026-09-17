@@ -24,6 +24,7 @@ architecture.md Sec 8):
 | Purpose | Transport | Route |
 |---------|-----------|-------|
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
+| Enroll (QUIC) | QUIC (TLS 1.3), token-identified | `quic://host:port`, ALPN `rod1` |
 | Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
 | Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
 | Beacon / tasking (WebSocket) | Plain HTTP(S) upgrade, key-authenticated | `GET /implants/beacon/stream` |
@@ -397,6 +398,31 @@ one session:
    connection server-side, the same reconnect semantics the other stream
    clients keep. Send QUIC keep-alives (the reference client pings every
    30s) -- the listener drops a connection silent past two minutes.
+
+**Enrollment over the QUIC stream.** The opening stream's first exchange may
+be an enroll instead of a handshake -- the full-independence step
+(architecture.md Sec 8): an implant whose baked enroll endpoint is
+quic-schemed needs no HTTP shape at all. Where step 2 above would send the
+handshake `Frame`, send instead a `Frame` with kind
+`FRAME_KIND_ENROLL_REQUEST` whose payload is an `EnrollRequest` message --
+the same enroll body the web route carries as JSON (token secret, class, the
+implant's public key as a DER SubjectPublicKeyInfo, parent, host facts, kill
+date), promoted into the frame grammar. The server answers one message: a
+`Frame` with kind `FRAME_KIND_ENROLL_RESPONSE` carrying an `EnrollResponse`.
+On a non-OK status that frame is the only answer and the connection ends,
+the same statuses the web route's 401s carry; on OK the frame carries the
+new identity (implant id, engagement), the leaf certificate and CA chain as
+raw bytes, the echoed parent, and -- when the redeemed token's build minted
+one -- the per-artifact check-in key (`envelope_key_id` is the 16-byte key
+id, `envelope_key` the 32-byte AES-256 key, the same packed halves the baked
+envelope key carries as base64). The ordinary handshake follows immediately
+on the same stream with the identity the enroll issued: one connection
+carries enroll-then-session, and every reconnect carries the handshake
+alone. The listener scopes the exchange to its own engagement -- a token
+minted for another engagement is refused whole and unspent -- with the same
+refusal rules and audit arc the web enroll route applies. The reference
+implant's QUIC enroll client requires the pinned CA (the bake always pins
+one); the QUIC dial has no system-root fallback.
 
 The identity is the certificate-less posture the pipe and raw TCP carry: no
 client certificate is requested anywhere, so the implant is identified by

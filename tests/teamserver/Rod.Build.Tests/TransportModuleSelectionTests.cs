@@ -85,6 +85,37 @@ public class TransportModuleSelectionTests : IDisposable
     }
 
     [Fact]
+    public void Select_AQuicEnrollFront_CompilesTheQuicModule()
+    {
+        // Enrollment over QUIC (architecture.md Sec 8): a quic-schemed enroll
+        // endpoint runs the frame exchange, which rides the QUIC module's
+        // dial -- so the module compiles even when the beacon names another
+        // front's socket (the split shape) or derives from the same entry.
+        var derived = new TransportProfile("quic://c2.example.test:443", "/beacon");
+        Assert.Equal(
+            CheckInModules.Quic,
+            TransportModuleSelection.Select(derived, CheckInModes.Stream));
+
+        var split = new TransportProfile("quic://c2.example.test:443", "/beacon")
+        {
+            BeaconEndpoint = "c2.example.test:8443",
+        };
+        Assert.Equal(
+            CheckInModules.Quic | CheckInModules.Stream,
+            TransportModuleSelection.Select(split, CheckInModes.Stream));
+
+        // The enroll shape claims its module for fallbacks too: a web primary
+        // with a quic fallback keeps both clients.
+        var withQuicFallback = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon")
+        {
+            FallbackEndpoints = new[] { "quic://backup.example.test:443" },
+        };
+        Assert.Equal(
+            CheckInModules.Web | CheckInModules.Quic,
+            TransportModuleSelection.Select(withQuicFallback, CheckInModes.Poll));
+    }
+
+    [Fact]
     public void Select_ADnsBeacon_CompilesTheDnsClientOnly()
     {
         // The DNS pairing shape: the enroll front stays web while the named

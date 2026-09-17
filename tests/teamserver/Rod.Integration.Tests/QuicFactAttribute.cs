@@ -31,3 +31,23 @@ public sealed class QuicFactAttribute : FactAttribute
         => version.StartsWith("2.6.0", StringComparison.Ordinal)
             || version.StartsWith("2.6.1", StringComparison.Ordinal);
 }
+
+/// <summary>
+/// A <see cref="QuicFactAttribute"/> that also skips without the .NET SDK:
+/// the subprocess QUIC enroll acceptance both dials a real QUIC listener and
+/// publishes the reference implant, so it carries both environment guards.
+/// </summary>
+public sealed class QuicDotNetFactAttribute : FactAttribute
+{
+    public QuicDotNetFactAttribute()
+    {
+        var quic = new QuicFactAttribute();
+        if (quic.Skip is not null)
+        {
+            Skip = quic.Skip;
+            return;
+        }
+        if (!TestSupport.DotNetAvailable())
+            Skip = DotNetFactAttribute.SkipReason;
+    }
+}

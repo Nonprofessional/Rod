@@ -493,6 +493,88 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Acceptance: the reference .NET implant enrolls over QUIC
+    /// (architecture.md Sec 8, enrollment over QUIC -- the designed
+    /// full-independence step). A quic listener is created through the
+    /// operator API for a fresh engagement, and the implant is launched with
+    /// a quic-schemed enroll URL and a derived beacon: the QUIC enroll client
+    /// runs the frame exchange (token, public key, host facts), the ordinary
+    /// handshake follows on the same connection -- one connection carrying
+    /// enroll-then-session -- and the session then runs dispatched tasking.
+    /// No HTTP shape is dialed at all: QUIC-only independence.
+    /// </summary>
+    [QuicDotNetFact]
+    public async Task DotNetImplant_EnrollsOverQuic_AndTasksOnTheSession_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        // The engagement's own quic listener: the implant's enroll and
+        // check-ins both ride its UDP socket.
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Quic Enroll"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        var secret = await env.MintStagerTokenAsync(engagement!.EngagementId);
+
+        var quicPort = TestSupport.GetFreeUdpPort();
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "quic-enroll",
+                Transport: "quic",
+                BindAddress: $"127.0.0.1:{quicPort}",
+                PublicEndpoint: $"127.0.0.1:{quicPort}"));
+        createdListener.EnsureSuccessStatusCode();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        // The derived beacon: an enroll URL with no path derives the quic
+        // dial itself, so the session rides the same listener.
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero,
+            enrollUrl: $"quic://127.0.0.1:{quicPort}", deriveBeaconUrl: true);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(
+                    env, deadline: TimeSpan.FromSeconds(60), stderr);
+                Assert.Equal(engagement.EngagementId, engagementId);
+
+                var marker = "rod-quic-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains(marker);
+                }, deadline: TimeSpan.FromSeconds(60));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
     /// Core-operations acceptance for the process verbs (architecture.md
     /// Sec 10.1, Sec 14): a stage-2 implant lists the live processes with pid,
     /// ppid, user, and image, then terminates one by pid through proc.kill,

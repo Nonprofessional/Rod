@@ -238,6 +238,271 @@ public class QuicBeaconRoundTripTests
                 BeaconListenerId: beaconListenerId);
     }
 
+    // Enrollment over QUIC (architecture.md Sec 8, the designed
+    // full-independence step): the opening stream's first exchange is an
+    // enroll -- the JSON body the web route carries promoted into the
+    // rod.v1 frame grammar -- answered on the same stream and followed
+    // immediately by the ordinary handshake. One connection carries
+    // enroll-then-session; the leaf binds the implant's public key; the
+    // recorded implant carries the reported host facts; the tasking then
+    // rides the same session any handshake-opened one would.
+    [QuicFact]
+    public async Task TheQuicStream_CarriesEnrollThenSession_OnOneConnection()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var token = await MintStagerTokenAsync(client, engagementId);
+
+            var port = GetFreeUdpPort();
+            var created = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "runtime-quic",
+                    Transport: "quic",
+                    BindAddress: $"127.0.0.1:{port}",
+                    PublicEndpoint: $"10.0.0.5:{port}"));
+            created.EnsureSuccessStatusCode();
+
+            var authority = host.Services.GetRequiredService<IImplantCertificateAuthority>();
+            using var ca = authority.GetCaCertificate();
+            // The implant's own keypair: only the public half crosses the
+            // exchange, and the issued leaf must bind it (architecture.md
+            // Sec 9).
+            using var implantKey = System.Security.Cryptography.ECDsa.Create(
+                System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+
+            await using var session = await QuicImplant.ConnectForEnrollAsync(port, ca);
+            var enroll = await session.EnrollExchangeAsync(new Rod.V1.EnrollRequest
+            {
+                StagerTokenSecret = token,
+                PublicKey = ByteString.CopyFrom(implantKey.ExportSubjectPublicKeyInfo()),
+                Hostname = "quic-host01",
+                KillDate = DateTimeOffset.UtcNow.AddDays(7).ToString("O"),
+            });
+
+            Assert.Equal(EnrollStatus.Ok, enroll.Status);
+            Assert.False(string.IsNullOrWhiteSpace(enroll.ImplantId));
+            Assert.Equal(engagementId, enroll.EngagementId);
+
+            // The leaf binds the implant's public key; the chain rides along.
+            using var leaf = X509CertificateLoader.LoadCertificate(enroll.LeafCertificate.ToByteArray());
+            using var leafKey = leaf.GetECDsaPublicKey()!;
+            Assert.Equal(implantKey.ExportSubjectPublicKeyInfo(), leafKey.ExportSubjectPublicKeyInfo());
+            Assert.NotEmpty(enroll.CaChain);
+
+            // A manually minted token names no build, so the answer carries
+            // no per-artifact check-in key.
+            Assert.False(enroll.HasEnvelopeKeyId);
+
+            // The host facts crossed the frame exchange: the roster's implant
+            // is the one the enroll issued, with the reported hostname.
+            var implants = await client.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
+                $"/engagements/{engagementId}/implants");
+            var recorded = Assert.Single(implants!);
+            Assert.Equal(enroll.ImplantId, recorded!.ImplantId);
+            Assert.Equal("quic-host01", recorded.Hostname);
+
+            // The ordinary handshake follows on the same stream, and the
+            // session it opens carries tasking like any other.
+            var handshake = await session.HandshakeAsync(enroll.ImplantId);
+            Assert.Equal(HandshakeStatus.Ok, handshake.Status);
+
+            var marker = "rod-quic-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new { ImplantId = enroll.ImplantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+            issued.EnsureSuccessStatusCode();
+            var issuedBody = await issued.Content.ReadFromJsonAsync<IssuedBody>();
+
+            var request = TaskRequest.Parser.ParseFrom(await session.ReceiveSingleFrameAsync());
+            Assert.Equal(issuedBody!.TaskId, request.TaskId);
+            await session.SendFramesAsync(Frames.Result(request.TaskId, TaskOutcome.Succeeded, marker));
+
+            var task = await WaitUntilAsync(async () =>
+            {
+                var fetched = await client.GetFromJsonAsync<TaskBody>(
+                    $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}");
+                return fetched?.Status == "Completed" ? fetched : null;
+            });
+            Assert.Contains(marker, task!.Output);
+        }
+    }
+
+    // The scope rule the QUIC listener enforces directly (architecture.md
+    // Sec 8): a token minted for another engagement is refused whole and
+    // unspent -- the QUIC listener knows its own engagement, the fact the
+    // HTTP route resolves from the local port. The refused token still
+    // enrolls its own engagement over the web route afterwards.
+    [QuicFact]
+    public async Task TheQuicStream_RefusesAForeignEngagementsToken_WithoutSpendingIt()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var listenerEngagement = await CreateEngagementAsync(client);
+            var foreignEngagement = await CreateEngagementAsync(client);
+            var foreignToken = await MintStagerTokenAsync(client, foreignEngagement);
+
+            var port = GetFreeUdpPort();
+            var created = await client.PostAsJsonAsync(
+                $"/engagements/{listenerEngagement}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "runtime-quic",
+                    Transport: "quic",
+                    BindAddress: $"127.0.0.1:{port}",
+                    PublicEndpoint: $"10.0.0.5:{port}"));
+            created.EnsureSuccessStatusCode();
+
+            var authority = host.Services.GetRequiredService<IImplantCertificateAuthority>();
+            using var ca = authority.GetCaCertificate();
+
+            await using var session = await QuicImplant.ConnectForEnrollAsync(port, ca);
+            var enroll = await session.EnrollExchangeAsync(
+                new Rod.V1.EnrollRequest { StagerTokenSecret = foreignToken });
+            Assert.Equal(EnrollStatus.BadToken, enroll.Status);
+            Assert.True(string.IsNullOrEmpty(enroll.ImplantId));
+
+            // Unspent: the same secret still enrolls its own engagement over
+            // the web route -- the refusal kept its use.
+            var webEnroll = await client.PostAsJsonAsync("/implants/enroll",
+                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignToken, Class: null));
+            Assert.Equal(HttpStatusCode.OK, webEnroll.StatusCode);
+        }
+    }
+
+    // The per-artifact check-in key on the QUIC enroll answer
+    // (architecture.md Sec 8/9): a token minted by a build names the
+    // artifact, the artifact names the key, and the QUIC-enrolled implant
+    // receives at enroll the key its listener-side binding demands.
+    [QuicFact]
+    public async Task TheQuicEnroll_AnswerCarriesTheBuildsCheckInKey()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            // A minted token plus the payload record a build would leave
+            // behind: the token id binds the record, the record the key.
+            var mint = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+            mint.EnsureSuccessStatusCode();
+            var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var (keyId, key) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
+            await host.Services.GetRequiredService<Rod.Audit.IPayloadStore>().SaveAsync(
+                new Rod.Audit.PayloadRecord(
+                    Guid.NewGuid(), Guid.Parse(engagementId), "Stage2", "DotNet",
+                    "application/octet-stream", new string('a', 64), Array.Empty<byte>(), 0,
+                    DateTimeOffset.UtcNow,
+                    TokenId: Guid.Parse(token!.StagerTokenId),
+                    EnvelopeKeyId: keyId,
+                    EnvelopeKey: key));
+
+            var port = GetFreeUdpPort();
+            var created = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "runtime-quic",
+                    Transport: "quic",
+                    BindAddress: $"127.0.0.1:{port}",
+                    PublicEndpoint: $"10.0.0.5:{port}"));
+            created.EnsureSuccessStatusCode();
+
+            var authority = host.Services.GetRequiredService<IImplantCertificateAuthority>();
+            using var ca = authority.GetCaCertificate();
+
+            await using var session = await QuicImplant.ConnectForEnrollAsync(port, ca);
+            var enroll = await session.EnrollExchangeAsync(
+                new Rod.V1.EnrollRequest { StagerTokenSecret = token.Secret });
+            Assert.Equal(EnrollStatus.Ok, enroll.Status);
+            Assert.True(enroll.HasEnvelopeKeyId);
+            Assert.Equal(keyId.ToByteArray(), enroll.EnvelopeKeyId.ToByteArray());
+            Assert.Equal(key, enroll.EnvelopeKey.ToByteArray());
+        }
+    }
+
+    // The build story (architecture.md Sec 8, enrollment over QUIC): a quic
+    // listener is enroll-nameable and the parser bakes its dial -- the
+    // transport's own scheme over the bare public endpoint -- with the
+    // beacon deriving from it. A poll-mode bake is refused: the quic session
+    // has no poll cycle. Registry-seeded (no socket binds), so it runs
+    // wherever the parser does.
+    [Fact]
+    public async Task ABuildNamingAQuicListenerAsItsEnroll_BakesTheQuicDial()
+    {
+        var (client, host, operatorId) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var registry = host.Services.GetRequiredService<IListenerRegistry>();
+            var listener = Listener.Define(
+                ListenerId.New(), "parser-quic", "quic", "127.0.0.1:9443", "10.0.0.5:9443",
+                DateTimeOffset.UtcNow, new EngagementId(Guid.Parse(engagementId)));
+            await registry.RegisterAsync(listener);
+
+            var refused = await PayloadBuildRequestParser.ParseAsync(
+                EnrollRequest(listener.Id.ToString(), mode: "poll"),
+                new EngagementId(Guid.Parse(engagementId)),
+                operatorId,
+                host.Services.GetRequiredService<Rod.Audit.IPayloadStore>(),
+                registry,
+                host.Services.GetRequiredService<IImplantCertificateAuthority>(),
+                CancellationToken.None);
+            Assert.NotNull(refused.Error);
+            Assert.Contains("no poll cycle", refused.Error!, StringComparison.OrdinalIgnoreCase);
+
+            var parse = await PayloadBuildRequestParser.ParseAsync(
+                EnrollRequest(listener.Id.ToString()),
+                new EngagementId(Guid.Parse(engagementId)),
+                operatorId,
+                host.Services.GetRequiredService<Rod.Audit.IPayloadStore>(),
+                registry,
+                host.Services.GetRequiredService<IImplantCertificateAuthority>(),
+                CancellationToken.None);
+            Assert.Null(parse.Error);
+            Assert.Equal("quic://10.0.0.5:9443", parse.Request!.Transport.Endpoint);
+            // The derived single-front shape: no beacon is named (the bake
+            // derives the quic dial from the enroll endpoint itself -- it
+            // carries no path to strip), the same discipline a web front's
+            // envelope cycle follows.
+            Assert.Null(parse.Request.Transport.BeaconEndpoint);
+
+        }
+
+        static Rod.Transport.Endpoints.PayloadEndpoints.BuildPayloadRequest EnrollRequest(
+            string listenerId, string? mode = null)
+            => new(
+                Language: null,
+                Class: null,
+                TargetOs: null,
+                TargetArch: null,
+                Endpoint: null,
+                UriPath: null,
+                SleepSeconds: null,
+                JitterSeconds: null,
+                KillDate: null,
+                Mode: mode,
+                ListenerId: listenerId);
+    }
+
+    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    {
+        var mint = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        mint.EnsureSuccessStatusCode();
+        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        return token!.Secret;
+    }
+
     private static async Task<Implant> StageImplantAsync(IHost host, string engagementId)
     {
         var implants = host.Services.GetRequiredService<IImplantRepository>();
@@ -330,6 +595,34 @@ public class QuicBeaconRoundTripTests
 
         public static async Task<QuicImplant> ConnectAsync(int port, X509Certificate2 ca, string implantId)
         {
+            var implant = await DialAsync(port, ca);
+
+            // The implant speaks first: the handshake frame, the identity
+            // this certificate-less transport runs on.
+            var handshake = new HandshakeRequest
+            {
+                Version = new ProtocolVersion { Major = 1, Minor = 0 },
+                ImplantId = implantId,
+                ReplayNonces = true,
+            };
+            handshake.Capabilities.Add("shell.exec");
+            handshake.Capabilities.Add(ChannelVerbs.ShellInteract);
+            await implant.SendFramesAsync(new Frame
+            {
+                Payload = ByteString.CopyFrom(handshake.ToByteArray()),
+            });
+            return implant;
+        }
+
+        // The enroll carriage's dial: connect and open the stream without
+        // speaking -- the opening exchange may be an enroll instead of a
+        // handshake (architecture.md Sec 8, enrollment over QUIC), and the
+        // exchange methods below speak in order.
+        public static async Task<QuicImplant> ConnectForEnrollAsync(int port, X509Certificate2 ca)
+            => await DialAsync(port, ca);
+
+        private static async Task<QuicImplant> DialAsync(int port, X509Certificate2 ca)
+        {
             if (!QuicSupported)
                 throw new InvalidOperationException(
                     "The host provides no QUIC stack; install libmsquic to run this acceptance.");
@@ -348,10 +641,26 @@ public class QuicBeaconRoundTripTests
             }, CancellationToken.None);
             var stream = await connection.OpenOutboundStreamAsync(
                 QuicStreamType.Bidirectional, CancellationToken.None);
-            var implant = new QuicImplant(connection, stream);
+            return new QuicImplant(connection, stream);
+        }
 
-            // The implant speaks first: the handshake frame, the identity
-            // this certificate-less transport runs on.
+        // The opening enroll exchange: a kind-bearing EnrollRequest frame
+        // answered by an EnrollResponse frame on the same stream.
+        public async Task<Rod.V1.EnrollResponse> EnrollExchangeAsync(Rod.V1.EnrollRequest request)
+        {
+            await SendFramesAsync(new Frame
+            {
+                Kind = FrameKind.EnrollRequest,
+                Payload = ByteString.CopyFrom(request.ToByteArray()),
+            });
+            return Rod.V1.EnrollResponse.Parser.ParseFrom(
+                await ReceiveSingleFrameAsync(FrameKind.EnrollResponse));
+        }
+
+        // The ordinary handshake, sent after a successful enroll on the same
+        // connection -- enroll-then-session on one stream.
+        public async Task<HandshakeResponse> HandshakeAsync(string implantId)
+        {
             var handshake = new HandshakeRequest
             {
                 Version = new ProtocolVersion { Major = 1, Minor = 0 },
@@ -359,12 +668,11 @@ public class QuicBeaconRoundTripTests
                 ReplayNonces = true,
             };
             handshake.Capabilities.Add("shell.exec");
-            handshake.Capabilities.Add(ChannelVerbs.ShellInteract);
-            await implant.SendFramesAsync(new Frame
+            await SendFramesAsync(new Frame
             {
                 Payload = ByteString.CopyFrom(handshake.ToByteArray()),
             });
-            return implant;
+            return await ReceiveHandshakeAsync();
         }
 
         // The pinned-CA posture the reference implant pins (C2.PinServerChain,

