@@ -751,6 +751,27 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   contract ([extending/implants.md](extending/implants.md)); the transport
   needs a host QUIC stack (libmsquic on Linux), and the bind refuses with
   the named cause when the host carries none.
+  **Enrollment over QUIC (the designed full-independence step):** the
+  certificate-less posture above is what makes the carriage clean -- no
+  TLS change, no second connection. The opening stream's first exchange
+  may be an enroll instead of a handshake: a length-prefixed
+  `EnrollRequest` frame (the enroll body the web route carries, promoted
+  from JSON into the rod.v1 frame grammar -- token secret, class, host
+  facts, the implant's public key, parent, kill date) answered by an
+  `EnrollmentResponse` frame (status, identity, leaf and chain, the
+  per-artifact check-in key) and followed immediately by the ordinary
+  handshake on the same stream -- one connection carries
+  enroll-then-session; every reconnect carries the handshake alone. The
+  server reuses the enrollment service the web route drives, scoped by
+  the listener's own engagement (the ingress the HTTP route resolves from
+  the local port, the QUIC listener knows directly), with the web route's
+  refusal rules and audit arc. The build story follows: a quic listener
+  becomes enroll-nameable, the parser bakes its dial, and the implant
+  enrolls over QUIC when the baked enroll endpoint is quic-schemed -- the
+  web-enroll + QUIC-session pairing inverts into QUIC-only independence.
+  Implementation order: the frame grammar and the server half first (the
+  QUIC acceptance tests drive both halves of the exchange), the implant's
+  enroll client second.
 - **The shellcatch transport holds caught reverse shells.** Where the TCP
   listener serves check-ins -- one connection, one rod.v1 exchange,
   closed -- the shellcatch listener (`"shellcatch"`) accepts connections
