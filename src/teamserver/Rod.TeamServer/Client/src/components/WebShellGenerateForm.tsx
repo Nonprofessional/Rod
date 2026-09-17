@@ -8,12 +8,26 @@ import { type GeneratedWebShellScript, ApiError, generateWebShellScript } from '
 // encryption the channel carries -- the Rod family's AES-256-GCM seal
 // under a baked 256-bit key, or the universal one-liner (the classic
 // eval shape every manager drives, base64 on the wire, password-gated;
-// PHP only, the language the one-liner family renders today).
+// PHP, ASPX, and classic ASP).
 const LANGUAGES = [
   { id: 'php', label: 'PHP' },
   { id: 'jsp', label: 'JSP' },
   { id: 'aspx', label: 'ASPX' },
+  { id: 'asp', label: 'ASP' },
 ]
+
+// The languages each encryption renders today: the sealed Rod family is
+// PHP and JSP; the universal one-liner is PHP, ASPX, and classic ASP.
+const ONELINER_LANGUAGES = ['php', 'aspx', 'asp']
+
+function adapterFor(language: string, encryption: string): string {
+  if (encryption === 'oneliner') {
+    if (language === 'aspx') return 'eval-aspx'
+    if (language === 'asp') return 'eval-asp'
+    return 'eval-php'
+  }
+  return language === 'jsp' ? 'rod-jsp' : 'rod-php'
+}
 
 const ENCRYPTIONS = [
   {
@@ -29,11 +43,6 @@ const ENCRYPTIONS = [
     credentialPlaceholder: 'connection password (optional)',
   },
 ]
-
-function adapterFor(language: string, encryption: string): string {
-  if (encryption === 'oneliner') return language === 'aspx' ? 'eval-aspx' : 'eval-php'
-  return language === 'jsp' ? 'rod-jsp' : 'rod-php'
-}
 
 export function WebShellGenerateForm({ engagementId }: { engagementId: string }) {
   const [language, setLanguage] = useState('php')
@@ -88,9 +97,10 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
               value={language}
               onChange={(e) => {
                 setLanguage(e.target.value)
-                // The one-liner family renders PHP and ASPX today; picking
-                // another language falls back to the sealed shape.
-                if (e.target.value !== 'php' && e.target.value !== 'aspx' && encryption === 'oneliner')
+                // The one-liner family renders PHP, ASPX, and classic ASP
+                // today; picking another language falls back to the sealed
+                // shape.
+                if (!ONELINER_LANGUAGES.includes(e.target.value) && encryption === 'oneliner')
                   setEncryption('sealed')
               }}
               title="The language the placed script is written in. The wire protocol is the same shape in every language this list grows."
@@ -113,10 +123,12 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
                 <option
                   key={e.id}
                   value={e.id}
-                  disabled={e.id === 'oneliner' && !['php', 'aspx'].includes(language)}
+                  disabled={e.id === 'oneliner' && !ONELINER_LANGUAGES.includes(language)}
                 >
                   {e.label}
-                  {e.id === 'oneliner' && !['php', 'aspx'].includes(language) ? ' (PHP / ASPX)' : ''}
+                  {e.id === 'oneliner' && !ONELINER_LANGUAGES.includes(language)
+                    ? ' (PHP / ASPX / ASP)'
+                    : ''}
                 </option>
               ))}
             </select>

