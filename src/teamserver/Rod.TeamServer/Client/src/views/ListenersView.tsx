@@ -27,24 +27,16 @@ import { StatusBadge } from '../components/StatusBadge'
 // per transport. The public endpoint stays free text -- it names the redirector
 // implants dial, which is a fact about the target network, not this host.
 
-// The transports the create form offers, grouped the way the fixed
-// vocabulary already sorts them -- payload ingress first (the group a build
-// names), the catcher last -- so the dropdown reads as two choices instead
-// of eight rows. The alternate-reach family (DNS, DoH, QUIC, SMB, TCP)
-// rides behind the form's egress disclosure: niche answers to specific
-// egress problems, not transports an operator browses. Each entry carries
-// the default port it takes and names the wire it rides in the label. The
-// server validates for real; this list only keeps the form from offering
-// shapes the server would refuse (the retired https-envelope transport is
-// deliberately absent -- envelope check-ins ride the HTTPS listener now).
-// SMB is the odd one out: its bind is a bare pipe name, not interface +
-// port.
-// Each label names what the transport carries, in the fixed vocabulary:
-// TLS-terminated fronts carry every behavior (enroll, check-in, interactive);
-// cleartext HTTP carries enroll + check-in over the envelope POST cycle and
-// the interactive WebSocket beacon beside it; DNS/DoH/QUIC/SMB/TCP are
-// alternate reach and pivot links, not the payload ingress the Build form
-// picks from.
+// The transports the create form offers, grouped by role: payload ingress
+// first (the group a build names), the DNS family behind the egress
+// disclosure (the refresh carrier for egress that only lets DNS-shaped
+// traffic leave), the catcher last. Each entry carries the default port it
+// takes and names the wire it rides in the label -- every front carries
+// every behavior, so the label names the wire's own properties (its
+// encryption, its posture, its mode shape), not a capability list; how each
+// behavior rides is the build's pick, spelled out by the Build form's
+// summary. SMB is the odd one out: its bind is a bare pipe name, not
+// interface + port.
 interface TransportOption {
   value: string
   label: string
@@ -58,21 +50,21 @@ const TRANSPORT_GROUPS: readonly {
   {
     label: 'Payload ingress',
     transports: [
-      { value: 'https', label: 'HTTPS — one port: enroll + check-in + interactive', port: '443' },
-      { value: 'mtls', label: 'mTLS — client certs: enroll + check-in + interactive', port: '5443' },
-      { value: 'http', label: 'HTTP — cleartext: enroll + check-in; interactive over the WebSocket beacon', port: '5090' },
+      { value: 'https', label: 'HTTPS — TLS web front (recommended)', port: '443' },
+      { value: 'mtls', label: 'mTLS — TLS + client certs', port: '5443' },
+      { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '5090' },
+      { value: 'quic', label: 'QUIC — UDP/443, TLS 1.3', port: '443' },
+      { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '4444' },
+      { value: 'smb', label: 'SMB — named pipe, internal segment', port: '' },
     ],
   },
 ]
 
 const EGRESS_GROUP = {
-  label: 'Alternate reach & pivots',
+  label: 'DNS family (DNS-only egress)',
   transports: [
-    { value: 'dns', label: 'DNS — TXT over UDP: alternate reach, not payload ingress', port: '53' },
-    { value: 'doh', label: 'DoH — DNS over HTTPS: alternate reach, not payload ingress', port: '443' },
-    { value: 'quic', label: 'QUIC — UDP stream: check-in + interactive; no enroll — pair with a web front', port: '443' },
-    { value: 'smb', label: 'SMB — named pipe: pivot link, not payload ingress', port: '' },
-    { value: 'tcp', label: 'Raw TCP — framed: pivot link, not payload ingress', port: '4444' },
+    { value: 'dns', label: 'DNS — TXT over UDP', port: '53' },
+    { value: 'doh', label: 'DoH — the same grammar over HTTPS', port: '443' },
   ],
 } satisfies { label: string; transports: readonly TransportOption[] }
 
@@ -297,9 +289,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       <h3>Listeners</h3>
       <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
         This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
-        dial. Every web front carries enroll + check-in and, over the WebSocket beacon, the
-        interactive stream too; HTTPS/mTLS remain the recommended posture, cleartext HTTP the lab
-        one.
+        dial. Every front carries every behavior; the wires differ in encryption, posture, and
+        speed — pick by the target's egress (the Build form's summary spells out how each
+        behavior rides). HTTPS/mTLS remain the recommended posture, cleartext HTTP the lab one.
       </p>
 
       {/* The same labeled-grid shape as the Build form: every field carries
@@ -323,7 +315,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
               if (port !== '') setBindPort(port)
             }}
-            title="The wire this listener speaks. HTTPS/mTLS carry every behavior (enroll, check-in, interactive) on one TLS socket; cleartext HTTP carries enroll + check-in via the sealed envelope POST and the interactive WebSocket beacon beside it (sealed frames, so cleartext carries confidential content). The egress family below the fold is alternate reach and pivot links — an implant enrolls on a web front and reaches them beside it."
+            title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per check-in). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
           >
             {TRANSPORT_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -354,7 +346,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         </label>
         <label
           className="checkbox-label"
-          title="DNS, DoH, QUIC, SMB, and raw TCP listeners: answers to specific egress problems (only DNS leaves, UDP passes but TCP does not, pivot links inside a network), not transports an operator browses. Show them when one is the answer."
+          title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Check-ins step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
         >
           <input
             type="checkbox"

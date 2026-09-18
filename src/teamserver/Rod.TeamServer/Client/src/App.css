@@ -1221,7 +1221,10 @@ a:hover {
 
 .build-advanced .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* Wider minimum than the form grids: the advanced labels carry their
+     fixed-vocabulary annotations (enroll + check-in, manual), and a narrow
+     cell wraps them into tall rows that push the fields below around. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -2109,21 +2112,31 @@ button.file-entry {
   overflow: auto;
 }
 
-/* --- Build traffic-shape diagram ------------------------------------------------------ */
+/* --- Build summary ---------------------------------------------------------------------- */
 
-/* The live picture of what a build bakes: the artifact on the left, the front
-   (or fronts) it dials on the right, one path per socket. Full-row inside the
-   build form's grid -- a diagram wedged into one grid cell would push the
-   fields around it out of rhythm. */
-.wire-shape {
+/* The baked shape read back from the form's picks, laid over the submit
+   button so the tradeoffs read before the build commits. Full-row inside
+   the build form's grid. */
+.build-summary {
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 12px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   margin: 2px 0 0;
+  font-size: 12px;
+}
+
+/* Each line's leading key: the behavior the line describes, mono so the
+   enroll / check-in / interactive set reads as fixed vocabulary. */
+.build-summary .summary-key {
+  display: inline-block;
+  min-width: 64px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* The Advanced disclosure's checkbox: the browser default renders large and
@@ -2137,57 +2150,16 @@ button.file-entry {
 }
 
 /* A checkbox label reads inline (box beside its text), unlike the column
-   labels around it. Same specificity as .build-form label; file order wins. */
-label.checkbox-label {
+   labels around it. Scoped to the forms that use it so their column-label
+   rules (.build-form label, .listener-form label) cannot flip it back by
+   file order. */
+.build-form label.checkbox-label,
+.listener-form label.checkbox-label {
   flex-direction: row;
   align-items: center;
   gap: 8px;
   padding-top: 18px;
   color: var(--text);
-}
-
-.wire-node {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 3px 9px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-
-.wire-icon {
-  width: 13px;
-  height: 13px;
-  color: var(--muted);
-}
-
-.wire-paths {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.wire-path {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-}
-
-.wire-label {
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.wire-arrow {
-  color: var(--accent);
-  font-family: var(--font-mono);
 }
 
 /* --- Endpoint inline edit ---------------------------------------------------------------- */

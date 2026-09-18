@@ -52,9 +52,12 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // owns better.
 const RECENT_BUILDS_SHOWN = 5
 
-// The transports an implant can enroll through; the listener select offers
-// these and greys everything else out.
-const HTTP_INGRESS = new Set(['http', 'https', 'mtls'])
+// The transports an implant can enroll through -- the HTTP-shaped fronts,
+// QUIC (architecture.md Sec 8, enrollment over QUIC), the socket family
+// (enrollment over the stream check-in), and the DNS family (enrollment
+// over DNS: the chunked TXT exchange a DNS-only target runs); the listener
+// select offers these and greys everything else out.
+const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'quic', 'smb', 'tcp', 'dns', 'doh'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.
@@ -111,7 +114,7 @@ export function PayloadBuildView({
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
-  const [envelope, setEnvelope] = useState('None')
+  const [envelope, setEnvelope] = useState('AesGcm')
   const [checkInProtection, setCheckInProtection] = useState(true)
   const [tokenHours, setTokenHours] = useState('')
 
@@ -121,6 +124,19 @@ export function PayloadBuildView({
   // for poll, the WebSocket beacon for stream -- so one listener is always
   // the whole story and the form offers no split.
   const selectedListener = listeners.find((l) => l.id === listenerId)
+
+  // The poll-only families: no live stream exists to hold, so stream mode
+  // is incoherent on them -- the form keeps the mode honest (the server
+  // refuses the pairing with the same fix).
+  const pollOnly =
+    selectedListener?.transport === 'smb' || selectedListener?.transport === 'tcp'
+    || selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
+    || /^smb:\/\//i.test(endpoint.trim()) || /^tcp:\/\//i.test(endpoint.trim())
+    || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim())
+
+  useEffect(() => {
+    if (pollOnly && mode === 'stream') setMode('poll')
+  }, [pollOnly, mode])
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -176,7 +192,7 @@ export function PayloadBuildView({
   // them again by snapping a deselected listener back into place.
   const preselected = useRef(false)
   const pickable = useMemo(
-    () => listeners.filter((l) => HTTP_INGRESS.has(l.transport)),
+    () => listeners.filter((l) => ENROLL_TRANSPORTS.has(l.transport)),
     [listeners],
   )
   // The DNS family's pairing shape (architecture.md Sec 8): check-ins step
@@ -330,17 +346,17 @@ export function PayloadBuildView({
                 // open the section it lives in.
                 if (e.target.value === '') setAdvancedOpen(true)
               }}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life -- interactive rides the same front (the WebSocket beacon on stream builds). Only HTTP-shaped listeners serve implants; DNS/SMB/TCP fronts are reached by other means."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped, QUIC, and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are check-in carriers only (pair one below)."
             >
               <option value="">-- none: public endpoint under Advanced --</option>
               {listeners.map((l) =>
-                HTTP_INGRESS.has(l.transport) ? (
+                ENROLL_TRANSPORTS.has(l.transport) ? (
                   <option key={l.id} value={l.id}>
                     {l.name} ({l.transport} → {l.publicEndpoint})
                   </option>
                 ) : (
                   <option key={l.id} disabled>
-                    {l.name} ({l.transport} — not HTTP ingress)
+                    {l.name} ({l.transport} — not enroll ingress)
                   </option>
                 ),
               )}
@@ -352,7 +368,7 @@ export function PayloadBuildView({
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier over UDP. A DoH listener: the same grammar over HTTPS (RFC 8484) -- DNS-shaped traffic that blends as HTTPS. Either way enrollment keeps riding the web front above (presence, short tasking, chunked results; no channels, no staged transfers), and the implant dials the listener's own bind as its resolver."
+                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier over UDP. A DoH listener: the same grammar over HTTPS (RFC 8484) -- DNS-shaped traffic that blends as HTTPS. The carrier is refresh-only by physics: presence, short tasking, and chunked results -- no interactive channels (a datagram poll has no input half, so channel tasks queue until a stream front answers) and no staged transfers; enrollment keeps riding the web front above, and the implant dials the listener's own bind as its resolver."
               >
                 <option value="">-- same front as enrollment --</option>
                 {dnsCarriers.map((l) => (
@@ -417,15 +433,6 @@ export function PayloadBuildView({
               ))}
             </select>
           </label>
-          {/* The traffic picture reads after the fields it summarizes: one
-              socket carries everything the build dials. */}
-          <WireShape
-            enroll={
-              selectedListener
-                ? `${selectedListener.name} (${selectedListener.transport})`
-                : endpoint.trim() || 'manual endpoint'
-            }
-          />
         </fieldset>
         <fieldset disabled={isStager}>
           <legend>Beacon profile</legend>
@@ -434,9 +441,12 @@ export function PayloadBuildView({
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value)}
-              title="How the artifact checks in. Poll posts one envelope per interval over the web front; stream holds one connection open for interactive channels -- the WebSocket beacon on a web front (sealed frames under the per-artifact key, cleartext included) or the gRPC stream on mTLS."
+              disabled={pollOnly}
+              title={pollOnly
+                ? 'This front holds no live stream (one connection or one answer per check-in), so poll is the only coherent mode -- the server refuses the stream pairing with the same fix.'
+                : 'How the artifact checks in: stream holds one connection open with live server push; poll exchanges one check-in per interval. Either way every verb rides -- the summary below spells out how.'}
             >
-              <option value="stream">stream — persistent (interactive)</option>
+              <option value="stream" disabled={pollOnly}>stream — persistent connection</option>
               <option value="poll">poll — check in and sleep</option>
             </select>
           </label>
@@ -457,15 +467,6 @@ export function PayloadBuildView({
             />
           </label>
           <label>
-            Kill date
-            <input
-              type="date"
-              value={killDate}
-              onChange={(e) => setKillDate(e.target.value)}
-              title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = no fuse -- the implant runs until retired (the long-haul default). A date also caps the baked credential's window unless 'Valid for' overrides it."
-            />
-          </label>
-          <label>
             Max uses
             <input
               value={tokenMaxUses}
@@ -475,13 +476,14 @@ export function PayloadBuildView({
             <span className="field-help">0 = unlimited</span>
           </label>
           <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-            Call-home cadence, the artifact's optional kill-date fuse, and the baked credential's
-            two caps (how many hosts, for how long) — hover each field for specifics.
+            Call-home cadence and the baked credential's host cap. The artifact's kill-date fuse
+            and the credential's enroll window ride under Advanced — hover each field for
+            specifics.
           </p>
           {isStager && (
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              The stager bakes only its kill date; beacon timing belongs to the Stage2 it
-              fetches.
+              The stager bakes only its kill date (under Advanced); beacon timing belongs to the
+              Stage2 it fetches.
             </p>
           )}
         </fieldset>
@@ -495,7 +497,8 @@ export function PayloadBuildView({
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Manual overrides only, for builds without a picked listener: the enroll + check-in
               public endpoint, backup enroll + check-in endpoints, and the one path knob --
-              registration's. Check-ins ride a fixed route and the interactive stream rides the
+              registration's. The artifact's kill-date fuse and the credential's enroll window
+              ride here too. Check-ins ride a fixed route and the interactive stream rides the
               same front's WebSocket beacon, so no other address or path exists to set.
             </p>
             <label>
@@ -553,7 +556,7 @@ export function PayloadBuildView({
               <select
                 value={envelope}
                 onChange={(e) => setEnvelope(e.target.value)}
-                title="Shapes the ENROLL request body only. None sends the raw JSON body; Base64 wraps it as one string so it no longer reads as structured C2; AES-GCM encrypts it under a per-artifact key minted at build — worth it on cleartext http or where a redirector terminates TLS early; redundant on direct https, where TLS already encrypts the channel."
+                title="Shapes the ENROLL request body only. AES-GCM (the default) encrypts it under a per-artifact key minted at build — the same default posture check-ins already carry; redundant on direct https, where TLS already encrypts the channel. None sends the raw JSON body, the lab-debug shape; Base64 wraps it as one string so it no longer reads as structured C2."
               >
                 <option>None</option>
                 <option>Base64</option>
@@ -572,6 +575,15 @@ export function PayloadBuildView({
               Protect check-ins
             </label>
             <label>
+              Kill date
+              <input
+                type="date"
+                value={killDate}
+                onChange={(e) => setKillDate(e.target.value)}
+                title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = no fuse -- the implant runs until retired (the long-haul default). A date also caps the baked credential's window unless 'Valid for' overrides it."
+              />
+            </label>
+            <label>
               Valid for (h)
               <input
                 value={tokenHours}
@@ -579,10 +591,19 @@ export function PayloadBuildView({
                 placeholder="hours"
                 title="How long the baked credential can enroll NEW implants. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or a 30-day drop window when there is none. Enrollment is permanent — an implant that already enrolled checks in for life; this only gates copies that have not enrolled yet."
               />
-              <span className="field-help">gates new enrolls only; empty = until the kill date, else a 30-day drop window</span>
+              <span className="field-help">empty = until the kill date, else 30 days</span>
             </label>
           </div>
         </details>
+        <BuildSummary
+          listener={selectedListener}
+          endpoint={endpoint}
+          carrier={dnsCarriers.find((l) => l.id === carrierId)}
+          mode={mode}
+          sleep={sleepSeconds}
+          jitter={jitterSeconds}
+          stager={isStager}
+        />
         <button className="primary" type="submit" disabled={submitting}>
           Build payload
         </button>
@@ -733,18 +754,84 @@ export function PayloadBuildView({
 // interactive WebSocket beacon -- rides the one named front. The form's
 // words say what each field does; this says what the target will see
 // moving.
-function WireShape({ enroll }: { enroll: string }) {
+// The baked shape, composed live from the picks above: what the artifact
+// enrolls on, how it checks in, and how interactive rides -- read before the
+// build commits, not discovered on target. The three keys are the fixed
+// vocabulary's three behaviors; the values follow the front's transport,
+// the check-in carrier, and the mode.
+function BuildSummary({
+  listener,
+  endpoint,
+  carrier,
+  mode,
+  sleep,
+  jitter,
+  stager,
+}: {
+  listener?: ListenerSummary
+  endpoint: string
+  carrier?: ListenerSummary
+  mode: string
+  sleep: string
+  jitter: string
+  stager: boolean
+}) {
+  const front = listener?.publicEndpoint ?? (endpoint.trim() || 'the typed endpoint under Advanced')
+  const via = listener ? `${listener.name} (${listener.transport})` : 'manual endpoint'
+  const cadence = `every ${sleep.trim() || '30'}s ± ${jitter.trim() || '10'}s`
+  const quic = listener?.transport === 'quic' || /^quic:\/\//i.test(endpoint.trim())
+  const mtls = listener?.transport === 'mtls'
+  // The socket family's dial shape, from the listener or a typed endpoint.
+  const socket = !quic && (listener?.transport === 'smb' || listener?.transport === 'tcp'
+    || /^tcp:\/\//i.test(endpoint.trim()) || /^smb:\/\//i.test(endpoint.trim()))
+  const socketName = listener?.transport === 'smb' || /^smb:\/\//i.test(endpoint.trim()) ? 'named-pipe' : 'socket'
+  // The DNS family as the enroll front itself (the DNS-only target's shape).
+  const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh'
+    || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim()))
+
+  const checkIn = carrier
+    ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
+    : quic
+      ? mode === 'poll'
+        ? `one QUIC session per check-in, ${cadence}, on ${front}`
+        : `one QUIC session on ${front}, enrollment on the same socket`
+      : socket
+        ? `one ${socketName} connection per check-in, ${cadence}, on ${front}`
+        : dnsFront
+          ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
+          : mtls
+            ? mode === 'poll'
+              ? `gRPC drain cycles ${cadence} on ${front} (client-cert TLS)`
+              : `gRPC stream on ${front} (client-cert TLS)`
+            : mode === 'poll'
+              ? `sealed envelope POSTs ${cadence} on ${front}`
+              : `WebSocket beacon held open on ${front}`
+
+  const interactive = carrier
+    ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
+    : stager
+      ? 'none — a stager fetches its Stage-2 and never checks in'
+      : dnsFront
+        ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
+        : mode === 'poll'
+          ? 'store-and-forward over those check-ins — input rides the next cycle (sleep 0 approaches live)'
+          : quic
+            ? 'live channel over the QUIC stream'
+            : mtls
+              ? 'live channel over the gRPC stream'
+              : 'live channel over the WebSocket beacon'
+
   return (
-    <div className="wire-shape" title="The traffic shape this build bakes">
-      <span className="wire-node">
-        <Icon name="cpu" className="wire-icon" /> implant
-      </span>
-      <div className="wire-paths">
-        <div className="wire-path">
-          <span className="wire-label">enroll + check-in + interactive</span>
-          <span className="wire-arrow">→</span>
-          <span className="wire-node">{enroll}</span>
-        </div>
+    <div className="build-summary" title="What this build bakes, composed from the picks above">
+      <div>
+        <span className="summary-key">enroll</span> once on <code>{front}</code> via {via}
+        {stager && ' — then stages its Stage-2 from the same front'}
+      </div>
+      <div>
+        <span className="summary-key">check-in</span> {checkIn}
+      </div>
+      <div>
+        <span className="summary-key">interactive</span> {interactive}
       </div>
     </div>
   )
