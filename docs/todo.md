@@ -64,3 +64,46 @@ starts from a gap an actual engagement surfaces.
   _AC:_ with the integration enabled, an operator generates a summary of a
   completed task's output from the task read, and the request appears in
   the engagement's audit trail.
+
+- **External recon workbench: whois/RDAP, subdomains, port scan** (serves
+  architecture.md Sec 10.1 and Sec 11; design lands first). What an
+  engagement cannot do without it: scope a target before the first
+  foothold -- registration data (whois, RDAP), the subdomain surface
+  (certificate transparency plus resolution), and the port map are how the
+  operator aims the first implant, and today that work leaves Rod for
+  ad-hoc tools whose findings never reach the engagement's attributed
+  record. Shape: an operator-layer workbench, not implant tasking -- these
+  lookups and scans run on the teamserver against external services,
+  engagement-scoped and audited, findings recorded as engagement
+  artifacts. Passive lookups (whois, RDAP, CT-log enumeration) are the
+  safe defaults; active scanning (port scan) is gated on the engagement's
+  ROE target scope and carries an explicit egress note -- where the scan
+  originates (teamserver direct, a redirector, or an implant already
+  inside, whose host/port recon already exists) is an OPSEC decision the
+  runbook documents, never a silent default.
+  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
+  against a named engagement target from the operator API, and the
+  findings land as engagement-scoped artifacts in the audit trail.
+
+- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
+  architecture.md Sec 5.2 and Sec 10.1; design lands first). What an
+  engagement cannot do without it: pivot a script-injection foothold into
+  tasking -- the hooked browser is the most common web-facing foothold,
+  and today it needs a separate platform (BeEF) with its own operator
+  surface, storage, and OPSEC story, disconnected from the engagement
+  trail. Shape: a new `Browser` implant class whose artifact is a served
+  hook script (`<script src>`), enrolling and checking in over the
+  certificate-less envelope carrier (Sec 8) on the poll cadence the
+  store-and-forward degraded discipline already models; the reduced verb
+  set starts mainstream and documented -- browser fingerprint, cookie
+  read, DOM read and screenshot, redirect, prompt -- with the sensitive
+  boundary held (Sec 13): input capture and browser-exploit chaining stay
+  out-of-tree capability contracts, not core verbs. Every hooked browser
+  is an engagement-scoped implant entity, so attribution, live events,
+  audit, and the automation engine treat it like any other implant.
+  Where the hook script itself lives -- a second reference artifact beside
+  the .NET implant, or transport-owned like the webshell adapters -- is
+  the first design question.
+  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
+  over the envelope carrier, and an operator tasks a fingerprint and a
+  cookie read against it, with both results in the audit trail.
