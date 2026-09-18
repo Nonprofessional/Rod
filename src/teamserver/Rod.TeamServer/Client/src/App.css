@@ -1144,19 +1144,6 @@ a:hover {
   white-space: nowrap;
 }
 
-/* --- Listener repoint ----------------------------------------------------------------- */
-
-.repoint-form {
-  display: flex;
-  gap: 6px;
-}
-
-.repoint-form input {
-  width: 200px;
-  height: 26px;
-  font-size: 12px;
-}
-
 /* --- Build form ------------------------------------------------------------------------- */
 
 .build-form {

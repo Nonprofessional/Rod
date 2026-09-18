@@ -23,16 +23,6 @@ export interface Engagement {
   retiredAt: string | null
 }
 
-export interface StagerToken {
-  stagerTokenId: string
-  engagementId: string
-  secret: string
-  issuedBy: string
-  issuedAt: string
-  expiresAt: string
-  maxUses: number
-}
-
 export interface Implant {
   implantId: string
   engagementId: string
@@ -373,16 +363,6 @@ function toBase64Utf8(text: string): string {
 // events out to every subscriber, so two operators see each other's actions in
 // real time without polling. The operator's identity is read off the session
 // cookie server-side, so this stream carries no identity of its own.
-
-export type LiveEventName =
-  | 'hello'
-  | 'OperatorJoined'
-  | 'OperatorLeft'
-  | 'TaskIssued'
-  | 'TaskCompleted'
-  | 'TaskCancelled'
-  | 'ChannelOutput'
-  | 'SessionClosed'
 
 export interface LiveOperator {
   id: string
