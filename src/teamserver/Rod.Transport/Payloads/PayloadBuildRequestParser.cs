@@ -78,7 +78,7 @@ internal static class PayloadBuildRequestParser
             return (null, refusal);
         if (endpoint.Value is { } dialable && !IsDialableEndpoint(dialable))
             return (null,
-                $"Endpoint must be an absolute http(s) or quic URL the implant can dial, got '{dialable}'.");
+                $"Endpoint must be a schemed dial the implant can serve -- http(s)://, quic://, tcp://, smb://, dns://, or doh:// -- got '{dialable}'.");
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             foreach (var fallback in fallbacks)
@@ -87,7 +87,7 @@ internal static class PayloadBuildRequestParser
                     continue;
                 if (!IsDialableEndpoint(fallback))
                     return (null,
-                        $"Each fallback endpoint must be an absolute http(s) or quic URL, got '{fallback}'.");
+                        $"Each fallback endpoint must be a schemed dial (http(s)://, quic://, tcp://, smb://, dns://, doh://), got '{fallback}'.");
             }
         }
 
@@ -367,6 +367,10 @@ internal static class PayloadBuildRequestParser
             if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
                 || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
             {
+                if (mode != "poll")
+                    return (null,
+                        $"The {trimmed[..trimmed.IndexOf("://", StringComparison.Ordinal)]} carrier is one-answer-one-poll; build it mode 'poll' "
+                        + "(the interactive verbs ride the polls store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
                 var rest = trimmed[(trimmed.IndexOf("://", StringComparison.Ordinal) + 3)..];
                 if (rest.Length == 0)
                     return (null,
@@ -389,9 +393,14 @@ internal static class PayloadBuildRequestParser
         // to strip), and either mode bakes -- the client holds the session or
         // cycles it on the idle window at the baked cadence.
         // The poll-only families' derived shape: an smb, tcp, dns, or doh
-        // enroll front holds no live stream, so the walk's own mode gate
-        // applies here too -- stream mode names one the carrier does not
-        // hold.
+        // front holds no live stream, so the walk's own mode gate applies
+        // here too -- stream mode names one the carrier does not hold. The
+        // same gate covers a typed socket- or DNS-schemed endpoint: the
+        // scheme is the protocol pick, and what it picks carries no stream.
+        if (TypedPollOnlyScheme(enrollEndpoint) is { } typedCarrier && mode != "poll")
+            return (null,
+                $"The {typedCarrier} carrier is one-exchange-one-check-in; build it mode 'poll' "
+                + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
         if (enrollTransport is "smb" or "tcp" && mode != "poll")
             return (null,
                 $"The {enrollTransport} carrier is one-connection-one-check-in; build it mode 'poll' "
@@ -520,6 +529,23 @@ internal static class PayloadBuildRequestParser
                 || uri.Scheme.Equals("smb", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("dns", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
+
+    // The carrier a typed endpoint's scheme names, when that carrier holds
+    // no live stream -- the typed-endpoint twin of the named-listener mode
+    // gate, so a stream-mode build cannot bake a poll-only dial just because
+    // it was typed instead of picked.
+    private static string? TypedPollOnlyScheme(string? endpoint)
+    {
+        var trimmed = endpoint?.Trim();
+        if (trimmed is null || trimmed.Length < 7)
+            return null;
+        foreach (var scheme in new[] { "tcp://", "smb://", "dns://", "doh://" })
+        {
+            if (trimmed.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
+                return scheme[..^3];
+        }
+        return null;
+    }
 
     // The DNS family's baked dial (Sec 8), shared by the enroll and beacon
     // arms: the listener's own bind as the resolver plus its zone, the dial

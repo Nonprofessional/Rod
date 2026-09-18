@@ -54,7 +54,7 @@ const TRANSPORT_GROUPS: readonly {
       { value: 'mtls', label: 'mTLS — TLS + client certs', port: '5443' },
       { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '5090' },
       { value: 'quic', label: 'QUIC — UDP/443, TLS 1.3', port: '443' },
-      { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '4444' },
+      { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '8443' },
       { value: 'smb', label: 'SMB — named pipe, internal segment', port: '' },
     ],
   },
@@ -74,7 +74,7 @@ const CATCHERS_GROUP = {
     {
       value: 'shellcatch',
       label: 'Shellcatch — holds caught reverse shells; no implant ingress',
-      port: '4445',
+      port: '8080',
     },
   ],
 } satisfies { label: string; transports: readonly TransportOption[] }
@@ -123,6 +123,28 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [pipeName, setPipeName] = useState('')
   const [publicEndpoint, setPublicEndpoint] = useState('')
   const isSmb = transport === 'smb'
+
+  // The endpoint field speaks each transport's own dial shape: the web
+  // family completes scheme-less hosts and can derive from the bind, the
+  // socket family wants the bare host:port, the DNS family the zone, SMB
+  // the pipe path. One placeholder/title per shape, so the field itself
+  // names what the transport's validation will demand.
+  const isDnsFamily = transport === 'dns' || transport === 'doh'
+  const isBareDial = transport === 'quic' || transport === 'tcp' || transport === 'shellcatch'
+  const endpointPlaceholder = isSmb
+    ? '\\\\target\\pipe\\rod-pipe — the pipe implants open'
+    : isDnsFamily
+      ? 'c2.example.test — the zone this listener answers for'
+      : isBareDial
+        ? 'host:port implants dial (e.g. 203.0.113.10:8443)'
+        : 'host, host:port, or URL — empty = the bind'
+  const endpointTitle = isSmb
+    ? 'The pipe path baked into payloads — \\\\host\\pipe\\name on the target segment. Required: a pipe path cannot be derived from this host.'
+    : isDnsFamily
+      ? 'The DNS zone this listener answers TXT check-ins under — the domain delegated to this host (its NS records point here). Required: a zone is a fact about the target network, not derivable from the bind.'
+      : isBareDial
+        ? `The host:port implants dial (your redirector in production). The ${transport} scheme is completed at bake time, so type no scheme here. Required: the bare dial cannot be left empty.`
+        : "The address baked into payloads — what deployed implants enroll and check in on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -184,8 +206,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // Proposes the public endpoint from the current picks: the dialable host
   // (the chosen interface, or the host's first dialable NIC when the bind
   // is the wildcard), the bind port, and the transport's own scheme where
-  // one applies. A redirector replaces it later -- this fills the common
-  // no-redirector shape so the field never blocks on typing.
+  // one applies. The socket-owning family (quic, tcp, shellcatch) stores
+  // the bare host:port -- the scheme is the bake's completion, not the
+  // listener record's shape. A redirector replaces it later -- this fills
+  // the common no-redirector shape so the field never blocks on typing.
   const onFillEndpoint = () => {
     if (isSmb || transport === 'dns' || transport === 'doh') return
     const host =
@@ -198,11 +222,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     if (!host || !bindPort.trim()) return
     const dial = hostPort(host, bindPort.trim())
     setPublicEndpoint(
-      transport === 'quic'
-        ? `quic://${dial}`
-        : transport === 'tcp' || transport === 'shellcatch'
-          ? dial
-          : `${transport === 'http' ? 'http' : 'https'}://${dial}`,
+      transport === 'tcp' || transport === 'quic' || transport === 'shellcatch'
+        ? dial
+        : `${transport === 'http' ? 'http' : 'https'}://${dial}`,
     )
   }
 
@@ -348,20 +370,22 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           className="checkbox-label"
           title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Check-ins step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
         >
-          <input
-            type="checkbox"
-            checked={showEgress}
-            onChange={(e) => {
-              setShowEgress(e.target.checked)
-              // Hiding the family cannot leave one of its transports
-              // selected: fall back to the default posture.
-              if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
-                setTransport('https')
-                setBindPort('443')
-              }
-            }}
-          />
-          Egress &amp; pivots
+          <span className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={showEgress}
+              onChange={(e) => {
+                setShowEgress(e.target.checked)
+                // Hiding the family cannot leave one of its transports
+                // selected: fall back to the default posture.
+                if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
+                  setTransport('https')
+                  setBindPort('443')
+                }
+              }}
+            />
+            Egress &amp; pivots
+          </span>
         </label>
         {isSmb ? (
           <label>
@@ -432,8 +456,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           Public endpoint
           <input
             className="endpoint-input"
-            placeholder="host, host:port, or URL — empty = the bind"
-            title="The address baked into payloads — what deployed implants enroll and check in on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
+            placeholder={endpointPlaceholder}
+            title={endpointTitle}
             value={publicEndpoint}
             onChange={(e) => setPublicEndpoint(e.target.value)}
           />
@@ -444,7 +468,11 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             type="button"
             onClick={onFillEndpoint}
             disabled={isSmb || transport === 'dns' || transport === 'doh'}
-            title="Compose the public endpoint from the picks above: the dialable host (the interface, or the host's first dialable NIC for a wildcard bind), the bind port, and this transport's scheme. A redirector replaces it later."
+            title={
+              isSmb || transport === 'dns' || transport === 'doh'
+                ? 'A pipe path or a DNS zone is a fact about the target network — a host this server runs on cannot derive it from its interfaces. Type it directly.'
+                : 'Compose the public endpoint from the picks above: the dialable host (the interface, or the host\'s first dialable NIC for a wildcard bind), the bind port, and this transport\'s own dial shape. A redirector replaces it later.'
+            }
           >
             Fill endpoint
           </button>

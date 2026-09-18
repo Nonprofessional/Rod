@@ -1187,6 +1187,15 @@ a:hover {
   font-size: 12.5px;
 }
 
+/* A checkbox is not a text control: the 30px input height must not stretch
+   it, or the box dwarfs its row and reads misaligned against the neighboring
+   selects and inputs. */
+.build-form input[type='checkbox'],
+.listener-form input[type='checkbox'] {
+  height: auto;
+  margin: 0;
+}
+
 /* The advanced disclosure: same field rhythm as the fieldsets, visually
    quieter so the main path reads as the form and this reads as the
    behind-the-door remainder. */
@@ -2136,17 +2145,22 @@ button.file-entry {
   flex: none;
 }
 
-/* A checkbox label reads inline (box beside its text), unlike the column
-   labels around it. Scoped to the forms that use it so their column-label
-   rules (.build-form label, .listener-form label) cannot flip it back by
-   file order. */
+/* A checkbox label keeps the column shape of its neighbors (the label's
+   own gap and rhythm apply unchanged); the checkbox and its text ride one
+   control-band-height row, so the box centers exactly in the band the
+   neighboring selects and inputs occupy. */
 .build-form label.checkbox-label,
 .listener-form label.checkbox-label {
+  color: var(--text);
+}
+
+.build-form .checkbox-row,
+.listener-form .checkbox-row {
+  display: flex;
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  padding-top: 18px;
-  color: var(--text);
+  height: 30px;
 }
 
 /* --- Endpoint inline edit ---------------------------------------------------------------- */

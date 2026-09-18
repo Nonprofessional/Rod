@@ -506,12 +506,12 @@ export function PayloadBuildView({
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://redirect.example.test"
+                placeholder="https://redirect.example.test — or quic://, tcp://, smb://, dns://, doh://"
                 disabled={!!listenerId}
                 title={
                   listenerId
                     ? 'An enroll + check-in listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
-                    : 'The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere).'
+                    : "The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), quic://host:port, tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
                 }
               />
             </label>
@@ -567,12 +567,14 @@ export function PayloadBuildView({
               className="checkbox-label"
               title="Seals every check-in POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web check-ins use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
             >
-              <input
-                type="checkbox"
-                checked={checkInProtection}
-                onChange={(e) => setCheckInProtection(e.target.checked)}
-              />
-              Protect check-ins
+              <span className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={checkInProtection}
+                  onChange={(e) => setCheckInProtection(e.target.checked)}
+                />
+                Protect check-ins
+              </span>
             </label>
             <label>
               Kill date
