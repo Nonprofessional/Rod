@@ -598,7 +598,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   A deployment that fronts the teamserver with its own TLS-terminating edge
   accepts the split knowingly; without such an edge, real binds are `Https`
   or `Mtls`.
-- **DNS is the egress-restricted check-in transport.** A DNS listener entry
+- **DNS is the egress-restricted check-in transport, and it carries its own
+  enrollment.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
   the next queued tasking as a signed `TaskRequest` in TXT; result chunks
@@ -606,12 +607,32 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   report outcomes, reassembled server-side. The wire grammar is the DNS
   check-in contract ([extending/implants.md](extending/implants.md)); the
   responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
-  too large for the budget -- or a streaming task, whose channel needs the
-  stream a datagram poll cannot carry (Sec 10.3) -- is not claimed over DNS:
-  it stays queued for a stream transport. The transport's tradeoff is deliberate and documented: no
-  handshake and no mTLS ride DNS, an implant is identified by its id alone,
-  and a session must have been opened on a handshake-capable transport before
-  DNS can refresh it. Downstream tasking keeps the full Sec 9 posture -- the
+  too large for the budget is not claimed over DNS: it stays queued for a
+  stream transport.
+  **The store-and-forward channels ride the polls (Sec 10.3):** the poll
+  answer carries a kind byte naming its frame -- a queued task, or the
+  parked operator input the degraded hub drained (every frame the drain
+  collected, length-prefixed, so a typing burst and its eof cross
+  together) -- and the channel's output chunks up as `c.` queries,
+  reassembled and ingested through the shared composition the beacon
+  stream uses. The DNS carrier serves the degraded discipline: the
+  slowest wire that carries the interactive verbs, carried anyway -- the
+  operator's pick, at the query-rate cadence.
+  **Enrollment over DNS (the full-independence step for a DNS-only
+  target):** the enroll body uploads as chunked TXT queries
+  (`e.<b32(stream)>.<seq>.<t|m>.<b32(chunk)>.<zone>`) keyed by a
+  client-chosen stream id -- sealed under the baked per-artifact key when
+  the artifact carries one, so the token secret never crosses the resolver
+  chain in the clear -- and the assembled `EnrollResponse` chunks back down
+  as token-keyed answers (`a.<b32(token)>.<seq>.<zone>`). The terminal
+  chunk drives the shared `ScopedEnrollment` flow scoped by the answering
+  listener's engagement, and an accepted DNS enrollment opens the session
+  itself (no handshake exists to open it): the polls that follow refresh
+  what it wrote. A DNS-only target runs its whole lifecycle on this one
+  carrier -- the lightweight implant. The transport's tradeoff is deliberate and documented: no
+  handshake and no mTLS ride DNS, an implant is identified by its id alone
+  on the check-in path (the sealed enroll exchange authenticates by key
+  possession). Downstream tasking keeps the full Sec 9 posture -- the
   TaskRequest carries the same command signature, and a DNS-delivered task
   verifies exactly like a stream-delivered one. The degraded-mode contract
   rides the session record: every check-in stamps the carrier it rode (web,
@@ -695,15 +716,28 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   hardened option for an engagement that wants the interactive stream.
   Dropping the gRPC/HTTP-2 requirement is the point -- Tier 0 is reachable
   from any language with an HTTP client and a protobuf codec
-  ([extending/implants.md](extending/implants.md)). A channel task is never
-  claimed over the envelope (its input half needs a live stream, the same
-  rule the DNS transport applies), and an artifact's exfil chunk run must
+  ([extending/implants.md](extending/implants.md)). A channel task claims
+  over the envelope under the store-and-forward discipline every poll
+  artifact advertises (Sec 10.3; only the DNS datagram poll refuses one),
+  and an artifact's exfil chunk run must
   complete within one request body -- the poll-transport bounds, documented
   with the wire grammar.
-- **The stream listeners (named pipe and raw TCP) are the no-egress-segment
-  transports.** SMB serves Windows segments where neither HTTP nor DNS egress
-  exists (the pipe is the shape such a segment still allows); raw TCP serves
-  segment networks that permit arbitrary sockets but no HTTP shape. Both carry
+- **The stream listeners: raw TCP answers weak-inspection egress, SMB the
+  internal segment.** Raw TCP is the front for environments that permit
+  arbitrary outbound sockets but put nothing between them and the internet
+  -- no HTTP inspection to blend with, no TLS requirement to satisfy -- so
+  a plain framed socket is the cheapest adequate shape. SMB serves Windows
+  segments with no egress at all (the pipe is the shape such a segment
+  still allows): the reach is internal, and the deployment that serves it
+  bridges the segment to a teamserver -- not with a redirector (a
+  redirector is OUR infrastructure, deployed on our own servers to rotate
+  IPs and machines while the teamserver stays fixed, never placed inside a
+  target network), but with the pivot posture: a parent implant holding
+  the outward session derives children inside the segment
+  (`lateral.move`, Sec 5.2), and the children's tasking rides fronted on
+  the parent's stream -- implant-to-implant reach that goes deeper into
+  the environment as far as the parent chain goes, in both dial
+  directions. Both listeners carry
   the same rod.v1 frames the envelope carries -- one self-delimited message
   per direction (a varint byte length, then the envelope's delimited frame
   sequence), because a raw stream lacks the request boundary an HTTP body
@@ -711,9 +745,33 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   `BeaconTasking`): a result captured over a pipe or socket is
   indistinguishable in core state, the audit trail, and the live bus from one
   captured over the gRPC stream. One connection is one poll check-in, the
-  envelope's cadence on the envelope's budget, and a channel task is never
-  claimed for the same reason (its input half needs a live stream). The
-  identity posture is the certificate-less one: no client certificate rides a
+  envelope's cadence on the envelope's budget, and channel tasks claim under
+  the store-and-forward discipline every poll artifact advertises (Sec 10.3)
+  -- operator input parks server-side and rides the next connection's
+  response.
+  **Enrollment over the stream check-in (the full-independence step QUIC
+  first took):** the opening message may carry a kind-bearing
+  `EnrollRequest` frame ahead of its handshake -- the enroll body the web
+  route carries, promoted into the rod.v1 frame grammar -- answered by an
+  `EnrollResponse` frame as its own message, the ordinary handshake
+  following on the same connection. The shared `ScopedEnrollment` flow does
+  the work, scoped by the listener's own engagement with the web route's
+  refusal rules and audit arc, so a no-egress segment can enroll its first
+  implant over the pipe or socket it already reaches. The reference
+  implant's socket module carries it end to end: the parser bakes the
+  transport's own dial (`tcp://host:port`, the pipe path in URL form
+  `smb://host/pipe/name`), the enroll exchange runs the frame grammar on
+  the dial, and the poll cycles ride the envelope's own request/response
+  shape over the message framing -- the carrier is poll-only (one
+  connection is one check-in), a stream-mode naming refused with the fix,
+  and the interactive verbs ride the shared store-and-forward carriage
+  every poll client runs. The sealed body rides by default: the enroll
+  exchange and every check-in message are AES-256-GCM under the baked
+  per-artifact key (counter-floored on the check-in side, purpose-tagged
+  on both), the same application-layer seal the cleartext http posture
+  carries -- a bare socket or pipe leaks no frame bytes either, and the
+  token secret never crosses in the clear.
+  The identity posture is the certificate-less one: no client certificate rides a
   pipe or a raw socket, so the implant is identified by the id in its
   handshake -- the DNS tradeoff extended to a handshake-capable transport,
   with the enrolled, kill-date, and retired gates applying in full (on a
@@ -725,7 +783,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   registered into the listener registry the same bind-then-register way every
   transport follows (`StreamBeaconBridge` is the transport-blind check-in
   flow both share); the wire grammar is the stream check-in contract
-  ([extending/implants.md](extending/implants.md)).
+  ([extending/implants.md](extending/implants.md)), pinned end to end by the
+  stream-enroll acceptance tests (a from-scratch TCP client drives
+  enroll-then-checkin on one connection, and a foreign engagement's token is
+  refused whole and unspent).
 - **QUIC is the duplex socket transport: the interactive tier over a UDP
   egress.** An engagement whose egress passes UDP/443 (where HTTP/3-era
   traffic lives) but blocks TCP has no shape among the stream listeners, so
@@ -742,8 +803,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   carrier, so a quic listener is beacon-nameable, the build bakes its dial
   as the transport's own scheme (`quic://host:port` -- the URL shape picks
   the artifact's check-in client, and the bake-time trim compiles the QUIC
-  module for exactly that shape), and a poll-mode build naming it is refused
-  (the session has no poll cycle). The identity is the certificate-less
+  module for exactly that shape). Either mode bakes: stream holds the
+  session, poll ends each cycle on the client's idle window at the baked
+  cadence -- the operator's pick -- and a poll run carries the interactive
+  verbs store-and-forward on its cycles, the same shared discipline
+  (PollChannels) every poll client runs, whatever its wire. The identity is the certificate-less
   family posture -- the implant id in the handshake inside the encrypted
   transport, with the enrolled, kill-date, and retired gates in full; the
   TLS layer authenticates the server to the implant (chain-to-CA pinned),
@@ -1303,8 +1367,8 @@ The task therefore never parks queued (a failed round trip completes it
 failed), and the claim the route makes is the only claimer there is; the
 lifecycle, the audit arc, and the timeline read exactly like a beacon's
 capture. This is the third claim exception beside the channel rules -- a
-channel task is not claimed over DNS (a datagram poll carries no stream) nor
-over the envelope (its input half needs one) -- and it needs no gate of its
+channel task is not claimed over DNS (a datagram poll carries no input
+half) -- and it needs no gate of its
 own: with no session there is no stream to claim from, by construction.
 
 **The dispatch strand.** A written frame used to count as delivered, and below
@@ -1386,15 +1450,15 @@ a dropped stream kills the shell or the tunnel (the implant's write gate and
 channel lifetime see to that) and the task stays dispatched -- and DNS never
 claims a channel task at all, because a datagram poll has no stream to carry
 the input half. The poll carriers have a third answer, the degraded
-discipline: a build that opts in (`degradedChannels`) has its artifact
-advertise the store-and-forward capability, and the interactive verbs then
+discipline, carried by every poll artifact: the artifact advertises the
+store-and-forward capability in its handshake, and the interactive verbs
 claim over its envelope check-ins -- operator input parks server-side
 (DegradedChannelHub, bounded per task) and rides the next cycle's response,
 the handler's output batches upstream, and a channel the implant stops
-collecting closes itself with a timeout result. The tradeoff is named at
-the bake, never silent: while a channel is open, the interactive traffic
-runs at the check-in cadence, every keystroke costing up to one interval
-each way. The reference implant's shell channel runs the platform shell
+collecting closes itself with a timeout result. The tradeoff is the
+operator's to make, not the bake's: while a channel is open, the
+interactive traffic runs at the check-in cadence, every keystroke costing
+up to one interval each way. The reference implant's shell channel runs the platform shell
 under a pseudo-terminal on Unix -- the documented `script` wrapper -- so the
 channel behaves like a real terminal: prompt, line editing, and the
 interrupt byte becoming SIGINT for the foreground program. Where no PTY

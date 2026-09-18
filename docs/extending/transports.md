@@ -70,10 +70,13 @@ ChannelSupport: Native | Degraded | None
 - **Native** — the transport holds a live stream; channel verbs claim on
   it, and a build may name a listener of this transport as its beacon.
 - **Degraded** — a poll shape whose unit can carry channel traffic both
-  ways; channel verbs claim only against a session that advertised the
-  opt-in (the handshake capability `channels.poll` from a
-  `degradedChannels` bake).
-- **None** — a datagram-shaped poll; channel verbs never claim.
+  ways by the store-and-forward discipline; every poll artifact
+  advertises the handshake capability `channels.poll`, so channel verbs
+  claim against any of its sessions. The DNS grammar rides here: input
+  on the TXT answers, output as chunked queries.
+- **None** — a carrier that cannot carry channel traffic at all; channel
+  verbs never claim on it. No in-tree carrier declares this -- it is the
+  registration slot for a shape the discipline genuinely cannot serve.
 
 Registering a new carrier (`TransportCapabilities.Register(name, new
 CarrierCapabilities(...))`) with `Native` support is what makes a transport

@@ -191,23 +191,21 @@ per-artifact key the build baked (below). One POST is one poll check-in:
   a no-op server-side).
 - **The envelope's bounds:** an artifact's `ExfilChunk` run must begin and
   end inside one request body (the reassembler is per-request), and a
-  channel task (`shell.interact`) is never claimed over the envelope unless
-  the bake opted into the degraded discipline (below) -- without it, the
-  task stays queued until a stream transport claims it, the same rule the
-  DNS transport applies.
+  channel task (`shell.interact`) claims over the envelope under the
+  degraded discipline below -- only DNS never claims one, because a
+  datagram poll has no stream to carry the input half.
 
-**The degraded channel discipline (opt-in).** A poll-mode build may carry
-`degradedChannels: true`: the artifact then advertises the `channels.poll`
-capability in its handshake, and the interactive verbs claim over its
-envelope cycles -- operator input parks server-side and rides the next
-check-in's response as `ChannelInput` frames, the implant's
-`ChannelOutput` and the channel's final `TaskResult` batch upstream like
-any other frames, and a channel the implant stops collecting closes with
-a timeout `TaskResult` instead of sitting dispatched. The tradeoff is
-named, not silent: while a channel is open, the interactive traffic rides
-at the check-in cadence -- every keystroke costs up to one interval down
-and one interval back. A poll build without the opt-in keeps the
-live-stream-only behavior exactly.
+**The degraded channel discipline (always carried).** Every poll-mode
+build advertises the `channels.poll` capability in its handshake, and the
+interactive verbs claim over its envelope cycles -- operator input parks
+server-side and rides the next check-in's response as `ChannelInput`
+frames, the implant's `ChannelOutput` and the channel's final
+`TaskResult` batch upstream like any other frames, and a channel the
+implant stops collecting closes with a timeout `TaskResult` instead of
+sitting dispatched. The tradeoff is the operator's to make, not the
+bake's: while a channel is open, the interactive traffic rides at the
+check-in cadence -- every keystroke costs up to one interval down and one
+interval back.
 
 The frame contents, the handshake order, the signature discipline, and
 the result/chunk grammar are identical to the stream's -- only the carriage
@@ -329,8 +327,10 @@ tunnel; the task stays dispatched server-side). Input is not signed -- like a
 `StagedChunk` run it rides the mTLS stream the signed `TaskRequest` opened.
 Keep output chunks at or under 16 KiB. The server routes `ChannelInput` only
 for a task whose verb is one of these channel verbs (`shell.interact`,
-`tunnel.forward`); a channel task is never claimed over the envelope or DNS
-poll transports, which carry no stream to run the input half on.
+`tunnel.forward`); a channel task claims over every poll carrier under the
+store-and-forward discipline (below) -- the envelope cycle, the stream
+family's polls, and the DNS grammar alike (input on the TXT answers,
+output as `c.` queries).
 
 For a tunnel the channel is byte-transparent: the relayed protocol is none
 of the wire contract's business, and the task's final output is the relay
@@ -355,13 +355,41 @@ sockets but no HTTP shape. One connection is one poll check-in:
    demands, and queued tasking while the 4 MiB dispatch budget lasts.
 4. Close; sleep the baked interval; reconnect for the next check-in.
 
+**Enrollment over the stream check-in.** The opening request message may
+carry a kind-bearing `EnrollRequest` frame ahead of its handshake -- the
+same enroll body the web route carries, promoted into the frame grammar
+(token secret, class, the implant's public key as DER
+SubjectPublicKeyInfo, parent, host facts, kill date). The server answers
+it as its own response message, a single `EnrollResponse` frame (`Ok`
+with the implant id, engagement id, leaf certificate, CA chain, and --
+when the redeemed token names a build -- the per-artifact check-in key;
+a refusal carries just the status, no signal beyond no). After an
+acceptance the ordinary handshake follows on the same connection, so a
+no-egress segment can enroll its first implant over the pipe or socket
+it already reaches; a client may also close after the enroll exchange
+and check in on fresh connections. A baked per-artifact key seals the
+whole carriage -- the enroll exchange and every check-in message are
+AES-256-GCM under it (the check-in body wrapping a fresh big-endian
+counter the server floors; each direction under its own purpose tag), the
+same seal the cleartext http posture carries, so a bare wire leaks no
+frame bytes. The reference implant's socket module
+carries all of it: the dial shapes are `tcp://host:port` and
+`smb://host/pipe/name` (a dot host is the local machine), the carrier is
+poll-only -- a stream-mode build naming one of these fronts is refused
+at parse -- and the check-in cycle is the envelope's own request/response
+shape over the message framing, with the interactive verbs on the shared
+store-and-forward carriage.
+
 No client certificate rides these transports: the implant is identified by
 the id in its handshake (the DNS posture, extended to a handshake-capable
 transport), and a refused handshake answers a bare `Unspecified`. Dispatched
 tasking keeps the full signature posture -- verify it exactly like a
-stream-delivered task. A channel task is never dispatched over a stream
-check-in (its input half needs the long-lived gRPC stream); oversized or
-malformed messages drop the connection without an answer.
+stream-delivered task. Channel tasks claim under the store-and-forward
+discipline every poll artifact advertises (`channels.poll` in the
+handshake): operator input parks server-side and rides the next
+connection's response as `ChannelInput` frames, channel output batches
+upstream like any other frame. Oversized or malformed messages drop the
+connection without an answer.
 
 ### The QUIC stream (UDP egress, the duplex socket transport)
 
@@ -372,8 +400,12 @@ moment it is queued, `ChannelInput` frames flowing down while a channel
 runs, the same session the gRPC stream and the WebSocket beacon hold. A
 build names a QUIC listener as its beacon and the baked endpoint carries the
 transport's own scheme (`quic://host:port`) -- the dial shape picks the
-client, and there is no poll cycle to bake (a poll-mode build naming a QUIC
-beacon is refused at build time).
+client. Either mode bakes: stream holds the session open; poll ends each
+cycle when the tasking queue drains inside a short idle window (250 ms),
+sleeps the baked cadence, and reconnects -- one session per check-in, the
+session surviving server-side across the disconnects. A poll run carries
+the interactive verbs store-and-forward on its cycles, the same shared
+discipline every poll client runs.
 
 The carriage is one connection, one client-initiated bidirectional stream,
 one session:
@@ -444,21 +476,48 @@ RFC 4648 base32 labels, no padding:
 ```
 poll:          p.<b32(implant id)>.<zone>
 result chunk:  r.<b32(task id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
+channel chunk: c.<b32(task id)>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
+enroll chunk:  e.<b32(stream id)>.<seq>.<t|m>.<b32(chunk)>.<zone>
+enroll answer: a.<b32(token)>.<seq>.<zone>
 ```
 
 A poll is answered with zero or one TXT record whose strings concatenate to
-the base32 of a signed `TaskRequest` (verify it exactly like a stream-delivered
-one -- the signature covers the canonical tuple); an empty answer means no
-tasking. A result is reported as chunked queries (0-origin `seq`, `t` terminal
+the base32 of a kind byte plus its message: `t` names a signed
+`TaskRequest` (verify it exactly like a stream-delivered one -- the
+signature covers the canonical tuple); `i` names the parked channel input
+the store-and-forward discipline drained -- every collected
+`ChannelInput` frame, each length-prefixed (a varint byte length ahead of
+its message), so a typing burst and its eof cross together. An empty
+answer means no tasking and no parked input. A result is reported as
+chunked queries (0-origin `seq`, `t` terminal
 or `m` more, UTF-8 chunks; an empty chunk rides as the bare label `e`),
-answered with an empty NOERROR. Send EDNS0 (the answers ride up to 1232
+answered with an empty NOERROR. A live channel's output chunks up the
+same way as `c.` queries: the chunks reassemble into the channel's data
+bytes (the task id rides the name), landing on the task's transcript
+through the shared composition every carrier uses. Send EDNS0 (the answers ride up to 1232
 bytes); short-argument tasking only -- a task that does not fit is not
 delivered over DNS.
 
+**Enrollment over DNS (the full-independence step for a DNS-only target).**
+The enroll body -- the framed `EnrollRequest`, sealed under the baked
+per-artifact key when the artifact carries one (the raw base64 of the sealed
+envelope, so the token secret never crosses the resolver chain in the clear)
+-- uploads as chunked `e.` queries keyed by a client-chosen random stream id,
+each answered `+` until the terminal chunk's answer names a download token
+(`=<b32(token)>`). The `EnrollResponse` -- framed, sealed under the same key
+when the upload was -- downloads as token-keyed `a.` answers (`<t|m>.<b32(chunk)>`,
+0-origin, terminal-flagged). The terminal upload chunk drives the shared
+scoped-enrollment flow against the answering listener's engagement; an
+accepted DNS enrollment opens the session itself (no handshake exists to
+open it), and the polls that follow refresh what it wrote. A manually minted
+token names no build, so its exchange rides plaintext and the key arrives in
+the answer. The whole lifecycle rides the one carrier -- the lightweight
+implant a DNS-only target runs.
+
 The transport's identity tradeoff is deliberate: no handshake and no mTLS ride
-DNS. An implant is identified by its id alone, and its session must have been
-opened on a handshake-capable transport first -- DNS refreshes presence
-(`last-seen`), it does not create sessions. Downstream tasking keeps the full
+the DNS check-in path -- an implant is identified by its id alone on polls
+and results (the sealed enroll exchange authenticates by key possession).
+Downstream tasking keeps the full
 Tier 1 posture: verify the signature before executing anything received over
 DNS. The reference implant's DNS client dials a beacon URL of the shapes
 `dns://<resolver-host>[:<port>]/<zone>` (the resolver is the listener

@@ -18,9 +18,11 @@ and the UI uses them precisely:
   the next cycle. All ordinary operations (shell commands, file transfers,
   process listings, screenshots) ride check-ins.
 - **Interactive** -- not "everything else": it is the on-demand live channel
-  (`shell.interact`, tunnels) held open over the stream for real-time
-  typing -- the gRPC stream on mTLS, the WebSocket beacon on a web front.
-  An implant that never opens one still fully operates through
+  (`shell.interact`, tunnels) for real-time typing -- held open over the
+  stream on a stream-mode build (the gRPC stream on mTLS, the WebSocket
+  beacon on a web front), or carried store-and-forward on a poll build's
+  check-ins (operator input arrives on the next response, at the check-in
+  cadence). An implant that never opens one still fully operates through
   check-ins.
 
 Two builds of that contact cadence: **poll** mode makes each check-in a
@@ -64,7 +66,8 @@ deliberate act that updates this section first.
   listener whose public endpoint gets baked. The implant registers on it
   once and checks in on it for the rest of its life, interactive riding
   the same front (the gRPC stream on mTLS, the WebSocket beacon on a web
-  front). The Payloads library's **Listener** column names the same thing
+  front's stream build, the check-ins themselves on a poll build). The
+  Payloads library's **Listener** column names the same thing
   per artifact.
 - **Public endpoint (enroll + check-in, manual)** -- the typed-address
   twin of the pick, under Advanced, for an address this teamserver does
@@ -76,14 +79,21 @@ deliberate act that updates this section first.
   was retired as a synonym that meant three things.
 
 Transport labels in the listener form follow the same rule -- they name
-what each transport carries: HTTPS and mTLS carry **enroll + check-in +
-interactive** (one port; mTLS additionally enforces client certificates
-at the TLS layer), cleartext HTTP carries **enroll + check-in** over the
-envelope POST cycle and the **interactive** WebSocket beacon beside it
-(sealed frames under the per-artifact key), and DNS/DoH/QUIC/SMB/TCP are
-alternate reach and pivot links, not the payload ingress the Build form
-picks from. QUIC carries check-in + interactive but no enroll -- an
-implant enrolls on a web front and holds its session over QUIC.
+what each transport carries, not how a build makes it ride: every
+transport -- HTTPS, mTLS, cleartext HTTP, QUIC, the socket family (named
+pipe, raw TCP), and the DNS family (TXT over UDP, the same grammar over
+HTTPS on DoH) -- carries **enroll + check-in + interactive** (mTLS
+additionally enforces client certificates at the TLS layer; QUIC's opening
+stream also carries enrollment, the full-independence step,
+architecture.md Sec 8; the socket family is poll-only -- enrollment on
+the opening exchange; the DNS family enrolls through a chunked TXT
+exchange and opens the session itself -- a DNS-only target's whole
+lifecycle rides the one carrier). Interactive rides the stream fronts
+live or the poll cycles store-and-forward -- over DNS, the input arrives
+on the TXT answers and the output chunks up as queries, at the query-rate
+cadence: the slowest wire that carries it, carried anyway. How each
+behavior rides is the build's pick -- mode and carrier -- and the Build
+form's summary spells that out per build.
 
 Three identity layers fold into the UI, and it pays to keep them straight:
 a **device** is the host an implant reported at enroll (hostname, OS/arch,
@@ -203,7 +213,7 @@ hostname. DNS, SMB, and TCP cannot derive at all; their endpoint (zone /
 pipe path / host:port) is required.
 
 The transport dropdown is grouped by role -- payload ingress (https, mTLS,
-http), alternate reach & pivots (DNS, DoH, QUIC, SMB, TCP), catchers
+http, quic), alternate reach & pivots (DNS, DoH, SMB, TCP), catchers
 (shellcatch) -- and the form opens on https: the one-port posture that
 carries every behavior, so the untouched default is already the recommended
 shape.
@@ -256,16 +266,22 @@ The main path is the mainstream shape: pick the **Listener (enroll +
 check-in)** and the **target** (OS/arch; x86 pairs with Windows only),
 leave the rest at the defaults, and build. The artifact is a
 self-contained single-file executable with its enrollment credential
-baked in -- drop it on the target and run, zero arguments. A small
-diagram under the picks draws the traffic shape the build bakes and
-follows them live, labeled with the fixed vocabulary: which behaviors
-each socket carries.
+baked in -- drop it on the target and run, zero arguments. A summary
+above the **Build payload** button composes from the picks live, labeled
+with the fixed vocabulary: the front it enrolls on (name, transport,
+public endpoint), how it checks in (envelope POSTs at the picked cadence,
+a held WebSocket beacon, the gRPC stream, one QUIC session -- held or one
+per check-in at the cadence -- one pipe or socket connection per
+check-in, or the DNS TXT carrier), and how
+interactive rides (the live channel's stream, or store-and-forward over
+the check-ins -- the same discipline whichever wire the poll runs on).
 
 The form's pick is the vocabulary's core role: the **enroll + check-in
 listener** is where the implant calls home (it registers there once and
 checks in there for the rest of its life), interactive riding the same
 front -- the gRPC stream on mTLS, the WebSocket beacon on a web front,
-sealed frames under the per-artifact key. Everything else -- "enroll",
+sealed frames under the per-artifact key, or the check-ins themselves on
+a poll build. Everything else -- "enroll",
 "check-in" in the hover texts -- names the moments inside that one
 relationship. (The build API still accepts a `beaconListenerId` for the
 split-socket shape; the form no longer offers one.) When the engagement
@@ -300,17 +316,12 @@ its kill date; beacon timing belongs to the Stage2 it fetches.
 
 - **Mode** -- `stream` holds the connection open (interactive; server-push
   tasking); `poll` checks in, drains queued tasking, closes, and sleeps --
-  the low-and-slow shape.
+  the low-and-slow shape. Both modes carry interactive: live over the
+  held stream, or store-and-forward over the check-ins at the cadence
+  below.
 - **Check-in every / Randomize ±** -- the call-home cadence and the random
   slack added to every interval so check-ins are not clockwork. Defaults
   30 s / 10 s.
-- **Kill date** -- the artifact's optional fuse. Past it the executable stops
-  being usable: a leftover copy refuses to run, and a live implant terminates
-  at its next check-in. Empty = no fuse: the implant runs until retired -- the
-  long-haul default. A pinned date also bounds the baked credential's window
-  unless *Valid for* overrides it. The implant reports its baked date at
-  enroll, so the fleet's Kill date column shows the artifact's own fuse
-  (a dash for open-ended builds).
 - **Max uses** -- how many hosts the baked credential may enroll: one spend
   per host, so one executable can seed several machines until the budget runs
   out. `0` = unlimited. Default 1.
@@ -336,12 +347,22 @@ its kill date; beacon timing belongs to the Stage2 it fetches.
 - **Request timeout (s)** -- per-request HTTP timeout. Default 30.
 - **Enroll body** -- shapes the ENROLL request body only (the "envelope"
   word elsewhere -- the POST check-in shape -- is a different thing).
-  `None` sends the raw JSON body; `Base64` wraps it as one string so the
-  body does not read as structured C2; `AES-GCM` encrypts it under a
+  `AES-GCM` (the default) encrypts it under a
   per-artifact key minted at build, so the body stays opaque even where
   TLS terminates early (a redirector, a fronting CDN) or on cleartext
-  `http`. On direct `https` it is redundant -- TLS already encrypts the
-  channel.
+  `http` -- the same default posture check-ins already carry. On direct
+  `https` it is redundant -- TLS already encrypts the channel.
+  `None` sends the raw JSON body, the lab-debug shape; `Base64` wraps it
+  as one string so the body does not read as structured C2.
+- **Kill date** -- the artifact's optional fuse. Past it the executable stops
+  being usable: a leftover copy refuses to run, and a live implant terminates
+  at its next check-in. Empty = no fuse: the implant runs until retired -- the
+  long-haul default. A pinned date also bounds the baked credential's window
+  unless *Valid for* overrides it. The implant reports its baked date at
+  enroll, so the fleet's Kill date column shows the artifact's own fuse
+  (a dash for open-ended builds). The one beacon-profile value a stager
+  bakes too -- it rides here, outside the timing fields a stager leaves to
+  its Stage-2.
 - **Valid for (h)** -- how long the baked credential can enroll **new**
   implants. Pairs with *Max uses*: that caps how many enrolls, this caps for
   how long. Empty = until the kill date, or a 30-day drop window when there
