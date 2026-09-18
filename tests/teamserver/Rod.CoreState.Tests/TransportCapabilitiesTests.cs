@@ -120,15 +120,6 @@ public class TransportCapabilitiesTests
     }
 
     [Fact]
-    public void Find_ServesTheDegradedOptInMarkerAsADegradedCarrier()
-    {
-        // The enrollment's stamp for a degraded-channels bake: not a
-        // transport, but the issuance gate reads it exactly like a
-        // degraded-capable carrier.
-        Assert.Equal(ChannelSupport.Degraded, TransportCapabilities.Find("channels-degraded").Channels);
-    }
-
-    [Fact]
     public void Register_DeclaresACarrierTheCoreDoesNotKnow()
     {
         TransportCapabilities.Register(

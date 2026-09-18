@@ -29,6 +29,5 @@ internal static class WebCheckIn
         setup.Config.Transport,
         setup.Cadence,
         setup.Config.Mode,
-        setup.Config.DegradedChannels,
         setup.Held);
 }

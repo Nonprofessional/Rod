@@ -103,7 +103,7 @@ public static class DnsOverHttpsEndpoints
         if (owner is null)
             return Results.NotFound(new Problem("No DoH listener serves this socket."));
 
-        var answerer = new DnsCheckInAnswerer(owner.PublicEndpoint, bridge, logger, owner.Name);
+        var answerer = new DnsCheckInAnswerer(owner, bridge, logger);
         var response = await answerer.AnswerAsync(query, cancellationToken);
         return Results.Bytes(response, MediaType);
     }

@@ -101,6 +101,7 @@ public static class TransportProviders
                 services.GetRequiredService<TimeProvider>(),
                 services.GetRequiredService<ITaskDispatchWake>(),
                 services.GetRequiredService<LiveChannelHub>(),
+                services.GetRequiredService<Channels.DegradedChannelHub>(),
                 services.GetRequiredService<TaskRelayHub>(),
                 services.GetRequiredService<SocksProxyHub>(),
                 services.GetRequiredService<BeaconIngest>(),

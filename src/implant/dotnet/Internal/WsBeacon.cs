@@ -285,7 +285,6 @@ internal sealed class WsBeacon : ICheckInClient
                         await Write(BeaconFrames.AckFrame(task.TaskId), cancellationToken);
                     await _tasking.AcceptAsync(
                         task,
-                        isPoll: false,
                         Write,
                         (staged, ct) => RunStagedTaskAsync(ws, writeGate, staged, ct),
                         (started, handler) => StartChannel(ws, writeGate, liveChannels, started, handler, channelsGone.Token),

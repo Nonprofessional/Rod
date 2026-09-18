@@ -294,7 +294,6 @@ public static class PayloadEndpoints
         DateTimeOffset? KillDate,
         string? ListenerId = null,
         string? Mode = null,
-        bool? DegradedChannels = null,
         string? EnrollPath = null,
         string? UserAgent = null,
         Dictionary<string, string>? Headers = null,
@@ -380,7 +379,6 @@ public static class PayloadEndpoints
     // operator left it empty.
     public sealed record PayloadBuildProfileResponse(
         string? Mode = null,
-        bool? DegradedChannels = null,
         double? SleepSeconds = null,
         double? JitterSeconds = null,
         DateTimeOffset? KillDate = null,
@@ -397,7 +395,6 @@ public static class PayloadEndpoints
                 ? null
                 : new(
                     profile.Mode,
-                    profile.DegradedChannels,
                     profile.SleepSeconds,
                     profile.JitterSeconds,
                     profile.KillDate,

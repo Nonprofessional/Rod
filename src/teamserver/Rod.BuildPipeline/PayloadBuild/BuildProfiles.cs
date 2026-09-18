@@ -68,8 +68,10 @@ public sealed record TransportProfile(
     public TimeSpan RequestTimeout { get; init; } = Defaults.RequestTimeout;
 
     /// <summary>How the enroll JSON body is shaped on the wire
-    /// (architecture.md Sec 7). Defaults to <see cref="TransportEnvelope.None"/>,
-    /// leaving the body as raw JSON.</summary>
+    /// (architecture.md Sec 7). Defaults to <see cref="TransportEnvelope.AesGcm"/>,
+    /// sealing the enroll body under the per-artifact key so a cleartext or
+    /// early-terminated front carries no readable enrollment; None is the
+    /// lab-debug raw JSON body.</summary>
     public TransportEnvelope Envelope { get; init; } = Defaults.Envelope;
 
     /// <summary>
@@ -130,7 +132,7 @@ public sealed record TransportProfile(
         public static readonly IReadOnlyDictionary<string, string> Headers
             = new Dictionary<string, string>(StringComparer.Ordinal);
         public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
-        public const TransportEnvelope Envelope = TransportEnvelope.None;
+        public const TransportEnvelope Envelope = TransportEnvelope.AesGcm;
         public const bool CheckInProtection = true;
         public static readonly IReadOnlyList<string> FallbackEndpoints = Array.Empty<string>();
     }
@@ -153,21 +155,11 @@ public sealed record TransportProfile(
 /// long-haul posture where the implant runs until it is retired or the
 /// operator rebuilds it, with no time fuse at all.
 /// </param>
-/// <param name="DegradedChannels">
-/// The opt-in for the degraded channel discipline (architecture.md
-/// Sec 10.3): a poll-mode artifact that carries it advertises the
-/// store-and-forward capability, so the interactive verbs claim over its
-/// check-ins -- input parks and rides the next cycle, at the cycle's
-/// latency. The deliberate, named tradeoff: a channel open over a poll
-/// carrier pulls the cadence toward back-to-back while it runs. Defaults
-/// to false.
-/// </param>
 public sealed record BeaconProfile(
     TimeSpan Sleep,
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
-    string Mode = "stream",
-    bool DegradedChannels = false);
+    string Mode = "stream");
 
 /// <summary>
 /// The target the artifact is built for. Build params are produced at request

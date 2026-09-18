@@ -60,6 +60,18 @@ public static class AesGcmEnvelope
     /// </summary>
     public static ReadOnlySpan<byte> CheckInResponseAad => "rod-checkin-response-v1"u8;
 
+    /// <summary>
+    /// The AAD binding the socket family's sealed enroll exchange to its
+    /// purpose (architecture.md Sec 8, enrollment over the stream check-in):
+    /// the same per-artifact key envelopes the enroll body and the check-in
+    /// bodies, so the purpose tag keeps one exchange's ciphertext from being
+    /// replayed as another's.
+    /// </summary>
+    public static ReadOnlySpan<byte> EnrollRequestAad => "rod-enroll-v1"u8;
+
+    /// <summary>The response-side twin of <see cref="EnrollRequestAad"/>.</summary>
+    public static ReadOnlySpan<byte> EnrollResponseAad => "rod-enroll-response-v1"u8;
+
     /// <summary>The key size in bytes: AES-256.</summary>
     public const int KeyBytes = 32;
 

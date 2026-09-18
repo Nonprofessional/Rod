@@ -179,9 +179,9 @@ public class QuicBeaconRoundTripTests
         // The issuance half of the honest carrier declaration: a quic
         // listener is beacon-nameable, and the baked beacon URL must name the
         // dial the artifact's check-in client picks by -- the transport's own
-        // scheme completed over the bare public endpoint. A poll-mode bake is
-        // refused with the reason: the quic session holds one live stream
-        // and has no poll cycle.
+        // scheme completed over the bare public endpoint. Either mode bakes:
+        // the poll shape cycles the session on the client's idle window at
+        // the baked cadence.
         var (client, host, operatorId) = AuthenticatedHost.Create();
         using (client)
         using (host)
@@ -201,13 +201,10 @@ public class QuicBeaconRoundTripTests
             var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
             Assert.NotNull(listener);
 
-            var refused = await client.PostAsJsonAsync(
+            var built = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 Request(mode: "poll", beaconListenerId: listener!.Id));
-            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-            var problem = await refused.Content.ReadFromJsonAsync<ProblemBody>();
-            Assert.NotNull(problem);
-            Assert.Contains("no poll cycle", problem!.Error, StringComparison.OrdinalIgnoreCase);
+            built.EnsureSuccessStatusCode();
 
             var parse = await PayloadBuildRequestParser.ParseAsync(
                 Request(beaconListenerId: listener.Id),
@@ -431,9 +428,9 @@ public class QuicBeaconRoundTripTests
     // The build story (architecture.md Sec 8, enrollment over QUIC): a quic
     // listener is enroll-nameable and the parser bakes its dial -- the
     // transport's own scheme over the bare public endpoint -- with the
-    // beacon deriving from it. A poll-mode bake is refused: the quic session
-    // has no poll cycle. Registry-seeded (no socket binds), so it runs
-    // wherever the parser does.
+    // beacon deriving from it. Either mode bakes: the poll shape cycles the
+    // session on the client's idle window at the baked cadence. Registry-
+    // seeded (no socket binds), so it runs wherever the parser does.
     [Fact]
     public async Task ABuildNamingAQuicListenerAsItsEnroll_BakesTheQuicDial()
     {
@@ -450,7 +447,7 @@ public class QuicBeaconRoundTripTests
                 DateTimeOffset.UtcNow, new EngagementId(Guid.Parse(engagementId)));
             await registry.RegisterAsync(listener);
 
-            var refused = await PayloadBuildRequestParser.ParseAsync(
+            var poll = await PayloadBuildRequestParser.ParseAsync(
                 EnrollRequest(listener.Id.ToString(), mode: "poll"),
                 new EngagementId(Guid.Parse(engagementId)),
                 operatorId,
@@ -458,8 +455,9 @@ public class QuicBeaconRoundTripTests
                 registry,
                 host.Services.GetRequiredService<IImplantCertificateAuthority>(),
                 CancellationToken.None);
-            Assert.NotNull(refused.Error);
-            Assert.Contains("no poll cycle", refused.Error!, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(poll.Error);
+            Assert.Equal("quic://10.0.0.5:9443", poll.Request!.Transport.Endpoint);
+            Assert.Equal("poll", poll.Request.Mode);
 
             var parse = await PayloadBuildRequestParser.ParseAsync(
                 EnrollRequest(listener.Id.ToString()),

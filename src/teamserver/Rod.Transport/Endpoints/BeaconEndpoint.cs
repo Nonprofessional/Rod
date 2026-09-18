@@ -58,6 +58,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         TimeProvider clock,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
+        Rod.Transport.Channels.DegradedChannelHub degraded,
         TaskRelayHub relays,
         SocksProxyHub socks,
         BeaconIngest ingest,
@@ -69,7 +70,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // gRPC reader and writer to: everything between the handshake and the
         // stream's end is the frame paths' business, not the transport's.
         _runner = new BeaconSessionRunner(
-            sessions, tasks, clock, wake, channels, relays, socks, ingest, tasking);
+            sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
     }
 
     public override async Task CheckIn(

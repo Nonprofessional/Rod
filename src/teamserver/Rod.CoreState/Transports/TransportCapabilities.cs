@@ -101,29 +101,24 @@ public static class TransportCapabilities
     /// <summary>The wire name of <see cref="MessagePipe"/>.</summary>
     public const string MessagePipeName = "message-pipe";
 
-    /// <summary>
-    /// The wire name of the degraded-channels opt-in marker: not a carrier a
-    /// transport serves, but the stamp an enrollment derives off a build
-    /// that baked the flag -- it stands for "this artifact's poll carriers
-    /// carry channel traffic by the store-and-forward discipline," which the
-    /// issuance gate reads as claimable and the dispatch path checks against
-    /// the live advertisement.
-    /// </summary>
-    public const string DegradedChannelsName = "channels-degraded";
-
     /// <summary>The gRPC beacon stream: the native channel carrier.</summary>
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
-    /// <summary>The plain-HTTP envelope POST cycle: degraded channels by opt-in.</summary>
+    /// <summary>The plain-HTTP envelope POST cycle: store-and-forward
+    /// channels, carried on every check-in (the artifact always advertises
+    /// the capability).</summary>
     public static readonly CarrierCapabilities Envelope = new(ChannelSupport.Degraded);
 
-    /// <summary>The DNS TXT datagram check-in: poll only, datagram-sized.</summary>
-    public static readonly CarrierCapabilities Dns = new(ChannelSupport.None);
+    /// <summary>The DNS TXT datagram check-in: poll only, datagram-sized --
+    /// channels store-and-forward on the polls, the input riding TXT
+    /// answers and the output chunking up as queries.</summary>
+    public static readonly CarrierCapabilities Dns = new(ChannelSupport.Degraded);
 
     /// <summary>
     /// The self-delimited message framing the named-pipe and raw-TCP
-    /// listeners share: one connection is one poll check-in, degraded
-    /// channels by opt-in -- the same bodies the envelope carries.
+    /// listeners share: one connection is one poll check-in,
+    /// store-and-forward channels carried on every check-in -- the same
+    /// bodies the envelope carries.
     /// </summary>
     public static readonly CarrierCapabilities MessagePipe = new(ChannelSupport.Degraded);
 
@@ -137,7 +132,6 @@ public static class TransportCapabilities
             [EnvelopeName] = Envelope,
             [DnsName] = Dns,
             [MessagePipeName] = MessagePipe,
-            [DegradedChannelsName] = new CarrierCapabilities(ChannelSupport.Degraded),
         };
 
     /// <summary>
@@ -174,8 +168,9 @@ public static class TransportCapabilities
     /// <summary>
     /// Whether a dispatched task fits this carrier's check-in: a channel verb
     /// needs a carrier that holds a live stream -- or, on a degraded carrier,
-    /// the implant's opt-in, which the dispatch path passes as
-    /// <paramref name="degradedChannels"/> (the session's advertisement) --
+    /// the session's live advertisement, which the dispatch path passes as
+    /// <paramref name="degradedChannels"/> (every current poll artifact
+    /// advertises it; an artifact that does not keeps the deferral) --
     /// and the marshaled task must fit the carrier's per-response budget.
     /// The channel deferral wins over size, so the reason an operator reads
     /// never depends on which bound the task tripped first.

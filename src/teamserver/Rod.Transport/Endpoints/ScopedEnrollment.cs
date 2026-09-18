@@ -64,6 +64,42 @@ internal sealed record ScopedEnrollmentOutcome(
         => new(true, EnrollStatus.Ok, null, 0, enrolled, build);
 }
 
+internal static class ScopedEnrollmentResponse
+{
+    /// <summary>
+    /// Assembles the rod.v1 EnrollResponse off one outcome -- the answer
+    /// every enrollment carriage sends, whatever its wire (the HTTP route's
+    /// JSON twin aside): the status, the ids, the leaf and chain, the
+    /// parent, and the build's per-artifact check-in key when the redeemed
+    /// token bound one. A refusal carries just the status, no signal
+    /// beyond no.
+    /// </summary>
+    public static Rod.V1.EnrollResponse Build(ScopedEnrollmentOutcome outcome)
+    {
+        if (!outcome.Accepted)
+            return new Rod.V1.EnrollResponse { Status = outcome.Status };
+
+        var enrolled = outcome.Enrolled!;
+        var response = new Rod.V1.EnrollResponse
+        {
+            Status = EnrollStatus.Ok,
+            ImplantId = enrolled.ImplantId.ToString(),
+            EngagementId = enrolled.EngagementId.ToString(),
+            LeafCertificate = Google.Protobuf.ByteString.CopyFrom(enrolled.LeafCertificate),
+        };
+        if (enrolled.ParentImplantId is { } parent)
+            response.ParentImplantId = parent.ToString();
+        foreach (var chainCert in enrolled.CaChain)
+            response.CaChain.Add(Google.Protobuf.ByteString.CopyFrom(chainCert));
+        if (outcome.Build?.EnvelopeKeyId is { } keyId && outcome.Build.EnvelopeKey is { } key)
+        {
+            response.EnvelopeKeyId = Google.Protobuf.ByteString.CopyFrom(keyId.ToByteArray());
+            response.EnvelopeKey = Google.Protobuf.ByteString.CopyFrom(key);
+        }
+        return response;
+    }
+}
+
 internal static class ScopedEnrollment
 {
     /// <summary>

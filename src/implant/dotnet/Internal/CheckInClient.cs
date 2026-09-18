@@ -115,9 +115,11 @@ internal sealed record EnrollDial(
 /// names a web front whose check-in the envelope POST cycle carries; a bare
 /// host:port is the mTLS socket the gRPC stream dials; a quic-schemed URL
 /// is the QUIC stream's dial; a dns-schemed URL is the DNS carrier's dial
-/// -- a resolver and a zone (dns://resolver[:port]/zone). Shared by the
-/// clients and the coordinator, and mirrored by the build unit when it
-/// selects which transport modules a build compiles.
+/// -- a resolver and a zone (dns://resolver[:port]/zone); a tcp-schemed
+/// URL is the raw socket's dial and an smb-schemed one the named pipe's
+/// (smb://host/pipe/name). Shared by the clients and the coordinator, and
+/// mirrored by the build unit when it selects which transport modules a
+/// build compiles.
 /// </summary>
 internal static class BeaconUrl
 {
@@ -127,6 +129,13 @@ internal static class BeaconUrl
 
     public static bool IsQuic(string beaconUrl)
         => beaconUrl.Trim().StartsWith("quic://", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsSocket(string beaconUrl)
+    {
+        var trimmed = beaconUrl.Trim();
+        return trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
+               || trimmed.StartsWith("smb://", StringComparison.OrdinalIgnoreCase);
+    }
 
     public static bool IsDns(string beaconUrl)
     {

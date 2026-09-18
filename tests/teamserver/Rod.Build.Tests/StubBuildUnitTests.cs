@@ -124,7 +124,7 @@ public class StubBuildUnitTests
         Assert.Contains("user_agent=", manifest);
         Assert.Contains("headers=-", manifest);
         Assert.Contains("request_timeout=30s", manifest);
-        Assert.Contains("envelope=none", manifest);
+        Assert.Contains("envelope=aesgcm", manifest);
     }
 
     [Fact]

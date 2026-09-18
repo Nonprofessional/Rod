@@ -450,6 +450,21 @@ public static class TaskEndpoints
             return Results.Conflict(
                 new Problem("The task's channel is not live: it is queued or already completed."));
 
+        // A poll-mode implant (the degraded advertisement) takes its input
+        // through the parking queue even while one of its cycle's streams
+        // happens to be open: those streams are transient -- the idle window
+        // ends them mid-typing, and a live-sink write racing the close drops
+        // the keystroke -- while the queue is the carrier its cycles pump,
+        // drained onto whichever connection comes next.
+        if (await degraded.AdvertisedAsync(task.ImplantId, cancellationToken))
+        {
+            if (!await degraded.TryEnqueueAsync(
+                    task.ImplantId, new TaskId(taskValue), data, body.Eof, cancellationToken))
+            {
+                return Results.Conflict(
+                    new Problem("The implant's poll cycle is not accepting channel input."));
+            }
+        }
         // The hub reaches the implant's live beacon stream. No sink (or a full
         // one) means the channel cannot take this input right now -- unless
         // the implant opted into the degraded discipline, whose parking queue
@@ -457,7 +472,7 @@ public static class TaskEndpoints
         // pivot child's channel has no sink of its own (Sec 5.2): its input
         // rides the fronting parent's stream, so a child that holds no sink
         // routes through its parent.
-        if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
+        else if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
         {
             var target = await implants.FindAsync(task.ImplantId, cancellationToken);
             if (target is { Class: ImplantClass.Pivot, ParentImplantId: { } fronting }

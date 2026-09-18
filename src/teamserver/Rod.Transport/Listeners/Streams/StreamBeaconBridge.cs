@@ -1,13 +1,16 @@
 using Google.Protobuf;
+using Microsoft.Extensions.Logging;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.Staging;
 using Rod.CoreState.Tasks;
 using Rod.CoreState.Transports;
 using Rod.Transport.Channels;
 using Rod.Transport.Endpoints;
+using Rod.Transport.Payloads;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
 
@@ -23,6 +26,12 @@ namespace Rod.Transport.Listeners.Streams;
 // BeaconTasking), so a result captured over a stream listener is
 // indistinguishable in core state, the audit trail, and the live bus from one
 // captured over the gRPC stream -- the same property the envelope carries.
+//
+// The opening message may also carry an EnrollRequest ahead of its handshake
+// (Sec 8, the same full-independence step QUIC took): the certificate-less
+// posture makes the carriage clean -- no TLS, no second connection -- so a
+// no-egress segment can enroll its first implant over the pipe or socket it
+// already reaches.
 //
 // The identity posture is the certificate-less one (Sec 8): no client
 // certificate rides a pipe or a raw socket, so the implant is identified by
@@ -60,6 +69,11 @@ internal sealed class StreamBeaconBridge
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
     private readonly DegradedChannelHub _degraded;
+    private readonly EnrollmentService _enrollment;
+    private readonly IStagerTokenService _tokens;
+    private readonly IPayloadStore _payloads;
+    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly ILogger<StreamBeaconBridge> _logger;
 
     public StreamBeaconBridge(
         HandshakeService handshake,
@@ -69,7 +83,12 @@ internal sealed class StreamBeaconBridge
         BeaconTasking tasking,
         IAuditStore audit,
         TimeProvider clock,
-        DegradedChannelHub degraded)
+        DegradedChannelHub degraded,
+        EnrollmentService enrollment,
+        IStagerTokenService tokens,
+        IPayloadStore payloads,
+        EnvelopeCheckInKeys checkInKeys,
+        ILogger<StreamBeaconBridge> logger)
     {
         _handshake = handshake;
         _sessions = sessions;
@@ -79,6 +98,11 @@ internal sealed class StreamBeaconBridge
         _audit = audit;
         _clock = clock;
         _degraded = degraded;
+        _enrollment = enrollment;
+        _tokens = tokens;
+        _payloads = payloads;
+        _checkInKeys = checkInKeys;
+        _logger = logger;
     }
 
     /// <summary>
@@ -87,25 +111,49 @@ internal sealed class StreamBeaconBridge
     /// with a bare handshake response -- ends the connection; the next
     /// check-in reconnects, the poll cadence implants already keep.
     /// </summary>
-    public async Task HandleCheckInAsync(Stream stream, CancellationToken stoppingToken)
+    public async Task HandleCheckInAsync(Stream stream, Listener listener, CancellationToken stoppingToken)
     {
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         bounded.CancelAfter(CheckInTimeout);
         var cancellationToken = bounded.Token;
         try
         {
-            byte[] body;
-            List<Frame> frames;
-            try
-            {
-                body = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
-                frames = EnvelopeFraming.Parse(body);
-            }
-            catch (Exception ex) when (ex is EnvelopeFramingException or IOException)
-            {
-                // A malformed or oversized check-in gets no answer: the
-                // connection is dropped, not negotiated.
+            // The opening message may carry an EnrollRequest ahead of its
+            // handshake (Sec 8), so the first decode accepts the enroll
+            // seal too; every later message on the connection is a check-in.
+            var opened = await ReadAndDecodeAsync(stream, allowEnroll: true, cancellationToken);
+            if (opened is null)
                 return;
+            var frames = opened.Frames;
+            var sealedKey = (KeyId: opened.Sealed ? opened.KeyId : Guid.Empty, opened.Key);
+            var isSealed = opened.Sealed;
+            var checkInCounter = opened.Counter;
+
+            // Enrollment over the stream check-in (Sec 8, the same
+            // full-independence step QUIC took): the opening message may
+            // carry an EnrollRequest ahead of its handshake -- the
+            // certificate-less posture makes the carriage clean, no TLS and
+            // no second connection. The arm answers as its own message and
+            // reads the next message as the check-in.
+            if (frames.Count > 0 && frames[0].Kind == FrameKind.EnrollRequest)
+            {
+                if (!await ServeEnrollmentAsync(stream, listener, frames[0], opened, cancellationToken))
+                    return;
+
+                // The handshake is the next frame the connection carries: the
+                // remainder of the enroll message when it rode one, else the
+                // next message's first frame.
+                frames = frames.Skip(1).ToList();
+                if (frames.Count == 0)
+                {
+                    var next = await ReadAndDecodeAsync(stream, allowEnroll: false, cancellationToken);
+                    if (next is null)
+                        return;
+                    frames = next.Frames;
+                    sealedKey = (next.Sealed ? next.KeyId : Guid.Empty, next.Key);
+                    isSealed = next.Sealed;
+                    checkInCounter = next.Counter;
+                }
             }
 
             // The implant speaks first here too: the first frame is the
@@ -116,14 +164,31 @@ internal sealed class StreamBeaconBridge
                 || !TryParseHandshake(frames[0], out handshakeRequest)
                 || !ImplantId.TryParse(handshakeRequest.ImplantId, out var implantId))
             {
-                await RespondAsync(stream, BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false), stoppingToken);
+                await RespondAsync(stream, BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false), sealedKey, isSealed, stoppingToken);
                 return;
             }
+
+            // The key posture gates, checked before the handshake opens
+            // anything (the envelope route's own rules, carried here): an
+            // implant bound to a build key at enroll checks in sealed under
+            // exactly that key -- a plaintext body from it is the refused
+            // downgrade, another artifact's key does not impersonate it --
+            // and the counter must clear the floor: a replayed body,
+            // whatever it claims, turns away without a session or a touch.
+            // The refusal is the dropped connection, the raw carriage's
+            // answer to the HTTP problem body.
+            if (_checkInKeys.TryGet(implantId) is { } bound)
+            {
+                if (!isSealed || sealedKey.KeyId != bound.KeyId)
+                    return;
+            }
+            if (isSealed && !_checkInKeys.Accept(implantId, checkInCounter))
+                return;
 
             var (response, handshake) = await TryHandshakeAsync(implantId, handshakeRequest);
             if (response.Status != HandshakeStatus.Ok || handshake is null)
             {
-                await RespondAsync(stream, response, stoppingToken);
+                await RespondAsync(stream, response, sealedKey, isSealed, stoppingToken);
                 return;
             }
 
@@ -148,7 +213,7 @@ internal sealed class StreamBeaconBridge
             var active = await _sessions.GetActiveAsync(session.Implant, cancellationToken);
             if (active is null || active.Id != session.SessionId)
             {
-                await RespondAsync(stream, response, stoppingToken);
+                await RespondAsync(stream, response, sealedKey, isSealed, stoppingToken);
                 return;
             }
 
@@ -218,8 +283,7 @@ internal sealed class StreamBeaconBridge
                 outbound.AddRange(_degraded.Drain(session.Implant, budget));
             }
 
-            await StreamCheckInFraming.WriteMessageAsync(
-                stream, EnvelopeFraming.Encode(outbound), stoppingToken);
+            await ReplyAsync(stream, outbound, sealedKey, isSealed, stoppingToken);
         }
         catch (Exception ex) when (
             ex is OperationCanceledException
@@ -234,9 +298,192 @@ internal sealed class StreamBeaconBridge
         }
     }
 
-    private async Task RespondAsync(Stream stream, HandshakeResponse response, CancellationToken stoppingToken)
-        => await StreamCheckInFraming.WriteMessageAsync(
-            stream, EnvelopeFraming.Encode(new[] { HandshakeFrame(response) }), stoppingToken);
+    // One response message out: the framed body, or the same body sealed
+    // under the key the request verified with -- a sealed cycle answers
+    // sealed, handshake refusals included, so the wire carries no readable
+    // frame bytes in either direction.
+    private static async Task ReplyAsync(
+        Stream stream, IReadOnlyList<Frame> outbound, (Guid KeyId, byte[] Key) sealedKey, bool isSealed,
+        CancellationToken stoppingToken)
+    {
+        var body = EnvelopeFraming.Encode(outbound);
+        if (isSealed)
+            body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
+                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInResponseAad));
+        await StreamCheckInFraming.WriteMessageAsync(stream, body, stoppingToken);
+    }
+
+    private async Task RespondAsync(
+        Stream stream, HandshakeResponse response, (Guid, byte[]) sealedKey, bool isSealed, CancellationToken stoppingToken)
+        => await ReplyAsync(
+            stream, new[] { HandshakeFrame(response) }, sealedKey, isSealed, stoppingToken);
+
+    // The enroll exchange on the opening connection (Sec 8): a kind-bearing
+    // EnrollRequest frame -- the enroll body the web route carries, promoted
+    // into the rod.v1 frame grammar -- answered by an EnrollResponse frame.
+    // The shared ScopedEnrollment flow does the work the web route drives it
+    // for, scoped by this connection's own listener (the ingress the HTTP
+    // route resolves from the local port, the pipe or socket listener knows
+    // directly), with the same refusal rules and audit arc. A refusal answers
+    // the status frame and ends the connection (no identity exists to hold a
+    // session); an acceptance is followed by the ordinary handshake on the
+    // same connection.
+    private async Task<bool> ServeEnrollmentAsync(
+        Stream stream, Listener listener, Frame frame, DecodedMessage opened, CancellationToken cancellationToken)
+    {
+        Rod.V1.EnrollRequest request;
+        try
+        {
+            request = Rod.V1.EnrollRequest.Parser.ParseFrom(frame.Payload);
+        }
+        catch (InvalidProtocolBufferException)
+        {
+            await WriteEnrollResponseAsync(
+                stream, new Rod.V1.EnrollResponse { Status = EnrollStatus.Unspecified }, opened, cancellationToken);
+            return false;
+        }
+
+        // A shared-tier socket refuses implant ingress outright (Sec 8) --
+        // the same rule ScopedEnrollment enforces from the listener record,
+        // kept here so the named refusal reads on the listener's own log.
+        if (listener.EngagementId is null)
+        {
+            _logger.LogInformation(
+                "Stream enroll refused on {Name}: the socket is not engagement-scoped.", listener.Name);
+            await WriteEnrollResponseAsync(
+                stream, new Rod.V1.EnrollResponse { Status = EnrollStatus.BadToken }, opened, cancellationToken);
+            return false;
+        }
+
+        var outcome = await ScopedEnrollment.EnrollAsync(
+            new EnrollWireFields(
+                request.StagerTokenSecret,
+                NullWhenEmpty(request.Class),
+                request.PublicKey.IsEmpty ? null : request.PublicKey.ToByteArray(),
+                NullWhenEmpty(request.ParentImplantId),
+                NullWhenEmpty(request.Hostname),
+                NullWhenEmpty(request.Os),
+                NullWhenEmpty(request.Arch),
+                NullWhenEmpty(request.Username),
+                NullWhenEmpty(request.KillDate)),
+            listener,
+            _enrollment,
+            _tokens,
+            _payloads,
+            _checkInKeys,
+            _audit,
+            _clock,
+            cancellationToken);
+
+        if (!outcome.Accepted)
+        {
+            // The token states carry over the wire; the problem causes (a
+            // malformed request, a closed engagement) collapse to the
+            // generic refusal -- the same "no signal beyond no" the web
+            // route keeps -- with the cause named server-side.
+            if (outcome.Problem is { } problem)
+                _logger.LogInformation("Stream enroll refused on {Name}: {Problem}.", listener.Name, problem);
+            else
+                _logger.LogInformation(
+                    "Stream enroll refused on {Name}: status {Status}.", listener.Name, outcome.Status);
+            await WriteEnrollResponseAsync(
+                stream, new Rod.V1.EnrollResponse { Status = outcome.Status }, opened, cancellationToken);
+            return false;
+        }
+
+        var enrolled = outcome.Enrolled!;
+        _logger.LogInformation(
+            "Rod stream listener {Name} enrolled implant {Implant} into {Engagement}.",
+            listener.Name, enrolled.ImplantId, enrolled.EngagementId);
+
+        var response = ScopedEnrollmentResponse.Build(outcome);
+
+        await WriteEnrollResponseAsync(stream, response, opened, cancellationToken);
+        return true;
+    }
+
+    private static async Task WriteEnrollResponseAsync(
+        Stream stream, Rod.V1.EnrollResponse response, DecodedMessage opened, CancellationToken cancellationToken)
+    {
+        var body = EnvelopeFraming.Encode(new[]
+        {
+            new Frame { Kind = FrameKind.EnrollResponse, Payload = ByteString.CopyFrom(response.ToByteArray()) },
+        });
+        // A sealed exchange answers sealed, refusals included: the client
+        // that baked a key reads its answer under it, and the wire carries
+        // no readable frame bytes in either direction.
+        if (opened.Sealed)
+            body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
+                body, opened.KeyId, opened.Key, AesGcmEnvelope.EnrollResponseAad));
+        await StreamCheckInFraming.WriteMessageAsync(stream, body, cancellationToken);
+    }
+
+    private static string? NullWhenEmpty(string value)
+        => value.Length == 0 ? null : value;
+
+    // One decoded inbound message: the frames, and -- when the body was the
+    // sealed shape -- the key it verified under and the counter it carried.
+    private sealed record DecodedMessage(
+        List<Frame> Frames, bool Sealed, Guid KeyId, byte[] Key, long Counter);
+
+    // Reads one message and decodes its body: the plaintext framed shape, or
+    // the sealed shape (architecture.md Sec 8/9) -- base64 of
+    // magic || keyId || nonce || ciphertext || tag, AES-256-GCM under the
+    // artifact's per-build key, the same application-layer seal the
+    // cleartext http posture carries, so a bare socket or pipe leaks no
+    // frame bytes either. The check-in body wraps a strictly increasing
+    // counter (8 bytes, big-endian) ahead of the framed bytes; the enroll
+    // exchange (the opening message, allowEnroll) seals its frames without
+    // one. A body that names no known key, or does not verify under it, is
+    // undecodable -- null, the dropped connection.
+    private async Task<DecodedMessage?> ReadAndDecodeAsync(
+        Stream stream, bool allowEnroll, CancellationToken cancellationToken)
+    {
+        byte[] body;
+        try
+        {
+            body = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
+        }
+        catch (Exception ex) when (ex is EnvelopeFramingException or IOException or OperationCanceledException)
+        {
+            return null;
+        }
+
+        var framed = body;
+        var sealedShape = (Sealed: false, KeyId: Guid.Empty, Key: Array.Empty<byte>());
+        long counter = 0;
+        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(body, out var sealedText) is { } keyId)
+        {
+            var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
+            if (carrier?.EnvelopeKey is not { } key)
+                return null;
+            byte[]? plain = null;
+            if (allowEnroll)
+                plain = AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.EnrollRequestAad);
+            if (plain is null)
+            {
+                plain = AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.CheckInRequestAad);
+                if (plain is null || plain.Length < 8)
+                    return null;
+                counter = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(plain);
+                plain = plain[8..];
+            }
+            framed = plain;
+            sealedShape = (true, keyId, key);
+        }
+
+        try
+        {
+            return new DecodedMessage(
+                EnvelopeFraming.Parse(framed), sealedShape.Sealed, sealedShape.KeyId, sealedShape.Key, counter);
+        }
+        catch (EnvelopeFramingException)
+        {
+            // A malformed body gets no answer: the connection is dropped,
+            // not negotiated.
+            return null;
+        }
+    }
 
     private static bool TryParseHandshake(Frame frame, out HandshakeRequest request)
     {

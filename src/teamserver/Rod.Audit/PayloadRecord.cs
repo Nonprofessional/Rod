@@ -81,14 +81,6 @@ public sealed record PayloadBuildProfile
     /// "poll" (envelope POST cycles).</summary>
     public string? Mode { get; init; }
 
-    /// <summary>
-    /// Whether the bake opted into the degraded channel discipline
-    /// (architecture.md Sec 10.3): channel verbs claim over the poll
-    /// check-ins, at the cycle's latency. Null on records that predate the
-    /// flag.
-    /// </summary>
-    public bool? DegradedChannels { get; init; }
-
     /// <summary>The check-in interval in seconds.</summary>
     public double? SleepSeconds { get; init; }
 

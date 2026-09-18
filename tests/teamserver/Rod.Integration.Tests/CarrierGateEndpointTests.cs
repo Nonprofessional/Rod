@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,8 +19,11 @@ namespace Rod.Integration.Tests;
 public class CarrierGateEndpointTests
 {
     [Fact]
-    public async Task ChannelVerb_IsRefusedAtIssuance_ForAnEnvelopeOnlyBuild()
+    public async Task ChannelVerb_IsIssued_ForAPollWebBuild()
     {
+        // The store-and-forward discipline is not a bake-time choice: every
+        // poll-mode web artifact advertises the capability, so the channel
+        // verbs are issuable against its cadence without any stream.
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
@@ -37,16 +39,33 @@ public class CarrierGateEndpointTests
                 $"/engagements/{engagementId}/tasks",
                 new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
 
-            Assert.Equal(HttpStatusCode.UnprocessableEntity, issued.StatusCode);
-            var problem = await issued.Content.ReadFromJsonAsync<Problem>();
-            Assert.NotNull(problem);
-            Assert.Contains("carrier", problem!.Error, StringComparison.OrdinalIgnoreCase);
+            issued.EnsureSuccessStatusCode();
+        }
+    }
 
-            // One-shot tasking is untouched: the gate is the channel verbs' alone.
-            var exec = await client.PostAsJsonAsync(
+    [Fact]
+    public async Task ChannelVerb_IsIssued_ForADnsOnlyBuild()
+    {
+        // The DNS carrier serves store-and-forward channels (architecture.md
+        // Sec 10.3): an artifact whose every dial is the DNS TXT carrier
+        // still claims the channel verbs -- input rides the TXT answers,
+        // output chunks up as queries.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            await SavePayloadAsync(host, tokenId, engagementId,
+                endpoint: "dns://10.0.0.1:53/c2.example.test", beaconEndpoint: null);
+            var implantId = await EnrollAsync(client, secret);
+
+            var issued = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
-                new { ImplantId = implantId, Verb = "shell.exec", Arguments = "whoami" });
-            exec.EnsureSuccessStatusCode();
+                new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
+
+            issued.EnsureSuccessStatusCode();
         }
     }
 
@@ -122,32 +141,6 @@ public class CarrierGateEndpointTests
         }
     }
 
-    [Fact]
-    public async Task ChannelVerb_IsIssued_ForADegradedChannelsBake()
-    {
-        // The degraded opt-in: a poll-mode web build that baked the flag
-        // stamps the marker carrier, so the channel verbs are issuable
-        // against its poll cadence without any stream at all.
-        var (client, host, _) = AuthenticatedHost.Create();
-        using (client)
-        using (host)
-        {
-            await AuthenticatedHost.LoginAsync(client);
-            var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
-            await SavePayloadAsync(host, tokenId, engagementId,
-                endpoint: "https://front.example.com:8443", beaconEndpoint: null,
-                mode: "poll", degradedChannels: true);
-            var implantId = await EnrollAsync(client, secret);
-
-            var issued = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/tasks",
-                new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
-
-            issued.EnsureSuccessStatusCode();
-        }
-    }
-
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",
@@ -185,8 +178,7 @@ public class CarrierGateEndpointTests
         string engagementId,
         string endpoint,
         string? beaconEndpoint,
-        string? mode = null,
-        bool degradedChannels = false)
+        string? mode = null)
     {
         var payloads = host.Services.GetRequiredService<IPayloadStore>();
         await payloads.SaveAsync(new PayloadRecord(
@@ -202,12 +194,11 @@ public class CarrierGateEndpointTests
             Endpoint: endpoint,
             BeaconEndpoint: beaconEndpoint,
             TokenId: tokenId,
-            Build: mode is null && !degradedChannels
+            Build: mode is null
                 ? null
                 : new PayloadBuildProfile
                 {
                     Mode = mode,
-                    DegradedChannels = degradedChannels ? true : null,
                 }));
     }
 }

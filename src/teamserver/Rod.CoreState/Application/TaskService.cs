@@ -514,18 +514,15 @@ public sealed class TaskService
     }
 
     // The carrier gate's half of the question: can any baked carrier run a
-    // channel task? A native carrier holds a live stream; the degraded
-    // marker is the bake's own opt-in, standing for the store-and-forward
-    // discipline its poll carriers then carry. A degraded-shaped carrier
-    // WITHOUT the marker is the un-opted bake -- the discipline is not on,
-    // so the refusal stands.
+    // channel task? A native carrier holds a live stream; a degraded carrier
+    // carries the store-and-forward discipline on its poll cycles (the
+    // artifact always advertises it). Only a carrier with no channel support
+    // at all (DNS's datagram poll) keeps the refusal.
     private static bool HoldsChannelCapableCarrier(IReadOnlyList<string> carriers)
     {
         foreach (var carrier in carriers)
         {
-            if (TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native)
-                return true;
-            if (string.Equals(carrier, TransportCapabilities.DegradedChannelsName, StringComparison.OrdinalIgnoreCase))
+            if (TransportCapabilities.Find(carrier).Channels != ChannelSupport.None)
                 return true;
         }
         return false;

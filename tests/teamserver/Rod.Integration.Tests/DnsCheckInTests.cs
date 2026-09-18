@@ -183,7 +183,12 @@ public class DnsCheckInTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
         var pollAnswer = await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone));
-        var taskRequest = TaskRequest.Parser.ParseFrom(DnsCheckInNames.TryDecode(pollAnswer!, out var marshaled) ? marshaled : Array.Empty<byte>());
+        Assert.NotNull(pollAnswer);
+        Assert.True(DnsCheckInNames.TryDecode(pollAnswer, out var framed));
+        // The poll answer carries a kind byte ahead of its message: 't' names
+        // the TaskRequest ('i' would name parked channel input).
+        Assert.Equal((byte)'t', framed![0]);
+        var taskRequest = TaskRequest.Parser.ParseFrom(framed[1..]);
         Assert.Equal(issuedBody!.TaskId, taskRequest.TaskId);
         Assert.Equal("shell.exec", taskRequest.Verb);
         Assert.Equal("id", taskRequest.Arguments);

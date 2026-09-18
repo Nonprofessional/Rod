@@ -82,7 +82,7 @@ internal sealed class SmbListenerService : BackgroundService
             {
                 try
                 {
-                    await _bridge.HandleCheckInAsync(connection, stoppingToken);
+                    await _bridge.HandleCheckInAsync(connection, _listener, stoppingToken);
                 }
                 finally
                 {

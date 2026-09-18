@@ -36,12 +36,21 @@ public static class BakedCarriers
 
         var names = new List<string>();
 
-        // The beacon field is the parser-guaranteed mTLS authority, so it
-        // dials the stream whatever string it holds; every other endpoint
+        // The beacon field's shape picks its carrier: the parser-guaranteed
+        // mTLS authority dials the live stream, while the DNS family's
+        // dns:// or doh:// dial names the TXT poll carrier -- the one
+        // carrier with no channel support at all. Every other endpoint
         // must classify as a schemed web URL, the QUIC dial, or the set is
         // undeclared.
         if (!string.IsNullOrWhiteSpace(payload.BeaconEndpoint))
-            Add(names, TransportCapabilities.BeaconStreamName);
+        {
+            var beacon = payload.BeaconEndpoint.Trim();
+            if (beacon.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+                || beacon.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
+                Add(names, TransportCapabilities.DnsName);
+            else
+                Add(names, TransportCapabilities.BeaconStreamName);
+        }
         if (!TryAddEndpoint(names, payload.Endpoint))
             return null;
         if (payload.Build?.FallbackEndpoints is { } fallbacks)
@@ -55,16 +64,12 @@ public static class BakedCarriers
 
         // A stream-mode web build holds the WebSocket beacon open on its
         // front (the web posture's interactive tier), so the baked mode adds
-        // the native carrier a web-front artifact actually dials. A
-        // degraded-channels bake opts its poll carriers into the
-        // store-and-forward discipline, so the flag adds the marker the
-        // issuance gate reads as claimable-at-cycle-latency. Poll-mode and
-        // modeless records (an old build, a manual token) keep the
-        // envelope-only answer -- the conservative direction either way.
+        // the native carrier a web-front artifact actually dials. Poll-mode
+        // and modeless records (an old build, a manual token) keep the
+        // envelope-only answer, whose channel support is the
+        // store-and-forward discipline every poll artifact advertises.
         if (string.Equals(payload.Build?.Mode, "stream", StringComparison.OrdinalIgnoreCase))
             Add(names, TransportCapabilities.BeaconStreamName);
-        if (payload.Build?.DegradedChannels == true)
-            Add(names, TransportCapabilities.DegradedChannelsName);
 
         return names.Count == 0 ? null : names;
     }
@@ -72,8 +77,11 @@ public static class BakedCarriers
     // Adds the carrier an endpoint's shape dials: a schemed http(s) endpoint
     // runs the envelope POST cycle, the QUIC dial (enroll front or fallback --
     // enrollment over QUIC, architecture.md Sec 8) serves the native stream
-    // carrier; an empty field adds nothing, and an unrecognized shape returns
-    // false so the caller undeclares the whole set instead of guessing.
+    // carrier, the DNS family's dns:// or doh:// dial serves the TXT poll
+    // carrier, and the socket family's tcp:// or smb:// dial serves the
+    // one-connection-one-check-in message-pipe carrier; an empty field adds
+    // nothing, and an unrecognized shape returns false so the caller
+    // undeclares the whole set instead of guessing.
     private static bool TryAddEndpoint(List<string> names, string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -82,6 +90,18 @@ public static class BakedCarriers
         if (trimmed.StartsWith("quic://", StringComparison.OrdinalIgnoreCase))
         {
             Add(names, TransportCapabilities.BeaconStreamName);
+            return true;
+        }
+        if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("smb://", StringComparison.OrdinalIgnoreCase))
+        {
+            Add(names, TransportCapabilities.MessagePipeName);
+            return true;
+        }
+        if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
+        {
+            Add(names, TransportCapabilities.DnsName);
             return true;
         }
         if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)

@@ -101,6 +101,7 @@ internal sealed class QuicListenerService : BackgroundService
         TimeProvider clock,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
+        Rod.Transport.Channels.DegradedChannelHub degraded,
         TaskRelayHub relays,
         SocksProxyHub socks,
         BeaconIngest ingest,
@@ -120,7 +121,7 @@ internal sealed class QuicListenerService : BackgroundService
         _clock = clock;
         _ca = ca;
         _runner = new BeaconSessionRunner(
-            sessions, tasks, clock, wake, channels, relays, socks, ingest, tasking);
+            sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
         _listeners = listeners;
         _enrollment = enrollment;
         _tokens = tokens;
@@ -466,28 +467,7 @@ internal sealed class QuicListenerService : BackgroundService
             "Rod QUIC listener {Name} enrolled implant {Implant} into {Engagement}.",
             _listener.Name, enrolled.ImplantId, enrolled.EngagementId);
 
-        var response = new Rod.V1.EnrollResponse
-        {
-            Status = EnrollStatus.Ok,
-            ImplantId = enrolled.ImplantId.ToString(),
-            EngagementId = enrolled.EngagementId.ToString(),
-            LeafCertificate = ByteString.CopyFrom(enrolled.LeafCertificate),
-        };
-        if (enrolled.ParentImplantId is { } parent)
-            response.ParentImplantId = parent.ToString();
-        foreach (var chainCert in enrolled.CaChain)
-            response.CaChain.Add(ByteString.CopyFrom(chainCert));
-
-        // The per-artifact check-in key the enrollment bound (Sec 8/9): the
-        // QUIC-enrolled artifact receives at enroll the key its listener-side
-        // binding demands, so a walk that later crosses onto a web front
-        // seals under it. The 16-byte key id and 32-byte key are the same
-        // packed halves the baked envelope key carries.
-        if (outcome.Build?.EnvelopeKeyId is { } keyId && outcome.Build.EnvelopeKey is { } key)
-        {
-            response.EnvelopeKeyId = ByteString.CopyFrom(keyId.ToByteArray());
-            response.EnvelopeKey = ByteString.CopyFrom(key);
-        }
+        var response = ScopedEnrollmentResponse.Build(outcome);
 
         await WriteEnrollResponseAsync(stream, response, cancellationToken);
         return true;

@@ -135,14 +135,17 @@ public class TaskServiceGatingTests
     }
 
     [Fact]
-    public async Task IssueAsync_RejectsAChannelVerbWhenNoBakedCarrierHoldsAStream()
+    public async Task IssueAsync_RejectsAChannelVerbWhenNoBakedCarrierServesOne()
     {
-        // The carrier gate (architecture.md Sec 10.3): an envelope-only
-        // artifact can never claim a channel task, so the refusal lands at
-        // issuance instead of leaving the task queued forever.
+        // The carrier gate (architecture.md Sec 10.3): an artifact whose
+        // every carrier declares no channel support at all can never claim a
+        // channel task, so the refusal lands at issuance instead of leaving
+        // the task queued forever. (DNS itself now serves store-and-forward
+        // channels, so it no longer lands here -- the message-pipe family's
+        // unknown carriers do.)
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
-        var implant = await EnrollWithCarriersAsync(implants, engagement, new[] { "envelope" });
+        var implant = await EnrollWithCarriersAsync(implants, engagement, new[] { "unknown-carrier" });
         var service = NewService(implants);
 
         var ex = await Assert.ThrowsAsync<TaskRejectedException>(
@@ -150,6 +153,23 @@ public class TaskServiceGatingTests
                 new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.interact", "")));
 
         Assert.Equal(TaskRejectionReason.NoChannelCarrier, ex.Reason);
+    }
+
+    [Fact]
+    public async Task IssueAsync_AllowsAChannelVerbOnADnsOnlyImplant()
+    {
+        // The DNS carrier serves store-and-forward channels (architecture.md
+        // Sec 10.3): input rides the TXT answers, output chunks up as
+        // queries -- a DNS-only artifact claims the channel verbs.
+        var implants = new InMemoryImplantRepository();
+        var engagement = EngagementId.New();
+        var implant = await EnrollWithCarriersAsync(implants, engagement, new[] { "dns" });
+        var service = NewService(implants);
+
+        var issued = await service.IssueAsync(
+            new IssueTaskCommand(engagement, implant.Id, OperatorId.New(), "shell.interact", ""));
+
+        Assert.Equal("shell.interact", issued.Verb);
     }
 
     [Fact]
@@ -187,15 +207,15 @@ public class TaskServiceGatingTests
     }
 
     [Fact]
-    public async Task IssueAsync_AllowsAChannelVerbWhenTheBakeOptedIntoDegradedChannels()
+    public async Task IssueAsync_AllowsAChannelVerbOnAnEnvelopeOnlyImplant()
     {
-        // The degraded marker the enrollment derives off a
-        // degraded-channels bake: the poll carriers claim channel verbs
-        // under the store-and-forward discipline, so the gate passes.
+        // The store-and-forward discipline is not a bake-time choice: the
+        // envelope carrier itself claims channel verbs, carried on every
+        // poll cycle the artifact runs.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
         var implant = await EnrollWithCarriersAsync(
-            implants, engagement, new[] { "envelope", "channels-degraded" });
+            implants, engagement, new[] { "envelope" });
         var service = NewService(implants);
 
         var issued = await service.IssueAsync(

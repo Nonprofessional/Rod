@@ -132,7 +132,8 @@ internal sealed class BeaconTasking(
     TaskNonceTracker nonces,
     HeldTaskLedger held,
     HandlerRegistry handlers,
-    TextWriter log)
+    TextWriter log,
+    bool markResultsOnWrite = true)
 {
     /// <summary>
     /// Results whose delivery died with an earlier stream ride this one first
@@ -156,7 +157,11 @@ internal sealed class BeaconTasking(
     /// Writes one task result and caches it in the held-task ledger: the cache
     /// is what a redelivery re-sends, and the delivery mark is what a dying
     /// stream clears so the next connection re-sends it (first-wins
-    /// server-side).
+    /// server-side). A wire-writing carrier marks on the write (the frame left
+    /// for the server to read); a batch carrier -- whose write queues the
+    /// frame for a later cycle -- leaves the mark to its own "batch crossed"
+    /// moment, so a failed cycle followed by a walk switch still replays the
+    /// result on the next client.
     /// </summary>
     public async Task ReportAsync(
         string taskId,
@@ -167,18 +172,21 @@ internal sealed class BeaconTasking(
     {
         await write(BeaconFrames.ResultFrame(taskId, outcome, output), cancellationToken);
         held.Remember(taskId, outcome, output);
-        held.MarkDelivered(taskId);
+        if (markResultsOnWrite)
+            held.MarkDelivered(taskId);
     }
 
     /// <summary>
     /// One dispatched TaskRequest: the fronted gate, then verification, then
     /// the dispatch strand's dedup, then the staged / channel / inline shapes.
     /// A refused task is held and reported like any other -- its redelivery is
-    /// answered from the cache, never re-executed.
+    /// answered from the cache, never re-executed. The channel shape is the
+    /// caller's carriage: a live stream starts the channel on itself, a poll
+    /// run starts it on its store-and-forward batch (PollChannels) -- the
+    /// acceptance is the same either way.
     /// </summary>
     public async Task AcceptAsync(
         TaskRequest task,
-        bool isPoll,
         Func<Frame, CancellationToken, Task> write,
         Func<TaskRequest, CancellationToken, Task<(TaskOutcome Outcome, string Output)>> runStaged,
         Action<TaskRequest, CapabilityChannelHandler> startChannel,
@@ -268,24 +276,12 @@ internal sealed class BeaconTasking(
         else if (handlers.ChannelFor(task.Verb) is { } channelHandler)
         {
             // The streaming shape: the task opens a channel instead of
-            // completing inline. A poll cycle cannot host one -- its read loop
-            // ends on the idle window, and there is no downstream half to
-            // carry input -- so the refusal is reported on the task itself. On
-            // a live stream the handler runs in the background and reports its
+            // completing inline. The carriage is the caller's pick -- the
+            // startChannel delegate a live stream binds to itself, a poll run
+            // to its store-and-forward batch -- and the handler reports its
             // own final TaskResult; the loop keeps reading while it runs.
             held.Hold(task.TaskId);
-            if (isPoll)
-            {
-                log.WriteLine($"task {task.TaskId} refused: no channel on a poll cycle");
-                await ReportAsync(
-                    task.TaskId, TaskOutcome.Failed,
-                    $"{task.Verb} requires a stream-mode check-in; a poll cycle carries no channel",
-                    write, cancellationToken);
-            }
-            else
-            {
-                startChannel(task, channelHandler);
-            }
+            startChannel(task, channelHandler);
             return;
         }
         else if (task.HasStagedBytes)

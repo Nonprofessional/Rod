@@ -73,8 +73,7 @@ public sealed class PayloadBuildService
             request.Target,
             request.Transport,
             new BeaconProfile(
-                request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode,
-                request.DegradedChannels),
+                request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
             request.Stage2,
             request.TokenSecret,
             request.MintedTokenId,
@@ -141,5 +140,4 @@ public sealed record BuildRequest(
     Guid? MintedTokenId = null,
     int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
-    byte[]? EnvelopeKey = null,
-    bool DegradedChannels = false);
+    byte[]? EnvelopeKey = null);

@@ -76,7 +76,7 @@ internal sealed class TcpListenerService : BackgroundService
                     var stream = new NetworkStream(socket, ownsSocket: true);
                     try
                     {
-                        await _bridge.HandleCheckInAsync(stream, stoppingToken);
+                        await _bridge.HandleCheckInAsync(stream, _listener, stoppingToken);
                     }
                     finally
                     {

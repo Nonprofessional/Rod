@@ -575,6 +575,585 @@ public class DotNetImplantTests
     }
 
     /// <summary>
+    /// Acceptance: the reference .NET implant runs the QUIC front in poll
+    /// mode -- the shape the parser stopped refusing (architecture.md
+    /// Sec 8): one session per check-in at the baked cadence. The implant
+    /// enrolls over the quic dial, then cycles -- handshake, drain the
+    /// tasking queue inside the idle window, close, sleep -- and a task
+    /// issued between cycles lands on the next connection, its result on
+    /// the same cycle's upstream. The operator's pick, not the parser's.
+    /// </summary>
+    [QuicDotNetFact]
+    public async Task DotNetImplant_QuicPollMode_CyclesTheSession_AndTasks_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Quic Poll"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        var secret = await env.MintStagerTokenAsync(engagement!.EngagementId);
+
+        var quicPort = TestSupport.GetFreeUdpPort();
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "quic-poll",
+                Transport: "quic",
+                BindAddress: $"127.0.0.1:{quicPort}",
+                PublicEndpoint: $"127.0.0.1:{quicPort}"));
+        createdListener.EnsureSuccessStatusCode();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, mode: "poll",
+            enrollUrl: $"quic://127.0.0.1:{quicPort}", deriveBeaconUrl: true);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(
+                    env, deadline: TimeSpan.FromSeconds(60), stderr);
+                Assert.Equal(engagement.EngagementId, engagementId);
+
+                var marker = "rod-quic-poll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains(marker);
+                }, deadline: TimeSpan.FromSeconds(60));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: the stream family's poll shape carries the interactive
+    /// verbs store-and-forward, the same discipline the web family runs
+    /// (architecture.md Sec 10.3, the shared PollChannels carriage): a
+    /// poll-mode QUIC implant claims shell.interact on one session cycle,
+    /// the operator's typing parks and rides the next connection down, and
+    /// the shell's output batches back up -- the unification this step
+    /// pinned, one discipline whatever the wire.
+    /// </summary>
+    [QuicDotNetFact]
+    public async Task DotNetImplant_QuicPollMode_InteractiveShellAcrossSessionCycles_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Quic Poll Channel"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        var secret = await env.MintStagerTokenAsync(engagement!.EngagementId);
+
+        var quicPort = TestSupport.GetFreeUdpPort();
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "quic-poll-channel",
+                Transport: "quic",
+                BindAddress: $"127.0.0.1:{quicPort}",
+                PublicEndpoint: $"127.0.0.1:{quicPort}"));
+        createdListener.EnsureSuccessStatusCode();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, mode: "poll",
+            enrollUrl: $"quic://127.0.0.1:{quicPort}", deriveBeaconUrl: true);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(
+                    env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                var marker = "rod-quic-poll-channel-" + Guid.NewGuid().ToString("N")[..8];
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
+                issued.EnsureSuccessStatusCode();
+                var issuedJson = await issued.Content.ReadFromJsonAsync<TaskBody>();
+                Assert.NotNull(issuedJson?.TaskId);
+                var taskId = issuedJson!.TaskId;
+
+                var dispatched = await WaitUntilTaskAsync(
+                    env.Http, engagementId, taskId, t => t.Status == "Dispatched");
+                if (dispatched is null)
+                {
+                    var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{taskId}");
+                    throw new Xunit.Sdk.XunitException(
+                        "The channel task never dispatched. Final state: "
+                        + $"{final?.Status}/{final?.Outcome}: {final?.Output}\n"
+                        + "Implant stderr:\n" + stderr);
+                }
+
+                var typed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{taskId}/input",
+                    new { Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"echo {marker}\n")) });
+                typed.EnsureSuccessStatusCode();
+
+                var closed = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks/{taskId}/input",
+                    new { Eof = true });
+                closed.EnsureSuccessStatusCode();
+
+                var completed = await WaitUntilTaskAsync(
+                    env.Http, engagementId, taskId,
+                    t => t.Status == "Completed",
+                    timeout: TimeSpan.FromSeconds(30));
+                if (completed is null)
+                {
+                    var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{taskId}");
+                    throw new Xunit.Sdk.XunitException(
+                        "The channel task never completed. Final state: "
+                        + $"{final?.Status}/{final?.Outcome}: {final?.Output}\n"
+                        + "Implant stderr:\n" + stderr);
+                }
+                if (!completed.Output!.Contains(marker))
+                    throw new Xunit.Sdk.XunitException(
+                        "The channel completed without the typed marker. Output: "
+                        + $"{completed.Status}/{completed.Outcome}: {completed.Output}\n"
+                        + "Implant stderr:\n" + stderr);
+                Assert.Contains(marker, completed!.Output);
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: the reference .NET implant enrolls over the raw TCP
+    /// socket (architecture.md Sec 8, enrollment over the stream check-in)
+    /// and cycles check-ins on it -- the no-egress segment's full
+    /// independence, no HTTP shape dialed at all. One connection per
+    /// check-in at the baked cadence; a task issued between cycles lands on
+    /// the next connection, its result on the same exchange. The artifact
+    /// is the built shape, so the default check-in seal rides too: every
+    /// message this wire exchanges is AES-256-GCM under the baked
+    /// per-artifact key, the same application-layer seal the cleartext
+    /// http posture carries -- the bare socket leaks no frame bytes.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_EnrollsOverTcp_AndCyclesCheckIns_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Tcp Enroll"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+
+        var port = TestSupport.GetFreeTcpPort();
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement!.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "tcp-enroll",
+                Transport: "tcp",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        createdListener.EnsureSuccessStatusCode();
+        var listener = await createdListener.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+
+        var artifactPath = await BuildStage2ViaJobAsync(
+            env.Http, engagement.EngagementId, listener!.Id, mode: "poll");
+        try
+        {
+            var stderr = new StringBuilder();
+            var proc = StartBuiltArtifact(artifactPath);
+            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            proc.BeginErrorReadLine();
+            using (proc)
+            {
+                try
+                {
+                    var (engagementId, implantId) = await WaitForImplantOnlineAsync(
+                        env, deadline: TimeSpan.FromSeconds(60), stderr);
+
+                    var marker = "rod-tcp-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                    var issued = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks",
+                        new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                    issued.EnsureSuccessStatusCode();
+                    var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                    Assert.NotNull(issuedBody);
+
+                    await WaitUntilAsync(async () =>
+                    {
+                        var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                            $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                        return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                            && (fetched.Output ?? string.Empty).Contains(marker);
+                    }, deadline: TimeSpan.FromSeconds(60));
+                }
+                finally
+                {
+                    if (!proc.HasExited)
+                    {
+                        try { proc.Kill(entireProcessTree: true); } catch { }
+                        proc.WaitForExit(5000);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(artifactPath)) File.Delete(artifactPath); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: the same independence over the named pipe -- the shape a
+    /// Windows segment without HTTP or DNS egress still allows. The implant
+    /// enrolls over smb://./pipe/name (the Unix pipe the Linux test host
+    /// serves; a Windows dial names the remote host the same way) and cycles
+    /// check-ins on it. Raw TCP pins the bridge; this pins the pipe dial.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_EnrollsOverSmbPipe_AndCyclesCheckIns_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Pipe Enroll"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        var secret = await env.MintStagerTokenAsync(engagement!.EngagementId);
+
+        var pipe = "rod-pipe-" + Guid.NewGuid().ToString("N")[..8];
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "smb-enroll",
+                Transport: "smb",
+                BindAddress: pipe,
+                PublicEndpoint: $"\\\\.\\pipe\\{pipe}"));
+        createdListener.EnsureSuccessStatusCode();
+
+        var implantSource = LocateImplantSource();
+        var implantDir = PublishImplant(implantSource);
+        var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
+        var implantProc = StartImplant(implantDll, env, secret,
+            sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, mode: "poll",
+            enrollUrl: $"smb://./pipe/{pipe}", deriveBeaconUrl: true);
+        var stderr = new StringBuilder();
+        implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        implantProc.BeginErrorReadLine();
+        using (implantProc)
+        {
+            try
+            {
+                var (engagementId, implantId) = await WaitForImplantOnlineAsync(
+                    env, deadline: TimeSpan.FromSeconds(60), stderr);
+                Assert.Equal(engagement.EngagementId, engagementId);
+
+                var marker = "rod-smb-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                var issued = await env.Http.PostAsJsonAsync(
+                    $"/engagements/{engagementId}/tasks",
+                    new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                issued.EnsureSuccessStatusCode();
+                var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                Assert.NotNull(issuedBody);
+
+                await WaitUntilAsync(async () =>
+                {
+                    var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                        $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                    return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                        && (fetched.Output ?? string.Empty).Contains(marker);
+                }, deadline: TimeSpan.FromSeconds(60));
+            }
+            finally
+            {
+                if (!implantProc.HasExited)
+                {
+                    try { implantProc.Kill(entireProcessTree: true); } catch { }
+                    implantProc.WaitForExit(5000);
+                }
+                try { if (Directory.Exists(implantDir)) Directory.Delete(implantDir, recursive: true); } catch { }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: the reference .NET implant enrolls over the DNS grammar
+    /// (architecture.md Sec 8, enrollment over DNS -- the full-independence
+    /// step for a DNS-only target): the built artifact's enroll body --
+    /// sealed under the baked per-artifact key -- uploads as chunked TXT
+    /// queries, the EnrollResponse chunks back down, the accepted
+    /// enrollment opens the session itself, and the polls that follow carry
+    /// tasking with the results chunking back up. No other protocol is
+    /// dialed at all: the DNS-only target's lightweight implant.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_EnrollsOverDns_AndPollsTasks_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Dns Enroll"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+
+        var port = TestSupport.GetFreeUdpPort();
+        var zone = $"rod{Guid.NewGuid().ToString("N")[..6]}.test";
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement!.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "dns-enroll",
+                Transport: "dns",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: zone));
+        createdListener.EnsureSuccessStatusCode();
+        var listener = await createdListener.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+
+        var artifactPath = await BuildStage2ViaJobAsync(
+            env.Http, engagement.EngagementId, listener!.Id, mode: "poll");
+        try
+        {
+            var stderr = new StringBuilder();
+            var proc = StartBuiltArtifact(artifactPath);
+            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            proc.BeginErrorReadLine();
+            using (proc)
+            {
+                try
+                {
+                    // Scoped to this engagement's presence: a stale session
+                    // from an earlier test lingers on the global roster until
+                    // the staleness sweep, so "some implant online" is not
+                    // this implant.
+                    string implantId;
+                    try
+                    {
+                        await WaitUntilAsync(async () =>
+                        {
+                            var presence = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
+                                $"/engagements/{engagement.EngagementId}/presence");
+                            return presence is { Length: > 0 };
+                        }, deadline: TimeSpan.FromSeconds(90));
+                        var presence = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
+                            $"/engagements/{engagement.EngagementId}/presence");
+                        implantId = presence![0].ImplantId;
+                    }
+                    catch (TimeoutException)
+                    {
+                        throw new TimeoutException(
+                            "The dns-front implant never appeared online. Implant stderr:\n" + stderr);
+                    }
+                    var engagementId = engagement.EngagementId;
+
+                    var marker = "rod-dns-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
+                    var issued = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks",
+                        new { ImplantId = implantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+                    issued.EnsureSuccessStatusCode();
+                    var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+                    Assert.NotNull(issuedBody);
+
+                    try
+                    {
+                        await WaitUntilAsync(async () =>
+                        {
+                            var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
+                                $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                            return fetched is { Status: "Completed", Outcome: "Succeeded" }
+                                && (fetched.Output ?? string.Empty).Contains(marker);
+                        }, deadline: TimeSpan.FromSeconds(90));
+                    }
+                    catch (TimeoutException)
+                    {
+                        var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                            $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}");
+                        throw new TimeoutException(
+                            "The dns-front task never completed. Final state: "
+                            + $"{final?.Status}/{final?.Outcome}: {final?.Output}\n"
+                            + "Implant stderr:\n" + stderr);
+                    }
+                }
+                finally
+                {
+                    if (!proc.HasExited)
+                    {
+                        try { proc.Kill(entireProcessTree: true); } catch { }
+                        proc.WaitForExit(5000);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(artifactPath)) File.Delete(artifactPath); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Acceptance: the DNS carrier's store-and-forward channel (architecture.md
+    /// Sec 10.3): a DNS-enrolled implant claims shell.interact on a poll,
+    /// the operator's typing parks and rides a later poll's TXT answer down,
+    /// and the real shell's output chunks back up as c. queries onto the
+    /// task's transcript -- the interactive verbs at the query-rate cadence,
+    /// the last carrier to carry them.
+    /// </summary>
+    [DotNetFact]
+    public async Task DotNetImplant_DnsChannel_InteractiveShellAcrossPolls_EndToEnd()
+    {
+        await using var env = await TestEnv.StartAsync();
+
+        var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Dns Channel"));
+        createEngagement.EnsureSuccessStatusCode();
+        var engagement = await createEngagement.Content
+            .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+
+        var port = TestSupport.GetFreeUdpPort();
+        var zone = $"rod{Guid.NewGuid().ToString("N")[..6]}.test";
+        var createdListener = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagement!.EngagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "dns-channel",
+                Transport: "dns",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: zone));
+        createdListener.EnsureSuccessStatusCode();
+        var listener = await createdListener.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        Assert.NotNull(listener);
+
+        var artifactPath = await BuildStage2ViaJobAsync(
+            env.Http, engagement.EngagementId, listener!.Id, mode: "poll");
+        try
+        {
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            var proc = StartBuiltArtifact(artifactPath, narrate: true);
+            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
+            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            using (proc)
+            {
+                try
+                {
+                    await WaitUntilAsync(async () =>
+                    {
+                        var presence = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
+                            $"/engagements/{engagement.EngagementId}/presence");
+                        return presence is { Length: > 0 };
+                    }, deadline: TimeSpan.FromSeconds(90));
+                    var presence = await env.Http.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
+                        $"/engagements/{engagement.EngagementId}/presence");
+                    var engagementId = engagement.EngagementId;
+                    var implantId = presence![0].ImplantId;
+
+                    var marker = "rod-dns-channel-" + Guid.NewGuid().ToString("N")[..8];
+                    var issued = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks",
+                        new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
+                    issued.EnsureSuccessStatusCode();
+                    var issuedJson = await issued.Content.ReadFromJsonAsync<TaskBody>();
+                    Assert.NotNull(issuedJson?.TaskId);
+                    var taskId = issuedJson!.TaskId;
+
+                    var dispatched = await WaitUntilTaskAsync(
+                        env.Http, engagementId, taskId, t => t.Status == "Dispatched");
+                    if (dispatched is null)
+                    {
+                        var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                            $"/engagements/{engagementId}/tasks/{taskId}");
+                        throw new Xunit.Sdk.XunitException(
+                            "The dns channel task never dispatched. Final state: "
+                            + $"{final?.Status}/{final?.Outcome}: {final?.Output}\n"
+                            + "Implant stdout:\n" + stdout + "\nImplant stderr:\n" + stderr);
+                    }
+
+                    var typed = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks/{taskId}/input",
+                        new { Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"echo {marker}\n")) });
+                    typed.EnsureSuccessStatusCode();
+                    var closed = await env.Http.PostAsJsonAsync(
+                        $"/engagements/{engagementId}/tasks/{taskId}/input",
+                        new { Eof = true });
+                    closed.EnsureSuccessStatusCode();
+
+                    var completed = await WaitUntilTaskAsync(
+                        env.Http, engagementId, taskId,
+                        t => t.Status == "Completed",
+                        timeout: TimeSpan.FromSeconds(60));
+                    if (completed is null)
+                    {
+                        var final = await env.Http.GetFromJsonAsync<TaskBody>(
+                            $"/engagements/{engagementId}/tasks/{taskId}");
+                        throw new Xunit.Sdk.XunitException(
+                            "The dns channel task never completed. Final state: "
+                            + $"{final?.Status}/{final?.Outcome}: {final?.Output}\n"
+                            + "Implant stdout:\n" + stdout + "\nImplant stderr:\n" + stderr);
+                    }
+                    if (!completed.Output!.Contains(marker))
+                        throw new Xunit.Sdk.XunitException(
+                            "The dns channel completed without the typed marker. Output: "
+                            + $"{completed.Status}/{completed.Outcome}: {completed.Output}\n"
+                            + "Implant stdout:\n" + stdout + "\nImplant stderr:\n" + stderr);
+                }
+                finally
+                {
+                    if (!proc.HasExited)
+                    {
+                        try { proc.Kill(entireProcessTree: true); } catch { }
+                        proc.WaitForExit(5000);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(artifactPath)) File.Delete(artifactPath); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Core-operations acceptance for the process verbs (architecture.md
     /// Sec 10.1, Sec 14): a stage-2 implant lists the live processes with pid,
     /// ppid, user, and image, then terminates one by pid through proc.kill,
@@ -975,12 +1554,12 @@ public class DotNetImplantTests
     }
 
     /// <summary>
-    /// Acceptance for the degraded channel discipline (architecture.md
-    /// Sec 10.3) driven by the real implant: a poll-mode stage-2 baked with
-    /// the opt-in against a web front claims shell.interact, the operator's
+    /// Acceptance for the store-and-forward channel discipline
+    /// (architecture.md Sec 10.3) driven by the real implant: a poll-mode
+    /// stage-2 against a web front claims shell.interact, the operator's
     /// typing parks and rides the next check-in down, and the real shell's
     /// output streams back up the same batched cycle -- the interactive
-    /// verbs at the poll cadence, the named tradeoff.
+    /// verbs at the poll cadence, carried by every poll artifact.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_DegradedChannels_InteractiveShellAcrossPollCheckIns_EndToEnd()
@@ -999,7 +1578,7 @@ public class DotNetImplantTests
         Assert.NotNull(listener);
 
         var artifactPath = await BuildStage2ViaJobAsync(
-            env.Http, engagementId, listener!.Id, mode: "poll", degradedChannels: true);
+            env.Http, engagementId, listener!.Id, mode: "poll");
         try
         {
             var stdout = new StringBuilder();
@@ -1087,10 +1666,10 @@ public class DotNetImplantTests
     }
 
     /// <summary>
-    /// The degraded channel discipline's dev-run leg: the same shape as the
-    /// built-artifact acceptance, but the source implant with flags and the
-    /// environment knob -- the run that narrates every step, so a failure
-    /// anywhere in the poll-channel runtime names itself.
+    /// The store-and-forward discipline's dev-run leg: the same shape as the
+    /// built-artifact acceptance, but the source implant with flags -- the
+    /// run that narrates every step, so a failure anywhere in the
+    /// poll-channel runtime names itself.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_DegradedChannels_DevRun_InteractiveShellAcrossPollCheckIns()
@@ -1106,7 +1685,7 @@ public class DotNetImplantTests
             var stderr = new StringBuilder();
             var proc = StartImplant(implantDll, env, httpToken,
                 sleep: TimeSpan.FromSeconds(1), jitter: TimeSpan.Zero, mode: "poll",
-                deriveBeaconUrl: true, degradedChannels: "true");
+                deriveBeaconUrl: true);
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
             proc.BeginErrorReadLine();
             using (proc)
@@ -1440,7 +2019,7 @@ public class DotNetImplantTests
     // Unix hosts).
     private static async Task<string> BuildStage2ViaJobAsync(
         HttpClient http, string engagementId, string listenerId,
-        string? mode = null, bool? degradedChannels = null)
+        string? mode = null)
     {
         var enqueued = await http.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
@@ -1453,7 +2032,6 @@ public class DotNetImplantTests
                 sleepSeconds = 1.0,
                 jitterSeconds = 0.0,
                 mode,
-                degradedChannels,
             });
         enqueued.EnsureSuccessStatusCode();
         var job = await enqueued.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
@@ -1485,7 +2063,7 @@ public class DotNetImplantTests
     // Starts a pipeline-built artifact exactly the way a deployment would:
     // no arguments at all -- the baked profile carries the endpoint, the
     // cadence, the credential, and the check-in key.
-    private static Process StartBuiltArtifact(string artifactPath)
+    private static Process StartBuiltArtifact(string artifactPath, bool narrate = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -1494,6 +2072,8 @@ public class DotNetImplantTests
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+        if (narrate)
+            psi.Environment["ROD_QUIET"] = "0";
         return Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the built artifact.");
     }
 
@@ -1509,7 +2089,7 @@ public class DotNetImplantTests
     private static Process StartImplant(
         string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream",
         string? enrollUrl = null, string? beaconUrl = null, string? fallbackEnrollUrls = null,
-        bool deriveBeaconUrl = false, string? degradedChannels = null)
+        bool deriveBeaconUrl = false)
     {
         var psi = new ProcessStartInfo
         {
@@ -1518,10 +2098,6 @@ public class DotNetImplantTests
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        // The degraded-channels opt-in rides the environment, the same knob
-        // the baked profile sets: a dev run passes it explicitly.
-        if (degradedChannels is not null)
-            psi.Environment["ROD_DEGRADED_CHANNELS"] = degradedChannels;
         psi.ArgumentList.Add(implantDll);
         psi.ArgumentList.Add("-enroll-url");
         psi.ArgumentList.Add(enrollUrl ?? $"http://127.0.0.1:{env.HttpPort}/implants/enroll");

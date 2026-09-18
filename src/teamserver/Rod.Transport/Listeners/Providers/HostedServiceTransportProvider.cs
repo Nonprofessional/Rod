@@ -156,8 +156,21 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
                 return;
             case BindReservation.UdpPort:
                 {
+                    // Wrapped the way the runtime bind wraps: a raw
+                    // SocketException (address not on this host, port in use,
+                    // privileged port) escapes the create endpoint's handler
+                    // as a 500 instead of the bind-refused conflict its
+                    // InvalidOperationException promises.
                     var (host, port) = TransportHost.ParseBindAddress(config.BindAddress);
-                    using var udp = new UdpClient(new IPEndPoint(host, port));
+                    try
+                    {
+                        using var udp = new UdpClient(new IPEndPoint(host, port));
+                    }
+                    catch (SocketException ex)
+                    {
+                        throw new InvalidOperationException(
+                            $"Listener '{config.Name}' could not bind {config.BindAddress}: {ex.Message}");
+                    }
                     return;
                 }
             default:

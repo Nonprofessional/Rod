@@ -322,10 +322,6 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["caCert"] = @params.Transport.CaPem ?? "",
             ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
-            // The degraded-channel opt-in (architecture.md Sec 10.3): the
-            // poll-mode artifact advertises the store-and-forward capability
-            // and accepts channel verbs over its check-ins.
-            ["degradedChannels"] = @params.Beacon.DegradedChannels ? "true" : "false",
             // Empty string is the open-ended shape: the loader reads a missing
             // or empty kill date as "no fuse" and never self-terminates.
             ["killDate"] = @params.Beacon.KillDate?.ToString("O") ?? "",

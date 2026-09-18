@@ -37,7 +37,7 @@ internal sealed class DnsListenerService : BackgroundService
         _listener = listener;
         // The shared answer core: the same wire grammar the DoH route serves
         // over HTTP bodies, behind this service's UDP socket.
-        _answerer = new DnsCheckInAnswerer(listener.PublicEndpoint, bridge, logger, listener.Name);
+        _answerer = new DnsCheckInAnswerer(listener, bridge, logger);
         _listeners = listeners;
         _logger = logger;
     }

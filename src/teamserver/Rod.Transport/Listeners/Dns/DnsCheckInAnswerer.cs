@@ -9,25 +9,27 @@ namespace Rod.Transport.Listeners.Dns;
 // lives in DnsBeaconBridge. The carriage changes; the answer never does.
 
 /// <summary>
-/// Answers one DNS wire query under a zone: a poll or result chunk under
-/// the zone gets the check-in treatment; anything else in the zone is
-/// NXDOMAIN, the shape a resolver expects for an unknown name, so the zone
-/// does not advertise what it is; a query for another zone entirely is
-/// REFUSED (rcode 5) -- this listener is not an open resolver.
+/// Answers one DNS wire query under a zone: a poll, result chunk, or
+/// enrollment exchange under the zone gets the check-in treatment; anything
+/// else in the zone is NXDOMAIN, the shape a resolver expects for an
+/// unknown name, so the zone does not advertise what it is; a query for
+/// another zone entirely is REFUSED (rcode 5) -- this listener is not an
+/// open resolver.
 /// </summary>
 internal sealed class DnsCheckInAnswerer
 {
     private readonly string _zone;
     private readonly DnsBeaconBridge _bridge;
     private readonly ILogger _logger;
-    private readonly string _listenerName;
+    private readonly Rod.Transport.Listeners.Listener _listener;
 
-    public DnsCheckInAnswerer(string zone, DnsBeaconBridge bridge, ILogger logger, string listenerName)
+    public DnsCheckInAnswerer(
+        Rod.Transport.Listeners.Listener listener, DnsBeaconBridge bridge, ILogger logger)
     {
-        _zone = zone.TrimEnd('.').ToLowerInvariant();
+        _zone = listener.PublicEndpoint.TrimEnd('.').ToLowerInvariant();
         _bridge = bridge;
         _logger = logger;
-        _listenerName = listenerName;
+        _listener = listener;
     }
 
     /// <summary>
@@ -74,6 +76,33 @@ internal sealed class DnsCheckInAnswerer
                     chunk.Implant, chunk.Task, chunk.Outcome, chunk.Sequence, chunk.Terminal, chunk.Chunk,
                     cancellationToken);
             }
+            else if (DnsCheckInNames.TryParseChannel(name, _zone) is { } output)
+            {
+                await _bridge.ChannelChunkAsync(
+                    output.Implant, output.Task, output.Sequence, output.Terminal, output.Chunk,
+                    cancellationToken);
+            }
+            else if (DnsCheckInNames.TryParseEnroll(name, _zone) is { } enroll)
+            {
+                // The enrollment exchange (Sec 8): scoped by this listener's
+                // own engagement, the same rule every ingress follows. The
+                // ack text rides base32-wrapped like every TXT answer this
+                // grammar carries.
+                var ack = await _bridge.EnrollChunkAsync(
+                    _listener, enroll.Stream, enroll.Sequence, enroll.Terminal, enroll.Chunk, cancellationToken);
+                if (ack is not null)
+                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(ack)));
+                else
+                    response.ResponseCode = 3; // malformed shape: in-zone, unanswered
+            }
+            else if (DnsCheckInNames.TryParseEnrollAnswer(name, _zone) is { } probe)
+            {
+                var part = await _bridge.EnrollAnswerAsync(probe.Token, probe.Sequence);
+                if (part is not null)
+                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(part)));
+                else
+                    response.ResponseCode = 3; // unknown or expired token
+            }
             else
             {
                 response.ResponseCode = 3; // NXDOMAIN: in-zone but not a check-in
@@ -81,7 +110,7 @@ internal sealed class DnsCheckInAnswerer
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DNS listener {Name} failed a check-in for {Question}.", _listenerName, question.Name);
+            _logger.LogError(ex, "DNS listener {Name} failed a check-in for {Question}.", _listener.Name, question.Name);
             return EmptyResponse(parsed.Id, responseCode: 2); // SERVFAIL
         }
 

