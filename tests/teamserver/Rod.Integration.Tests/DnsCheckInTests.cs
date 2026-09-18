@@ -84,6 +84,47 @@ public class DnsCheckInTests
         Assert.Null(DnsCodec.ParseQuery(new byte[12]));
     }
 
+    [Fact]
+    public void Codec_EncodesAnACoverAnswer()
+    {
+        var response = new DnsMessage
+        {
+            Id = 7,
+            Question = new DnsQuestion("www." + Zone, DnsCodec.AType, 1),
+            ResponseCode = 0,
+        };
+        response.AAnswers.Add(new DnsAAnswer("www." + Zone, IPAddress.Parse("203.0.113.10")));
+
+        var datagram = DnsCodec.EncodeResponse(response);
+
+        var answerCount = (datagram[6] << 8) | datagram[7];
+        Assert.Equal(1, answerCount);
+        Assert.Contains("www", Encoding.ASCII.GetString(datagram));
+        // The rdata carries the four address bytes contiguously.
+        Assert.True(ContainsSequence(datagram, new byte[] { (byte)203, (byte)0, (byte)113, (byte)10 }));
+    }
+
+    // Byte-subsequence search for wire assertions: the codecs carry no
+    // offsets out, so rdata checks locate the bytes.
+    private static bool ContainsSequence(byte[] hay, byte[] needle)
+    {
+        for (var offset = 0; offset + needle.Length <= hay.Length; offset++)
+        {
+            var match = true;
+            for (var probe = 0; probe < needle.Length; probe++)
+            {
+                if (hay[offset + probe] != needle[probe])
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (match)
+                return true;
+        }
+        return false;
+    }
+
     // --- The name grammar. ---
 
     [Fact]
@@ -166,6 +207,38 @@ public class DnsCheckInTests
     }
 
     // --- The acceptance point: an implant checks in over DNS. ---
+
+    [Fact]
+    public async Task Cover_AnAQueryInTheZoneAnswersAnAddress()
+    {
+        await using var env = await DnsTestEnv.StartAsync();
+
+        // An A query for an unknown name in the zone: NOERROR with one A
+        // record -- the ordinary v4-zone shape, not the TXT-only oddity an
+        // NXDOMAIN-everything zone reads as. The test env binds 127.0.0.1,
+        // so the cover address is the bind's own host.
+        var datagram = await env.DnsQueryRawAsync("www." + Zone, DnsCodec.AType);
+        Assert.True(datagram.Length >= 12);
+        Assert.Equal(0, datagram[3] & 0x0F);
+        Assert.Equal(1, (datagram[6] << 8) | datagram[7]);
+        Assert.True(ContainsSequence(datagram, new byte[] { 127, 0, 0, 1 }));
+
+        // A repeat answers the same address: the cover is deterministic,
+        // the behavior resolvers cache by.
+        var again = await env.DnsQueryRawAsync("www." + Zone, DnsCodec.AType);
+        Assert.Equal(0, again[3] & 0x0F);
+        Assert.True(ContainsSequence(again, new byte[] { 127, 0, 0, 1 }));
+
+        // AAAA stays NXDOMAIN: a v4-only zone is the ordinary shape, and
+        // inventing v6 records adds no cover.
+        var aaaa = await env.DnsQueryRawAsync("www." + Zone, 28);
+        Assert.Equal(3, aaaa[3] & 0x0F);
+
+        // A TXT query for a non-check-in name keeps its NXDOMAIN: the cover
+        // widens the zone's record types, not the check-in surface.
+        var txt = await env.DnsQueryAsync("www." + Zone);
+        Assert.Null(txt);
+    }
 
     [Fact]
     public async Task Implant_ChecksInOverDns_AgainstARealListenerEntry()
@@ -379,9 +452,9 @@ public class DnsCheckInTests
         return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
     }
 
-    // Builds one TXT query datagram: header, question, and an EDNS0 OPT
-    // record so the response may carry the signed TaskRequest.
-    private static byte[] BuildQuery(ushort id, string name)
+    // Builds one query datagram of the asked type: header, question, and an
+    // EDNS0 OPT record so the response may carry the signed TaskRequest.
+    private static byte[] BuildQuery(ushort id, string name, ushort type = DnsCodec.TxtType)
     {
         var buffer = new List<byte>(128);
         buffer.Add((byte)(id >> 8));
@@ -399,7 +472,8 @@ public class DnsCheckInTests
             buffer.AddRange(Encoding.ASCII.GetBytes(label));
         }
         buffer.Add(0);
-        buffer.Add(0); buffer.Add((byte)DnsCodec.TxtType);
+        buffer.Add((byte)(type >> 8));
+        buffer.Add((byte)type);
         buffer.Add(0); buffer.Add(1);
 
         // OPT: root name, type 41, class = payload size, no data.
@@ -557,12 +631,22 @@ public class DnsCheckInTests
         /// </summary>
         public async Task<string?> DnsQueryAsync(string name)
         {
-            var query = BuildQuery((ushort)Random.Shared.Next(1, ushort.MaxValue), name);
+            var response = await DnsQueryRawAsync(name, DnsCodec.TxtType);
+            return ParseTxtAnswer(response, name);
+        }
+
+        /// <summary>
+        /// One exchange for any query type: the raw response datagram, for
+        /// the assertions a TXT string parse cannot express (A-record
+        /// rdata, rcodes outside the TXT path).
+        /// </summary>
+        public async Task<byte[]> DnsQueryRawAsync(string name, ushort type)
+        {
+            var query = BuildQuery((ushort)Random.Shared.Next(1, ushort.MaxValue), name, type);
             await _dns.SendAsync(query, query.Length);
 
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var response = await _dns.ReceiveAsync(timeout.Token);
-            return ParseTxtAnswer(response.Buffer, name);
+            return (await _dns.ReceiveAsync(timeout.Token)).Buffer;
         }
 
         // Reads the first TXT answer's concatenated strings off a response.

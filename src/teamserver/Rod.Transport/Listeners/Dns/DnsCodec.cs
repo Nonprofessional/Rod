@@ -29,6 +29,12 @@ internal sealed class DnsMessage
     public List<DnsTxtAnswer> Answers { get; } = new();
 
     /// <summary>
+    /// A answers to write on encode: the cover records the zone's non-TXT
+    /// queries get, so the zone does not read as TXT-only.
+    /// </summary>
+    public List<DnsAAnswer> AAnswers { get; } = new();
+
+    /// <summary>
     /// The EDNS0 UDP payload size: read from a query's OPT record (what the
     /// client accepts), written on responses (what this listener may send).
     /// Zero when absent.
@@ -44,9 +50,17 @@ internal sealed record DnsQuestion(string Name, ushort Type, ushort Class);
 /// <summary>One TXT answer record; the strings concatenate into the payload.</summary>
 internal sealed record DnsTxtAnswer(string Name, IReadOnlyList<string> Strings);
 
+/// <summary>
+/// One A answer record: the cover address a zone's non-TXT name resolves
+/// to, so the zone answers like an ordinary v4 zone instead of a TXT-only
+/// oddity.
+/// </summary>
+internal sealed record DnsAAnswer(string Name, System.Net.IPAddress Address);
+
 internal static class DnsCodec
 {
     public const ushort TxtType = 16;
+    public const ushort AType = 1;
     public const ushort OptType = 41;
     private const ushort InClass = 1;
 
@@ -134,7 +148,7 @@ internal static class DnsCodec
         WriteU16(buffer, message.Id);
         WriteU16(buffer, (ushort)(0x8000 | 0x0400 | 0x0080 | (message.ResponseCode & 0x000F)));
         WriteU16(buffer, message.Question is null ? (ushort)0 : (ushort)1);
-        WriteU16(buffer, (ushort)message.Answers.Count);
+        WriteU16(buffer, (ushort)(message.Answers.Count + message.AAnswers.Count));
         WriteU16(buffer, 0);
         WriteU16(buffer, 1);
 
@@ -143,6 +157,19 @@ internal static class DnsCodec
             WriteName(buffer, question.Name);
             WriteU16(buffer, question.Type);
             WriteU16(buffer, question.Class);
+        }
+
+        foreach (var answer in message.AAnswers)
+        {
+            var bytes = answer.Address.MapToIPv4().GetAddressBytes();
+            if (bytes.Length != 4)
+                throw new InvalidOperationException("An A answer requires an IPv4 address.");
+            WriteName(buffer, answer.Name);
+            WriteU16(buffer, AType);
+            WriteU16(buffer, InClass);
+            WriteU32(buffer, 60); // a cover record: short, plausible, cacheable
+            WriteU16(buffer, (ushort)bytes.Length);
+            buffer.AddRange(bytes);
         }
 
         foreach (var answer in message.Answers)

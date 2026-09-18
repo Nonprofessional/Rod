@@ -517,6 +517,15 @@ through the shared composition every carrier uses. Send EDNS0 (the answers ride 
 bytes); short-argument tasking only -- a task that does not fit is not
 delivered over DNS.
 
+**Record types beyond TXT (the cover).** An A query anywhere under the
+zone answers one A record -- the bind's own host when the bind is a
+concrete address, else a deterministic per-name address in
+198.18.0.0/15 (TTL 60). A zone that answered TXT for random labels but
+NXDOMAIN for every A query would itself be the fingerprint; an ordinary
+v4 zone answers its A records, so this one does too. AAAA and every
+other type keep the NXDOMAIN a v4-only zone would give; a query outside
+the zone is REFUSED (this listener is not an open resolver).
+
 **Enrollment over DNS (the full-independence step for a DNS-only target).**
 The enroll body -- the framed `EnrollRequest`, sealed under the baked
 per-artifact key when the artifact carries one (the raw base64 of the sealed

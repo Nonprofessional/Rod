@@ -10,11 +10,14 @@ namespace Rod.Transport.Listeners.Dns;
 
 /// <summary>
 /// Answers one DNS wire query under a zone: a poll, result chunk, or
-/// enrollment exchange under the zone gets the check-in treatment; anything
-/// else in the zone is NXDOMAIN, the shape a resolver expects for an
-/// unknown name, so the zone does not advertise what it is; a query for
-/// another zone entirely is REFUSED (rcode 5) -- this listener is not an
-/// open resolver.
+/// enrollment exchange under the zone gets the check-in treatment; an A
+/// query under the zone resolves to the cover address (a zone that
+/// answered TXT for random labels but NXDOMAIN for every A query would
+/// read as a TXT-only oddity -- an ordinary v4 zone answers its A records,
+/// so this one does too); anything else in the zone is NXDOMAIN, the shape
+/// a resolver expects for an unknown name, so the zone does not advertise
+/// what it is; a query for another zone entirely is REFUSED (rcode 5) --
+/// this listener is not an open resolver.
 /// </summary>
 internal sealed class DnsCheckInAnswerer
 {
@@ -23,6 +26,13 @@ internal sealed class DnsCheckInAnswerer
     private readonly ILogger _logger;
     private readonly Rod.Transport.Listeners.Listener _listener;
 
+    // The address the zone's A queries resolve to: the bind's own host when
+    // it is a concrete address (the factually correct "where this zone
+    // lives"), else a deterministic per-name address in 198.18.0.0/15 -- a
+    // wildcard bind names no single host, and a benchmark-range address
+    // points nowhere while reading as an ordinary record.
+    private readonly System.Net.IPAddress? _coverHost;
+
     public DnsCheckInAnswerer(
         Rod.Transport.Listeners.Listener listener, DnsBeaconBridge bridge, ILogger logger)
     {
@@ -30,6 +40,7 @@ internal sealed class DnsCheckInAnswerer
         _bridge = bridge;
         _logger = logger;
         _listener = listener;
+        _coverHost = TryParseConcreteBindHost(listener.BindAddress);
     }
 
     /// <summary>
@@ -47,12 +58,29 @@ internal sealed class DnsCheckInAnswerer
 
         var name = question.Name.ToLowerInvariant();
 
-        // Only TXT check-ins under our zone; no recursion, no other records.
+        // Only our zone; no recursion, no other zones.
         if (!name.EndsWith(_zone, StringComparison.Ordinal))
             return EmptyResponse(parsed.Id, responseCode: 5); // REFUSED: not our zone
 
+        // The cover: an A query anywhere in the zone resolves, the shape an
+        // ordinary v4 zone's answer section takes. Check-in names answer the
+        // cover too -- the TXT answer is the only channel that carries
+        // check-in data, and it answers below.
+        if (question.Type == DnsCodec.AType)
+        {
+            var cover = new DnsMessage
+            {
+                Id = parsed.Id,
+                IsResponse = true,
+                Question = question,
+                ResponseCode = 0,
+            };
+            cover.AAnswers.Add(new DnsAAnswer(name, CoverAddressFor(name)));
+            return DnsCodec.EncodeResponse(cover);
+        }
+
         if (question.Type != DnsCodec.TxtType)
-            return EmptyResponse(parsed.Id, responseCode: 3); // NXDOMAIN: TXT only
+            return EmptyResponse(parsed.Id, responseCode: 3); // NXDOMAIN: TXT (or A) only
 
         var response = new DnsMessage
         {
@@ -141,4 +169,52 @@ internal sealed class DnsCheckInAnswerer
 
     private static byte[] EmptyResponse(ushort id, ushort responseCode)
         => DnsCodec.EncodeResponse(new DnsMessage { Id = id, IsResponse = true, ResponseCode = responseCode });
+
+    /// <summary>
+    /// The cover address one name resolves to: the bind's own host when the
+    /// bind is concrete, else a deterministic hash of the name inside
+    /// 198.18.0.0/15 (RFC 2544's benchmark space -- reserved, unroutable, and
+    /// shaped like any other record). Deterministic so repeated queries for
+    /// one name agree, the behavior resolvers cache by.
+    /// </summary>
+    private System.Net.IPAddress CoverAddressFor(string name)
+    {
+        if (_coverHost is { } host)
+            return host;
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.ASCII.GetBytes(name));
+        // 198.18.0.0/15 spans 198.18.x.x and 198.19.x.x: one hash bit picks
+        // between the two, the rest spread over the low octets.
+        var low = (ushort)((hash[0] << 8) | hash[1]);
+        return new System.Net.IPAddress(new byte[] { 198, (byte)(0x12 | ((low & 0x0100) >> 8)), (byte)(low >> 8), (byte)low });
+    }
+
+    // The bind's host when it names a concrete address an A record can
+    // carry (v4, or v4-mapped v6); null for the wildcard shapes, loopback
+    // v6, and any bind a genuine v6 address names -- those take the
+    // deterministic cover, since no honest v4 record exists for them.
+    private static System.Net.IPAddress? TryParseConcreteBindHost(string bindAddress)
+    {
+        var span = bindAddress.AsSpan().Trim();
+        if (span.StartsWith('['))
+        {
+            var end = span.IndexOf(']');
+            if (end > 1 && System.Net.IPAddress.TryParse(span[1..end], out var v6))
+            {
+                var bytes = v6.GetAddressBytes();
+                if (bytes.Length == 16
+                    && bytes.AsSpan(0, 10).SequenceEqual(stackalloc byte[10])
+                    && bytes[10] == 0xFF && bytes[11] == 0xFF)
+                    return new System.Net.IPAddress(bytes[12..]);
+            }
+            return null;
+        }
+        var colon = span.LastIndexOf(':');
+        var host = colon > 0 ? span[..colon] : span;
+        if (System.Net.IPAddress.TryParse(host, out var parsed)
+            && parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            && !parsed.Equals(System.Net.IPAddress.Any))
+            return parsed;
+        return null;
+    }
 }

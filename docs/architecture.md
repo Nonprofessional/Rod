@@ -608,7 +608,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   check-in contract ([extending/implants.md](extending/implants.md)); the
   responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
   too large for the budget is not claimed over DNS: it stays queued for a
-  stream transport.
+  stream transport. **The record-type cover:** an A query anywhere under
+  the zone answers one A record (the bind's own host, else a deterministic
+  per-name address in 198.18.0.0/15) -- a zone answering TXT for random
+  labels but NXDOMAIN for every A query would itself be the fingerprint,
+  and an ordinary v4 zone answers its A records. AAAA and other types keep
+  the NXDOMAIN a v4-only zone gives; out-of-zone queries stay REFUSED.
   **The store-and-forward channels ride the polls (Sec 10.3):** the poll
   answer carries a kind byte naming its frame -- a queued task, or the
   parked operator input the degraded hub drained (every frame the drain
