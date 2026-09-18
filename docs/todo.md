@@ -205,3 +205,26 @@ starts from a gap an actual engagement surfaces.
   No new verbs, no new gates: this item is console ergonomics only.
   _AC:_ an operator saves a named task snippet once and issues its
   whole sequence with one command from the palette.
+
+- **Delivery campaigns: tracked spear-phish into tasking** (serves
+  architecture.md Sec 2, the delivery step of the lifecycle, and
+  Sec 11; design lands first). What an engagement cannot do without it:
+  open the door -- the first foothold arrives by delivery, and today
+  that happens outside Rod entirely (a manual mailbox, a separate
+  phishing platform), so the causal chain from lure to implant lives
+  across two tools and the attribution story breaks at the seam. Shape:
+  an engagement-scoped campaign entity -- a sending profile (SMTP
+  relay), a target list, a message template with per-recipient merge --
+  where each recipient's link or attachment binds to a per-recipient
+  stager token the build pipeline already mints, so an implant -- or a
+  browser hook, the item above -- that follows the lure enrolls already
+  attributed to the campaign and the recipient. Tracking (sent,
+  opened, clicked, executed) rides the public ingress that serves
+  staging, redirector-fronted like every other public edge; the
+  campaign's egress (which relay, whose IP) is an OPSEC decision the
+  runbook documents, never a silent default. Credentials a landing
+  page captures follow the existing standard-store collection posture;
+  evasion-grade social engineering stays out-of-tree.
+  _AC:_ a two-recipient campaign mints per-recipient lure links, and
+  the recipient who executes the lure enrolls with campaign and
+  recipient attribution visible in the audit trail.
