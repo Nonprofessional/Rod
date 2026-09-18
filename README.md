@@ -1,15 +1,19 @@
 <p align="center"><img src="docs/assets/rod-logo.png" alt="Rod" width="200"></p>
 
-# Rod
+<h1 align="center">Rod</h1>
 
-Rod is an **authorized-use red-team command-and-control (C2) platform** for
-penetration tests, red-team operations, and security research. A team of
-operators drives a fleet of short-lived, disposable implants from one
-teamserver, reaching hosts behind NAT and firewalls over implant-initiated
-connections -- and walks away with an audit trail that is the report.
+<p align="center">
+  An <b>authorized-use red-team command-and-control (C2) platform</b> for
+  penetration tests, red-team operations, and security research.<br>
+  One teamserver, a fleet of disposable implants, hosts behind NAT and
+  firewalls over implant-initiated connections --<br>
+  and an audit trail that becomes the report.
+</p>
 
-[![CI](https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml/badge.svg)](https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+<p align="center">
+  <a href="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml"><img src="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+</p>
 
 > **Authorized use only.** Rod is remote-code-execution infrastructure. It
 > must **only** be used against systems and networks you own or are
@@ -35,6 +39,13 @@ connections -- and walks away with an audit trail that is the report.
   a build-time profile -- check-in mode, beacon cadence and jitter, kill
   date, transport shape -- and enrolls on a one-time credential baked at
   build, so a dropped artifact needs zero run-time arguments.
+- **Web shells and caught reverse shells.** The build panel renders
+  placement scripts in PHP, JSP, ASPX, or classic ASP -- sealed under a
+  baked AES-256-GCM key, or in the universal eval shape -- and a placed
+  script registers as an implant driven through the same tasking and audit
+  surface. A `shellcatch` listener catches raw reverse-shell one-liners
+  (`nc`, bash `/dev/tcp`, ...), fingerprints the OS, and hands back
+  paste-ready lines that upgrade the catch into a full implant.
 - **A stager for delivery discipline.** First contact runs a tiny stage-1
   loader that fetches the stage-2 artifact, verifies it against the sha256
   baked at build, and runs it ([architecture.md Sec 5.2, Sec 6](docs/architecture.md)).
@@ -43,9 +54,9 @@ connections -- and walks away with an audit trail that is the report.
   build against the same language-neutral contract without coupling the
   teamserver to their toolchains.
 - **A multiplayer operator console.** A React web UI -- fleet view, tasking,
-  interactive shells, file and process browsers, listeners, payload builds,
-  evidence panels -- with server-sent-event updates and every action
-  attributed to the operator who took it.
+  interactive shells, file and process browsers, listeners, payload and
+  webshell builds, evidence panels -- with server-sent-event updates and
+  every action attributed to the operator who took it.
 - **Evidence as a first-class output.** A hash-chained audit trail, the
   engagement timeline, generated reports (JSON + Markdown), and a close-out
   evidence package: what happened, who did it, and what it proved.
@@ -70,12 +81,15 @@ tunneling), then close out -- freeze, export the evidence package, retire.
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
 | Operator UI | React 19, Vite | Lives in the teamserver project; served same-origin. |
 | Implants | .NET reference; Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
+| Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |
 | Stager | .NET | Fetch-and-exec only; verifies stage-2 against the baked sha256. |
 | Build units | .NET in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint; no runtime install. |
 | Data store | In-memory and file-backed by default; PostgreSQL opt-in | `ConnectionStrings:Postgres` switches in durable state and audit. |
 
 ## Quick start
+
+### Development
 
 Prerequisites: .NET SDK 10 (pinned by `global.json`) and Node.js 22.12+
 for the operator UI.
@@ -87,10 +101,7 @@ dotnet run --project src/teamserver/Rod.TeamServer
 
 1. Open `http://127.0.0.1:5080` and sign in as `operator` / `operator` --
    the built-in Development account that applies whenever the `Operators`
-   configuration section supplies no initial operator. Outside Development
-   there is **no fallback**: production provisions its first operator from
-   configuration (`Operators:Initial`; see
-   [docs/operations/teamserver.md](docs/operations/teamserver.md)).
+   configuration section supplies no initial operator.
 2. Create an engagement, then its listener in the engagement's Listeners
    panel. A listener is the engagement's private implant ingress --
    persisted and rebound on restart; the operator front refuses implant
@@ -107,6 +118,36 @@ The full lifecycle walk -- single-host and multi-host runs, the win-x64
 adversarial surface walk, the CA rotation drill, with acceptance evidence
 at every step -- is [docs/operations/rehearsal.md](docs/operations/rehearsal.md).
 
+### Production
+
+The installed shape (the executed path, walked end to end in
+[docs/operations/teamserver.md](docs/operations/teamserver.md) -- install,
+upgrade, backup/restore, posture):
+
+```
+dotnet publish src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj \
+  -c Release -r linux-x64 --self-contained true -o /tmp/rod-publish
+```
+
+- Self-contained publish under `/opt/rod`, a dedicated `rod` service user,
+  and a systemd unit with the hardening flags; secrets ride a root-only
+  environment file (`Operators__Initial__*`, the CA key passphrase, the
+  PostgreSQL connection string).
+- **Outside Development there is no fallback login.** The first operator
+  comes from the `Operators:Initial` section -- the whole section, read
+  once at first boot; rotate credentials through the operator API.
+- Durable state: PostgreSQL for authoritative state and audit
+  (`ConnectionStrings:Postgres`, schema applied once via
+  `dotnet ef database update`), a data directory for artifacts and built
+  payloads, and the engagement CA (PEM cert + key) under `/etc/rod/pki`.
+- Payload builds compile from source at request time: the deployment names
+  the implant/stager source trees (`Build:ImplantSourceDirectory`,
+  `Build:StagerSourceDirectory`) and keeps the service user's NuGet cache
+  warm.
+- Binaries stamp their version and source commit (startup log line and
+  `GET /build`); accept an install only when the stamp matches the tag it
+  was cut from.
+
 Configuration is opt-in sections of `appsettings.json`:
 
 | Section | Effect |
@@ -116,6 +157,7 @@ Configuration is opt-in sections of `appsettings.json`:
 | `Pki` | An externally provisioned engagement CA (PEM cert + key); omit for the dev self-signed CA. |
 | `Listeners` | The shared tier only (the operator front). Implant-facing listeners are engagement-scoped, created through the API. |
 | `Operators` | Production operator provisioning (`Operators:Initial`); no Development fallback outside Development. |
+| `Build` | Deployed build-source trees for request-time payload compilation. |
 
 ## Documentation
 
