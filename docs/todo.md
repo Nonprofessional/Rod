@@ -107,3 +107,101 @@ starts from a gap an actual engagement surfaces.
   _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
   over the envelope carrier, and an operator tasks a fingerprint and a
   cookie read against it, with both results in the audit trail.
+
+- **Target intel and situational awareness layer** (serves
+  architecture.md Sec 11 and the operator layer, Sec 4.1; design lands
+  first). What an engagement cannot do without it: hold what the
+  engagement learns -- today recon findings, loot, and host observations
+  live inside task output strings, so the operator re-reads transcripts
+  instead of consulting a picture. Shape: labels and operator notes on
+  implants and hosts (attributed, part of the trail), typed loot views
+  over the exfil artifacts that already exist (credential, file, and
+  screenshot renderers -- the collection verbs are in-repo, the
+  organizer is what is missing), and a topology view assembled from the
+  recon workbench and implant discovery data, pivot links included.
+  Everything is engagement-scoped and audit-backed: the layer organizes
+  the trail, it does not become a second store of truth.
+  _AC:_ an operator tags an implant with a note, opens a captured
+  screenshot from the loot view, and both actions carry attribution in
+  the audit trail.
+
+- **Out-of-band event notifications** (serves architecture.md Sec 4.1,
+  layer 4; design lands first). What an engagement cannot do without it:
+  reach the operator who is not at the console -- an implant that
+  returns overnight, a caught shell, a failed task are visible only to
+  connected operator sessions today. Shape: a subscriber on the live
+  event bus forwarding selected event kinds to operator-configured
+  channels (webhook first; IM bridges are configuration, not code),
+  engagement-scoped, the subscription itself audited. Best-effort like
+  the bus it rides -- the audit trail stays the record.
+  _AC:_ an operator registers a webhook for session-opened and
+  shell-caught events, and a new check-in delivers a push to it.
+
+- **Operator roles and interaction ownership** (serves architecture.md
+  Sec 9 and Sec 10.3; design lands first). What an engagement cannot do
+  without it: more than one operator without collisions -- today every
+  operator is a peer who can type into any channel, and nothing marks
+  who is driving which implant. Shape: per-operator claims beyond the
+  current peer model (a read scope, a tasking scope, an approver
+  scope), per-implant activity presence extending the existing presence
+  service, and exclusive claims on live channel interaction (an
+  interactive shell's input half, a tunnel) so two operators cannot
+  type into one shell; claims are visible on the live bus and released
+  on disconnect.
+  _AC:_ two operators on one engagement see each other's claim on an
+  interactive shell, the second's input is refused while the claim
+  holds, and an operator without the tasking scope cannot issue tasks.
+
+- **Sensitive-verb approval workflow** (serves architecture.md Sec 9
+  and Sec 10.2/10.3; design lands first). What an engagement cannot do
+  without it: a second pair of eyes where it matters -- sensitive verbs
+  require engagement authorization by design, but the authorization is
+  configuration-time; there is no in-flow request, approval, and
+  release. Shape: a request queue on the existing gate -- an operator
+  requests a sensitive tasking, a lead holding the approver scope
+  approves or refuses, the approved task enters the queue attributed
+  to both, and the whole arc (requested, approved, refused) lands in
+  the audit trail and on the live bus. Automation firing a sensitive
+  verb is refused outright, never queued for approval.
+  _AC:_ a sensitive verb requested by one operator does not queue until
+  a second approves it, and both the request and the approval appear in
+  the engagement's audit trail.
+
+- **ATT&CK mapping in the capability model and report** (serves
+  architecture.md Sec 10.1 and Sec 11; design lands first). What an
+  engagement cannot do without it: tell the client what was exercised
+  -- a red-team deliverable without technique coverage makes the reader
+  map the report by hand. Shape: capability descriptors carry ATT&CK
+  technique ids as metadata (the tradecraft registry is the single
+  place verbs are described), and the closeout report derives a
+  coverage view from the audit trail -- techniques exercised, by which
+  verbs, against which targets -- with unmapped verbs surfaced as a
+  review list, not silently dropped.
+  _AC:_ a closeout export includes technique coverage derived from the
+  audit trail, and a verb without a mapping shows up as unmapped rather
+  than absent.
+
+- **Shift handoff digest** (serves architecture.md Sec 11; design lands
+  first). What an engagement cannot do without it: resume command after
+  an absence -- the trail holds everything that happened, but an
+  operator returning to the console reconstructs the watch by reading
+  it raw. Shape: a time-windowed digest view over the audit trail
+  (sessions opened and closed, tasking issued and its outcomes,
+  sensitive approvals, annotations), assembled by the reporting layer
+  the closeout export already uses; the LLM client item above is the
+  natural narrator for it, but the digest stands without it.
+  _AC:_ an operator requests the digest for the last watch window and
+  gets a single ordered account of sessions, task outcomes, and
+  approvals from the audit trail.
+
+- **Console depth for the solo operator** (serves the operator UI,
+  docs/operations/operator-ui.md; design lands first). What an
+  engagement cannot do without it: speed at the keyboard -- the console
+  exposes every capability, but common sequences are typed out verb by
+  verb every time. Shape: a command palette with fuzzy reach, task
+  snippets -- a named sequence of issue commands, engagement-scoped and
+  shareable -- and inline action surfaces on the process and file
+  browsers over verbs that already exist (kill, transfer both ways).
+  No new verbs, no new gates: this item is console ergonomics only.
+  _AC:_ an operator saves a named task snippet once and issues its
+  whole sequence with one command from the palette.
