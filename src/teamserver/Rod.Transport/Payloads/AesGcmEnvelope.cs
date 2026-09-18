@@ -25,7 +25,10 @@ namespace Rod.Transport.Payloads;
 /// also seals the envelope check-in bodies (architecture.md Sec 8): every
 /// check-in request and response is AES-GCM ciphertext under the artifact key,
 /// so the cleartext-http posture carries confidential content, not just
-/// authenticated content -- the Cobalt Strike metadata model.
+/// authenticated content -- the Cobalt Strike metadata model. The DNS carriage
+/// seals the same way but carries the raw R1 body (no base64 layer: its labels
+/// are already base32, a text encoding inside another would double the
+/// expansion) -- <see cref="WrapBody"/> and friends are that byte-level form.
 /// </summary>
 public static class AesGcmEnvelope
 {
@@ -71,6 +74,28 @@ public static class AesGcmEnvelope
 
     /// <summary>The response-side twin of <see cref="EnrollRequestAad"/>.</summary>
     public static ReadOnlySpan<byte> EnrollResponseAad => "rod-enroll-response-v1"u8;
+
+    /// <summary>
+    /// The AAD binding the DNS carriage's poll answers to their purpose
+    /// (architecture.md Sec 8): a key-named poll's TXT answer is sealed under
+    /// this tag, so no other purpose's ciphertext (an enroll answer, a web
+    /// check-in body) can be reflected down the DNS wire as tasking.
+    /// </summary>
+    public static ReadOnlySpan<byte> DnsPollAad => "rod-dns-poll-v1"u8;
+
+    /// <summary>
+    /// The upstream twin for task results: a sealed result blob the implant
+    /// chunks into <c>r.</c> queries is bound to this tag, so a sealed poll
+    /// answer or channel blob cannot be replayed up as a result.
+    /// </summary>
+    public static ReadOnlySpan<byte> DnsResultAad => "rod-dns-result-v1"u8;
+
+    /// <summary>
+    /// The upstream twin for channel outputs: a sealed output blob the
+    /// implant chunks into <c>c.</c> queries is bound to this tag, keeping it
+    /// distinct from results and poll answers under the same key.
+    /// </summary>
+    public static ReadOnlySpan<byte> DnsChannelAad => "rod-dns-channel-v1"u8;
 
     /// <summary>The key size in bytes: AES-256.</summary>
     public const int KeyBytes = 32;
@@ -124,6 +149,15 @@ public static class AesGcmEnvelope
     /// another's.
     /// </summary>
     public static string Wrap(byte[] plaintext, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
+        => Convert.ToBase64String(WrapBody(plaintext, keyId, key, aad));
+
+    /// <summary>
+    /// The byte-level form <see cref="Wrap"/> base64s: the raw
+    /// <c>magic || keyId || nonce || ciphertext || tag</c> body. The DNS
+    /// carriage carries this form (base32 labels around a base64 text would
+    /// double the encoding expansion); every other purpose sends the string.
+    /// </summary>
+    public static byte[] WrapBody(byte[] plaintext, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(key.Length, KeyBytes);
         var nonce = RandomNumberGenerator.GetBytes(NonceBytes);
@@ -143,7 +177,7 @@ public static class AesGcmEnvelope
         ciphertext.AsSpan().CopyTo(body.AsSpan(position));
         position += ciphertext.Length;
         tag.AsSpan().CopyTo(body.AsSpan(position));
-        return Convert.ToBase64String(body);
+        return body;
     }
 
     /// <summary>
@@ -154,7 +188,7 @@ public static class AesGcmEnvelope
     /// </summary>
     public static byte[]? TryUnwrap(string wrapped, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
     {
-        if (string.IsNullOrEmpty(wrapped) || key.Length != KeyBytes)
+        if (string.IsNullOrEmpty(wrapped))
             return null;
         byte[] body;
         try
@@ -165,18 +199,31 @@ public static class AesGcmEnvelope
         {
             return null;
         }
+        return TryUnwrapBody(body, keyId, key, aad);
+    }
+
+    /// <summary>
+    /// The byte-level form <see cref="TryUnwrap"/> decodes into: opens a raw
+    /// R1 body under the same key id and <paramref name="aad"/>, or null on
+    /// any mismatch. The DNS carriage's reassembled upstream blobs arrive in
+    /// this form.
+    /// </summary>
+    public static byte[]? TryUnwrapBody(ReadOnlySpan<byte> body, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)
+    {
+        if (key.Length != KeyBytes)
+            return null;
         if (body.Length < 2 + 16 + NonceBytes + TagBytes)
             return null;
-        if (!body.AsSpan(0, 2).SequenceEqual(Magic))
+        if (!body.Slice(0, 2).SequenceEqual(Magic))
             return null;
-        if (!new Guid(body.AsSpan(2, 16).ToArray()).Equals(keyId))
+        if (!new Guid(body.Slice(2, 16).ToArray()).Equals(keyId))
             return null;
-        var nonce = body.AsSpan(2 + 16, NonceBytes).ToArray();
+        var nonce = body.Slice(2 + 16, NonceBytes).ToArray();
         var ciphertextLength = body.Length - 2 - 16 - NonceBytes - TagBytes;
         if (ciphertextLength < 0)
             return null;
-        var ciphertext = body.AsSpan(2 + 16 + NonceBytes, ciphertextLength).ToArray();
-        var tag = body.AsSpan(body.Length - TagBytes).ToArray();
+        var ciphertext = body.Slice(2 + 16 + NonceBytes, ciphertextLength).ToArray();
+        var tag = body.Slice(body.Length - TagBytes).ToArray();
         var plaintext = new byte[ciphertextLength];
         try
         {
@@ -207,10 +254,21 @@ public static class AesGcmEnvelope
         {
             return null;
         }
+        return TryReadKeyIdBody(body);
+    }
+
+    /// <summary>
+    /// The byte-level form of <see cref="TryReadKeyId"/>: reads the key id off
+    /// a raw R1 body, or null when the bytes are not the shape. The DNS
+    /// carriage's discriminator between a sealed upstream blob and a plaintext
+    /// one.
+    /// </summary>
+    public static Guid? TryReadKeyIdBody(ReadOnlySpan<byte> body)
+    {
         if (body.Length < 2 + 16 + NonceBytes + TagBytes)
             return null;
-        if (!body.AsSpan(0, 2).SequenceEqual(Magic))
+        if (!body.Slice(0, 2).SequenceEqual(Magic))
             return null;
-        return new Guid(body.AsSpan(2, 16).ToArray());
+        return new Guid(body.Slice(2, 16).ToArray());
     }
 }

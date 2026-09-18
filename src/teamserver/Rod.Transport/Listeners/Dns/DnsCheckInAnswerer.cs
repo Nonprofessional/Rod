@@ -64,7 +64,17 @@ internal sealed class DnsCheckInAnswerer
 
         try
         {
-            if (DnsCheckInNames.TryParsePoll(name, _zone) is { } poll)
+            if (DnsCheckInNames.TryParseSealedPoll(name, _zone) is { } sealedPoll)
+            {
+                // The sealed carriage's poll: the key id in the name resolves
+                // the answer's seal. The TXT payload is base32 like every
+                // other answer -- of the raw R1 body, not the kind-prefixed
+                // plaintext.
+                var sealedAnswer = await _bridge.PollAsync(sealedPoll.Implant, sealedPoll.KeyId, cancellationToken);
+                if (sealedAnswer is not null)
+                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(sealedAnswer)));
+            }
+            else if (DnsCheckInNames.TryParsePoll(name, _zone) is { } poll)
             {
                 var marshaled = await _bridge.PollAsync(poll.Implant, cancellationToken);
                 if (marshaled is not null)

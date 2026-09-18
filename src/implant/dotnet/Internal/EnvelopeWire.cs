@@ -51,6 +51,16 @@ internal static class EnvelopeWire
     /// not a structured binary).
     /// </summary>
     public static byte[] SealCheckInBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
+        => System.Text.Encoding.UTF8.GetBytes(
+            Convert.ToBase64String(SealBody(plaintext, keyId, key, aad)));
+
+    /// <summary>
+    /// The byte-level form <see cref="SealCheckInBody"/> base64s: the raw
+    /// <c>b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16)</c> body.
+    /// The DNS carriage carries this form -- its labels are already base32,
+    /// and a text encoding inside another would double the expansion.
+    /// </summary>
+    public static byte[] SealBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
     {
         var nonce = RandomNumberGenerator.GetBytes(12);
         var ciphertext = new byte[plaintext.Length];
@@ -71,7 +81,7 @@ internal static class EnvelopeWire
         ciphertext.AsSpan().CopyTo(body.AsSpan(position));
         position += ciphertext.Length;
         tag.AsSpan().CopyTo(body.AsSpan(position));
-        return System.Text.Encoding.UTF8.GetBytes(Convert.ToBase64String(body));
+        return body;
     }
 
     /// <summary>
@@ -83,27 +93,36 @@ internal static class EnvelopeWire
     /// </summary>
     public static byte[]? TryOpenCheckInBody(byte[] body, byte[] keyId, byte[] key, string aad)
     {
-        string text;
         byte[] packed;
         try
         {
-            text = System.Text.Encoding.UTF8.GetString(body).Trim();
-            packed = Convert.FromBase64String(text);
+            packed = Convert.FromBase64String(System.Text.Encoding.UTF8.GetString(body).Trim());
         }
         catch (Exception ex) when (ex is FormatException or System.Text.DecoderFallbackException)
         {
             return null;
         }
-        if (packed.Length < 2 + 16 + 12 + 16)
+        return TryOpenBody(packed, keyId, key, aad);
+    }
+
+    /// <summary>
+    /// The byte-level form <see cref="TryOpenCheckInBody"/> decodes into:
+    /// opens a raw R1 body under the same key id and purpose tag, or null on
+    /// any mismatch (wrong key, tampered bytes, foreign shape). The DNS
+    /// carriage's poll answers arrive in this form.
+    /// </summary>
+    public static byte[]? TryOpenBody(byte[] body, byte[] keyId, byte[] key, string aad)
+    {
+        if (body.Length < 2 + 16 + 12 + 16)
             return null;
-        if (!packed.AsSpan(0, 2).SequenceEqual("R1"u8))
+        if (!body.AsSpan(0, 2).SequenceEqual("R1"u8))
             return null;
-        if (!packed.AsSpan(2, 16).SequenceEqual(keyId))
+        if (!body.AsSpan(2, 16).SequenceEqual(keyId))
             return null;
-        var nonce = packed.AsSpan(2 + 16, 12).ToArray();
-        var ciphertextLength = packed.Length - 2 - 16 - 12 - 16;
-        var ciphertext = packed.AsSpan(2 + 16 + 12, ciphertextLength).ToArray();
-        var tag = packed.AsSpan(packed.Length - 16).ToArray();
+        var nonce = body.AsSpan(2 + 16, 12).ToArray();
+        var ciphertextLength = body.Length - 2 - 16 - 12 - 16;
+        var ciphertext = body.AsSpan(2 + 16 + 12, ciphertextLength).ToArray();
+        var tag = body.AsSpan(body.Length - 16).ToArray();
         var plaintext = new byte[ciphertextLength];
         try
         {

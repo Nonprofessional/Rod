@@ -14,9 +14,12 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
+using Rod.Audit;
 using Rod.Transport;
+using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.Dns;
+using Rod.Transport.Payloads;
 using Rod.V1;
 
 namespace Rod.Integration.Tests;
@@ -94,6 +97,24 @@ public class DnsCheckInTests
         Assert.Equal(implant, parsed!.Implant);
         Assert.Null(DnsCheckInNames.TryParsePoll("x." + Zone, Zone));
         Assert.Null(DnsCheckInNames.TryParsePoll("p." + DnsCheckInNames.Encode(implant.ToString()) + ".other.test", Zone));
+    }
+
+    [Fact]
+    public void Grammar_SealedPollRoundTrips()
+    {
+        var implant = ImplantId.New();
+        var keyId = Guid.NewGuid();
+
+        var parsed = DnsCheckInNames.TryParseSealedPoll(DnsCheckInNames.SealedPollName(implant, keyId, Zone), Zone);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(implant, parsed!.Implant);
+        Assert.Equal(keyId, parsed.KeyId);
+        // The plain poll parser does not claim a k-name, and the sealed parser
+        // does not claim a p-name: the two carriages stay disjoint.
+        Assert.Null(DnsCheckInNames.TryParsePoll(DnsCheckInNames.SealedPollName(implant, keyId, Zone), Zone));
+        Assert.Null(DnsCheckInNames.TryParseSealedPoll(DnsCheckInNames.PollName(implant, Zone), Zone));
+        Assert.Null(DnsCheckInNames.TryParseSealedPoll("k." + DnsCheckInNames.Encode(implant.ToString()) + "." + Zone, Zone));
     }
 
     [Fact]
@@ -222,6 +243,98 @@ public class DnsCheckInTests
         var implants = await env.Http.GetFromJsonAsync<ImplantBody[]>(
             $"/engagements/{implant.EngagementId}/implants");
         Assert.Contains(implants!, i => i.ImplantId == implant.Id.ToString() && i.IsOnline);
+    }
+
+    [Fact]
+    public async Task Sealed_KeyedArtifact_PollsAndReportsUnderCiphertext()
+    {
+        await using var env = await DnsTestEnv.StartAsync();
+        var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
+        using var channel = env.ConnectBeacon(leafCert, leafKey);
+        var client = new Beacon.BeaconClient(channel);
+        var call = client.CheckIn();
+        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
+        Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
+        await call.RequestStream.CompleteAsync();
+
+        // The artifact's build minted an envelope key: the payload record
+        // carries the teamserver's half, and the enrollment bound the implant
+        // to it -- the state a k-poll re-derives on its own after a restart.
+        var (keyId, key) = AesGcmEnvelope.Mint();
+        var payloads = env.Host.Services.GetRequiredService<IPayloadStore>();
+        await payloads.SaveAsync(new PayloadRecord(
+            Guid.NewGuid(), implant.EngagementId.Value, "dotnet", "csharp",
+            "application/octet-stream", "sealed-test", Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
+            EnvelopeKeyId: keyId, EnvelopeKey: key), CancellationToken.None);
+        env.Host.Services.GetRequiredService<EnvelopeCheckInKeys>().Bind(implant.Id, keyId, key);
+
+        await env.LoginAsync();
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id" });
+        issued.EnsureSuccessStatusCode();
+        var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        // The downgrade refusal: a plain p-poll from a key-bound implant
+        // answers nothing -- the tasking is never handed down in the clear.
+        Assert.Null(await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone)));
+
+        // The k-poll's answer is a raw R1 body under the DNS poll purpose
+        // tag: no kind byte, no protobuf, nothing readable rides the wire.
+        var sealedAnswer = await env.DnsQueryAsync(DnsCheckInNames.SealedPollName(implant.Id, keyId, Zone));
+        Assert.NotNull(sealedAnswer);
+        Assert.True(DnsCheckInNames.TryDecode(sealedAnswer, out var sealedBytes));
+        Assert.True(sealedBytes!.Length >= 2 && sealedBytes[0] == (byte)'R' && sealedBytes[1] == (byte)'1');
+        var opened = AesGcmEnvelope.TryUnwrapBody(sealedBytes, keyId, key, AesGcmEnvelope.DnsPollAad);
+        Assert.NotNull(opened);
+        Assert.Equal((byte)'t', opened![0]);
+        var taskRequest = TaskRequest.Parser.ParseFrom(opened[1..]);
+        Assert.Equal(issuedBody!.TaskId, taskRequest.TaskId);
+        Assert.Equal("shell.exec", taskRequest.Verb);
+        Assert.Equal("id", taskRequest.Arguments);
+
+        // The result seals whole under the result purpose tag, then chunks;
+        // the task completes with the plaintext the server unwrapped.
+        var output = "uid=0(root) gid=0(root)";
+        var blob = AesGcmEnvelope.WrapBody(Encoding.UTF8.GetBytes(output), keyId, key, AesGcmEnvelope.DnsResultAad);
+        var chunks = Chunk(blob, 20);
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+                implant.Id, Guid.TryParse(taskRequest.TaskId, out var tid) ? new TaskId(tid) : TaskId.New(),
+                succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
+        }
+
+        var fetched = await WaitUntilAsync(async () => await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{implant.EngagementId}/tasks/{taskRequest.TaskId}"));
+        Assert.NotNull(fetched);
+        Assert.Equal("Completed", fetched!.Status);
+        Assert.Equal("Succeeded", fetched.Outcome);
+        Assert.Equal(output, fetched.Output);
+
+        // The upstream refusal: a plaintext reassembly from the bound implant
+        // is dropped, so a task never completes off cleartext chunks. The
+        // drop is decided inside the r-query's own answer cycle -- the
+        // response datagram cannot precede it -- so one read settles it.
+        var issuedPlain = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "whoami" });
+        issuedPlain.EnsureSuccessStatusCode();
+        var issuedPlainBody = await issuedPlain.Content.ReadFromJsonAsync<TaskIssuedBody>();
+        Assert.NotNull(await env.DnsQueryAsync(DnsCheckInNames.SealedPollName(implant.Id, keyId, Zone)));
+
+        var plain = Chunk(Encoding.UTF8.GetBytes("forged plaintext output"), 20);
+        for (var i = 0; i < plain.Count; i++)
+        {
+            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+                implant.Id, Guid.TryParse(issuedPlainBody!.TaskId, out var pid) ? new TaskId(pid) : TaskId.New(),
+                succeeded: true, sequence: i, terminal: i == plain.Count - 1, plain[i], Zone));
+        }
+        var plainFetched = await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{implant.EngagementId}/tasks/{issuedPlainBody!.TaskId}");
+        Assert.NotNull(plainFetched);
+        Assert.NotEqual("Completed", plainFetched!.Status);
     }
 
     private static List<byte[]> Chunk(byte[] bytes, int size)

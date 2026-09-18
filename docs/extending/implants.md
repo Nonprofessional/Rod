@@ -475,11 +475,30 @@ RFC 4648 base32 labels, no padding:
 
 ```
 poll:          p.<b32(implant id)>.<zone>
+key-named poll:k.<b32(implant id)>.<b32(key id)>.<zone>
 result chunk:  r.<b32(task id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
 channel chunk: c.<b32(task id)>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
 enroll chunk:  e.<b32(stream id)>.<seq>.<t|m>.<b32(chunk)>.<zone>
 enroll answer: a.<b32(token)>.<seq>.<zone>
 ```
+
+**Sealing (a build that baked an envelope key).** The check-in carriage
+seals like the enroll exchange does, so the resolver chain reads no frame
+bytes in the clear: the implant polls `k.`-named -- the key id rides the
+name as its raw 16 guid bytes -- and the answer's TXT payload is the
+base32 of a raw `R1` AES-GCM body (`R1 || keyId || nonce || ciphertext ||
+tag`, the envelope family's own shape without the base64 layer) under the
+`rod-dns-poll-v1` purpose tag; open it, then read the kind byte as
+ordinary. Results and channel outputs seal whole before chunking (one
+body per report, not per chunk) under `rod-dns-result-v1` and
+`rod-dns-channel-v1` respectively -- the `s|f` outcome flag and the task
+id stay in the name, where they ride either way. The server resolves the
+key by the id on the wire, so sealing survives a teamserver restart with
+nothing re-established. A plaintext answer to a sealed poll (the key's
+payload record was deleted) still carries its kind byte: run it -- the
+signature, not the seal, gates execution. Symmetrically, the server
+refuses the downgrade for a key-bound implant: a plain `p.` poll is
+answered empty, and a plaintext result or channel reassembly is dropped.
 
 A poll is answered with zero or one TXT record whose strings concatenate to
 the base32 of a kind byte plus its message: `t` names a signed
