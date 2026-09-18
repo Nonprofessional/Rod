@@ -672,58 +672,9 @@ public static class TransportHost
     /// <summary>Maps the operator- and implant-facing endpoints onto a built application.</summary>
     public static WebApplication MapRodEndpoints(this WebApplication app)
     {
-        app.MapEngagementEndpoints();
-        app.MapEnrollmentEndpoints();
-        app.MapImplantEndpoints();
-        app.MapListenerEndpoints();
-        // The engagement's caught reverse shells: the shellcatch surface's
-        // roster and console routes.
-        app.MapShellSessionEndpoints();
-        // The engagement's web-shell endpoints: the register/list routes and
-        // the synchronous execution arc.
-        app.MapWebShellEndpoints();
-        // The host's bindable interfaces: the read view behind the listener
-        // form's bind dropdown.
-        app.MapNetworkEndpoints();
-        app.MapPresenceEndpoints();
-        app.MapTaskEndpoints();
-        app.MapPayloadEndpoints();
-        // Operator-facing runtime settings (the live session-presence knobs).
-        app.MapSettingsEndpoints();
-        // Background payload builds: the job-queued face of the same pipeline.
-        app.MapPayloadJobEndpoints();
-        // The per-engagement operational event log: the durable,
-        // hash-chained audit trail read view. Distinct from the operators-layer
-        // live SSE route (the transient fan-out).
-        app.MapAuditEndpoints();
-        // First-class evidence objects linked to tasks: attach,
-        // list, and retrieve artifacts per task, scoped by engagement.
-        app.MapArtifactEndpoints();
-        // The built-in consumers of the event + task + artifact store: export the engagement timeline and report (JSON + Markdown),
-        // reproducibility-stamped. Read-only projections of the evidence trail.
-        app.MapReportEndpoints();
-        // The engagement close-out (architecture.md Sec 2 step 10): freeze,
-        // export the evidence package, retire -- the path a finished
-        // engagement takes out of service.
-        app.MapCloseoutEndpoints();
-        // The implant-initiated beacon stream: gRPC over the
-        // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
-        app.MapGrpcService<BeaconEndpoint>();
-        // The plain-HTTP envelope check-in (architecture.md Sec 8): the same
-        // frames as delimited sequences in ordinary request/response bodies,
-        // for implants with an HTTP client and a protobuf codec but no
-        // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,
-        // so only an mTLS-terminated listener ever serves it.
-        app.MapEnvelopeBeaconEndpoints();
-        // The WebSocket beacon stream: the web posture's live channel, the
-        // same session the gRPC stream runs over the envelope's own auth and
-        // frame grammar.
-        app.MapWebSocketBeaconEndpoints();
-        // DNS-over-HTTPS: the DNS grammar's second carriage, served by the
-        // doh listener that owns the arriving port.
-        app.MapDnsOverHttpsEndpoints();
-        // A trivial health probe so the listener is observably up.
-        app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        // A built application is itself an IEndpointRouteBuilder, so the
+        // mapping list lives once, in the raw-pipeline overload below.
+        MapRodEndpoints((IEndpointRouteBuilder)app);
         return app;
     }
 
@@ -751,7 +702,8 @@ public static class TransportHost
         // Background payload builds: the job-queued face of the same pipeline.
         endpoints.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,
-        // hash-chained audit trail read view.
+        // hash-chained audit trail read view. Distinct from the operators-layer
+        // live SSE route (the transient fan-out).
         endpoints.MapAuditEndpoints();
         // First-class evidence objects linked to tasks: attach,
         // list, and retrieve artifacts per task, scoped by engagement.
@@ -763,12 +715,25 @@ public static class TransportHost
         // export the evidence package, retire -- the path a finished
         // engagement takes out of service.
         endpoints.MapCloseoutEndpoints();
-        // gRPC service binding is an IEndpointRouteBuilder extension; it works the
+        // The implant-initiated beacon stream: gRPC over the
+        // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
+        // The binding is an IEndpointRouteBuilder extension, so it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
+        // The plain-HTTP envelope check-in (architecture.md Sec 8): the same
+        // frames as delimited sequences in ordinary request/response bodies,
+        // for implants with an HTTP client and a protobuf codec but no
+        // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,
+        // so only an mTLS-terminated listener ever serves it.
         endpoints.MapEnvelopeBeaconEndpoints();
+        // The WebSocket beacon stream: the web posture's live channel, the
+        // same session the gRPC stream runs over the envelope's own auth and
+        // frame grammar.
         endpoints.MapWebSocketBeaconEndpoints();
+        // DNS-over-HTTPS: the DNS grammar's second carriage, served by the
+        // doh listener that owns the arriving port.
         endpoints.MapDnsOverHttpsEndpoints();
+        // A trivial health probe so the listener is observably up.
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
     }
 
