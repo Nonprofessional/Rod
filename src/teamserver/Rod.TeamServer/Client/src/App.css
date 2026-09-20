@@ -1187,14 +1187,8 @@ a:hover {
   font-size: 12.5px;
 }
 
-/* A checkbox is not a text control: the 30px input height must not stretch
-   it, or the box dwarfs its row and reads misaligned against the neighboring
-   selects and inputs. */
-.build-form input[type='checkbox'],
-.listener-form input[type='checkbox'] {
-  height: auto;
-  margin: 0;
-}
+/* A checkbox is not a text control: the form input-height rules must not
+   stretch it. The complete cure is the global block at the file's end. */
 
 /* The advanced disclosure: same field rhythm as the fieldsets, visually
    quieter so the main path reads as the form and this reads as the
@@ -2135,33 +2129,13 @@ button.file-entry {
   color: var(--muted);
 }
 
-/* The Advanced disclosure's checkbox: the browser default renders large and
-   off-baseline next to 12px form text; bring it to the form's scale. */
-.build-advanced input[type='checkbox'] {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--accent);
-  flex: none;
-}
+/* The Advanced disclosure's checkbox is covered by the one global checkbox
+   rule at the file's end -- this earlier per-form sizing is what the two
+   rules kept fighting over; the cure is defined once. */
 
-/* A checkbox label keeps the column shape of its neighbors (the label's
-   own gap and rhythm apply unchanged); the checkbox and its text ride one
-   control-band-height row, so the box centers exactly in the band the
-   neighboring selects and inputs occupy. */
-.build-form label.checkbox-label,
-.listener-form label.checkbox-label {
-  color: var(--text);
-}
-
-.build-form .checkbox-row,
-.listener-form .checkbox-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-}
+/* The checkbox field's cure lives once, at the file's end, so equal-
+   specificity form rules (.build-form input, .listener-form input) cannot
+   flip it back by file order. See the block after the endpoint styles. */
 
 /* --- Endpoint inline edit ---------------------------------------------------------------- */
 
@@ -2363,4 +2337,30 @@ button.file-entry {
   font-size: 12px;
   color: var(--muted);
   word-break: break-all;
+}
+
+/* --- The checkbox field, once and globally ----------------------------------------------- */
+
+/* A checkbox field is a column field like every other: the label's text is
+   the caption line, and the box rides a control-band row below it -- the
+   exact two-line geometry its siblings' selects and inputs occupy, in any
+   form grid. Defined once at the file's end (same specificity as the form
+   input rules, so file order decides) so any future checkbox inherits the
+   shape instead of each form re-deriving it. The box itself is a fixed
+   14px square: no form's input-height rule can stretch or dwarf it. */
+input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+label.checkbox-label .checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  color: var(--text);
 }

@@ -51,10 +51,10 @@ const TRANSPORT_GROUPS: readonly {
     label: 'Payload ingress',
     transports: [
       { value: 'https', label: 'HTTPS — TLS web front (recommended)', port: '443' },
-      { value: 'mtls', label: 'mTLS — TLS + client certs', port: '5443' },
-      { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '5090' },
+      { value: 'mtls', label: 'mTLS — TLS + client certs', port: '443' },
+      { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '8080' },
       { value: 'quic', label: 'QUIC — UDP/443, TLS 1.3', port: '443' },
-      { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '8443' },
+      { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '443' },
       { value: 'smb', label: 'SMB — named pipe, internal segment', port: '' },
     ],
   },
@@ -370,6 +370,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           className="checkbox-label"
           title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Check-ins step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
         >
+          Egress &amp; pivots
           <span className="checkbox-row">
             <input
               type="checkbox"
@@ -384,7 +385,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                 }
               }}
             />
-            Egress &amp; pivots
           </span>
         </label>
         {isSmb ? (

@@ -567,13 +567,13 @@ export function PayloadBuildView({
               className="checkbox-label"
               title="Seals every check-in POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web check-ins use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
             >
+              Protect check-ins
               <span className="checkbox-row">
                 <input
                   type="checkbox"
                   checked={checkInProtection}
                   onChange={(e) => setCheckInProtection(e.target.checked)}
                 />
-                Protect check-ins
               </span>
             </label>
             <label>
