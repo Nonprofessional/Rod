@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
+using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
@@ -131,6 +132,7 @@ public static class LauncherEndpoints
     private static async Task<IResult> ListLaunchersAsync(
         string engagementId,
         ILauncherStore launchers,
+        IPayloadStore payloads,
         IStagerTokenService tokens,
         CancellationToken cancellationToken)
     {
@@ -142,13 +144,24 @@ public static class LauncherEndpoints
         foreach (var row in rows)
         {
             // The commands are re-rendered on read, so the row always copies
-            // in the current shape.
-            var rendered = ShellUpgradeLaunchers.Render(row.Url, row.TokenSecret)
+            // in the current shape -- against the payload's recorded format,
+            // or the default families when the payload is gone.
+            var payload = await payloads.FindAsync(row.PayloadId, engagement.Value, cancellationToken);
+            var rendered = ShellUpgradeLaunchers.Render(row.Url, row.TokenSecret, FormatOf(payload))
                 .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
                 .ToArray();
             body.Add(await ResponseOfAsync(row, rendered, tokens, cancellationToken));
         }
         return Results.Ok(body);
+    }
+
+    // The build record's format picks the launcher families; a record without
+    // one (a deleted payload, a pre-axis build) renders the default families.
+    internal static ArtifactFormat FormatOf(PayloadRecord? payload)
+    {
+        if (payload?.Build?.Format is { } wire && ArtifactFormats.TryParse(wire, out var format))
+            return format;
+        return ArtifactFormat.SingleFileExe;
     }
 
     private static async Task<IResult> RevokeLauncherAsync(
@@ -440,7 +453,7 @@ internal static class LauncherRender
             webListener,
             token,
             url,
-            ShellUpgradeLaunchers.Render(url, token.Secret)
+            ShellUpgradeLaunchers.Render(url, token.Secret, LauncherEndpoints.FormatOf(payload))
                 .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
                 .ToArray()));
     }

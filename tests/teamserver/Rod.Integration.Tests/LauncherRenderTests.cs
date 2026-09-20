@@ -4,12 +4,14 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
+using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Staging;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
+using Rod.Transport.Listeners.ShellCatch;
 
 namespace Rod.Integration.Tests;
 
@@ -206,6 +208,56 @@ public class LauncherRenderTests
         => new(
             id, engagement.Value, "Stage2", "dotnet", "application/octet-stream",
             "sha256:test", [1, 2, 3], 3, builtAt, Target: "linux-x64");
+
+    [Fact]
+    public void Render_TheDiskFamiliesAnswerForEveryFormat()
+    {
+        // The disk families are the universal fallbacks: whatever the
+        // payload's shape, a shell that can only download-and-run still gets
+        // a working command, and the credential rides each command exactly
+        // once.
+        foreach (ArtifactFormat format in Enum.GetValues(typeof(ArtifactFormat)))
+        {
+            var rendered = ShellUpgradeLaunchers.Render(
+                "http://stage.example.test/implants/stage2/abc", "secret", format);
+            Assert.Contains(rendered, l => l.Id == "unix-curl");
+            Assert.Contains(rendered, l => l.Id == "unix-wget");
+            Assert.Contains(rendered, l => l.Id == "windows-powershell");
+        }
+    }
+
+    [Fact]
+    public void Render_TheAotFormatAddsTheLinuxInMemoryFamily()
+    {
+        // The AOT binary is the executable shape that runs from an anonymous
+        // fd, so it is the only format that earns the memfd family -- and
+        // never the pwsh cradle an IL bundle would need.
+        var rendered = ShellUpgradeLaunchers.Render(
+            "http://stage.example.test/implants/stage2/abc", "secret", ArtifactFormat.NativeAot);
+
+        var memfd = Assert.Single(rendered, l => l.Id == "unix-python-memfd");
+        Assert.Equal("linux", memfd.Os);
+        Assert.Contains("memfd_create", memfd.Command);
+        Assert.Contains("/proc/self/fd", memfd.Command);
+        Assert.Contains("secret", memfd.Command);
+        Assert.DoesNotContain(rendered, l => l.Id == "windows-pwsh");
+    }
+
+    [Fact]
+    public void Render_TheDllFormatAnswersThePwshCradle()
+    {
+        // The dll bundle loads whole into a pwsh 7+ process, so the dll
+        // format renders the in-memory cradle -- and never the memfd family
+        // (a bundle is not an fd-executable native binary).
+        var rendered = ShellUpgradeLaunchers.Render(
+            "http://stage.example.test/implants/stage2/abc", "secret", ArtifactFormat.Dll);
+
+        var cradle = Assert.Single(rendered, l => l.Id == "windows-pwsh");
+        Assert.Equal("windows", cradle.Os);
+        Assert.Contains("[Reflection.Assembly]::Load", cradle.Command);
+        Assert.Contains("secret", cradle.Command);
+        Assert.DoesNotContain(rendered, l => l.Id == "unix-python-memfd");
+    }
 
     private sealed record LauncherRenderDto(
         string PayloadId,
