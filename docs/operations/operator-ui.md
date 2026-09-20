@@ -266,26 +266,40 @@ C2's own CA -- no system-trust assumptions.
 
 ## Launchers
 
-The one-liner delivery surface: paste-ready commands that fetch a stage-2
-payload over the engagement's web front and run it, so a target with any
+The engagement's one-liner home: every command an operator copies out, in
+one place.
+
+**Catch a shell** renders the paste-ready reverse-shell one-liners per
+shellcatch listener -- the classic shapes across the interpreter families a
+target is likely to have (`bash -i >& /dev/tcp/...`, `nc`, a Python/Perl/
+PHP/socat one-liner, a PowerShell client). No credential is involved: the
+address is the listener's public endpoint, and the caught shell lands in
+the Shells roster.
+
+**Deliver a beacon** cuts the stage-2 fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's
 Upgrade render produces the same commands for a shell it already caught;
-this panel is where an operator cuts them ahead of any catch.
-
-A render takes four choices. **Payload** names the stage-2 build the fetch
-delivers (the engagement's newest stands in). **Front** names the HTTP(S)
-listener whose public endpoint the fetch URL rides (the hardened members are
-preferred when unnamed). **Uses** sets how many redeems the minted
-deployment credential allows -- single use (the default posture: one paste,
-one beacon), unlimited-until-expiry, or a fixed count for a many-host
-deployment. **Lifetime** sets how long that credential lives (30 minutes by
-default, up to a day).
+this panel is where an operator cuts them ahead of any catch. The one pick
+that matters is the **payload** -- the stage-2 build the fetch delivers
+(the engagement's newest stands in). The rest live behind the "fetch front
+& credential" fold because the defaults are almost always right: the
+hardened HTTP(S) front for the fetch URL, a single-use credential (one
+paste, one beacon) living 30 minutes. Unfold to name a specific front, to
+widen the credential for a many-host deployment (unlimited or a fixed
+count, up to a day), or both.
 
 The answer carries the fetch URL, the credential (shown exactly once, never
 on the audit trail -- only its mint is recorded), and one command per
 downloader family: `curl` and `wget` for Unix targets, PowerShell's `iwr`
 for Windows. Copy the one the target's shell has; the beacon lands in the
 Implants table on its enrollment, already reporting its cadence.
+
+Why the fetch carries its own credential when the payload bakes one: the
+baked credential lives inside the artifact and enrolls the implant after it
+runs. The fetch -- downloading those bytes -- presents a freshly minted,
+scoped token instead, so a long-lived enrollment secret never rides a
+command line or shell history; each render mints its own and nothing is
+kept in a list to maintain.
 
 ## Build
 

@@ -7,16 +7,19 @@ import {
   listPayloads,
   renderLaunchers,
 } from '../api'
+import { catchLaunchers } from '../catchOneLiners'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
 
-// The engagement's one-liner delivery surface: the paste-ready stage-2 fetch
-// commands that grow a beacon, without needing a caught shell first. The
-// operator names the payload and the web front the fetch should ride (or
-// leaves either to the engagement's own preference), sets the deployment
-// credential's shape -- how many redeems, how long it lives -- and copies the
-// one-liner for the target's shell family. The server mints the credential
-// per render; it is shown here exactly once and never lands anywhere else.
+// The engagement's one-liner home: every command an operator copies out,
+// in one place. Two surfaces live here. "Catch a shell" renders the
+// paste-ready reverse-shell one-liners per shellcatch listener -- no
+// credential is involved, the address is the listener's public endpoint,
+// and the caught shell lands in the Shells roster. "Deliver a beacon"
+// drives the launcher render endpoint: pick the stage-2 payload, and the
+// server mints the fetch's deployment credential and answers with the
+// downloader one-liner per shell family; the credential shows exactly once
+// and never lands anywhere else.
 
 // The redeem budgets an operator realistically picks. Single-use is the
 // default posture (one paste, one beacon); the wider budgets serve a
@@ -69,7 +72,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
         ])
         if (cancelled) return
         setPayloads(allPayloads)
-        setListeners(allListeners.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)))
+        setListeners(allListeners)
         setError(null)
       } catch (e) {
         if (!cancelled) setError(String(e))
@@ -85,6 +88,15 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
   useEffect(() => {
     setRendered(null)
   }, [engagementId])
+
+  const webListeners = useMemo(
+    () => listeners.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)),
+    [listeners],
+  )
+  const catchers = useMemo(
+    () => listeners.filter((l) => l.transport === 'shellcatch'),
+    [listeners],
+  )
 
   const onRender = useCallback(async () => {
     setBusy(true)
@@ -120,24 +132,72 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
     () => USE_OPTIONS.find((o) => o.value === maxUses)?.label ?? `${maxUses} uses`,
     [maxUses],
   )
+  const lifetimeLabel = useMemo(
+    () => LIFETIME_OPTIONS.find((o) => o.value === lifetimeMinutes)?.label ?? `${lifetimeMinutes} min`,
+    [lifetimeMinutes],
+  )
+  const frontLabel = useMemo(() => {
+    if (!listenerId) return 'preferred front'
+    const named = webListeners.find((l) => l.id === listenerId)
+    return named ? named.name : 'named front'
+  }, [listenerId, webListeners])
 
   return (
     <section className="view">
       <h2>Launchers</h2>
       <p className="muted">
-        Paste-ready one-liners that fetch a stage-2 payload over the engagement's web front and
-        run it — the fetch presents a freshly minted deployment credential, and the enrollment
-        that follows spends it. The credential is shown once, here; copy the command for the
-        target's shell family.
+        Every paste-ready one-liner this engagement can cut, in one place: reverse shells that land
+        in the Shells roster, and stage-2 fetches that grow a beacon in the Implants table.
       </p>
       {error && <p className="error">{error}</p>}
 
-      {payloads.length === 0 || listeners.length === 0 ? (
+      {catchers.length > 0 && (
         <div className="card">
+          <h3>Catch a shell</h3>
+          <p className="muted">
+            Reverse-shell one-liners per shellcatch listener. No credential is involved — the
+            address is the listener's public endpoint; paste one on the target and the shell lands
+            in the Shells roster.
+          </p>
+          {catchers.map((listener) => {
+            const launchers = catchLaunchers(listener.publicEndpoint)
+            if (launchers.length === 0) return null
+            return (
+              <details key={listener.id} className="catch-details">
+                <summary title="The paste-ready reverse-shell one-liners for this listener's public endpoint — expand to copy one">
+                  Catch on <code>{listener.name}</code> · <code>{listener.publicEndpoint}</code>
+                  <span className="muted"> — {launchers.length} one-liners</span>
+                </summary>
+                <div className="upgrade-panel">
+                  {launchers.map((launcher) => (
+                    <div key={launcher.id} className="upgrade-launcher">
+                      <span title={`For ${launcher.os} targets`}>
+                        <Icon name={osIconFor(launcher.os)} className="wire-icon" />
+                      </span>
+                      <code>{launcher.id}</code>
+                      <code className="upgrade-command">{launcher.command}</code>
+                      <button
+                        className="ghost sm"
+                        onClick={() => void copy(`catch:${listener.id}:${launcher.id}`, launcher.command)}
+                      >
+                        {copied === `catch:${listener.id}:${launcher.id}` ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )
+          })}
+        </div>
+      )}
+
+      {payloads.length === 0 || webListeners.length === 0 ? (
+        <div className="card">
+          <h3>Deliver a beacon</h3>
           <div className="empty">
             <Icon name="copy" />
-            {payloads.length === 0 && listeners.length === 0
-              ? 'Rendering needs a stage-2 payload (Build) and an HTTP(S) listener (Listeners) — create both first.'
+            {payloads.length === 0 && webListeners.length === 0
+              ? 'Delivery needs a stage-2 payload (Build) and an HTTP(S) listener (Listeners) — create both first.'
               : payloads.length === 0
                 ? 'No stage-2 payload in this engagement yet — build one under Build first.'
                 : 'No HTTP(S) listener in this engagement yet — create one under Listeners first.'}
@@ -145,7 +205,12 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
         </div>
       ) : (
         <div className="card">
-          <h3>Render a launcher</h3>
+          <h3>Deliver a beacon</h3>
+          <p className="muted">
+            A one-liner that fetches the stage-2 payload over the engagement's web front and runs
+            it. The fetch presents a freshly minted credential; the enrollment that follows spends
+            it.
+          </p>
           <div className="inline-form">
             <select
               value={payloadId}
@@ -159,44 +224,57 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                 </option>
               ))}
             </select>
-            <select
-              value={listenerId}
-              onChange={(e) => setListenerId(e.target.value)}
-              title="The web front the fetch rides; the hardened members are preferred when unnamed"
-            >
-              <option value="">Preferred HTTP(S) front</option>
-              {listeners.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} · {l.transport} · {l.publicEndpoint}
-                </option>
-              ))}
-            </select>
-            <select
-              value={maxUses}
-              onChange={(e) => setMaxUses(Number(e.target.value))}
-              title="How many redeems the minted credential allows before it is spent"
-            >
-              {USE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={lifetimeMinutes}
-              onChange={(e) => setLifetimeMinutes(Number(e.target.value))}
-              title="How long the minted credential lives"
-            >
-              {LIFETIME_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
             <button className="primary" onClick={() => void onRender()} disabled={busy}>
               {busy ? 'Rendering…' : 'Render'}
             </button>
           </div>
+          {/* The choices almost every render leaves alone. The payload bakes
+              its own endpoints for after it runs; the fetch still needs a
+              front to ride and a credential to present, and the defaults --
+              the hardened front, single-use, half an hour -- are the right
+              posture for the one-paste-one-beacon shape. */}
+          <details className="build-advanced">
+            <summary title="The fetch front and the minted credential's policy — the defaults fit the one-paste-one-beacon shape">
+              Fetch front &amp; credential — {frontLabel} · {usesLabel.toLowerCase()} ·{' '}
+              {lifetimeLabel.toLowerCase()}
+            </summary>
+            <div className="inline-form">
+              <select
+                value={listenerId}
+                onChange={(e) => setListenerId(e.target.value)}
+                title="The web front the fetch rides; the hardened members are preferred when unnamed"
+              >
+                <option value="">Preferred HTTP(S) front</option>
+                {webListeners.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} · {l.transport} · {l.publicEndpoint}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={maxUses}
+                onChange={(e) => setMaxUses(Number(e.target.value))}
+                title="How many redeems the minted credential allows before it is spent"
+              >
+                {USE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={lifetimeMinutes}
+                onChange={(e) => setLifetimeMinutes(Number(e.target.value))}
+                title="How long the minted credential lives"
+              >
+                {LIFETIME_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </details>
 
           {rendered && (
             <div className="upgrade-panel">
