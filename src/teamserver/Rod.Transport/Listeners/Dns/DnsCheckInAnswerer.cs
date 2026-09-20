@@ -141,6 +141,15 @@ internal sealed class DnsCheckInAnswerer
                 else
                     response.ResponseCode = 3; // unknown or expired token
             }
+            else if (DnsCheckInNames.TryParseDelivery(name, _zone) is { } delivery)
+            {
+                // The retransmission half's confirmation: y once the exact
+                // blob landed, n while it has not -- the TXT payload rides
+                // base32 like every answer this grammar carries.
+                var landed = _bridge.DeliveryConfirmed(delivery.Task, delivery.Sha);
+                response.Answers.Add(TxtAnswer(
+                    name, DnsCheckInNames.Encode(new[] { (byte)(landed ? 'y' : 'n') })));
+            }
             else
             {
                 response.ResponseCode = 3; // NXDOMAIN: in-zone but not a check-in

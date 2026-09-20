@@ -480,6 +480,7 @@ result chunk:  r.<b32(task id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>
 channel chunk: c.<b32(task id)>.<seq>.<t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
 enroll chunk:  e.<b32(stream id)>.<seq>.<t|m>.<b32(chunk)>.<zone>
 enroll answer: a.<b32(token)>.<seq>.<zone>
+delivery probe:n.<b32(task id)>.<b32(sha128)>.<b32(implant id)>.<zone>
 ```
 
 **Sealing (a build that baked an envelope key).** The check-in carriage
@@ -516,6 +517,19 @@ bytes (the task id rides the name), landing on the task's transcript
 through the shared composition every carrier uses. Send EDNS0 (the answers ride up to 1232
 bytes); short-argument tasking only -- a task that does not fit is not
 delivered over DNS.
+
+**Delivery confirmation (the retransmission half).** A datagram carrier
+loses chunks, and a gap in a report's 0..n sequence drops the server's
+reassembly whole -- so a report is not delivered when its queries were
+sent, but when the server confirms the exact blob landed. After chunking
+a result or channel output, probe
+`n.<b32(task id)>.<b32(first 16 bytes of SHA-256 over the plaintext)>.<b32(implant id)>.<zone>`:
+the TXT answer is `y` once that blob's reassembly reached recording
+(base32 like every TXT payload here), `n` while it has not. Keep the
+frame pending until `y` and re-send the whole chunk sequence on later
+cycles -- first-wins recording makes the re-send idempotent, and the
+restarted-server case is one redundant re-send. The reference implant's
+flush loop does exactly this.
 
 **Record types beyond TXT (the cover).** An A query anywhere under the
 zone answers one A record -- the bind's own host when the bind is a

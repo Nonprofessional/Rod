@@ -608,7 +608,14 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   check-in contract ([extending/implants.md](extending/implants.md)); the
   responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
   too large for the budget is not claimed over DNS: it stays queued for a
-  stream transport. **The record-type cover:** an A query anywhere under
+  stream transport. **Delivery confirmation:** a lost chunk drops a
+  report's reassembly whole, so the sender probes
+  `n.<b32(task)>.<b32(sha128 of the plaintext)>.<b32(implant)>` after
+  chunking and keeps the frame pending until the `y` answer -- the
+  re-send rides later cycles idempotently (first-wins recording), the
+  reliability shape a datagram carrier needs without a per-chunk ack
+  protocol.
+  **The record-type cover:** an A query anywhere under
   the zone answers one A record (the bind's own host, else a deterministic
   per-name address in 198.18.0.0/15) -- a zone answering TXT for random
   labels but NXDOMAIN for every A query would itself be the fingerprint,

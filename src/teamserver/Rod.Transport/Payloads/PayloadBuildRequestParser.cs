@@ -399,7 +399,7 @@ internal static class PayloadBuildRequestParser
         // scheme is the protocol pick, and what it picks carries no stream.
         if (TypedPollOnlyScheme(enrollEndpoint) is { } typedCarrier && mode != "poll")
             return (null,
-                $"The {typedCarrier} carrier is one-exchange-one-check-in; build it mode 'poll' "
+                $"The {typedCarrier} carrier is {(typedCarrier is "dns" or "doh" ? "one-answer-one-poll" : "one-connection-one-check-in")}; build it mode 'poll' "
                 + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
         if (enrollTransport is "smb" or "tcp" && mode != "poll")
             return (null,

