@@ -499,4 +499,10 @@ src/teamserver/Rod.TeamServer/wwwroot/
 src/implant/dotnet/bin/
 src/implant/dotnet/obj/
 
+# Rust implant: cargo's build output (target/ holds the compiled binaries and
+# the generated protobuf bindings under target/release/build). The checked-in
+# baked.rs stub is tracked (empty -- the build unit overwrites it in a temp
+# copy at build time).
+src/implant/rust/target/
+
 

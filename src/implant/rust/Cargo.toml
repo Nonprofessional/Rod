@@ -1,0 +1,56 @@
+[package]
+name = "rod-implant"
+version = "1.0.0-dev"
+edition = "2021"
+
+# The reference Rust implant (architecture.md Sec 12.2): the reach implant
+# that covers what a managed runtime cannot -- 32-bit ARM/MIPS IoT Linux,
+# static musl, small-footprint servers -- at a native binary's size. Coupled
+# to the teamserver only by the wire protocol (rod.proto) and the baked
+# profile format, both language-neutral contracts; the .NET reference implant
+# remains the full-capability reference until this one reaches parity.
+#
+# Like the .NET trees, this project is an EXTERNAL component: it is not part
+# of Rod.slnx. The Rust build unit compiles it per build request.
+
+[[bin]]
+name = "rod-implant"
+path = "src/main.rs"
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+p256 = { version = "0.13", features = ["ecdsa"] }
+prost = "0.13"
+rand = "0.8"
+rsa = { version = "0.9", features = ["sha2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+x509-parser = { version = "0.16", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[build-dependencies]
+prost-build = "0.13"
