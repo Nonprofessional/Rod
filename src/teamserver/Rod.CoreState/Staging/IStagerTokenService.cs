@@ -3,12 +3,13 @@ namespace Rod.CoreState.Staging;
 /// <summary>
 /// Mints and redeems stager tokens. The mint result carries the plaintext secret
 /// exactly once; only a hash is retained server-side so a stolen store cannot
-/// replay tokens. Redeem is the entry point of enrollment: a presenting
-/// stager is verified against the stored hash, checked for expiry and remaining
-/// uses, and consumed on success. <see cref="VerifyAsync"/> is the same check
-/// without the consume -- the pre-enrollment read a stage-1 stager's payload
-/// fetch performs (architecture.md Sec 6): the fetch may not spend the
-/// deployment credential, because the stage-2 it launches spends it at enroll.
+/// replay tokens. Redeem is the consuming read: a presenting stager is verified
+/// against the stored hash, checked for expiry and remaining uses, and one use
+/// is spent on success -- an enrollment spends the artifact's baked credential
+/// this way, and a served stage-2 fetch spends the loader's the same way.
+/// <see cref="VerifyAsync"/> is the non-consuming twin every refusal path
+/// resolves through first, so a budget is only ever spent on an action that
+/// actually serves the presenter.
 /// </summary>
 public interface IStagerTokenService
 {
@@ -46,8 +47,9 @@ public interface IStagerTokenService
     /// Verifies a stager token by its plaintext <paramref name="secret"/> at
     /// <paramref name="now"/> without consuming a use: the same hash, expiry,
     /// and remaining-uses checks as <see cref="RedeemAsync"/>, the same refusal
-    /// exceptions, but the token's state is untouched so the enrollment that
-    /// follows can still spend it.
+    /// exceptions, but the token's state is untouched. The resolution step a
+    /// refusal path takes before it decides to serve -- and spending belongs
+    /// to <see cref="RedeemAsync"/> alone.
     /// </summary>
     Task<RedeemedStagerToken> VerifyAsync(
         string secret,

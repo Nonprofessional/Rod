@@ -4,7 +4,6 @@ using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 
@@ -15,11 +14,13 @@ namespace Rod.Integration.Tests;
 /// building a stager yields a runnable stage-1 that pulls its stage-2 and
 /// enrols. The test stands up a real teamserver, builds a stage-2 implant and
 /// then a stager referencing it through the operator build API, downloads the
-/// stager executable, and runs it as a real subprocess with the deployment
-/// credential. The stager fetches the stage-2 over the anonymous listener
-/// (token verified, not spent), verifies the baked sha256, executes the
-/// fetched artifact -- and the stage-2 spends the token at enroll and appears
-/// on the roster.
+/// stager executable, and runs it as a real subprocess -- with no arguments
+/// and no environment, exactly as it lands in the field. Each build bakes its
+/// own credential: the stager's gates the fetch (one served download spends
+/// one use), and the stage-2's is what its enroll spends. The stager fetches
+/// the stage-2 over the anonymous listener, verifies the baked sha256,
+/// executes the fetched artifact -- and the stage-2 enrols on its own baked
+/// credential and appears on the roster.
 /// </summary>
 public class StagerEndToEndTests
 {
@@ -27,7 +28,7 @@ public class StagerEndToEndTests
     public async Task Stager_FetchesStage2_AndTheStage2_Enrols()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        await env.CreateEngagementAsync();
 
         // Build the stage-2 first: a linux/amd64 single-file implant baked for
         // this teamserver's enroll endpoint, sleeping at a 1s beacon cadence.
@@ -60,9 +61,9 @@ public class StagerEndToEndTests
         Assert.Equal("Stager", stager.Class);
 
         // Download the stager executable and run it as the operator would drop
-        // it on a target: a bare binary plus the deployment credential. The
-        // stage-2's baked profile already carries the beacon host (the
-        // split-socket shape above); only the CA pin rides the environment.
+        // it on a target: a bare binary, no arguments, no environment -- each
+        // build's bake carries its own credential (the loader's gates the
+        // fetch, the stage-2's enrolls), the beacon host, and the CA pin.
         var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-stager-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var stagerPath = Path.Combine(outDir, "Rod.Stager");
@@ -84,14 +85,6 @@ public class StagerEndToEndTests
             FileName = stagerPath,
             UseShellExecute = false,
             RedirectStandardError = true,
-            // The loader takes the token at run time, never baked: it forwards
-            // the credential (and the CA pin the mTLS beacon handshake needs)
-            // to the stage-2 through the process environment.
-            Environment =
-            {
-                ["ROD_STAGER_TOKEN"] = secret,
-                ["ROD_CA_CERT"] = env.CACertFile,
-            },
         });
         Assert.NotNull(process);
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
@@ -152,8 +145,9 @@ public class StagerEndToEndTests
 
     /// <summary>
     /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator/enroll API, logged in and with the dev CA exported
-    /// for the beacon mTLS pin. Mirrors the DotNetImplantTests harness.
+    /// plain-HTTP operator/enroll API, logged in. Mirrors the
+    /// DotNetImplantTests harness; the builds bake everything the artifacts
+    /// need, so no CA file or credential is handed around.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {
@@ -161,7 +155,6 @@ public class StagerEndToEndTests
         public HttpClient Http { get; private set; } = null!;
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
-        public string CACertFile { get; private set; } = null!;
 
         public static async Task<TestEnv> StartAsync()
         {
@@ -180,14 +173,6 @@ public class StagerEndToEndTests
                 .Build();
             await env.Host.StartAsync();
 
-            var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-            env.CACertFile = Path.Combine(Path.GetTempPath(), "rod-test-ca-" + Guid.NewGuid().ToString("N") + ".pem");
-            var caPem = "-----BEGIN CERTIFICATE-----\n"
-                + Convert.ToBase64String(ca.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert),
-                    Base64FormattingOptions.InsertLineBreaks)
-                + "\n-----END CERTIFICATE-----\n";
-            await File.WriteAllTextAsync(env.CACertFile, caPem);
-
             env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
             {
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
@@ -196,18 +181,13 @@ public class StagerEndToEndTests
             return env;
         }
 
-        public async Task<string> MintStagerTokenAsync()
+        public async Task CreateEngagementAsync()
         {
             var createResponse = await Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
                 Name: "Operation Stager Slice"));
             createResponse.EnsureSuccessStatusCode();
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             EngagementId = created!.EngagementId;
-
-            var mintResponse = await Http.PostAsync($"/engagements/{EngagementId}/stager-tokens", content: null);
-            mintResponse.EnsureSuccessStatusCode();
-            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
-            return token!.Secret;
         }
 
         public string? EngagementId { get; private set; }
@@ -225,7 +205,6 @@ public class StagerEndToEndTests
         public async ValueTask DisposeAsync()
         {
             Http?.Dispose();
-            try { if (CACertFile is not null && File.Exists(CACertFile)) File.Delete(CACertFile); } catch { }
             if (Host is not null)
                 await Host.StopAsync();
             Host?.Dispose();

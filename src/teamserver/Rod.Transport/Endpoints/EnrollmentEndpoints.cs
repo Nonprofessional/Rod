@@ -26,9 +26,10 @@ namespace Rod.Transport.Endpoints;
 /// engagement, and the recorded linkage is echoed on the response.
 ///
 /// The stage-2 fetch route below is the stage-1 half of staging
-/// (architecture.md Sec 6): a stager presents the same deployment credential
-/// enroll takes, verified without being spent, and receives the stage-2 bytes
-/// it then runs.
+/// (architecture.md Sec 6): a stager presents the deployment credential its
+/// own build baked, each served fetch spending one use of it, and receives
+/// the stage-2 bytes it then runs -- bytes whose own baked credential is
+/// what the enrollment that follows spends.
 /// </summary>
 public static class EnrollmentEndpoints
 {
@@ -48,8 +49,11 @@ public static class EnrollmentEndpoints
     // stager token in the X-Stager-Token header resolves the engagement; the
     // payload must exist in that engagement, so a token for one engagement
     // never reaches another engagement's payloads (architecture.md Sec 3).
-    // The token is verified, not redeemed: the fetch is pre-identity
-    // transport, and the enrollment that follows is the audited record.
+    // The fetch REDEEMS one use of the token: the download gate is the
+    // token's whole job -- the enrollment that follows rides the credential
+    // baked into the fetched artifact, not this one. A single-use token
+    // authorizes exactly one download; an unlimited budget (maxUses 0)
+    // serves until expiry.
     private static async Task<IResult> FetchStage2Async(
         string payloadId,
         HttpRequest http,
@@ -69,6 +73,9 @@ public static class EnrollmentEndpoints
 
         try
         {
+            // Resolve without spending first: every refusal below (a foreign
+            // socket, an unknown payload) must leave the budget whole, and
+            // only a fetch that actually serves bytes redeems its use.
             var token = await tokens.VerifyAsync(secret, clock.GetUtcNow(), cancellationToken);
 
             // The scope check an engagement's own listener enforces: the
@@ -87,6 +94,9 @@ public static class EnrollmentEndpoints
             if (payload is null)
                 return Results.NotFound(new Problem("Payload does not exist in this engagement."));
 
+            // The download's redemption, after every refusal: one served
+            // fetch spends one use, and a token at zero serves no more.
+            await tokens.RedeemAsync(secret, clock.GetUtcNow(), cancellationToken);
             return Results.File(payload.Content, payload.ContentType, $"rod-stage2-{payloadValue:N}.bin");
         }
         catch (StagerTokenRedeemException)

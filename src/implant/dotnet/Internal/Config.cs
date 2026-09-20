@@ -160,6 +160,20 @@ internal sealed class Config
     /// </summary>
     public static Config Parse(string[] args)
     {
+        var config = ParseWithoutValidation(args);
+        config.Validate();
+        return config;
+    }
+
+    /// <summary>
+    /// The parse without the required-field check, for the program's bake-aware
+    /// startup: the baked profile is applied over the parsed run-time values
+    /// BEFORE <see cref="Validate"/> runs, so a fielded artifact that takes zero
+    /// flags and zero environment -- everything baked -- validates against what
+    /// the bake supplied, not against the empty run-time shape.
+    /// </summary>
+    internal static Config ParseWithoutValidation(string[] args)
+    {
         var config = new Config
         {
             EnrollURL = Env("ROD_ENROLL_URL", string.Empty),
@@ -267,13 +281,14 @@ internal sealed class Config
             }
         }
 
-        config.Validate();
         return config;
     }
 
     /// <summary>Enforces the required fields. BeaconURL may be empty when the
-    /// enroll/beacon hosts coincide; the beacon client derives it then.</summary>
-    private void Validate()
+    /// enroll/beacon hosts coincide; the beacon client derives it then.
+    /// Internal for the program's bake-aware startup, which validates after
+    /// the bake is applied.</summary>
+    internal void Validate()
     {
         var missing = new List<string>();
         if (EnrollURL.Length == 0)
@@ -318,7 +333,9 @@ internal sealed class Config
 
     // Validates the contact mode; anything but stream/poll is a usage error
     // rather than a silent default, so a typoed bake or flag fails loudly.
-    private static string NormalizeMode(string value)
+    // Internal for BakedProfileSupport, which applies the baked mode with
+    // the same validation a flag gets.
+    internal static string NormalizeMode(string value)
     {
         var mode = value.Trim().ToLowerInvariant();
         if (mode is not (BeaconModes.Stream or BeaconModes.Poll))
@@ -338,7 +355,8 @@ internal sealed class Config
     // Splits a comma-separated list ("a,b,c") into its items, trimming
     // whitespace and dropping empties so a stray separator never registers a
     // blank entry. Serves the class verb set and the fallback endpoint flag.
-    private static IReadOnlyList<string> ParseCommaList(string raw)
+    // Internal for BakedProfileSupport, which applies the baked verb set.
+    internal static IReadOnlyList<string> ParseCommaList(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return Array.Empty<string>();
