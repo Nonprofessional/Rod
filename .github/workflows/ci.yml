@@ -327,7 +327,7 @@ jobs:
         # via `dotnet publish`, then runs `dotnet Rod.Implant.dll` as a real
         # subprocess against a real teamserver -- enrolls over HTTP, beacons over
         # mTLS, runs a dispatched shell.exec task. This is the job that proves the
-        # .NET implant checks in and tasks end-to-end; it is otherwise skipped
+        # .NET implant contacts and tasks end-to-end; it is otherwise skipped
         # when dotnet is not on PATH.
         run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~DotNetImplantTests"
 

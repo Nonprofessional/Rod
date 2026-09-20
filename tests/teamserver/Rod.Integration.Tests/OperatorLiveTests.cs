@@ -149,7 +149,7 @@ public class OperatorLiveTests
     }
 
     [Fact]
-    public async Task Operator_Sees_An_Implant_Check_In_Live()
+    public async Task Operator_Sees_An_Implant_Contact_Live()
     {
         // A session opening is a live event -- the roster's mirror of the sweep's
         // SessionClosed -- so a connected operator watches an implant come online
