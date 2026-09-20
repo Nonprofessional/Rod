@@ -12,11 +12,15 @@ and the UI uses them precisely:
 
 - **Enroll** -- the one-time registration. A dropped artifact redeems its
   baked credential exactly once, receives its identity and certificate, and
-  reports its host facts. It never happens again for that implant.
+  reports its host facts and its baked contact cadence (sleep/jitter). It
+  never happens again for that implant.
 - **Contact** -- every later contact, on the sleep cadence the build baked.
   The implant calls home, picks up queued tasking, and returns results on
   the next cycle. All ordinary operations (shell commands, file transfers,
-  process listings, screenshots) ride contacts.
+  process listings, screenshots) ride contacts. Every contact's handshake
+  re-advertises the implant's *current* cadence, so the fleet's detail
+  strip shows the live sleep/jitter pair -- a `beacon.sleep` retune lands
+  on the record at the next contact.
 - **Interactive** -- not "everything else": it is the on-demand live channel
   (`shell.interact`, tunnels) for real-time typing -- held open over the
   stream on a stream-mode build (the gRPC stream on mTLS, the WebSocket
@@ -259,6 +263,29 @@ serve the HTTP/1.x enrollment). The shapes that follow from that:
 Every payload build pins the teamserver CA into the artifact, so the
 implant's first contact (enroll) validates the server it dials against the
 C2's own CA -- no system-trust assumptions.
+
+## Launchers
+
+The one-liner delivery surface: paste-ready commands that fetch a stage-2
+payload over the engagement's web front and run it, so a target with any
+shell access beacons without a file landing first. The shell console's
+Upgrade render produces the same commands for a shell it already caught;
+this panel is where an operator cuts them ahead of any catch.
+
+A render takes four choices. **Payload** names the stage-2 build the fetch
+delivers (the engagement's newest stands in). **Front** names the HTTP(S)
+listener whose public endpoint the fetch URL rides (the hardened members are
+preferred when unnamed). **Uses** sets how many redeems the minted
+deployment credential allows -- single use (the default posture: one paste,
+one beacon), unlimited-until-expiry, or a fixed count for a many-host
+deployment. **Lifetime** sets how long that credential lives (30 minutes by
+default, up to a day).
+
+The answer carries the fetch URL, the credential (shown exactly once, never
+on the audit trail -- only its mint is recorded), and one command per
+downloader family: `curl` and `wget` for Unix targets, PowerShell's `iwr`
+for Windows. Copy the one the target's shell has; the beacon lands in the
+Implants table on its enrollment, already reporting its cadence.
 
 ## Build
 

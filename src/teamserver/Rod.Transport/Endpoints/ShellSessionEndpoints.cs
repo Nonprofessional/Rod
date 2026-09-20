@@ -248,96 +248,43 @@ public static class ShellSessionEndpoints
             engagementId, id, sessions, cancellationToken);
         if (scope is null)
             return failure!;
-        if (await engagements.FindAsync(scope.Engagement, cancellationToken) is not { } engagement)
-            return Results.NotFound(new Problem("Engagement does not exist."));
 
         var operatorId = user.TryGetOperatorId();
         if (operatorId is null)
             return Results.Unauthorized();
 
-        // The stage-2 fetch rides the engagement's web listeners, so the
-        // URL needs one to exist. The operator may name the front the
-        // fetch should use (several listeners, one specific redirector);
-        // unnamed, the hardened members are preferred over cleartext.
-        var webListeners = (await listenerStore.ListAsync(cancellationToken))
-            .Where(l => l.EngagementId == scope.Engagement && IsWebTransport(l.Transport))
-            .ToList();
-        ListenerDefinition? webListener;
-        if (body?.ListenerId is { } namedListener)
-        {
-            webListener = Guid.TryParse(namedListener, out var named)
-                ? webListeners.FirstOrDefault(l => l.Id == named)
-                : null;
-            if (webListener is null)
-                return Results.BadRequest(new Problem(
-                    "ListenerId does not name one of this engagement's HTTP(S) listeners."));
-        }
-        else
-        {
-            webListener = webListeners
-                .OrderByDescending(l => l.Transport == "https")
-                .ThenByDescending(l => l.Transport == "mtls")
-                .ThenBy(l => l.CreatedAt)
-                .FirstOrDefault();
-        }
-        if (webListener is null)
-            return Results.BadRequest(new Problem(
-                "The engagement has no HTTP(S) listener to serve the stage-2 fetch; create one first."));
-
-        // The payload to grow into: the operator names one, or the newest
-        // build in the engagement stands in.
-        var payload = await ResolvePayloadAsync(payloads, scope.Engagement, body?.PayloadId, cancellationToken);
-        if (payload is null)
-            return Results.BadRequest(new Problem(
-                "No stage-2 payload exists in this engagement; build one first, or name an existing payload id."));
-
-        // One deployment credential for the paste: single-use (the fetch
-        // verifies it, the enrollment spends it) and short-lived.
-        var at = clock.GetUtcNow();
-        var token = await tokens.MintAsync(
-            scope.Engagement, engagement.OwnerId, at,
-            maxUses: 1, lifetime: TimeSpan.FromMinutes(30),
-            originShellSession: scope.Session.Id, cancellationToken: cancellationToken);
-        await audit.AppendAsync(
-            AuditEvent.Fact(
-                eventId: Guid.NewGuid(),
-                engagementId: scope.Engagement.Value,
-                operatorId: engagement.OwnerId.Value,
-                implantId: Guid.Empty,
-                taskId: Guid.Empty,
-                verb: "mint-stager-token",
-                kind: AuditEventKind.StagerTokenMinted,
-                payload: $"origin=shell-upgrade shell={scope.Session.Id} requestedBy={operatorId.Value} uses=1 lifetime=30m",
-                output: null,
-                outcome: token.Id.ToString(),
-                at),
+        // The shared launcher flow (the standalone launchers endpoint renders
+        // the same shape): resolve the front and payload, mint the paste's
+        // credential, render every downloader family. A caught shell always
+        // mints single-use for thirty minutes -- one paste, one beacon -- and
+        // the mint's origin carries this session so the enrollment binds the
+        // implant back to the shell it grew from.
+        var (renderFailure, set) = await LauncherRender.ResolveAsync(
+            scope.Engagement,
+            new LauncherSelection(
+                body?.PayloadId,
+                body?.ListenerId,
+                MaxUses: 1,
+                Lifetime: TimeSpan.FromMinutes(30),
+                RequestedBy: operatorId.Value,
+                OriginShellSession: scope.Session.Id,
+                AuditOrigin: $"origin=shell-upgrade shell={scope.Session.Id}"),
+            engagements,
+            listenerStore,
+            payloads,
+            tokens,
+            audit,
+            clock,
             cancellationToken);
+        if (set is null)
+            return renderFailure!;
 
-        var url = $"{webListener.PublicEndpoint.TrimEnd('/')}/implants/stage2/{payload.PayloadId:N}";
         return Results.Ok(new ShellUpgradeResponse(
-            payload.PayloadId.ToString("N"),
-            url,
-            token.Secret,
-            token.ExpiresAt,
-            ShellUpgradeLaunchers.Render(url, token.Secret)
-                .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
-                .ToArray()));
-    }
-
-    private static bool IsWebTransport(string transport)
-        => transport is "http" or "https" or "mtls";
-
-    private static async Task<PayloadRecord?> ResolvePayloadAsync(
-        IPayloadStore payloads,
-        EngagementId engagement,
-        string? payloadId,
-        CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(payloadId) && Guid.TryParse(payloadId, out var named))
-            return await payloads.FindAsync(named, engagement.Value, cancellationToken);
-
-        var newest = await payloads.ListAsync(engagement.Value, cancellationToken);
-        return newest.OrderByDescending(p => p.BuiltAt).FirstOrDefault();
+            set.Payload.PayloadId.ToString("N"),
+            set.Url,
+            set.Token.Secret,
+            set.Token.ExpiresAt,
+            set.Launchers));
     }
 
     // Resolves the scoped shell: the engagement in the path must own the

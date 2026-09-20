@@ -685,6 +685,9 @@ public static class TransportHost
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
         endpoints.MapListenerEndpoints();
+        // The standalone one-liner launchers: the paste-ready stage-2 fetch
+        // renders, shared with the shell console's upgrade flow.
+        endpoints.MapLauncherEndpoints();
         // The engagement's caught reverse shells: the shellcatch surface's
         // roster and console routes.
         endpoints.MapShellSessionEndpoints();
