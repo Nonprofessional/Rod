@@ -1260,6 +1260,11 @@ export interface BuildPayloadInput {
   // default server-side to single use inside the artifact's kill window.
   tokenMaxUses: number | null
   tokenLifetimeSeconds: number | null
+  // The artifact's form factor: 'exe' (the default), 'exe-trimmed', 'aot'
+  // (the runtime-free native binary), or 'dll' (the in-memory-loadable
+  // bundle -- an implant shape; the server refuses it on a stager build).
+  // Null leaves the single-file default.
+  format: string | null
 }
 
 export interface BuildPayloadResult {

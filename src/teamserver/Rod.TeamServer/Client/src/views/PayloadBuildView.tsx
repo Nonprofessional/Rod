@@ -88,6 +88,7 @@ export function PayloadBuildView({
   const [stage2PayloadId, setStage2PayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
+  const [format, setFormat] = useState('exe')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [mode, setMode] = useState('stream')
@@ -290,6 +291,7 @@ export function PayloadBuildView({
         killDate: killDate ? new Date(killDate).toISOString() : null,
         tokenMaxUses: num(tokenMaxUses),
         tokenLifetimeSeconds: num(tokenHours) !== null ? num(tokenHours)! * 3600 : null,
+        format: format !== 'exe' ? format : null,
       })
       setError(null)
       await refreshJobs()
@@ -434,6 +436,20 @@ export function PayloadBuildView({
                   {a === 'amd64' ? 'amd64 / x64' : a}
                 </option>
               ))}
+            </select>
+          </label>
+          <label>
+            Format
+            {/* The artifact's form factor: the single-file default drops and
+                runs anywhere, trimmed and AOT shrink it (AOT carries no
+                runtime at all), and the dll bundle loads in memory inside a
+                host with a .NET 8+ runtime. A stager IS a loader, so the dll
+                shape is implant-only -- the server refuses the pairing. */}
+            <select value={format} onChange={(e) => setFormat(e.target.value)}>
+              <option value="exe">exe — self-contained single file</option>
+              <option value="exe-trimmed">exe-trimmed — smaller single file</option>
+              <option value="aot">aot — runtime-free native binary</option>
+              {!isStager && <option value="dll">dll — in-memory load bundle</option>}
             </select>
           </label>
         </fieldset>
