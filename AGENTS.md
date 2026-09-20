@@ -99,36 +99,28 @@ tests encode the layer rules; adding a forbidden reference must fail a test.
   messages; when touching an old comment that still cites one, drop the id.
 - No attribution trailers (see Sec. 2 for the full ban).
 
-## 7. Sensitive-capability discipline
+## 7. Capability discipline
 
-The boundary between in-repo and out-of-tree tradecraft is decided by
-**what kind of technique it is**, not by capability category. See
-[architecture.md Sec 13](docs/architecture.md) for the
-authoritative rule; this section summarizes it.
+The capability surface is governed by contracts, not by a curated technique
+allowlist. See [architecture.md Sec 13](docs/architecture.md) for the
+authoritative statement.
 
-- **In-repo: standard, mainstream, documented techniques.** Mechanisms that are
-  documented in OS vendor references (Win32 API, MSDN, systemd, cron, OpenSSH,
-  etc.), widely covered in offensive-security curricula and tooling, and have a
-  legitimate system-administration or defensive-research side. The reference
-  implants implement these directly so the framework is useful for learning,
-  research, and authorized red-team work out of the box. Current in-repo surface:
-  shell execution, file transfer in both directions (`file.push`/`file.pull`),
-  host/port recon, process enumeration and termination (`recon.ps`/`proc.kill`),
-  child-implant derivation, Windows access tokens, remote
-  execution, persistence (Run key / scheduled tasks / services / cron / systemd),
+- **The reference set is the standard, documented surface**: shell execution,
+  file transfer in both directions (`file.push`/`file.pull`), host/port recon,
+  process enumeration and termination (`recon.ps`/`proc.kill`),
+  child-implant derivation, Windows access tokens, remote execution,
+  persistence (Run key / scheduled tasks / services / cron / systemd),
   standard-store credential collection, screen capture over the standard
-  desktop-capture APIs (`collect.screenshot`), and C2 exfiltration into
+  desktop-capture APIs (`collect.screenshot`), in-memory payload carriage
+  (assembly loading, memfd execution), and C2 exfiltration into
   engagement-scoped artifact storage.
-- **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days, weaponized
-  proof-of-concepts, novel or unpublished detection-evasion and bypass
-  techniques, LSASS memory dumping for credential theft, and input capture
-  (keyloggers) stay out of the core. These are **pluggable capability
-  contracts**: define their interface, registration, dispatch, and data model
-  here; the concrete tradecraft lives in separate, opt-in, out-of-tree modules
-  the operator supplies.
-- All work here assumes an authorized-use context. When
-  in doubt about which side a technique falls on, default to out-of-tree and
-  raise the question.
+- **Everything beyond it arrives through the module seams**: server-side
+  `CapabilityModule`s, the implant handler overlay, and the payload transform
+  chain each define their interface, registration, dispatch, and data model
+  here; the concrete tradecraft is supplied as separate, opt-in modules the
+  operator deploys. The core ships no concrete evasion, exploit, or
+  collection tradecraft beyond the reference set.
+- All work here assumes an authorized-use context.
 
 ## 8. Where things live
 

@@ -83,9 +83,11 @@ placed it, and named it.
 
 Implement `ICapabilityHandler` (or use the `CapabilityHandler` delegate
 wrapper) and register it in `HandlerRegistry.Default`'s `additional` seam --
-registration is compile-time by design (no runtime assembly loading: it would
-break Native AOT, enlarge the artifact, and put plugin files on disk;
-architecture.md Sec 5.3):
+registration is compile-time by design (no runtime assembly loading for
+handler plugins: it would break Native AOT, enlarge the artifact, and put
+plugin files on disk; the in-memory loading the tree does have is the
+loader's stage-2 carriage, not a plugin mechanism -- architecture.md
+Sec 5.3):
 
 ```csharp
 var registry = HandlerRegistry.Default(
@@ -137,8 +139,9 @@ handler's verb (the rule the section below spells out). No fork of the
 implant tree to maintain. The
 build unit still bakes the per-artifact profile (mode, endpoint,
 sleep/jitter/kill date, verb set) into whatever tree it compiles, and
-publishes a self-contained single-file executable for the requested OS/arch
-with no target-side runtime.
+publishes the requested artifact format -- the self-contained single-file
+executable default, its trimmed twin, the native AOT binary, or the
+in-memory-loadable dll bundle (architecture.md Sec 6).
 
 A handler source follows one authoring shape: a top-level concrete class with
 a parameterless constructor whose base list names `ICapabilityHandler`. Any
@@ -210,9 +213,8 @@ build the metadata as if the operator's report depends on it, because it does.
 Build-time artifact transformation -- the slot where Metasploit put its
 encoders and payload encryption -- follows the same pattern as a capability
 module, one layer down ([architecture.md Sec 6](../architecture.md)). The
-platform ships only the seam; no transform ships in-tree, because concrete
-transforms sit on the sensitive side of the Sec 13 boundary and each one owns
-its key material and its decode contract end to end -- the teamserver
+platform ships only the seam; no transform ships in-tree, because each one
+owns its key material and its decode contract end to end -- the teamserver
 generates none, stores none, and knows nothing about how the bytes unwrap on
 the target.
 
@@ -258,11 +260,10 @@ note): the engagement report never lies about what a transform produced.
 Remember the implant side is still yours -- nothing in-tree unwraps your
 bytes, so your decode stub travels with whatever artifact you ship.
 
-## What stays out of the core, and why
+## What the core ships, and where your module sits
 
-The boundary is technique-kind, not category (architecture.md Sec 13):
-standard, documented, mainstream techniques ship in the reference implant;
-in-the-wild zero-days, weaponized PoCs, and novel detection-evasion live in
-modules like yours. When unsure which side a technique falls on, keep it
-out-of-tree -- tightening later is cheap; loosening under pressure is how the
-line erodes.
+The reference set is the standard, documented surface (architecture.md
+Sec 13); everything beyond it -- in-the-wild zero-days, weaponized PoCs,
+novel tradecraft -- lives in modules like yours, arriving through the module
+seams. The core keeps the interfaces, registration, dispatch, and data
+models; the tradecraft is yours.

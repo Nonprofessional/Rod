@@ -138,9 +138,10 @@ in-house. The dependency rule is enforced by architecture tests.
   compiles its wire bindings
   from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
   committed generated code), and `DotNetBuildUnit` bakes the per-implant
-  profile in at compile time. It performs no evasion and no obfuscation
-  (Sec. 7); the in-repo tradecraft it carries is bounded by
-  Sec 13. The wire protocol is the language-neutral product, so a community
+  profile in at compile time. The reference set it carries is the standard,
+  documented tradecraft surface (Sec 13); anything beyond it arrives through
+  the extension seams. The wire protocol is the language-neutral product, so a
+  community
   implant in Go, C, or Nim builds against the same contract without coupling
   the teamserver to its language (Sec 12.2).
 - **Redirectors.** Near-stateless forwarders (.NET, Native AOT, single static
@@ -170,7 +171,7 @@ under, and a note on its current state are listed.
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` contact stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S) and mTLS listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
-| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `DotNetBuildUnit` -- the sole in-tree unit -- publishes the reference implant in a per-build staging copy as a self-contained single-file executable for the requested OS/arch (runtime identifier mapped from the build target; no target-side .NET install), baking the profile (transport shape, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `DotNetBuildUnit` -- the sole in-tree unit -- publishes the reference implant in a per-build staging copy in any of the four artifact formats (self-contained single-file default, trimmed, native AOT, or the in-memory-loadable dll bundle; runtime identifier mapped from the build target for the executable shapes), baking the profile (transport shape, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, stager tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
@@ -278,8 +279,9 @@ Implants differ by purpose, not by a "managed device flavor":
 
 - **Stage-2 implant** -- the primary long-haul implant; full capability set and
   module support. (e.g. the .NET reference implant, cross-platform.)
-- **Stager** -- a tiny stage-1 loader that fetches a stage-2 implant. Separate
-  generation output class.
+- **Stager** -- a stage-1 loader that fetches a stage-2 implant and runs it by
+  its format: hosting a dll bundle in its own process, or executing a native
+  stage-2 (from memory on Linux). Separate generation output class.
 - **Web-shell class** -- a script placed in a web root, bound to the web
   transport; code execution over HTTP, no interactive PTY. The endpoint is
   operator-initiated in every phase: registration creates the class's
@@ -370,21 +372,23 @@ compiled handler set, and dispatch routes through an
 implant-side handler registry (the implant analog of the server's
 `ICapabilityModule`) rather than a hard-coded `switch`, so adding a verb is a
 handler plus a registration, not an edit to the runner. Registration is
-compile-time -- no runtime assembly loading (that would break Native AOT, enlarge
-the artifact, and introduce on-disk plugin files), and the capability set is
+compile-time -- no runtime assembly loading for *handler plugins* (that would
+break Native AOT, enlarge
+the artifact, and introduce on-disk plugin files; the in-memory loading path
+that does exist in the tree is the loader's stage-2 host, a baked artifact
+carriage rather than a plugin mechanism), and the capability set is
 decided per class at build time, so runtime discovery buys nothing. Out-of-tree
 handlers compile in through the build unit's extension overlay (Sec 6) -- a
 configured extension directory whose sources overlay onto the per-build staging
-tree, with generated registrations feeding the registry's `additional` seam; the
-reference implant ships no Sec 13 boundary verb.
+tree, with generated registrations feeding the registry's `additional` seam.
 
 Rejected alternatives: runtime dynamic assembly loading for plugins (breaks
 Native AOT and the lean artifact, and is unnecessary since the set is fixed at
 build time); advertising the full baked class set regardless of implemented
 handlers (recreates the unknown-verb-for-an-advertised-verb failure the
 intersection exists to prevent); keeping the hard-coded switch and adding
-`collect.keylog` in-repo behind a flag (crosses the technique-kind boundary of
-Sec 13 and leaves no growth seam); and making the implant class-aware but
+`collect.keylog` in-repo behind a flag (bypasses the module contract and
+leaves no growth seam); and making the implant class-aware but
 keeping the switch (solves advertising but not extensibility -- the registry
 is what makes the design durable).
 
@@ -398,7 +402,7 @@ class set) advertises its full compiled handler set, so the checked-in stub
 keeps running from flags/env. The implant tests pin both halves of the
 contract: the advertised set is the baked-verbs/handlers intersection for
 every class, an added registration widens it, and the reference registry
-contains no Sec 13 boundary verb.
+contains no contract-only verb.
 
 The class verb set is also a compile-time boundary, not only an
 advertise-time one: the bake trims each implant-class build to the verbs its
@@ -431,16 +435,33 @@ recorded.**
   it only by that contract, so a community build unit in Go, C/C++, or Nim can
   register and compile against the same contract with no in-language coupling
   (the `Language` enum keeps those slots, Sec 12.2).
-- **Artifacts are self-contained single-file executables for the requested
-  target.** The unit maps the build target's OS/arch onto a runtime identifier
-  and publishes self-contained (runtime bundled, compressed), so a generated
-  implant runs on a stock target with no .NET installed -- the deployment shape
-  an operation actually has. An unmappable target fails the build with the
-  supported set named rather than silently building for the build host.
-- **Build params** include the implant class, target OS/arch, transport
-  profile, and beacon parameters (mode, sleep, jitter, kill date). They are
-  produced at request time so each artifact is unique -- this is essential for
-  OPSEC. No key material crosses the build contract (Sec 5.1).
+- **Artifacts ship in four form factors; the format is a build request
+  knob.** `ArtifactFormat` rides the build contract beside the class and
+  target, and the unit maps it onto one publish invocation:
+  **`exe`** (the default) -- a self-contained single-file native executable,
+  runtime bundled and compressed, the drop-and-run shape that needs nothing
+  installed; **`exe-trimmed`** -- the same shape with IL trimming applied
+  (the tree is source-generation clean, so the trim runs warning-free), a
+  materially smaller transfer; **`aot`** -- native AOT compilation, a
+  runtime-free native binary with the same deployment property a C or Go
+  artifact has, the smallest and fastest-starting executable (measured on
+  linux-x64: 39.8 MB single-file and 14.8 MB trimmed for the implant,
+  10.3 MB AOT; 37.4/14.0/6.2 MB for the stager); and **`dll`** -- a
+  framework-dependent net8.0 publish packed into one zip (the entry
+  assembly, its dependencies, deps/runtimeconfig), the in-memory-loadable
+  shape: a host with a .NET 8+ runtime loads it via `Assembly.Load` with no
+  bytes on disk, and net8.0 is the oldest TFM every supported host runtime
+  loads (pwsh 7.4 LTS through the teamserver's own .NET 10). The
+  compatibility tiers the formats cover: a target with nothing installed
+  runs the exe/trimmed/aot shapes and the script one-liners; a stock
+  Windows with only .NET Framework answers through the PowerShell families;
+  a target with a .NET 8+ host additionally takes the dll bundle in
+  memory. An unmappable target fails the build with the supported set
+  named rather than silently building for the build host.
+- **Build params** include the implant class, artifact format, target OS/arch,
+  transport profile, and beacon parameters (mode, sleep, jitter, kill date).
+  They are produced at request time so each artifact is unique -- this is
+  essential for OPSEC. No key material crosses the build contract (Sec 5.1).
 - **The extension overlay is the implant-side out-of-tree seam.**
   `Build:ImplantExtensionDirectory` names a directory of handler sources; the
   unit copies its `.cs` files onto the per-build staging tree and generates the
@@ -470,20 +491,34 @@ recorded.**
   verbs riding every build). The stager tree is never trimmed: a stage-1
   loader carries no handlers.
 - **Staging** is a separate output class with its own generation path: a
-  stager-class build compiles the minimal stage-1 loader, not the implant, and
-  bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
-  -- alongside the listener, kill date, and its own minted credential (a
-  deployment secret, not key material). The loader runs with zero arguments
-  and zero environment -- the bake is authoritative, and no flag or variable
-  re-points or re-credentials a fielded artifact: the loader presents its
-  token for the fetch (`GET /implants/stage2/{id}`, each served fetch
-  spending one use -- the download gate is that credential's whole job),
-  refuses bytes that do not hash to the baked fingerprint, executes the
-  fetched artifact, and hands nothing operational across the process
-  boundary -- the stage-2 spends its own baked token at its enroll and
-  appears on the roster as a top-level implant. The .NET reference loader
-  lives in `src/stager/dotnet/`; the fetch route is engagement-scoped by the
-  token and by the listener it arrived on (Sec 8).
+  stager-class build compiles the stage-1 loader, not the implant, and
+  bakes in a fetch reference -- the stage-2 payload's id, sha256
+  fingerprint, and format -- alongside the listener, kill date, and its
+  own minted credential (a deployment secret, not key material). The
+  loader runs with zero arguments and zero environment -- the bake is
+  authoritative, and no flag or variable re-points or re-credentials a
+  fielded artifact: the loader presents its token for the fetch
+  (`GET /implants/stage2/{id}`, each served fetch spending one use -- the
+  download gate is that credential's whole job), refuses bytes that do not
+  hash to the baked fingerprint, runs the fetched artifact by its baked
+  format, and hands nothing operational across the process boundary --
+  the stage-2 spends its own baked token at its enroll and appears on the
+  roster as a top-level implant. The run path follows the format: a
+  **dll** stage-2 is hosted in the loader's own process (the bundle
+  unpacks into memory, dependencies pre-load from bytes, the entry point
+  invokes) -- no byte of the stage-2 on any filesystem, any OS; a
+  **native AOT** stage-2 runs from an anonymous memfd on Linux
+  (`memfd_create` + `execveat`, the documented kernel facilities -- the
+  loader's process image becomes the stage-2), equally disk-free, because
+  an AOT binary is a plain ELF with no self-reference; the single-file
+  shapes keep the temp-file child, because a single-file bundle reads its
+  own file to mount the runtime (observed: the bundle host cannot resolve
+  the current executable from an anonymous fd). An AOT stager pairs only
+  with executable stage-2 shapes -- a native host cannot load IL -- and
+  the build refuses the pairing with the fix named. The .NET reference
+  loader lives in `src/stager/dotnet/`; the fetch route is
+  engagement-scoped by the token and by the listener it arrived on
+  (Sec 8).
 - **Every build mints the enrollment credential it bakes.** The token is
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --
@@ -491,19 +526,21 @@ recorded.**
   by id (`POST /engagements/{id}/stager-tokens/{tokenId}:revoke`, audited as
   `StagerTokenRevoked`). The manual mint stays for the rotation and re-entry
   flows (Sec 9), scoped per request to uses and window.
-- **The transform seam is post-build and out-of-tree.** Build-time artifact
-  transformation -- where MSF put its encoders and payload encryption -- is a
-  config-listed `IPayloadTransform` chain (Sec 13 keeps concrete transforms
-  out-of-tree; against modern EDR they are legacy anyway). Each transform
-  names itself, receives the built bytes plus the build context, and returns
-  transformed bytes plus metadata; the chain runs after the build unit and
-  before anything is recorded, so the stored fingerprint covers exactly the
-  transformed bytes and the `PayloadBuilt` audit event names every applied
-  transform. Each transform owns its key material and decode contract end to
-  end -- the service generates none. No in-tree transform ships: the empty
-  chain is the seam, exactly like the capability placeholders, and transforms
-  arrive through the explicit `Build:Transforms` list (the same loading shape
-  as `Tradecraft:Modules`, [extending/tradecraft.md](extending/tradecraft.md)).
+- **The transform seam is post-build.** Build-time artifact transformation
+  -- where MSF put its encoders and payload encryption -- is a
+  config-listed `IPayloadTransform` chain (each transform owns its key
+  material and decode contract end to end; against modern EDR the classic
+  encoders are legacy anyway). Each transform names itself, receives the
+  built bytes plus the build context, and returns transformed bytes plus
+  metadata; the chain runs after the build unit and before anything is
+  recorded, so the stored fingerprint covers exactly the transformed bytes
+  and the `PayloadBuilt` audit event names every applied transform. No
+  in-tree transform ships: the empty chain is the seam, exactly like the
+  capability placeholders, and transforms arrive through the explicit
+  `Build:Transforms` list (the same loading shape as `Tradecraft:Modules`,
+  [extending/tradecraft.md](extending/tradecraft.md)). A shellcode-form
+  transform (turning a built artifact into position-independent bytes for
+  the loaders that want them) is the seam's canonical occupant.
 - **Artifact tracking.** Every generated artifact is fingerprinted and recorded
   (who, when, config) into the audit trail.
 
@@ -556,9 +593,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   repoint a listener's public endpoint to swap a burned redirector without
   touching the backend, which severs the old endpoint.
 
-> This section defines what the platform must **provide** for OPSEC. It does not
-> describe concrete evasion techniques. Those are out-of-tree capability modules
-> (Sec. 10, Sec. 13).
+> This section defines what the platform must **provide** for OPSEC. Concrete
+> tradecraft beyond it is an operator-supplied capability module (Sec. 10).
 
 ## 8. Transports, listeners, and redirectors
 
@@ -902,8 +938,13 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   shell leaves the hub the moment its socket dies, before the durable
   marking, so no route resolves a dead socket. An upgrade render is
   advisory: it mints the engagement a single-use stager token and returns
-  paste-ready one-liners (the standard fetch-credential-run stager shape
-  against the engagement's web listener) -- the paste is the operator's
+  paste-ready one-liners against the engagement's web listener, rendered
+  for the payload's format -- the disk families (curl/wget/PowerShell
+  fetch-and-run) for every shape, the Linux in-memory family (python
+  stages the bytes in a memfd and execs through /proc/self/fd) for the
+  native AOT payload, and the pwsh cradle (in-memory zip unpack,
+  dependency pre-load, `Assembly.Load`, entry invoke) for the dll bundle
+  -- the paste is the operator's
   action through the input route, not a server-side write into the
   session. The standalone launchers endpoint renders the same one-liners
   without a caught shell -- the cut-ahead delivery surface, where the
@@ -1214,7 +1255,7 @@ task arguments, generates a fresh child keypair, and enrolls a child naming
 itself as parent; the enroll clients thread parentage onto the request, and the
 binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
 the HTTP path. The `lateral.token` and `lateral.exec_remote` verbs also ship
-in-repo reference handlers under the Sec 13 boundary (AGENTS.md Sec 7): `lateral.token` enumerates the current process's Windows access-token
+as in-repo reference handlers: `lateral.token` enumerates the current process's Windows access-token
 context (user, groups, privileges) via `whoami`, the documented administration
 command for inspecting the calling token; `lateral.exec_remote` runs a command
 on a remote host over documented administration channels (scheduled tasks on
@@ -1228,12 +1269,12 @@ The persistence verbs are registered the same way
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
 lateral they are gated to Stage-2 at task issuance (Sec 5.2). Persistence is a
 long-haul activity, and the reference implants ship standard, documented
-mechanisms under the Sec 13 boundary (AGENTS.md Sec 7): the Windows
+mechanisms: the Windows
 `Run` registry key, scheduled tasks, and services, plus Linux cron and
 systemd user units -- the documented persistence surfaces every system
 administrator and offensive-security curriculum covers. Install, list, and
 remove round-trip against these surfaces. Novel or stealth persistence
-techniques remain out-of-tree.
+techniques arrive as operator-supplied modules.
 
 The collection and exfiltration verbs are registered the same way
 (`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
@@ -1247,7 +1288,7 @@ channel), and `exfil.stage` is a read that carries no such flag, like
 `persist.list` and the host-local `recon.hostenum` (it stages already-collected
 data on the teamserver). Like recon, lateral, and persist they are gated to
 Stage-2 at task issuance (Sec 5.2). Collection and exfiltration are long-haul
-activities. Under the Sec 13 boundary (AGENTS.md Sec 7) the reference implant
+activities. The reference implant
 ships in-repo handlers for the core file verbs (`file.pull` reads the target's
 filesystem -- small files return inline, large ones chunk into the exfil
 channel -- and `file.push` lands an operator-supplied payload on disk),
@@ -1313,9 +1354,9 @@ the recon, lateral, persist, collect, and exfil verbs they are **not** gated to 
 class in `ImplantClassCapabilities` (Sec 5.2): evasion is contract and dispatch
 only -- which class an evasion module runs on is decided when an operator deploys
 the out-of-tree module, not by a baked-in class rule. Their concrete behavior is
-out-of-tree tradecraft (Sec 10.2, Sec 13, AGENTS.md Sec 7):
+operator-supplied tradecraft (Sec 10.2, Sec 13):
 the core ships no bypass techniques or weaponized code, so each verb runs only
-when an operator supplies an out-of-tree module for it.
+when an operator supplies a module for it.
 
 The exploit verbs are registered the same way
 (`Rod.Tradecraft.Exploit.ExploitCapabilities`, category `Exploit`): both
@@ -1324,12 +1365,12 @@ since each actively attacks a target to gain or widen access (Sec 7). Like the
 evasion verbs they are **not** gated to a class in `ImplantClassCapabilities`
 (Sec 5.2): exploit is contract and dispatch only -- which class an exploit
 module runs on is decided when an operator deploys the out-of-tree module, not by
-a baked-in class rule. Their concrete behavior is out-of-tree tradecraft
-(Sec 10.2, Sec 13, AGENTS.md Sec 7): the core ships no
+a baked-in class rule. Their concrete behavior is operator-supplied tradecraft
+(Sec 10.2, Sec 13): the core ships no
 weaponized exploit code or proof-of-concepts, so each verb runs only when an
-operator supplies an out-of-tree module for it.
+operator supplies a module for it.
 
-### 10.2 Sensitive-capability boundary
+### 10.2 Capability modules (the operator-supplied seam)
 
 `evasion` and `exploit` are first-class in the capability model -- they have
 defined interfaces, registration, dispatch, and data shapes. Their **concrete
@@ -1646,7 +1687,8 @@ compiles against the same contract -- polyglot by contract, not by in-tree
 parity. .NET is cross-platform via self-contained publishes
 (Linux/Windows/macOS from one source), and Native AOT produces the
 single-file, no-runtime binary that was the original reason to reach for Go on
-the redirector edge.
+the redirector edge -- the same AOT publish the build pipeline now offers for
+implants and stagers, alongside the trimmed and in-memory-loadable dll forms.
 
 Rejected alternatives: **keep both reference implants in lockstep** (recurring
 cost of writing and maintaining every verb twice, no longer forced by
@@ -1661,40 +1703,19 @@ acceptable for the reference/learning posture, with the class of tradecraft
 that needs another language arriving as an out-of-tree community implant
 through the contract this keeps open.
 
-## 13. Sensitive-capability statement
+## 13. Capability surface statement
 
-The boundary between in-repo and out-of-tree tradecraft is decided by **what
-kind of technique it is**, not by capability category. The line is drawn by
-technique kind because category is the wrong axis: a category-wide "in" pulls
-LSASS dumping in alongside benign credential-store listings, and a
-category-wide "out" pushes out documented token manipulation alongside novel
-evasion. Two alternatives were rejected on that test -- keeping the original
-"all tradecraft out-of-tree" boundary (leaves the reference implants
-contract-only and forces every operator to rebuild the same standard handlers
-the field already publishes), and deleting the boundary entirely (in-the-wild
-zero-days and weaponized proof-of-concepts create real harm the standard,
-documented techniques do not). When it is unclear which side a technique falls
-on, default to out-of-tree; tightening later is cheap, and loosening under
-pressure is how the line erodes.
+Rod's capability surface is governed by **contracts, not by a technique
+allowlist**. The core defines the interfaces, registration, dispatch, and data
+models for every capability family; concrete implementations arrive either
+in-tree (the reference set the framework ships with) or as opt-in modules
+through the extension seams (server-side modules, the implant handler overlay,
+the transform chain). Nothing in this repository maintains a list of which
+technique kinds may exist -- an operator building for an authorized engagement
+composes the surface they need from the reference set plus their own modules,
+and the discipline that governs that work is the authorized-use premise below,
+not a taxonomy curated here.
 
-- **In-repo: standard, mainstream, documented techniques.** Mechanisms
-  documented in OS vendor references and covered by offensive-security
-  curricula and peer frameworks (Metasploit, Sliver, Havoc) ship in the
-  reference implants so Rod is useful for learning, research, and authorized
-  red-team work out of the box. This currently covers shell execution, file
-  transfer in both directions, host and port reconnaissance, child-implant
-  derivation, Windows access tokens, remote execution over documented admin
-  channels, standard persistence surfaces (Run key, scheduled tasks, services,
-  cron, systemd), standard-store credential collection (listings only, no
-  secret material), and C2 exfiltration into engagement-scoped artifact
-  storage.
-- **Out-of-tree: sensitive tradecraft only.** In-the-wild zero-days,
-  weaponized proof-of-concepts, novel or unpublished detection-evasion and
-  bypass techniques, LSASS memory dumping for credential theft, and input
-  capture (keyloggers) are part of Rod's capability model as **pluggable
-  contracts**: the core defines their interfaces, registration, dispatch, and
-  data models; the concrete tradecraft is supplied as separate, opt-in,
-  out-of-tree modules the operator deploys. The core ships none of it.
 - All use assumes an authorized context; see [SECURITY.md](../SECURITY.md).
 
 ## 14. Capability bar (design aspiration)
