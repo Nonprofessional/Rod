@@ -1212,7 +1212,7 @@ a:hover {
 .build-advanced .grid {
   display: grid;
   /* Wider minimum than the form grids: the advanced labels carry their
-     fixed-vocabulary annotations (enroll + check-in, manual), and a narrow
+     fixed-vocabulary annotations (enroll + contact, manual), and a narrow
      cell wraps them into tall rows that push the fields below around. */
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
@@ -2120,7 +2120,7 @@ button.file-entry {
 }
 
 /* Each line's leading key: the behavior the line describes, mono so the
-   enroll / check-in / interactive set reads as fixed vocabulary. */
+   enroll / contact / interactive set reads as fixed vocabulary. */
 .build-summary .summary-key {
   display: inline-block;
   min-width: 64px;

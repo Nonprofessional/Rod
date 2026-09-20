@@ -65,7 +65,7 @@
     <!-- Versions are governed centrally by Directory.Packages.props at the repo
          root (CPM), so no Version is set here. Google.Protobuf and Grpc.Tools
          stay in every shape: the messages (and their generation) are the wire
-         contract both check-in clients speak. -->
+         contract both contact clients speak. -->
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Net.Client" Condition="'$(RodGrpcServices)' != 'None'" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
