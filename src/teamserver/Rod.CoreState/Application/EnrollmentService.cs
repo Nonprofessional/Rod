@@ -25,23 +25,19 @@ public sealed class EnrollmentService
     private readonly IImplantRepository _implants;
     private readonly IImplantCertificateAuthority _certificateAuthority;
     private readonly TimeProvider _clock;
-    /// <summary>The caught-shell registry, for the upgrade lineage bind; null when not composed.</summary>
-    private readonly ShellSessions.IShellSessionRegistry? _shellSessions;
 
     public EnrollmentService(
         IEngagementRepository engagements,
         IStagerTokenService stagerTokens,
         IImplantRepository implants,
         IImplantCertificateAuthority certificateAuthority,
-        TimeProvider clock,
-        ShellSessions.IShellSessionRegistry? shellSessions = null)
+        TimeProvider clock)
     {
         _engagements = engagements;
         _stagerTokens = stagerTokens;
         _implants = implants;
         _certificateAuthority = certificateAuthority;
         _clock = clock;
-        _shellSessions = shellSessions;
     }
 
     /// <summary>
@@ -109,38 +105,13 @@ public sealed class EnrollmentService
         //    who authorized this deployment -- so the implant-initiated events that
         //    follow (a session opening, tasking) attribute to an accountable
         //    operator (architecture.md Sec 11).
-        // The upgrade lineage's origin (architecture.md Sec 8): a token minted
-        // by a shell's upgrade render carries the session it belongs to. The
-        // origin is provenance, never authority, so it is validated before
-        // the row is built -- it must resolve, belong to the redeemed
-        // engagement (a foreign origin is a bug elsewhere, and provenance
-        // never crosses engagements), and anything else leaves the
-        // enrollment ordinary.
-        ShellSessions.ShellSession? originShell = null;
-        if (redeemed.OriginShellSession is { } origin && _shellSessions is not null)
-        {
-            var candidate = await _shellSessions.FindAsync(origin, cancellationToken);
-            if (candidate is not null && candidate.EngagementId == redeemed.EngagementId)
-                originShell = candidate;
-        }
-
         var implantId = ImplantId.New();
         var implant = Implant.EnrollChild(
             implantId, redeemed.EngagementId, command.KillDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
             command.Hostname, command.Os, command.Arch, command.Username,
             command.SleepSeconds, command.JitterSeconds, command.EnrolledViaListenerId,
-            command.Carriers,
-            originShell?.Id);
+            command.Carriers);
         await _implants.SaveAsync(implant, cancellationToken);
-
-        // The upgrade lineage (architecture.md Sec 8): a token minted by a
-        // shell's upgrade render carries the session it belongs to, and the
-        // enrollment that redeems it closes the loop both ways -- the
-        // implant's origin above, the shell's upgraded pointer here. The
-        // origin was validated before the row was built, so the shell this
-        // points at is this engagement's own.
-        if (originShell is not null)
-            await _shellSessions!.BindUpgradeAsync(originShell.Id, implant.Id, cancellationToken);
 
         // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
         //    implant's own public key when it supplied one (the mTLS-capable path);

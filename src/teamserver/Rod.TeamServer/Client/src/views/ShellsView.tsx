@@ -99,14 +99,13 @@ export function ShellsView({
               <th>Shell</th>
               <th>Opened</th>
               <th>Last output</th>
-              <th>Grew into</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {shells.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={6}>
                   <div className="empty">
                     <Icon name="terminal" />
                     {catchers.length > 0
@@ -133,13 +132,6 @@ export function ShellsView({
                 <td>{new Date(shell.openedAt).toLocaleTimeString()}</td>
                 <td>
                   {shell.lastOutputAt ? new Date(shell.lastOutputAt).toLocaleTimeString() : '—'}
-                </td>
-                <td>
-                  {shell.upgradedImplantId ? (
-                    <code>{shell.upgradedImplantId.slice(0, 8)}</code>
-                  ) : (
-                    '—'
-                  )}
                 </td>
                 <td>
                   <button

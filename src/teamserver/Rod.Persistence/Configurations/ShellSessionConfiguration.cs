@@ -27,9 +27,6 @@ internal sealed class ShellSessionConfiguration : IEntityTypeConfiguration<Shell
         builder.Property(s => s.EngagementId)
             .HasConversion(IdConverters.EngagementId)
             .HasColumnName("engagement_id");
-        builder.Property(s => s.UpgradedImplantId)
-            .HasConversion(IdConverters.ImplantId)
-            .HasColumnName("upgraded_implant_id");
         builder.Property(s => s.ListenerId)
             .HasColumnName("listener_id");
 

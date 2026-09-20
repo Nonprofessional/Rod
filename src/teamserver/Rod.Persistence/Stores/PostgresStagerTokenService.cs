@@ -58,7 +58,6 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         DateTimeOffset issuedAt,
         int? maxUses = null,
         TimeSpan? lifetime = null,
-        ShellSessionId? originShellSession = null,
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
@@ -84,7 +83,6 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             ExpiresAt = expiresAt,
             MaxUses = effectiveMaxUses,
             RemainingUses = effectiveMaxUses,
-            OriginShellSession = originShellSession,
         });
         await db.SaveChangesAsync(cancellationToken);
 
@@ -97,7 +95,6 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
             MaxUses = effectiveMaxUses,
-            OriginShellSession = originShellSession,
         };
     }
 
@@ -154,7 +151,6 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
                 Id = entry.Id,
                 EngagementId = entry.EngagementId,
                 IssuedBy = entry.IssuedBy,
-                OriginShellSession = entry.OriginShellSession,
             };
         }
 
@@ -237,7 +233,6 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             Id = entry.Id,
             EngagementId = entry.EngagementId,
             IssuedBy = entry.IssuedBy,
-            OriginShellSession = entry.OriginShellSession,
         };
     }
 }

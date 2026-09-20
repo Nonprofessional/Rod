@@ -258,8 +258,8 @@ public static class ShellSessionEndpoints
         // download credential, render every downloader family. A caught shell
         // always mints single-use for thirty minutes -- one paste, one
         // download -- and the fetched artifact enrolls on the credential its
-        // own build baked. The mint's origin carries this session, so the
-        // trail names the shell the render was cut for.
+        // own build baked. The mint's audit names the shell the render was
+        // cut for.
         var (renderFailure, set) = await LauncherRender.ResolveAsync(
             scope.Engagement,
             new LauncherSelection(
@@ -268,7 +268,6 @@ public static class ShellSessionEndpoints
                 MaxUses: 1,
                 Lifetime: TimeSpan.FromMinutes(30),
                 RequestedBy: operatorId.Value,
-                OriginShellSession: scope.Session.Id,
                 AuditOrigin: $"origin=shell-upgrade shell={scope.Session.Id}"),
             engagements,
             listenerStore,
@@ -322,8 +321,7 @@ public static class ShellSessionEndpoints
         DateTimeOffset OpenedAt,
         DateTimeOffset? LastInputAt,
         DateTimeOffset? LastOutputAt,
-        DateTimeOffset? EndedAt,
-        string? UpgradedImplantId)
+        DateTimeOffset? EndedAt)
     {
         public static ShellSessionResponse From(ShellSession session)
             => new(
@@ -334,8 +332,7 @@ public static class ShellSessionEndpoints
                 session.OpenedAt,
                 session.LastInputAt,
                 session.LastOutputAt,
-                session.EndedAt,
-                session.UpgradedImplantId?.ToString());
+                session.EndedAt);
     }
 
     private sealed record ShellOutputResponse(long LatestSequence, IReadOnlyList<ShellChunkResponse> Chunks);

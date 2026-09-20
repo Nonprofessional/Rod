@@ -27,13 +27,6 @@ internal sealed class StoredStagerToken
     public DateTimeOffset ExpiresAt { get; set; }
     public int MaxUses { get; set; }
     public int RemainingUses { get; set; }
-
-    /// <summary>
-    /// The caught shell session an upgrade render minted this token for, when
-    /// it did (architecture.md Sec 8); null on every other mint. Provenance
-    /// for the enrollment's lineage bind, never authority.
-    /// </summary>
-    public ShellSessionId? OriginShellSession { get; set; }
 }
 
 internal sealed class StoredStagerTokenConfiguration : IEntityTypeConfiguration<StoredStagerToken>
@@ -60,9 +53,6 @@ internal sealed class StoredStagerTokenConfiguration : IEntityTypeConfiguration<
         builder.Property(t => t.IssuedAt).HasColumnName("issued_at");
         builder.Property(t => t.ExpiresAt).HasColumnName("expires_at");
         builder.Property(t => t.MaxUses).HasColumnName("max_uses");
-        builder.Property(t => t.OriginShellSession)
-            .HasConversion(IdConverters.ShellSessionId)
-            .HasColumnName("origin_shell_session");
         builder.Property(t => t.RemainingUses).HasColumnName("remaining_uses");
 
         // Redeem looks the token up by hash digest (the plaintext is never

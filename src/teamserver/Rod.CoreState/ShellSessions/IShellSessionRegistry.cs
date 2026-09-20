@@ -69,15 +69,6 @@ public interface IShellSessionRegistry
         DateTimeOffset at,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Binds the implant this shell grew into (the upgrade path's
-    /// enrollment callback). First binding wins.
-    /// </summary>
-    Task BindUpgradeAsync(
-        ShellSessionId session,
-        ImplantId implant,
-        CancellationToken cancellationToken = default);
-
     /// <summary>The session, or null when unknown.</summary>
     Task<ShellSession?> FindAsync(ShellSessionId session, CancellationToken cancellationToken = default);
 

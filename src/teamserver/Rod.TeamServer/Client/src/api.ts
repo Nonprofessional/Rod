@@ -894,7 +894,6 @@ export interface ShellSession {
   lastInputAt: string | null
   lastOutputAt: string | null
   endedAt: string | null
-  upgradedImplantId: string | null
 }
 
 export async function listShells(engagementId: string): Promise<ShellSession[]> {

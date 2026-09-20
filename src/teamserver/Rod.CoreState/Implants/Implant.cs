@@ -59,14 +59,6 @@ public sealed class Implant
     public ImplantId? ParentImplantId { get; }
 
     /// <summary>
-    /// The caught reverse-shell session this implant grew out of, when an
-    /// upgrade render's token carried it (architecture.md Sec 8): the shell
-    /// console's lineage mirror -- the shell's own record points back here
-    /// through its UpgradedImplantId. Null on every ordinary enrollment.
-    /// </summary>
-    public ShellSessionId? OriginShellSessionId { get; }
-
-    /// <summary>
     /// Where this implant runs, as the implant itself reported at enroll: the
     /// host's machine name. The device dimension of the fleet -- several
     /// implants (a redeploy, a parent and its child) can share one host, and
@@ -160,8 +152,7 @@ public sealed class Implant
         double? sleepSeconds = null,
         double? jitterSeconds = null,
         Guid? enrolledViaListenerId = null,
-        IReadOnlyList<string>? carriers = null,
-        ShellSessionId? originShellSessionId = null)
+        IReadOnlyList<string>? carriers = null)
     {
         Id = id;
         EngagementId = engagementId;
@@ -170,7 +161,6 @@ public sealed class Implant
         CreatedAt = createdAt;
         DeployedBy = deployedBy;
         ParentImplantId = parentImplantId;
-        OriginShellSessionId = originShellSessionId;
         Hostname = hostname;
         Os = os;
         Arch = arch;
@@ -241,8 +231,7 @@ public sealed class Implant
         double? sleepSeconds = null,
         double? jitterSeconds = null,
         Guid? enrolledViaListenerId = null,
-        IReadOnlyList<string>? carriers = null,
-        ShellSessionId? originShellSessionId = null)
+        IReadOnlyList<string>? carriers = null)
     {
         if (killDate is { } fuse && fuse <= createdAt)
             throw new ArgumentException("Implant kill date must be after creation.", nameof(killDate));
@@ -251,7 +240,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, sleepSeconds, jitterSeconds, enrolledViaListenerId, carriers, originShellSessionId);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, sleepSeconds, jitterSeconds, enrolledViaListenerId, carriers);
     }
 
     /// <summary>

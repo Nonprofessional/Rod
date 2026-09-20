@@ -97,7 +97,6 @@ public static class LauncherEndpoints
                 maxUses,
                 TimeSpan.FromMinutes(lifetimeMinutes),
                 operatorId.Value,
-                OriginShellSession: null,
                 AuditOrigin: "origin=launcher"),
             engagements,
             listenerStore,
@@ -329,7 +328,6 @@ internal sealed record LauncherSelection(
     int MaxUses,
     TimeSpan Lifetime,
     OperatorId RequestedBy,
-    ShellSessionId? OriginShellSession,
     string AuditOrigin);
 
 /// <summary>The resolved pieces one render is made of.</summary>
@@ -420,7 +418,7 @@ internal static class LauncherRender
         var token = await tokens.MintAsync(
             engagement, engagementRow.OwnerId, at,
             maxUses: selection.MaxUses, lifetime: selection.Lifetime,
-            originShellSession: selection.OriginShellSession, cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken);
         await audit.AppendAsync(
             AuditEvent.Fact(
                 eventId: Guid.NewGuid(),

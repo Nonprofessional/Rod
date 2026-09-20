@@ -31,7 +31,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset issuedAt,
         int? maxUses = null,
         TimeSpan? lifetime = null,
-        ShellSessionId? originShellSession = null,
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
@@ -47,7 +46,7 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         var id = StagerTokenId.New();
 
         _stored[id] = new StoredToken(
-            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt, effectiveMaxUses, effectiveMaxUses, originShellSession);
+            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt, effectiveMaxUses, effectiveMaxUses);
 
         return new StagerToken
         {
@@ -58,7 +57,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
             MaxUses = effectiveMaxUses,
-            OriginShellSession = originShellSession,
         };
     }
 
@@ -89,7 +87,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
                 Id = entry.Id,
                 EngagementId = entry.Token.EngagementId,
                 IssuedBy = entry.Token.IssuedBy,
-                OriginShellSession = entry.Token.OriginShellSession,
             });
         }
     }
@@ -99,10 +96,10 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
-        // The same checks redeem runs, minus the consume: a stage-1 stager's
-        // payload fetch must leave the token whole for the stage-2's enroll
-        // (architecture.md Sec 6). The lock keeps the read off a concurrent
-        // redeem's check-then-consume window.
+        // The same checks redeem runs, minus the consume: the non-consuming
+        // resolution every refusal path takes (architecture.md Sec 6). The
+        // lock keeps the read off a concurrent redeem's check-then-consume
+        // window.
         lock (_redeemLock)
         {
             var entry = FindForRead(secret, now);
@@ -111,7 +108,6 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
                 Id = entry.Id,
                 EngagementId = entry.Token.EngagementId,
                 IssuedBy = entry.Token.IssuedBy,
-                OriginShellSession = entry.Token.OriginShellSession,
             });
         }
     }
@@ -184,6 +180,5 @@ public sealed class InMemoryStagerTokenService : IStagerTokenService
         DateTimeOffset IssuedAt,
         DateTimeOffset ExpiresAt,
         int MaxUses,
-        int RemainingUses,
-        ShellSessionId? OriginShellSession = null);
+        int RemainingUses);
 }

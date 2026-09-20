@@ -53,12 +53,6 @@ public sealed class ShellSession
 
     public DateTimeOffset? EndedAt { get; private set; }
 
-    /// <summary>
-    /// The implant this shell grew into via the upgrade path, once an
-    /// enrollment landed and was bound back; null until then.
-    /// </summary>
-    public ImplantId? UpgradedImplantId { get; private set; }
-
     private ShellSession(
         ShellSessionId id,
         EngagementId engagementId,
@@ -142,15 +136,5 @@ public sealed class ShellSession
         Status = ShellSessionStatus.Closed;
         EndedAt = at;
         return true;
-    }
-
-    /// <summary>
-    /// Binds the implant this shell grew into. First binding wins and is
-    /// final: the enrollment that claimed the lineage is a fact about what
-    /// happened, not a preference to overwrite.
-    /// </summary>
-    public void BindUpgrade(ImplantId implant)
-    {
-        UpgradedImplantId ??= implant;
     }
 }

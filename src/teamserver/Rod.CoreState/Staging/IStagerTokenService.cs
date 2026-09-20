@@ -27,7 +27,6 @@ public interface IStagerTokenService
         DateTimeOffset issuedAt,
         int? maxUses = null,
         TimeSpan? lifetime = null,
-        ShellSessionId? originShellSession = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

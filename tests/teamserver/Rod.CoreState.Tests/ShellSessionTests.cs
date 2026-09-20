@@ -36,7 +36,6 @@ public class ShellSessionTests
         Assert.Null(session.LastInputAt);
         Assert.Null(session.LastOutputAt);
         Assert.Null(session.EndedAt);
-        Assert.Null(session.UpgradedImplantId);
     }
 
     [Fact]
@@ -107,19 +106,6 @@ public class ShellSessionTests
     }
 
     [Fact]
-    public void BindUpgrade_FirstBindingWins()
-    {
-        var session = LiveSession();
-        var first = ImplantId.New();
-        var second = ImplantId.New();
-
-        session.BindUpgrade(first);
-        session.BindUpgrade(second);
-
-        Assert.Equal(first, session.UpgradedImplantId);
-    }
-
-    [Fact]
     public async Task Registry_MutationsResolveStoredEntity_AndUnknownIdsAreNoOps()
     {
         var registry = new InMemoryShellSessionRegistry();
@@ -132,7 +118,6 @@ public class ShellSessionTests
         await registry.NoteOutputAsync(unknown, Opened);
         await registry.MarkLostAsync(unknown, Opened);
         await registry.CloseAsync(unknown, Opened);
-        await registry.BindUpgradeAsync(unknown, ImplantId.New());
         Assert.Null(await registry.FindAsync(unknown));
 
         var session = await registry.OpenAsync(engagement, listenerId, "10.9.8.7:44441", Opened);

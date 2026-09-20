@@ -79,16 +79,6 @@ public sealed class InMemoryShellSessionRegistry : IShellSessionRegistry
         return Task.CompletedTask;
     }
 
-    public Task BindUpgradeAsync(
-        ShellSessionId session,
-        ImplantId implant,
-        CancellationToken cancellationToken = default)
-    {
-        if (_sessions.TryGetValue(session, out var found))
-            found.BindUpgrade(implant);
-        return Task.CompletedTask;
-    }
-
     public Task<ShellSession?> FindAsync(ShellSessionId session, CancellationToken cancellationToken = default)
         => Task.FromResult(_sessions.TryGetValue(session, out var found) ? found : null);
 

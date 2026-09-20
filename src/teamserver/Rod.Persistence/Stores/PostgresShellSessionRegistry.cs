@@ -102,19 +102,6 @@ internal sealed class PostgresShellSessionRegistry : IShellSessionRegistry
         }
     }
 
-    public async Task BindUpgradeAsync(
-        ShellSessionId session,
-        ImplantId implant,
-        CancellationToken cancellationToken = default)
-    {
-        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        if (await db.ShellSessions.FindAsync(new object[] { session }, cancellationToken) is { } found)
-        {
-            found.BindUpgrade(implant);
-            await db.SaveChangesAsync(cancellationToken);
-        }
-    }
-
     public async Task<ShellSession?> FindAsync(
         ShellSessionId session,
         CancellationToken cancellationToken = default)
