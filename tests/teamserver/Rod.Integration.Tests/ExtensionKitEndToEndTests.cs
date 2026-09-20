@@ -70,11 +70,12 @@ public class ExtensionKitEndToEndTests
             // extension directory and the live endpoint differ from a stock build.
             // The profile bakes the live enroll endpoint, a 1s contact cadence,
             // and the class verb set plus the ungated contract-only verbs. The
-            // beacon endpoint is named too, matching the launch flags below:
-            // the bake-time transport trim compiles exactly the contact
-            // clients the baked walk names (a web enroll front plus the bare
-            // mTLS beacon is the shape-crossing walk that keeps both), so a
-            // profile that dials a socket it never names strands the artifact.
+            // beacon endpoint is named too, so the bake-time transport trim
+            // compiles exactly the contact clients the baked walk names (a web
+            // enroll front plus the bare mTLS beacon is the shape-crossing
+            // walk that keeps both), so a profile that dials a socket it
+            // never names strands the artifact. The credential and the CA pin
+            // ride the bake as well: the fielded shape takes no flags at all.
             var unit = new DotNetBuildUnit(extensionDir: extensionDir);
             var artifact = await unit.BuildAsync(new BuildParams(
                 EngagementId.New(),
@@ -84,8 +85,10 @@ public class ExtensionKitEndToEndTests
                 new TransportProfile($"http://127.0.0.1:{env.HttpPort}/implants/enroll", "/beacon")
                 {
                     BeaconEndpoint = $"127.0.0.1:{env.MtlsPort}",
+                    CaPem = env.CaPem,
                 },
-                new BeaconProfile(TimeSpan.FromSeconds(1), TimeSpan.Zero, DateTimeOffset.UtcNow.AddDays(1))));
+                new BeaconProfile(TimeSpan.FromSeconds(1), TimeSpan.Zero, DateTimeOffset.UtcNow.AddDays(1)),
+                TokenSecret: secret));
 
             // The artifact is the self-contained single-file executable's bytes;
             // write them out and mark the file executable so it runs as a process.
@@ -94,7 +97,7 @@ public class ExtensionKitEndToEndTests
                 File.SetUnixFileMode(artifactPath,
                     System.IO.UnixFileMode.UserRead | System.IO.UnixFileMode.UserWrite | System.IO.UnixFileMode.UserExecute);
 
-            var implantProc = StartArtifact(artifactPath, env, secret);
+            var implantProc = StartArtifact(artifactPath);
             var stderr = new StringBuilder();
             implantProc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
             implantProc.BeginErrorReadLine();
@@ -164,11 +167,10 @@ public class ExtensionKitEndToEndTests
             _ => "x86",
         };
 
-    // Starts the built artifact as a real subprocess. The baked profile seeds
-    // the endpoint and cadence; the flags carry what no bake holds (the token,
-    // the mTLS beacon port, the CA pin) exactly the way a deployment would run
-    // the artifact.
-    private static Process StartArtifact(string artifactPath, TestEnv env, string token)
+    // Starts the built artifact exactly as a deployment would: no arguments
+    // and no environment -- the baked profile carries the endpoint, the
+    // cadence, the credential, and the CA pin.
+    private static Process StartArtifact(string artifactPath)
     {
         var psi = new ProcessStartInfo
         {
@@ -177,16 +179,6 @@ public class ExtensionKitEndToEndTests
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        psi.ArgumentList.Add("-beacon-url");
-        psi.ArgumentList.Add($"127.0.0.1:{env.MtlsPort}");
-        psi.ArgumentList.Add("-token");
-        psi.ArgumentList.Add(token);
-        psi.ArgumentList.Add("-ca-cert");
-        psi.ArgumentList.Add(env.CACertFile);
-        psi.ArgumentList.Add("-sleep");
-        psi.ArgumentList.Add("1s");
-        psi.ArgumentList.Add("-jitter");
-        psi.ArgumentList.Add("0s");
         return Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the built artifact.");
     }
 
@@ -262,6 +254,7 @@ public class ExtensionKitEndToEndTests
         public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
         public string CACertFile { get; private set; } = null!;
+        public string CaPem { get; private set; } = null!;
 
         public static async Task<TestEnv> StartAsync()
         {
@@ -281,15 +274,16 @@ public class ExtensionKitEndToEndTests
                 .Build();
             await env.Host.StartAsync();
 
-            // The dev CA as a PEM file the artifact trusts as the mTLS server
-            // identity (the dev CA doubles as the server cert).
+            // The dev CA as a PEM the artifact trusts as the mTLS server
+            // identity (the dev CA doubles as the server cert): the file for
+            // harnesses that pin by path, the text for the bake.
             var ca = env.Host.Services.GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>().GetCaCertificate();
             env.CACertFile = Path.Combine(Path.GetTempPath(), "rod-test-ca-" + Guid.NewGuid().ToString("N") + ".pem");
-            var caPem = "-----BEGIN CERTIFICATE-----\n"
+            env.CaPem = "-----BEGIN CERTIFICATE-----\n"
                 + Convert.ToBase64String(ca.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert),
                     Base64FormattingOptions.InsertLineBreaks)
                 + "\n-----END CERTIFICATE-----\n";
-            await File.WriteAllTextAsync(env.CACertFile, caPem);
+            await File.WriteAllTextAsync(env.CACertFile, env.CaPem);
 
             env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
             {

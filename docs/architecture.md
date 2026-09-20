@@ -226,7 +226,14 @@ complexity budget, and its evolution rules bind every future protocol change.
 
 A **profile** -- the contact mode, beacon parameters (sleep, jitter, kill
 date), the transport profile, and the C2 endpoint list -- is embedded into the
-implant is self-contained and standalone. This
+artifact at build time, and the bake is the artifact's whole configuration:
+the release build (what the pipeline publishes, and what lands on targets)
+reads no flags and no environment, so a fielded executable cannot be
+re-pointed or re-credentialed and runs bare -- zero arguments, console silent
+beyond fatal one-liners. The debug build is the dev shape: flags and the
+ROD_* environment drive the checked-in empty profile stub, and the run
+narrates to stderr; a bake, when a debug build carries one, still overrides
+both. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
 lost implant self-terminates at its kill date. No key material is baked: the
 implant's cryptographic identity is the keypair it generates itself at first

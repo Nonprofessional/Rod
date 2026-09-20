@@ -1068,7 +1068,7 @@ public class DotNetImplantTests
         {
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
-            var proc = StartBuiltArtifact(artifactPath, narrate: true);
+            var proc = StartBuiltArtifact(artifactPath);
             proc.OutputDataReceived += (_, e) => { if (e.Data is not null) stdout.AppendLine(e.Data); };
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
             proc.BeginOutputReadLine();
@@ -1944,8 +1944,11 @@ public class DotNetImplantTests
 
     // Publishes the reference implant into a temp dir once for the test. The
     // publish is framework-dependent (the test host already has dotnet), so the
-    // output is small and the slice stays about the build path. A failed publish
-    // throws so the failure is attributable rather than a silent subprocess exit.
+    // output is small and the slice stays about the build path. Debug is the
+    // dev shape these flag-driven tests run: the release build takes no
+    // flags (the bake is its only configuration) and is covered by the
+    // pipeline-built artifact tests. A failed publish throws so the failure
+    // is attributable rather than a silent subprocess exit.
     private static string PublishImplant(string implantSource)
     {
         var outDir = Path.Combine(Path.GetTempPath(), "rod-dotnet-implant-" + Guid.NewGuid().ToString("N"));
@@ -1959,7 +1962,7 @@ public class DotNetImplantTests
         };
         psi.ArgumentList.Add("publish");
         psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add("Release");
+        psi.ArgumentList.Add("Debug");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add(outDir);
         psi.ArgumentList.Add("--nologo");
@@ -2061,9 +2064,11 @@ public class DotNetImplantTests
     }
 
     // Starts a pipeline-built artifact exactly the way a deployment would:
-    // no arguments at all -- the baked profile carries the endpoint, the
-    // cadence, the credential, and the contact key.
-    private static Process StartBuiltArtifact(string artifactPath, bool narrate = false)
+    // no arguments and no environment -- the baked profile carries the
+    // endpoint, the cadence, the credential, and the contact key, and the
+    // release build reads nothing else. Narration is compiled out of the
+    // release shape; only the fatal one-liners reach stderr.
+    private static Process StartBuiltArtifact(string artifactPath)
     {
         var psi = new ProcessStartInfo
         {
@@ -2072,8 +2077,6 @@ public class DotNetImplantTests
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        if (narrate)
-            psi.Environment["ROD_QUIET"] = "0";
         return Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the built artifact.");
     }
 

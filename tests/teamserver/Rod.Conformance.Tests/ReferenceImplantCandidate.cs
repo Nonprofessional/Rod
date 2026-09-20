@@ -40,7 +40,9 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
         };
         psi.ArgumentList.Add("publish");
         psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add("Release");
+        // Debug is the dev shape this flag-driven candidate runs: the release
+        // build takes no flags (the bake is its only configuration).
+        psi.ArgumentList.Add("Debug");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add(outDir);
         psi.ArgumentList.Add("--nologo");

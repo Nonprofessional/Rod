@@ -101,15 +101,6 @@ internal sealed class Config
     /// </summary>
     public IReadOnlyList<string> ClassVerbs { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Silences the progress narration (keypair generation, enroll attempts,
-    /// handshake status) a dev run prints to stderr. Fatal one-liners -- a
-    /// refused enroll, a dead beacon -- still print: an implant that dies
-    /// silently is undebuggable. Default false; a deployed implant runs with
-    /// it on so its console tells nothing.
-    /// </summary>
-    public bool Quiet { get; set; }
-
     /// <summary>True when a kill date was supplied (env or flag or baked).</summary>
     public bool HasKillDate => KillDate != DateTimeOffset.MinValue;
 
@@ -202,7 +193,6 @@ internal sealed class Config
             },
             Mode = NormalizeMode(Env("ROD_MODE", BeaconModes.Stream)),
             ClassVerbs = ParseCommaList(Env("ROD_VERBS", string.Empty)),
-            Quiet = EnvFlag("ROD_QUIET"),
         };
         var killDate = Env("ROD_KILL_DATE", string.Empty);
         if (killDate.Length > 0)
@@ -272,10 +262,6 @@ internal sealed class Config
                 case "--mode":
                     config.Mode = NormalizeMode(TakeValue(args, ref i, flag));
                     break;
-                case "-quiet":
-                case "--quiet":
-                    config.Quiet = true;
-                    break;
                 default:
                     throw new ExitProgramException(2, $"unknown flag: {flag}\n{Usage}");
             }
@@ -321,13 +307,12 @@ internal sealed class Config
                                (base64)
           -request-timeout duration
                                transport profile: per-request HTTP timeout
-          -quiet               silence the progress narration on stderr (default false)
 
         Each flag falls back to the matching ROD_* environment variable
         (ROD_ENROLL_URL, ROD_BEACON_URL, ROD_FALLBACK_ENROLL_URLS as JSON,
         ROD_STAGER_TOKEN, ROD_SLEEP, ROD_JITTER, ROD_MODE, ROD_KILL_DATE,
         ROD_CA_CERT, ROD_ENROLL_PATH, ROD_USER_AGENT, ROD_HEADERS as JSON,
-        ROD_ENVELOPE, ROD_REQUEST_TIMEOUT, ROD_VERBS, ROD_QUIET, ROD_ENVELOPE_KEY,
+        ROD_ENVELOPE, ROD_REQUEST_TIMEOUT, ROD_VERBS,
         ROD_CONTACT_ENVELOPE, ROD_SHELL_IDLE_SECONDS).
         """;
 
@@ -345,12 +330,6 @@ internal sealed class Config
 
     private static string Env(string key, string fallback)
         => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
-
-    // Truthy check for a boolean env knob: "1" or "true" (case-insensitive)
-    // turn it on, anything else leaves it off.
-    private static bool EnvFlag(string key)
-        => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v
-            && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
 
     // Splits a comma-separated list ("a,b,c") into its items, trimming
     // whitespace and dropping empties so a stray separator never registers a
