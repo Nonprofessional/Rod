@@ -664,6 +664,25 @@ public class DotNetBuildUnitTests
     }
 
     [DotNetFact]
+    public async Task Build_TheTrimmedFormat_PublishesAMateriallySmallerExecutable()
+    {
+        // The trimmed format keeps the drop-and-run shape (a native
+        // single-file executable) with IL trimming applied, so the artifact
+        // transfers for a fraction of the default's bytes. The strict
+        // inequality is the point: a trimmed build that stopped being
+        // smaller would mean the trim stopped running.
+        var unit = new DotNetBuildUnit();
+
+        var singleFile = await unit.BuildAsync(Params());
+        var trimmed = await unit.BuildAsync(Params() with { Format = ArtifactFormat.TrimmedExe });
+
+        Assert.Equal("application/octet-stream", trimmed.ContentType);
+        Assert.NotEmpty(trimmed.Content);
+        Assert.True(trimmed.Size < singleFile.Size,
+            $"the trimmed executable ({trimmed.Size} bytes) must be smaller than the single-file default ({singleFile.Size} bytes)");
+    }
+
+    [DotNetFact]
     public async Task Build_TheDllFormat_ShipsAZippedFrameworkDependentBundle()
     {
         // The dll format (architecture.md Sec 6) is the in-memory-loadable
