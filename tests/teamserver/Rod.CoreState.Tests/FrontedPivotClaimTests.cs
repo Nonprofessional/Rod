@@ -79,9 +79,9 @@ public class FrontedPivotClaimTests
         await tasks.SaveAsync(childTask);
 
         // The narrow claim the parent's poll transport makes (DNS, an envelope
-        // check-in) cannot carry a fronted channel's input half, so it must
+        // contact) cannot carry a fronted channel's input half, so it must
         // not claim the child's tasking -- it parks for the fronting stream.
-        // (The child itself never checks in at all, so nothing else claims it.)
+        // (The child itself never contacts at all, so nothing else claims it.)
         Assert.Null(await tasks.ClaimNextPendingAsync(parent, Now.AddSeconds(1)));
 
         var fronted = await tasks.ClaimNextPendingForAsync([parent, pivotChild], Now.AddSeconds(3));

@@ -17,7 +17,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-initiated beacon stream: the gRPC shape of the CheckIn contract.
+/// The implant-initiated beacon stream: the gRPC shape of the Contact contract.
 /// An implant opens a long-lived reverse connection; the first frame it sends is
 /// the handshake (payload = <see cref="HandshakeRequest"/>), and the first frame
 /// the server writes back is the <see cref="HandshakeResponse"/>. On a successful
@@ -33,7 +33,7 @@ namespace Rod.Transport.Endpoints;
 ///
 /// The per-frame ingest (results, exfil, staged pulls, channel output) and the
 /// downstream marshal (the signed TaskRequest, its audit record, staged chunk
-/// runs) are shared with the plain-HTTP envelope check-in in
+/// runs) are shared with the plain-HTTP envelope contact in
 /// <see cref="BeaconIngest"/> and <see cref="BeaconTasking"/> -- the transport
 /// changes, the frame paths do not (architecture.md Sec 8).
 ///
@@ -73,7 +73,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
             sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
     }
 
-    public override async Task CheckIn(
+    public override async Task Contact(
         IAsyncStreamReader<Frame> requestStream,
         IServerStreamWriter<Frame> responseStream,
         ServerCallContext context)
@@ -114,7 +114,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
         // it open, draining results and pushing queued tasks. The stream
         // ending does NOT close the session: a session is the implant's live
         // channel, not one TCP connection -- a poll-mode implant ends every
-        // check-in stream and opens the next seconds later. Liveness is
+        // contact stream and opens the next seconds later. Liveness is
         // last-seen based; the staleness sweeper closes the session after the
         // configured silence threshold, and retirement closes it immediately.
         // The session context (engagement/implant/operator) is threaded down
@@ -170,7 +170,7 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     TaskAcks: request.TaskAcks),
                 CancellationToken.None);
 
-            // The full result is returned (not just the session id) so CheckIn can
+            // The full result is returned (not just the session id) so Contact can
             // compose the SessionOpened audit write from it -- a handshake is
             // implant-initiated, so the event is attributed to the implant's
             // DeployedBy and needs the engagement/implant/session ids the result

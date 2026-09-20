@@ -6,14 +6,14 @@ using Rod.Implant.Internal;
 namespace Rod.Implant.Tests;
 
 /// <summary>
-/// The DNS check-in client's own halves (extending/implants.md, the DNS
+/// The DNS contact client's own halves (extending/implants.md, the DNS
 /// contract): the name grammar (base32 labels, the poll and result shapes)
 /// and the dial's wire exchange, driven against a test-local UDP responder
 /// that answers the RFC 1035 shape the listener serves -- so the client's
 /// question encoding and answer parsing are pinned without coupling the
 /// implant's tests to the server assembly.
 /// </summary>
-public class DnsCheckInTests
+public class DnsContactTests
 {
     [Fact]
     public void Base32_RendersLowercaseRfc4648_WithoutPadding()

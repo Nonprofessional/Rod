@@ -4,11 +4,11 @@ using Rod.V1;
 
 namespace Rod.Implant.Tests;
 
-// Pins the envelope check-in client's wire-facing halves (architecture.md
+// Pins the envelope contact client's wire-facing halves (architecture.md
 // Sec 8): the URL shape that selects it (a web URL -- http(s):// -- is the
-// envelope's; a bare host:port stays the mTLS gRPC stream's), the check-in
+// envelope's; a bare host:port stays the mTLS gRPC stream's), the contact
 // URL the cycle POSTs, and the delimited-frame codec both directions ride.
-// The check-in loop itself is exercised end to end against the real
+// The contact loop itself is exercised end to end against the real
 // teamserver by the integration suite (DotNetImplantTests).
 public class EnvelopeBeaconTests
 {
@@ -34,11 +34,11 @@ public class EnvelopeBeaconTests
     [InlineData("http://127.0.0.1:5080", "http://127.0.0.1:5080/implants/beacon")]
     [InlineData("https://front.example.test/some/front/path", "https://front.example.test/implants/beacon")]
     [InlineData("HTTP://front.example.test:80", "HTTP://front.example.test:80/implants/beacon")]
-    public void CheckInUrl_AppendsTheFixedRouteToTheAuthority(string beaconUrl, string expected)
+    public void ContactUrl_AppendsTheFixedRouteToTheAuthority(string beaconUrl, string expected)
     {
         // The route is fixed on every web listener; whatever path a front
-        // carried, the check-in lands on the authority plus the route.
-        Assert.Equal(expected, EnvelopeBeacon.CheckInUrl(beaconUrl));
+        // carried, the contact lands on the authority plus the route.
+        Assert.Equal(expected, EnvelopeBeacon.ContactUrl(beaconUrl));
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class EnvelopeBeaconTests
     }
 
     [Fact]
-    public void SealedCheckIn_RoundTripsUnderTheBakedKey_AndDistinguishesDirections()
+    public void SealedContact_RoundTripsUnderTheBakedKey_AndDistinguishesDirections()
     {
         // The sealed wire shape (architecture.md Sec 8/9): the baked key's
         // id and key halves seal counter || framed-frames as the R1 envelope,
@@ -112,28 +112,28 @@ public class EnvelopeBeaconTests
 
         var plaintext = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a, 0x05, 0x68, 0x65, 0x6c, 0x6c, 0x6f };
 
-        var request = EnvelopeWire.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-v1");
-        var response = EnvelopeWire.SealCheckInBody(plaintext, keyId, keyMaterial, "rod-checkin-response-v1");
+        var request = EnvelopeWire.SealContactBody(plaintext, keyId, keyMaterial, "rod-contact-v1");
+        var response = EnvelopeWire.SealContactBody(plaintext, keyId, keyMaterial, "rod-contact-response-v1");
 
-        Assert.Equal(plaintext, EnvelopeWire.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-v1"));
-        Assert.Equal(plaintext, EnvelopeWire.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeWire.TryOpenCheckInBody(request, keyId, keyMaterial, "rod-checkin-response-v1"));
-        Assert.Null(EnvelopeWire.TryOpenCheckInBody(response, keyId, keyMaterial, "rod-checkin-v1"));
+        Assert.Equal(plaintext, EnvelopeWire.TryOpenContactBody(request, keyId, keyMaterial, "rod-contact-v1"));
+        Assert.Equal(plaintext, EnvelopeWire.TryOpenContactBody(response, keyId, keyMaterial, "rod-contact-response-v1"));
+        Assert.Null(EnvelopeWire.TryOpenContactBody(request, keyId, keyMaterial, "rod-contact-response-v1"));
+        Assert.Null(EnvelopeWire.TryOpenContactBody(response, keyId, keyMaterial, "rod-contact-v1"));
 
         // Tampered bytes never open, and a foreign key never opens the seal.
         var tampered = (byte[])request.Clone();
         tampered[^2] = (byte)(tampered[^2] ^ 0x01);
-        Assert.Null(EnvelopeWire.TryOpenCheckInBody(tampered, keyId, keyMaterial, "rod-checkin-v1"));
+        Assert.Null(EnvelopeWire.TryOpenContactBody(tampered, keyId, keyMaterial, "rod-contact-v1"));
         var other = EnvelopeWire.ParseBakedKey(Convert.ToBase64String(
             Guid.NewGuid().ToByteArray().Concat(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToArray()));
-        Assert.Null(EnvelopeWire.TryOpenCheckInBody(
-            request, other!.Value.KeyId, other.Value.Key, "rod-checkin-v1"));
+        Assert.Null(EnvelopeWire.TryOpenContactBody(
+            request, other!.Value.KeyId, other.Value.Key, "rod-contact-v1"));
     }
 
     [Fact]
     public void ParseBakedKey_RejectsMalformedMaterial()
     {
-        // A bad bake falls back to the plaintext frame rather than checking
+        // A bad bake falls back to the plaintext frame rather than contactg
         // in undecodably: the key parse refuses the wrong length and junk
         // base64 alike.
         Assert.Null(EnvelopeWire.ParseBakedKey(""));
@@ -142,15 +142,15 @@ public class EnvelopeBeaconTests
     }
 
     [Fact]
-    public void TransportProfile_SealsCheckIns_OnlyWithShapeAndKey()
+    public void TransportProfile_SealsContacts_OnlyWithShapeAndKey()
     {
         // The posture rule mirrors the enroll envelope's: the "aesgcm" shape
         // seals only when the baked key rides with it -- anything else falls
-        // back to the plaintext frame rather than an undecodable check-in.
+        // back to the plaintext frame rather than an undecodable contact.
         var bakedKey = Convert.ToBase64String(new byte[48]);
-        Assert.True(new TransportProfile { CheckInEnvelope = "aesgcm", EnvelopeKey = bakedKey }.SealsCheckIns);
-        Assert.False(new TransportProfile { CheckInEnvelope = "aesgcm" }.SealsCheckIns);
-        Assert.False(new TransportProfile { CheckInEnvelope = "none", EnvelopeKey = bakedKey }.SealsCheckIns);
-        Assert.False(new TransportProfile().SealsCheckIns);
+        Assert.True(new TransportProfile { ContactEnvelope = "aesgcm", EnvelopeKey = bakedKey }.SealsContacts);
+        Assert.False(new TransportProfile { ContactEnvelope = "aesgcm" }.SealsContacts);
+        Assert.False(new TransportProfile { ContactEnvelope = "none", EnvelopeKey = bakedKey }.SealsContacts);
+        Assert.False(new TransportProfile().SealsContacts);
     }
 }

@@ -45,7 +45,7 @@ public class InteractiveShellRoundTripTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "shell.interact"));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
@@ -152,7 +152,7 @@ public class InteractiveShellRoundTripTests
         // A one-shot task, even dispatched on a live stream, takes no input.
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "shell.exec"));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);

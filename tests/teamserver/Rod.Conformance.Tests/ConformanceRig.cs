@@ -31,13 +31,13 @@ namespace Rod.Conformance.Tests;
 // pointing it at a deliberately broken one fails with the violated clause
 // named.
 
-/// <summary>The check-in shape a candidate speaks.</summary>
+/// <summary>The contact shape a candidate speaks.</summary>
 public enum CandidateTransport
 {
     /// <summary>gRPC over mTLS: the reference implant's transport.</summary>
     GRpc,
 
-    /// <summary>The plain-HTTP envelope: one POST per poll check-in.</summary>
+    /// <summary>The plain-HTTP envelope: one POST per poll contact.</summary>
     Envelope,
 }
 
@@ -207,7 +207,7 @@ public sealed class ConformanceRig : IAsyncDisposable
     /// Runs the clause battery against one candidate, in three phases: the
     /// live server (enroll, handshake, tasking, chunking), the probe
     /// (signature verification), and a past kill date (self-termination
-    /// before any check-in).
+    /// before any contact).
     /// </summary>
     public async Task<ConformanceReport> RunAsync(IImplantCandidate candidate)
     {
@@ -230,7 +230,7 @@ public sealed class ConformanceRig : IAsyncDisposable
                 (await _sessions.ListActiveAsync(engagement.EngagementId)).Count > 0);
             clauses.Add(new ConformanceClause(HandshakeClause, online,
                 online ? "the first frame was a handshake and the session opened"
-                         : "no session opened: the server never accepted a handshake-first check-in"));
+                         : "no session opened: the server never accepted a handshake-first contact"));
 
             if (!online)
             {
@@ -321,7 +321,7 @@ public sealed class ConformanceRig : IAsyncDisposable
                 (await _implants.ListByEngagementAsync(killEngagement.EngagementId)).Count > 0;
             var stayed = !ranAnyway && candidate.HasExited;
             clauses.Add(new ConformanceClause(KillDateClause, stayed,
-                stayed ? "refused to run past the baked kill date: no enrollment, no check-in, exited"
+                stayed ? "refused to run past the baked kill date: no enrollment, no contact, exited"
                          : "the candidate ran past its kill date (enrolled or stayed alive anyway)"));
         }
         finally
@@ -585,7 +585,7 @@ internal sealed class TaskingProbe
     }
 }
 
-/// <summary>The probe's gRPC surface: one scripted connection per CheckIn.</summary>
+/// <summary>The probe's gRPC surface: one scripted connection per Contact.</summary>
 internal sealed class ProbeBeaconService : Beacon.BeaconBase
 {
     private readonly TaskingProbe _probe;
@@ -595,7 +595,7 @@ internal sealed class ProbeBeaconService : Beacon.BeaconBase
         _probe = probe;
     }
 
-    public override async Task CheckIn(
+    public override async Task Contact(
         IAsyncStreamReader<Frame> requestStream,
         IServerStreamWriter<Frame> responseStream,
         ServerCallContext context)

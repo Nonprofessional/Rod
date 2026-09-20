@@ -102,14 +102,14 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     build: (values) => ({ arguments: text(values.pid) }),
   },
   'beacon.sleep': {
-    title: 'Retune the check-in cadence',
+    title: 'Retune the contact cadence',
     fields: [
       {
         key: 'sleep',
-        label: 'Check-in every',
+        label: 'Contact every',
         required: true,
         placeholder: '10s, 5m, or bare seconds (0 = back-to-back)',
-        help: 'Go duration (30s, 5m) or bare seconds. 0 checks in continuously — the interactive-as-poll posture.',
+        help: 'Go duration (30s, 5m) or bare seconds. 0 contacts continuously — the interactive-as-poll posture.',
       },
       {
         key: 'jitter',

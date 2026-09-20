@@ -32,7 +32,7 @@ public class StagerEndToEndTests
         // Build the stage-2 first: a linux/amd64 single-file implant baked for
         // this teamserver's enroll endpoint, sleeping at a 1s beacon cadence.
         // The beacon host is baked too -- the split-socket shape (enroll on
-        // the plain-HTTP listener, check-ins on the mTLS port) is now a
+        // the plain-HTTP listener, contacts on the mTLS port) is now a
         // first-class build input, so the artifact needs no run-time override.
         var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
         var stage2 = await env.BuildAsync(new

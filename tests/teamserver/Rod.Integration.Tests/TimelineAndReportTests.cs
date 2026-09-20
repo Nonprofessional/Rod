@@ -259,7 +259,7 @@ public class TimelineAndReportTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implantId, 1, 0));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));

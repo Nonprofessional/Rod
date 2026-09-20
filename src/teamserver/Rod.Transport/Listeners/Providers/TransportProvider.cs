@@ -24,7 +24,7 @@ public interface ITransportProvider
     string Transport { get; }
 
     /// <summary>
-    /// The check-in carriers this transport serves, by their wire names (the
+    /// The contact carriers this transport serves, by their wire names (the
     /// registry the core-state capability table keys). The build pipeline
     /// reads this to decide whether a listener may be named as a beacon -- a
     /// carrier with native channel support makes it claimable -- and the

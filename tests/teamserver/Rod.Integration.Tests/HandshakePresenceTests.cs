@@ -50,7 +50,7 @@ public class HandshakePresenceTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 
@@ -76,7 +76,7 @@ public class HandshakePresenceTests
 
         // Ending the stream does NOT end the session: a session is the
         // implant's live channel, not one TCP connection -- a poll-mode implant
-        // ends every check-in stream and reconnects seconds later, so liveness
+        // ends every contact stream and reconnects seconds later, so liveness
         // is last-seen based and the staleness sweeper is the close path.
         await call.RequestStream.CompleteAsync();
         await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()); // server ends the stream
@@ -102,7 +102,7 @@ public class HandshakePresenceTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, major: 2, minor: 0));
 
@@ -124,7 +124,7 @@ public class HandshakePresenceTests
 
         using var channel = env.ConnectBeacon(rogue, rogueKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         // The server refuses the TLS handshake (the cert does not chain to the
         // dev CA), so the connection is torn down before any beacon handler
@@ -176,7 +176,7 @@ public class HandshakePresenceTests
         var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));

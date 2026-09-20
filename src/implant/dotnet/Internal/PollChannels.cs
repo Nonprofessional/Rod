@@ -27,7 +27,7 @@ internal sealed class PollChannels : IAsyncDisposable
 {
     /// <summary>
     /// The handshake capability a poll-mode run advertises: "this artifact
-    /// accepts channel traffic over its check-in cycles" -- the server's
+    /// accepts channel traffic over its contact cycles" -- the server's
     /// parking hub reads it off the session and parks operator input for the
     /// next cycle to carry.
     /// </summary>

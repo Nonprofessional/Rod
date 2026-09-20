@@ -4,7 +4,7 @@ namespace Rod.Build.Tests;
 
 /// <summary>
 /// Unit tests for the bake-time transport trim (architecture.md Sec 8): the
-/// egress walk's URL shapes decide which check-in modules a build compiles,
+/// egress walk's URL shapes decide which contact modules a build compiles,
 /// so an artifact carries exactly the transports it can dial. The selection
 /// rule is pinned against every walk shape (web, stream, and the
 /// shape-crossing mixed walk fallbacks can build), and the staging rewrite
@@ -30,9 +30,9 @@ public class TransportModuleSelectionTests : IDisposable
         // client, the WebSocket client) ever compiles.
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon");
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Web, modules);
+        Assert.Equal(ContactModules.Web, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -44,9 +44,9 @@ public class TransportModuleSelectionTests : IDisposable
         // compiles and neither the POST cycle nor the gRPC client does.
         var profile = new TransportProfile("https://c2.example.test/implants/enroll", "/beacon");
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Stream);
 
-        Assert.Equal(CheckInModules.WebSocket, modules);
+        Assert.Equal(ContactModules.WebSocket, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -61,9 +61,9 @@ public class TransportModuleSelectionTests : IDisposable
             BeaconEndpoint = "c2.example.test:8443",
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Stream);
 
-        Assert.Equal(CheckInModules.Stream, modules);
+        Assert.Equal(ContactModules.Stream, modules);
         Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -78,9 +78,9 @@ public class TransportModuleSelectionTests : IDisposable
             BeaconEndpoint = "quic://c2.example.test:443",
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Stream);
 
-        Assert.Equal(CheckInModules.Quic, modules);
+        Assert.Equal(ContactModules.Quic, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -93,16 +93,16 @@ public class TransportModuleSelectionTests : IDisposable
         // front's socket (the split shape) or derives from the same entry.
         var derived = new TransportProfile("quic://c2.example.test:443", "/beacon");
         Assert.Equal(
-            CheckInModules.Quic,
-            TransportModuleSelection.Select(derived, CheckInModes.Stream));
+            ContactModules.Quic,
+            TransportModuleSelection.Select(derived, ContactModes.Stream));
 
         var split = new TransportProfile("quic://c2.example.test:443", "/beacon")
         {
             BeaconEndpoint = "c2.example.test:8443",
         };
         Assert.Equal(
-            CheckInModules.Quic | CheckInModules.Stream,
-            TransportModuleSelection.Select(split, CheckInModes.Stream));
+            ContactModules.Quic | ContactModules.Stream,
+            TransportModuleSelection.Select(split, ContactModes.Stream));
 
         // The enroll shape claims its module for fallbacks too: a web primary
         // with a quic fallback keeps both clients.
@@ -111,8 +111,8 @@ public class TransportModuleSelectionTests : IDisposable
             FallbackEndpoints = new[] { "quic://backup.example.test:443" },
         };
         Assert.Equal(
-            CheckInModules.Web | CheckInModules.Quic,
-            TransportModuleSelection.Select(withQuicFallback, CheckInModes.Poll));
+            ContactModules.Web | ContactModules.Quic,
+            TransportModuleSelection.Select(withQuicFallback, ContactModes.Poll));
     }
 
     [Fact]
@@ -126,9 +126,9 @@ public class TransportModuleSelectionTests : IDisposable
             BeaconEndpoint = "dns://10.9.8.7:53/c2.example.test",
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Stream);
 
-        Assert.Equal(CheckInModules.Dns, modules);
+        Assert.Equal(ContactModules.Dns, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -142,9 +142,9 @@ public class TransportModuleSelectionTests : IDisposable
             BeaconEndpoint = "doh://10.9.8.7:443/c2.example.test",
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Dns, modules);
+        Assert.Equal(ContactModules.Dns, modules);
     }
 
     [Fact]
@@ -159,9 +159,9 @@ public class TransportModuleSelectionTests : IDisposable
             FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Dns | CheckInModules.Web, modules);
+        Assert.Equal(ContactModules.Dns | ContactModules.Web, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -177,9 +177,9 @@ public class TransportModuleSelectionTests : IDisposable
             FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Quic | CheckInModules.Web, modules);
+        Assert.Equal(ContactModules.Quic | ContactModules.Web, modules);
         Assert.False(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -196,9 +196,9 @@ public class TransportModuleSelectionTests : IDisposable
             FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Web | CheckInModules.Stream, modules);
+        Assert.Equal(ContactModules.Web | ContactModules.Stream, modules);
         Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -213,9 +213,9 @@ public class TransportModuleSelectionTests : IDisposable
             FallbackEndpoints = new[] { "https://backup.example.test/implants/enroll" },
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Stream);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Stream);
 
-        Assert.Equal(CheckInModules.WebSocket | CheckInModules.Stream, modules);
+        Assert.Equal(ContactModules.WebSocket | ContactModules.Stream, modules);
         Assert.True(TransportModuleSelection.NeedsGrpcClient(modules));
     }
 
@@ -234,9 +234,9 @@ public class TransportModuleSelectionTests : IDisposable
             },
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Web, modules);
+        Assert.Equal(ContactModules.Web, modules);
     }
 
     [Fact]
@@ -251,9 +251,9 @@ public class TransportModuleSelectionTests : IDisposable
             BeaconEndpoint = "https://front.example.test",
         };
 
-        var modules = TransportModuleSelection.Select(profile, CheckInModes.Poll);
+        var modules = TransportModuleSelection.Select(profile, ContactModes.Poll);
 
-        Assert.Equal(CheckInModules.Web, modules);
+        Assert.Equal(ContactModules.Web, modules);
     }
 
     [Fact]
@@ -267,7 +267,7 @@ public class TransportModuleSelectionTests : IDisposable
             dir = dir.Parent;
         Assert.NotNull(dir);
         var tree = Path.Combine(dir!.FullName, "src", "implant", "dotnet");
-        foreach (var descriptor in CheckInModuleRegistry.All)
+        foreach (var descriptor in ContactModuleRegistry.All)
             foreach (var file in descriptor.Files)
                 Assert.True(File.Exists(Path.Combine(tree, file)), $"the {descriptor.Module} descriptor names a file the implant tree does not carry: {file}");
     }
@@ -277,17 +277,17 @@ public class TransportModuleSelectionTests : IDisposable
     {
         var staging = StageModuleFiles();
 
-        TransportModuleSelection.Apply(staging, CheckInModules.Web);
+        TransportModuleSelection.Apply(staging, ContactModules.Web);
 
         // Whole source files out: the stream client and its factory leave the
         // compilation, and with them every Grpc reference the tree carried.
         Assert.False(File.Exists(Path.Combine(staging, "Internal", "Beacon.cs")));
-        Assert.False(File.Exists(Path.Combine(staging, "Internal", "StreamCheckIn.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "StreamContact.cs")));
         Assert.True(File.Exists(Path.Combine(staging, "Internal", "EnvelopeBeacon.cs")));
-        Assert.True(File.Exists(Path.Combine(staging, "Internal", "WebCheckIn.cs")));
+        Assert.True(File.Exists(Path.Combine(staging, "Internal", "WebContact.cs")));
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "TransportSelection.cs"));
-        Assert.Contains("WebCheckIn.Create(setup)", selection);
-        Assert.DoesNotContain("StreamCheckIn.Create(setup)", selection);
+        Assert.Contains("WebContact.Create(setup)", selection);
+        Assert.DoesNotContain("StreamContact.Create(setup)", selection);
     }
 
     [Fact]
@@ -295,15 +295,15 @@ public class TransportModuleSelectionTests : IDisposable
     {
         var staging = StageModuleFiles();
 
-        TransportModuleSelection.Apply(staging, CheckInModules.Stream);
+        TransportModuleSelection.Apply(staging, ContactModules.Stream);
 
         Assert.False(File.Exists(Path.Combine(staging, "Internal", "EnvelopeBeacon.cs")));
-        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WebCheckIn.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WebContact.cs")));
         Assert.True(File.Exists(Path.Combine(staging, "Internal", "Beacon.cs")));
-        Assert.True(File.Exists(Path.Combine(staging, "Internal", "StreamCheckIn.cs")));
+        Assert.True(File.Exists(Path.Combine(staging, "Internal", "StreamContact.cs")));
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "TransportSelection.cs"));
-        Assert.Contains("StreamCheckIn.Create(setup)", selection);
-        Assert.DoesNotContain("WebCheckIn.Create(setup)", selection);
+        Assert.Contains("StreamContact.Create(setup)", selection);
+        Assert.DoesNotContain("WebContact.Create(setup)", selection);
     }
 
     [Fact]
@@ -311,13 +311,13 @@ public class TransportModuleSelectionTests : IDisposable
     {
         var staging = StageModuleFiles();
 
-        TransportModuleSelection.Apply(staging, CheckInModules.Web | CheckInModules.Stream);
+        TransportModuleSelection.Apply(staging, ContactModules.Web | ContactModules.Stream);
 
-        foreach (var file in new[] { "Beacon.cs", "StreamCheckIn.cs", "EnvelopeBeacon.cs", "WebCheckIn.cs" })
+        foreach (var file in new[] { "Beacon.cs", "StreamContact.cs", "EnvelopeBeacon.cs", "WebContact.cs" })
             Assert.True(File.Exists(Path.Combine(staging, "Internal", file)), file + " must survive a both-module bake");
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "TransportSelection.cs"));
-        Assert.Contains("WebCheckIn.Create(setup)", selection);
-        Assert.Contains("StreamCheckIn.Create(setup)", selection);
+        Assert.Contains("WebContact.Create(setup)", selection);
+        Assert.Contains("StreamContact.Create(setup)", selection);
     }
 
     [Fact]
@@ -325,18 +325,18 @@ public class TransportModuleSelectionTests : IDisposable
     {
         var staging = StageModuleFiles();
 
-        TransportModuleSelection.Apply(staging, CheckInModules.Quic);
+        TransportModuleSelection.Apply(staging, ContactModules.Quic);
 
         // Whole source files out: only the QUIC client survives, and with no
         // stream-shaped entry the gRPC client leaves too.
-        Assert.True(File.Exists(Path.Combine(staging, "Internal", "QuicCheckIn.cs")));
+        Assert.True(File.Exists(Path.Combine(staging, "Internal", "QuicContact.cs")));
         Assert.False(File.Exists(Path.Combine(staging, "Internal", "Beacon.cs")));
         Assert.False(File.Exists(Path.Combine(staging, "Internal", "WsBeacon.cs")));
-        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WebCheckIn.cs")));
+        Assert.False(File.Exists(Path.Combine(staging, "Internal", "WebContact.cs")));
         var selection = File.ReadAllText(Path.Combine(staging, "Internal", "TransportSelection.cs"));
-        Assert.Contains("QuicCheckIn.Create(setup)", selection);
-        Assert.DoesNotContain("StreamCheckIn.Create(setup)", selection);
-        Assert.DoesNotContain("WebCheckIn.Create(setup)", selection);
+        Assert.Contains("QuicContact.Create(setup)", selection);
+        Assert.DoesNotContain("StreamContact.Create(setup)", selection);
+        Assert.DoesNotContain("WebContact.Create(setup)", selection);
     }
 
     [Fact]
@@ -348,7 +348,7 @@ public class TransportModuleSelectionTests : IDisposable
         var staging = StageModuleFiles();
 
         Assert.Throws<InvalidOperationException>(
-            () => TransportModuleSelection.Apply(staging, CheckInModules.None));
+            () => TransportModuleSelection.Apply(staging, ContactModules.None));
     }
 
     // Stages a minimal implant tree: the module files plus the
@@ -360,8 +360,8 @@ public class TransportModuleSelectionTests : IDisposable
         Directory.CreateDirectory(Path.Combine(staging, "Internal"));
         foreach (var file in new[]
                  {
-                     "Beacon.cs", "StreamCheckIn.cs", "EnvelopeBeacon.cs", "WebCheckIn.cs",
-                     "WsBeacon.cs", "QuicCheckIn.cs", "TransportSelection.cs",
+                     "Beacon.cs", "StreamContact.cs", "EnvelopeBeacon.cs", "WebContact.cs",
+                     "WsBeacon.cs", "QuicContact.cs", "TransportSelection.cs",
                  })
             File.WriteAllText(Path.Combine(staging, "Internal", file), "// fixture");
         return staging;

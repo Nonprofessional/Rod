@@ -18,33 +18,33 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Acceptance for the plain-HTTP envelope check-in (architecture.md Sec 8,
+/// Acceptance for the plain-HTTP envelope contact (architecture.md Sec 8,
 /// the implant-reach escape hatch): the same rod.v1 frames the gRPC stream
 /// carries, as varint-length-delimited sequences in ordinary HTTPS
 /// request/response bodies over the same client certificates. The acceptance
 /// bar is the todo's own criterion: a from-scratch implant written from the
-/// contract doc alone, using no gRPC library, enrolls, checks in, and
+/// contract doc alone, using no gRPC library, enrolls, contacts, and
 /// completes a task. <see cref="ScratchImplant"/> is that implant -- an
 /// HttpClient, the protobuf messages, a hand-rolled varint codec, and the
 /// canonical tasking-signature verification, nothing else.
 /// </summary>
-public class EnvelopeCheckInTests
+public class EnvelopeContactTests
 {
     [Fact]
-    public async Task FromScratchImplant_EnrollsChecksInAndCompletesTask()
+    public async Task FromScratchImplant_EnrollsContactsAndCompletesTask()
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
 
         // The from-scratch implant: ECDSA P-256 keypair, JSON enroll over plain
-        // HTTP, envelope check-ins over mTLS with the issued leaf. No gRPC
+        // HTTP, envelope contacts over mTLS with the issued leaf. No gRPC
         // library anywhere on this path.
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
         Assert.False(string.IsNullOrEmpty(implant.ImplantId));
 
-        // First check-in: the handshake alone. The response's first frame is
+        // First contact: the handshake alone. The response's first frame is
         // the handshake response, and the implant is online in its engagement.
-        var first = await implant.CheckInAsync();
+        var first = await implant.ContactAsync();
         var handshake = HandshakeResponse.Parser.ParseFrom(first[0].Payload);
         Assert.Equal(HandshakeStatus.Ok, handshake.Status);
         Assert.Equal(1, handshake.Version.Major);
@@ -61,9 +61,9 @@ public class EnvelopeCheckInTests
         var (taskId, _) = await env.IssueTaskAsync(
             implant.EngagementId, implant.ImplantId, "shell.exec", $"echo {marker}");
 
-        // The next check-in drains the task: a signed TaskRequest rides the
+        // The next contact drains the task: a signed TaskRequest rides the
         // response after the handshake frame.
-        var second = await implant.CheckInAsync();
+        var second = await implant.ContactAsync();
         Assert.True(second.Count >= 2, "expected the handshake response plus a task");
         var request = TaskRequest.Parser.ParseFrom(second[1].Payload);
         Assert.Equal(taskId, request.TaskId);
@@ -75,9 +75,9 @@ public class EnvelopeCheckInTests
         Assert.True(implant.VerifyTasking(request), "the dispatched tasking failed signature verification");
 
         // Run the verb (shell.exec: one shot, stdout captured) and report the
-        // result on the next check-in.
+        // result on the next contact.
         var (output, exitCode) = RunShell(request.Arguments);
-        var third = await implant.CheckInAsync(new[] { ImplantFrames.TaskResult(
+        var third = await implant.ContactAsync(new[] { ImplantFrames.TaskResult(
             request.TaskId,
             exitCode == 0 ? Rod.V1.TaskOutcome.Succeeded : Rod.V1.TaskOutcome.Failed,
             output) });
@@ -99,13 +99,13 @@ public class EnvelopeCheckInTests
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
-        await implant.CheckInAsync();
+        await implant.ContactAsync();
 
         // A file.pull task names a path on the target; the from-scratch
         // handler reads the bytes and streams them back as exfil chunks after
         // the TaskResult, all inside one request body -- the envelope's exfil
         // discipline: an artifact's chunk run begins and ends within one
-        // check-in.
+        // contact.
         var content = RandomNumberGenerator.GetBytes(2 * 1024 * 1024);
         var path = Path.Combine(Path.GetTempPath(), "rod-envelope-pull-" + Guid.NewGuid().ToString("N") + ".bin");
         await File.WriteAllBytesAsync(path, content);
@@ -114,8 +114,8 @@ public class EnvelopeCheckInTests
             var (taskId, _) = await env.IssueTaskAsync(
                 implant.EngagementId, implant.ImplantId, "file.pull", path);
 
-            var checkIn = await implant.CheckInAsync();
-            var request = TaskRequest.Parser.ParseFrom(checkIn[1].Payload);
+            var contact = await implant.ContactAsync();
+            var request = TaskRequest.Parser.ParseFrom(contact[1].Payload);
             Assert.Equal("file.pull", request.Verb);
 
             var frames = new List<Frame>
@@ -123,7 +123,7 @@ public class EnvelopeCheckInTests
                 ImplantFrames.TaskResult(request.TaskId, Rod.V1.TaskOutcome.Succeeded, path),
             };
             frames.AddRange(ImplantFrames.ExfilChunkRun(request.TaskId, Path.GetFileName(path), content));
-            await implant.CheckInAsync(frames.ToArray());
+            await implant.ContactAsync(frames.ToArray());
 
             var artifacts = env.Host.Services.GetRequiredService<IArtifactStore>();
             var stored = (await artifacts.ForTaskAsync(Guid.Parse(taskId)))
@@ -142,7 +142,7 @@ public class EnvelopeCheckInTests
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
-        await implant.CheckInAsync();
+        await implant.ContactAsync();
 
         // A file.push larger than the inline cap stages the bytes server-side;
         // the demand path is the typed arm (architecture.md Sec 10).
@@ -153,14 +153,14 @@ public class EnvelopeCheckInTests
             var (taskId, _) = await env.IssueTaskAsync(
                 implant.EngagementId, implant.ImplantId, "file.push", path, content);
 
-            var checkIn = await implant.CheckInAsync();
-            var request = TaskRequest.Parser.ParseFrom(checkIn[1].Payload);
+            var contact = await implant.ContactAsync();
+            var request = TaskRequest.Parser.ParseFrom(contact[1].Payload);
             Assert.Equal("file.push", request.Verb);
             Assert.Equal(content.Length, (int)request.StagedBytes);
 
             // Demand the staged payload; the same response carries the chunk
             // run to its terminal chunk.
-            var pull = await implant.CheckInAsync(new[] { ImplantFrames.StagedPull(request.TaskId) });
+            var pull = await implant.ContactAsync(new[] { ImplantFrames.StagedPull(request.TaskId) });
             var chunks = pull.Skip(1).Select(f => StagedChunk.Parser.ParseFrom(f.Payload)).ToList();
             Assert.NotEmpty(chunks);
             Assert.True(chunks[^1].Terminal);
@@ -177,7 +177,7 @@ public class EnvelopeCheckInTests
             // The from-scratch handler lands the file and reports the result.
             var target = request.Arguments.Split(' ')[0];
             await File.WriteAllBytesAsync(target, reassembled);
-            await implant.CheckInAsync(new[] { ImplantFrames.TaskResult(
+            await implant.ContactAsync(new[] { ImplantFrames.TaskResult(
                 request.TaskId, Rod.V1.TaskOutcome.Succeeded, target) });
 
             var task = await env.GetTaskAsync(implant.EngagementId, taskId);
@@ -196,34 +196,34 @@ public class EnvelopeCheckInTests
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
-        await implant.CheckInAsync();
+        await implant.ContactAsync();
 
         // A shell.interact task is a live channel: its input half needs a
-        // stream (architecture.md Sec 10.3), so the envelope check-in -- like
+        // stream (architecture.md Sec 10.3), so the envelope contact -- like
         // the DNS poll -- never claims it. It parks queued for a stream
         // transport.
         var (taskId, _) = await env.IssueTaskAsync(
             implant.EngagementId, implant.ImplantId, "shell.interact", "");
 
-        var checkIn = await implant.CheckInAsync();
-        Assert.Single(checkIn); // handshake response only; the channel was not claimed.
+        var contact = await implant.ContactAsync();
+        Assert.Single(contact); // handshake response only; the channel was not claimed.
 
         var task = await env.GetTaskAsync(implant.EngagementId, taskId);
         Assert.Equal("Queued", task!.Status);
     }
 
     [Fact]
-    public async Task Envelope_ResponseBudget_SplitsTaskingAcrossCheckIns()
+    public async Task Envelope_ResponseBudget_SplitsTaskingAcrossContacts()
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
-        await implant.CheckInAsync();
+        await implant.ContactAsync();
 
         // Nine tasks whose argument strings each marshal to ~0.5 MB of
         // TaskRequest together exceed the 4 MiB dispatch budget, so no single
         // response can carry them all; what does not fit is requeued for the
-        // next check-in.
+        // next contact.
         var padding = new string('x', 500 * 1000);
         var ids = new List<string>();
         for (var i = 0; i < 9; i++)
@@ -237,16 +237,16 @@ public class EnvelopeCheckInTests
         var responses = 0;
         while (delivered.Count < ids.Count && responses < 10)
         {
-            var checkIn = await implant.CheckInAsync(delivered
+            var contact = await implant.ContactAsync(delivered
                 .Select(id => ImplantFrames.TaskResult(id, Rod.V1.TaskOutcome.Succeeded, "ok"))
                 .ToArray());
             responses++;
-            foreach (var frame in checkIn.Skip(1))
+            foreach (var frame in contact.Skip(1))
                 delivered.Add(TaskRequest.Parser.ParseFrom(frame.Payload).TaskId);
         }
 
         // The budget did its job: the tasking needed more than one response,
-        // and every task was delivered exactly once across the check-ins.
+        // and every task was delivered exactly once across the contacts.
         Assert.True(responses >= 2, $"expected the budget to split the tasking, got {responses} response(s)");
         Assert.Equal(ids.OrderBy(x => x), delivered.OrderBy(x => x));
     }
@@ -259,7 +259,7 @@ public class EnvelopeCheckInTests
         // A kill-date-expired implant, enrolled directly through the core
         // ports with a passed kill date -- the same fixture the stream-side
         // refusal test uses. The envelope handshake must answer the same
-        // wire status, and the refusal closes the check-in after the
+        // wire status, and the refusal closes the contact after the
         // handshake response.
         var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
@@ -278,7 +278,7 @@ public class EnvelopeCheckInTests
             X509CertificateLoader.LoadCertificate(issued.Leaf),
             new[] { ca.GetCaCertificate() }, key,
             expired.Id.ToString(), expired.EngagementId.ToString());
-        var response = await expiredClient.CheckInAsync();
+        var response = await expiredClient.ContactAsync();
         var handshake = HandshakeResponse.Parser.ParseFrom(response[0].Payload);
         Assert.Equal(HandshakeStatus.KillDateExpired, handshake.Status);
         Assert.Single(response);
@@ -286,7 +286,7 @@ public class EnvelopeCheckInTests
         // Version mismatch maps the same way it does on the stream.
         var secret = await env.MintStagerTokenAsync();
         using var fresh = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
-        var mismatch = await fresh.CheckInAsync(major: 2);
+        var mismatch = await fresh.ContactAsync(major: 2);
         var mismatchHandshake = HandshakeResponse.Parser.ParseFrom(mismatch[0].Payload);
         Assert.Equal(HandshakeStatus.VersionMismatch, mismatchHandshake.Status);
         Assert.Single(mismatch);
@@ -297,11 +297,11 @@ public class EnvelopeCheckInTests
     {
         // Over cleartext no certificate can exist, so the route no longer
         // answers 401 on sight: the body is parsed, and a well-framed
-        // check-in whose handshake carries no implant id gets the refused
+        // contact whose handshake carries no implant id gets the refused
         // handshake status (unknown implant). Over TLS the certificate-less
         // connection is still refused before any frame is read -- the
         // single-port https listener admits one for enrollment's sake, and
-        // the check-in turns it away.
+        // the contact turns it away.
         await using var env = await TestEnv.StartAsync();
         // One zero-length frame: a valid delimited Frame (empty message),
         // so a handshake with no fields at all. The version check fires
@@ -348,10 +348,10 @@ public class EnvelopeCheckInTests
     }
 
     [Fact]
-    public async Task Envelope_CleartextCheckIn_IdentifiesByTheHandshakeId()
+    public async Task Envelope_CleartextContact_IdentifiesByTheHandshakeId()
     {
         // The pure-HTTP posture: an implant with an HTTP client and no
-        // certificate at all checks in over cleartext, identified by the
+        // certificate at all contacts over cleartext, identified by the
         // implant id in its handshake -- the same anything-with-reach
         // tradeoff the cleartext gRPC stream and the DNS/SMB/TCP transports
         // document. The session opens and the implant is online.
@@ -363,7 +363,7 @@ public class EnvelopeCheckInTests
         // HTTP client: no client certificate anywhere on the path.
         using var cleartext = ScratchImplant.ConnectBeaconCertless(
             $"http://127.0.0.1:{env.HttpPort}", implant.ImplantId, implant.EngagementId);
-        var first = await cleartext.CheckInAsync();
+        var first = await cleartext.ContactAsync();
         var handshake = HandshakeResponse.Parser.ParseFrom(first[0].Payload);
         Assert.Equal(HandshakeStatus.Ok, handshake.Status);
         Assert.Single(first);
@@ -375,12 +375,12 @@ public class EnvelopeCheckInTests
     }
 
     [Fact]
-    public async Task Envelope_SealedCheckIn_RoundTrips_AndRefusesReplayAndDowngrade()
+    public async Task Envelope_SealedContact_RoundTrips_AndRefusesReplayAndDowngrade()
     {
         // The per-artifact key posture (architecture.md Sec 8/9): the build
         // mints a key, bakes it, and records it beside the payload whose
         // token the artifact redeems -- so the enrollment binds the implant
-        // to the key. Every check-in body is then AES-256-GCM ciphertext
+        // to the key. Every contact body is then AES-256-GCM ciphertext
         // covering a fresh counter, over cleartext http no less: the posture
         // carries confidential content, not just authenticated content, and
         // neither a replayed body nor a downgrade to the plaintext lab shape
@@ -389,13 +389,13 @@ public class EnvelopeCheckInTests
         var (engagementId, secret, bakedKey) = await env.MintSealedArtifactShapeAsync();
 
         // The enrollment redeems the payload's own token, so the bind rides
-        // with it; the check-in client is the sealed cleartext twin -- no
+        // with it; the contact client is the sealed cleartext twin -- no
         // certificate anywhere on the path.
         using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
         using var sealedImplant = ScratchImplant.ConnectBeaconSealed(
             $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId, bakedKey);
 
-        var first = await sealedImplant.SealedCheckInAsync();
+        var first = await sealedImplant.SealedContactAsync();
         var handshake = HandshakeResponse.Parser.ParseFrom(first[0].Payload);
         Assert.Equal(HandshakeStatus.Ok, handshake.Status);
         Assert.Single(first);
@@ -409,11 +409,11 @@ public class EnvelopeCheckInTests
         // rides the sealed body like any other frame.
         var (taskId, _) = await env.IssueTaskAsync(
             engagementId, enrolled.ImplantId, "shell.exec", "echo rod-sealed");
-        var second = await sealedImplant.SealedCheckInAsync();
+        var second = await sealedImplant.SealedContactAsync();
         Assert.True(second.Count >= 2, "expected the handshake response plus a task");
         var request = TaskRequest.Parser.ParseFrom(second[1].Payload);
         Assert.Equal(taskId, request.TaskId);
-        var third = await sealedImplant.SealedCheckInAsync(new[] { ImplantFrames.TaskResult(
+        var third = await sealedImplant.SealedContactAsync(new[] { ImplantFrames.TaskResult(
             request.TaskId, Rod.V1.TaskOutcome.Succeeded, "rod-sealed\n") });
         Assert.Single(third);
         var task = await env.GetTaskAsync(engagementId, taskId);
@@ -426,15 +426,15 @@ public class EnvelopeCheckInTests
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
 
         // Downgrade: the same implant id, now posting the plaintext lab body,
-        // is refused whole -- the bind at enroll means no keyless check-in.
+        // is refused whole -- the bind at enroll means no keyless contact.
         using var plain = ScratchImplant.ConnectBeaconCertless(
             $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId);
-        var downgrade = await plain.CheckInRawAsync();
+        var downgrade = await plain.ContactRawAsync();
         Assert.Equal(HttpStatusCode.Unauthorized, downgrade.StatusCode);
 
         // And the sealed cadence still works after both refusals: the floor
         // advanced only for accepted counters, and the session is intact.
-        var fourth = await sealedImplant.SealedCheckInAsync();
+        var fourth = await sealedImplant.SealedContactAsync();
         Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(fourth[0].Payload).Status);
     }
 
@@ -453,7 +453,7 @@ public class EnvelopeCheckInTests
         var (otherId, otherKey) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
         var foreign = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
             new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 }, otherId, otherKey,
-            Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+            Rod.Transport.Payloads.AesGcmEnvelope.ContactRequestAad);
         var refused = await sealedImplant.PostSealedRawAsync(
             System.Text.Encoding.UTF8.GetBytes(foreign));
         Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
@@ -463,7 +463,7 @@ public class EnvelopeCheckInTests
         Assert.True(Rod.Transport.Payloads.AesGcmEnvelope.TryUnbake(bakedKey, out var keyId, out var key));
         var real = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
             new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 },
-            keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+            keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.ContactRequestAad);
         var tamperedChars = real.ToCharArray();
         tamperedChars[^2] = tamperedChars[^2] == 'A' ? 'B' : 'A';
         var tampered = await sealedImplant.PostSealedRawAsync(
@@ -542,7 +542,7 @@ public class EnvelopeCheckInTests
         private readonly string? _bakedKey;
         private long _counter;
 
-        // The exact body the last sealed check-in posted -- the replay probe
+        // The exact body the last sealed contact posted -- the replay probe
         // re-posts it verbatim.
         public byte[]? LastSealedBody { get; private set; }
 
@@ -622,7 +622,7 @@ public class EnvelopeCheckInTests
 
         /// <summary>
         /// The cleartext twin: a bare HTTP client with no certificate and no
-        /// TLS options -- the pure-HTTP check-in, identified by handshake id.
+        /// TLS options -- the pure-HTTP contact, identified by handshake id.
         /// </summary>
         public static ScratchImplant ConnectBeaconCertless(
             string baseAddress, string implantId, string engagementId)
@@ -647,8 +647,8 @@ public class EnvelopeCheckInTests
                 EngagementId = engagementId,
             };
 
-        /// <summary>One poll check-in: POST the frames, parse the response.</summary>
-        public async Task<List<Frame>> CheckInAsync(
+        /// <summary>One poll contact: POST the frames, parse the response.</summary>
+        public async Task<List<Frame>> ContactAsync(
             IEnumerable<Frame>? upstream = null, int major = 1, int minor = 0)
         {
             var frames = new List<Frame> { HandshakeFrame(major, minor) };
@@ -663,11 +663,11 @@ public class EnvelopeCheckInTests
         }
 
         /// <summary>
-        /// The sealed check-in: wraps the handshake (plus upstream frames)
+        /// The sealed contact: wraps the handshake (plus upstream frames)
         /// behind a fresh big-endian counter as AES-GCM under the baked key,
         /// posts the base64 body, and opens the sealed response.
         /// </summary>
-        public async Task<List<Frame>> SealedCheckInAsync(IEnumerable<Frame>? upstream = null)
+        public async Task<List<Frame>> SealedContactAsync(IEnumerable<Frame>? upstream = null)
         {
             var frames = new List<Frame> { HandshakeFrame(1, 0) };
             if (upstream is not null)
@@ -684,10 +684,10 @@ public class EnvelopeCheckInTests
             => await _beacon.PostAsync("/implants/beacon", TextBody(sealedBody));
 
         /// <summary>
-        /// The plaintext check-in without the success assertion, so a refusal
+        /// The plaintext contact without the success assertion, so a refusal
         /// is an assertable outcome (the downgrade probe).
         /// </summary>
-        public async Task<HttpResponseMessage> CheckInRawAsync(IEnumerable<Frame>? upstream = null)
+        public async Task<HttpResponseMessage> ContactRawAsync(IEnumerable<Frame>? upstream = null)
         {
             var frames = new List<Frame> { HandshakeFrame(1, 0) };
             if (upstream is not null)
@@ -709,7 +709,7 @@ public class EnvelopeCheckInTests
             encoded.CopyTo(plaintext, 8);
             var (keyId, key) = Unbake();
             var wrapped = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
-                plaintext, keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad);
+                plaintext, keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.ContactRequestAad);
             return System.Text.Encoding.UTF8.GetBytes(wrapped);
         }
 
@@ -718,7 +718,7 @@ public class EnvelopeCheckInTests
             var (keyId, key) = Unbake();
             var plaintext = Rod.Transport.Payloads.AesGcmEnvelope.TryUnwrap(
                 System.Text.Encoding.UTF8.GetString(body).Trim(), keyId, key,
-                Rod.Transport.Payloads.AesGcmEnvelope.CheckInResponseAad);
+                Rod.Transport.Payloads.AesGcmEnvelope.ContactResponseAad);
             Assert.NotNull(plaintext);
             return plaintext!;
         }

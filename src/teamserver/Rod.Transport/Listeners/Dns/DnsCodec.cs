@@ -1,7 +1,7 @@
 namespace Rod.Transport.Listeners.Dns;
 
 // The DNS wire codec the DNS listener speaks (architecture.md Sec 8): the
-// minimal subset a TXT check-in exchange needs -- one question, TXT answers,
+// minimal subset a TXT contact exchange needs -- one question, TXT answers,
 // and an EDNS0 OPT record so a signed TaskRequest fits the response. Hand-rolled
 // on purpose: the codec is ~200 lines, the DNS message format is stable since
 // RFC 1035, and the layer stays package-free the way the inner rings are
@@ -177,7 +177,7 @@ internal static class DnsCodec
             WriteName(buffer, answer.Name);
             WriteU16(buffer, TxtType);
             WriteU16(buffer, InClass);
-            WriteU32(buffer, 0); // TTL: answers are per-check-in, never cached
+            WriteU32(buffer, 0); // TTL: answers are per-contact, never cached
             var rdata = new List<byte>(answer.Strings.Sum(s => s.Length + 1));
             foreach (var s in answer.Strings)
             {

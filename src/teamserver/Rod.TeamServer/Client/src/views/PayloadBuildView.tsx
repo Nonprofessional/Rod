@@ -54,7 +54,7 @@ const RECENT_BUILDS_SHOWN = 5
 
 // The transports an implant can enroll through -- the HTTP-shaped fronts,
 // QUIC (architecture.md Sec 8, enrollment over QUIC), the socket family
-// (enrollment over the stream check-in), and the DNS family (enrollment
+// (enrollment over the stream contact), and the DNS family (enrollment
 // over DNS: the chunked TXT exchange a DNS-only target runs); the listener
 // select offers these and greys everything else out.
 const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'quic', 'smb', 'tcp', 'dns', 'doh'])
@@ -115,12 +115,12 @@ export function PayloadBuildView({
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
   const [envelope, setEnvelope] = useState('AesGcm')
-  const [checkInProtection, setCheckInProtection] = useState(true)
+  const [contactProtection, setContactProtection] = useState(true)
   const [tokenHours, setTokenHours] = useState('')
 
   const isStager = klass === 'Stager'
 
-  // Every web front carries its own check-ins -- the envelope POST cycle
+  // Every web front carries its own contacts -- the envelope POST cycle
   // for poll, the WebSocket beacon for stream -- so one listener is always
   // the whole story and the form offers no split.
   const selectedListener = listeners.find((l) => l.id === listenerId)
@@ -129,7 +129,7 @@ export function PayloadBuildView({
   // answer per poll -- so stream mode is incoherent on them and the form
   // keeps the mode honest (the server refuses the pairing with the same
   // fix). The socket family (SMB/TCP) bakes either mode: stream holds the
-  // live session, poll cycles one connection per check-in.
+  // live session, poll cycles one connection per contact.
   const pollOnly =
     selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
     || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim())
@@ -195,13 +195,13 @@ export function PayloadBuildView({
     () => listeners.filter((l) => ENROLL_TRANSPORTS.has(l.transport)),
     [listeners],
   )
-  // The steady-state pairing shape (architecture.md Sec 8): check-ins ride
+  // The steady-state pairing shape (architecture.md Sec 8): contacts ride
   // the named carrier while enrollment keeps riding the picked front -- the
   // priority inversion a fallback list cannot express (its entries serve
   // both exchanges together). Any listener a beacon may name serves: the
   // web family (the WebSocket stream or the envelope cycle by mode), mTLS,
   // QUIC, the socket family (either mode), and the DNS family (poll, the
-  // egress-restricted TXT carrier). The catcher serves no check-in at all.
+  // egress-restricted TXT carrier). The catcher serves no contact at all.
   const carriers = useMemo(
     () => listeners.filter((l) => l.transport !== 'shellcatch'),
     [listeners],
@@ -283,7 +283,7 @@ export function PayloadBuildView({
         headers: null,
         requestTimeoutSeconds: num(requestTimeoutSeconds),
         envelope: envelope !== 'None' ? envelope : null,
-        checkInProtection: checkInProtection ? null : false,
+        contactProtection: contactProtection ? null : false,
         mode: mode !== 'stream' ? mode : null,
         sleepSeconds: num(sleepSeconds),
         jitterSeconds: num(jitterSeconds),
@@ -340,7 +340,7 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
-            Listener (enroll + check-in)
+            Listener (enroll + contact)
             <select
               value={listenerId}
               onChange={(e) => {
@@ -349,7 +349,7 @@ export function PayloadBuildView({
                 // open the section it lives in.
                 if (e.target.value === '') setAdvancedOpen(true)
               }}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and checks in on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped, QUIC, and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are check-in carriers only (pair one below)."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped, QUIC, and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are contact carriers only (pair one below)."
             >
               <option value="">-- none: public endpoint under Advanced --</option>
               {listeners.map((l) =>
@@ -367,11 +367,11 @@ export function PayloadBuildView({
           </label>
           {carriers.length > 0 && (
             <label>
-              Check-in carrier
+              Contact carrier
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where check-ins ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS/QUIC listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
+                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS/QUIC listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
               >
                 <option value="">-- same front as enrollment --</option>
                 {carriers.map((l) => (
@@ -446,15 +446,15 @@ export function PayloadBuildView({
               onChange={(e) => setMode(e.target.value)}
               disabled={pollOnly}
               title={pollOnly
-                ? 'This front holds no live stream (one connection or one answer per check-in), so poll is the only coherent mode -- the server refuses the stream pairing with the same fix.'
-                : 'How the artifact checks in: stream holds one connection open with live server push; poll exchanges one check-in per interval. Either way every verb rides -- the summary below spells out how.'}
+                ? 'This front holds no live stream (one connection or one answer per contact), so poll is the only coherent mode -- the server refuses the stream pairing with the same fix.'
+                : 'How the artifact contacts: stream holds one connection open with live server push; poll exchanges one contact per interval. Either way every verb rides -- the summary below spells out how.'}
             >
               <option value="stream" disabled={pollOnly}>stream — persistent connection</option>
-              <option value="poll">poll — check in and sleep</option>
+              <option value="poll">poll — contact and sleep</option>
             </select>
           </label>
           <label>
-            Check-in every (s)
+            Contact every (s)
             <input
               value={sleepSeconds}
               onChange={(e) => setSleepSeconds(e.target.value)}
@@ -466,7 +466,7 @@ export function PayloadBuildView({
             <input
               value={jitterSeconds}
               onChange={(e) => setJitterSeconds(e.target.value)}
-              title="Random slack added to every interval so check-ins are not clockwork. Default 10."
+              title="Random slack added to every interval so contacts are not clockwork. Default 10."
             />
           </label>
           <label>
@@ -498,14 +498,14 @@ export function PayloadBuildView({
           <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Manual overrides only, for builds without a picked listener: the enroll + check-in
-              public endpoint, backup enroll + check-in endpoints, and the one path knob --
+              Manual overrides only, for builds without a picked listener: the enroll + contact
+              public endpoint, backup enroll + contact endpoints, and the one path knob --
               registration's. The artifact's kill-date fuse and the credential's enroll window
-              ride here too. Check-ins ride a fixed route and the interactive stream rides the
+              ride here too. Contacts ride a fixed route and the interactive stream rides the
               same front's WebSocket beacon, so no other address or path exists to set.
             </p>
             <label>
-              Public endpoint (enroll + check-in, manual)
+              Public endpoint (enroll + contact, manual)
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
@@ -513,8 +513,8 @@ export function PayloadBuildView({
                 disabled={!!listenerId}
                 title={
                   listenerId
-                    ? 'An enroll + check-in listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
-                    : "The address the implant registers and checks in on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), quic://host:port, tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
+                    ? 'An enroll + contact listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
+                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), quic://host:port, tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
                 }
               />
             </label>
@@ -524,7 +524,7 @@ export function PayloadBuildView({
                 value={fallbackEndpoints}
                 onChange={(e) => setFallbackEndpoints(e.target.value)}
                 placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Backup enroll + check-in addresses the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed check-in route. Empty bakes the single-address shape."
+                title="Backup enroll + contact addresses the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed contact route. Empty bakes the single-address shape."
               />
             </label>
             <label>
@@ -533,7 +533,7 @@ export function PayloadBuildView({
                 value={enrollPath}
                 onChange={(e) => setEnrollPath(e.target.value)}
                 placeholder="/implants/enroll"
-                title="The URI path of the one-time registration POST (default /implants/enroll). The only path knob: check-ins ride the fixed /implants/beacon route and the interactive stream rides the mTLS socket's own path. Change it only when a redirector rewrites to the real route."
+                title="The URI path of the one-time registration POST (default /implants/enroll). The only path knob: contacts ride the fixed /implants/beacon route and the interactive stream rides the mTLS socket's own path. Change it only when a redirector rewrites to the real route."
               />
             </label>
             <label>
@@ -559,7 +559,7 @@ export function PayloadBuildView({
               <select
                 value={envelope}
                 onChange={(e) => setEnvelope(e.target.value)}
-                title="Shapes the ENROLL request body only. AES-GCM (the default) encrypts it under a per-artifact key minted at build — the same default posture check-ins already carry; redundant on direct https, where TLS already encrypts the channel. None sends the raw JSON body, the lab-debug shape; Base64 wraps it as one string so it no longer reads as structured C2."
+                title="Shapes the ENROLL request body only. AES-GCM (the default) encrypts it under a per-artifact key minted at build — the same default posture contacts already carry; redundant on direct https, where TLS already encrypts the channel. None sends the raw JSON body, the lab-debug shape; Base64 wraps it as one string so it no longer reads as structured C2."
               >
                 <option>None</option>
                 <option>Base64</option>
@@ -568,14 +568,14 @@ export function PayloadBuildView({
             </label>
             <label
               className="checkbox-label"
-              title="Seals every check-in POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web check-ins use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
+              title="Seals every contact POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web contacts use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
             >
-              Protect check-ins
+              Protect contacts
               <span className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={checkInProtection}
-                  onChange={(e) => setCheckInProtection(e.target.checked)}
+                  checked={contactProtection}
+                  onChange={(e) => setContactProtection(e.target.checked)}
                 />
               </span>
             </label>
@@ -585,7 +585,7 @@ export function PayloadBuildView({
                 type="date"
                 value={killDate}
                 onChange={(e) => setKillDate(e.target.value)}
-                title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next check-in. Empty = no fuse -- the implant runs until retired (the long-haul default). A date also caps the baked credential's window unless 'Valid for' overrides it."
+                title="Past this date the executable stops being usable: a leftover copy refuses to run, and a live implant terminates at its next contact. Empty = no fuse -- the implant runs until retired (the long-haul default). A date also caps the baked credential's window unless 'Valid for' overrides it."
               />
             </label>
             <label>
@@ -594,7 +594,7 @@ export function PayloadBuildView({
                 value={tokenHours}
                 onChange={(e) => setTokenHours(e.target.value)}
                 placeholder="hours"
-                title="How long the baked credential can enroll NEW implants. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or a 30-day drop window when there is none. Enrollment is permanent — an implant that already enrolled checks in for life; this only gates copies that have not enrolled yet."
+                title="How long the baked credential can enroll NEW implants. Pairs with Max uses: that caps how many enrolls, this caps for how long. Empty = until the kill date, or a 30-day drop window when there is none. Enrollment is permanent — an implant that already enrolled contacts for life; this only gates copies that have not enrolled yet."
               />
               <span className="field-help">empty = until the kill date, else 30 days</span>
             </label>
@@ -651,7 +651,7 @@ export function PayloadBuildView({
                       <span
                         title={
                           front
-                            ? `The engagement's ${front.transport} listener: ${job.endpoint} (enroll + check-in)`
+                            ? `The engagement's ${front.transport} listener: ${job.endpoint} (enroll + contact)`
                             : `No listener serves this address (typed for a redirector): ${job.endpoint}`
                         }
                       >
@@ -755,15 +755,15 @@ export function PayloadBuildView({
 }
 
 // The traffic shape this build bakes, drawn from the current picks: every
-// behavior the artifact dials -- enroll, check-in, and (stream mode) the
+// behavior the artifact dials -- enroll, contact, and (stream mode) the
 // interactive WebSocket beacon -- rides the one named front. The form's
 // words say what each field does; this says what the target will see
 // moving.
 // The baked shape, composed live from the picks above: what the artifact
-// enrolls on, how it checks in, and how interactive rides -- read before the
+// enrolls on, how it contacts, and how interactive rides -- read before the
 // build commits, not discovered on target. The three keys are the fixed
 // vocabulary's three behaviors; the values follow the front's transport,
-// the check-in carrier, and the mode.
+// the contact carrier, and the mode.
 function BuildSummary({
   listener,
   endpoint,
@@ -794,14 +794,14 @@ function BuildSummary({
   const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh'
     || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim()))
 
-  const checkIn = carrier
+  const contact = carrier
     ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
     : quic
       ? mode === 'poll'
-        ? `one QUIC session per check-in, ${cadence}, on ${front}`
+        ? `one QUIC session per contact, ${cadence}, on ${front}`
         : `one QUIC session on ${front}, enrollment on the same socket`
       : socket
-        ? `one ${socketName} connection per check-in, ${cadence}, on ${front}`
+        ? `one ${socketName} connection per contact, ${cadence}, on ${front}`
         : dnsFront
           ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
           : mtls
@@ -815,11 +815,11 @@ function BuildSummary({
   const interactive = carrier
     ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
     : stager
-      ? 'none — a stager fetches its Stage-2 and never checks in'
+      ? 'none — a stager fetches its Stage-2 and never contacts'
       : dnsFront
         ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
         : mode === 'poll'
-          ? 'store-and-forward over those check-ins — input rides the next cycle (sleep 0 approaches live)'
+          ? 'store-and-forward over those contacts — input rides the next cycle (sleep 0 approaches live)'
           : quic
             ? 'live channel over the QUIC stream'
             : mtls
@@ -833,7 +833,7 @@ function BuildSummary({
         {stager && ' — then stages its Stage-2 from the same front'}
       </div>
       <div>
-        <span className="summary-key">check-in</span> {checkIn}
+        <span className="summary-key">contact</span> {contact}
       </div>
       <div>
         <span className="summary-key">interactive</span> {interactive}

@@ -97,9 +97,9 @@ public class SessionRegistryTests
         Assert.NotNull(active);
         Assert.Equal(new[] { "file.push" }, active!.Capabilities);
         Assert.Equal(Now.AddSeconds(60), active.LastSeenAt);
-        // The degraded-mode contract: the carrier the last check-in rode.
+        // The degraded-mode contract: the carrier the last contact rode.
         // A touch that records none keeps the last recorded one -- a legacy
-        // caller must not erase what a carrier-carrying check-in wrote.
+        // caller must not erase what a carrier-carrying contact wrote.
         Assert.Equal("dns", active.LastCarrier);
     }
 

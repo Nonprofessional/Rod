@@ -158,7 +158,7 @@ public class ListenerTests
 
         using var channel = env.ConnectBeacon(env.MtlsBind, leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
 

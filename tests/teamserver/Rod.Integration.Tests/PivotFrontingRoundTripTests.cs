@@ -68,7 +68,7 @@ public class PivotFrontingRoundTripTests
 
         using var channel = env.ConnectBeacon(X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(parent.Id, "tunnel.forward"));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));

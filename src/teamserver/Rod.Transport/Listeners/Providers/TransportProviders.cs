@@ -83,7 +83,7 @@ public static class TransportProviders
         // UDP reservation, for egress that passes UDP/443 but blocks TCP. The
         // public endpoint stays the bare host:port the family dials; the
         // scheme the transport completes it with is its own (quic://), the
-        // URL shape the artifact's check-in client picks by. The carrier is
+        // URL shape the artifact's contact client picks by. The carrier is
         // the native stream carrier: one connection is one live session
         // (server-push tasking, live channels), not the family's poll cycle.
         // The opening stream also carries enrollment (Sec 8, enrollment over
@@ -111,12 +111,12 @@ public static class TransportProviders
                 services.GetRequiredService<EnrollmentService>(),
                 services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>(),
                 services.GetRequiredService<IPayloadStore>(),
-                services.GetRequiredService<Endpoints.EnvelopeCheckInKeys>(),
+                services.GetRequiredService<Endpoints.EnvelopeContactKeys>(),
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<QuicListenerService>()),
             publicEndpointScheme: "quic"));
 
         // The DNS grammar's second carriage (RFC 8484): the same TXT
-        // check-in wire the UDP listener answers, as DNS wire messages over
+        // contact wire the UDP listener answers, as DNS wire messages over
         // an HTTPS body -- the egress-restricted carrier behind a shape a
         // restricted network already allows. The single-port TLS posture
         // (no client certificate anywhere); the public endpoint is the zone
@@ -127,7 +127,7 @@ public static class TransportProviders
         // The stream family's catcher: a TCP socket that holds connections
         // speaking no Rod protocol at all (architecture.md Sec 8) -- the
         // reverse shells an operator's one-liners dial home over. It serves
-        // no check-in carrier (nothing here is implant ingress, so a build
+        // no contact carrier (nothing here is implant ingress, so a build
         // may never name it as a beacon), and its public endpoint is the
         // bare host:port the one-liners dial, the family's dial shape.
         Register(new HostedServiceTransportProvider("shellcatch",

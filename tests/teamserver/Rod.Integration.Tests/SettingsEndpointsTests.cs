@@ -51,7 +51,7 @@ public class SettingsEndpointsTests
             Assert.Equal(5, reread!.ThresholdMinutes);
 
             // Out-of-bounds values refuse loudly rather than clamping: a
-            // threshold under a minute would flap every quiet check-in gap
+            // threshold under a minute would flap every quiet contact gap
             // to offline.
             var refused = await client.PutAsJsonAsync(
                 "/settings/sessions",

@@ -288,7 +288,7 @@ public class FileAuditStoreTests
         Assert.Equal(trail[1].Hash, trail[2].PreviousHash);
 
         // The whole trail verifies after the restart -- the stored chain is
-        // self-checking across the teardown.
+        // self-contactg across the teardown.
         Assert.Null(AuditChain.VerifyTrail(trail));
     }
 

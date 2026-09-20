@@ -229,7 +229,7 @@ public class ReplayNonceTests
     }
 
     /// <summary>
-    /// The minimal in-process implant: mTLS gRPC check-in with the handshake
+    /// The minimal in-process implant: mTLS gRPC contact with the handshake
     /// (optionally advertising the replay-nonce arm), the reference verifier's
     /// nonce floor, and result reporting. It never executes tasking -- the
     /// suite is about negotiation, stamping, and the surfaced rejection.
@@ -271,7 +271,7 @@ public class ReplayNonceTests
             };
             var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{env.MtlsPort}",
                 new GrpcChannelOptions { HttpHandler = handler, DisposeHttpClient = true });
-            var call = new Beacon.BeaconClient(channel).CheckIn();
+            var call = new Beacon.BeaconClient(channel).Contact();
 
             var handshake = new HandshakeRequest
             {

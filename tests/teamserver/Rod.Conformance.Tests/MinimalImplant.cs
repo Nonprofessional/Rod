@@ -23,7 +23,7 @@ public sealed record ImplantDefects(
 /// <summary>
 /// A minimal Tier 0/Tier 1 implant written straight from the contract doc,
 /// in-process so the harness can switch defects on and off: ECDSA P-256 enroll,
-/// gRPC check-in over mTLS with pinned-CA server validation, canonical
+/// gRPC contact over mTLS with pinned-CA server validation, canonical
 /// tasking-signature verification, shell.exec execution, and chunked file.pull
 /// exfil. The deliberately broken candidates the acceptance criterion names
 /// are this implant with one defect flipped on.
@@ -112,7 +112,7 @@ public sealed class MinimalImplant : IImplantCandidate
         {
             try
             {
-                await CheckInOnceAsync(target, implantId, engagementId, leaf, key, cas, cancellationToken);
+                await ContactOnceAsync(target, implantId, engagementId, leaf, key, cas, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -126,7 +126,7 @@ public sealed class MinimalImplant : IImplantCandidate
         }
     }
 
-    private async Task CheckInOnceAsync(
+    private async Task ContactOnceAsync(
         ConformanceTarget target,
         string implantId,
         string engagementId,
@@ -147,7 +147,7 @@ public sealed class MinimalImplant : IImplantCandidate
         };
         using var channel = GrpcChannel.ForAddress($"https://{target.BeaconHostPort}",
             new GrpcChannelOptions { HttpHandler = handler, DisposeHttpClient = true });
-        using var call = new Beacon.BeaconClient(channel).CheckIn(cancellationToken: cancellationToken);
+        using var call = new Beacon.BeaconClient(channel).Contact(cancellationToken: cancellationToken);
 
         // The defect variant speaks its result frame first; the server answers
         // an unspecified handshake status and closes, which is the point.
@@ -175,7 +175,7 @@ public sealed class MinimalImplant : IImplantCandidate
             return;
         var handshake = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
         if (handshake.Status != HandshakeStatus.Ok)
-            return; // Every non-OK status is permanent: stop checking in.
+            return; // Every non-OK status is permanent: stop contacting.
         _negotiated = handshake.ReplayNonces;
 
         while (await call.ResponseStream.MoveNext(cancellationToken))

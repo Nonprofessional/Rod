@@ -15,7 +15,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance for the DNS grammar's second carriage (architecture.md
-/// Sec 8): DNS-over-HTTPS per RFC 8484, the same TXT check-in wire the UDP
+/// Sec 8): DNS-over-HTTPS per RFC 8484, the same TXT contact wire the UDP
 /// listener answers, as DNS wire messages over HTTP bodies. A doh listener
 /// entry owns the route -- its public endpoint is the zone it answers for
 /// -- and the arrival port resolves which listener answers. The acceptance
@@ -50,7 +50,7 @@ public class DnsOverHttpsTests
 
         // POST: an in-zone poll for an implant with no session -- the
         // documented NOERROR-empty answer, exactly the UDP listener's.
-        var pollName = DnsCheckInNames.PollName(ImplantId.New(), Zone);
+        var pollName = DnsContactNames.PollName(ImplantId.New(), Zone);
         var post = await env.Doh.PostAsync($"{DnsOverHttpsEndpoints.Route}",
             new ByteArrayContent(Query(pollName)));
         Assert.Equal(HttpStatusCode.OK, post.StatusCode);
@@ -68,16 +68,16 @@ public class DnsOverHttpsTests
         Assert.Equal(0, AnswerCount(getAnswer));
 
         // The zone's answer codes: a foreign zone is REFUSED (this listener
-        // is not an open resolver), an in-zone non-check-in is NXDOMAIN.
+        // is not an open resolver), an in-zone non-contact is NXDOMAIN.
         var foreign = await env.Doh.PostAsync($"{DnsOverHttpsEndpoints.Route}",
             new ByteArrayContent(Query("p.other.example.test")));
         var foreignAnswer = await foreign.Content.ReadAsByteArrayAsync();
         Assert.Equal(5, ResponseCode(foreignAnswer)); // REFUSED
 
-        var notCheckIn = await env.Doh.PostAsync($"{DnsOverHttpsEndpoints.Route}",
+        var notContact = await env.Doh.PostAsync($"{DnsOverHttpsEndpoints.Route}",
             new ByteArrayContent(Query($"ordinary.{Zone}")));
-        var notCheckInAnswer = await notCheckIn.Content.ReadAsByteArrayAsync();
-        Assert.Equal(3, ResponseCode(notCheckInAnswer)); // NXDOMAIN
+        var notContactAnswer = await notContact.Content.ReadAsByteArrayAsync();
+        Assert.Equal(3, ResponseCode(notContactAnswer)); // NXDOMAIN
 
         // A socket no doh listener owns: the route is not served there --
         // an ordinary 404, so a prober learns nothing.

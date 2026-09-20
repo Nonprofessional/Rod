@@ -52,7 +52,7 @@ public class SocksProxyRoundTripTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
@@ -145,7 +145,7 @@ public class SocksProxyRoundTripTests
         var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock, ImplantClass.Stage2);
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);

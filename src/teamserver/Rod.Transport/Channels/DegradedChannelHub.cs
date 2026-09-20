@@ -16,15 +16,15 @@ namespace Rod.Transport.Channels;
 // The store-and-forward half of the degraded channel discipline
 // (architecture.md Sec 10.3): the parking queue operator input waits in when
 // the implant's carrier is a poll shape, the drain the envelope and
-// message-pipe check-ins deliver it through, and the idle deadline that
+// message-pipe contacts deliver it through, and the idle deadline that
 // closes a channel the implant stopped collecting. The live-sink half stays
 // in LiveChannelHub; this hub exists because a poll carrier has no sink to
-// attach -- the queue IS the sink, and the check-in cycle is its pump.
+// attach -- the queue IS the sink, and the contact cycle is its pump.
 
 /// <summary>
 /// Parks operator input for dispatched channel tasks against implants whose
 /// active session advertised the degraded discipline, delivers it as
-/// ChannelInput frames on their poll check-ins, and times out channels the
+/// ChannelInput frames on their poll contacts, and times out channels the
 /// implant stopped collecting. The opt-in is the session's advertisement
 /// (the handshake capability <see cref="Capability"/>), so a poll build that
 /// never opted in keeps the live-stream-only behavior: nothing parks, and
@@ -34,7 +34,7 @@ internal sealed class DegradedChannelHub
 {
     /// <summary>
     /// The handshake capability an opted-in implant advertises: "this
-    /// artifact accepts channel traffic over its poll check-ins." The wire
+    /// artifact accepts channel traffic over its poll contacts." The wire
     /// contract's name (extending/implants.md); the implant bakes it from
     /// its profile's degraded-channels flag.
     /// </summary>
@@ -112,7 +112,7 @@ internal sealed class DegradedChannelHub
 
     /// <summary>
     /// The implant's parked input as ChannelInput frames, in arrival order,
-    /// while <paramref name="maxBytes"/> lasts -- what a poll check-in's
+    /// while <paramref name="maxBytes"/> lasts -- what a poll contact's
     /// response carries after its tasking. Collecting refreshes the
     /// channels' idle clocks; a task whose eof has been collected and whose
     /// queue is empty leaves the park (the channel's close rides the
@@ -192,7 +192,7 @@ internal sealed class DegradedChannelHub
                     {
                         await _tasks.RecordResultAsync(
                             new TaskId(taskId),
-                            "channel timed out: the implant stopped collecting its poll check-ins",
+                            "channel timed out: the implant stopped collecting its poll contacts",
                             TaskOutcome.Failed,
                             cancellationToken);
                     }

@@ -26,7 +26,7 @@ namespace Rod.Integration.Tests;
 /// implants keep today's semantics, requeues ack-less dispatches at stream
 /// end, and makes duplicate results idempotent (first result wins). The
 /// acceptance criterion is the todo's own: a task whose frame rides a stream
-/// that dies before the ack is redelivered on the next check-in, and an
+/// that dies before the ack is redelivered on the next contact, and an
 /// implant that already held it re-acks without running it twice. The implant
 /// here is a minimal in-process client that mirrors the reference ledger's
 /// re-ack posture, so the slice stays about the server's negotiation,
@@ -35,7 +35,7 @@ namespace Rod.Integration.Tests;
 public class TaskAckRedeliveryTests
 {
     [Fact]
-    public async Task AcklessDispatch_OnDyingStream_IsRedeliveredOnTheNextCheckIn()
+    public async Task AcklessDispatch_OnDyingStream_IsRedeliveredOnTheNextContact()
     {
         await using var env = await TestEnv.StartAsync();
         var (implant, leaf, key) = await env.EnrollImplantAsync();
@@ -54,7 +54,7 @@ public class TaskAckRedeliveryTests
             // dispatch the server never saw evidence for.
         }
 
-        // The next check-in redelivers it: the stream's end returned the
+        // The next contact redelivers it: the stream's end returned the
         // ack-less dispatch to the queue, and the reconnect's writer claims
         // from it.
         using var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseTaskAcks: true);
@@ -70,7 +70,7 @@ public class TaskAckRedeliveryTests
     }
 
     [Fact]
-    public async Task AcklessDispatch_OnAbortedStream_IsRedeliveredOnTheNextCheckIn()
+    public async Task AcklessDispatch_OnAbortedStream_IsRedeliveredOnTheNextContact()
     {
         await using var env = await TestEnv.StartAsync();
         var (implant, leaf, key) = await env.EnrollImplantAsync();
@@ -293,7 +293,7 @@ public class TaskAckRedeliveryTests
     }
 
     /// <summary>
-    /// The minimal in-process implant: mTLS gRPC check-in with the handshake
+    /// The minimal in-process implant: mTLS gRPC contact with the handshake
     /// (optionally advertising the receive-ack arm), the ack frame, and result
     /// reporting. It never executes tasking -- the suite is about the server's
     /// requeue, negotiation, and first-wins discipline.
@@ -329,7 +329,7 @@ public class TaskAckRedeliveryTests
             };
             var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{env.MtlsPort}",
                 new GrpcChannelOptions { HttpHandler = handler, DisposeHttpClient = true });
-            var call = new Beacon.BeaconClient(channel).CheckIn();
+            var call = new Beacon.BeaconClient(channel).Contact();
 
             var handshake = new HandshakeRequest
             {

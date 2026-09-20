@@ -188,8 +188,8 @@ public static class PayloadEndpoints
         // artifact -- the operator never handles the secret. Both build paths
         // mint identically, and the per-artifact envelope key mints the same
         // way whenever a phase needs it: the AesGcm enroll envelope encrypts
-        // under it, and check-in protection (the default) seals every
-        // check-in body under it -- one key, minted once per build.
+        // under it, and contact protection (the default) seals every
+        // contact body under it -- one key, minted once per build.
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with
@@ -198,7 +198,7 @@ public static class PayloadEndpoints
             MintedTokenId = tokenId.Value,
             TokenMaxUses = body.TokenMaxUses ?? 1,
         };
-        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.ContactProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
             request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };
@@ -274,13 +274,13 @@ public static class PayloadEndpoints
     // tests) stays valid. ListenerId names the engagement's own listener and
     // supplies the endpoint from its record, so the two are mutually
     // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the mTLS
-    // socket the gRPC stream dials when the check-in should not ride the
+    // socket the gRPC stream dials when the contact should not ride the
     // enroll front's own envelope cycle -- the split-socket shape (enroll on
     // a web listener, the stream on an mTLS listener), optional everywhere:
-    // a web front carries its check-ins itself, so no split is required.
-    // CheckInProtection is its own Advanced knob beside the enroll-body
+    // a web front carries its contacts itself, so no split is required.
+    // ContactProtection is its own Advanced knob beside the enroll-body
     // Envelope pick: on unless explicitly false (the lab-debug plaintext
-    // frame), sealing every check-in body under the per-artifact key the
+    // frame), sealing every contact body under the per-artifact key the
     // mint below then makes sure exists.
     public sealed record BuildPayloadRequest(
         string? Language,
@@ -299,7 +299,7 @@ public static class PayloadEndpoints
         Dictionary<string, string>? Headers = null,
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
-        bool? CheckInProtection = null,
+        bool? ContactProtection = null,
         string? Stage2PayloadId = null,
         List<string>? FallbackEndpoints = null,
         int? TokenMaxUses = null,
@@ -387,7 +387,7 @@ public static class PayloadEndpoints
         string? UserAgent = null,
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
-        bool? CheckInProtection = null,
+        bool? ContactProtection = null,
         string[]? FallbackEndpoints = null)
     {
         public static PayloadBuildProfileResponse? Of(Rod.Audit.PayloadBuildProfile? profile) =>
@@ -403,7 +403,7 @@ public static class PayloadEndpoints
                     profile.UserAgent,
                     profile.RequestTimeoutSeconds,
                     profile.Envelope,
-                    profile.CheckInProtection,
+                    profile.ContactProtection,
                     profile.FallbackEndpoints?.ToArray());
     }
 

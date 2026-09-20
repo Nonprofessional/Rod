@@ -29,11 +29,11 @@ public sealed class Session
     public SessionStatus Status { get; private set; }
 
     /// <summary>
-    /// The carrier the session's last check-in rode (the degraded-mode
+    /// The carrier the session's last contact rode (the degraded-mode
     /// contract, architecture.md Sec 8), in the fixed vocabulary: "web"
     /// (the envelope POST cycle or the WebSocket beacon), "grpc" (the mTLS
     /// stream), "quic", "dns", "pipe" (the SMB/TCP pivot stream). Null
-    /// means no check-in recorded one -- the operator surface reads it as
+    /// means no contact recorded one -- the operator surface reads it as
     /// the posture's default, not degraded. "dns" is the constrained
     /// carrier: presence, short tasking, chunked results; the roster
     /// badges it so a queued channel task has its visible why.

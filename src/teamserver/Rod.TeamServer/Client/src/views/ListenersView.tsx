@@ -141,10 +141,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const endpointTitle = isSmb
     ? 'The pipe path baked into payloads — \\\\host\\pipe\\name on the target segment. Required: a pipe path cannot be derived from this host.'
     : isDnsFamily
-      ? 'The DNS zone this listener answers TXT check-ins under — the domain delegated to this host (its NS records point here). Required: a zone is a fact about the target network, not derivable from the bind.'
+      ? 'The DNS zone this listener answers TXT contacts under — the domain delegated to this host (its NS records point here). Required: a zone is a fact about the target network, not derivable from the bind.'
       : isBareDial
         ? `The host:port implants dial (your redirector in production). The ${transport} scheme is completed at bake time, so type no scheme here. Required: the bare dial cannot be left empty.`
-        : "The address baked into payloads — what deployed implants enroll and check in on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
+        : "The address baked into payloads — what deployed implants enroll and contact on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -337,7 +337,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
               if (port !== '') setBindPort(port)
             }}
-            title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per check-in). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
+            title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per contact). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
           >
             {TRANSPORT_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -368,7 +368,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         </label>
         <label
           className="checkbox-label"
-          title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Check-ins step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
+          title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
         >
           Egress &amp; pivots
           <span className="checkbox-row">

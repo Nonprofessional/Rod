@@ -80,7 +80,7 @@ internal sealed class CapabilityHandler : ICapabilityHandler
 
 /// <summary>
 /// The implant-side half of a live task channel: what a channel handler reads
-/// and writes. The beacon loop implements it over the CheckIn stream -- output
+/// and writes. The beacon loop implements it over the Contact stream -- output
 /// chunks frame as ChannelOutput upstream, input arrives as ChannelInput
 /// downstream -- so channel handlers stay transport-blind.
 /// </summary>
@@ -204,7 +204,7 @@ internal sealed class HandlerRegistry
     /// reference set in the dev tree, the build class's reduced set in a
     /// generated artifact -- with <paramref name="additional"/> (an
     /// out-of-tree handler, or a test's stand-in) appended after the reference
-    /// set. <paramref name="cadence"/> is the live check-in cadence the
+    /// set. <paramref name="cadence"/> is the live contact cadence the
     /// beacon.sleep handler retunes; null leaves that verb refusing cleanly
     /// (a dispatch path with no cadence to change).
     /// </summary>

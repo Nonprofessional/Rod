@@ -20,7 +20,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Acceptance: an implant written from the contract doc completes a check-in
+/// Acceptance: an implant written from the contract doc completes a contact
 /// and a task over the stream listeners (architecture.md Sec 8) -- the named
 /// pipe for Windows segments without HTTP or DNS egress, and the raw TCP
 /// socket for segment networks that allow sockets but no HTTP shape. Both
@@ -33,16 +33,16 @@ namespace Rod.Integration.Tests;
 /// and dispatched tasking keeps the full Sec 9 signature, verified here the
 /// way an implant verifies it.
 /// </summary>
-public class StreamCheckInTests
+public class StreamContactTests
 {
     [Fact]
-    public async Task Implant_ChecksInOverTheNamedPipe_AndCompletesATask()
+    public async Task Implant_ContactsOverTheNamedPipe_AndCompletesATask()
     {
         var pipeName = $"rod-test-{Guid.NewGuid():N}";
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             "test-smb", "smb", pipeName, $@"\\host\pipe\{pipeName}"));
 
-        await CheckInAndCompleteATaskAsync(
+        await ContactAndCompleteATaskAsync(
             env,
             endpoint: $@"\\host\pipe\{pipeName}",
             expectedTransport: "smb",
@@ -55,13 +55,13 @@ public class StreamCheckInTests
     }
 
     [Fact]
-    public async Task Implant_ChecksInOverRawTcp_AndCompletesATask()
+    public async Task Implant_ContactsOverRawTcp_AndCompletesATask()
     {
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
             "test-tcp", "tcp", $"127.0.0.1:{port}", $"10.0.0.5:{port}"));
 
-        await CheckInAndCompleteATaskAsync(
+        await ContactAndCompleteATaskAsync(
             env,
             endpoint: $"10.0.0.5:{port}",
             expectedTransport: "tcp",
@@ -75,9 +75,9 @@ public class StreamCheckInTests
 
     // The shared acceptance arc: handshake over the transport, listener
     // listing reflects the entry, a shell.exec task dispatches into a
-    // check-in response with a verifiable signature, and the reported result
+    // contact response with a verifiable signature, and the reported result
     // completes the task with the standard audit arc.
-    private static async Task CheckInAndCompleteATaskAsync(
+    private static async Task ContactAndCompleteATaskAsync(
         TestEnv env,
         string endpoint,
         string expectedTransport,
@@ -111,10 +111,10 @@ public class StreamCheckInTests
         Assert.Equal(endpoint, entry.PublicEndpoint);
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // Check-in one: the handshake opens the session. The implant
+        // Contact one: the handshake opens the session. The implant
         // advertises the replay-nonce arm like the reference implant, and the
         // response echoes it.
-        var opened = await CheckInAsync(connect, Handshake(implant));
+        var opened = await ContactAsync(connect, Handshake(implant));
         var openedResponse = HandshakeResponse.Parser.ParseFrom(opened[0].Payload);
         Assert.Equal(HandshakeStatus.Ok, openedResponse.Status);
         Assert.True(openedResponse.ReplayNonces);
@@ -128,11 +128,11 @@ public class StreamCheckInTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
 
-        // Check-in two: the handshake refreshes the session and the queued
+        // Contact two: the handshake refreshes the session and the queued
         // task rides the response. The tasking is signed by the CA -- an
         // implant verifies it exactly like a stream-delivered task, the
         // signature posture is the transport-independent half.
-        var dispatched = await CheckInAsync(connect, Handshake(implant));
+        var dispatched = await ContactAsync(connect, Handshake(implant));
         var dispatchedResponse = HandshakeResponse.Parser.ParseFrom(dispatched[0].Payload);
         Assert.Equal(HandshakeStatus.Ok, dispatchedResponse.Status);
         Assert.Equal(2, dispatched.Count);
@@ -150,10 +150,10 @@ public class StreamCheckInTests
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pss));
 
-        // Check-in three: the implant reports the result and the task
+        // Contact three: the implant reports the result and the task
         // completes with the standard audit arc -- indistinguishable from a
         // stream-delivered task in the trail.
-        var reported = await CheckInAsync(
+        var reported = await ContactAsync(
             connect,
             Handshake(implant),
             new Frame
@@ -183,11 +183,11 @@ public class StreamCheckInTests
             fetched.Audit.Select(e => e.Kind).ToArray());
     }
 
-    // One check-in: connect, send the request message (the handshake frame
+    // One contact: connect, send the request message (the handshake frame
     // first, then any upstream frames), read the response message, close.
-    // One connection is one poll check-in -- the cadence every stream
+    // One connection is one poll contact -- the cadence every stream
     // listener serves.
-    private static async Task<List<Frame>> CheckInAsync(
+    private static async Task<List<Frame>> ContactAsync(
         Func<Task<System.IO.Stream>> connect, params Frame[] upstream)
     {
         using var stream = await connect();

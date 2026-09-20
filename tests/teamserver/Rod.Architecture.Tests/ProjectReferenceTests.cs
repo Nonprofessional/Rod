@@ -4,7 +4,7 @@ namespace Rod.Architecture.Tests;
 
 /// <summary>
 /// Guards the layer dependency matrix at the project-file level
-/// (architecture.md Sec 4.1, AGENTS.md Sec 5). The namespace-based checks in
+/// (architecture.md Sec 4.1, AGENTS.md Sec 5). The namespace-based contacts
 /// <see cref="LayerDependencyTests"/> inspect usage, so a forbidden csproj
 /// reference that no code uses yet would pass them. This test reads the actual
 /// ProjectReference edges and compares them against the allowed matrix, so a

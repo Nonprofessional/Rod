@@ -13,7 +13,7 @@ pre-engagement baseline: it was executed end to end on one Linux host
 the run produced. The multi-host walk (Sec 4) composes the production
 shape -- a TLS-terminating edge in front of the certificate-less ingress,
 the redirector on its own host carrying the mTLS beacon across a network
-hop, and a pipeline-built win-x64 implant checking in from a real Windows
+hop, and a pipeline-built win-x64 implant contacting from a real Windows
 machine -- and it was executed the same way. The win-x64 surface pass
 (Sec 5) turns the same shape against every Windows-only implant path with
 an adversarial eye, and the CA rotation drill (Sec 6) swaps the engagement
@@ -84,7 +84,7 @@ variables; `appsettings` sections are equivalent):
 
 | Listener | Transport | Purpose |
 |----------|-----------|---------|
-| `beacon` | `Mtls` | The implant check-in channel. Public endpoint is the primary redirector; implants present the CA-signed leaf here. |
+| `beacon` | `Mtls` | The implant contact channel. Public endpoint is the primary redirector; implants present the CA-signed leaf here. |
 | `enroll-http` | `Http` | The certificate-less ingress stage-1 rides: enroll and stage-2 fetch hold no leaf yet, so an mTLS listener cannot serve their TLS handshake. In a real deployment the operator's TLS-terminating edge fronts this shape ([architecture.md](../architecture.md) Sec 8); on the rehearsal host it is loopback plain HTTP standing in for that edge. |
 | `operator-http` | `Http` | The operator API and UI. Keep it loopback or behind the crew's VPN/TLS edge -- credentials cross it in the clear otherwise. |
 
@@ -130,7 +130,7 @@ misconfigured listener -- that is the acceptance for step zero.
    with the pre-restart hash chain byte-identical; artifacts remain
    retrievable; operator cookies survive (the data-protection keys and the
    credential store are durable).
-7. **Burn a front**: stop the primary redirector. The implant's check-ins
+7. **Burn a front**: stop the primary redirector. The implant's contacts
    fail and the baked egress walk advances to the fallback front -- it
    returns to the roster with no operator action. Then repoint the
    listener (`POST /engagements/{engagementId}/listeners/{id}:repoint` with

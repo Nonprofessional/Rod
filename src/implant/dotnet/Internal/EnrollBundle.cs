@@ -16,7 +16,7 @@ namespace Rod.Implant.Internal;
 /// </summary>
 /// <remarks>
 /// Lives in its own always-compiled file, apart from any handler source: the
-/// program, both check-in clients, and the lateral handler all consume it, so
+/// program, both contact clients, and the lateral handler all consume it, so
 /// it must survive the bake-time handler trim no matter which verbs a reduced
 /// class keeps.
 /// </remarks>

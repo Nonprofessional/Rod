@@ -72,10 +72,10 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
     push(
       {
         kind: 'item',
-        label: 'Check-in interval',
+        label: 'Contact interval',
         icon: 'clock',
         opensDialog: true,
-        title: 'beacon.sleep -- retune the live check-in cadence (e.g. 10s, 5m, or 0 0 for back-to-back, near-interactive polling)',
+        title: 'beacon.sleep -- retune the live contact cadence (e.g. 10s, 5m, or 0 0 for back-to-back, near-interactive polling)',
         onSelect: () => actions.onDialog('beacon.sleep'),
       },
       'beacon.sleep',

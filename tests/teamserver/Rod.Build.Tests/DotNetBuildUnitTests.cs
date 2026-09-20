@@ -116,10 +116,10 @@ public class DotNetBuildUnitTests
     }
 
     [Fact]
-    public void RenderBakedProfile_BakesCheckInSealingOnlyWhenTheKeyRides()
+    public void RenderBakedProfile_BakesContactSealingOnlyWhenTheKeyRides()
     {
-        // Check-in protection is its own knob beside the enroll-body envelope
-        // (architecture.md Sec 8/9): "aesgcm" seals every check-in body under
+        // Contact protection is its own knob beside the enroll-body envelope
+        // (architecture.md Sec 8/9): "aesgcm" seals every contact body under
         // the per-artifact key, "none" is the lab-debug plaintext frame. The
         // seal bakes only when the key rides the params too -- a protection
         // ask with no key never bakes a seal the artifact cannot honor, and
@@ -129,25 +129,25 @@ public class DotNetBuildUnitTests
         var @params = Params() with { EnvelopeKeyId = keyId, EnvelopeKey = key };
 
         using var sealedDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(@params)));
-        Assert.Equal("aesgcm", sealedDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+        Assert.Equal("aesgcm", sealedDoc.RootElement.GetProperty("contactEnvelope").GetString());
 
         // The default transport profile carries no key here (the mint is the
         // transport endpoint's), so a unit-level build bakes the plaintext
         // shape -- and so does a params pair whose protection was turned off.
         using var plainDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(Params())));
-        Assert.Equal("none", plainDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+        Assert.Equal("none", plainDoc.RootElement.GetProperty("contactEnvelope").GetString());
 
         var optedOut = Params() with
         {
             Transport = new TransportProfile("http://c2.example.test/implants/enroll", "/beacon")
             {
-                CheckInProtection = false,
+                ContactProtection = false,
             },
             EnvelopeKeyId = keyId,
             EnvelopeKey = key,
         };
         using var outDoc = JsonDocument.Parse(Base64UrlDecode(DotNetBuildUnit.RenderBakedProfile(optedOut)));
-        Assert.Equal("none", outDoc.RootElement.GetProperty("checkinEnvelope").GetString());
+        Assert.Equal("none", outDoc.RootElement.GetProperty("contactEnvelope").GetString());
     }
 
     [Fact]

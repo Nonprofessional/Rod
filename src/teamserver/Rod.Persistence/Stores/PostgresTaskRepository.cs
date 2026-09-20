@@ -148,7 +148,7 @@ internal sealed class PostgresTaskRepository : ITaskRepository
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         // The oldest still-queued task for the implant by enqueue sequence; the
-        // beacon drains these one at a time on each check-in.
+        // beacon drains these one at a time on each contact.
         return await db.Tasks
             .AsNoTracking()
             .Where(t => t.ImplantId == implant && t.Status == Rod.CoreState.Tasks.TaskStatus.Queued)

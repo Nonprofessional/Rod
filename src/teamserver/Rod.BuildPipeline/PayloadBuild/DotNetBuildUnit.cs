@@ -13,11 +13,11 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract (architecture.md Sec 6). It runs <c>dotnet publish</c> against the
 /// implant source tree, baking the per-implant profile into a generated
 /// <c>BakedProfile.g.cs</c> source file so each artifact carries its own endpoint,
-/// check-in mode, beacon parameters, and kill date (architecture.md Sec 5.1).
+/// contact mode, beacon parameters, and kill date (architecture.md Sec 5.1).
 /// The implant's identity is never build-time material: the keypair it
 /// generates at first run, bound by the CA at enroll (architecture.md Sec 9).
 /// The one symmetric key a build does mint is the transport envelope key
-/// (Sec 7/8) -- it seals the enroll and check-in bodies, not identity, and it
+/// (Sec 7/8) -- it seals the enroll and contact bodies, not identity, and it
 /// is per-artifact and revocable with the payload it is recorded beside.
 ///
 /// The teamserver is coupled to this unit only by the build contract: it sends
@@ -166,11 +166,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
                     verb => HandlerModuleSelection.CompilesVerb(@params.Class, verb));
 
             // The bake-time transport trim (architecture.md Sec 8): the baked
-            // egress walk's URL shapes decide which check-in modules compile,
+            // egress walk's URL shapes decide which contact modules compile,
             // so an artifact carries exactly the transports it can dial and
             // nothing else -- a web-shaped build links no gRPC client at all.
-            // The stager is never trimmed: it carries no check-in clients.
-            var modules = CheckInModules.None;
+            // The stager is never trimmed: it carries no contact clients.
+            var modules = ContactModules.None;
             if (!isStager)
             {
                 modules = TransportModuleSelection.Select(@params.Transport, @params.Beacon.Mode);
@@ -332,12 +332,12 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["headers"] = RenderHeadersMap(@params.Transport.Headers),
             ["requestTimeout"] = ((long)@params.Transport.RequestTimeout.TotalSeconds).ToString() + "s",
             ["envelope"] = @params.Transport.Envelope.ToString().ToLowerInvariant(),
-            // Check-in protection (architecture.md Sec 8/9), its own knob
-            // beside the enroll-body envelope: "aesgcm" seals every check-in
+            // Contact protection (architecture.md Sec 8/9), its own knob
+            // beside the enroll-body envelope: "aesgcm" seals every contact
             // body under the baked key, "none" is the lab-debug plaintext
             // frame. The key must actually ride the params -- a protection
             // ask with no key never bakes a seal the artifact cannot honor.
-            ["checkinEnvelope"] = @params.Transport.CheckInProtection && @params.EnvelopeKey is not null
+            ["contactEnvelope"] = @params.Transport.ContactProtection && @params.EnvelopeKey is not null
                 ? "aesgcm"
                 : "none",
             ["verbs"] = verbs,
@@ -435,7 +435,7 @@ public sealed class DotNetBuildUnit : IBuildUnit
     // build params carry a single endpoint; the implant accepts an explicit beacon
     // URL when enroll and beacon hosts differ (a redirector in front). Mirrors the
     // Go build unit. Internal: the transport module selection derives the same
-    // walk entries when it classifies which check-in modules a build compiles.
+    // walk entries when it classifies which contact modules a build compiles.
     internal static string BeaconUrlFromEnroll(string enrollEndpoint)
     {
         const string suffix = "/implants/enroll";

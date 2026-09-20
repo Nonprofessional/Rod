@@ -27,7 +27,7 @@ message ProtocolVersion {
 // must not be reused (the evolution rules in extending/implants.md).
 //
 // kind disambiguates the payload shape on the upstream (implant-to-server)
-// half of the CheckIn stream. It defaults to UNSPECIFIED for backward
+// half of the Contact stream. It defaults to UNSPECIFIED for backward
 // compatibility: existing TaskResult writers leave it unset and the server
 // treats UNSPECIFIED as "try-parse as TaskResult". New upstream payload types
 // (exfil chunks, staged pulls, channel output) set their kind so the
@@ -61,7 +61,7 @@ enum FrameKind {
   // 10.3 -- the dispatch strand): sent the moment a TaskRequest is parsed,
   // before the task executes, so the server holds delivery evidence above
   // the result. A stream that ends holding a dispatch whose ack never
-  // arrived requeues the task for the next check-in; a redelivered task the
+  // arrived requeues the task for the next contact; a redelivered task the
   // implant already holds is re-acked without running twice. Negotiated at
   // handshake (HandshakeRequest.task_acks) -- an implant that never
   // advertised keeps today's dispatch semantics, and the server never waits
@@ -227,7 +227,7 @@ message EnrollRequest {
 // so a derived implant can confirm its lineage. A top-level enroll leaves it
 // unset.
 //
-// envelope_key_id and envelope_key carry the per-artifact check-in key the
+// envelope_key_id and envelope_key carry the per-artifact contact key the
 // enrollment bound (architecture.md Sec 8/9) on the QUIC frame exchange,
 // present when the redeemed token's build minted one: the QUIC-enrolled
 // artifact receives at enroll the key its listener-side binding demands, so a
@@ -246,7 +246,7 @@ message EnrollResponse {
   optional bytes envelope_key = 8;
 }
 
-// Handshake on the CheckIn stream. The implant's first Frame's
+// Handshake on the Contact stream. The implant's first Frame's
 // payload carries a HandshakeRequest; the server's first Frame back carries a
 // HandshakeResponse. Both are opaque Frame payloads -- the stream contract is
 // unchanged, only the inner shape is defined here.
@@ -274,7 +274,7 @@ message HandshakeRequest {
   // interoperates unchanged. Set, the server echoes task_acks on the
   // HandshakeResponse and expects a TaskAck for every dispatched TaskRequest
   // on that stream; a stream that ends holding an ack-less dispatch requeues
-  // it, so the task rides the next check-in instead of stranding. The
+  // it, so the task rides the next contact instead of stranding. The
   // negotiation is per handshake, deliberately not sticky: unlike
   // replay_nonces, a handshake that stops advertising must drop the arm, or
   // the server would requeue dispatches an unupgraded implant already ran.
@@ -325,7 +325,7 @@ message HandshakeResponse {
   optional bool task_acks = 5;
 }
 
-// Tasking over the CheckIn stream. After the handshake the stream
+// Tasking over the Contact stream. After the handshake the stream
 // carries tasking downstream and results upstream, each as an opaque Frame
 // payload. The one-shot shape here -- a single verb with a single argument
 // string and a single result -- covers most verbs; the streaming task shape
@@ -380,7 +380,7 @@ message HandshakeResponse {
 // Pivot class, Sec 10.3): set only on a TaskRequest for a pivot child that
 // the receiving stream's implant fronts -- the parent claims and executes
 // the child's tasking on the child's behalf, because the child has no
-// process of its own to check in with. It names the tuple's executor for
+// process of its own to contact with. It names the tuple's executor for
 // routing; the signature's implant_id element is and stays the authority
 // (the tuple signs the target's own id, Sec 9), so a fronting parent
 // verifies against this field, not its own id. Absent, the frame is the
@@ -418,5 +418,5 @@ message TaskResult {
 // a long-lived reverse connection; the first exchange is the handshake, then
 // the stream carries tasking and results for the life of the stream.
 service Beacon {
-  rpc CheckIn(stream Frame) returns (stream Frame);
+  rpc Contact(stream Frame) returns (stream Frame);
 }

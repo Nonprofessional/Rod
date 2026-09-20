@@ -107,7 +107,7 @@ public static class EnrollmentEndpoints
         TimeProvider clock,
         IAuditStore audit,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         CancellationToken cancellationToken)
     {
         var body = await ReadEnrollRequestAsync(http, payloads, cancellationToken);
@@ -139,7 +139,7 @@ public static class EnrollmentEndpoints
         // listener the local port resolves names the engagement a token must
         // belong to -- refused whole and unspent otherwise -- and the
         // listener id stamped onto the implant record. The shared refusal
-        // rules, the enrollment, the audit arc, and the check-in key
+        // rules, the enrollment, the audit arc, and the contact key
         // binding live in the shared flow (ScopedEnrollment), the same one
         // the QUIC opening exchange drives with its own listener's scope. A
         // socket the registry does not know (the in-memory test harness,
@@ -163,7 +163,7 @@ public static class EnrollmentEndpoints
             service,
             tokens,
             payloads,
-            checkInKeys,
+            contactKeys,
             audit,
             clock,
             cancellationToken);

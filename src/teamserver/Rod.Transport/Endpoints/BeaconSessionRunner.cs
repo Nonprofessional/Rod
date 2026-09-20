@@ -85,7 +85,7 @@ internal sealed class BeaconSessionRunner
     /// open, draining results and pushing queued tasks until either loop ends
     /// (a clean client close in the reader, cancellation). The stream ending
     /// does NOT close the session: a session is the implant's live channel,
-    /// not one connection -- a poll-mode implant ends every check-in stream
+    /// not one connection -- a poll-mode implant ends every contact stream
     /// and opens the next seconds later. Liveness is last-seen based; the
     /// staleness sweeper closes the session after the configured silence
     /// threshold, and retirement closes it immediately.
@@ -123,7 +123,7 @@ internal sealed class BeaconSessionRunner
         // A poll-mode session (architecture.md Sec 10.3, the store-and-forward
         // carriage): operator input that arrived while no stream was open
         // parked in the degraded hub -- flush it onto this stream the moment
-        // it opens, the same drain the poll carriers' check-in paths apply,
+        // it opens, the same drain the poll carriers' contact paths apply,
         // and sweep the channels the implant stopped collecting.
         if (session.Capabilities.Contains(Rod.Transport.Channels.DegradedChannelHub.Capability))
         {
@@ -136,7 +136,7 @@ internal sealed class BeaconSessionRunner
         // dispatched task the handshake's receive-ack negotiation covers, the
         // reader clears each as its ack crosses, and whatever survives to the
         // stream's end is requeued below -- a task whose frame died with the
-        // connection rides the next check-in instead of stranding Dispatched.
+        // connection rides the next contact instead of stranding Dispatched.
         // Concurrent because the writer adds while the reader clears.
         var unacked = new ConcurrentDictionary<TaskId, byte>();
         var reader = ReadResultsAsync(session, connection, read, pulls, unacked, linked, carrier);
@@ -167,7 +167,7 @@ internal sealed class BeaconSessionRunner
 
         // The stream is gone: close the dispatch strand it carried. Every
         // dispatch still holding no ack is returned to the queue, so the
-        // implant's next check-in redelivers it -- the at-least-once trade the
+        // implant's next contact redelivers it -- the at-least-once trade the
         // arm negotiated, safe because a redelivered task an implant already
         // held is re-acked without running twice. A task that completed in the
         // race (its result crossed on another stream after its ack died with
@@ -323,7 +323,7 @@ internal sealed class BeaconSessionRunner
 
         // Write downstream first: the dispatch audit records a task the implant
         // actually received. When the write fails, the task returns to the queue
-        // so a later check-in redelivers it -- a task whose frame never left the
+        // so a later contact redelivers it -- a task whose frame never left the
         // server must not strand in Dispatched (architecture.md Sec 10.3).
         try
         {

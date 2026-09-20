@@ -25,7 +25,7 @@ architecture.md Sec 8):
 |---------|-----------|-------|
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
 | Enroll (QUIC) | QUIC (TLS 1.3), token-identified | `quic://host:port`, ALPN `rod1` |
-| Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/CheckIn` |
+| Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/Contact` |
 | Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
 | Beacon / tasking (WebSocket) | Plain HTTP(S) upgrade, key-authenticated | `GET /implants/beacon/stream` |
 | Beacon / tasking (QUIC stream) | QUIC (TLS 1.3), handshake-identified | `quic://host:port`, ALPN `rod1` |
@@ -48,7 +48,7 @@ needs no gRPC stack.
   enrolled implant's engagement" (architecture.md Sec 9). Only the mTLS
   listener asks to see it; the `http`/`https` listeners never send a TLS
   `CertificateRequest` (it is itself a fingerprint), and the envelope
-  check-in authenticates under the baked key instead.
+  contact authenticates under the baked key instead.
 - **Server identity:** the teamserver presents the engagement CA certificate
   itself as its server identity (it carries no SANs). Pin **chain-to-CA**, not
   DNS names: build the chain with the enrolled CA chain in the trust store,
@@ -95,9 +95,9 @@ certificate material; a malformed body answers `400`. Bad/expired/spent are
 **definitive** -- do not retry them. Transport failures (connection refused,
 timeout) are worth retrying with exponential backoff.
 
-### The CheckIn stream
+### The Contact stream
 
-One bidirectional gRPC stream, method `/rod.v1.Beacon/CheckIn`, protobuf
+One bidirectional gRPC stream, method `/rod.v1.Beacon/Contact`, protobuf
 messages defined in rod.proto. The unit that crosses the stream is `Frame`:
 an opaque `payload` plus, upstream only, a `kind` discriminator. The server's
 message cap is 2 MiB per frame; keep a single payload near or under 1 MiB and
@@ -134,14 +134,14 @@ the server echoes it: from then on, ack every parsed `TaskRequest` with a
 `TaskAck` frame (its `task_id`) *before* executing it. The ack is delivery
 evidence, not execution evidence -- it says the frame crossed intact. A
 stream that dies before the ack makes the server redeliver the task on the
-next check-in, so delivery is at-least-once and the implant owes two things:
+next contact, so delivery is at-least-once and the implant owes two things:
 recognize a task id it already parsed (re-ack it, never run it twice), and
 re-send a cached result when the original delivery died with a stream -- the
 server records first-wins, so a duplicate result is a no-op there. The
 negotiation is per handshake by design: stop advertising and the arm is off
 for that connection, keeping an unupgraded pair on today's semantics (a
 written frame counts as delivered). Over the poll carriers (the envelope,
-the pipe/TCP check-ins) the ack rides the next request body and the server
+the pipe/TCP contacts) the ack rides the next request body and the server
 accepts it inertly -- those carriers answer whole or not at all and never
 requeue on acks; the dedup still pays, because a task requeued by a dead
 stream can be redelivered over any carrier the run lands on. DNS carries no
@@ -149,21 +149,21 @@ ack at all (no handshake rides it).
 
 **Using the stream:** hold it open for the session (stream mode -- the
 interactive shape, server pushes tasking the moment it is queued) or run
-check-in cycles (poll mode -- drain queued tasking, half-close, wait for the
+contact cycles (poll mode -- drain queued tasking, half-close, wait for the
 server to end the stream, sleep the baked interval with jitter, reconnect and
 re-handshake). Both are Tier 0; the server treats them identically and reuses
 the implant's session across reconnects.
 
-### The envelope check-in (the web check-in)
+### The envelope contact (the web contact)
 
 `POST /implants/beacon` against any web listener (`http` and `https` fronts
 alike; an mTLS front serves it too, where the client certificate resolves
 first). The body is a sequence of rod.v1 `Frame` messages, each prefixed with
 its byte length as an unsigned protobuf varint -- the canonical
 delimited-stream shape every protobuf runtime ships -- sealed under the
-per-artifact key the build baked (below). One POST is one poll check-in:
+per-artifact key the build baked (below). One POST is one poll contact:
 
-- **Request body:** the sealed envelope (or, on a lab build with check-in
+- **Request body:** the sealed envelope (or, on a lab build with contact
   protection off, the raw framed sequence) whose plaintext is a strictly
   increasing 8-byte big-endian counter ahead of the handshake `Frame` first,
   then any `TaskResult`, `TaskAck`, `ExfilChunk`, `StagedPull`, and
@@ -178,12 +178,12 @@ per-artifact key the build baked (below). One POST is one poll check-in:
   the `HandshakeResponse` frame first, then the `StagedChunk` run answering
   each request-body `StagedPull` (in demand order), then dispatched
   `TaskRequest` frames in queue order while the 4 MiB dispatch budget lasts
-  -- what does not fit is requeued and rides the next check-in. A non-OK
-  handshake response is the only frame in the body: the check-in is refused,
+  -- what does not fit is requeued and rides the next contact. A non-OK
+  handshake response is the only frame in the body: the contact is refused,
   and every non-OK status is permanent exactly as on the stream.
-- **Poll discipline:** check in, drain, close, sleep the baked interval with
+- **Poll discipline:** contact, drain, close, sleep the baked interval with
   jitter, repeat. Every POST re-handshakes; the server reuses the session
-  across check-ins, so the cadence neither churns session entities nor
+  across contacts, so the cadence neither churns session entities nor
   floods the engagement trail with `SessionOpened` records. Burn the counter
   on every attempt, not every delivery: a retransmitted batch after a lost
   response must carry a fresh counter, and the batch semantics make the
@@ -198,13 +198,13 @@ per-artifact key the build baked (below). One POST is one poll check-in:
 **The degraded channel discipline (always carried).** Every poll-mode
 build advertises the `channels.poll` capability in its handshake, and the
 interactive verbs claim over its envelope cycles -- operator input parks
-server-side and rides the next check-in's response as `ChannelInput`
+server-side and rides the next contact's response as `ChannelInput`
 frames, the implant's `ChannelOutput` and the channel's final
 `TaskResult` batch upstream like any other frames, and a channel the
 implant stops collecting closes with a timeout `TaskResult` instead of
 sitting dispatched. The tradeoff is the operator's to make, not the
 bake's: while a channel is open, the interactive traffic rides at the
-check-in cadence -- every keystroke costs up to one interval down and one
+contact cadence -- every keystroke costs up to one interval down and one
 interval back.
 
 The frame contents, the handshake order, the signature discipline, and
@@ -214,7 +214,7 @@ protobuf codec, and AES-256-GCM, nothing else.
 
 #### The sealed body
 
-The default build shape (check-in protection on) seals both directions under
+The default build shape (contact protection on) seals both directions under
 the per-artifact key the build minted and baked -- the same key, wire shape,
 and byte layout as the opt-in AES-GCM enroll envelope, but under its own
 purpose tags so neither direction's ciphertext can be replayed as the
@@ -222,14 +222,14 @@ other's:
 
 ```
 body   := base64( b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16) )
-AAD    := "rod-checkin-v1"        (requests)
-        | "rod-checkin-response-v1"  (responses)
+AAD    := "rod-contact-v1"        (requests)
+        | "rod-contact-response-v1"  (responses)
 plain  := counter(8, big-endian) || delimited-frames    (requests)
         | delimited-frames                                (responses)
 ```
 
 The key is standard base64 of `keyId(16) || key(32)` in the baked profile's
-`envelopeKey`; the `checkinEnvelope` profile key says `"aesgcm"` (seal) or
+`envelopeKey`; the `contactEnvelope` profile key says `"aesgcm"` (seal) or
 `"none"` (the lab-debug plaintext frame). Possession of the key is the
 authentication -- the web transports request no TLS client certificate at
 all -- and the seal is the confidentiality: over cleartext `http`, everything
@@ -247,13 +247,13 @@ certificate anywhere.
 
 The message grammar is the envelope's body grammar, message-shaped:
 
-- **First client message:** exactly the envelope check-in's request body --
+- **First client message:** exactly the envelope contact's request body --
   the sealed envelope (or the lab build's raw framed sequence) whose
   plaintext is a fresh counter ahead of the handshake `Frame` first, then
   any `TaskResult`, `ExfilChunk`, `StagedPull`, and `ChannelOutput` frames.
   The same key-posture gates apply: a key-bound implant must seal under
   exactly its bound key, and the counter must clear the accepted floor.
-- **First server message:** the envelope check-in's response shape -- the
+- **First server message:** the envelope contact's response shape -- the
   `HandshakeResponse` frame first (sealed when the client sealed; a non-OK
   status is the only frame and the connection ends, permanent as on every
   transport).
@@ -321,7 +321,7 @@ complete until the channel ends. Flow:
    server appends the final output to the transcript and completes the task
    with it as the record.
 
-The channel is session-scoped: it lives on the CheckIn stream that carried
+The channel is session-scoped: it lives on the Contact stream that carried
 its `TaskRequest`, and a stream drop ends it (kill the shell or close the
 tunnel; the task stays dispatched server-side). Input is not signed -- like a
 `StagedChunk` run it rides the mTLS stream the signed `TaskRequest` opened.
@@ -339,12 +339,12 @@ The transcript accumulates as UTF-8 text, so binary tunnel traffic renders
 with replacement characters -- the traffic's attribution is the task record
 and the summary, not byte fidelity in the transcript.
 
-### Stream check-ins (named pipe / raw TCP, the no-egress transports)
+### Stream contacts (named pipe / raw TCP, the no-egress transports)
 
 The SMB and TCP listeners carry the envelope's frames over a raw duplex
 stream -- a named pipe (`\\host\pipe\name`) for Windows segments without
 HTTP or DNS egress, or a plain TCP socket for segment networks that allow
-sockets but no HTTP shape. One connection is one poll check-in:
+sockets but no HTTP shape. One connection is one poll contact:
 
 1. Connect to the entry's public endpoint (the pipe path, or `host:port`).
 2. Write one request message: a varint byte length, then exactly that many
@@ -353,28 +353,28 @@ sockets but no HTTP shape. One connection is one poll check-in:
 3. Read one response message: the same shape -- a varint byte length, then
    the handshake response, staged chunk runs answering the request's
    demands, and queued tasking while the 4 MiB dispatch budget lasts.
-4. Close; sleep the baked interval; reconnect for the next check-in.
+4. Close; sleep the baked interval; reconnect for the next contact.
 
-**Enrollment over the stream check-in.** The opening request message may
+**Enrollment over the stream contact.** The opening request message may
 carry a kind-bearing `EnrollRequest` frame ahead of its handshake -- the
 same enroll body the web route carries, promoted into the frame grammar
 (token secret, class, the implant's public key as DER
 SubjectPublicKeyInfo, parent, host facts, kill date). The server answers
 it as its own response message, a single `EnrollResponse` frame (`Ok`
 with the implant id, engagement id, leaf certificate, CA chain, and --
-when the redeemed token names a build -- the per-artifact check-in key;
+when the redeemed token names a build -- the per-artifact contact key;
 a refusal carries just the status, no signal beyond no). After an
 acceptance the ordinary handshake follows on the same connection, so a
 no-egress segment can enroll its first implant over the pipe or socket
 it already reaches; a client may also close after the enroll exchange
-and check in on fresh connections. A baked per-artifact key seals the
-whole carriage -- the enroll exchange and every check-in message are
-AES-256-GCM under it (the check-in body wrapping a fresh big-endian
+and contact on fresh connections. A baked per-artifact key seals the
+whole carriage -- the enroll exchange and every contact message are
+AES-256-GCM under it (the contact body wrapping a fresh big-endian
 counter the server floors; each direction under its own purpose tag), the
 same seal the cleartext http posture carries, so a bare wire leaks no
 frame bytes. The reference implant's socket module
 carries all of it: the dial shapes are `tcp://host:port` and
-`smb://host/pipe/name` (a dot host is the local machine), and the check-in
+`smb://host/pipe/name` (a dot host is the local machine), and the contact
 cycle is the envelope's own request/response shape over the message framing,
 with the interactive verbs on the shared store-and-forward carriage.
 
@@ -390,7 +390,7 @@ connection is a reconnect, not a termination: the session survives
 server-side, the next cycle re-handshakes on a fresh connection. The seal
 is the poll shape's own (a fresh counter per message, each direction under
 its own purpose tag). An older teamserver that does not know the
-advertisement serves the connection as an ordinary poll check-in, so the
+advertisement serves the connection as an ordinary poll contact, so the
 capability is a graceful step up, never a break.
 
 No client certificate rides these transports: the implant is identified by
@@ -415,7 +415,7 @@ build names a QUIC listener as its beacon and the baked endpoint carries the
 transport's own scheme (`quic://host:port`) -- the dial shape picks the
 client. Either mode bakes: stream holds the session open; poll ends each
 cycle when the tasking queue drains inside a short idle window (250 ms),
-sleeps the baked cadence, and reconnects -- one session per check-in, the
+sleeps the baked cadence, and reconnects -- one session per contact, the
 session surviving server-side across the disconnects. A poll run carries
 the interactive verbs store-and-forward on its cycles, the same shared
 discipline every poll client runs.
@@ -458,7 +458,7 @@ On a non-OK status that frame is the only answer and the connection ends,
 the same statuses the web route's 401s carry; on OK the frame carries the
 new identity (implant id, engagement), the leaf certificate and CA chain as
 raw bytes, the echoed parent, and -- when the redeemed token's build minted
-one -- the per-artifact check-in key (`envelope_key_id` is the 16-byte key
+one -- the per-artifact contact key (`envelope_key_id` is the 16-byte key
 id, `envelope_key` the 32-byte AES-256 key, the same packed halves the baked
 envelope key carries as base64). The ordinary handshake follows immediately
 on the same stream with the identity the enroll issued: one connection
@@ -480,10 +480,10 @@ Linux needs libmsquic) -- the listener refuses its bind without one and the
 reference client terminates with the cause. Channels are session-scoped as
 on every stream: the connection's end closes the channel halves with it.
 
-### DNS check-ins (Tier 2, the egress-restricted transport)
+### DNS contacts (Tier 2, the egress-restricted transport)
 
 A DNS listener entry answers TXT queries over UDP under its zone (the entry's
-public endpoint). The check-in grammar encodes into the query NAME as lowercase
+public endpoint). The contact grammar encodes into the query NAME as lowercase
 RFC 4648 base32 labels, no padding:
 
 ```
@@ -496,7 +496,7 @@ enroll answer: a.<b32(token)>.<seq>.<zone>
 delivery probe:n.<b32(task id)>.<b32(sha128)>.<b32(implant id)>.<zone>
 ```
 
-**Sealing (a build that baked an envelope key).** The check-in carriage
+**Sealing (a build that baked an envelope key).** The contact carriage
 seals like the enroll exchange does, so the resolver chain reads no frame
 bytes in the clear: the implant polls `k.`-named -- the key id rides the
 name as its raw 16 guid bytes -- and the answer's TXT payload is the
@@ -570,7 +570,7 @@ the answer. The whole lifecycle rides the one carrier -- the lightweight
 implant a DNS-only target runs.
 
 The transport's identity tradeoff is deliberate: no handshake and no mTLS ride
-the DNS check-in path -- an implant is identified by its id alone on polls
+the DNS contact path -- an implant is identified by its id alone on polls
 and results (the sealed enroll exchange authenticates by key possession).
 Downstream tasking keeps the full
 Tier 1 posture: verify the signature before executing anything received over
@@ -654,14 +654,14 @@ advertises keeps receiving it -- the addition is negotiated, never imposed.
 
 ## Tier 0 -- Interop (required)
 
-The smallest implant that enrolls, checks in, and executes tasking:
+The smallest implant that enrolls, contacts, and executes tasking:
 
 1. **Enroll.** Generate an ECDSA P-256 key pair. POST the public key with the
    stager token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
-2. **Beacon.** Open `/rod.v1.Beacon/CheckIn` over mTLS with the leaf -- or
+2. **Beacon.** Open `/rod.v1.Beacon/Contact` over mTLS with the leaf -- or
    POST the envelope route (`/implants/beacon`, above) with no gRPC stack:
-   the default build bakes a per-artifact key, and every check-in body seals
+   the default build bakes a per-artifact key, and every contact body seals
    under it covering a fresh counter (a lab build with protection off sends
    the plaintext frames, on the cleartext front only).
 3. **Handshake.** Send the `HandshakeRequest` first; require OK; treat every
@@ -723,11 +723,11 @@ the server cannot observe whether an implant adopted any of them:
   check bounds a lost implant that can no longer reach any server.
 - **Beacon discipline.** The baked sleep with jitter, and exponential backoff
   on consecutive failures, so a down teamserver is not polled at beacon rate.
-  The check-in mode is the implant's choice on the same stream contract.
+  The contact mode is the implant's choice on the same stream contract.
 - **Egress fallback walk.** The baked profile may carry an ordered endpoint
   list -- a primary plus fallbacks (`fallbackEnrollURLs` in the baked JSON,
   `[]` when the build names none). Walk it on failure: advance to the next
-  entry when an enroll attempt or a check-in cycle fails without a handshake,
+  entry when an enroll attempt or a contact cycle fails without a handshake,
   and wrap to the primary so a front that returns is picked up again. The walk
   is client-side only -- the frame grammar never changes -- and the leaf stays
   the same whichever entry answers, so the server sees one identity
@@ -754,7 +754,7 @@ Adopt per deployment need; absence degrades the feature, not interop:
   the `task_acks` handshake advertisement and the `TaskAck` frame. An
   implant without it never advertises, never acks, and keeps today's
   dispatch semantics exactly -- a written frame counts as delivered.
-- **DNS check-ins** -- the TXT-query grammar above, for egress-restricted
+- **DNS contacts** -- the TXT-query grammar above, for egress-restricted
   targets where only DNS leaves the network. Absence is graceful: an implant
   without it simply beacons over the stream transports. The reference
   implant carries the client: a `dns://` entry in its baked egress walk
@@ -809,12 +809,12 @@ Tier 0/Tier 1 example with switchable defects.
 ## Calibration note
 
 Tier 0's heaviest piece used to be the gRPC/HTTP-2 channel, not the crypto or
-the messages. The plain-HTTP envelope check-in (above) shipped as the answer:
+the messages. The plain-HTTP envelope contact (above) shipped as the answer:
 the same rod.v1 frames carried as delimited sequences in ordinary HTTP
-request/response bodies, one POST per poll check-in, so Tier 0 now needs only
+request/response bodies, one POST per poll contact, so Tier 0 now needs only
 an HTTP client, a protobuf codec, and AES-256-GCM. Authentication moved to
 the application layer with it: the build bakes a per-artifact key, every
-check-in body seals under it covering a fresh counter, and the web transports
+contact body seals under it covering a fresh counter, and the web transports
 request no TLS client certificate at all -- so a Tier 0 implant also needs no
 TLS client-certificate machinery on the web front, and the cleartext `http`
 posture carries confidential content. The
@@ -824,7 +824,7 @@ it is queued, and the live channels -- so an implant that wants
 reason to carry a gRPC stack at all.
 
 The reference .NET implant made the same cut: an artifact built against an
-`http`/`https` front with no beacon named checks in over the envelope POST
+`http`/`https` front with no beacon named contacts over the envelope POST
 cycle on that front's own port (the mainstream single-port web shape), and
 only an mTLS-shaped build dials the gRPC stream -- so the wire contract this
 document describes is the one the reference implant itself runs on the web

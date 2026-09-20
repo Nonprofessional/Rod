@@ -16,10 +16,10 @@ using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Endpoints;
 
-// The plain-HTTP envelope check-in (architecture.md Sec 8, the implant-reach
+// The plain-HTTP envelope contact (architecture.md Sec 8, the implant-reach
 // transport): the same rod.v1 Frames the gRPC stream carries, as
 // varint-length-delimited sequences in ordinary HTTP request/response bodies.
-// One POST is one poll check-in -- the request body carries the handshake
+// One POST is one poll contact -- the request body carries the handshake
 // first, then any results, exfil chunks, staged pulls, and channel output;
 // the response body carries the handshake response, then staged chunk runs
 // answering the request's demands, then queued tasking while the dispatch
@@ -36,7 +36,7 @@ namespace Rod.Transport.Endpoints;
 // shape, refused for implants whose enrollment bound them to a key.
 
 /// <summary>
-/// Maps the envelope check-in route. Mapped alongside the operator API on
+/// Maps the envelope contact route. Mapped alongside the operator API on
 /// every listener like the gRPC beacon. The identity is the artifact key that
 /// sealed the body; a client certificate, where the mTLS front presented one,
 /// still resolves first; and the handshake's implant id alone -- the
@@ -45,36 +45,36 @@ namespace Rod.Transport.Endpoints;
 /// </summary>
 public static class EnvelopeBeaconEndpoints
 {
-    /// <summary>The envelope check-in route, in the implant family with enroll.</summary>
+    /// <summary>The envelope contact route, in the implant family with enroll.</summary>
     public const string Route = "/implants/beacon";
 
     public static IEndpointRouteBuilder MapEnvelopeBeaconEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(Route, async (
             HttpContext http,
-            EnvelopeBeaconCheckIn checkIn,
+            EnvelopeBeaconContact contact,
             CancellationToken cancellationToken)
-            => await checkIn.HandleAsync(http, cancellationToken))
-            .WithName(nameof(EnvelopeBeaconCheckIn));
+            => await contact.HandleAsync(http, cancellationToken))
+            .WithName(nameof(EnvelopeBeaconContact));
         return endpoints;
     }
 }
 
 /// <summary>
-/// One envelope check-in. The per-frame paths are the shared beacon
+/// One envelope contact. The per-frame paths are the shared beacon
 /// compositions (<see cref="BeaconIngest"/>, <see cref="BeaconTasking"/>), so
 /// a result captured over the envelope is indistinguishable in core state,
 /// the audit trail, and the live bus from one captured over the stream. The
 /// poll shape is sequential -- ingest the request's frames, then dispatch
 /// queued tasking into the response -- with no push loops: a POST is one
-/// check-in cycle, and the implant sleeps the baked interval between them.
+/// contact cycle, and the implant sleeps the baked interval between them.
 /// </summary>
-internal sealed class EnvelopeBeaconCheckIn
+internal sealed class EnvelopeBeaconContact
 {
     /// <summary>
     /// The dispatched-tasking budget for one response body: tasking frames are
     /// claimed only while they fit, and a task that does not fit is requeued
-    /// for the next check-in -- it never strands in Dispatched
+    /// for the next contact -- it never strands in Dispatched
     /// (architecture.md Sec 10.3). Staged chunk runs are exempt: a demand is
     /// answered whole, because its size was fixed by the operator's staged
     /// upload, and an implant waits on the terminal chunk.
@@ -89,10 +89,10 @@ internal sealed class EnvelopeBeaconCheckIn
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
     private readonly IPayloadStore _payloads;
-    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly EnvelopeContactKeys _contactKeys;
     private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
 
-    public EnvelopeBeaconCheckIn(
+    public EnvelopeBeaconContact(
         HandshakeService handshake,
         ISessionRegistry sessions,
         TaskService tasks,
@@ -101,7 +101,7 @@ internal sealed class EnvelopeBeaconCheckIn
         IAuditStore audit,
         TimeProvider clock,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         Rod.Transport.Channels.DegradedChannelHub degraded)
     {
         _handshake = handshake;
@@ -112,7 +112,7 @@ internal sealed class EnvelopeBeaconCheckIn
         _audit = audit;
         _clock = clock;
         _payloads = payloads;
-        _checkInKeys = checkInKeys;
+        _contactKeys = contactKeys;
         _degraded = degraded;
     }
 
@@ -121,7 +121,7 @@ internal sealed class EnvelopeBeaconCheckIn
         // The identity the transport itself presented, when it presented one:
         // a client certificate on an mTLS front. The https and http listeners
         // never ask for a certificate (a TLS CertificateRequest is itself a
-        // fingerprint), so most check-ins carry none -- the sealed body below
+        // fingerprint), so most contacts carry none -- the sealed body below
         // is what authenticates those.
         var identity = ClientCertificateIdentity.Read(http);
 
@@ -143,7 +143,7 @@ internal sealed class EnvelopeBeaconCheckIn
         // whole body, counter and frames together. The wire-body cap above
         // governs the base64 text, so the frames inside ride a ~3/4 share of
         // it -- the budget was sized for exfil runs, not for this overhead.
-        long checkInCounter = 0;
+        long contactCounter = 0;
         var sealedKey = (KeyId: Guid.Empty, Key: Array.Empty<byte>());
         var isSealed = false;
         var framed = body;
@@ -151,14 +151,14 @@ internal sealed class EnvelopeBeaconCheckIn
         {
             var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
             if (carrier?.EnvelopeKey is not { } key
-                || AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.CheckInRequestAad)
+                || AesGcmEnvelope.TryUnwrap(sealedText, keyId, key, AesGcmEnvelope.ContactRequestAad)
                     is not { } plaintext
                 || plaintext.Length < CounterBytes)
                 return Results.Json(
-                    new Problem("The check-in body did not verify under its artifact key."),
+                    new Problem("The contact body did not verify under its artifact key."),
                     statusCode: StatusCodes.Status401Unauthorized);
 
-            checkInCounter = BinaryPrimitives.ReadInt64BigEndian(plaintext);
+            contactCounter = BinaryPrimitives.ReadInt64BigEndian(plaintext);
             framed = plaintext[CounterBytes..];
             sealedKey = (keyId, key);
             isSealed = true;
@@ -173,7 +173,7 @@ internal sealed class EnvelopeBeaconCheckIn
                 ? Results.Text(
                     AesGcmEnvelope.Wrap(
                         EnvelopeFraming.Encode(outbound), sealedKey.KeyId, sealedKey.Key,
-                        AesGcmEnvelope.CheckInResponseAad),
+                        AesGcmEnvelope.ContactResponseAad),
                     "text/plain",
                     Encoding.UTF8)
                 : Results.Bytes(EnvelopeFraming.Encode(outbound), "application/octet-stream");
@@ -196,27 +196,27 @@ internal sealed class EnvelopeBeaconCheckIn
             return Reply(new[] { HandshakeFrame(BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) });
 
         // The key posture gates, checked before the handshake opens anything:
-        // an implant bound to a build key at enroll checks in sealed under
+        // an implant bound to a build key at enroll contacts sealed under
         // exactly that key (a plaintext body from it is the refused downgrade;
         // another artifact's key does not impersonate it), and the counter
         // must clear the floor -- a replayed body, whatever it claims, turns
         // away without a session, a touch, or an audit record.
         if (ImplantId.TryParse(handshakeRequest.ImplantId, out var sealedImplant))
         {
-            if (_checkInKeys.TryGet(sealedImplant) is { } bound)
+            if (_contactKeys.TryGet(sealedImplant) is { } bound)
             {
                 if (!isSealed)
                     return Results.Json(
-                        new Problem("This implant checks in under its artifact key; the plaintext frame body is refused."),
+                        new Problem("This implant contacts under its artifact key; the plaintext frame body is refused."),
                         statusCode: StatusCodes.Status401Unauthorized);
                 if (sealedKey.KeyId != bound.KeyId)
                     return Results.Json(
-                        new Problem("The check-in body did not verify under its artifact key."),
+                        new Problem("The contact body did not verify under its artifact key."),
                         statusCode: StatusCodes.Status401Unauthorized);
             }
-            if (isSealed && !_checkInKeys.Accept(sealedImplant, checkInCounter))
+            if (isSealed && !_contactKeys.Accept(sealedImplant, contactCounter))
                 return Results.Json(
-                    new Problem("The check-in body carries a counter at or below the accepted floor."),
+                    new Problem("The contact body carries a counter at or below the accepted floor."),
                     statusCode: StatusCodes.Status401Unauthorized);
         }
 
@@ -232,7 +232,7 @@ internal sealed class EnvelopeBeaconCheckIn
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return Reply(new[] { HandshakeFrame(response) });
 
-        // A genuinely new session is recorded; a reused one (every check-in
+        // A genuinely new session is recorded; a reused one (every contact
         // after the first) is not, the same flood guard the stream applies
         // (architecture.md Sec 10.3, Sec 11).
         await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
@@ -249,7 +249,7 @@ internal sealed class EnvelopeBeaconCheckIn
             handshakeRequest.Capabilities,
             handshake.TaskAcks);
 
-        // One presence touch per check-in -- a POST is the poll-cadence unit
+        // One presence touch per contact -- a POST is the poll-cadence unit
         // here, not the individual frame. Then the stream's session guard: if
         // the session this handshake holds was closed out from under it, stop
         // after the handshake response so the implant re-handshakes on its
@@ -265,7 +265,7 @@ internal sealed class EnvelopeBeaconCheckIn
         // pulls, channel output) through the shared composition, collecting
         // validated staged demands for the response. The receive-ack frames a
         // negotiated implant sends are accepted here and handed to a no-op
-        // sink: a poll carrier keeps no ack ledger -- its check-in either
+        // sink: a poll carrier keeps no ack ledger -- its contact either
         // completed whole or answered nothing -- so the arm's requeue never
         // applies on this path (architecture.md Sec 10.3).
         var connection = _ingest.OpenConnection();
@@ -329,7 +329,7 @@ internal sealed class EnvelopeBeaconCheckIn
     }
 
     /// <summary>
-    /// The sealed check-in counter's size in bytes: an 8-byte unsigned
+    /// The sealed contact counter's size in bytes: an 8-byte unsigned
     /// big-endian integer, room for one fresh value per attempt for any
     /// cadence an implant will ever run.
     /// </summary>

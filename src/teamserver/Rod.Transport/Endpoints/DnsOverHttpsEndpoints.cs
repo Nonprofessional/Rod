@@ -8,13 +8,13 @@ using Rod.Transport.Listeners.Dns;
 namespace Rod.Transport.Endpoints;
 
 // DNS-over-HTTPS (architecture.md Sec 8, the DNS grammar's second
-// carriage): the same TXT check-in wire grammar the UDP listener answers,
+// carriage): the same TXT contact wire grammar the UDP listener answers,
 // carried as RFC 8484 DNS wire messages over HTTP bodies -- GET with the
 // urlsafe-base64 `dns` parameter or POST with an application/dns-message
 // body. A `doh` listener entry owns the route: the entry's public endpoint
 // is the zone its queries are answered under, exactly the UDP listener's
 // model, and the arrival port resolves which listener answers. The
-// carriage changes; the answer never does (DnsCheckInAnswerer).
+// carriage changes; the answer never does (DnsContactAnswerer).
 
 /// <summary>
 /// Maps the DoH route. Mapped alongside the operator API and the implant
@@ -103,7 +103,7 @@ public static class DnsOverHttpsEndpoints
         if (owner is null)
             return Results.NotFound(new Problem("No DoH listener serves this socket."));
 
-        var answerer = new DnsCheckInAnswerer(owner, bridge, logger);
+        var answerer = new DnsContactAnswerer(owner, bridge, logger);
         var response = await answerer.AnswerAsync(query, cancellationToken);
         return Results.Bytes(response, MediaType);
     }

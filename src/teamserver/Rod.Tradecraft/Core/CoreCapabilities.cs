@@ -50,10 +50,10 @@ public static class CoreCapabilities
     public const string ProcKill = "proc.kill";
 
     /// <summary>
-    /// Retune the live check-in cadence: the base sleep and its jitter,
+    /// Retune the live contact cadence: the base sleep and its jitter,
     /// applied from the target's next cycle. The runtime twin of the baked
-    /// check-in profile -- an operator can speed a fielded implant up for
-    /// live work (<c>0 0</c> checks in back-to-back, the interactive-as-poll
+    /// contact profile -- an operator can speed a fielded implant up for
+    /// live work (<c>0 0</c> contacts back-to-back, the interactive-as-poll
     /// posture) or slow it down for long-haul quiet, with no rebuild.
     /// </summary>
     public const string BeaconSleep = "beacon.sleep";

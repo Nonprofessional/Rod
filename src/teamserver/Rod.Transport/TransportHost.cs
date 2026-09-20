@@ -178,7 +178,7 @@ public static class TransportHost
         // The startup restore pass: rebind what the store holds so a restart
         // gives the engagements back their ingress.
         services.AddHostedService<ListenerRestoreService>();
-        // The stream-check-in bridges (DNS and named-pipe/raw-TCP) are shared
+        // The stream-contact bridges (DNS and named-pipe/raw-TCP) are shared
         // singletons: the startup hosted services and the runtime listener
         // manager both resolve them, so they register here unconditionally --
         // a host with no stream listeners configured still serves runtime
@@ -246,29 +246,29 @@ public static class TransportHost
         // Sec 8): the upstream frame ingest (results, exfil, staged pulls,
         // channel output) and the downstream tasking marshal (signed
         // TaskRequests, dispatch audit, staged chunk runs). The gRPC stream,
-        // the DNS bridge, and the plain-HTTP envelope check-in all route
+        // the DNS bridge, and the plain-HTTP envelope contact all route
         // through this pair, so a frame is captured and a task delivered
         // identically regardless of which transport carried it.
         services.AddSingleton<Endpoints.BeaconIngest>();
         services.AddSingleton<Endpoints.BeaconTasking>();
-        // The per-artifact check-in key bookkeeping (architecture.md Sec 8/9):
-        // the enroll-time implant-to-key binding and the check-in counter
+        // The per-artifact contact key bookkeeping (architecture.md Sec 8/9):
+        // the enroll-time implant-to-key binding and the contact counter
         // floor. Singleton because the binding spans the enroll route and the
-        // check-in route, and the floor spans every check-in an implant makes.
-        services.AddSingleton<Endpoints.EnvelopeCheckInKeys>();
-        // The plain-HTTP envelope check-in handler (architecture.md Sec 8):
-        // one POST is one poll check-in, the same frames the gRPC stream
+        // contact route, and the floor spans every contact an implant makes.
+        services.AddSingleton<Endpoints.EnvelopeContactKeys>();
+        // The plain-HTTP envelope contact handler (architecture.md Sec 8):
+        // one POST is one poll contact, the same frames the gRPC stream
         // carries as delimited sequences in ordinary request/response bodies.
-        services.AddSingleton<Endpoints.EnvelopeBeaconCheckIn>();
+        services.AddSingleton<Endpoints.EnvelopeBeaconContact>();
         // The store-and-forward half of the degraded channel discipline
         // (architecture.md Sec 10.3): the parking queue operator input waits
         // in against a poll-carrier implant that opted in, drained into its
-        // check-in responses. Singleton like the live sink hub it mirrors.
+        // contact responses. Singleton like the live sink hub it mirrors.
         services.AddSingleton<Channels.DegradedChannelHub>();
         // The WebSocket beacon stream (architecture.md Sec 8, the web
         // posture's interactive tier): the same session the gRPC stream runs,
         // over a WebSocket on the plain-HTTP listener family, authenticated
-        // and sealed the way the envelope check-in is.
+        // and sealed the way the envelope contact is.
         services.AddSingleton<Endpoints.WebSocketBeaconStream>();
 
         // Session staleness sweep (architecture.md Sec 10.3): the live values
@@ -497,7 +497,7 @@ public static class TransportHost
                     // The single-port https shapes never request a client
                     // certificate: a TLS CertificateRequest is itself a
                     // fingerprint (an ordinary website never asks the visitor
-                    // for one), and check-ins authenticate at the application
+                    // for one), and contacts authenticate at the application
                     // layer under the per-artifact key the build baked. The
                     // handshake carries a certificate exchange only for the
                     // server identity -- indistinguishable from ordinary web
@@ -561,7 +561,7 @@ public static class TransportHost
     // as the server identity and nothing else is negotiated -- no client
     // certificate is requested at all (the default mode), so the TLS
     // handshake looks like any ordinary website's. Enrollment answers on the
-    // stager token and check-ins authenticate under the baked per-artifact
+    // stager token and contacts authenticate under the baked per-artifact
     // key, both at the application layer (architecture.md Sec 8/9).
     private static void ConfigureHttps(ListenOptions listen, KestrelServerOptions kestrel)
     {
@@ -720,7 +720,7 @@ public static class TransportHost
         // The binding is an IEndpointRouteBuilder extension, so it works the
         // same on the raw pipeline (TestServer host) and the built application.
         endpoints.MapGrpcService<BeaconEndpoint>();
-        // The plain-HTTP envelope check-in (architecture.md Sec 8): the same
+        // The plain-HTTP envelope contact (architecture.md Sec 8): the same
         // frames as delimited sequences in ordinary request/response bodies,
         // for implants with an HTTP client and a protobuf codec but no
         // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,

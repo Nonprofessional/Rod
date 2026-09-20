@@ -14,7 +14,7 @@ namespace Rod.Transport.Endpoints;
 // The engagement-scoped enrollment flow every implant ingress drives
 // (architecture.md Sec 8): the refusal rules (the token must belong to the
 // engagement the socket answers for, refused whole and unspent otherwise),
-// the enrollment itself, the audit arc, and the check-in key binding. The
+// the enrollment itself, the audit arc, and the contact key binding. The
 // web enroll route resolves its scope from the local port; the QUIC listener
 // knows its own engagement directly. Everything except the wire marshaling
 // lives here, so an enrollment over either carriage is refused, recorded,
@@ -70,7 +70,7 @@ internal static class ScopedEnrollmentResponse
     /// Assembles the rod.v1 EnrollResponse off one outcome -- the answer
     /// every enrollment carriage sends, whatever its wire (the HTTP route's
     /// JSON twin aside): the status, the ids, the leaf and chain, the
-    /// parent, and the build's per-artifact check-in key when the redeemed
+    /// parent, and the build's per-artifact contact key when the redeemed
     /// token bound one. A refusal carries just the status, no signal
     /// beyond no.
     /// </summary>
@@ -119,7 +119,7 @@ internal static class ScopedEnrollment
         EnrollmentService service,
         IStagerTokenService tokens,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -183,7 +183,7 @@ internal static class ScopedEnrollment
         }
 
         // The build the token was minted for, resolved once for everything
-        // the enrollment reads off it: the check-in key binding below, and
+        // the enrollment reads off it: the contact key binding below, and
         // the baked carrier set stamped onto the implant -- the derivation
         // task issuance gates channel verbs on. A token the pre-check could
         // not verify has no build here; the redeem inside EnrollAsync is
@@ -224,13 +224,13 @@ internal static class ScopedEnrollment
                     at: enrolled.EnrolledAt),
                 cancellationToken);
 
-            // Bind the enrollment to its build's check-in key
+            // Bind the enrollment to its build's contact key
             // (architecture.md Sec 8/9): a token minted with a payload names
             // the artifact, and the artifact names the key. From here the
-            // implant's envelope check-ins seal under that key; a plaintext
+            // implant's envelope contacts seal under that key; a plaintext
             // body from it is refused.
             if (build?.EnvelopeKeyId is { } keyId && build.EnvelopeKey is { } key)
-                checkInKeys.Bind(enrolled.ImplantId, keyId, key);
+                contactKeys.Bind(enrolled.ImplantId, keyId, key);
 
             return ScopedEnrollmentOutcome.Accept(enrolled, build);
         }

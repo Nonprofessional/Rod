@@ -10,7 +10,7 @@ import { getSessionSettings, putSessionSettings } from '../api'
 //
 // The bounds mirror the server's validation: threshold 1 minute..24 hours,
 // sweep interval 10 seconds..1 hour. The threshold must stay above any
-// implant's check-in interval -- a threshold shorter than the sleep flaps
+// implant's contact interval -- a threshold shorter than the sleep flaps
 // every quiet period to offline -- which is why the minimum is a minute and
 // the help text says so.
 
@@ -74,7 +74,7 @@ export function SettingsView() {
             <input
               value={threshold}
               onChange={(e) => setThreshold(e.target.value)}
-              title="How long a session may go silent before the sweep closes it and the implant shows offline. A stream that closes cleanly drops immediately; this is the wait for one that dies silently. Keep it above your implants' check-in interval (a shorter threshold flaps every quiet period). 1..1440; default 15."
+              title="How long a session may go silent before the sweep closes it and the implant shows offline. A stream that closes cleanly drops immediately; this is the wait for one that dies silently. Keep it above your implants' contact interval (a shorter threshold flaps every quiet period). 1..1440; default 15."
             />
           </label>
           <label>

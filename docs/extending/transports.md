@@ -13,7 +13,7 @@ A transport is three declarations, not a switch arm:
    opens its socket, validates its bind address, reserves its port, and
    shapes its public endpoint.
 2. **The carriers it serves** — wire names from the core-state capability
-   table (`Rod.CoreState.Transports.TransportCapabilities`): what check-in
+   table (`Rod.CoreState.Transports.TransportCapabilities`): what contact
    shapes the transport can carry, which is what the build pipeline and the
    issuance gate read.
 3. **The registry entries** — `TransportProviders.Register(provider)` for
@@ -85,7 +85,7 @@ issuance gate, the enrollment's baked-carrier stamp -- reads the table, so
 no other edit is needed for that half.
 
 The same split decides the dispatch strand (architecture.md Sec 10.3): a
-transport that runs its check-ins through `BeaconSessionRunner` -- the live
+transport that runs its contacts through `BeaconSessionRunner` -- the live
 session shape -- carries the receive-ack ledger for free, requeueing
 ack-less dispatches when the stream ends; a poll shape answers whole or
 not at all, keeps no ack ledger, and accepts the `TaskAck` frame inertly
@@ -94,7 +94,7 @@ core state.
 
 ## Identity and auth
 
-A transport declares which of the three identity models its check-ins
+A transport declares which of the three identity models its contacts
 carry, by construction rather than by registry entry:
 
 - **Client certificate** (the mTLS shape): the TLS layer asks -- a presented
@@ -103,7 +103,7 @@ carry, by construction rather than by registry entry:
   `(implant_id, engagement_id)` check is the enforcement: a certificate-less
   connection completes TLS but opens no session.
 - **Application-layer key** (the web family): the per-artifact key seals
-  the check-in bodies; possession is the authentication.
+  the contact bodies; possession is the authentication.
 - **Id alone** (the DNS/SMB/TCP/QUIC family): the egress-restricted
   tradeoff, documented in the contract per transport -- QUIC pairs it with
   server-side TLS (chain-to-CA pinned), so the transport is encrypted even

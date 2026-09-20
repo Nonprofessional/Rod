@@ -27,9 +27,9 @@ internal static class EnvelopeFraming
     public const int MaxFrameBytes = 2 * 1024 * 1024;
 
     /// <summary>
-    /// The frame-count flood guard for one request: a poll check-in carries a
+    /// The frame-count flood guard for one request: a poll contact carries a
     /// handshake plus a bounded run of results and chunks, and anything past
-    /// this is a flood, not a check-in.
+    /// this is a flood, not a contact.
     /// </summary>
     public const int MaxFrames = 1024;
 

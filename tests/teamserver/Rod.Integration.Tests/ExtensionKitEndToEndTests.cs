@@ -68,10 +68,10 @@ public class ExtensionKitEndToEndTests
 
             // The build unit resolves the reference implant tree itself; only the
             // extension directory and the live endpoint differ from a stock build.
-            // The profile bakes the live enroll endpoint, a 1s check-in cadence,
+            // The profile bakes the live enroll endpoint, a 1s contact cadence,
             // and the class verb set plus the ungated contract-only verbs. The
             // beacon endpoint is named too, matching the launch flags below:
-            // the bake-time transport trim compiles exactly the check-in
+            // the bake-time transport trim compiles exactly the contact
             // clients the baked walk names (a web enroll front plus the bare
             // mTLS beacon is the shape-crossing walk that keeps both), so a
             // profile that dials a socket it never names strands the artifact.

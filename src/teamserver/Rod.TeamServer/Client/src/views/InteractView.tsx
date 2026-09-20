@@ -50,7 +50,7 @@ interface QuickCommand {
 const QUICK_HELP: readonly QuickCommand[] = [
   { usage: '‹command line›', note: 'runs as a shell command on the target' },
   { usage: 'interact', note: 'open the interactive shell dialog (a real terminal: PTY, Ctrl+C works; history survives)' },
-  { usage: 'sleep <interval> [jitter]', note: 'retune the check-in cadence (10s, 5m, 0 0 = back-to-back, near-interactive)' },
+  { usage: 'sleep <interval> [jitter]', note: 'retune the contact cadence (10s, 5m, 0 0 = back-to-back, near-interactive)' },
   { usage: 'ps', note: 'list processes (the browser pane is in the menu)' },
   { usage: 'kill <pid>', note: 'terminate a process' },
   { usage: 'screenshot', note: 'capture the display' },

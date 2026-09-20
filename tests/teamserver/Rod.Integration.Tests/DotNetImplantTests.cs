@@ -14,7 +14,7 @@ using Rod.Transport.Listeners;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Acceptance: the reference .NET implant checks in and tasks
+/// Acceptance: the reference .NET implant contacts and tasks
 /// end-to-end. A real teamserver (Kestrel mTLS beacon endpoint + plain-HTTP
 /// operator/enroll API) is stood up, the reference .NET implant is published to a
 /// temp dir and launched against it as a real subprocess (dotnet Rod.Implant.dll),
@@ -109,17 +109,17 @@ public class DotNetImplantTests
     }
 
     /// <summary>
-    /// Acceptance: an implant whose primary endpoint is dead keeps checking in
+    /// Acceptance: an implant whose primary endpoint is dead keeps contacting
     /// via the fallback entry, and its listener-side identity is unchanged
     /// (architecture.md Sec 8 -- the baked fallback egress walk). The implant's
     /// primary enroll endpoint is a port nothing answers; the fallback entry is
     /// the live enroll route. Enroll walks to the fallback and redeems the token
     /// there; the beacon cycle then starts on the fallback's derived beacon host
-    /// -- the same cleartext front, which carries the check-in itself over the
+    /// -- the same cleartext front, which carries the contact itself over the
     /// envelope POST cycle -- proving both halves of the walk, at enroll and at
-    /// check-in, in one run. The identity criterion: exactly one implant is
+    /// contact, in one run. The identity criterion: exactly one implant is
     /// enrolled and online -- the leaf issued at the fallback enroll is the leaf
-    /// every check-in presents -- and a task round-trips against it.
+    /// every contact presents -- and a task round-trips against it.
     /// </summary>
     [DotNetFact]
     public async Task DotNetImplant_WalksFallbackEndpoints_WhenThePrimaryIsDead_EndToEnd()
@@ -143,9 +143,9 @@ public class DotNetImplantTests
             try
             {
                 // The walk landed somewhere live: the implant enrolled and its
-                // check-ins are answered. Exactly one identity exists -- the
+                // contacts are answered. Exactly one identity exists -- the
                 // enrollment happened once, over the fallback, and every
-                // check-in presents that same leaf.
+                // contact presents that same leaf.
                 var (engagementId, implantId) = await WaitForImplantOnlineAsync(env, deadline: TimeSpan.FromSeconds(60), stderr);
 
                 var listed = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
@@ -153,8 +153,8 @@ public class DotNetImplantTests
                 Assert.NotNull(listed);
                 Assert.Single(listed!, i => i.ImplantId == implantId);
 
-                // Tasking proves the check-in path end to end: dispatch rides a
-                // live check-in, the result rides one back.
+                // Tasking proves the contact path end to end: dispatch rides a
+                // live contact, the result rides one back.
                 var task = await IssueAndWaitAsync(env.Http, engagementId, implantId, "recon.hostenum", "");
                 Assert.Equal("Succeeded", task.Outcome);
                 Assert.False(string.IsNullOrWhiteSpace(task.Output));
@@ -397,7 +397,7 @@ public class DotNetImplantTests
 
         // Publish the reference implant once for the test into a temp dir, then run
         // it as a real subprocess: enroll over HTTP, beacon over mTLS. A short
-        // sleep keeps the check-in prompt so the round-trip resolves quickly.
+        // sleep keeps the contact prompt so the round-trip resolves quickly.
         var implantSource = LocateImplantSource();
         var implantDir = PublishImplant(implantSource);
         var implantDll = Path.Combine(implantDir, "Rod.Implant.dll");
@@ -509,7 +509,7 @@ public class DotNetImplantTests
         await using var env = await TestEnv.StartAsync();
 
         // The engagement's own quic listener: the implant's enroll and
-        // check-ins both ride its UDP socket.
+        // contacts both ride its UDP socket.
         var createEngagement = await env.Http.PostAsJsonAsync("/engagements",
             new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Quic Enroll"));
         createEngagement.EnsureSuccessStatusCode();
@@ -577,7 +577,7 @@ public class DotNetImplantTests
     /// <summary>
     /// Acceptance: the reference .NET implant runs the QUIC front in poll
     /// mode -- the shape the parser stopped refusing (architecture.md
-    /// Sec 8): one session per check-in at the baked cadence. The implant
+    /// Sec 8): one session per contact at the baked cadence. The implant
     /// enrolls over the quic dial, then cycles -- handshake, drain the
     /// tasking queue inside the idle window, close, sleep -- and a task
     /// issued between cycles lands on the next connection, its result on
@@ -762,18 +762,18 @@ public class DotNetImplantTests
 
     /// <summary>
     /// Acceptance: the reference .NET implant enrolls over the raw TCP
-    /// socket (architecture.md Sec 8, enrollment over the stream check-in)
-    /// and cycles check-ins on it -- the no-egress segment's full
+    /// socket (architecture.md Sec 8, enrollment over the stream contact)
+    /// and cycles contacts on it -- the no-egress segment's full
     /// independence, no HTTP shape dialed at all. One connection per
-    /// check-in at the baked cadence; a task issued between cycles lands on
+    /// contact at the baked cadence; a task issued between cycles lands on
     /// the next connection, its result on the same exchange. The artifact
-    /// is the built shape, so the default check-in seal rides too: every
+    /// is the built shape, so the default contact seal rides too: every
     /// message this wire exchanges is AES-256-GCM under the baked
     /// per-artifact key, the same application-layer seal the cleartext
     /// http posture carries -- the bare socket leaks no frame bytes.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_EnrollsOverTcp_AndCyclesCheckIns_EndToEnd()
+    public async Task DotNetImplant_EnrollsOverTcp_AndCyclesContacts_EndToEnd()
     {
         await using var env = await TestEnv.StartAsync();
 
@@ -847,10 +847,10 @@ public class DotNetImplantTests
     /// Windows segment without HTTP or DNS egress still allows. The implant
     /// enrolls over smb://./pipe/name (the Unix pipe the Linux test host
     /// serves; a Windows dial names the remote host the same way) and cycles
-    /// check-ins on it. Raw TCP pins the bridge; this pins the pipe dial.
+    /// contacts on it. Raw TCP pins the bridge; this pins the pipe dial.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_EnrollsOverSmbPipe_AndCyclesCheckIns_EndToEnd()
+    public async Task DotNetImplant_EnrollsOverSmbPipe_AndCyclesContacts_EndToEnd()
     {
         await using var env = await TestEnv.StartAsync();
 
@@ -1334,13 +1334,13 @@ public class DotNetImplantTests
 
     /// <summary>
     /// Poll-mode end to end: the reference implant runs with -mode poll, so each
-    /// check-in drains queued tasking, closes the stream, and sleeps the beacon
+    /// contact drains queued tasking, closes the stream, and sleeps the beacon
     /// interval instead of holding a line open. The task must still round-trip,
-    /// and across several check-in cycles the engagement trail holds exactly one
-    /// SessionOpened record -- the session is reused per check-in, not churned.
+    /// and across several contact cycles the engagement trail holds exactly one
+    /// SessionOpened record -- the session is reused per contact, not churned.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_PollMode_TasksAcrossCheckIns_WithoutSessionChurn()
+    public async Task DotNetImplant_PollMode_TasksAcrossContacts_WithoutSessionChurn()
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
@@ -1367,7 +1367,7 @@ public class DotNetImplantTests
                 var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
                 Assert.NotNull(issuedBody);
 
-                // The next check-in drains the task and reports the result.
+                // The next contact drains the task and reports the result.
                 await WaitUntilAsync(async () =>
                 {
                     var fetched = await env.Http.GetFromJsonAsync<TaskBody>(
@@ -1376,8 +1376,8 @@ public class DotNetImplantTests
                         && (fetched.Output ?? string.Empty).Contains(marker);
                 }, deadline: TimeSpan.FromSeconds(60));
 
-                // Several check-in cycles later (sleep is 1s), the trail holds
-                // exactly one SessionOpened event: every check-in handshake
+                // Several contact cycles later (sleep is 1s), the trail holds
+                // exactly one SessionOpened event: every contact handshake
                 // reused the implant's one live session.
                 await Task.Delay(TimeSpan.FromSeconds(4));
                 await AuthenticatedHost.LoginAsync(env.Http);
@@ -1399,21 +1399,21 @@ public class DotNetImplantTests
     }
 
     /// <summary>
-    /// Acceptance for the envelope check-in as the implant's web default
+    /// Acceptance for the envelope contact as the implant's web default
     /// (architecture.md Sec 8), and for its key authentication (Sec 8/9).
     /// Leg one is the plain cleartext front with a flag-driven dev implant --
-    /// one socket for enrollment and check-ins, no beacon named, the lab
+    /// one socket for enrollment and contacts, no beacon named, the lab
     /// posture where the handshake id identifies the implant. Leg two is the
     /// item's literal criterion: a stage-2 built by the payload pipeline
     /// against a single-port https listener -- the build mints the
     /// per-artifact key and bakes it with the listener's endpoint and the
     /// artifact's own enrollment credential, so the binary runs with no
     /// arguments -- whose TLS handshake carries no certificate request (the
-    /// server never asks) and whose check-ins authenticate under the baked
+    /// server never asks) and whose contacts authenticate under the baked
     /// key. A task round-trips on both legs.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_EnvelopeCheckIn_RunsOnPlainHttpAndHttpsFronts_EndToEnd()
+    public async Task DotNetImplant_EnvelopeContact_RunsOnPlainHttpAndHttpsFronts_EndToEnd()
     {
         await using var env = await TestEnv.StartAsync();
         var (engagementId, httpToken, _) = await env.MintEngagementWithTwoTokensAsync();
@@ -1424,7 +1424,7 @@ public class DotNetImplantTests
         try
         {
             // Leg one -- the cleartext front. No -beacon-url: the derived
-            // check-in URL is the enroll host itself, and the envelope cycle
+            // contact URL is the enroll host itself, and the envelope cycle
             // rides the same socket.
             var httpStderr = new StringBuilder();
             var httpImplant = StartImplant(implantDll, env, httpToken,
@@ -1463,12 +1463,12 @@ public class DotNetImplantTests
 
             // Leg two -- the single-port https listener and a real pipeline
             // build against it: the acceptance shape for key-authenticated
-            // check-ins (architecture.md Sec 8/9). The build mints the
-            // per-artifact key (check-in protection is the default) and bakes
+            // contacts (architecture.md Sec 8/9). The build mints the
+            // per-artifact key (contact protection is the default) and bakes
             // it with the listener's endpoint and the artifact's own
             // enrollment credential, so the binary runs with no arguments;
             // its TLS handshake carries no certificate request, and its
-            // check-ins seal under the baked key.
+            // contacts seal under the baked key.
             var httpsPort = TestSupport.GetFreeTcpPort();
             var created = await env.Http.PostAsJsonAsync(
                 $"/engagements/{engagementId}/listeners",
@@ -1557,12 +1557,12 @@ public class DotNetImplantTests
     /// Acceptance for the store-and-forward channel discipline
     /// (architecture.md Sec 10.3) driven by the real implant: a poll-mode
     /// stage-2 against a web front claims shell.interact, the operator's
-    /// typing parks and rides the next check-in down, and the real shell's
+    /// typing parks and rides the next contact down, and the real shell's
     /// output streams back up the same batched cycle -- the interactive
     /// verbs at the poll cadence, carried by every poll artifact.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_DegradedChannels_InteractiveShellAcrossPollCheckIns_EndToEnd()
+    public async Task DotNetImplant_DegradedChannels_InteractiveShellAcrossPollContacts_EndToEnd()
     {
         await using var env = await TestEnv.StartAsync();
         var (engagementId, _, _) = await env.MintEngagementWithTwoTokensAsync();
@@ -1633,7 +1633,7 @@ public class DotNetImplantTests
                     closed.EnsureSuccessStatusCode();
 
                     // The shell executes across the parked input's cycle and
-                    // the final result rides a later check-in.
+                    // the final result rides a later contact.
                     var completed = await WaitUntilTaskAsync(
                         env.Http, engagementId, taskId,
                         t => t.Status == "Completed",
@@ -1672,7 +1672,7 @@ public class DotNetImplantTests
     /// poll-channel runtime names itself.
     /// </summary>
     [DotNetFact]
-    public async Task DotNetImplant_DegradedChannels_DevRun_InteractiveShellAcrossPollCheckIns()
+    public async Task DotNetImplant_DegradedChannels_DevRun_InteractiveShellAcrossPollContacts()
     {
         await using var env = await TestEnv.StartAsync();
         var (engagementId, httpToken, _) = await env.MintEngagementWithTwoTokensAsync();
@@ -1831,7 +1831,7 @@ public class DotNetImplantTests
     /// <summary>
     /// Acceptance: an operator types into a live shell on a connected implant
     /// (architecture.md Sec 10.3, the streaming task shape). The real implant
-    /// holds a stream-mode check-in; the operator issues shell.interact with
+    /// holds a stream-mode contact; the operator issues shell.interact with
     /// an initial command, watches its output land on the transcript while
     /// the task is still live, types a second command through the input route
     /// and sees it run, then closes stdin and the channel completes with the
@@ -2012,8 +2012,8 @@ public class DotNetImplantTests
 
     // Builds a stage-2 through the payload pipeline against the named
     // listener -- the job path both operator surfaces use, so the mint rides
-    // with it: the enrollment credential and the per-artifact check-in key
-    // (check-in protection is on by default) are baked into the artifact, and
+    // with it: the enrollment credential and the per-artifact contact key
+    // (contact protection is on by default) are baked into the artifact, and
     // nothing but the binary needs to reach the target. Polls the job to
     // completion, downloads the artifact, and returns its path (executable on
     // Unix hosts).
@@ -2062,7 +2062,7 @@ public class DotNetImplantTests
 
     // Starts a pipeline-built artifact exactly the way a deployment would:
     // no arguments at all -- the baked profile carries the endpoint, the
-    // cadence, the credential, and the check-in key.
+    // cadence, the credential, and the contact key.
     private static Process StartBuiltArtifact(string artifactPath, bool narrate = false)
     {
         var psi = new ProcessStartInfo
@@ -2084,8 +2084,8 @@ public class DotNetImplantTests
     // for diagnostics on failure but are not asserted -- the acceptance criterion is the
     // teamserver-side outcome. The optional overrides exist for the egress-walk
     // acceptance test: a dead primary endpoint plus a fallback list, and for
-    // the envelope acceptance test: a derived check-in (no -beacon-url, so
-    // the implant derives the check-in URL from the enroll front itself).
+    // the envelope acceptance test: a derived contact (no -beacon-url, so
+    // the implant derives the contact URL from the enroll front itself).
     private static Process StartImplant(
         string implantDll, TestEnv env, string token, TimeSpan sleep, TimeSpan jitter, string mode = "stream",
         string? enrollUrl = null, string? beaconUrl = null, string? fallbackEnrollUrls = null,
@@ -2102,7 +2102,7 @@ public class DotNetImplantTests
         psi.ArgumentList.Add("-enroll-url");
         psi.ArgumentList.Add(enrollUrl ?? $"http://127.0.0.1:{env.HttpPort}/implants/enroll");
         // The default pins the mTLS port (the gRPC stream dial shape); a
-        // derived check-in omits the flag so the beacon URL derives from the
+        // derived contact omits the flag so the beacon URL derives from the
         // enroll front -- an http(s) front runs the envelope POST cycle on
         // its own port.
         if (!deriveBeaconUrl)

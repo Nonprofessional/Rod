@@ -7,16 +7,16 @@ using Rod.CoreState.Implants;
 namespace Rod.Transport.Listeners.Streams;
 
 // The raw-TCP listener service (architecture.md Sec 8): the socket half of
-// the stream check-in transports, for segment networks that allow arbitrary
+// the stream contact transports, for segment networks that allow arbitrary
 // sockets but no HTTP shape. The entry binds its TCP endpoint (the bind
 // address), registers itself into the listener registry the same
 // bind-then-register way every transport follows, and accepts connections in
 // a loop: each connection serves the shape its handshake advertises -- the
-// poll exchange (one check-in, then closed) or the held live session the
+// poll exchange (one contact, then closed) or the held live session the
 // stream mode runs -- through the shared StreamBeaconBridge.
 
 /// <summary>
-/// Binds the entry's TCP endpoint and serves check-ins until the host stops.
+/// Binds the entry's TCP endpoint and serves contacts until the host stops.
 /// </summary>
 internal sealed class TcpListenerService : BackgroundService
 {
@@ -48,7 +48,7 @@ internal sealed class TcpListenerService : BackgroundService
         await _listeners.RegisterAsync(_listener, stoppingToken);
 
         _logger.LogInformation(
-            "Rod TCP listener {Name} answering socket check-ins on {Bind} for {Endpoint}.",
+            "Rod TCP listener {Name} answering socket contacts on {Bind} for {Endpoint}.",
             _listener.Name, _listener.BindAddress, _listener.PublicEndpoint);
 
         try
@@ -69,14 +69,14 @@ internal sealed class TcpListenerService : BackgroundService
                     continue; // transient; the next accept retries
                 }
 
-                // One connection is one check-in; serve it off the accept
+                // One connection is one contact; serve it off the accept
                 // loop so concurrent polls overlap.
                 _ = Task.Run(async () =>
                 {
                     var stream = new NetworkStream(socket, ownsSocket: true);
                     try
                     {
-                        await _bridge.HandleCheckInAsync(stream, _listener, stoppingToken);
+                        await _bridge.HandleContactAsync(stream, _listener, stoppingToken);
                     }
                     finally
                     {

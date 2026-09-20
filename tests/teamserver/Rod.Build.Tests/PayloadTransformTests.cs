@@ -123,7 +123,7 @@ public class PayloadTransformTests
             () => PayloadTransformLoader.Load(new[] { "Rod.Build.Tests.NoSuchType, Rod.Build.Tests" }));
     }
 
-    // The parameterless, contract-only stand-in the loader checks instantiate.
+    // The parameterless, contract-only stand-in the loader contactsstantiate.
     public sealed class LoadableTransform : IPayloadTransform
     {
         public string Name => "loadable";

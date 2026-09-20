@@ -72,7 +72,7 @@ internal static class PayloadBuildRecorder
                     UserAgent = artifact.Params.Transport.UserAgent,
                     RequestTimeoutSeconds = artifact.Params.Transport.RequestTimeout.TotalSeconds,
                     Envelope = artifact.Params.Transport.Envelope.ToString(),
-                    CheckInProtection = artifact.Params.Transport.CheckInProtection,
+                    ContactProtection = artifact.Params.Transport.ContactProtection,
                     FallbackEndpoints = artifact.Params.Transport.FallbackEndpoints.Count == 0
                         ? null
                         : artifact.Params.Transport.FallbackEndpoints.ToArray(),

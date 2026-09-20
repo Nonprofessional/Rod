@@ -89,7 +89,7 @@ public sealed class Implant
     /// could name it (the HTTP ingress resolves the listener from the local
     /// port). It is the ingress the implant dialed -- what a listener deletion
     /// warning counts against -- not a live routing fact: an implant keeps
-    /// checking in on whatever its baked endpoints resolve to. Null for
+    /// contacting on whatever its baked endpoints resolve to. Null for
     /// enrollments the transport could not attribute to one listener (the
     /// in-memory harness, a shared-tier socket that predates the stamp).
     /// </summary>
@@ -113,7 +113,7 @@ public sealed class Implant
     /// for an offline implant ("when did we last see this beacon"). Advanced
     /// by the session registry's last-seen decorator, at most once a minute
     /// (the presence roster carries the fresh stamp; this is the durable,
-    /// post-mortem one). Null for implants that never checked in past enroll.
+    /// post-mortem one). Null for implants that never contacted past enroll.
     /// </summary>
     public DateTimeOffset? LastSeenAt { get; private set; }
 
@@ -190,7 +190,7 @@ public sealed class Implant
     /// engagement and records its parent; the same kill-date shape as a
     /// top-level implant applies. A null <paramref name="parentImplantId"/> yields
     /// a top-level implant, so <see cref="Enroll"/> delegates here. The caller (the
-    /// enrollment use case) is responsible for resolving and scope-checking the
+    /// enrollment use case) is responsible for resolving and scope-contactg the
     /// parent; this factory only records the linkage. <paramref name="deployedBy"/>
     /// is the operator who authorized the deployment; it defaults to unattributed
     /// so tests that do not care about attribution compile unchanged.

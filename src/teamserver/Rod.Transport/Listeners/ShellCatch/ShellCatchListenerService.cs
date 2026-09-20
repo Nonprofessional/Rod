@@ -12,7 +12,7 @@ using Rod.Transport.Listeners;
 namespace Rod.Transport.Listeners.ShellCatch;
 
 // The shellcatch listener service (architecture.md Sec 8): the catcher half
-// of the stream family. Where the TCP listener serves check-ins -- one
+// of the stream family. Where the TCP listener serves contacts -- one
 // connection, one rod.v1 exchange, closed -- this listener accepts
 // connections that speak no protocol at all and holds them: the peer is
 // whatever one-liner the operator ran on the target (nc, a bash /dev/tcp
@@ -279,7 +279,7 @@ internal sealed class ShellCatchListenerService : BackgroundService
         => stamp?.ToString("O") ?? "never";
 
     // Parses "host:port" for the TCP bind; accepts an IP (v4/v6) or "*" for
-    // any interface -- the same shapes the TCP check-in listener accepts,
+    // any interface -- the same shapes the TCP contact listener accepts,
     // and a local duplicate of that parse because it is transport plumbing,
     // not policy (the house convention the DNS and TCP services follow).
     private static (IPAddress Host, int Port) ParseBindAddress(string bindAddress)

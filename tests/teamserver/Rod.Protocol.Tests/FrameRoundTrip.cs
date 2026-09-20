@@ -120,7 +120,7 @@ public class FrameRoundTrip
     }
 
     // Handshake messages: the first payload exchanged on a
-    // CheckIn stream must round-trip with version, identity, and capabilities
+    // Contact stream must round-trip with version, identity, and capabilities
     // intact -- these are what the server gates presence on.
 
     [Fact]

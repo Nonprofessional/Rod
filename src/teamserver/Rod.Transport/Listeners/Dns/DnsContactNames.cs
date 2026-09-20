@@ -3,9 +3,9 @@ using Rod.CoreState;
 
 namespace Rod.Transport.Listeners.Dns;
 
-// The DNS check-in name grammar (architecture.md Sec 8, the DNS listener's
+// The DNS contact name grammar (architecture.md Sec 8, the DNS listener's
 // contract, documented for implant authors in extending/implants.md). Every
-// check-in is a TXT query under the listener's zone -- the listener's public
+// contact is a TXT query under the listener's zone -- the listener's public
 // endpoint, a domain the teamserver answers for. The query NAME carries the
 // implant's message, base32-encoded into labels (DNS labels are case-
 // insensitive; the encoding is lowercase RFC 4648 without padding):
@@ -35,7 +35,7 @@ namespace Rod.Transport.Listeners.Dns;
 // does not fit the DNS budget is not claimed over this transport.
 //
 // Sealing (an artifact with a baked envelope key, the same posture the web
-// envelope check-ins carry): the k-poll's answer and the r/c chunks wrap their
+// envelope contacts carry): the k-poll's answer and the r/c chunks wrap their
 // payloads as raw R1 bodies under purpose-specific AADs, so the resolver chain
 // reads no frame bytes in the clear; a p-poll from a key-bound implant is
 // answered empty (the downgrade refusal -- plaintext tasking is not handed to
@@ -43,10 +43,10 @@ namespace Rod.Transport.Listeners.Dns;
 // is dropped the same way.
 
 /// <summary>
-/// Parses and renders the check-in query names. Pure grammar, no I/O -- the
+/// Parses and renders the contact query names. Pure grammar, no I/O -- the
 /// listener service and the tests share one definition.
 /// </summary>
-internal static class DnsCheckInNames
+internal static class DnsContactNames
 {
     /// <summary>A poll: the implant's presence ping and task fetch.</summary>
     internal sealed record Poll(ImplantId Implant);
@@ -98,7 +98,7 @@ internal static class DnsCheckInNames
 
     /// <summary>
     /// Parses a query name against <paramref name="zone"/>. Returns the poll
-    /// or result-chunk view, or null when the name is not a check-in under
+    /// or result-chunk view, or null when the name is not a contact under
     /// this zone (other names in the zone are answered NXDOMAIN by the
     /// listener, not parsed here).
     /// </summary>

@@ -99,7 +99,7 @@ export function EngagementView({
   }, [engagementId])
 
   // The online-implant roster is refreshed on the live tick (SessionOpened
-  // when an implant checks in, SessionClosed when its stream dies or is
+  // when an implant contacts, SessionClosed when its stream dies or is
   // swept) so the fleet counts move the moment the roster changes. The slow
   // poll stays as reconciliation only: after a dropped SSE connection the
   // events a reconnect missed are gone, and the poll re-anchors the roster

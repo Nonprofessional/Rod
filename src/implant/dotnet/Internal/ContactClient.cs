@@ -3,8 +3,8 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace Rod.Implant.Internal;
 
-// The check-in module seam (architecture.md Sec 8): the program's coordinator
-// holds the list of compiled-in check-in clients and hands each run to the
+// The contact module seam (architecture.md Sec 8): the program's coordinator
+// holds the list of compiled-in contact clients and hands each run to the
 // one that serves the egress walk's current URL shape. Which clients a build
 // compiles is decided at bake time -- the build unit rewrites
 // TransportSelection.cs to name only the modules the baked egress walk can
@@ -13,12 +13,12 @@ namespace Rod.Implant.Internal;
 // no web cycle. The checked-in tree compiles both (dev runs pick per URL
 // shape), so developing against either transport needs no build step.
 
-// How a check-in client's run ended for the program's coordinator: terminated
+// How a contact client's run ended for the program's coordinator: terminated
 // for good, or yielded because the egress walk's current beacon URL belongs
 // to another client -- a web URL (http(s)://) runs the envelope POST cycle,
 // a bare host:port runs the mTLS gRPC stream, a quic-schemed URL runs the
 // QUIC stream.
-internal enum CheckInExit
+internal enum ContactExit
 {
     // The kill date passed or the server refused the handshake permanently.
     Terminate,
@@ -28,33 +28,33 @@ internal enum CheckInExit
 }
 
 /// <summary>
-/// One compiled-in check-in client: it either serves the walk's current
-/// beacon URL shape or yields, and while it serves it runs the check-in
+/// One compiled-in contact client: it either serves the walk's current
+/// beacon URL shape or yields, and while it serves it runs the contact
 /// lifecycle until cancellation, the kill date, a permanent refusal, or the
 /// walk moving to a shape it does not carry.
 /// </summary>
-internal interface ICheckInClient
+internal interface IContactClient
 {
     /// <summary>
-    /// True when this client carries check-ins for the beacon URL's shape
+    /// True when this client carries contacts for the beacon URL's shape
     /// (a schemed web URL or a bare host:port).
     /// </summary>
     bool Serves(string beaconUrl);
 
     /// <summary>
-    /// Runs the check-in lifecycle until the cancellation token fires, the
+    /// Runs the contact lifecycle until the cancellation token fires, the
     /// kill date passes, the server refuses permanently
-    /// (<see cref="CheckInExit.Terminate"/>), or the walk's current entry
+    /// (<see cref="ContactExit.Terminate"/>), or the walk's current entry
     /// takes the other client's URL shape
-    /// (<see cref="CheckInExit.SwitchTransport"/>).
+    /// (<see cref="ContactExit.SwitchTransport"/>).
     /// </summary>
-    Task<CheckInExit> RunAsync(CancellationToken cancellationToken);
+    Task<ContactExit> RunAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// Everything a check-in client is constructed from: the parsed config (the
-/// check-in mode, kill date, verb set, transport profile), the enrollment it
-/// checks in under, the enroll bundle a derived child reuses, the egress
+/// Everything a contact client is constructed from: the parsed config (the
+/// contact mode, kill date, verb set, transport profile), the enrollment it
+/// contacts under, the enroll bundle a derived child reuses, the egress
 /// walk, replay-nonce state, the held-task ledger, and narration log shared
 /// by every client covering one run, and the live cadence the clients sleep
 /// on -- mutable at run time by the beacon.sleep verb, so every client
@@ -64,7 +64,7 @@ internal interface ICheckInClient
 /// session cycle rides it -- the ordinary handshake follows the enroll on
 /// the same stream -- and null on every other shape.
 /// </summary>
-internal sealed record CheckInSetup(
+internal sealed record ContactSetup(
     Config Config,
     Enrollment Enrollment,
     EnrollBundle Enroll,
@@ -80,7 +80,7 @@ internal sealed record CheckInSetup(
 /// inputs the program (or a handler deriving a child) hands the enroll
 /// client the baked transport selection names. An http(s) URL runs the JSON
 /// enroll cycle; a quic-schemed URL runs the frame exchange on the QUIC
-/// module's dial -- the same URL-shape dispatch the check-in clients follow.
+/// module's dial -- the same URL-shape dispatch the contact clients follow.
 /// The transport profile's malleable knobs shape the http body only; over
 /// QUIC the exchange is frames under TLS 1.3, so the profile contributes
 /// just its request timeout, and ServerCAs is the pinned chain the dial
@@ -112,7 +112,7 @@ internal sealed record EnrollDial(
 
 /// <summary>
 /// The beacon URL shapes (architecture.md Sec 8): a schemed http(s) URL
-/// names a web front whose check-in the envelope POST cycle carries; a bare
+/// names a web front whose contact the envelope POST cycle carries; a bare
 /// host:port is the mTLS socket the gRPC stream dials; a quic-schemed URL
 /// is the QUIC stream's dial; a dns-schemed URL is the DNS carrier's dial
 /// -- a resolver and a zone (dns://resolver[:port]/zone); a tcp-schemed
@@ -146,12 +146,12 @@ internal static class BeaconUrl
 }
 
 /// <summary>
-/// The check-in cadence shared by every client: the base sleep doubled per
+/// The contact cadence shared by every client: the base sleep doubled per
 /// consecutive failure (capped), plus-or-minus half the jitter, honoring
 /// cancellation. The envelope cycle backs off exactly like the stream, so a
 /// down front is walked away from at the same pace whichever client dials it.
 /// </summary>
-internal static class CheckInCadence
+internal static class ContactCadence
 {
     // The failure counter's doubling cap: the reconnect delay grows as
     // base * 2^failures up to 16x, keeping a down teamserver from being polled

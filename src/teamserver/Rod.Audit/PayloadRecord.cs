@@ -20,7 +20,7 @@ namespace Rod.Audit;
 /// so the library reads which front a payload phones. Null on old records.
 /// </param>
 /// <param name="BeaconEndpoint">
-/// The host the baked artifact's check-in stream dials, when it differs from
+/// The host the baked artifact's contact stream dials, when it differs from
 /// <see cref="Endpoint"/> (the split-socket shape: cleartext enroll listener,
 /// mTLS beacon listener). Null is the single-front shape -- and every record
 /// built before the field existed.
@@ -77,11 +77,11 @@ public sealed record PayloadRecord(
 /// </summary>
 public sealed record PayloadBuildProfile
 {
-    /// <summary>How the artifact checks in: "stream" (persistent mTLS) or
+    /// <summary>How the artifact contacts: "stream" (persistent mTLS) or
     /// "poll" (envelope POST cycles).</summary>
     public string? Mode { get; init; }
 
-    /// <summary>The check-in interval in seconds.</summary>
+    /// <summary>The contact interval in seconds.</summary>
     public double? SleepSeconds { get; init; }
 
     /// <summary>The random slack added to every interval, in seconds.</summary>
@@ -105,8 +105,8 @@ public sealed record PayloadBuildProfile
     /// <summary>The enroll body shape: None, Base64, or AesGcm.</summary>
     public string? Envelope { get; init; }
 
-    /// <summary>Whether check-in bodies seal under the per-artifact key.</summary>
-    public bool? CheckInProtection { get; init; }
+    /// <summary>Whether contact bodies seal under the per-artifact key.</summary>
+    public bool? ContactProtection { get; init; }
 
     /// <summary>The backup dial addresses baked behind the primary, in walk order.</summary>
     public IReadOnlyList<string>? FallbackEndpoints { get; init; }

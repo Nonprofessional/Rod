@@ -24,7 +24,7 @@ public sealed record SessionStalenessValues(TimeSpan Threshold, TimeSpan SweepIn
 public sealed class SessionRuntimeSettings
 {
     // The bounds the setter and the settings endpoint both enforce. The
-    // threshold must sit above any implant's check-in interval (a threshold
+    // threshold must sit above any implant's contact interval (a threshold
     // shorter than the sleep would flap every quiet period to offline) but
     // still vanish dead hosts within a day; the sweep interval trades prompt
     // drops against sweep cost.

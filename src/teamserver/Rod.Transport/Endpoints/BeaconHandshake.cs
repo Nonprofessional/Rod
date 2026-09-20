@@ -6,7 +6,7 @@ using Rod.V1;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The handshake pieces every check-in transport shares: the refusal map, the
+/// The handshake pieces every contact transport shares: the refusal map, the
 /// response builder, and the flood-guarded SessionOpened audit write. Each
 /// transport authenticates differently (a client certificate over mTLS, the
 /// sealed envelope's artifact key over the web posture, the handshake id over
@@ -48,7 +48,7 @@ internal static class BeaconHandshake
 
     /// <summary>
     /// Records a genuinely new session (architecture.md Sec 11). A reused one
-    /// (a reconnect -- a poll check-in or a flapped stream) is not: the session
+    /// (a reconnect -- a poll contact or a flapped stream) is not: the session
     /// entity and its SessionOpened record already exist, and a poll cadence
     /// must not flood the engagement trail. A handshake is implant-initiated,
     /// so the event is attributed to the operator who deployed the implant;

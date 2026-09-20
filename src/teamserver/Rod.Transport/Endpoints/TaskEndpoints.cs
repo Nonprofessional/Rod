@@ -468,7 +468,7 @@ public static class TaskEndpoints
         // The hub reaches the implant's live beacon stream. No sink (or a full
         // one) means the channel cannot take this input right now -- unless
         // the implant opted into the degraded discipline, whose parking queue
-        // is the poll carrier's sink and whose check-in cycle is its pump. A
+        // is the poll carrier's sink and whose contact cycle is its pump. A
         // pivot child's channel has no sink of its own (Sec 5.2): its input
         // rides the fronting parent's stream, so a child that holds no sink
         // routes through its parent.
@@ -484,7 +484,7 @@ public static class TaskEndpoints
                 && await degraded.TryEnqueueAsync(
                     task.ImplantId, new TaskId(taskValue), data, body.Eof, cancellationToken))
             {
-                // Parked for the implant's next poll check-in: the input
+                // Parked for the implant's next poll contact: the input
                 // lands when the cycle delivers it, not instantly -- the
                 // degraded discipline the implant opted into.
             }

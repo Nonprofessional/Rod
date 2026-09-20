@@ -3,7 +3,7 @@ using Rod.CoreState.Tasks;
 
 namespace Rod.CoreState.Transports;
 
-// The tasking-capability truth for the check-in carriers (architecture.md
+// The tasking-capability truth for the contact carriers (architecture.md
 // Sec 8, Sec 10.3). The set lives in core state for the same reason
 // ChannelVerbs does: the transport layer's claim gates, the build pipeline's
 // beacon validation, and the operator UI all need the same answer without a
@@ -12,13 +12,13 @@ namespace Rod.CoreState.Transports;
 // stays open where a closed enumeration would force an edit per protocol.
 
 /// <summary>
-/// Whether a check-in carrier can run a task that behaves as a live channel
+/// Whether a contact carrier can run a task that behaves as a live channel
 /// (architecture.md Sec 10.3): a channel's input half needs a writer the
 /// server can push to while the task runs. A native carrier holds one for
 /// the connection's life; a degraded carrier is a poll shape that opts into
 /// the store-and-forward discipline instead -- operator input parks until
-/// the next check-in delivers it, output batches the same way, and the
-/// channel's latency is the check-in interval (the deliberate, named
+/// the next contact delivers it, output batches the same way, and the
+/// channel's latency is the contact interval (the deliberate, named
 /// tradeoff, never a silent one).
 /// </summary>
 public enum ChannelSupport
@@ -49,7 +49,7 @@ public enum ChannelSupport
 }
 
 /// <summary>
-/// The tasking capabilities one check-in carrier declares. The per-response
+/// The tasking capabilities one contact carrier declares. The per-response
 /// frame budget stays on the carrier itself (a wire-format property), while
 /// the claim policy is the table's -- the two decisions every poll path
 /// makes, split where each half's truth lives.
@@ -59,11 +59,11 @@ public sealed record CarrierCapabilities(ChannelSupport Channels);
 
 /// <summary>
 /// The outcome of the claim evaluation a poll carrier runs before taking a
-/// dispatched task into its check-in response.
+/// dispatched task into its contact response.
 /// </summary>
 public enum ClaimDecision
 {
-    /// <summary>The carrier claims the task into this check-in.</summary>
+    /// <summary>The carrier claims the task into this contact.</summary>
     Claim,
 
     /// <summary>
@@ -82,7 +82,7 @@ public enum ClaimDecision
 
 /// <summary>
 /// The carrier capability table and the claim evaluation shared by every
-/// poll path (the envelope check-in, the DNS bridge, the message-pipe
+/// poll path (the envelope contact, the DNS bridge, the message-pipe
 /// bridge). One policy point instead of one copy per carrier: the deferral
 /// reasons stay stable, and a carrier arriving later declares itself rather
 /// than duplicating the gate.
@@ -105,18 +105,18 @@ public static class TransportCapabilities
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
     /// <summary>The plain-HTTP envelope POST cycle: store-and-forward
-    /// channels, carried on every check-in (the artifact always advertises
+    /// channels, carried on every contact (the artifact always advertises
     /// the capability).</summary>
     public static readonly CarrierCapabilities Envelope = new(ChannelSupport.Degraded);
 
-    /// <summary>The DNS TXT datagram check-in: poll only, datagram-sized --
+    /// <summary>The DNS TXT datagram contact: poll only, datagram-sized --
     /// channels store-and-forward on the polls, the input riding TXT
     /// answers and the output chunking up as queries.</summary>
     public static readonly CarrierCapabilities Dns = new(ChannelSupport.Degraded);
 
     /// <summary>
     /// The self-delimited message framing the named-pipe and raw-TCP
-    /// listeners share: a poll-mode build cycles one connection per check-in
+    /// listeners share: a poll-mode build cycles one connection per contact
     /// with the store-and-forward channels carried on every exchange, and a
     /// stream-mode build holds the live session instead -- the handshake's
     /// live advertisement switches the server to the shared session runner.
@@ -168,7 +168,7 @@ public static class TransportCapabilities
     }
 
     /// <summary>
-    /// Whether a dispatched task fits this carrier's check-in: a channel verb
+    /// Whether a dispatched task fits this carrier's contact: a channel verb
     /// needs a carrier that holds a live stream -- or, on a degraded carrier,
     /// the session's live advertisement, which the dispatch path passes as
     /// <paramref name="degradedChannels"/> (every current poll artifact

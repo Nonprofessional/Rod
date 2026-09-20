@@ -153,20 +153,20 @@ public class OperatorLiveTests
     {
         // A session opening is a live event -- the roster's mirror of the sweep's
         // SessionClosed -- so a connected operator watches an implant come online
-        // the moment it checks in, without waiting out a roster poll. The flood
+        // the moment it contacts, without waiting out a roster poll. The flood
         // guard rides along: only a genuinely new session publishes, so a poll
         // cadence (a reused session) stays silent.
         using var host = CreateHost();
         await RegisterAsync(host, "alpha", "Alpha Operator");
         using var client = await OperatorClientAsync(host, "alpha");
 
-        var engagementId = await CreateEngagementAsync(client, "Operation check-in");
+        var engagementId = await CreateEngagementAsync(client, "Operation contact");
         var implantId = await EnrollImplantAsync(client, engagementId);
 
         await using var stream = await OpenStreamAsync(client, engagementId);
         Assert.Equal("hello", (await stream.ReadAsync()).Event);
 
-        // The implant checks in: the handshake opens the session, and the
+        // The implant contacts: the handshake opens the session, and the
         // SessionOpened event reaches the connected operator live -- the SSE
         // endpoint subscribes to the bus before it writes hello, so an event
         // published immediately after the stream opens cannot be missed.
@@ -185,7 +185,7 @@ public class OperatorLiveTests
         Assert.Contains(implantId.ToString("N"), opened.Data);
 
         // A poll cadence reuses the active session and must not re-publish:
-        // the next check-in stays silent, and the next event on the stream is
+        // the next contact stays silent, and the next event on the stream is
         // the tasking issued after it -- not a second SessionOpened.
         var reuse = await handshake.HandshakeAsync(new HandshakeCommand(
             ImplantId: new ImplantId(implantId),

@@ -64,10 +64,10 @@ public enum LiveEventKind
     SessionClosed,
 
     /// <summary>
-    /// An implant opened a session -- it checked in and came online
+    /// An implant opened a session -- it contacted and came online
     /// (architecture.md Sec 10.3). Fires only for a genuinely new session: the
-    /// registry reuses the active session on a poll check-in or a flapped
-    /// stream, and a check-in cadence must not flood the stream. Connected
+    /// registry reuses the active session on a poll contact or a flapped
+    /// stream, and a contact cadence must not flood the stream. Connected
     /// operators refresh the online roster on it, seeing the implant appear
     /// without waiting out a poll -- the roster's mirror of
     /// <see cref="SessionClosed"/>.

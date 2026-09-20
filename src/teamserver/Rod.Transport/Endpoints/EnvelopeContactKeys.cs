@@ -3,9 +3,9 @@ using Rod.CoreState;
 
 namespace Rod.Transport.Endpoints;
 
-// The per-artifact key posture for the envelope check-in (architecture.md
+// The per-artifact key posture for the envelope contact (architecture.md
 // Sec 8/9): possession of the key the build minted and baked is what
-// authenticates an implant's check-in bodies -- the mainstream HTTP(S) C2
+// authenticates an implant's contact bodies -- the mainstream HTTP(S) C2
 // shape, replacing the TLS client certificate the https transport no longer
 // requests. This is the process-local bookkeeping that posture needs beyond
 // the key itself (which lives beside the stored payload, resolved by the key
@@ -13,22 +13,22 @@ namespace Rod.Transport.Endpoints;
 //
 // - The enroll-time binding: when the redeemed token was the one a build
 //   minted, the enrollment binds the new implant to that build's key, so a
-//   check-in from that implant never downgrades to a plaintext body.
+//   contact from that implant never downgrades to a plaintext body.
 //
-// - The check-in counter floor: every sealed body covers a strictly
+// - The contact counter floor: every sealed body covers a strictly
 //   increasing counter, and the floor is what turns a replayed body away.
 //   In-memory like the sessions it protects: a restart resets the floor, the
 //   same freshness boundary the presence roster already documents.
 
 /// <summary>
-/// One entry per enrolled implant: the artifact key its sealed check-ins
-/// authenticated against at enroll time, and the highest check-in counter
+/// One entry per enrolled implant: the artifact key its sealed contacts
+/// authenticated against at enroll time, and the highest contact counter
 /// accepted from it. Registered as a singleton; holds no secrets the payload
 /// store does not already keep (the key bytes here are the teamserver's
 /// recorded half, bound to the implant so the plaintext refusal cannot be
 /// talked out of).
 /// </summary>
-public sealed class EnvelopeCheckInKeys
+public sealed class EnvelopeContactKeys
 {
     private sealed record Binding(Guid KeyId, byte[] Key);
 
@@ -46,7 +46,7 @@ public sealed class EnvelopeCheckInKeys
         => _bindings[implant] = new Binding(keyId, key);
 
     /// <summary>
-    /// The key this implant's check-ins must seal under, or null when its
+    /// The key this implant's contacts must seal under, or null when its
     /// enrollment carried no build-minted credential (the manual-mint shape:
     /// sealed bodies still resolve by their own key id, but a plaintext body
     /// is not refused).
@@ -57,7 +57,7 @@ public sealed class EnvelopeCheckInKeys
             : null;
 
     /// <summary>
-    /// Accepts a strictly increasing check-in counter and advances the
+    /// Accepts a strictly increasing contact counter and advances the
     /// implant's floor, or refuses it as a replay. The floor starts at zero
     /// and lives for the process: a fresh counter on every attempt (the
     /// implant increments before each POST, so a retransmitted batch after a
@@ -74,7 +74,7 @@ public sealed class EnvelopeCheckInKeys
                 return false;
             if (_floors.TryUpdate(implant, counter, floor))
                 return true;
-            // Lost the race with a concurrent check-in from the same implant;
+            // Lost the race with a concurrent contact from the same implant;
             // re-read the floor and retry.
         }
     }

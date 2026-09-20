@@ -36,7 +36,7 @@
   store-and-forward channels on the poll transports.
 - **Disposable implants with baked profiles.** Each implant generates its
   own keypair at first run (no key material ships in the artifact), carries
-  a build-time profile -- check-in mode, beacon cadence and jitter, kill
+  a build-time profile -- contact mode, beacon cadence and jitter, kill
   date, transport shape -- and enrolls on a one-time credential baked at
   build, so a dropped artifact needs zero run-time arguments.
 - **Web shells and caught reverse shells.** The build panel renders

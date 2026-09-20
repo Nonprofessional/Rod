@@ -31,7 +31,7 @@ namespace Rod.Transport.Listeners.Quic;
 // the shared BeaconSessionRunner holds the session -- server-push tasking
 // the moment it is queued, live channels for the streaming verbs, the same
 // native-channel tier the gRPC stream and the WebSocket beacon run. The
-// message grammar is the stream check-in contract
+// message grammar is the stream contact contract
 // (extending/implants.md): one self-delimited message per direction turn --
 // a varint byte length, then the envelope's delimited frame sequence.
 //
@@ -47,7 +47,7 @@ namespace Rod.Transport.Listeners.Quic;
 
 /// <summary>
 /// Binds the entry's UDP endpoint as a QUIC listener and serves live
-/// check-in sessions until the host stops.
+/// contact sessions until the host stops.
 /// </summary>
 internal sealed class QuicListenerService : BackgroundService
 {
@@ -69,7 +69,7 @@ internal sealed class QuicListenerService : BackgroundService
 
     // How long a connection gets to open its stream and speak its handshake:
     // a client that connects and goes silent must not pin a handler, the
-    // same bound the poll bridge holds over a whole check-in.
+    // same bound the poll bridge holds over a whole contact.
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(30);
 
     // How long a connection may sit silent before the listener drops it. The
@@ -90,7 +90,7 @@ internal sealed class QuicListenerService : BackgroundService
     private readonly EnrollmentService _enrollment;
     private readonly IStagerTokenService _tokens;
     private readonly IPayloadStore _payloads;
-    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly EnvelopeContactKeys _contactKeys;
 
     public QuicListenerService(
         Listener listener,
@@ -111,7 +111,7 @@ internal sealed class QuicListenerService : BackgroundService
         EnrollmentService enrollment,
         IStagerTokenService tokens,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys,
+        EnvelopeContactKeys contactKeys,
         ILogger<QuicListenerService> logger)
     {
         _listener = listener;
@@ -126,7 +126,7 @@ internal sealed class QuicListenerService : BackgroundService
         _enrollment = enrollment;
         _tokens = tokens;
         _payloads = payloads;
-        _checkInKeys = checkInKeys;
+        _contactKeys = contactKeys;
         _logger = logger;
     }
 
@@ -159,7 +159,7 @@ internal sealed class QuicListenerService : BackgroundService
         await _listeners.RegisterAsync(_listener, stoppingToken);
 
         _logger.LogInformation(
-            "Rod QUIC listener {Name} answering stream check-ins on {Bind} for {Endpoint}.",
+            "Rod QUIC listener {Name} answering stream contacts on {Bind} for {Endpoint}.",
             _listener.Name, _listener.BindAddress, _listener.PublicEndpoint);
 
         try
@@ -251,7 +251,7 @@ internal sealed class QuicListenerService : BackgroundService
             // arrival, the enroll exchange when the first message carries
             // one, and the message on it. A client that connects and goes
             // silent must not pin a handler, the same bound the poll bridge
-            // holds over a whole check-in.
+            // holds over a whole contact.
             using var handshakeWindow = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             handshakeWindow.CancelAfter(HandshakeTimeout);
             QuicStream stream;
@@ -260,7 +260,7 @@ internal sealed class QuicListenerService : BackgroundService
             {
                 stream = await connection.AcceptInboundStreamAsync(handshakeWindow.Token);
                 frames = EnvelopeFraming.Parse(
-                    await StreamCheckInFraming.ReadMessageAsync(stream, handshakeWindow.Token));
+                    await StreamContactFraming.ReadMessageAsync(stream, handshakeWindow.Token));
             }
             catch (Exception ex) when (
                 ex is EnvelopeFramingException or IOException or OperationCanceledException)
@@ -291,7 +291,7 @@ internal sealed class QuicListenerService : BackgroundService
                     try
                     {
                         frames = EnvelopeFraming.Parse(
-                            await StreamCheckInFraming.ReadMessageAsync(stream, handshakeWindow.Token));
+                            await StreamContactFraming.ReadMessageAsync(stream, handshakeWindow.Token));
                     }
                     catch (Exception ex) when (
                         ex is EnvelopeFramingException or IOException or OperationCanceledException)
@@ -365,13 +365,13 @@ internal sealed class QuicListenerService : BackgroundService
                 {
                     while (pending.Count == 0)
                     {
-                        var message = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
+                        var message = await StreamContactFraming.ReadMessageAsync(stream, cancellationToken);
                         foreach (var frame in EnvelopeFraming.Parse(message))
                             pending.Enqueue(frame);
                     }
                     return pending.Dequeue();
                 },
-                (frame, cancellationToken) => StreamCheckInFraming.WriteMessageAsync(
+                (frame, cancellationToken) => StreamContactFraming.WriteMessageAsync(
                     stream, EnvelopeFraming.Encode(new[] { frame }), cancellationToken),
                 stoppingToken,
                 carrier: "quic");
@@ -441,7 +441,7 @@ internal sealed class QuicListenerService : BackgroundService
             _enrollment,
             _tokens,
             _payloads,
-            _checkInKeys,
+            _contactKeys,
             _audit,
             _clock,
             cancellationToken);
@@ -476,7 +476,7 @@ internal sealed class QuicListenerService : BackgroundService
 
     private static async Task WriteEnrollResponseAsync(
         QuicStream stream, Rod.V1.EnrollResponse response, CancellationToken cancellationToken)
-        => await StreamCheckInFraming.WriteMessageAsync(
+        => await StreamContactFraming.WriteMessageAsync(
             stream,
             EnvelopeFraming.Encode(new[]
             {
@@ -488,7 +488,7 @@ internal sealed class QuicListenerService : BackgroundService
         => value.Length == 0 ? null : value;
 
     private static async Task RespondAsync(QuicStream stream, HandshakeResponse response, CancellationToken stoppingToken)
-        => await StreamCheckInFraming.WriteMessageAsync(
+        => await StreamContactFraming.WriteMessageAsync(
             stream, EnvelopeFraming.Encode(new[] { HandshakeFrame(response) }), stoppingToken);
 
     private static bool TryParseHandshake(Frame frame, out HandshakeRequest request)

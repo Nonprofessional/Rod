@@ -107,7 +107,7 @@ public class ListenerRuntimeTests
         // certificate -- the handshake is indistinguishable from an ordinary
         // website's (a TLS CertificateRequest is itself an IDS fingerprint),
         // and both halves authenticate at the application layer: enrollment
-        // on the stager token, check-ins under the per-artifact key the
+        // on the stager token, contacts under the per-artifact key the
         // build baked (architecture.md Sec 8/9). One socket, both halves.
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
@@ -158,7 +158,7 @@ public class ListenerRuntimeTests
             new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
 
-        // The check-in route answers the certificate-less connection too --
+        // The contact route answers the certificate-less connection too --
         // a body whose single frame is not a handshake gets the refused
         // handshake status in the response envelope, never a TLS-layer or
         // identity 401: the key a real artifact seals with is the identity
@@ -219,7 +219,7 @@ public class ListenerRuntimeTests
             new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
 
-        // The check-in is turned away where identity is consumed: over TLS
+        // The contact is turned away where identity is consumed: over TLS
         // the beacon resolves the implant from the certificate alone, so the
         // certificate-less body gets the refused handshake, never a session.
         var beacon = await client.PostAsync("/implants/beacon",
@@ -465,7 +465,7 @@ public class ListenerRuntimeTests
         Assert.NotNull(listener);
 
         // The stream service bound its socket: a TCP connection is accepted
-        // (the check-in grammar answers; a bare connect succeeding is enough).
+        // (the contact grammar answers; a bare connect succeeding is enough).
         using (var probe = new TcpClient())
         {
             await probe.ConnectAsync(IPAddress.Loopback, port);
@@ -750,7 +750,7 @@ public class ListenerRuntimeTests
 
     // Splits a delimited envelope body (a varint length ahead of each
     // marshaled rod.v1 Frame) back into its frames -- enough of the wire
-    // grammar to read a check-in response's handshake status.
+    // grammar to read a contact response's handshake status.
     private static List<Rod.V1.Frame> ParseFrames(byte[] body)
     {
         var frames = new List<Rod.V1.Frame>();

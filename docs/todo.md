@@ -18,7 +18,7 @@ starts from a gap an actual engagement surfaces.
   architecture.md Sec 10.3; design lands as a new subsection there before
   any code). What an engagement cannot do without it: act on a cadence or
   on a return while no operator watches -- the overnight screenshot every
-  30 minutes, the triage batch on first check-in, the chain that reads a
+  30 minutes, the triage batch on first contact, the chain that reads a
   result and tasks the follow-up. Shape: an engine beside the operator
   layer subscribing to the live event bus (Sec 4.1, layer 4) for event
   triggers and running a scheduler for time triggers; engagement-scoped
@@ -92,7 +92,7 @@ starts from a gap an actual engagement surfaces.
   and today it needs a separate platform (BeEF) with its own operator
   surface, storage, and OPSEC story, disconnected from the engagement
   trail. Shape: a new `Browser` implant class whose artifact is a served
-  hook script (`<script src>`), enrolling and checking in over the
+  hook script (`<script src>`), enrolling and contacting over the
   certificate-less envelope carrier (Sec 8) on the poll cadence the
   store-and-forward degraded discipline already models; the reduced verb
   set starts mainstream and documented -- browser fingerprint, cookie
@@ -135,7 +135,7 @@ starts from a gap an actual engagement surfaces.
   engagement-scoped, the subscription itself audited. Best-effort like
   the bus it rides -- the audit trail stays the record.
   _AC:_ an operator registers a webhook for session-opened and
-  shell-caught events, and a new check-in delivers a push to it.
+  shell-caught events, and a new contact delivers a push to it.
 
 - **Operator roles and interaction ownership** (serves architecture.md
   Sec 9 and Sec 10.3; design lands first). What an engagement cannot do

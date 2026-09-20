@@ -199,7 +199,7 @@ public sealed class TaskService
         {
             throw new TaskRejectedException(
                 TaskRejectionReason.NoChannelCarrier,
-                $"Implant {implant.Id} checks in over {string.Join(", ", implant.Carriers)}; " +
+                $"Implant {implant.Id} contacts over {string.Join(", ", implant.Carriers)}; " +
                 "no baked carrier can run a channel task. Name the mTLS beacon listener in the " +
                 "build, or bake the degraded-channels opt-in for its poll cadence.");
         }
@@ -292,7 +292,7 @@ public sealed class TaskService
     /// <summary>
     /// Atomically claims the next queued task for <paramref name="implant"/>,
     /// or returns null when nothing is queued. What the beacon stream drains on
-    /// each check-in. The claim is atomic inside the repository adapter, so a
+    /// each contact. The claim is atomic inside the repository adapter, so a
     /// reconnect overlap for one implant cannot dispatch the same task twice.
     /// A claimed task for an implant that negotiated the replay-nonce arm
     /// (architecture.md Sec 9) is stamped with the next per-implant nonce --
@@ -306,7 +306,7 @@ public sealed class TaskService
     /// Widens the claim to the Pivot children this implant fronts
     /// (architecture.md Sec 5.2): their tasking is claimed here and executed by
     /// this implant's stream, because a pivot child has no process of its own
-    /// to claim with. Opt-in -- a poll transport (DNS, an envelope check-in)
+    /// to claim with. Opt-in -- a poll transport (DNS, an envelope contact)
     /// cannot carry a fronted channel's input half, so it keeps the narrow
     /// claim and fronted tasks park for a stream to claim.
     /// </param>
@@ -366,7 +366,7 @@ public sealed class TaskService
     /// <summary>
     /// Returns a claimed task to the queue (architecture.md Sec 10.3): the
     /// transport calls this when the downstream frame write failed, so the task
-    /// is redelivered on a later check-in instead of stranding Dispatched.
+    /// is redelivered on a later contact instead of stranding Dispatched.
     /// Throws <see cref="InvalidOperationException"/> when the task is not in
     /// Dispatched -- same refusal shape as <see cref="RecordResultAsync"/>.
     /// </summary>

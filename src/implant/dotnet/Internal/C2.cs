@@ -303,7 +303,7 @@ internal static class C2
 
     /// <summary>
     /// The AES-GCM envelope's client half: the same sealed-body shape every
-    /// web check-in carries (<see cref="EnvelopeWire"/>), under the enroll
+    /// web contact carries (<see cref="EnvelopeWire"/>), under the enroll
     /// body's own purpose tag, returned as the JSON string the envelope
     /// setting shapes the body into -- the exact shape the teamserver's enroll
     /// decode unwraps. The baked key string is standard base64 of
@@ -313,7 +313,7 @@ internal static class C2
     {
         var (keyId, key) = EnvelopeWire.ParseBakedKey(bakedKey)
             ?? throw new InvalidOperationException("baked envelope key is malformed");
-        return System.Text.Encoding.UTF8.GetString(EnvelopeWire.SealCheckInBody(
+        return System.Text.Encoding.UTF8.GetString(EnvelopeWire.SealContactBody(
             System.Text.Encoding.UTF8.GetBytes(plaintextJson), keyId, key, EnrollEnvelopeAad));
     }
 

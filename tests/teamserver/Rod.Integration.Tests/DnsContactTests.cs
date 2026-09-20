@@ -25,8 +25,8 @@ using Rod.V1;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// The DNS check-in surface (architecture.md Sec 8): the codec, the name
-/// grammar, and the acceptance point -- an implant checks in over DNS against
+/// The DNS contact surface (architecture.md Sec 8): the codec, the name
+/// grammar, and the acceptance point -- an implant contacts over DNS against
 /// a real listener entry. The unit checks pin the wire shapes; the end-to-end
 /// check drives a real UDP socket against a real listener entry: a from-
 /// scratch implant (a hand-rolled DNS client speaking the documented
@@ -34,7 +34,7 @@ namespace Rod.Integration.Tests;
 /// polls and reports over DNS -- presence advances, a queued task arrives as
 /// a signed TaskRequest in TXT, and its result lands in the audit trail.
 /// </summary>
-public class DnsCheckInTests
+public class DnsContactTests
 {
     private const string Zone = "c2.example.test";
 
@@ -43,7 +43,7 @@ public class DnsCheckInTests
     [Fact]
     public void Codec_RoundTripsAQuery()
     {
-        var query = BuildQuery(0x1234, DnsCheckInNames.PollName(ImplantId.New(), Zone));
+        var query = BuildQuery(0x1234, DnsContactNames.PollName(ImplantId.New(), Zone));
 
         var parsed = DnsCodec.ParseQuery(query);
 
@@ -132,12 +132,12 @@ public class DnsCheckInTests
     {
         var implant = ImplantId.New();
 
-        var parsed = DnsCheckInNames.TryParsePoll(DnsCheckInNames.PollName(implant, Zone), Zone);
+        var parsed = DnsContactNames.TryParsePoll(DnsContactNames.PollName(implant, Zone), Zone);
 
         Assert.NotNull(parsed);
         Assert.Equal(implant, parsed!.Implant);
-        Assert.Null(DnsCheckInNames.TryParsePoll("x." + Zone, Zone));
-        Assert.Null(DnsCheckInNames.TryParsePoll("p." + DnsCheckInNames.Encode(implant.ToString()) + ".other.test", Zone));
+        Assert.Null(DnsContactNames.TryParsePoll("x." + Zone, Zone));
+        Assert.Null(DnsContactNames.TryParsePoll("p." + DnsContactNames.Encode(implant.ToString()) + ".other.test", Zone));
     }
 
     [Fact]
@@ -146,16 +146,16 @@ public class DnsCheckInTests
         var implant = ImplantId.New();
         var keyId = Guid.NewGuid();
 
-        var parsed = DnsCheckInNames.TryParseSealedPoll(DnsCheckInNames.SealedPollName(implant, keyId, Zone), Zone);
+        var parsed = DnsContactNames.TryParseSealedPoll(DnsContactNames.SealedPollName(implant, keyId, Zone), Zone);
 
         Assert.NotNull(parsed);
         Assert.Equal(implant, parsed!.Implant);
         Assert.Equal(keyId, parsed.KeyId);
         // The plain poll parser does not claim a k-name, and the sealed parser
         // does not claim a p-name: the two carriages stay disjoint.
-        Assert.Null(DnsCheckInNames.TryParsePoll(DnsCheckInNames.SealedPollName(implant, keyId, Zone), Zone));
-        Assert.Null(DnsCheckInNames.TryParseSealedPoll(DnsCheckInNames.PollName(implant, Zone), Zone));
-        Assert.Null(DnsCheckInNames.TryParseSealedPoll("k." + DnsCheckInNames.Encode(implant.ToString()) + "." + Zone, Zone));
+        Assert.Null(DnsContactNames.TryParsePoll(DnsContactNames.SealedPollName(implant, keyId, Zone), Zone));
+        Assert.Null(DnsContactNames.TryParseSealedPoll(DnsContactNames.PollName(implant, Zone), Zone));
+        Assert.Null(DnsContactNames.TryParseSealedPoll("k." + DnsContactNames.Encode(implant.ToString()) + "." + Zone, Zone));
     }
 
     [Fact]
@@ -165,8 +165,8 @@ public class DnsCheckInTests
         var task = TaskId.New();
         var sha = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("uid=0(root)"))[..16];
 
-        var name = DnsCheckInNames.ProbeName(implant, task, sha, Zone);
-        var parsed = DnsCheckInNames.TryParseDelivery(name, Zone);
+        var name = DnsContactNames.ProbeName(implant, task, sha, Zone);
+        var parsed = DnsContactNames.TryParseDelivery(name, Zone);
 
         Assert.NotNull(parsed);
         Assert.Equal(implant, parsed!.Implant);
@@ -174,8 +174,8 @@ public class DnsCheckInTests
         Assert.Equal(sha, parsed.Sha);
         // A wrong sha is a different question, not a parse failure -- the
         // server's answer separates them.
-        var other = DnsCheckInNames.TryParseDelivery(
-            DnsCheckInNames.ProbeName(implant, task, new byte[16], Zone), Zone);
+        var other = DnsContactNames.TryParseDelivery(
+            DnsContactNames.ProbeName(implant, task, new byte[16], Zone), Zone);
         Assert.NotNull(other);
         Assert.NotEqual(sha, other!.Sha);
     }
@@ -187,8 +187,8 @@ public class DnsCheckInTests
         var task = TaskId.New();
         var chunk = Encoding.UTF8.GetBytes("uid=0(root)");
 
-        var name = DnsCheckInNames.ResultName(implant, task, succeeded: true, sequence: 0, terminal: true, chunk, Zone);
-        var parsed = DnsCheckInNames.TryParseResult(name, Zone);
+        var name = DnsContactNames.ResultName(implant, task, succeeded: true, sequence: 0, terminal: true, chunk, Zone);
+        var parsed = DnsContactNames.TryParseResult(name, Zone);
 
         Assert.NotNull(parsed);
         Assert.Equal(implant, parsed!.Implant);
@@ -202,10 +202,10 @@ public class DnsCheckInTests
     [Fact]
     public void Grammar_EmptyChunkRidesAsTheBareLabel()
     {
-        var name = DnsCheckInNames.ResultName(
+        var name = DnsContactNames.ResultName(
             ImplantId.New(), TaskId.New(), succeeded: false, sequence: 0, terminal: true, Array.Empty<byte>(), Zone);
 
-        var parsed = DnsCheckInNames.TryParseResult(name, Zone);
+        var parsed = DnsContactNames.TryParseResult(name, Zone);
 
         Assert.NotNull(parsed);
         Assert.Empty(parsed!.Chunk);
@@ -214,7 +214,7 @@ public class DnsCheckInTests
     [Fact]
     public void Reassembler_ConcatenatesInOrder_AndDropsGaps()
     {
-        var reassembler = new DnsCheckInNames.ResultReassembler();
+        var reassembler = new DnsContactNames.ResultReassembler();
         var task = TaskId.New();
         Assert.Null(reassembler.Add(task, 0, terminal: false, Encoding.UTF8.GetBytes("uid=")));
         Assert.Null(reassembler.Add(task, 1, terminal: false, Encoding.UTF8.GetBytes("0(")));
@@ -228,7 +228,7 @@ public class DnsCheckInTests
         Assert.Null(gapped);
     }
 
-    // --- The acceptance point: an implant checks in over DNS. ---
+    // --- The acceptance point: an implant contacts over DNS. ---
 
     [Fact]
     public async Task Cover_AnAQueryInTheZoneAnswersAnAddress()
@@ -256,14 +256,14 @@ public class DnsCheckInTests
         var aaaa = await env.DnsQueryRawAsync("www." + Zone, 28);
         Assert.Equal(3, aaaa[3] & 0x0F);
 
-        // A TXT query for a non-check-in name keeps its NXDOMAIN: the cover
-        // widens the zone's record types, not the check-in surface.
+        // A TXT query for a non-contact name keeps its NXDOMAIN: the cover
+        // widens the zone's record types, not the contact surface.
         var txt = await env.DnsQueryAsync("www." + Zone);
         Assert.Null(txt);
     }
 
     [Fact]
-    public async Task Implant_ChecksInOverDns_AgainstARealListenerEntry()
+    public async Task Implant_ContactsOverDns_AgainstARealListenerEntry()
     {
         await using var env = await DnsTestEnv.StartAsync();
         var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
@@ -272,7 +272,7 @@ public class DnsCheckInTests
         // a session, it does not handshake (the documented transport tradeoff).
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
@@ -298,9 +298,9 @@ public class DnsCheckInTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        var pollAnswer = await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone));
+        var pollAnswer = await env.DnsQueryAsync(DnsContactNames.PollName(implant.Id, Zone));
         Assert.NotNull(pollAnswer);
-        Assert.True(DnsCheckInNames.TryDecode(pollAnswer, out var framed));
+        Assert.True(DnsContactNames.TryDecode(pollAnswer, out var framed));
         // The poll answer carries a kind byte ahead of its message: 't' names
         // the TaskRequest ('i' would name parked channel input).
         Assert.Equal((byte)'t', framed![0]);
@@ -321,7 +321,7 @@ public class DnsCheckInTests
         var chunks = Chunk(Encoding.UTF8.GetBytes(output), 20);
         for (var i = 0; i < chunks.Count; i++)
         {
-            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+            await env.DnsQueryAsync(DnsContactNames.ResultName(
                 implant.Id, Guid.TryParse(taskRequest.TaskId, out var tid) ? new TaskId(tid) : TaskId.New(),
                 succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
         }
@@ -334,7 +334,7 @@ public class DnsCheckInTests
         Assert.Equal(output, fetched.Output);
 
         // Presence advanced over DNS: the session's last-seen reflects the
-        // check-ins (the implant reads online with no beacon frames in flight).
+        // contacts (the implant reads online with no beacon frames in flight).
         var implants = await env.Http.GetFromJsonAsync<ImplantBody[]>(
             $"/engagements/{implant.EngagementId}/implants");
         Assert.Contains(implants!, i => i.ImplantId == implant.Id.ToString() && i.IsOnline);
@@ -347,7 +347,7 @@ public class DnsCheckInTests
         var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
@@ -362,7 +362,7 @@ public class DnsCheckInTests
             Guid.NewGuid(), implant.EngagementId.Value, "dotnet", "csharp",
             "application/octet-stream", "sealed-test", Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
             EnvelopeKeyId: keyId, EnvelopeKey: key), CancellationToken.None);
-        env.Host.Services.GetRequiredService<EnvelopeCheckInKeys>().Bind(implant.Id, keyId, key);
+        env.Host.Services.GetRequiredService<EnvelopeContactKeys>().Bind(implant.Id, keyId, key);
 
         await env.LoginAsync();
         var issued = await env.Http.PostAsJsonAsync(
@@ -373,13 +373,13 @@ public class DnsCheckInTests
 
         // The downgrade refusal: a plain p-poll from a key-bound implant
         // answers nothing -- the tasking is never handed down in the clear.
-        Assert.Null(await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone)));
+        Assert.Null(await env.DnsQueryAsync(DnsContactNames.PollName(implant.Id, Zone)));
 
         // The k-poll's answer is a raw R1 body under the DNS poll purpose
         // tag: no kind byte, no protobuf, nothing readable rides the wire.
-        var sealedAnswer = await env.DnsQueryAsync(DnsCheckInNames.SealedPollName(implant.Id, keyId, Zone));
+        var sealedAnswer = await env.DnsQueryAsync(DnsContactNames.SealedPollName(implant.Id, keyId, Zone));
         Assert.NotNull(sealedAnswer);
-        Assert.True(DnsCheckInNames.TryDecode(sealedAnswer, out var sealedBytes));
+        Assert.True(DnsContactNames.TryDecode(sealedAnswer, out var sealedBytes));
         Assert.True(sealedBytes!.Length >= 2 && sealedBytes[0] == (byte)'R' && sealedBytes[1] == (byte)'1');
         var opened = AesGcmEnvelope.TryUnwrapBody(sealedBytes, keyId, key, AesGcmEnvelope.DnsPollAad);
         Assert.NotNull(opened);
@@ -396,7 +396,7 @@ public class DnsCheckInTests
         var chunks = Chunk(blob, 20);
         for (var i = 0; i < chunks.Count; i++)
         {
-            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+            await env.DnsQueryAsync(DnsContactNames.ResultName(
                 implant.Id, Guid.TryParse(taskRequest.TaskId, out var tid) ? new TaskId(tid) : TaskId.New(),
                 succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
         }
@@ -417,12 +417,12 @@ public class DnsCheckInTests
             new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "whoami" });
         issuedPlain.EnsureSuccessStatusCode();
         var issuedPlainBody = await issuedPlain.Content.ReadFromJsonAsync<TaskIssuedBody>();
-        Assert.NotNull(await env.DnsQueryAsync(DnsCheckInNames.SealedPollName(implant.Id, keyId, Zone)));
+        Assert.NotNull(await env.DnsQueryAsync(DnsContactNames.SealedPollName(implant.Id, keyId, Zone)));
 
         var plain = Chunk(Encoding.UTF8.GetBytes("forged plaintext output"), 20);
         for (var i = 0; i < plain.Count; i++)
         {
-            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+            await env.DnsQueryAsync(DnsContactNames.ResultName(
                 implant.Id, Guid.TryParse(issuedPlainBody!.TaskId, out var pid) ? new TaskId(pid) : TaskId.New(),
                 succeeded: true, sequence: i, terminal: i == plain.Count - 1, plain[i], Zone));
         }
@@ -439,7 +439,7 @@ public class DnsCheckInTests
         var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         await call.RequestStream.CompleteAsync();
@@ -451,9 +451,9 @@ public class DnsCheckInTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        var pollAnswer = await env.DnsQueryAsync(DnsCheckInNames.PollName(implant.Id, Zone));
+        var pollAnswer = await env.DnsQueryAsync(DnsContactNames.PollName(implant.Id, Zone));
         Assert.NotNull(pollAnswer);
-        Assert.True(DnsCheckInNames.TryDecode(pollAnswer, out var framed));
+        Assert.True(DnsContactNames.TryDecode(pollAnswer, out var framed));
         Assert.Equal((byte)'t', framed![0]);
         var taskRequest = TaskRequest.Parser.ParseFrom(framed[1..]);
         var task = Guid.TryParse(taskRequest.TaskId, out var tid) ? new TaskId(tid) : TaskId.New();
@@ -469,13 +469,13 @@ public class DnsCheckInTests
         {
             if (i == 1)
                 continue;
-            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+            await env.DnsQueryAsync(DnsContactNames.ResultName(
                 implant.Id, task, succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
         }
         var probe = await env.DnsQueryAsync(
-            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(bytes), Zone));
+            DnsContactNames.ProbeName(implant.Id, task, DnsContactNames.DeliverySha(bytes), Zone));
         Assert.NotNull(probe);
-        Assert.True(DnsCheckInNames.TryDecode(probe, out var notYet));
+        Assert.True(DnsContactNames.TryDecode(probe, out var notYet));
         Assert.Equal((byte)'n', notYet![0]);
         var early = await env.Http.GetFromJsonAsync<TaskBody>(
             $"/engagements/{implant.EngagementId}/tasks/{taskRequest.TaskId}");
@@ -486,7 +486,7 @@ public class DnsCheckInTests
         // partial first attempt -- and the probe confirms the exact blob.
         for (var i = 0; i < chunks.Count; i++)
         {
-            await env.DnsQueryAsync(DnsCheckInNames.ResultName(
+            await env.DnsQueryAsync(DnsContactNames.ResultName(
                 implant.Id, task, succeeded: true, sequence: i, terminal: i == chunks.Count - 1, chunks[i], Zone));
         }
         var fetched = await WaitUntilAsync(async () => await env.Http.GetFromJsonAsync<TaskBody>(
@@ -495,17 +495,17 @@ public class DnsCheckInTests
         Assert.Equal("Completed", fetched!.Status);
         Assert.Equal(output, fetched.Output);
         var confirmed = await env.DnsQueryAsync(
-            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(bytes), Zone));
+            DnsContactNames.ProbeName(implant.Id, task, DnsContactNames.DeliverySha(bytes), Zone));
         Assert.NotNull(confirmed);
-        Assert.True(DnsCheckInNames.TryDecode(confirmed, out var yes));
+        Assert.True(DnsContactNames.TryDecode(confirmed, out var yes));
         Assert.Equal((byte)'y', yes![0]);
 
         // A different blob under the same task stays unconfirmed: the probe
         // names the exact bytes, not just the task.
         var other = await env.DnsQueryAsync(
-            DnsCheckInNames.ProbeName(implant.Id, task, DnsCheckInNames.DeliverySha(Encoding.UTF8.GetBytes("forged")), Zone));
+            DnsContactNames.ProbeName(implant.Id, task, DnsContactNames.DeliverySha(Encoding.UTF8.GetBytes("forged")), Zone));
         Assert.NotNull(other);
-        Assert.True(DnsCheckInNames.TryDecode(other, out var no));
+        Assert.True(DnsContactNames.TryDecode(other, out var no));
         Assert.Equal((byte)'n', no![0]);
     }
 
@@ -594,7 +594,7 @@ public class DnsCheckInTests
                 return value;
             await Task.Delay(25);
         }
-        throw new TimeoutException("The DNS check-in state was not observed in time.");
+        throw new TimeoutException("The DNS contact state was not observed in time.");
     }
 
     private static bool Matches<T>(T value) where T : class
@@ -725,7 +725,7 @@ public class DnsCheckInTests
         }
 
         /// <summary>
-        /// One check-in exchange: send the query, read the answer, return the
+        /// One contact exchange: send the query, read the answer, return the
         /// concatenated TXT strings (null when the answer carries none).
         /// </summary>
         public async Task<string?> DnsQueryAsync(string name)

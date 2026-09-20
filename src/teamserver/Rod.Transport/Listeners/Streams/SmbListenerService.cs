@@ -6,20 +6,20 @@ using Rod.CoreState.Implants;
 namespace Rod.Transport.Listeners.Streams;
 
 // The SMB listener service (architecture.md Sec 8): the named-pipe half of
-// the stream check-in transports. Named-pipe check-ins serve Windows segments
+// the stream contact transports. Named-pipe contacts serve Windows segments
 // where neither HTTP nor DNS egress exists -- the pipe is the shape such a
 // segment still allows. Each listener entry binds its pipe (the bind address
 // is the bare pipe name), registers itself into the listener registry the
 // same bind-then-register way every transport follows, and then accepts
 // connections in a loop: each connection serves the shape its handshake
-// advertises -- the poll exchange (one check-in, then closed) or the held
+// advertises -- the poll exchange (one contact, then closed) or the held
 // live session the stream mode runs -- through the shared StreamBeaconBridge.
 // The next server instance is already waiting while the current one is
 // served, so concurrent connections from several implants overlap instead of
 // queueing.
 
 /// <summary>
-/// Binds the entry's named pipe and serves check-ins until the host stops.
+/// Binds the entry's named pipe and serves contacts until the host stops.
 /// </summary>
 internal sealed class SmbListenerService : BackgroundService
 {
@@ -49,7 +49,7 @@ internal sealed class SmbListenerService : BackgroundService
         await _listeners.RegisterAsync(_listener, stoppingToken);
 
         _logger.LogInformation(
-            "Rod SMB listener {Name} answering pipe check-ins on {Pipe} for {Endpoint}.",
+            "Rod SMB listener {Name} answering pipe contacts on {Pipe} for {Endpoint}.",
             _listener.Name, pipeName, _listener.PublicEndpoint);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -77,14 +77,14 @@ internal sealed class SmbListenerService : BackgroundService
             }
 
             // Serve this connection off the accept loop and let the next
-            // instance wait: check-ins are short, but several implants may
+            // instance wait: contacts are short, but several implants may
             // poll at once.
             var connection = server;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _bridge.HandleCheckInAsync(connection, _listener, stoppingToken);
+                    await _bridge.HandleContactAsync(connection, _listener, stoppingToken);
                 }
                 finally
                 {

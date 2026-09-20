@@ -8,10 +8,10 @@ namespace Rod.Transport.Listeners.Dns;
 
 // The DNS listener's UDP server (architecture.md Sec 8): one hosted service
 // per DNS listener entry, bound on the entry's address, answering TXT
-// check-ins under the entry's public endpoint (the zone). The wire grammar
-// lives in DnsCheckInNames and the contract doc; the tasking/presence
+// contacts under the entry's public endpoint (the zone). The wire grammar
+// lives in DnsContactNames and the contract doc; the tasking/presence
 // composition lives in DnsBeaconBridge. Names in the zone that are not
-// check-ins are answered NXDOMAIN, the shape a resolver expects for an
+// contacts are answered NXDOMAIN, the shape a resolver expects for an
 // unknown name, so the zone does not advertise what it is.
 
 /// <summary>
@@ -24,7 +24,7 @@ namespace Rod.Transport.Listeners.Dns;
 internal sealed class DnsListenerService : BackgroundService
 {
     private readonly Listener _listener;
-    private readonly DnsCheckInAnswerer _answerer;
+    private readonly DnsContactAnswerer _answerer;
     private readonly IListenerRegistry _listeners;
     private readonly ILogger<DnsListenerService> _logger;
 
@@ -37,7 +37,7 @@ internal sealed class DnsListenerService : BackgroundService
         _listener = listener;
         // The shared answer core: the same wire grammar the DoH route serves
         // over HTTP bodies, behind this service's UDP socket.
-        _answerer = new DnsCheckInAnswerer(listener, bridge, logger);
+        _answerer = new DnsContactAnswerer(listener, bridge, logger);
         _listeners = listeners;
         _logger = logger;
     }
@@ -51,7 +51,7 @@ internal sealed class DnsListenerService : BackgroundService
         // listening, the same ordering the Kestrel-bound transports follow.
         await _listeners.RegisterAsync(_listener, stoppingToken);
 
-        _logger.LogInformation("Rod DNS listener {Name} answering TXT check-ins for zone {Zone} on {Bind}.",
+        _logger.LogInformation("Rod DNS listener {Name} answering TXT contacts for zone {Zone} on {Bind}.",
             _listener.Name, _listener.PublicEndpoint, _listener.BindAddress);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -70,7 +70,7 @@ internal sealed class DnsListenerService : BackgroundService
                 continue; // a malformed send or a transient socket error: next datagram
             }
 
-            // Answer on a task of its own so one slow check-in (a task claim,
+            // Answer on a task of its own so one slow contact (a task claim,
             // an audit append) never head-of-line blocks the receive loop.
             _ = AnswerAsync(udp, datagram, stoppingToken);
         }
@@ -86,7 +86,7 @@ internal sealed class DnsListenerService : BackgroundService
         catch (Exception ex) when (ex is SocketException or OperationCanceledException)
         {
             // The client vanished or the listener is stopping; the datagram
-            // is disposable -- the implant's next check-in retries.
+            // is disposable -- the implant's next contact retries.
         }
     }
 

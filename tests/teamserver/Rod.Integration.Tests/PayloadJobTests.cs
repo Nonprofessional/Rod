@@ -61,9 +61,9 @@ public class PayloadJobTests
             download.EnsureSuccessStatusCode();
             Assert.True((await download.Content.ReadAsByteArrayAsync()).Length > 0);
 
-            // Default check-in protection (architecture.md Sec 8/9): the
+            // Default contact protection (architecture.md Sec 8/9): the
             // build minted the per-artifact key the artifact seals its
-            // check-ins under, recorded beside the payload with the baked
+            // contacts under, recorded beside the payload with the baked
             // token -- the pair the enroll-time key bind resolves.
             var payloads = host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
             var record = await payloads.FindAsync(
@@ -126,7 +126,7 @@ public class PayloadJobTests
     public async Task BuildJob_CleartextEnrollWithoutABeacon_IsAccepted()
     {
         // The envelope POST cycle made the cleartext front self-sufficient:
-        // check-ins ride an ordinary HTTP POST on the same socket enrollment
+        // contacts ride an ordinary HTTP POST on the same socket enrollment
         // does, so a build against a cleartext endpoint needs no beacon
         // split. The accepted job carries no beacon endpoint -- the derived
         // single-front shape. A Go language request keeps the worker from
@@ -172,7 +172,7 @@ public class PayloadJobTests
     {
         // The beacon names the mTLS socket (TLS, and named one way -- a
         // listener id or a typed endpoint, never both); and a stager never
-        // checks in, so beacon fields on its builds are a mistake the build
+        // contacts, so beacon fields on its builds are a mistake the build
         // refuses rather than silently drops.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);

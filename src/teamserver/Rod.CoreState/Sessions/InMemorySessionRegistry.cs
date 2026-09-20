@@ -10,7 +10,7 @@ namespace Rod.CoreState.Sessions;
 /// by session id; implant- and engagement-scoped queries filter that map. A
 /// session is the implant's live channel, not one TCP connection:
 /// <see cref="OpenAsync"/> reuses the implant's active session when one exists
-/// (a reconnect -- a poll check-in or a flapped stream -- refreshes capabilities
+/// (a reconnect -- a poll contact or a flapped stream -- refreshes capabilities
 /// and last-seen) and only opens a new entity after the prior session closed.
 /// State is lost on restart; the port keeps callers agnostic to that.
 /// </summary>
@@ -25,7 +25,7 @@ public sealed class InMemorySessionRegistry : ISessionRegistry
         CancellationToken cancellationToken = default)
     {
         // Open-or-reuse: a session is the implant's live channel, not one TCP
-        // connection, so a reconnect (poll check-in, flapped stream) reuses the
+        // connection, so a reconnect (poll contact, flapped stream) reuses the
         // active session -- refreshing its capabilities and last-seen -- instead
         // of churning a new session entity and a SessionOpened audit record per
         // connection. Only a closed session (staleness sweep, retirement,

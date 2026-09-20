@@ -91,8 +91,8 @@ internal static class PayloadBuildRequestParser
             }
         }
 
-        // The check-in mode rides the beacon profile into the artifact: stream
-        // (persistent, interactive) or poll (low-and-slow check-ins). A typo
+        // The contact mode rides the beacon profile into the artifact: stream
+        // (persistent, interactive) or poll (low-and-slow contacts). A typo
         // must not silently build the interactive shape for an operator who
         // asked for low-and-slow, so anything else is a 400.
         var mode = body.Mode?.Trim().ToLowerInvariant();
@@ -101,7 +101,7 @@ internal static class PayloadBuildRequestParser
         if (mode is not ("stream" or "poll"))
             return (null, "Mode must be 'stream' or 'poll'.");
 
-        // The check-in the baked artifact runs: named, the mTLS socket the
+        // The contact the baked artifact runs: named, the mTLS socket the
         // gRPC stream dials; derived, whatever the enroll front implies -- an
         // http(s) front carries the envelope POST cycle on its own port (the
         // mainstream single-port shape), an mTLS front the stream on the same
@@ -182,7 +182,7 @@ internal static class PayloadBuildRequestParser
     // otherwise. The refusal is returned as a string; the value is null only when the
     // error is set. Transport reports the named listener's transport (null
     // for a typed endpoint) -- the fact the beacon resolution below needs, so
-    // a derived check-in matches the front it rides: an mTLS front carries
+    // a derived contact matches the front it rides: an mTLS front carries
     // the gRPC stream, a web front the envelope POST cycle, a quic front
     // its own session dial.
     private static async Task<(string? Value, string? Transport, string? Error)> ResolveEndpointAsync(
@@ -225,7 +225,7 @@ internal static class PayloadBuildRequestParser
         }
 
         // The socket family's enroll arm (Sec 8, enrollment over the stream
-        // check-in): an smb or tcp listener is enroll-nameable the same way
+        // contact): an smb or tcp listener is enroll-nameable the same way
         // -- the opening exchange on the pipe or socket carries the
         // EnrollRequest frames -- and the baked endpoint is the transport's
         // own dial: the pipe path in URL form, the host:port under tcp://.
@@ -260,17 +260,17 @@ internal static class PayloadBuildRequestParser
         return ($"{scheme}://{publicEndpoint}", listener.Transport, null);
     }
 
-    // Resolves the check-in the baked artifact runs. A named beacon listener
+    // Resolves the contact the baked artifact runs. A named beacon listener
     // or a typed beacon endpoint names the mTLS socket the gRPC stream dials,
     // and bakes as the bare authority -- to the implant a schemed beacon URL
     // means the envelope POST cycle, so the stream's dial shape carries no
-    // scheme. With neither named the check-in derives from the enroll front:
+    // scheme. With neither named the contact derives from the enroll front:
     // an mTLS front carries the gRPC stream on the same socket, every web
     // front (http, https, or a typed http(s) URL) the envelope POST cycle on
     // its own port -- the mainstream single-port shape, no split required.
     // A socket-owning native dial (the QUIC stream) completes its bare
     // public endpoint with the transport's own scheme, the URL shape the
-    // artifact's check-in client picks by. Stagers never check in, so beacon
+    // artifact's contact client picks by. Stagers never contact, so beacon
     // fields are refused on their builds.
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
@@ -286,7 +286,7 @@ internal static class PayloadBuildRequestParser
             return (null, "Name either beaconListenerId or beaconEndpoint, not both.");
         if (@class == ImplantClass.Stager)
             return (body.BeaconListenerId is not null || body.BeaconEndpoint is not null
-                ? (null, "A stager fetches its stage-2 and never checks in; beacon fields are not valid on a stager build.")
+                ? (null, "A stager fetches its stage-2 and never contacts; beacon fields are not valid on a stager build.")
                 : (null, (string?)null));
 
         if (body.BeaconListenerId is { } beaconListenerText)
@@ -320,7 +320,7 @@ internal static class PayloadBuildRequestParser
             }
             // The socket family's beacon arm (Sec 8): the named-pipe and
             // raw-TCP listeners serve both shapes -- one connection is one
-            // poll check-in on a poll-mode bake, and a stream-mode bake
+            // poll contact on a poll-mode bake, and a stream-mode bake
             // holds the live session the handshake's live advertisement
             // opens -- so either mode may name one and the baked beacon is
             // the transport's own dial either way (the baked mode picks the
@@ -342,7 +342,7 @@ internal static class PayloadBuildRequestParser
                 return (listener.PublicEndpoint, null);
             // A socket-owning native dial (the QUIC stream): the bare
             // host:port public endpoint completes with the transport's own
-            // scheme -- the URL shape the artifact's check-in client picks
+            // scheme -- the URL shape the artifact's contact client picks
             // by. Either mode bakes: stream holds the session, poll ends
             // each cycle on the client's idle window at the baked cadence.
             var quicEndpoint = listener.PublicEndpoint.Trim();
@@ -375,7 +375,7 @@ internal static class PayloadBuildRequestParser
             }
             if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
                 return (null,
-                    $"Beacon endpoint must be an absolute https URL naming the mTLS socket the check-in stream dials, or a dns:// dial, got '{beaconEndpoint}'.");
+                    $"Beacon endpoint must be an absolute https URL naming the mTLS socket the contact stream dials, or a dns:// dial, got '{beaconEndpoint}'.");
             return (BeaconAuthority(trimmed), null);
         }
 
@@ -457,11 +457,11 @@ internal static class PayloadBuildRequestParser
         {
             profile = profile with { Envelope = parsed };
         }
-        // Check-in protection is its own knob, independent of the enroll-body
+        // Contact protection is its own knob, independent of the enroll-body
         // envelope (architecture.md Sec 8/9): on by default, and only an
         // explicit opt-out rides -- the lab-debug plaintext frame.
-        if (body.CheckInProtection is false)
-            profile = profile with { CheckInProtection = false };
+        if (body.ContactProtection is false)
+            profile = profile with { ContactProtection = false };
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             // The fallback list is the egress walk order (architecture.md Sec 8):
@@ -557,7 +557,7 @@ internal static class PayloadBuildRequestParser
     }
 
     // The socket family's baked dial (Sec 8, enrollment over the stream
-    // check-in): the raw-TCP listener's host:port public endpoint completes
+    // contact): the raw-TCP listener's host:port public endpoint completes
     // under tcp://, and the smb listener's pipe path (\\host\pipe\name)
     // becomes the URL form smb://host/pipe/name -- a dot host naming the
     // local machine.

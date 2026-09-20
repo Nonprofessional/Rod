@@ -6,7 +6,7 @@ namespace Rod.Transport.Payloads;
 /// <summary>
 /// Derives the carrier names an artifact's baked endpoints dial, off the
 /// payload record the redeemed token resolves (the same record the enroll
-/// path already reads for the check-in key). The rule is the URL-shape
+/// path already reads for the contact key). The rule is the URL-shape
 /// discipline the implant itself applies (architecture.md Sec 8): a schemed
 /// http(s) endpoint runs the envelope POST cycle, and the beacon authority --
 /// the one field the build parser guarantees is the bare mTLS socket -- dials
@@ -79,7 +79,7 @@ public static class BakedCarriers
     // enrollment over QUIC, architecture.md Sec 8) serves the native stream
     // carrier, the DNS family's dns:// or doh:// dial serves the TXT poll
     // carrier, and the socket family's tcp:// or smb:// dial serves the
-    // one-connection-one-check-in message-pipe carrier; an empty field adds
+    // one-connection-one-contact message-pipe carrier; an empty field adds
     // nothing, and an unrecognized shape returns false so the caller
     // undeclares the whole set instead of guessing.
     private static bool TryAddEndpoint(List<string> names, string? endpoint)

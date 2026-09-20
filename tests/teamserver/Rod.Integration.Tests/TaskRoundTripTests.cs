@@ -44,7 +44,7 @@ public class TaskRoundTripTests
         // Open the beacon stream and complete the handshake first.
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
@@ -125,7 +125,7 @@ public class TaskRoundTripTests
 
         using var channel = env.ConnectBeacon(leafCert, leafKey);
         var client = new Beacon.BeaconClient(channel);
-        var call = client.CheckIn();
+        var call = client.Contact();
 
         await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
         Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
@@ -188,13 +188,13 @@ public class TaskRoundTripTests
         var (impostor, impostorCert, impostorKey) = await EnrollImplantAsync(implants, ca, clock);
 
         using var victimChannel = env.ConnectBeacon(victimCert, victimKey);
-        var victimCall = new Beacon.BeaconClient(victimChannel).CheckIn();
+        var victimCall = new Beacon.BeaconClient(victimChannel).Contact();
         await victimCall.RequestStream.WriteAsync(HandshakeFrame(victim.Id, 1, 0));
         Assert.True(await victimCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(victimCall.ResponseStream.Current).Status);
 
         using var impostorChannel = env.ConnectBeacon(impostorCert, impostorKey);
-        var impostorCall = new Beacon.BeaconClient(impostorChannel).CheckIn();
+        var impostorCall = new Beacon.BeaconClient(impostorChannel).Contact();
         await impostorCall.RequestStream.WriteAsync(HandshakeFrame(impostor.Id, 1, 0));
         Assert.True(await impostorCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(impostorCall.ResponseStream.Current).Status);

@@ -9,7 +9,7 @@ namespace Rod.Implant.Tests;
 /// answer to Cobalt Strike's sleep. Pins the argument grammar (Go durations,
 /// bare seconds, the interactive-as-poll zero), the was/now report the
 /// operator reads back, and the swap semantics of the shared Cadence both
-/// check-in clients sleep on.
+/// contact clients sleep on.
 /// </summary>
 public class BeaconSleepTests
 {

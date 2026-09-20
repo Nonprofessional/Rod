@@ -1,18 +1,18 @@
 namespace Rod.Implant.Internal;
 
-// The live check-in cadence: the sleep/jitter pair the artifact was baked
+// The live contact cadence: the sleep/jitter pair the artifact was baked
 // with, held mutable so a fielded implant can be retuned at run time through
 // the beacon.sleep verb (Cobalt Strike's sleep) -- including 0/0, the
-// interactive-as-poll posture where the implant checks in back-to-back.
+// interactive-as-poll posture where the implant contacts back-to-back.
 //
 // One instance is shared by everything with an opinion about the cadence:
-// both check-in clients read it at the top of every cycle (a change lands on
+// both contact clients read it at the top of every cycle (a change lands on
 // the very next sleep, never mid-cycle), and the beacon.sleep handler is the
 // only writer. Reference swap of an immutable pair, so a reader torn between
 // two Set calls still sees one coherent (sleep, jitter) pair.
 
 /// <summary>
-/// The mutable check-in cadence shared by the check-in clients and the
+/// The mutable contact cadence shared by the contact clients and the
 /// beacon.sleep handler. Reads are lock-free snapshots; writes replace the
 /// whole pair.
 /// </summary>

@@ -27,8 +27,8 @@ namespace Rod.Integration.Tests;
 /// Acceptance for the QUIC stream transport (architecture.md Sec 8): the
 /// socket-owning family's duplex variant, for egress that passes UDP/443
 /// but blocks TCP. A from-scratch QUIC implant -- no HTTP stack, just a
-/// QUIC client, the stream check-in framing, and the protobuf messages --
-/// sees a listener entry created through the operator API carry a check-in
+/// QUIC client, the stream contact framing, and the protobuf messages --
+/// sees a listener entry created through the operator API carry a contact
 /// end to end: TLS terminated at the CA-issued leaf with no client
 /// certificate anywhere, the handshake as the identity, tasking pushed onto
 /// the open stream the moment it is queued, and the live channel an
@@ -38,7 +38,7 @@ namespace Rod.Integration.Tests;
 public class QuicBeaconRoundTripTests
 {
     [QuicFact]
-    public async Task AQuicListenerEntry_CreatedThroughTheOperatorApi_CarriesACheckInEndToEnd()
+    public async Task AQuicListenerEntry_CreatedThroughTheOperatorApi_CarriesAContactEndToEnd()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -70,7 +70,7 @@ public class QuicBeaconRoundTripTests
             Assert.Equal("quic", recorded.Transport);
             Assert.Equal("running", recorded.State);
 
-            // The check-in: dial, open the stream, speak first. The implant
+            // The contact: dial, open the stream, speak first. The implant
             // advertises the replay-nonce arm like the reference implant, and
             // the response echoes it.
             var authority = host.Services.GetRequiredService<IImplantCertificateAuthority>();
@@ -178,7 +178,7 @@ public class QuicBeaconRoundTripTests
     {
         // The issuance half of the honest carrier declaration: a quic
         // listener is beacon-nameable, and the baked beacon URL must name the
-        // dial the artifact's check-in client picks by -- the transport's own
+        // dial the artifact's contact client picks by -- the transport's own
         // scheme completed over the bare public endpoint. Either mode bakes:
         // the poll shape cycles the session on the client's idle window at
         // the baked cadence.
@@ -292,7 +292,7 @@ public class QuicBeaconRoundTripTests
             Assert.NotEmpty(enroll.CaChain);
 
             // A manually minted token names no build, so the answer carries
-            // no per-artifact check-in key.
+            // no per-artifact contact key.
             Assert.False(enroll.HasEnvelopeKeyId);
 
             // The host facts crossed the frame exchange: the roster's implant
@@ -373,12 +373,12 @@ public class QuicBeaconRoundTripTests
         }
     }
 
-    // The per-artifact check-in key on the QUIC enroll answer
+    // The per-artifact contact key on the QUIC enroll answer
     // (architecture.md Sec 8/9): a token minted by a build names the
     // artifact, the artifact names the key, and the QUIC-enrolled implant
     // receives at enroll the key its listener-side binding demands.
     [QuicFact]
-    public async Task TheQuicEnroll_AnswerCarriesTheBuildsCheckInKey()
+    public async Task TheQuicEnroll_AnswerCarriesTheBuildsContactKey()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -571,7 +571,7 @@ public class QuicBeaconRoundTripTests
         public string? Error { get; set; }
     }
 
-    // The from-scratch QUIC implant: the stream check-in framing over one
+    // The from-scratch QUIC implant: the stream contact framing over one
     // bidirectional stream, nothing else -- no HTTP stack, no gRPC library,
     // the client an implant author of any language with a QUIC stack writes
     // from the contract doc.

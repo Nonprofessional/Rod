@@ -14,9 +14,9 @@ namespace Rod.CoreState.Sessions;
 /// </summary>
 /// <remarks>
 /// Composition wraps whichever registry the host runs (in-memory by default,
-/// Postgres when configured), so every transport's check-in path records the
+/// Postgres when configured), so every transport's contact path records the
 /// heartbeat without any of them knowing about it. The stamp is advisory: a
-/// failure to persist it never fails the check-in it decorated -- the session
+/// failure to persist it never fails the contact it decorated -- the session
 /// registry's own result is the authoritative one for presence.
 /// </remarks>
 public sealed class LastSeenSessionRegistry : ISessionRegistry
@@ -111,7 +111,7 @@ public sealed class LastSeenSessionRegistry : ISessionRegistry
         }
         catch (Exception)
         {
-            // The durable stamp is advisory; the check-in it decorated
+            // The durable stamp is advisory; the contact it decorated
             // already succeeded.
         }
     }

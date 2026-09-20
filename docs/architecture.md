@@ -39,7 +39,7 @@ around "managed components". Each phase states what the platform must support.
 4. **Delivery and initial access.** Delivery (phishing, host interaction, etc.)
    is out of scope for Rod, but the platform must **ingest the first callback**
    and correlate it to the engagement.
-5. **Beaconing / check-in.** The implant calls in; the teamserver authenticates
+5. **Beaconing / contact.** The implant calls in; the teamserver authenticates
    it, queues tasks, and accepts results. Async beacon and interactive session
    are distinct modes.
 6. **Post-exploitation tasking.** Operators issue tasks; the platform captures
@@ -168,7 +168,7 @@ under, and a note on its current state are listed.
 |---------|------|------------------------------------|-------|
 | `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`, `ImplantService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented. In-memory adapters behind every port; the durable pair lives in `Rod.Persistence`. Task issuance gates each verb on the implant's class reduced set, enforces the kill date and retirement at handshake, and claims tasks atomically from the queue (Sec 5.2, Sec 10.3). |
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
-| `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` check-in stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
+| `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` contact stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S) and mTLS listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `DotNetBuildUnit` -- the sole in-tree unit -- publishes the reference implant in a per-build staging copy as a self-contained single-file executable for the requested OS/arch (runtime identifier mapped from the build target; no target-side .NET install), baking the profile (transport shape, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
@@ -224,7 +224,7 @@ complexity budget, and its evolution rules bind every future protocol change.
 
 ### 5.1 Profiles are baked in at generation
 
-A **profile** -- the check-in mode, beacon parameters (sleep, jitter, kill
+A **profile** -- the contact mode, beacon parameters (sleep, jitter, kill
 date), the transport profile, and the C2 endpoint list -- is embedded into the
 implant is self-contained and standalone. This
 is what makes per-implant OPSEC possible: no two implants look the same, and a
@@ -439,7 +439,7 @@ recorded.**
 - **The bake trims each build to the transport it dials.** The egress walk
   the profile bakes names URL shapes -- a schemed http(s) front carries the
   envelope POST cycle, a bare host:port the mTLS gRPC stream (Sec 8) -- and
-  the unit compiles exactly the check-in modules those shapes can dial: the
+  the unit compiles exactly the contact modules those shapes can dial: the
   other module's source files leave the staging copy whole, a generated
   selection replaces the checked-in both-modules stub, and a walk with no
   stream entry generates the rod.v1 message types without the gRPC client,
@@ -448,7 +448,7 @@ recorded.**
   fingerprint -- while a shape-crossing walk (a stream primary with web
   fallbacks) keeps both clients so no bake strands the artifact on a front
   it cannot dial. The stager tree is never trimmed: it fetches over plain
-  HTTP and carries no check-in clients.
+  HTTP and carries no contact clients.
 - **The bake trims each build to the verbs it runs.** The class's verb set
   (Sec 5.2) is the server's authority for what an artifact may run, and the
   unit compiles exactly that set's handlers -- the whole-file trim Sec 5.3
@@ -497,11 +497,11 @@ protocol be "the product" while implants stay polyglot.
 
 OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
-- **Per-implant beacon profile, including the check-in mode.** Two shapes ride
+- **Per-implant beacon profile, including the contact mode.** Two shapes ride
   the same stream contract: **stream** holds one long-lived connection (the
   interactive shape -- server-push tasking, no reconnect cost) and **poll**
   drains queued tasking, closes, and sleeps the interval with **jitter**
-  (randomized delta) before the next check-in -- the low-and-slow shape, since a
+  (randomized delta) before the next contact -- the low-and-slow shape, since a
   persistent connection to a C2 endpoint is itself a loud signal. The mode is
   baked per implant at generation (`mode: stream|poll` on the build request),
   so one engagement can mix an interactive foothold with sleeping beacons.
@@ -561,7 +561,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - Supported listener transports: **HTTP(S)**, **HTTPS** (the single-port
   shape: one TLS socket that requests no client certificate anywhere, so the
   handshake is indistinguishable from an ordinary website's -- enrollment
-  rides the stager token and check-ins ride the sealed envelope under the
+  rides the stager token and contacts ride the sealed envelope under the
   per-artifact key, both authenticated at the application layer), **mTLS**
   (one bind posture on every mTLS endpoint, startup-bound or created at
   runtime: ask for the client certificate, refuse one that does not chain to
@@ -583,29 +583,29 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   named as a build's beacon.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
-  it: the operator API and UI in the clear, and check-ins identified by the
+  it: the operator API and UI in the clear, and contacts identified by the
   implant id in their handshake alone -- the DNS/SMB/TCP tradeoff, but on a
   socket anything with reach can present. The dev fallback binds loopback
   for exactly that reason, and a non-loopback plain-HTTP bind logs a startup
-  warning naming this posture. The cleartext check-in carrier is the
+  warning naming this posture. The cleartext contact carrier is the
   envelope route (an ordinary HTTP/1.x POST): Kestrel serves cleartext
   HTTP/2 only on an HTTP/2-only endpoint, which cannot also serve the
   HTTP/1.x enrollment riding the same socket, so the gRPC stream is
   TLS-carried. Over TLS the gRPC stream's identity is the client
   certificate, and only the `mtls` transport requests one; the
-  certificate-less `https` socket carries check-ins on the envelope route
+  certificate-less `https` socket carries contacts on the envelope route
   instead, where the per-artifact key sealing the body is the identity.
   A deployment that fronts the teamserver with its own TLS-terminating edge
   accepts the split knowingly; without such an edge, real binds are `Https`
   or `Mtls`.
-- **DNS is the egress-restricted check-in transport, and it carries its own
+- **DNS is the egress-restricted contact transport, and it carries its own
   enrollment.** A DNS listener entry
   answers TXT queries under its public endpoint (the zone) over UDP: a poll
   (`p.<b32(implant-id)>.<zone>`) refreshes an implant's presence and returns
   the next queued tasking as a signed `TaskRequest` in TXT; result chunks
   (`r.<b32(task-id)>.<s|f>.<seq>.<t|m>.<b32(chunk)>.<b32(implant-id)>.<zone>`)
   report outcomes, reassembled server-side. The wire grammar is the DNS
-  check-in contract ([extending/implants.md](extending/implants.md)); the
+  contact contract ([extending/implants.md](extending/implants.md)); the
   responses ride EDNS0 so a signed TaskRequest fits the datagram, and a task
   too large for the budget is not claimed over DNS: it stays queued for a
   stream transport. **Delivery confirmation:** a lost chunk drops a
@@ -641,7 +641,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   listener's engagement, and an accepted DNS enrollment opens the session
   itself (no handshake exists to open it): the polls that follow refresh
   what it wrote. A DNS-only target runs its whole lifecycle on this one
-  carrier -- the lightweight implant. **The check-in carriage seals for a
+  carrier -- the lightweight implant. **The contact carriage seals for a
   keyed artifact:** a build that baked an envelope key polls `k.`-named
   (the key id in the name, so the server resolves the seal statelessly and
   a restart re-derives it on the next poll), the poll answer rides as a
@@ -653,11 +653,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   `p.` answer, a dropped plaintext reassembly) so tasking is never handed
   down in the clear to an artifact known to carry a key. The transport's tradeoff is deliberate and documented: no
   handshake and no mTLS ride DNS, an implant is identified by its id alone
-  on the check-in path (the sealed enroll exchange authenticates by key
+  on the contact path (the sealed enroll exchange authenticates by key
   possession). Downstream tasking keeps the full Sec 9 posture -- the
   TaskRequest carries the same command signature, and a DNS-delivered task
   verifies exactly like a stream-delivered one. The degraded-mode contract
-  rides the session record: every check-in stamps the carrier it rode (web,
+  rides the session record: every contact stamps the carrier it rode (web,
   grpc, quic, dns, pipe), the roster badges a dns-carried session as
   degraded, and a task the carrier cannot serve stays queued with its
   visible why -- capability is a property of the carrier at runtime, not of
@@ -676,7 +676,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   the deploy/rotate runbook ([operations/redirectors.md](operations/redirectors.md)).
 - **Fallback egress endpoints are baked in and walked client-side.** A build
   may carry an ordered endpoint list -- the primary plus fallbacks (Sec 5.1) --
-  and the implant walks it on failed check-ins: enroll retries and beacon
+  and the implant walks it on failed contacts: enroll retries and beacon
   cycles that never reach a handshake advance to the next entry, wrapping to
   the primary so a front that returns is picked up again. The walk is entirely
   client-side -- the Tier 0 frame grammar is untouched -- and it never touches
@@ -698,15 +698,15 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   at `/implants/enroll`; URI and header routing at the public endpoint is a
   redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
   httptest-backed wire-shape test that captures the enroll request.
-- **The plain-HTTP envelope check-in is the implant-reach transport and the
-  reference implant's web check-in.** The same rod.v1 frames the gRPC stream
+- **The plain-HTTP envelope contact is the implant-reach transport and the
+  reference implant's web contact.** The same rod.v1 frames the gRPC stream
   carries, marshaled as varint-length-delimited sequences in ordinary
   HTTP(S) request/response bodies -- one POST (`/implants/beacon`) is one
-  poll check-in: the request body carries the handshake first plus any
+  poll contact: the request body carries the handshake first plus any
   results, exfil chunks, and staged pulls; the response carries the handshake
   response, the staged chunk runs answering the request's demands, and
   queued tasking while a 4 MiB dispatch budget lasts (what does not fit is
-  requeued for the next check-in). It changes the framing, not the protocol
+  requeued for the next contact). It changes the framing, not the protocol
   semantics: the route is mapped on every listener and the frame paths are
   the beacon compositions every transport shares -- an mTLS front serves it
   alongside the gRPC stream on the same socket, so a deployment never needs a
@@ -722,17 +722,17 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   content, not just authenticated content; the counter is strictly increasing
   per attempt and the route refuses one at or below its floor (a replayed
   body turns away without a session or a touch), and an enrollment that
-  redeemed a build-minted token is bound to that build's key, so its check-ins
+  redeemed a build-minted token is bound to that build's key, so its contacts
   cannot downgrade to the plaintext frame. The plaintext framed body is the
-  lab-debug toggle's shape (check-in protection off at build), served only
+  lab-debug toggle's shape (contact protection off at build), served only
   for implants no key was ever bound to; a client certificate still resolves
   first where an mTLS front presented one. The reference .NET implant picks
-  its check-in client by the baked beacon URL's shape: an `http(s)://` URL
+  its contact client by the baked beacon URL's shape: an `http(s)://` URL
   runs the envelope POST cycle on that port -- the mainstream single-port web
   posture, the build's derived default for `Http`/`Https` fronts -- while a
   bare host:port dials the mTLS gRPC stream (what a named mTLS beacon
   listener bakes). The pick is also compile-time: the bake trims each build
-  to the check-in modules its walk can dial (Sec 6, the transport trim).
+  to the contact modules its walk can dial (Sec 6, the transport trim).
   A build against a web front therefore
   needs no beacon split; naming the mTLS listener as the beacon stays the
   hardened option for an engagement that wants the interactive stream.
@@ -766,12 +766,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   provides for free -- through the shared frame paths (`BeaconIngest`,
   `BeaconTasking`): a result captured over a pipe or socket is
   indistinguishable in core state, the audit trail, and the live bus from one
-  captured over the gRPC stream. One connection is one poll check-in, the
+  captured over the gRPC stream. One connection is one poll contact, the
   envelope's cadence on the envelope's budget, and channel tasks claim under
   the store-and-forward discipline every poll artifact advertises (Sec 10.3)
   -- operator input parks server-side and rides the next connection's
   response.
-  **Enrollment over the stream check-in (the full-independence step QUIC
+  **Enrollment over the stream contact (the full-independence step QUIC
   first took):** the opening message may carry a kind-bearing
   `EnrollRequest` frame ahead of its handshake -- the enroll body the web
   route carries, promoted into the rod.v1 frame grammar -- answered by an
@@ -784,7 +784,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   transport's own dial (`tcp://host:port`, the pipe path in URL form
   `smb://host/pipe/name`), the enroll exchange runs the frame grammar on
   the dial, and the poll cycles ride the envelope's own request/response
-  shape over the message framing -- one connection is one check-in, the
+  shape over the message framing -- one connection is one contact, the
   interactive verbs on the shared store-and-forward carriage every poll
   client runs. **The stream mode holds the connection instead:** the
   handshake's live advertisement switches the server to the shared session
@@ -792,10 +792,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   session's own), so a stream-mode bake over a pipe or socket gets
   server-push tasking and live channels on the held connection -- the same
   dial, the mode picking the client that dials it, and an older teamserver
-  serving the connection as an ordinary poll check-in when it does not
+  serving the connection as an ordinary poll contact when it does not
   know the advertisement. The sealed body rides by default: the enroll
-  exchange and every check-in message are AES-256-GCM under the baked
-  per-artifact key (counter-floored on the check-in side, purpose-tagged
+  exchange and every contact message are AES-256-GCM under the baked
+  per-artifact key (counter-floored on the contact side, purpose-tagged
   on both), the same application-layer seal the cleartext http posture
   carries -- a bare socket or pipe leaks no frame bytes either, and the
   token secret never crosses in the clear.
@@ -809,11 +809,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   the same command signature, and a stream-delivered task verifies exactly
   like any other. Each entry is a hosted service owning its pipe or socket,
   registered into the listener registry the same bind-then-register way every
-  transport follows (`StreamBeaconBridge` is the transport-blind check-in
-  flow both share); the wire grammar is the stream check-in contract
+  transport follows (`StreamBeaconBridge` is the transport-blind contact
+  flow both share); the wire grammar is the stream contact contract
   ([extending/implants.md](extending/implants.md)), pinned end to end by the
   stream-enroll acceptance tests (a from-scratch TCP client drives
-  enroll-then-checkin on one connection, and a foreign engagement's token is
+  enroll-then-contact on one connection, and a foreign engagement's token is
   refused whole and unspent).
 - **QUIC is the duplex socket transport: the interactive tier over a UDP
   egress.** An engagement whose egress passes UDP/443 (where HTTP/3-era
@@ -830,7 +830,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   declared where it is read: the transport serves the native `beacon-stream`
   carrier, so a quic listener is beacon-nameable, the build bakes its dial
   as the transport's own scheme (`quic://host:port` -- the URL shape picks
-  the artifact's check-in client, and the bake-time trim compiles the QUIC
+  the artifact's contact client, and the bake-time trim compiles the QUIC
   module for exactly that shape). Either mode bakes: stream holds the
   session, poll ends each cycle on the client's idle window at the baked
   cadence -- the operator's pick -- and a poll run carries the interactive
@@ -851,7 +851,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   from JSON into the rod.v1 frame grammar -- token secret, class, host
   facts, the implant's public key, parent, kill date) answered by an
   `EnrollResponse` frame (status, identity, leaf and chain, the
-  per-artifact check-in key) and followed immediately by the ordinary
+  per-artifact contact key) and followed immediately by the ordinary
   handshake on the same stream -- one connection carries
   enroll-then-session; every reconnect carries the handshake alone. The
   server reuses the enrollment flow the web route drives (one shared,
@@ -867,7 +867,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   implant's subprocess test enrolls, handshakes, and tasks over the one
   UDP socket with no HTTP shape dialed at all.
 - **The shellcatch transport holds caught reverse shells.** Where the TCP
-  listener serves check-ins -- one connection, one rod.v1 exchange,
+  listener serves contacts -- one connection, one rod.v1 exchange,
   closed -- the shellcatch listener (`"shellcatch"`) accepts connections
   that speak no Rod protocol at all: the peer is whatever reverse-shell
   one-liner the operator ran on the target (nc, a bash `/dev/tcp` pipe, a
@@ -888,7 +888,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   paste-ready one-liners (the standard fetch-credential-run stager shape
   against the engagement's web listener) -- the paste is the operator's
   action through the input route, not a server-side write into the
-  session. Shellcatch serves no check-in carrier -- nothing here is
+  session. Shellcatch serves no contact carrier -- nothing here is
   implant ingress, and a build may never name it as a beacon. The
   exposure is inherent and named: a shellcatch port accepts whoever
   reaches it (the one-liner carries no secret); the mitigations are a
@@ -917,8 +917,8 @@ fleet-wide code execution. Security is a first-class concern.
 
 - **Identity.** Operator identities (credentials and API tokens) verified at
   login and per request; implant identities bound to their engagement by the
-  transport they check in over -- a client certificate on the mTLS listener,
-  the per-artifact check-in key on the web transports (below). API tokens are
+  transport they contact over -- a client certificate on the mTLS listener,
+  the per-artifact contact key on the web transports (below). API tokens are
   bearer credentials minted per operator
   through the operator API (shown once, stored as a digest), honored alongside
   cookie sessions through a front scheme that authenticates by what the
@@ -940,17 +940,17 @@ fleet-wide code execution. Security is a first-class concern.
   TLS the beacon resolves the implant from the certificate alone, so a
   certificate-less connection completes TLS, reaches only what every front
   serves (enrollment answers on its token), and opens no session.
-- **Check-in keys.** The web transports authenticate implants at the
+- **Contact keys.** The web transports authenticate implants at the
   application layer, not the TLS layer -- a TLS `CertificateRequest` is
   itself a fingerprint (an ordinary website never asks the visitor for one),
   which is why the `http`/`https` listeners never send one. Each build mints
   a per-artifact AES-256 key (the same envelope-key shape the opt-in AesGcm
   enroll body uses), bakes it into the artifact, and records it beside the
   stored payload: deleting the payload deletes the key, and that artifact's
-  sealed bodies stop being decodable -- enroll included. Check-in protection
+  sealed bodies stop being decodable -- enroll included. Contact protection
   defaults on at build (its own Advanced knob beside the enroll-body
   envelope; off is the lab-debug plaintext frame), and every envelope
-  check-in body is then AES-256-GCM under that key covering a strictly
+  contact body is then AES-256-GCM under that key covering a strictly
   increasing counter -- possession of the key is the authentication, the
   GCM tag binds the counter to the frames, the server keeps a per-implant
   floor and refuses a counter at or below it (a replayed body never opens a
@@ -1051,7 +1051,7 @@ fleet-wide code execution. Security is a first-class concern.
   generated itself; the server binds it with a CA-signed leaf at enroll and
   never sees the private half (Sec 7, Sec 9). Identity key material stays out
   of artifacts; the one symmetric key a build bakes is the per-artifact
-  check-in/envelope key above -- it seals wire bodies, not identity, and it
+  contact/envelope key above -- it seals wire bodies, not identity, and it
   is per-artifact and revocable with the payload it is recorded beside.
   Rotation is the operational flow *retire the compromised implant, repoint its
   endpoint, and build a fresh artifact*; there is no live in-place key swap.
@@ -1147,7 +1147,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 
 | Category | Example verbs | Summary |
 |----------|---------------|---------|
-| **core** | `shell.exec`, `shell.interact`, `file.push`, `file.pull`, `fs.list`, `proc.kill`, `beacon.sleep` | The mandatory-to-useful baseline: command execution (one-shot and interactive), file transfer in both directions, directory listing, process termination, and retiming the beacon's own cadence. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm); `fs.list` lists a directory for the file browser; `proc.kill` ends one process by pid, carrying a `kills-process` OPSEC flag for the picker to badge; `beacon.sleep` retunes the live check-in cadence (sleep and jitter) from the next cycle. |
+| **core** | `shell.exec`, `shell.interact`, `file.push`, `file.pull`, `fs.list`, `proc.kill`, `beacon.sleep` | The mandatory-to-useful baseline: command execution (one-shot and interactive), file transfer in both directions, directory listing, process termination, and retiming the beacon's own cadence. `file.pull` returns small files inline and streams large ones into the artifact store; `file.push` lands an operator-supplied payload on disk -- inline base64 up to 1 MiB per task, larger uploads staged and streamed down in chunks on the implant's demand (Sec 10's typed arm); `fs.list` lists a directory for the file browser; `proc.kill` ends one process by pid, carrying a `kills-process` OPSEC flag for the picker to badge; `beacon.sleep` retunes the live contact cadence (sleep and jitter) from the next cycle. |
 | **recon** | `recon.portscan`, `recon.hostenum`, `recon.service`, `recon.ps` | Target and network reconnaissance. `recon.ps` lists the local host's live processes -- pid, ppid, user, image. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
@@ -1342,7 +1342,7 @@ filesystem, network, and credentials actually live.
 engagement authorization and are always audited.
 
 A session is the implant's live channel, not one TCP connection: the handshake
-**reuses** an implant's active session on a reconnect (a poll-mode check-in or a
+**reuses** an implant's active session on a reconnect (a poll-mode contact or a
 flapped stream refreshes capabilities and last-seen) and opens a new entity only
 after the prior one closed, so a poll cadence neither churns session entities
 nor floods the trail with `SessionOpened` records -- the audit write happens
@@ -1355,8 +1355,8 @@ older than the configured `Sessions:Staleness:Threshold` (checked every
 `Sessions:Staleness:SweepInterval`); retirement closes a session immediately.
 The session's whole life is live on the operator event stream: opening a
 genuinely new session fans out a `SessionOpened` event (the same flood guard
--- a poll check-in reuses the active session and publishes nothing), so
-connected operators watch an implant come online the moment it checks in
+-- a poll contact reuses the active session and publishes nothing), so
+connected operators watch an implant come online the moment it contacts
 rather than on the next roster poll, and closing the session is what drops
 it off the online roster; each swept
 close also fans out a `SessionClosed` live event so connected operators see it
@@ -1408,7 +1408,7 @@ whose handshake advertised `task_acks` gets the arm echoed, acks every parsed
 transports (the gRPC stream, the WebSocket beacon, QUIC) hold each dispatched
 task in a per-stream ledger until its ack crosses -- a stream that ends
 holding an ack-less dispatch returns it to the queue, so the task rides the
-next check-in instead of stranding. Delivery is then at-least-once, and the
+next contact instead of stranding. Delivery is then at-least-once, and the
 implant makes that safe: it recognizes a task it already held (a bounded
 per-run ledger of parsed ids), re-acks it without running it twice, and
 re-sends its cached result when the original delivery died with a stream.
@@ -1421,7 +1421,7 @@ per handshake, never sticky on the implant the way the replay-nonce flag is
 would requeue dispatches an unupgraded implant already ran. Unupgraded
 implants never advertise and keep today's semantics exactly -- a written
 frame counts as delivered, a lost result leaves the task Dispatched -- and
-the poll carriers (DNS, the plain-HTTP envelope, the pipe/TCP check-ins)
+the poll carriers (DNS, the plain-HTTP envelope, the pipe/TCP contacts)
 keep their own posture: their response is answered whole or not at all, they
 hold no ack ledger, and an ack they receive is accepted and inert.
 
@@ -1480,12 +1480,12 @@ claims a channel task at all, because a datagram poll has no stream to carry
 the input half. The poll carriers have a third answer, the degraded
 discipline, carried by every poll artifact: the artifact advertises the
 store-and-forward capability in its handshake, and the interactive verbs
-claim over its envelope check-ins -- operator input parks server-side
+claim over its envelope contacts -- operator input parks server-side
 (DegradedChannelHub, bounded per task) and rides the next cycle's response,
 the handler's output batches upstream, and a channel the implant stops
 collecting closes itself with a timeout result. The tradeoff is the
 operator's to make, not the bake's: while a channel is open, the
-interactive traffic runs at the check-in cadence, every keystroke costing
+interactive traffic runs at the contact cadence, every keystroke costing
 up to one interval each way. The reference implant's shell channel runs the platform shell
 under a pseudo-terminal on Unix -- the documented `script` wrapper -- so the
 channel behaves like a real terminal: prompt, line editing, and the

@@ -44,11 +44,11 @@ export interface Implant {
   // could attribute one -- what a listener-deletion warning counts against.
   enrolledViaListenerId: string | null
   // The durable heartbeat: when the teamserver last heard from this implant,
-  // kept after the session is gone. Null when it never checked in past enroll.
+  // kept after the session is gone. Null when it never contacted past enroll.
   lastSeenAt: string | null
-  // The carrier the live session's last check-in rode (the degraded-mode
+  // The carrier the live session's last contact rode (the degraded-mode
   // vocabulary: web, grpc, quic, dns, pipe); 'dns' is the constrained
-  // carrier. Null while offline or when no check-in recorded one.
+  // carrier. Null while offline or when no contact recorded one.
   lastCarrier: string | null
 }
 
@@ -1127,10 +1127,10 @@ export interface BuildPayloadInput {
   // exclusive on the wire.
   listenerId: string | null
   endpoint: string | null
-  // The socket the check-in stream dials when it differs from the enroll
+  // The socket the contact stream dials when it differs from the enroll
   // endpoint (the split-socket shape: enroll on a web front, the interactive
   // mTLS stream on its own listener). Named by listener or typed URL, and
-  // optional everywhere -- a web front carries its check-ins itself over the
+  // optional everywhere -- a web front carries its contacts itself over the
   // envelope POST cycle.
   beaconListenerId: string | null
   beaconEndpoint: string | null
@@ -1142,14 +1142,14 @@ export interface BuildPayloadInput {
   userAgent: string | null
   headers: Record<string, string> | null
   requestTimeoutSeconds: number | null
-  // The enroll-body shape only. Check-in protection is its own knob below --
+  // The enroll-body shape only. Contact protection is its own knob below --
   // the two phases are independent.
   envelope: string | null
-  // Whether the artifact's check-in bodies seal under the per-artifact key
+  // Whether the artifact's contact bodies seal under the per-artifact key
   // minted at build. Null (the default) leaves it on; false is the explicit
   // lab-debug opt-out -- the plaintext frame body, unauthenticated over
   // cleartext and unencrypted over TLS.
-  checkInProtection: boolean | null
+  contactProtection: boolean | null
   mode: string | null
   sleepSeconds: number | null
   jitterSeconds: number | null
@@ -1197,7 +1197,7 @@ export interface BuildJob {
   language: string
   target: string
   endpoint: string
-  // The check-in socket on a split-socket build; null when the beacon rides
+  // The contact socket on a split-socket build; null when the beacon rides
   // the enroll endpoint.
   beaconEndpoint: string | null
   mode: string
@@ -1267,7 +1267,7 @@ export interface PayloadBuildProfile {
   userAgent: string | null
   requestTimeoutSeconds: number | null
   envelope: string | null
-  checkInProtection: boolean | null
+  contactProtection: boolean | null
   fallbackEndpoints: string[] | null
 }
 

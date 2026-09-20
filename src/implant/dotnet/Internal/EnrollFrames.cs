@@ -15,8 +15,8 @@ internal static class EnrollFrames
     /// Parses an assembled EnrollResponse body (the plaintext framed shape)
     /// and materializes the enrollment: status-checked, leaf-bound, chain
     /// carried, and -- when the enrollment bound a build key the dial did
-    /// not already carry -- the per-artifact check-in key adopted into the
-    /// transport profile so later check-ins seal under it.
+    /// not already carry -- the per-artifact contact key adopted into the
+    /// transport profile so later contacts seal under it.
     /// <paramref name="carriage"/> names the module in the adoption log.
     /// </summary>
     public static Task<Enrollment> MaterializeAsync(byte[] answerBody, EnrollDial dial, string carriage)
@@ -46,7 +46,7 @@ internal static class EnrollFrames
             answer.ParentImplantId,
             dial.PrivateKey);
 
-        // The per-artifact check-in key the enrollment bound: adopted into
+        // The per-artifact contact key the enrollment bound: adopted into
         // the transport profile when the bake carried none, so a walk that
         // later crosses onto another front seals under the key the
         // listener-side binding demands.
@@ -58,7 +58,7 @@ internal static class EnrollFrames
             answer.EnvelopeKeyId.CopyTo(packed, 0);
             answer.EnvelopeKey.CopyTo(packed, answer.EnvelopeKeyId.Length);
             dial.Profile.EnvelopeKey = Convert.ToBase64String(packed);
-            dial.Log?.WriteLine($"rod-implant: adopted the build's check-in key from the {carriage} enroll answer");
+            dial.Log?.WriteLine($"rod-implant: adopted the build's contact key from the {carriage} enroll answer");
         }
 
         return Task.FromResult(enrollment);

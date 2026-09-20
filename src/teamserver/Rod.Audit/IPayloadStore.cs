@@ -41,7 +41,7 @@ public interface IPayloadStore
     /// The payload a build minted <paramref name="tokenId"/> into (its baked
     /// enrollment credential), or null when no stored payload carries it --
     /// a manually minted token names no payload. The enroll path resolves the
-    /// build's check-in key through this: a token minted with a payload binds
+    /// build's contact key through this: a token minted with a payload binds
     /// the enrollment to that artifact's key posture.
     /// </summary>
     Task<PayloadRecord?> FindByTokenAsync(Guid tokenId, CancellationToken cancellationToken = default);

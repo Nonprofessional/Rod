@@ -126,7 +126,7 @@ function App() {
   // cookie. null while the session is being resolved or when no session exists;
   // the route guard renders the login view in the latter case.
   const [operator, setOperator] = useState<SessionOperator | null>(null)
-  const [checking, setChecking] = useState(true)
+  const [contactg, setContactg] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -138,7 +138,7 @@ function App() {
         // No session cookie (401); stay on the login view.
       })
       .finally(() => {
-        if (!cancelled) setChecking(false)
+        if (!cancelled) setContactg(false)
       })
     // A mid-session 401 (cookie expired or revoked) anywhere in the API layer
     // returns the shell to the login view instead of leaving a half-working UI
@@ -161,7 +161,7 @@ function App() {
     setOperator(null)
   }, [])
 
-  if (checking) {
+  if (contactg) {
     return (
       <div className="boot">
         <div className="boot-inner">

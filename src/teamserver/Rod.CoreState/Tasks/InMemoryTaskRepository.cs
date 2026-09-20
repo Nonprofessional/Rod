@@ -136,7 +136,7 @@ public sealed class InMemoryTaskRepository : ITaskRepository
     public System.Threading.Tasks.Task<Task?> NextPendingAsync(ImplantId implant, CancellationToken cancellationToken = default)
     {
         // Oldest still-queued task for the implant by global enqueue order; the
-        // beacon drains these one at a time on each check-in.
+        // beacon drains these one at a time on each contact.
         var next = _tasks.Values
             .Where(t => t.ImplantId == implant && t.Status == TaskStatus.Queued)
             .OrderBy(t => _order.GetValueOrDefault(t.Id))

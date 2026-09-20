@@ -70,7 +70,7 @@ public static class PayloadJobEndpoints
         // The enrollment credential mints at enqueue and rides the queued
         // request into the bake -- identical to the synchronous path, including
         // the per-artifact envelope key whenever a phase needs it: the AesGcm
-        // enroll envelope or check-in protection (the default).
+        // enroll envelope or contact protection (the default).
         var (secret, tokenId) = await PayloadBuildTokenMinter.MintAsync(
             engagement!, body, tokens, clock, audit, cancellationToken);
         var request = parsed! with
@@ -79,7 +79,7 @@ public static class PayloadJobEndpoints
             MintedTokenId = tokenId.Value,
             TokenMaxUses = body.TokenMaxUses ?? 1,
         };
-        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.CheckInProtection)
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.ContactProtection)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
             request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };
@@ -147,7 +147,7 @@ public static class PayloadJobEndpoints
         string Language,
         string Target,
         string Endpoint,
-        // The check-in socket on a split-socket build; null when the beacon
+        // The contact socket on a split-socket build; null when the beacon
         // rides the enroll endpoint.
         string? BeaconEndpoint,
         string Mode,

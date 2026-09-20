@@ -81,7 +81,7 @@ public static class ImplantEndpoints
                 EnrolledViaListenerId: i.EnrolledViaListenerId?.ToString("N"),
                 LastSeenAt: i.LastSeenAt,
                 // The degraded-mode contract (architecture.md Sec 8): the
-                // carrier the live session's last check-in rode, null when
+                // carrier the live session's last contact rode, null when
                 // none recorded -- the posture's default, not degraded.
                 LastCarrier: sessionById.GetValueOrDefault(i.Id)?.LastCarrier))
             .ToArray();
@@ -328,9 +328,9 @@ public static class ImplantEndpoints
         // implant, kept after the session is gone. While a session is active
         // the presence roster's stamp is the fresher one.
         DateTimeOffset? LastSeenAt = null,
-        // The carrier the live session's last check-in rode (the degraded
+        // The carrier the live session's last contact rode (the degraded
         // vocabulary on Session.LastCarrier); null while offline or when no
-        // check-in recorded one.
+        // contact recorded one.
         string? LastCarrier = null);
 
     public sealed record ImplantTaskResponse(

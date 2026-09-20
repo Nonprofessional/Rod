@@ -36,7 +36,7 @@
     <!--
       The generated gRPC surface, the compile half of the bake-time transport
       trim (architecture.md Sec 8): "Client" (the default) also generates the
-      Beacon.CheckIn gRPC client the mTLS stream module dials; "None" (what
+      Beacon.Contact gRPC client the mTLS stream module dials; "None" (what
       the build unit passes for a walk with no stream-shaped entry) generates
       the rod.v1 message types only. The Grpc.Net.Client reference rides the
       same switch below, so a web-shaped build links no gRPC client code at
@@ -50,7 +50,7 @@
       The wire protocol contract. The proto is the teamserver's
       (src/teamserver/Rod.Protocol/protos/rod.proto); the Link keeps it visible
       under protos/ in the implant project without copying it. Client-only: the
-      implant dials the Beacon.CheckIn stream; it does not host any service.
+      implant dials the Beacon.Contact stream; it does not host any service.
       The gRPC services generated alongside the messages follow the
       RodGrpcServices trim switch above. rod.proto has no imports, so no
       ProtoRoot is needed; Grpc.Tools compiles the single file directly.

@@ -44,7 +44,7 @@ public class TransportProvidersTests
     public void Find_ServesTheQuicDialUnderItsOwnScheme()
     {
         // The duplex variant completes its bare host:port public endpoint
-        // with the quic scheme, the URL shape the baked artifact's check-in
+        // with the quic scheme, the URL shape the baked artifact's contact
         // client picks by -- the one socket-owning dial that is not the TLS
         // default.
         var provider = TransportProviders.Find("quic");

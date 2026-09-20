@@ -46,7 +46,7 @@ public class EngagementLoopTests
         // --- Phase 1: handshake + signed task dispatch + captured result. ---
         using var channelA = env.ConnectBeacon(leafCert, leafKey);
         var clientA = new Beacon.BeaconClient(channelA);
-        var callA = clientA.CheckIn();
+        var callA = clientA.Contact();
         await callA.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callA.ResponseStream.Current).Status);
@@ -178,7 +178,7 @@ public class EngagementLoopTests
         // --- Phase 4: silent stream death swept, recovered implant re-handshakes. ---
         using var channelB = env.ConnectBeacon(leafCert, leafKey);
         var clientB = new Beacon.BeaconClient(channelB);
-        var callB = clientB.CheckIn();
+        var callB = clientB.Contact();
         await callB.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await callB.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callB.ResponseStream.Current).Status);
@@ -208,7 +208,7 @@ public class EngagementLoopTests
         // -- the sweep ended the old session, and the handshake opens a new one.
         using var channelC = env.ConnectBeacon(leafCert, leafKey);
         var clientC = new Beacon.BeaconClient(channelC);
-        var callC = clientC.CheckIn();
+        var callC = clientC.Contact();
         await callC.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
         Assert.True(await callC.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
         Assert.Equal(HandshakeStatus.Ok, ParseResponse(callC.ResponseStream.Current).Status);

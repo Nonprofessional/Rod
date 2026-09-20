@@ -30,7 +30,7 @@ import { implantMenuEntries } from './implantMenu'
 // dot plus the last-seen column (the presence query's projection, handed down
 // from the engagement view's live tick). One row per implant is enough because
 // the session registry holds at most one active session per implant; a
-// re-check-in refreshes it rather than adding rows.
+// re-contact refreshes it rather than adding rows.
 //
 // The table rides a toolbar -- text search, a state filter, a class filter,
 // column sorting -- and paginates by device group when the fleet outgrows one
@@ -554,7 +554,7 @@ export function ImplantsView({
                             {implant.isOnline && implant.lastCarrier === 'dns' && (
                               <span
                                 className="muted"
-                                title="The degraded-mode contract: this session's last check-in rode the DNS carrier -- presence, short tasking, and chunked results only. Channel tasks stay queued until a stream carrier returns."
+                                title="The degraded-mode contract: this session's last contact rode the DNS carrier -- presence, short tasking, and chunked results only. Channel tasks stay queued until a stream carrier returns."
                               >
                                 {' '}
                                 degraded · dns

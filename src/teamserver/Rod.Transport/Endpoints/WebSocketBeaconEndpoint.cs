@@ -26,7 +26,7 @@ namespace Rod.Transport.Endpoints;
 // WebSocket on the plain-HTTP listener family -- so an implant whose only
 // front is a web front can still hold the live channel (shell.interact,
 // tunnel.forward, tunnel.socks) without faking it with back-to-back polls.
-// The handshake, the auth, and the frame grammar are the envelope check-in's
+// The handshake, the auth, and the frame grammar are the envelope contact's
 // own, message-shaped instead of body-shaped: every WebSocket message carries
 // the same sealed-or-plaintext framed-frames body the envelope POST does, so
 // the web transports keep their posture -- the per-artifact key authenticates
@@ -36,7 +36,7 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// Maps the WebSocket beacon route. Mapped alongside the operator API and the
-/// envelope check-in on every listener like them; the identity rules are the
+/// envelope contact on every listener like them; the identity rules are the
 /// envelope's (the sealed body's artifact key over the web posture, the
 /// cleartext id fallback in the lab posture only).
 /// </summary>
@@ -78,7 +78,7 @@ internal sealed class WebSocketBeaconStream
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
     private readonly IPayloadStore _payloads;
-    private readonly EnvelopeCheckInKeys _checkInKeys;
+    private readonly EnvelopeContactKeys _contactKeys;
     private readonly BeaconSessionRunner _runner;
 
     public WebSocketBeaconStream(
@@ -95,14 +95,14 @@ internal sealed class WebSocketBeaconStream
         BeaconIngest ingest,
         BeaconTasking tasking,
         IPayloadStore payloads,
-        EnvelopeCheckInKeys checkInKeys)
+        EnvelopeContactKeys contactKeys)
     {
         _handshake = handshake;
         _sessions = sessions;
         _audit = audit;
         _clock = clock;
         _payloads = payloads;
-        _checkInKeys = checkInKeys;
+        _contactKeys = contactKeys;
         _runner = new BeaconSessionRunner(
             sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
     }
@@ -117,34 +117,34 @@ internal sealed class WebSocketBeaconStream
         using var ws = await http.WebSockets.AcceptWebSocketAsync();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        // 1. The first message is the check-in body the envelope route reads:
+        // 1. The first message is the contact body the envelope route reads:
         //    the sealed envelope under the per-artifact key, or the plaintext
         //    framed frames of the lab posture.
         var first = await ReceiveMessageAsync(ws, linked.Token);
         if (first is null)
             return;
 
-        long checkInCounter = 0;
+        long contactCounter = 0;
         var sealedKey = (KeyId: Guid.Empty, Key: Array.Empty<byte>());
         var isSealed = false;
         var framed = first;
-        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(first, out var sealedText) is { } keyId)
+        if (EnvelopeBeaconContact.TryReadSealedKeyId(first, out var sealedText) is { } keyId)
         {
             var carrier = await _payloads.FindByEnvelopeKeyAsync(keyId, linked.Token);
             if (carrier?.EnvelopeKey is not { } artifactKey
-                || AesGcmEnvelope.TryUnwrap(sealedText, keyId, artifactKey, AesGcmEnvelope.CheckInRequestAad)
+                || AesGcmEnvelope.TryUnwrap(sealedText, keyId, artifactKey, AesGcmEnvelope.ContactRequestAad)
                     is not { } plaintext
                 || plaintext.Length < CounterZero.Length)
             {
                 // The unwrap failed, so there is nothing to seal a refusal
                 // under: the raw unspecified refusal leaks only the status.
                 await SendFramesAsync(ws, sealedBody: false,
-                    new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
+                    new[] { EnvelopeBeaconContact.HandshakeFrame(
                         BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                     sealedKey, linked.Token);
                 return;
             }
-            checkInCounter = BinaryPrimitives.ReadInt64BigEndian(plaintext);
+            contactCounter = BinaryPrimitives.ReadInt64BigEndian(plaintext);
             framed = plaintext[CounterZero.Length..];
             sealedKey = (keyId, artifactKey);
             isSealed = true;
@@ -163,9 +163,9 @@ internal sealed class WebSocketBeaconStream
             return; // A malformed body gets no answer; the connection ends.
         }
 
-        if (frames.Count == 0 || !EnvelopeBeaconCheckIn.TryParseHandshake(frames[0], out var handshakeRequest))
+        if (frames.Count == 0 || !EnvelopeBeaconContact.TryParseHandshake(frames[0], out var handshakeRequest))
         {
-            await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
+            await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconContact.HandshakeFrame(
                 BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                 sealedKey, linked.Token);
             return;
@@ -176,19 +176,19 @@ internal sealed class WebSocketBeaconStream
         // clear the accepted floor.
         if (ImplantId.TryParse(handshakeRequest.ImplantId, out var sealedImplant))
         {
-            if (_checkInKeys.TryGet(sealedImplant) is { } bound)
+            if (_contactKeys.TryGet(sealedImplant) is { } bound)
             {
                 if (!isSealed || sealedKey.KeyId != bound.KeyId)
                 {
-                    await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
+                    await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconContact.HandshakeFrame(
                         BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                         sealedKey, linked.Token);
                     return;
                 }
             }
-            if (isSealed && !_checkInKeys.Accept(sealedImplant, checkInCounter))
+            if (isSealed && !_contactKeys.Accept(sealedImplant, contactCounter))
             {
-                await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(
+                await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconContact.HandshakeFrame(
                     BeaconHandshake.Response(HandshakeStatus.Unspecified, engagementId: null, replayNonces: false)) },
                     sealedKey, linked.Token);
                 return;
@@ -199,9 +199,9 @@ internal sealed class WebSocketBeaconStream
         // transport presented one, else the sealed body's posture -- which
         // stands by reach alone only in the cleartext lab shape.
         var identity = ClientCertificateIdentity.Read(http);
-        var (response, handshake) = await EnvelopeBeaconCheckIn.TryHandshakeAsync(
+        var (response, handshake) = await EnvelopeBeaconContact.TryHandshakeAsync(
             _handshake, identity, handshakeRequest, isSealed || !http.Request.IsHttps);
-        await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconCheckIn.HandshakeFrame(response) },
+        await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconContact.HandshakeFrame(response) },
             sealedKey, linked.Token);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return;
@@ -244,12 +244,12 @@ internal sealed class WebSocketBeaconStream
                     byte[] plaintext;
                     if (isSealed)
                     {
-                        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(message, out var messageSealed) is not { } messageKey
+                        if (EnvelopeBeaconContact.TryReadSealedKeyId(message, out var messageSealed) is not { } messageKey
                             || messageKey != sealedKey.KeyId
-                            || AesGcmEnvelope.TryUnwrap(messageSealed, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInRequestAad)
+                            || AesGcmEnvelope.TryUnwrap(messageSealed, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.ContactRequestAad)
                                 is not { } unsealed
                             || unsealed.Length < CounterZero.Length
-                            || !_checkInKeys.Accept(session.Implant, BinaryPrimitives.ReadInt64BigEndian(unsealed)))
+                            || !_contactKeys.Accept(session.Implant, BinaryPrimitives.ReadInt64BigEndian(unsealed)))
                             throw new InvalidOperationException("A sealed message did not verify under its artifact key.");
                         plaintext = unsealed[CounterZero.Length..];
                     }
@@ -294,7 +294,7 @@ internal sealed class WebSocketBeaconStream
     {
         var payload = sealedBody
             ? Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
-                EnvelopeFraming.Encode(frames), sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInResponseAad))
+                EnvelopeFraming.Encode(frames), sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.ContactResponseAad))
             : EnvelopeFraming.Encode(frames);
         return ws.SendAsync(
             payload,

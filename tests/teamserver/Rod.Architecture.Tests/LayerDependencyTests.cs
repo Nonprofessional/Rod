@@ -115,7 +115,7 @@ public class LayerDependencyTests
     // it depends on nothing in-house, exactly like core state and audit. This
     // test was the missing half of the layer matrix -- without it, a forbidden
     // reference from the contract project would go unnoticed as long as no code
-    // used it. The namespace checks inspect usage, so the dead-reference case
+    // used it. The namespace contactsspect usage, so the dead-reference case
     // is guarded at the csproj level by ProjectReferenceTests.
     [Fact]
     public void Protocol_Dependencies_PointInwardOnly()

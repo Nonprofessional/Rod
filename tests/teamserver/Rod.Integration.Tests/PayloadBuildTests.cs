@@ -180,7 +180,7 @@ public class PayloadBuildTests
             Assert.Equal(10, row.Build.JitterSeconds);
             Assert.Equal(1, row.Build.TokenMaxUses);
             Assert.Equal("AesGcm", row.Build.Envelope);
-            Assert.True(row.Build.CheckInProtection);
+            Assert.True(row.Build.ContactProtection);
 
             // The join is live: revoking the baked credential removes the
             // token, and the next listing keeps the historical id but reads

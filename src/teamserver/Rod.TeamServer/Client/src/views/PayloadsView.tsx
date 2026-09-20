@@ -196,7 +196,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                           <span
                             title={
                               front
-                                ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + check-in${p.beaconEndpoint ? ' of the split shape' : ''})`
+                                ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + contact${p.beaconEndpoint ? ' of the split shape' : ''})`
                                 : `No listener serves this address (typed for a redirector): ${p.endpoint}`
                             }
                           >
@@ -348,7 +348,7 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
     lines.push(
       line('Mode', b.mode ?? 'stream (default)'),
       line(
-        'Check-in',
+        'Contact',
         b.sleepSeconds != null
           ? `every ${b.sleepSeconds}s ± ${b.jitterSeconds ?? 0}s jitter`
           : 'defaults',
@@ -362,8 +362,8 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
     if (b.envelope) lines.push(line('Enroll body', b.envelope))
     lines.push(
       line(
-        'Check-in protection',
-        b.checkInProtection == null ? 'on (default)' : b.checkInProtection ? 'on' : 'off',
+        'Contact protection',
+        b.contactProtection == null ? 'on (default)' : b.contactProtection ? 'on' : 'off',
       ),
     )
   }

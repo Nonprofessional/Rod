@@ -40,7 +40,7 @@ internal sealed class EgressEndpoints
     /// <summary>The enroll endpoint the next attempt uses.</summary>
     public string CurrentEnrollUrl => _entries[Index].EnrollUrl;
 
-    /// <summary>The beacon host the next check-in cycle dials.</summary>
+    /// <summary>The beacon host the next contact cycle dials.</summary>
     public string CurrentBeaconUrl => _entries[Index].BeaconUrl;
 
     /// <summary>

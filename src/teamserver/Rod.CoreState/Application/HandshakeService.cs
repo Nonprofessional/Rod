@@ -147,7 +147,7 @@ public sealed class HandshakeService
         // 6. Open (or reuse) the session. The capabilities advertised here gate
         // tasking dispatch (architecture.md Sec 10). A session is the
         // implant's live channel, not one TCP connection: the registry reuses
-        // the active session on a reconnect (a poll check-in or a flapped
+        // the active session on a reconnect (a poll contact or a flapped
         // stream) and only opens a new entity after the prior one closed.
         // Whether this handshake reused one is returned so the transport
         // writes the SessionOpened audit record only for a genuinely new
@@ -157,10 +157,10 @@ public sealed class HandshakeService
 
         // 6b. Fan a genuinely-new session out to connected operator sessions
         // (architecture.md Sec 10.3): the implant came online, and the online
-        // roster should show it the moment it checks in, not on the next poll.
+        // roster should show it the moment it contacts, not on the next poll.
         // The same flood guard the transport's SessionOpened audit record
-        // applies -- a reused session (a poll check-in, a flapped stream) is
-        // silent, so a check-in cadence cannot flood the stream. The audit
+        // applies -- a reused session (a poll contact, a flapped stream) is
+        // silent, so a contact cadence cannot flood the stream. The audit
         // record itself stays the transport's write: it owns the trail's
         // encoding and ordering relative to its own frames.
         if (priorActive is null && _bus is not null)

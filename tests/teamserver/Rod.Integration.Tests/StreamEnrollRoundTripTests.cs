@@ -16,21 +16,21 @@ using TaskOutcome = Rod.V1.TaskOutcome;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Acceptance for enrollment over the stream check-in (architecture.md
+/// Acceptance for enrollment over the stream contact (architecture.md
 /// Sec 8, the same full-independence step QUIC took): the named-pipe and
 /// raw-TCP listeners' opening message may carry an EnrollRequest ahead of
 /// its handshake, so a no-egress segment can enroll its first implant over
 /// the pipe or socket it already reaches. A from-scratch TCP implant -- a
-/// plain socket, the stream check-in framing, and the protobuf messages --
+/// plain socket, the stream contact framing, and the protobuf messages --
 /// drives the whole exchange: enroll, then the ordinary handshake, then
-/// tasking and results on the poll cadence one-connection-one-check-in
+/// tasking and results on the poll cadence one-connection-one-contact
 /// serves. The raw-TCP transport pins the shared StreamBeaconBridge the
 /// named pipe rides too.
 /// </summary>
 public class StreamEnrollRoundTripTests
 {
     // The build story (architecture.md Sec 8, enrollment over the stream
-    // check-in): the socket family's listeners are enroll-nameable, the
+    // contact): the socket family's listeners are enroll-nameable, the
     // parser baking the transport's own dial -- tcp://host:port for the raw
     // socket, the pipe path in URL form (smb://host/pipe/name) for the
     // named pipe -- with the beacon deriving from it. The carrier is
@@ -123,7 +123,7 @@ public class StreamEnrollRoundTripTests
             Mode: mode);
 
     [Fact]
-    public async Task TheTcpListener_CarriesEnrollThenCheckIn_OnOneConnection()
+    public async Task TheTcpListener_CarriesEnrollThenContact_OnOneConnection()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -170,7 +170,7 @@ public class StreamEnrollRoundTripTests
             Assert.Equal(implantKey.ExportSubjectPublicKeyInfo(), leafKey.ExportSubjectPublicKeyInfo());
 
             // A manually minted token names no build, so the answer carries
-            // no per-artifact check-in key.
+            // no per-artifact contact key.
             Assert.False(enroll.HasEnvelopeKeyId);
 
             // The host facts crossed the frame exchange: the roster's implant
@@ -181,7 +181,7 @@ public class StreamEnrollRoundTripTests
             Assert.Equal(enroll.ImplantId, recorded!.ImplantId);
             Assert.Equal("tcp-host01", recorded.Hostname);
 
-            // Tasking queued before the check-in rides its response: the
+            // Tasking queued before the contact rides its response: the
             // poll shape -- nothing is pushed, the exchange carries what
             // accumulated.
             var marker = "rod-tcp-enroll-marker-" + Guid.NewGuid().ToString("N")[..8];
@@ -192,19 +192,19 @@ public class StreamEnrollRoundTripTests
             var issuedBody = await issued.Content.ReadFromJsonAsync<IssuedBody>();
 
             // The ordinary handshake follows on the same connection, and the
-            // check-in response carries the queued task.
-            var response = await session.CheckInAsync(enroll.ImplantId);
+            // contact response carries the queued task.
+            var response = await session.ContactAsync(enroll.ImplantId);
             Assert.Equal(HandshakeStatus.Ok, response.Handshake.Status);
             var request = TaskRequest.Parser.ParseFrom(response.Frames[1].Payload);
             Assert.Equal(issuedBody!.TaskId, request.TaskId);
             Assert.Equal("shell.exec", request.Verb);
             Assert.NotEmpty(request.Signature.ToByteArray());
 
-            // The result rides the next connection's check-in -- one
-            // connection is one check-in, the poll cadence the stream
+            // The result rides the next connection's contact -- one
+            // connection is one contact, the poll cadence the stream
             // listeners serve.
             using var next = await StreamImplant.ConnectAsync(port);
-            var result = await next.CheckInAsync(
+            var result = await next.ContactAsync(
                 enroll.ImplantId, Frames.Result(request.TaskId, TaskOutcome.Succeeded, marker));
             Assert.Equal(HandshakeStatus.Ok, result.Handshake.Status);
 
@@ -415,7 +415,7 @@ public class StreamEnrollRoundTripTests
         };
     }
 
-    // The from-scratch raw-TCP implant: the stream check-in framing over a
+    // The from-scratch raw-TCP implant: the stream contact framing over a
     // plain socket, nothing else -- the client an implant author of any
     // language writes from the contract doc (extending/implants.md).
     private sealed class StreamImplant : IDisposable
@@ -451,10 +451,10 @@ public class StreamEnrollRoundTripTests
             return Rod.V1.EnrollResponse.Parser.ParseFrom(answer[0].Payload);
         }
 
-        // One check-in: the handshake (plus any result frames) sent, the
+        // One contact: the handshake (plus any result frames) sent, the
         // handshake response (plus any queued tasking) read back -- one
         // message each way, the poll shape the stream listeners serve.
-        public async Task<(HandshakeResponse Handshake, IReadOnlyList<Frame> Frames)> CheckInAsync(
+        public async Task<(HandshakeResponse Handshake, IReadOnlyList<Frame> Frames)> ContactAsync(
             string implantId, params Frame[] extra)
         {
             var handshake = new HandshakeRequest
@@ -538,7 +538,7 @@ public class StreamEnrollRoundTripTests
                     break;
                 shift += 7;
                 if (shift > 28)
-                    throw new IOException("Check-in length prefix is a malformed varint.");
+                    throw new IOException("Contact length prefix is a malformed varint.");
             }
 
             var body = new byte[length];

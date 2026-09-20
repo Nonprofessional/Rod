@@ -22,8 +22,8 @@ namespace Rod.Transport.Payloads;
 /// tests encode with the same bytes the teamserver decodes.
 ///
 /// The same key, in the same R1 shape but under purpose-specific AAD tags,
-/// also seals the envelope check-in bodies (architecture.md Sec 8): every
-/// check-in request and response is AES-GCM ciphertext under the artifact key,
+/// also seals the envelope contact bodies (architecture.md Sec 8): every
+/// contact request and response is AES-GCM ciphertext under the artifact key,
 /// so the cleartext-http posture carries confidential content, not just
 /// authenticated content -- the Cobalt Strike metadata model. The DNS carriage
 /// seals the same way but carries the raw R1 body (no base64 layer: its labels
@@ -49,24 +49,24 @@ public static class AesGcmEnvelope
     public static ReadOnlySpan<byte> Aad => "rod-envelope-v1"u8;
 
     /// <summary>
-    /// The AAD binding an implant's sealed check-in request to its purpose
+    /// The AAD binding an implant's sealed contact request to its purpose
     /// (architecture.md Sec 8/9): the same per-artifact key envelopes the
-    /// enroll body and the check-in bodies, so the purpose tag is what keeps
+    /// enroll body and the contact bodies, so the purpose tag is what keeps
     /// one direction's ciphertext from being replayed as the other's.
     /// </summary>
-    public static ReadOnlySpan<byte> CheckInRequestAad => "rod-checkin-v1"u8;
+    public static ReadOnlySpan<byte> ContactRequestAad => "rod-contact-v1"u8;
 
     /// <summary>
-    /// The response-side twin of <see cref="CheckInRequestAad"/>: the
-    /// teamserver seals every check-in response under this tag, so a sealed
+    /// The response-side twin of <see cref="ContactRequestAad"/>: the
+    /// teamserver seals every contact response under this tag, so a sealed
     /// request body cannot be reflected as a response and vice versa.
     /// </summary>
-    public static ReadOnlySpan<byte> CheckInResponseAad => "rod-checkin-response-v1"u8;
+    public static ReadOnlySpan<byte> ContactResponseAad => "rod-contact-response-v1"u8;
 
     /// <summary>
     /// The AAD binding the socket family's sealed enroll exchange to its
-    /// purpose (architecture.md Sec 8, enrollment over the stream check-in):
-    /// the same per-artifact key envelopes the enroll body and the check-in
+    /// purpose (architecture.md Sec 8, enrollment over the stream contact):
+    /// the same per-artifact key envelopes the enroll body and the contact
     /// bodies, so the purpose tag keeps one exchange's ciphertext from being
     /// replayed as another's.
     /// </summary>
@@ -79,7 +79,7 @@ public static class AesGcmEnvelope
     /// The AAD binding the DNS carriage's poll answers to their purpose
     /// (architecture.md Sec 8): a key-named poll's TXT answer is sealed under
     /// this tag, so no other purpose's ciphertext (an enroll answer, a web
-    /// check-in body) can be reflected down the DNS wire as tasking.
+    /// contact body) can be reflected down the DNS wire as tasking.
     /// </summary>
     public static ReadOnlySpan<byte> DnsPollAad => "rod-dns-poll-v1"u8;
 
@@ -144,8 +144,8 @@ public static class AesGcmEnvelope
     /// Wraps plaintext as the full wire value (the JSON string's content):
     /// base64 of magic, key id, nonce, ciphertext, and tag. The
     /// <paramref name="aad"/> names the purpose the ciphertext is bound to --
-    /// <see cref="Aad"/> for the enroll body, the check-in tags for the
-    /// check-in bodies -- so one purpose's wrapped bytes never validate as
+    /// <see cref="Aad"/> for the enroll body, the contact tags for the
+    /// contact bodies -- so one purpose's wrapped bytes never validate as
     /// another's.
     /// </summary>
     public static string Wrap(byte[] plaintext, Guid keyId, byte[] key, ReadOnlySpan<byte> aad)

@@ -19,8 +19,8 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance for the degraded channel discipline (architecture.md
 /// Sec 10.3, the opt-in interactive tier over poll carriers): an implant
-/// whose envelope check-in advertises the discipline claims channel verbs,
-/// operator input parks and rides the next check-in as ChannelInput, the
+/// whose envelope contact advertises the discipline claims channel verbs,
+/// operator input parks and rides the next contact as ChannelInput, the
 /// implant's ChannelOutput batches the same way, and a channel the implant
 /// stops collecting closes with a timeout instead of sitting Dispatched. An
 /// implant that never opted in keeps the live-stream-only behavior.
@@ -28,7 +28,7 @@ namespace Rod.Integration.Tests;
 public class DegradedChannelRoundTripTests
 {
     [Fact]
-    public async Task OptedInEnvelopeImplant_RunsTheInteractiveChannelAcrossCheckIns()
+    public async Task OptedInEnvelopeImplant_RunsTheInteractiveChannelAcrossContacts()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -42,7 +42,7 @@ public class DegradedChannelRoundTripTests
             // The handshake advertises the discipline: the session record
             // carries it, the dispatch claim and the input park read it.
             using var implant = new PollImplant(host, implantId, advertiseDegraded: true);
-            var handshake = await implant.CheckInAsync();
+            var handshake = await implant.ContactAsync();
             Assert.NotNull(handshake);
             Assert.Equal(HandshakeStatus.Ok, handshake!.Status);
 
@@ -67,19 +67,19 @@ public class DegradedChannelRoundTripTests
                 new { Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("whoami\n")) });
             typed.EnsureSuccessStatusCode();
 
-            // ... and rides the next check-in as a ChannelInput frame.
+            // ... and rides the next contact as a ChannelInput frame.
             var input = ChannelInput.Parser.ParseFrom(await implant.NextFrameAsync());
             Assert.Equal(issuedBody.TaskId, input.TaskId.Replace("-", ""));
             Assert.Equal("whoami\n", input.Data.ToStringUtf8());
 
             // The implant's shell output batches upstream the same way, and
-            // the final result closes the channel -- both ride the check-in
+            // the final result closes the channel -- both ride the contact
             // after the one that collected the input.
             var marker = "rod-degraded-" + Guid.NewGuid().ToString("N")[..8];
             await implant.SendFramesAsync(
                 Frames.ChannelOut(task.TaskId, marker),
                 Frames.Result(task.TaskId, TaskOutcome.Succeeded, "session over"));
-            Assert.Equal(HandshakeStatus.Ok, (await implant.CheckInAsync())!.Status);
+            Assert.Equal(HandshakeStatus.Ok, (await implant.ContactAsync())!.Status);
 
             var completed = await WaitUntilAsync(async () =>
             {
@@ -104,7 +104,7 @@ public class DegradedChannelRoundTripTests
             var implantId = await EnrollAsync(client, secret);
 
             using var implant = new PollImplant(host, implantId, advertiseDegraded: false);
-            Assert.Equal(HandshakeStatus.Ok, (await implant.CheckInAsync())!.Status);
+            Assert.Equal(HandshakeStatus.Ok, (await implant.ContactAsync())!.Status);
 
             var issued = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -115,7 +115,7 @@ public class DegradedChannelRoundTripTests
             // The claim defers (the discipline is not advertised) and the
             // input refuses: nothing parks, exactly the behavior that
             // predates the tier.
-            var next = await implant.CheckInAsync();
+            var next = await implant.ContactAsync();
             Assert.NotNull(next);
             var typed = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/input",
@@ -141,7 +141,7 @@ public class DegradedChannelRoundTripTests
             var implantId = await EnrollAsync(client, secret);
 
             using var implant = new PollImplant(host, implantId, advertiseDegraded: true);
-            Assert.Equal(HandshakeStatus.Ok, (await implant.CheckInAsync())!.Status);
+            Assert.Equal(HandshakeStatus.Ok, (await implant.ContactAsync())!.Status);
 
             var issued = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -150,7 +150,7 @@ public class DegradedChannelRoundTripTests
             var issuedBody = await issued.Content.ReadFromJsonAsync<IssuedBody>();
             var task = TaskRequest.Parser.ParseFrom(await implant.NextFrameAsync());
 
-            // Input parks; the implant then vanishes (no further check-ins).
+            // Input parks; the implant then vanishes (no further contacts).
             var typed = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks/{issuedBody!.TaskId}/input",
                 new { Data = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("stale\n")) });
@@ -246,7 +246,7 @@ public class DegradedChannelRoundTripTests
             _advertiseDegraded = advertiseDegraded;
         }
 
-        public async Task<HandshakeResponse?> CheckInAsync()
+        public async Task<HandshakeResponse?> ContactAsync()
         {
             var frames = new List<Frame> { HandshakeFrame() };
             frames.AddRange(_inbound);
@@ -267,7 +267,7 @@ public class DegradedChannelRoundTripTests
         {
             while (_inbound.Count == 0)
             {
-                var handshake = await CheckInAsync();
+                var handshake = await ContactAsync();
                 Assert.NotNull(handshake);
                 Assert.Equal(HandshakeStatus.Ok, handshake!.Status);
             }

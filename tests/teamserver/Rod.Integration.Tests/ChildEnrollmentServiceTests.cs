@@ -12,7 +12,7 @@ namespace Rod.Integration.Tests;
 /// Direct checks of <see cref="EnrollmentService"/>'s child-enrollment path
 /// (architecture.md Sec 5.2) -- the acceptance point: a child
 /// implant enrols from a parent within scope, with parentage linkage recorded.
-/// Complements the top-level enroll checks in <see cref="EnrollmentServiceTests"/>
+/// Complements the top-level enroll contacts <see cref="EnrollmentServiceTests"/>
 /// and the HTTP slice that follows. Drives the service against the in-memory ports
 /// the way the composition root does, focusing on the parent resolution and
 /// scope/liveness rules a child derivation requires.

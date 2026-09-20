@@ -9,7 +9,7 @@ namespace Rod.Audit;
 /// over its own contents plus the previous event's hash, so every event commits
 /// to its predecessor: altering any stored event changes its hash, which breaks
 /// the link its successor carries -- the chain is the tamper-evident binding
-/// that makes the audit trail self-checking.
+/// that makes the audit trail self-contactg.
 ///
 /// The canonical form is a fixed-order concatenation of the event's fields and
 /// its <see cref="AuditEvent.PreviousHash"/>, hashed with SHA-256 and hex-encoded.

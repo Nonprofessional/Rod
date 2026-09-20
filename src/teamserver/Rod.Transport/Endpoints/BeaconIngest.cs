@@ -17,7 +17,7 @@ namespace Rod.Transport.Endpoints;
 
 // The shared upstream-frame ingest for every beacon transport
 // (architecture.md Sec 8): the same capture-and-audit composition whether a
-// frame crossed the gRPC stream or a plain-HTTP envelope check-in. Task state
+// frame crossed the gRPC stream or a plain-HTTP envelope contact. Task state
 // lives in core, the audit event in the audit layer, and this is where both
 // meet on a completed task (architecture.md Sec 10.3/11) -- extracted from
 // BeaconEndpoint so every transport drives the identical paths.
@@ -171,7 +171,7 @@ internal sealed class BeaconConnectionIngest
     /// the artifact store; STAGED_PULL hands the implant's demand for a staged
     /// payload to the caller's sink (each transport answers demands its own
     /// way -- the stream queues them for its dispatch writer, an envelope
-    /// check-in answers them in the same response); CHANNEL_OUTPUT appends a
+    /// contact answers them in the same response); CHANNEL_OUTPUT appends a
     /// streaming task's chunk onto its transcript; TASK_ACK hands the
     /// implant's receive-ack to the caller's sink (architecture.md Sec 10.3 --
     /// the dispatch strand). Non-result, non-exfil frames are ignored

