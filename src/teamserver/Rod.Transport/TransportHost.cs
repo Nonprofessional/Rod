@@ -171,6 +171,10 @@ public static class TransportHost
         // state without Postgres), Postgres-backed when the connection string
         // is set (the composition root swaps the adapter).
         services.AddSingleton<Rod.CoreState.Listeners.IListenerStore, Rod.CoreState.Listeners.InMemoryListenerStore>();
+        // The rendered launcher rows: the operator's re-copy/revoke list for
+        // the one-liner delivery surface, in-memory by default and
+        // Postgres-backed when the connection string is set.
+        services.AddSingleton<Rod.CoreState.Launchers.ILauncherStore, Rod.CoreState.Launchers.InMemoryLauncherStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.

@@ -51,6 +51,29 @@ public readonly record struct StagerTokenId(Guid Value)
 }
 
 /// <summary>
+/// Identifies a rendered launcher -- one persisted cut of the paste-ready
+/// stage-2 fetch one-liners, with its minted download credential. Engagement-
+/// scoped operator working state, deletable with the row and nothing else.
+/// </summary>
+public readonly record struct LauncherId(Guid Value)
+{
+    public static LauncherId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    public static bool TryParse(string? text, out LauncherId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new LauncherId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
 /// Identifies an implant -- a short-lived, disposable payload enrolled into one
 /// engagement (architecture.md Sec 5). Ephemeral per engagement; disposable with
 /// the operation.

@@ -98,6 +98,9 @@ public static class RodPersistenceHost
         // Engagement-scoped listener definitions: the durable pair so a restart
         // rebinds the listeners the operator created per engagement.
         services.Replace(ServiceDescriptor.Singleton<IListenerStore, PostgresListenerStore>());
+        // The rendered launcher rows: the durable twin so a credential with a
+        // long window stays re-copyable and revocable across a restart.
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Launchers.ILauncherStore, Stores.PostgresLauncherStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

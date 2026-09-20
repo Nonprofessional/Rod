@@ -465,15 +465,18 @@ recorded.**
 - **Staging** is a separate output class with its own generation path: a
   stager-class build compiles the minimal stage-1 loader, not the implant, and
   bakes in a fetch reference -- the stage-2 payload's id and sha256 fingerprint
-  -- alongside the listener and kill date. Each stage of the chain carries its
-  own minted credential (a deployment secret, not key material): the loader
-  presents its token for the fetch (`GET /implants/stage2/{id}`, verified
-  without being spent), refuses bytes that do not hash to the baked
-  fingerprint, executes the fetched artifact, and forwards only a run-time
-  token -- the stage-2 spends its own baked token at its enroll and appears
-  on the roster as a top-level implant. The .NET reference loader lives in
-  `src/stager/dotnet/`; the fetch route is engagement-scoped by the token and
-  by the listener it arrived on (Sec 8).
+  -- alongside the listener, kill date, and its own minted credential (a
+  deployment secret, not key material). The loader runs with zero arguments
+  and zero environment -- the bake is authoritative, and no flag or variable
+  re-points or re-credentials a fielded artifact: the loader presents its
+  token for the fetch (`GET /implants/stage2/{id}`, each served fetch
+  spending one use -- the download gate is that credential's whole job),
+  refuses bytes that do not hash to the baked fingerprint, executes the
+  fetched artifact, and hands nothing operational across the process
+  boundary -- the stage-2 spends its own baked token at its enroll and
+  appears on the roster as a top-level implant. The .NET reference loader
+  lives in `src/stager/dotnet/`; the fetch route is engagement-scoped by the
+  token and by the listener it arrived on (Sec 8).
 - **Every build mints the enrollment credential it bakes.** The token is
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --
@@ -899,7 +902,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   without a caught shell -- the cut-ahead delivery surface, where the
   credential's use budget and lifetime are the operator's choice (the
   shell upgrade always mints single-use for thirty minutes: one paste,
-  one beacon). Shellcatch serves no contact carrier -- nothing here is
+  one download). Every render the endpoint cuts is kept as a launcher
+  row -- url, credential, policy, provenance -- so the operator can
+  re-copy a command at any time, watch the credential's budget, revoke
+  it the moment it leaks, and delete the row when it is spent; the rows
+  are engagement-scoped operator state, durable with the store.
+  Shellcatch serves no contact carrier -- nothing here is
   implant ingress, and a build may never name it as a beacon. The
   exposure is inherent and named: a shellcatch port accepts whoever
   reaches it (the one-liner carries no secret); the mitigations are a

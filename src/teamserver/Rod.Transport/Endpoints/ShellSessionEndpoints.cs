@@ -255,10 +255,11 @@ public static class ShellSessionEndpoints
 
         // The shared launcher flow (the standalone launchers endpoint renders
         // the same shape): resolve the front and payload, mint the paste's
-        // credential, render every downloader family. A caught shell always
-        // mints single-use for thirty minutes -- one paste, one beacon -- and
-        // the mint's origin carries this session so the enrollment binds the
-        // implant back to the shell it grew from.
+        // download credential, render every downloader family. A caught shell
+        // always mints single-use for thirty minutes -- one paste, one
+        // download -- and the fetched artifact enrolls on the credential its
+        // own build baked. The mint's origin carries this session, so the
+        // trail names the shell the render was cut for.
         var (renderFailure, set) = await LauncherRender.ResolveAsync(
             scope.Engagement,
             new LauncherSelection(

@@ -27,6 +27,9 @@ internal static class IdConverters
     public static ValueConverter<StagerTokenId, Guid> StagerTokenId { get; } =
         new(id => id.Value, value => new StagerTokenId(value));
 
+    public static ValueConverter<LauncherId, Guid> LauncherId { get; } =
+        new(id => id.Value, value => new LauncherId(value));
+
     public static ValueConverter<ImplantId, Guid> ImplantId { get; } =
         new(id => id.Value, value => new ImplantId(value));
 

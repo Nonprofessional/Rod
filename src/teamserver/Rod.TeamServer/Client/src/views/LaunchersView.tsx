@@ -1,28 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  type LauncherRender,
+  type LauncherRow,
   type ListenerSummary,
   type PayloadSummary,
+  deleteLauncher,
+  listLaunchers,
   listListeners,
   listPayloads,
   renderLaunchers,
+  revokeLauncher,
 } from '../api'
 import { catchLaunchers } from '../catchOneLiners'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
+import { useNow } from '../when'
 
 // The engagement's one-liner home: every command an operator copies out,
-// in one place. Two surfaces live here. "Catch a shell" renders the
+// in one place. Three surfaces live here. "Catch a shell" renders the
 // paste-ready reverse-shell one-liners per shellcatch listener -- no
 // credential is involved, the address is the listener's public endpoint,
 // and the caught shell lands in the Shells roster. "Deliver a beacon"
-// drives the launcher render endpoint: pick the stage-2 payload, and the
-// server mints the fetch's deployment credential and answers with the
-// downloader one-liner per shell family; the credential shows exactly once
-// and never lands anywhere else.
+// cuts a stage-2 fetch render: pick the payload, the server mints the
+// download credential and answers with the downloader one-liner per shell
+// family. "Kept launchers" is the list those renders land in -- every cut
+// is kept, so the operator can come back to it: re-copy the command any
+// time, watch the credential's budget, revoke it the moment it leaks, and
+// delete the row when it is spent.
 
 // The redeem budgets an operator realistically picks. Single-use is the
-// default posture (one paste, one beacon); the wider budgets serve a
+// default posture (one paste, one download); the wider budgets serve a
 // many-host deployment from one render.
 const USE_OPTIONS: { value: number; label: string }[] = [
   { value: 1, label: 'Single use' },
@@ -53,14 +59,27 @@ function payloadLabel(p: PayloadSummary): string {
 export function LaunchersView({ engagementId }: { engagementId: string }) {
   const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
+  const [rows, setRows] = useState<LauncherRow[]>([])
   const [payloadId, setPayloadId] = useState('')
   const [listenerId, setListenerId] = useState('')
   const [maxUses, setMaxUses] = useState(1)
   const [lifetimeMinutes, setLifetimeMinutes] = useState(30)
-  const [rendered, setRendered] = useState<LauncherRender | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [commandsFor, setCommandsFor] = useState<string | null>(null)
+
+  // The quiet clock keeps expiry counts moving between interactions.
+  const now = useNow(30_000)
+
+  const refreshRows = useCallback(async () => {
+    try {
+      setRows(await listLaunchers(engagementId))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [engagementId])
 
   useEffect(() => {
     let cancelled = false
@@ -83,10 +102,13 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
     }
   }, [engagementId])
 
-  // A render belongs to the engagement it was cut for; a stale panel must
-  // never survive the switch.
   useEffect(() => {
-    setRendered(null)
+    void refreshRows()
+  }, [refreshRows])
+
+  // A selection must not survive the engagement switch.
+  useEffect(() => {
+    setCommandsFor(null)
   }, [engagementId])
 
   const webListeners = useMemo(
@@ -101,21 +123,48 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
   const onRender = useCallback(async () => {
     setBusy(true)
     try {
-      setRendered(
-        await renderLaunchers(engagementId, {
-          payloadId: payloadId || undefined,
-          listenerId: listenerId || undefined,
-          maxUses,
-          lifetimeMinutes,
-        }),
-      )
+      await renderLaunchers(engagementId, {
+        payloadId: payloadId || undefined,
+        listenerId: listenerId || undefined,
+        maxUses,
+        lifetimeMinutes,
+      })
+      await refreshRows()
       setError(null)
     } catch (e) {
       setError(String(e))
     } finally {
       setBusy(false)
     }
-  }, [engagementId, payloadId, listenerId, maxUses, lifetimeMinutes])
+  }, [engagementId, payloadId, listenerId, maxUses, lifetimeMinutes, refreshRows])
+
+  const onRevoke = async (row: LauncherRow) => {
+    if (
+      !window.confirm(
+        `Revoke this launcher's credential? Every copy of its command stops working at the next fetch.`,
+      )
+    )
+      return
+    try {
+      await revokeLauncher(engagementId, row.launcherId)
+      await refreshRows()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onDelete = async (row: LauncherRow) => {
+    if (!window.confirm('Delete this launcher row? Tidying only -- the credential dies by its own revocation or expiry, and the mint stays on the trail.'))
+      return
+    try {
+      await deleteLauncher(engagementId, row.launcherId)
+      await refreshRows()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
 
   const copy = async (id: string, text: string) => {
     try {
@@ -147,7 +196,9 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
       <h2>Launchers</h2>
       <p className="muted">
         Every paste-ready one-liner this engagement can cut, in one place: reverse shells that land
-        in the Shells roster, and stage-2 fetches that grow a beacon in the Implants table.
+        in the Shells roster, and stage-2 fetches that grow a beacon in the Implants table. Every
+        fetch render is kept below — re-copy it any time, revoke its credential the moment it
+        leaks, delete the row when it is spent.
       </p>
       {error && <p className="error">{error}</p>}
 
@@ -208,8 +259,8 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
           <h3>Deliver a beacon</h3>
           <p className="muted">
             A one-liner that fetches the stage-2 payload over the engagement's web front and runs
-            it. The fetch presents a freshly minted credential; the enrollment that follows spends
-            it.
+            it. Each served fetch spends one use of a freshly minted credential; the enrollment
+            that follows rides the credential baked into the fetched artifact.
           </p>
           <div className="inline-form">
             <select
@@ -229,12 +280,12 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
             </button>
           </div>
           {/* The choices almost every render leaves alone. The payload bakes
-              its own endpoints for after it runs; the fetch still needs a
-              front to ride and a credential to present, and the defaults --
-              the hardened front, single-use, half an hour -- are the right
-              posture for the one-paste-one-beacon shape. */}
+              its own endpoints and enrollment credential; the fetch still
+              needs a front to ride and a download credential to present, and
+              the defaults -- the hardened front, single use, half an hour --
+              are the right posture for the one-paste-one-download shape. */}
           <details className="build-advanced">
-            <summary title="The fetch front and the minted credential's policy — the defaults fit the one-paste-one-beacon shape">
+            <summary title="The fetch front and the minted credential's policy — the defaults fit the one-paste-one-download shape">
               Fetch front &amp; credential — {frontLabel} · {usesLabel.toLowerCase()} ·{' '}
               {lifetimeLabel.toLowerCase()}
             </summary>
@@ -254,7 +305,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
               <select
                 value={maxUses}
                 onChange={(e) => setMaxUses(Number(e.target.value))}
-                title="How many redeems the minted credential allows before it is spent"
+                title="How many served fetches the minted credential allows"
               >
                 {USE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -275,41 +326,150 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
               </select>
             </div>
           </details>
-
-          {rendered && (
-            <div className="upgrade-panel">
-              <p>
-                Fetch URL <code>{rendered.url}</code> · credential{' '}
-                <code className="upgrade-command">{rendered.tokenSecret}</code>{' '}
-                <button
-                  className="ghost sm"
-                  onClick={() => void copy('token', rendered.tokenSecret)}
-                >
-                  {copied === 'token' ? 'Copied' : 'Copy'}
-                </button>{' '}
-                · {usesLabel.toLowerCase()}, expires{' '}
-                {new Date(rendered.tokenExpiresAt).toLocaleTimeString()}. Paste one of these on
-                the target; the beacon lands in the Implants table.
-              </p>
-              {rendered.launchers.map((launcher) => (
-                <div key={launcher.id} className="upgrade-launcher">
-                  <span title={`For ${launcher.os} targets`}>
-                    <Icon name={osIconFor(launcher.os)} className="wire-icon" />
-                  </span>
-                  <code>{launcher.id}</code>
-                  <code className="upgrade-command">{launcher.command}</code>
-                  <button
-                    className="ghost sm"
-                    onClick={() => void copy(launcher.id, launcher.command)}
-                  >
-                    {copied === launcher.id ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
+
+      <div className="card">
+        <h3>Kept launchers</h3>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cut</th>
+                <th>Payload</th>
+                <th>Front</th>
+                <th>Credential</th>
+                <th>State</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty">
+                      <Icon name="copy" />
+                      No launchers kept yet — every render above lands here, re-copyable until its
+                      credential expires.
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {rows.map((row) => {
+                const expired = new Date(row.expiresAt).getTime() <= now
+                const spent = row.tokenRemainingUses != null && row.tokenRemainingUses <= 0
+                const revoked = row.revokedAt != null
+                const live = !revoked && !expired && !spent
+                const usesLeft =
+                  row.maxUses === 0
+                    ? 'unlimited'
+                    : row.tokenRemainingUses == null
+                      ? '—'
+                      : `${row.tokenRemainingUses} left`
+                return (
+                  <tr key={row.launcherId} className={live ? undefined : 'row-dim'}>
+                    <td title={`Cut by ${row.createdBy}`}>
+                      {new Date(row.createdAt).toLocaleString()}
+                    </td>
+                    <td>
+                      <code title={row.payloadId}>{row.payloadId.slice(0, 8)}</code>
+                    </td>
+                    <td title={row.frontEndpoint}>{row.frontName}</td>
+                    <td>
+                      {usesLeft}
+                      {!revoked && (
+                        <span className="muted">
+                          {' '}
+                          ·{' '}
+                          {expired
+                            ? 'expired'
+                            : `expires ${new Date(row.expiresAt).toLocaleTimeString()}`}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {revoked ? (
+                        <span title={row.revokedAt ? `Revoked ${new Date(row.revokedAt).toLocaleString()}` : undefined}>
+                          revoked
+                        </span>
+                      ) : expired ? (
+                        <span title="The credential's window closed">expired</span>
+                      ) : spent ? (
+                        <span title="The budget was downloaded out">spent</span>
+                      ) : (
+                        <span title="The credential serves fetches">live</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          className="sm"
+                          onClick={() =>
+                            setCommandsFor((current) =>
+                              current === row.launcherId ? null : row.launcherId,
+                            )
+                          }
+                        >
+                          {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
+                        </button>
+                        {!revoked && (
+                          <button className="sm" onClick={() => void onRevoke(row)}>
+                            Revoke
+                          </button>
+                        )}
+                        <button className="ghost sm" onClick={() => void onDelete(row)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {rows.length > 0 && (
+          <p className="muted">
+            Commands re-render from each row's URL and credential, so an old row always copies in
+            the current shape. Revoking kills the credential wherever a copy of the command carries
+            it; deleting a row is tidying — the credential dies by its own revocation or expiry.
+          </p>
+        )}
+        {rows.map(
+          (row) =>
+            commandsFor === row.launcherId && (
+              <div key={row.launcherId} className="upgrade-panel">
+                <p>
+                  Fetch URL <code>{row.url}</code> · credential{' '}
+                  <code className="upgrade-command">{row.tokenSecret}</code>{' '}
+                  <button
+                    className="ghost sm"
+                    onClick={() => void copy(`token:${row.launcherId}`, row.tokenSecret)}
+                  >
+                    {copied === `token:${row.launcherId}` ? 'Copied' : 'Copy'}
+                  </button>
+                </p>
+                {row.launchers.map((launcher) => (
+                  <div key={launcher.id} className="upgrade-launcher">
+                    <span title={`For ${launcher.os} targets`}>
+                      <Icon name={osIconFor(launcher.os)} className="wire-icon" />
+                    </span>
+                    <code>{launcher.id}</code>
+                    <code className="upgrade-command">{launcher.command}</code>
+                    <button
+                      className="ghost sm"
+                      onClick={() =>
+                        void copy(`${row.launcherId}:${launcher.id}`, launcher.command)
+                      }
+                    >
+                      {copied === `${row.launcherId}:${launcher.id}` ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ),
+        )}
+      </div>
     </section>
   )
 }

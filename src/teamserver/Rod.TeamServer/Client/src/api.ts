@@ -985,31 +985,46 @@ export async function upgradeShell(
 // The one-liner delivery surface: the same paste-ready stage-2 fetch renders
 // the shell console's upgrade produces, without a caught shell to grow from.
 // The operator names the payload and the web front (or takes the engagement's
-// own preference), sets the deployment credential's policy (uses and
-// lifetime), and copies the downloader command for the target's shell family.
+// own preference), sets the download credential's policy (uses and lifetime),
+// and copies the downloader command for the target's shell family. Every
+// render is kept as a row the operator can return to: re-copy the command,
+// watch the credential's budget, revoke it the moment it leaks, and delete
+// the row when it is spent.
 
-export interface LauncherRender {
+export interface LauncherRow {
+  launcherId: string
   payloadId: string
   url: string
+  frontName: string
+  frontEndpoint: string
   tokenSecret: string
-  tokenExpiresAt: string
+  maxUses: number
+  expiresAt: string
+  createdAt: string
+  createdBy: string
+  revokedAt: string | null
+  // The live credential state, joined from the token store; null when the
+  // token is no longer stored (revoked, or spent to zero).
+  tokenRemainingUses: number | null
+  tokenExpiresAt: string | null
+  // Re-rendered on read, so the row always copies in the current shape.
   launchers: ShellLauncher[]
 }
 
 export interface RenderLauncherInput {
   payloadId?: string
   listenerId?: string
-  // How many redeems the minted token allows: 1 = single-use (default), 0 =
-  // unlimited until expiry.
+  // How many served fetches the minted credential allows: 1 = one download
+  // (default), 0 = unlimited until expiry.
   maxUses?: number
-  // The token's lifetime in minutes; 30 by default.
+  // The credential's lifetime in minutes; 30 by default.
   lifetimeMinutes?: number
 }
 
 export async function renderLaunchers(
   engagementId: string,
   input: RenderLauncherInput = {},
-): Promise<LauncherRender> {
+): Promise<LauncherRow> {
   return jsonOrThrow(
     await fetch(`engagements/${engagementId}/launchers`, {
       method: 'POST',
@@ -1020,6 +1035,36 @@ export async function renderLaunchers(
         maxUses: input.maxUses ?? null,
         lifetimeMinutes: input.lifetimeMinutes ?? null,
       }),
+    }),
+  )
+}
+
+export async function listLaunchers(engagementId: string): Promise<LauncherRow[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/launchers`))
+}
+
+// Kills the row's credential wherever a copy of the command carries it; the
+// row stays, marked revoked.
+export async function revokeLauncher(
+  engagementId: string,
+  launcherId: string,
+): Promise<void> {
+  await jsonOrThrow(
+    await fetch(`engagements/${engagementId}/launchers/${launcherId}:revoke`, {
+      method: 'POST',
+    }),
+  )
+}
+
+// Removes the row -- tidying, not disabling: the credential dies by its own
+// revocation or expiry, and the trail keeps the mint.
+export async function deleteLauncher(
+  engagementId: string,
+  launcherId: string,
+): Promise<void> {
+  await jsonOrThrow(
+    await fetch(`engagements/${engagementId}/launchers/${launcherId}`, {
+      method: 'DELETE',
     }),
   )
 }

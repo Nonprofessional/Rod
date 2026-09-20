@@ -284,12 +284,11 @@ that matters is the **payload** -- the stage-2 build the fetch delivers
 (the engagement's newest stands in). The rest live behind the "fetch front
 & credential" fold because the defaults are almost always right: the
 hardened HTTP(S) front for the fetch URL, a single-use credential (one
-paste, one beacon) living 30 minutes. Unfold to name a specific front, to
+paste, one download) living 30 minutes. Unfold to name a specific front, to
 widen the credential for a many-host deployment (unlimited or a fixed
 count, up to a day), or both.
 
-The answer carries the fetch URL, the credential (shown exactly once, never
-on the audit trail -- only its mint is recorded), and one command per
+The answer carries the fetch URL, the credential, and one command per
 downloader family: `curl` and `wget` for Unix targets, PowerShell's `iwr`
 for Windows. Copy the one the target's shell has; the beacon lands in the
 Implants table on its enrollment, already reporting its cadence.
@@ -298,8 +297,20 @@ Why the fetch carries its own credential when the payload bakes one: the
 baked credential lives inside the artifact and enrolls the implant after it
 runs. The fetch -- downloading those bytes -- presents a freshly minted,
 scoped token instead, so a long-lived enrollment secret never rides a
-command line or shell history; each render mints its own and nothing is
-kept in a list to maintain.
+command line or shell history. Each served fetch spends one use of that
+token; a refused fetch (wrong front, unknown payload) spends nothing, and
+the credential dies by budget, expiry, or revocation.
+
+**Kept launchers** is the list every render lands in: when it was cut, for
+which payload, over which front, the credential's remaining budget and
+window, and its state -- live, spent, expired, or revoked. **Commands**
+re-opens the row's one-liners (re-rendered from the row's URL and
+credential, so an old row always copies in the current shape).
+**Revoke** kills the credential wherever a copy of the command carries it,
+and stays on the audit trail; **Delete** removes the row -- tidying only,
+since the credential dies by its own revocation or expiry either way. The
+rows survive a teamserver restart when the durable store is configured,
+like every other engagement fact.
 
 ## Build
 

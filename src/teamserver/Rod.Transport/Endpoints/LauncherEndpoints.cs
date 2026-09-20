@@ -6,6 +6,7 @@ using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
+using Rod.CoreState.Launchers;
 using Rod.CoreState.Operators;
 using Rod.CoreState.ShellSessions;
 using Rod.CoreState.Staging;
@@ -16,41 +17,51 @@ namespace Rod.Transport.Endpoints;
 // The standalone launcher surface: the operator's "give me the one-liner that
 // beacons" (architecture.md Sec 8), without a caught shell to grow from. The
 // shell console's Upgrade render and this endpoint share one definition of the
-// flow -- resolve the web front and the stage-2 payload, mint the deployment
+// flow -- resolve the web front and the stage-2 payload, mint the download
 // credential, render the paste-ready downloader families -- so both surfaces
 // answer identically whichever one an operator drives.
+//
+// Every render this endpoint cuts is kept: the engagement holds its launcher
+// rows -- url, credential, policy, provenance -- so an operator can come back
+// to a render at any time (re-copy the command, watch the credential's
+// budget, revoke it the moment it leaks, and delete the row when it is
+// spent). The commands are re-rendered on read from the row's url and secret,
+// so an old row always copies in the current command shape.
 
 /// <summary>
-/// The engagement-scoped launcher render: resolves the fetch front and the
-/// stage-2 payload (each nameable, else the engagement's own preference),
-/// mints the single deployment credential the fetch verifies and the
-/// enrollment spends, records the mint on the engagement trail, and renders
-/// the one-liners per downloader family. The token policy is the caller's:
-/// the shell upgrade always mints single-use for thirty minutes (one paste,
-/// one shell), while the standalone render lets the operator widen it for a
-/// many-host deployment.
+/// The engagement-scoped launcher registry endpoints: render-and-keep a
+/// launcher set, list what was kept, revoke a credential, and delete a row.
+/// The credential policy is the operator's -- the shell upgrade always mints
+/// single-use for thirty minutes (one paste, one download), while a kept
+/// render can widen the budget and window for a many-host deployment.
 /// </summary>
 public static class LauncherEndpoints
 {
     public static IEndpointRouteBuilder MapLauncherEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/engagements/{engagementId}/launchers").RequireAuthorization();
-        // POST on the collection renders a launcher set: the call creates the
-        // one artifact this resource exists to produce (the minted credential
-        // plus the one-liners), so the plain collection POST is the render.
-        group.MapPost("/", RenderAsync).WithName(nameof(RenderAsync));
+
+        // POST on the collection renders a launcher set and keeps the row:
+        // the call creates the one artifact this resource exists to produce
+        // (the minted credential plus the one-liners), so the plain
+        // collection POST is the render.
+        group.MapPost("/", RenderLauncherAsync).WithName(nameof(RenderLauncherAsync));
+        group.MapGet("/", ListLaunchersAsync).WithName(nameof(ListLaunchersAsync));
+        group.MapPost("/{launcherId}:revoke", RevokeLauncherAsync).WithName(nameof(RevokeLauncherAsync));
+        group.MapDelete("/{launcherId}", DeleteLauncherAsync).WithName(nameof(DeleteLauncherAsync));
+
         return endpoints;
     }
 
     // The default token policy and the bounds an operator may widen it to:
-    // one paste one beacon, thirty minutes, up to unlimited uses or a day --
+    // one paste one download, thirty minutes, up to unlimited uses or a day --
     // a credential wider than the engagement's patience does not outlive it.
     private const int DefaultMaxUses = 1;
     private const int MaxUsesBound = 1000;
     private const int DefaultLifetimeMinutes = 30;
     private const int LifetimeMinutesBound = 24 * 60;
 
-    private static async Task<IResult> RenderAsync(
+    private static async Task<IResult> RenderLauncherAsync(
         string engagementId,
         LauncherRenderRequest? body,
         ClaimsPrincipal user,
@@ -58,6 +69,7 @@ public static class LauncherEndpoints
         IListenerStore listenerStore,
         IPayloadStore payloads,
         IStagerTokenService tokens,
+        ILauncherStore launchers,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -97,13 +109,170 @@ public static class LauncherEndpoints
         if (set is null)
             return failure!;
 
-        return Results.Ok(new LauncherRenderResponse(
-            set.Payload.PayloadId.ToString("N"),
-            set.Url,
+        // Keep the row: the snapshot the operator returns to.
+        var row = new Launcher(
+            LauncherId.New(),
+            engagement,
+            set.Payload.PayloadId,
+            set.Front.Id,
+            set.Front.Name,
+            set.Front.PublicEndpoint,
+            set.Token.Id,
             set.Token.Secret,
+            set.Url,
+            maxUses,
             set.Token.ExpiresAt,
-            set.Launchers));
+            clock.GetUtcNow(),
+            operatorId.Value);
+        await launchers.SaveAsync(row, cancellationToken);
+
+        return Results.Ok(await ResponseOfAsync(row, set.Launchers, tokens, cancellationToken));
     }
+
+    private static async Task<IResult> ListLaunchersAsync(
+        string engagementId,
+        ILauncherStore launchers,
+        IStagerTokenService tokens,
+        CancellationToken cancellationToken)
+    {
+        if (!EngagementId.TryParse(engagementId, out var engagement))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        var rows = await launchers.ListByEngagementAsync(engagement, cancellationToken);
+        var body = new List<LauncherResponse>();
+        foreach (var row in rows)
+        {
+            // The commands are re-rendered on read, so the row always copies
+            // in the current shape.
+            var rendered = ShellUpgradeLaunchers.Render(row.Url, row.TokenSecret)
+                .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
+                .ToArray();
+            body.Add(await ResponseOfAsync(row, rendered, tokens, cancellationToken));
+        }
+        return Results.Ok(body);
+    }
+
+    private static async Task<IResult> RevokeLauncherAsync(
+        string engagementId,
+        string launcherId,
+        ClaimsPrincipal user,
+        ILauncherStore launchers,
+        IStagerTokenService tokens,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!EngagementId.TryParse(engagementId, out var engagement))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!LauncherId.TryParse(launcherId, out var rowId))
+            return Results.BadRequest(new Problem("Launcher id is not a valid identifier."));
+
+        // The engagement in the path must own the row; a foreign engagement's
+        // row is indistinguishable from an unknown one (architecture.md Sec 3).
+        var row = await launchers.FindAsync(rowId, cancellationToken);
+        if (row is null || row.EngagementId != engagement)
+            return Results.NotFound(new Problem("Launcher does not exist in this engagement."));
+        if (row.RevokedAt is not null)
+            return Results.BadRequest(new Problem("This launcher's credential is already revoked."));
+
+        // The revocation kills the credential wherever it lives -- the row's
+        // own fetch, and any copy of the command that carries it.
+        var at = clock.GetUtcNow();
+        if (!await tokens.RevokeAsync(row.TokenId, cancellationToken))
+        {
+            // The token is already gone (spent to zero, expired and swept):
+            // the honest answer is still to mark the row, but the wire says
+            // the credential needed no killing.
+            if (!row.Revoke(at))
+                return Results.BadRequest(new Problem("This launcher's credential is already revoked."));
+            await launchers.SaveAsync(row, cancellationToken);
+            return Results.Ok(RevokedResponse(row, alreadyDead: true));
+        }
+
+        row.Revoke(at);
+        await launchers.SaveAsync(row, cancellationToken);
+
+        // The revocation is recorded like every engagement fact
+        // (architecture.md Sec 11): attributed to the acting operator, the
+        // outcome the revoked token id.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagement.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "revoke-stager-token",
+                kind: AuditEventKind.StagerTokenRevoked,
+                payload: $"origin=launcher requestedBy={operatorId.Value.Value}",
+                output: null,
+                outcome: row.TokenId.ToString(),
+                at: at),
+            cancellationToken);
+
+        return Results.Ok(RevokedResponse(row, alreadyDead: false));
+    }
+
+    private static async Task<IResult> DeleteLauncherAsync(
+        string engagementId,
+        string launcherId,
+        ClaimsPrincipal user,
+        ILauncherStore launchers,
+        CancellationToken cancellationToken)
+    {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!EngagementId.TryParse(engagementId, out var engagement))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!LauncherId.TryParse(launcherId, out var rowId))
+            return Results.BadRequest(new Problem("Launcher id is not a valid identifier."));
+
+        // Deleting the row is tidying, not disabling: the credential dies by
+        // its own revocation or expiry, and the trail keeps the mint. The
+        // engagement in the path must own the row.
+        var row = await launchers.FindAsync(rowId, cancellationToken);
+        if (row is null || row.EngagementId != engagement)
+            return Results.NotFound(new Problem("Launcher does not exist in this engagement."));
+        if (!await launchers.RemoveAsync(rowId, cancellationToken))
+            return Results.NotFound(new Problem("Launcher does not exist in this engagement."));
+
+        return Results.NoContent();
+    }
+
+    // The row's response shape: the snapshot plus the live credential state,
+    // joined from the token store. A null remaining count means the token is
+    // no longer stored -- revoked, or spent to zero -- and reads as "no
+    // downloads left".
+    private static async Task<LauncherResponse> ResponseOfAsync(
+        Launcher row,
+        IReadOnlyList<ShellLauncherResponse> commands,
+        IStagerTokenService tokens,
+        CancellationToken cancellationToken)
+    {
+        var state = await tokens.FindAsync(row.TokenId, cancellationToken);
+        return new LauncherResponse(
+            row.Id.ToString(),
+            row.PayloadId.ToString("N"),
+            row.Url,
+            row.FrontName,
+            row.FrontEndpoint,
+            row.TokenSecret,
+            row.MaxUses,
+            row.ExpiresAt,
+            row.CreatedAt,
+            row.CreatedBy.ToString(),
+            row.RevokedAt,
+            TokenRemainingUses: state is null ? null : state.RemainingUses,
+            TokenExpiresAt: state?.ExpiresAt,
+            Launchers: commands);
+    }
+
+    private static RevokedLauncherResponse RevokedResponse(Launcher row, bool alreadyDead)
+        => new(row.Id.ToString(), row.TokenId.ToString(), row.RevokedAt!.Value, alreadyDead);
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
@@ -111,8 +280,7 @@ public static class LauncherEndpoints
     /// Names the stage-2 payload and the web listener the fetch should ride
     /// (either may be omitted for the engagement's own preference: the newest
     /// build, the hardened front), and the deployment credential's policy:
-    /// how many redeems it allows (0 = unlimited until expiry) and how long
-    /// it lives.
+    /// how many redeems it allows (0 = unlimited) and how long it lives.
     /// </summary>
     public sealed record LauncherRenderRequest(
         string? PayloadId = null,
@@ -121,17 +289,37 @@ public static class LauncherEndpoints
         int? LifetimeMinutes = null);
 
     /// <summary>
-    /// The rendered launcher set: the payload it grows into, the stage-2
-    /// fetch URL, the deployment credential (shown exactly once -- here, never
-    /// on the audit trail), and the paste-ready one-liners per downloader
-    /// family.
+    /// One kept launcher row: what it delivers and where it fetches from, the
+    /// re-copyable credential with its policy and provenance, the revocation
+    /// state, and the paste-ready one-liners re-rendered from the row's url
+    /// and secret.
     /// </summary>
-    public sealed record LauncherRenderResponse(
+    public sealed record LauncherResponse(
+        string LauncherId,
         string PayloadId,
         string Url,
+        string FrontName,
+        string FrontEndpoint,
         string TokenSecret,
-        DateTimeOffset TokenExpiresAt,
+        int MaxUses,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset CreatedAt,
+        string CreatedBy,
+        DateTimeOffset? RevokedAt,
+        int? TokenRemainingUses,
+        DateTimeOffset? TokenExpiresAt,
         IReadOnlyList<ShellLauncherResponse> Launchers);
+
+    /// <summary>
+    /// The answer to a revocation: the row, its credential's id, when the
+    /// handle was pulled, and whether the credential was already dead (spent
+    /// or expired) when the operator pulled it.
+    /// </summary>
+    public sealed record RevokedLauncherResponse(
+        string LauncherId,
+        string TokenId,
+        DateTimeOffset RevokedAt,
+        bool AlreadyDead);
 }
 
 /// <summary>What one render asked for, beyond the engagement it targets.</summary>
@@ -147,6 +335,7 @@ internal sealed record LauncherSelection(
 /// <summary>The resolved pieces one render is made of.</summary>
 internal sealed record LauncherSet(
     PayloadRecord Payload,
+    ListenerDefinition Front,
     StagerToken Token,
     string Url,
     IReadOnlyList<ShellLauncherResponse> Launchers);
@@ -221,10 +410,12 @@ internal static class LauncherRender
                     "No stage-2 payload exists in this engagement; build one first, or name an existing payload id.")),
                 null);
 
-        // One deployment credential for the fetch: verified at the fetch,
-        // spent at the enrollment that follows, and short-lived. The mint is
-        // issued by the engagement's owner and recorded on the trail with the
-        // rendering operator named; the secret itself never rides the audit.
+        // One download credential for the fetch: every served fetch spends
+        // one use, the window is the operator's, and the enrollment that
+        // follows rides the credential baked into the fetched artifact. The
+        // mint is issued by the engagement's owner and recorded on the trail
+        // with the rendering operator named; the secret itself never rides
+        // the audit.
         var at = clock.GetUtcNow();
         var token = await tokens.MintAsync(
             engagement, engagementRow.OwnerId, at,
@@ -248,6 +439,7 @@ internal static class LauncherRender
         var url = $"{webListener.PublicEndpoint.TrimEnd('/')}/implants/stage2/{payload.PayloadId:N}";
         return (null, new LauncherSet(
             payload,
+            webListener,
             token,
             url,
             ShellUpgradeLaunchers.Render(url, token.Secret)

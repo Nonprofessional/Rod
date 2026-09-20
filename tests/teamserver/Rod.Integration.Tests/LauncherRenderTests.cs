@@ -133,6 +133,75 @@ public class LauncherRenderTests
         Assert.Equal(HttpStatusCode.BadRequest, badListener.StatusCode);
     }
 
+    [Fact]
+    public async Task Renders_AreKeptAsRows_ThatListRevokeAndDelete()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var engagement = new EngagementId(Guid.Parse(engagementId));
+
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-http",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: "http://stage.example.test"));
+        created.EnsureSuccessStatusCode();
+        var frontListener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+
+        var payloads = env.Host.Services.GetRequiredService<IPayloadStore>();
+        var payloadId = Guid.NewGuid();
+        await payloads.SaveAsync(Payload(payloadId, engagement, DateTimeOffset.UtcNow));
+
+        // The render: kept as a row, answering with the full kept shape.
+        var rendered = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { });
+        rendered.EnsureSuccessStatusCode();
+        var row = await rendered.Content.ReadFromJsonAsync<LauncherRowDto>();
+        Assert.NotNull(row);
+        Assert.False(string.IsNullOrEmpty(row!.LauncherId));
+        Assert.Equal(frontListener!.Name, row.FrontName);
+        Assert.False(string.IsNullOrEmpty(row.TokenSecret));
+        Assert.Contains(row.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(row.Url));
+
+        // The listing holds what was cut -- the same row, the commands
+        // re-rendered from the stored url and secret.
+        var listed = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
+            $"/engagements/{engagementId}/launchers");
+        var kept = Assert.Single(listed!);
+        Assert.Equal(row.LauncherId, kept.LauncherId);
+        Assert.Contains(kept.Launchers, l => l.Command.Contains(kept.TokenSecret));
+
+        // Revocation kills the credential and marks the row; a second pull
+        // of the handle is refused.
+        var revoke = await env.Http.PostAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}:revoke", content: null);
+        revoke.EnsureSuccessStatusCode();
+        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
+        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => tokens.VerifyAsync(row.TokenSecret, DateTimeOffset.UtcNow));
+        var listedAfterRevoke = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
+            $"/engagements/{engagementId}/launchers");
+        Assert.NotNull(Assert.Single(listedAfterRevoke!).RevokedAt);
+
+        var revokeAgain = await env.Http.PostAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}:revoke", content: null);
+        Assert.Equal(HttpStatusCode.BadRequest, revokeAgain.StatusCode);
+
+        // Deletion is tidying: the row goes, a repeat answers 404, and the
+        // listing is empty.
+        var deleted = await env.Http.DeleteAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        var deleteAgain = await env.Http.DeleteAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}");
+        Assert.Equal(HttpStatusCode.NotFound, deleteAgain.StatusCode);
+        var listedAfterDelete = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
+            $"/engagements/{engagementId}/launchers");
+        Assert.Empty(listedAfterDelete!);
+    }
+
     private static PayloadRecord Payload(Guid id, EngagementId engagement, DateTimeOffset builtAt)
         => new(
             id, engagement.Value, "Stage2", "dotnet", "application/octet-stream",
@@ -143,6 +212,23 @@ public class LauncherRenderTests
         string Url,
         string TokenSecret,
         DateTimeOffset TokenExpiresAt,
+        IReadOnlyList<LauncherDto> Launchers);
+
+    // The kept-row shape: the render answer and the listing rows share it.
+    private sealed record LauncherRowDto(
+        string LauncherId,
+        string PayloadId,
+        string Url,
+        string FrontName,
+        string FrontEndpoint,
+        string TokenSecret,
+        int MaxUses,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset CreatedAt,
+        string CreatedBy,
+        DateTimeOffset? RevokedAt,
+        int? TokenRemainingUses,
+        DateTimeOffset? TokenExpiresAt,
         IReadOnlyList<LauncherDto> Launchers);
 
     private sealed record LauncherDto(string Id, string Os, string Command);
