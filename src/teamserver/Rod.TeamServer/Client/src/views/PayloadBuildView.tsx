@@ -195,12 +195,15 @@ export function PayloadBuildView({
     () => listeners.filter((l) => ENROLL_TRANSPORTS.has(l.transport)),
     [listeners],
   )
-  // The DNS family's pairing shape (architecture.md Sec 8): check-ins step
-  // down to a DNS listener's TXT carrier (raw UDP, or the same grammar
-  // over RFC 8484 HTTPS on a DoH listener) while enrollment keeps riding
-  // the web front -- offered when the engagement runs one.
-  const dnsCarriers = useMemo(
-    () => listeners.filter((l) => l.transport === 'dns' || l.transport === 'doh'),
+  // The steady-state pairing shape (architecture.md Sec 8): check-ins ride
+  // the named carrier while enrollment keeps riding the picked front -- the
+  // priority inversion a fallback list cannot express (its entries serve
+  // both exchanges together). Any listener a beacon may name serves: the
+  // web family (the WebSocket stream or the envelope cycle by mode), mTLS,
+  // QUIC, the socket family (either mode), and the DNS family (poll, the
+  // egress-restricted TXT carrier). The catcher serves no check-in at all.
+  const carriers = useMemo(
+    () => listeners.filter((l) => l.transport !== 'shellcatch'),
     [listeners],
   )
   const [carrierId, setCarrierId] = useState('')
@@ -362,18 +365,18 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {dnsCarriers.length > 0 && (
+          {carriers.length > 0 && (
             <label>
               Check-in carrier
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where check-ins ride. Empty: the same front as enrollment (everything on one socket). A DNS listener: the egress-restricted TXT carrier over UDP. A DoH listener: the same grammar over HTTPS (RFC 8484) -- DNS-shaped traffic that blends as HTTPS. The carrier is refresh-only by physics: presence, short tasking, and chunked results -- no interactive channels (a datagram poll has no input half, so channel tasks queue until a stream front answers) and no staged transfers; enrollment keeps riding the web front above, and the implant dials the listener's own bind as its resolver."
+                title="Where check-ins ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS/QUIC listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
               >
                 <option value="">-- same front as enrollment --</option>
-                {dnsCarriers.map((l) => (
+                {carriers.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name} ({l.transport} · zone {l.publicEndpoint})
+                    {l.name} ({l.transport} · {l.publicEndpoint})
                   </option>
                 ))}
               </select>
@@ -600,7 +603,7 @@ export function PayloadBuildView({
         <BuildSummary
           listener={selectedListener}
           endpoint={endpoint}
-          carrier={dnsCarriers.find((l) => l.id === carrierId)}
+          carrier={carriers.find((l) => l.id === carrierId)}
           mode={mode}
           sleep={sleepSeconds}
           jitter={jitterSeconds}
