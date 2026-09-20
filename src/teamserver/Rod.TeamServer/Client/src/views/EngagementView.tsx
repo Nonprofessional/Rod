@@ -13,6 +13,7 @@ import { ArtifactsView } from './ArtifactsView'
 import { AuditView } from './AuditView'
 import { ImplantsView } from './ImplantsView'
 import { InteractView } from './InteractView'
+import { LaunchersView } from './LaunchersView'
 import { ListenersView } from './ListenersView'
 import { PayloadBuildView } from './PayloadBuildView'
 import { PayloadsView } from './PayloadsView'
@@ -30,8 +31,9 @@ import { TimelineView } from './TimelineView'
 // roster, and a monotonically increasing tick lets child views refresh
 // without polling of their own. The online-implant roster (the presence
 // query's projection: an implant is online exactly while its session is
-// active) is fetched here and handed to the Implants view, with a slow poll
-// as reconnect reconciliation.
+// active) is fetched here and handed to the Implants view, on the live tick
+// and a short reconciliation poll -- quiet heartbeats produce no SSE event,
+// so the poll is what keeps a beaconing implant's last-seen moving.
 
 export function EngagementView({
   engagementId,
@@ -100,10 +102,13 @@ export function EngagementView({
 
   // The online-implant roster is refreshed on the live tick (SessionOpened
   // when an implant contacts, SessionClosed when its stream dies or is
-  // swept) so the fleet counts move the moment the roster changes. The slow
-  // poll stays as reconciliation only: after a dropped SSE connection the
-  // events a reconnect missed are gone, and the poll re-anchors the roster
-  // to the server's view.
+  // swept) so the fleet counts move the moment the roster changes. A quiet
+  // heartbeat -- an online implant simply beaconing on its cadence --
+  // produces no SSE event, so the short poll below is also what keeps the
+  // fleet's last-seen stamps moving between events, and it re-anchors the
+  // roster to the server's view after a dropped SSE connection. One small
+  // JSON read per operator every few seconds is nothing next to the SSE
+  // stream already held open.
   useEffect(() => {
     let cancelled = false
     const refresh = async () => {
@@ -115,7 +120,7 @@ export function EngagementView({
       }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 10_000)
+    const timer = window.setInterval(() => void refresh(), 5_000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -157,6 +162,7 @@ export function EngagementView({
       {tab === 'timeline' && <TimelineView engagementId={engagementId} />}
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
+      {tab === 'launchers' && <LaunchersView engagementId={engagementId} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
       {tab === 'payloads' && <PayloadsView engagementId={engagementId} />}
     </LiveContext.Provider>

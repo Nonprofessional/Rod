@@ -40,6 +40,16 @@ export interface Implant {
   os: string | null
   arch: string | null
   username: string | null
+  // The contact cadence the implant last advertised, in seconds: the base
+  // sleep and the jitter half-width. Set at enroll (the baked profile) and
+  // refreshed by every changed handshake advertisement, so a beacon.sleep
+  // retune lands here at the next contact. Null on either half = not
+  // reported.
+  sleepSeconds: number | null
+  jitterSeconds: number | null
+  // The operator the implant's events attribute to (the token issuer) --
+  // who deployed this beacon.
+  deployedBy: string | null
   // The listener whose socket carried the enrollment, when the transport
   // could attribute one -- what a listener-deletion warning counts against.
   enrolledViaListenerId: string | null
@@ -50,6 +60,9 @@ export interface Implant {
   // vocabulary: web, grpc, quic, dns, pipe); 'dns' is the constrained
   // carrier. Null while offline or when no contact recorded one.
   lastCarrier: string | null
+  // The baked carrier set the artifact's endpoints dial; null when the
+  // enroll derived none.
+  carriers: string[] | null
 }
 
 export interface Task {
@@ -962,6 +975,50 @@ export async function upgradeShell(
       body: JSON.stringify({
         payloadId: payloadId ?? null,
         listenerId: listenerId ?? null,
+      }),
+    }),
+  )
+}
+
+// --- Standalone launchers --------------------------------------
+//
+// The one-liner delivery surface: the same paste-ready stage-2 fetch renders
+// the shell console's upgrade produces, without a caught shell to grow from.
+// The operator names the payload and the web front (or takes the engagement's
+// own preference), sets the deployment credential's policy (uses and
+// lifetime), and copies the downloader command for the target's shell family.
+
+export interface LauncherRender {
+  payloadId: string
+  url: string
+  tokenSecret: string
+  tokenExpiresAt: string
+  launchers: ShellLauncher[]
+}
+
+export interface RenderLauncherInput {
+  payloadId?: string
+  listenerId?: string
+  // How many redeems the minted token allows: 1 = single-use (default), 0 =
+  // unlimited until expiry.
+  maxUses?: number
+  // The token's lifetime in minutes; 30 by default.
+  lifetimeMinutes?: number
+}
+
+export async function renderLaunchers(
+  engagementId: string,
+  input: RenderLauncherInput = {},
+): Promise<LauncherRender> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/launchers`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        payloadId: input.payloadId ?? null,
+        listenerId: input.listenerId ?? null,
+        maxUses: input.maxUses ?? null,
+        lifetimeMinutes: input.lifetimeMinutes ?? null,
       }),
     }),
   )

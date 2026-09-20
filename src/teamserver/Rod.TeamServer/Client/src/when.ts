@@ -27,3 +27,12 @@ export function useNow(intervalMs: number): number {
   }, [intervalMs])
   return now
 }
+
+// Seconds rendered the way beacon.sleep speaks them: whole seconds plain,
+// sub-second precision to one decimal (the near-interactive end matters).
+// Shared by the fleet's detail strip and the session console's facts line.
+export function formatSeconds(seconds: number): string {
+  return seconds >= 10 || Number.isInteger(seconds)
+    ? `${Math.round(seconds)}s`
+    : `${seconds.toFixed(1)}s`
+}

@@ -20,7 +20,7 @@ import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { VERB_FORMS } from '../verbForms'
-import { ago, useNow } from '../when'
+import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
 // The implants panel: the fleet as one table, three identity layers deep. The
@@ -122,6 +122,9 @@ export function ImplantsView({
   const [implants, setImplants] = useState<Implant[]>([])
   const [error, setError] = useState<string | null>(null)
   const [notesFor, setNotesFor] = useState<string | null>(null)
+  // Which implant's detail strip is expanded under its row; the record's
+  // whole projection (identity, cadence, lineage, lifecycle) in one place.
+  const [detailsFor, setDetailsFor] = useState<string | null>(null)
   const [notes, setNotes] = useState<ImplantNote[]>([])
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
@@ -155,9 +158,12 @@ export function ImplantsView({
   const [sort, setSort] = useState<Sort | null>(null)
   const [page, setPage] = useState(0)
 
-  // The quiet clock for relative stamps: bumps every 30s so "2m ago" keeps
-  // moving between live events.
-  const now = useNow(30_000)
+  // The clock for relative stamps: a per-second tick keeps "last seen" moving
+  // the moment the roster refresh lands it -- the freshest stamp in the world
+  // still reads "10s ago" frozen if nothing re-renders the cell. The derived
+  // table state (filtering, grouping, sorting) is memoized on the data, so
+  // the tick only re-renders the stamp text.
+  const now = useNow(1_000)
 
   useEffect(() => {
     void loadCapabilityGroups()
@@ -190,9 +196,11 @@ export function ImplantsView({
     void refresh()
   }, [refresh, onlineTick])
 
-  // A stale open notes panel must never survive an engagement switch.
+  // A stale open notes or details panel must never survive an engagement
+  // switch.
   useEffect(() => {
     setNotesFor(null)
+    setDetailsFor(null)
     setNotes([])
     setCollapsed(new Set())
     setSearchDraft('')
@@ -605,6 +613,17 @@ export function ImplantsView({
                               >
                                 Interact
                               </a>
+                              <button
+                                className="sm"
+                                onClick={() =>
+                                  setDetailsFor((current) =>
+                                    current === implant.implantId ? null : implant.implantId,
+                                  )
+                                }
+                                title="Everything the record holds about this implant"
+                              >
+                                {detailsFor === implant.implantId ? 'Hide details' : 'Details'}
+                              </button>
                               <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
                                 {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
                               </button>
@@ -623,6 +642,17 @@ export function ImplantsView({
                             </div>
                           </td>
                         </tr>
+                        {detailsFor === implant.implantId && (
+                          <tr className="notes-row">
+                            <td colSpan={7}>
+                              <ImplantDetail
+                                implant={implant}
+                                lastSeen={seenOf(implant)}
+                                presence={presenceByImplant.get(implant.implantId) ?? null}
+                              />
+                            </td>
+                          </tr>
+                        )}
                         {notesFor === implant.implantId && (
                           <tr className="notes-row">
                             <td colSpan={7}>
@@ -737,6 +767,103 @@ export function ImplantsView({
           osHint={implants.find((i) => i.implantId === filesFor)?.os ?? null}
           onClose={() => setFilesFor(null)}
         />
+      )}
+    </div>
+  )
+}
+
+// One implant's whole record, laid out as the detail strip under its row:
+// identity and lineage, the host it reported, the cadence it runs, and the
+// lifecycle facts. Everything the fleet table summarizes, unfolded.
+function ImplantDetail({
+  implant,
+  lastSeen,
+  presence,
+}: {
+  implant: Implant
+  lastSeen: string | null
+  presence: PresenceRecord | null
+}) {
+  const fact = (label: string, node: React.ReactNode) => (
+    <div className="task-detail-line" key={label}>
+      <span className="muted">{label}</span> {node}
+    </div>
+  )
+  const dash = <span className="muted">&mdash;</span>
+
+  const host = [implant.hostname, implant.os, implant.arch, implant.username]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <div className="notes-panel">
+      {fact(
+        'implant',
+        <>
+          <code>{implant.implantId}</code> · class <code>{implant.class}</code>
+          {implant.parentImplantId ? (
+            <>
+              {' '}
+              · parent <code>{implant.parentImplantId}</code>
+            </>
+          ) : null}
+          {implant.deployedBy ? (
+            <>
+              {' '}
+              · deployed by <code title={implant.deployedBy}>{implant.deployedBy.slice(0, 8)}</code>
+            </>
+          ) : null}
+        </>,
+      )}
+      {fact('host', host ? host : dash)}
+      {fact(
+        'cadence',
+        implant.sleepSeconds != null ? (
+          <span title="The sleep/jitter pair the implant last advertised: baked at enroll, refreshed by every changed handshake advertisement (a beacon.sleep retune lands at the next contact)">
+            every {formatSeconds(implant.sleepSeconds)} ±{' '}
+            {implant.jitterSeconds != null ? formatSeconds(implant.jitterSeconds) : '?'}
+          </span>
+        ) : (
+          <span className="muted" title="This implant never advertised a cadence">
+            not reported
+          </span>
+        ),
+      )}
+      {fact(
+        'lifecycle',
+        <>
+          created {new Date(implant.createdAt).toLocaleString()}
+          {implant.killDate ? (
+            <> · kill date {new Date(implant.killDate).toLocaleString()}</>
+          ) : (
+            <> · <span className="muted">no kill date</span></>
+          )}
+          {implant.retiredAt ? <> · retired {new Date(implant.retiredAt).toLocaleString()}</> : null}
+          {lastSeen ? <> · last seen {new Date(lastSeen).toLocaleString()}</> : null}
+          {presence ? <> · online since {new Date(presence.onlineAt).toLocaleString()}</> : null}
+          {implant.lastCarrier ? <> · last carrier <code>{implant.lastCarrier}</code></> : null}
+        </>,
+      )}
+      {fact(
+        'ingress',
+        implant.enrolledViaListenerId ? (
+          <code title="The listener whose socket carried the enrollment">{implant.enrolledViaListenerId}</code>
+        ) : (
+          dash
+        ),
+      )}
+      {fact(
+        'carriers',
+        implant.carriers && implant.carriers.length > 0 ? (
+          implant.carriers.map((c) => <code key={c}>{c}</code>).reduce<React.ReactNode[]>(
+            (acc, node, i) => (i === 0 ? [node] : [...acc, ' ', node]),
+            [],
+          )
+        ) : (
+          <span className="muted" title="No baked carrier set was derived at enroll">
+            undeclared
+          </span>
+        ),
       )}
     </div>
   )

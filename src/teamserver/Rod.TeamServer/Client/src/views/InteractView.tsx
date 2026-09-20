@@ -21,7 +21,7 @@ import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { CHANNEL_VERBS, VERB_FORMS } from '../verbForms'
-import { ago, useNow } from '../when'
+import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
 // The session console: one implant, rendered as the terminal operators expect
@@ -325,6 +325,11 @@ export function InteractView({
             {implant ? [implant.class, ...[implant.os, implant.arch].filter(Boolean)].join(' · ') : ''}
             {implant?.username ? ` · as ${implant.username}` : ''}
             {implant?.parentImplantId ? ` · parent ${implant.parentImplantId.slice(0, 8)}` : ''}
+            {implant?.sleepSeconds != null
+              ? ` · every ${formatSeconds(implant.sleepSeconds)} ± ${
+                  implant.jitterSeconds != null ? formatSeconds(implant.jitterSeconds) : '?'
+                }`
+              : ''}
             {implant
               ? implant.killDate
                 ? ` · kill ${new Date(implant.killDate).toLocaleDateString()}`

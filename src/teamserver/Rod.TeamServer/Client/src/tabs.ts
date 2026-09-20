@@ -17,6 +17,7 @@ export type TabId =
   | 'timeline'
   | 'report'
   | 'listeners'
+  | 'launchers'
   | 'build'
   | 'payloads'
 
@@ -46,6 +47,9 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Infrastructure',
     items: [
       { id: 'listeners', label: 'Listeners', icon: 'radio' },
+      // The one-liner delivery surface: paste-ready stage-2 fetches beside
+      // the listeners they ride and the builds they deliver.
+      { id: 'launchers', label: 'Launchers', icon: 'copy' },
       { id: 'build', label: 'Build', icon: 'package' },
       { id: 'payloads', label: 'Payloads', icon: 'archive' },
     ],
