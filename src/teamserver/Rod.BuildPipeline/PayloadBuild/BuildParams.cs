@@ -48,6 +48,13 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// implant encrypts its enroll body with it) and recorded beside the stored
 /// payload (the teamserver decrypts with it). Null on every other envelope.
 /// </param>
+/// <param name="Format">
+/// The artifact form factor the unit emits for this build (architecture.md
+/// Sec 6): the single-file executable default, the trimmed executable, the
+/// native AOT binary, or the framework-dependent DLL bundle a host loads
+/// in-process. Defaults to the single-file executable -- the shape every build
+/// produced before the format axis existed.
+/// </param>
 public sealed record BuildParams(
     EngagementId EngagementId,
     OperatorId RequestedBy,
@@ -60,7 +67,8 @@ public sealed record BuildParams(
     Guid? TokenId = null,
     int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
-    byte[]? EnvelopeKey = null);
+    byte[]? EnvelopeKey = null,
+    ArtifactFormat Format = ArtifactFormat.SingleFileExe);
 
 /// <summary>
 /// The stage-2 payload a stage-1 stager build references: the built-payload id

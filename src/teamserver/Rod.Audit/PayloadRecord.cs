@@ -110,4 +110,10 @@ public sealed record PayloadBuildProfile
 
     /// <summary>The backup dial addresses baked behind the primary, in walk order.</summary>
     public IReadOnlyList<string>? FallbackEndpoints { get; init; }
+
+    /// <summary>The artifact's form factor as the request named it (the
+    /// ArtifactFormats wire name: 'exe', 'exe-trimmed', 'aot', 'dll'). Null on
+    /// records built before the format axis existed -- the single-file
+    /// executable every build produced then.</summary>
+    public string? Format { get; init; }
 }

@@ -663,6 +663,38 @@ public class DotNetBuildUnitTests
             "an mTLS-shaped artifact keeps the gRPC client the stream dials");
     }
 
+    [DotNetFact]
+    public async Task Build_TheDllFormat_ShipsAZippedFrameworkDependentBundle()
+    {
+        // The dll format (architecture.md Sec 6) is the in-memory-loadable
+        // shape: one zip carrying the entry assembly, its dependencies, and
+        // the deps/runtimeconfig files, published framework-dependent against
+        // net8.0 so every supported host runtime (.NET 8 pwsh through the
+        // teamserver's own 10) loads the same bytes. The default profile's
+        // egress walk is web-shaped, so the transport trim keeps the gRPC
+        // client out of the bundle the same way it keeps it out of the
+        // single-file build.
+        var unit = new DotNetBuildUnit();
+
+        var artifact = await unit.BuildAsync(Params() with { Format = ArtifactFormat.Dll });
+
+        Assert.Equal("application/zip", artifact.ContentType);
+        Assert.Equal(artifact.Content.Length, artifact.Size);
+        // A zip opens with the local-file-header signature.
+        Assert.True(artifact.Content.Length > 4
+            && artifact.Content[0] == (byte)'P' && artifact.Content[1] == (byte)'K'
+            && artifact.Content[2] == 3 && artifact.Content[3] == 4);
+
+        using var archive = new System.IO.Compression.ZipArchive(
+            new MemoryStream(artifact.Content));
+        var names = archive.Entries.Select(e => e.Name).ToHashSet();
+        Assert.Contains("Rod.Implant.dll", names);
+        Assert.Contains("Rod.Implant.runtimeconfig.json", names);
+        Assert.Contains("Rod.Implant.deps.json", names);
+        Assert.Contains("Google.Protobuf.dll", names);
+        Assert.DoesNotContain("Grpc.Net.Client.dll", names);
+    }
+
     // Scans the single-file bundle's bytes for a pattern. The bundle manifest
     // lists every embedded file's name as plain text (only the payloads are
     // compressed), so an assembly's presence in the bundle is visible in its

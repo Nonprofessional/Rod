@@ -261,7 +261,14 @@ public static class PayloadEndpoints
         if (payload is null)
             return Results.NotFound(new Problem("Payload does not exist in this engagement."));
 
-        var fileName = $"rod-{payload.Class.ToLowerInvariant()}-{payload.PayloadId.ToString("N")[..8]}.bin";
+        // The download's extension follows the artifact's shape: the dll
+        // bundle is a zip, a Windows executable carries .exe, and everything
+        // else keeps the extensionless-binary .bin.
+        var extension =
+            payload.ContentType == "application/zip" ? ".dll.zip"
+            : payload.Target?.StartsWith("windows", StringComparison.OrdinalIgnoreCase) == true ? ".exe"
+            : ".bin";
+        var fileName = $"rod-{payload.Class.ToLowerInvariant()}-{payload.PayloadId.ToString("N")[..8]}{extension}";
         return Results.File(payload.Content, payload.ContentType, fileName);
     }
 
@@ -281,7 +288,9 @@ public static class PayloadEndpoints
     // ContactProtection is its own Advanced knob beside the enroll-body
     // Envelope pick: on unless explicitly false (the lab-debug plaintext
     // frame), sealing every contact body under the per-artifact key the
-    // mint below then makes sure exists.
+    // mint below then makes sure exists. Format picks the artifact form
+    // factor ('exe' default, 'exe-trimmed', 'aot', 'dll'); the dll bundle
+    // is an implant shape, so a stager build refuses it.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,
@@ -305,11 +314,13 @@ public static class PayloadEndpoints
         int? TokenMaxUses = null,
         long? TokenLifetimeSeconds = null,
         string? BeaconListenerId = null,
-        string? BeaconEndpoint = null);
+        string? BeaconEndpoint = null,
+        string? Format = null);
 
     // The response's TokenId names the enrollment credential baked into the
     // artifact (null on a credential-free build): enough to revoke it, never
     // enough to reuse it -- the secret itself exists only inside the artifact.
+    // Format is the artifact's form factor as the request named it.
     public sealed record BuildPayloadResponse(
         string ArtifactId,
         string EngagementId,
@@ -320,7 +331,8 @@ public static class PayloadEndpoints
         string Fingerprint,
         DateTimeOffset BuiltAt,
         string[]? Transforms = null,
-        string? TokenId = null);
+        string? TokenId = null,
+        string? Format = null);
 
     /// <summary>
     /// One row of the payload library: a stored payload's metadata without the
@@ -388,7 +400,8 @@ public static class PayloadEndpoints
         double? RequestTimeoutSeconds = null,
         string? Envelope = null,
         bool? ContactProtection = null,
-        string[]? FallbackEndpoints = null)
+        string[]? FallbackEndpoints = null,
+        string? Format = null)
     {
         public static PayloadBuildProfileResponse? Of(Rod.Audit.PayloadBuildProfile? profile) =>
             profile is null
@@ -404,7 +417,8 @@ public static class PayloadEndpoints
                     profile.RequestTimeoutSeconds,
                     profile.Envelope,
                     profile.ContactProtection,
-                    profile.FallbackEndpoints?.ToArray());
+                    profile.FallbackEndpoints?.ToArray(),
+                    profile.Format);
     }
 
 }

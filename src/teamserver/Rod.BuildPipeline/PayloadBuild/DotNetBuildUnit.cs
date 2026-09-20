@@ -9,7 +9,9 @@ namespace Rod.BuildPipeline.PayloadBuild;
 
 /// <summary>
 /// The real .NET build unit. Drives the reference .NET implant's
-/// toolchain to compile a self-contained, per-implant artifact through the build
+/// toolchain to compile a per-implant artifact in the requested form factor
+/// (the single-file executable default, its trimmed twin, the native AOT
+/// binary, or the in-memory-loadable dll bundle) through the build
 /// contract (architecture.md Sec 6). It runs <c>dotnet publish</c> against the
 /// implant source tree, baking the per-implant profile into a generated
 /// <c>BakedProfile.g.cs</c> source file so each artifact carries its own endpoint,
@@ -102,13 +104,14 @@ public sealed class DotNetBuildUnit : IBuildUnit
             throw new InvalidOperationException(
                 "A stager build requires a stage-2 payload reference (BuildParams.Stage2).");
 
-        // The artifact must run on the target, not on the build host: map the
-        // requested OS/arch onto a runtime identifier and publish self-contained
-        // so no .NET has to be installed on the target (the practical deployment
-        // shape -- a target with a shared .NET 10 on it is a rarity, not the
-        // rule). Single-file bundles the runtime; compression trades a slower
-        // cold start for a much smaller artifact worth transferring.
-        var rid = MapRid(@params.Target);
+        // The requested form decides the toolchain shape (architecture.md
+        // Sec 6): the executable forms map the requested OS/arch onto a
+        // runtime identifier and bundle a runtime so no .NET has to be
+        // installed on the target (the practical deployment shape -- a
+        // target with a shared .NET on it is a rarity, not the rule); the
+        // dll bundle is AnyCPU framework-dependent output -- a host with a
+        // .NET runtime loads it in-process, so it maps no pair at all.
+        var rid = @params.Format == ArtifactFormat.Dll ? null : MapRid(@params.Target);
 
         var now = DateTimeOffset.UtcNow;
         var baked = isStager ? RenderStagerProfile(@params) : RenderBakedProfile(@params);
@@ -135,6 +138,15 @@ public sealed class DotNetBuildUnit : IBuildUnit
             if (!isStager)
                 CopyProtoTree(sourceDir, workDir);
             CopyRepoProps(sourceDir, workDir);
+
+            // The dll bundle targets net8.0 -- the oldest TFM every supported
+            // host runtime loads. The global-property route
+            // (-p:TargetFramework) never reaches publish's implicit restore
+            // (NETSDK1005: the assets keep the shared props' net10.0), so the
+            // staging copy's own props carry the retarget -- the same
+            // generated-file mechanism the baked profile uses.
+            if (@params.Format == ArtifactFormat.Dll)
+                RetargetStagingProps(workDir, "net8.0");
 
             // Overwrite the checked-in BakedProfile stub with the per-build profile.
             // The committed stub compiles empty so the component runs from flags/env
@@ -185,21 +197,57 @@ public sealed class DotNetBuildUnit : IBuildUnit
             if (!isStager)
                 HandlerModuleSelection.Apply(stagingDir, HandlerModuleSelection.Select(@params.Class));
 
-            // dotnet publish compiles the component into a self-contained
-            // single-file executable for the requested runtime identifier: one
-            // native entrypoint, runtime bundled, no target-side install.
+            // The format axis (architecture.md Sec 6): every form is one
+            // dotnet publish invocation with its own shape. The single-file
+            // default bundles the runtime (compression trades a slower cold
+            // start for a much smaller artifact worth transferring); the
+            // trimmed twin adds IL trimming for a materially smaller bundle;
+            // native AOT compiles ahead of time to a runtime-free native
+            // binary; the dll bundle publishes framework-dependent against
+            // net8.0 -- the oldest TFM every supported host runtime loads,
+            // so a pwsh 7.4 (LTS, .NET 8) host and this teamserver's own
+            // .NET 10 both load the same bytes.
             var publishArgs = new List<string>
             {
                 "publish",
                 "-c", "Release",
-                "-r", rid,
-                "--self-contained", "true",
-                "-p:PublishSingleFile=true",
-                "-p:EnableCompressionInSingleFile=true",
-                "-o", outputDir,
-                "--nologo",
-                "/clp:NoSummary",
             };
+            if (rid is not null)
+                publishArgs.AddRange(new[] { "-r", rid });
+            switch (@params.Format)
+            {
+                case ArtifactFormat.TrimmedExe:
+                    publishArgs.AddRange(new[]
+                    {
+                        "--self-contained", "true",
+                        "-p:PublishSingleFile=true",
+                        "-p:EnableCompressionInSingleFile=true",
+                        "-p:PublishTrimmed=true",
+                    });
+                    break;
+                case ArtifactFormat.NativeAot:
+                    publishArgs.AddRange(new[]
+                    {
+                        "--self-contained", "true",
+                        "-p:PublishAot=true",
+                    });
+                    break;
+                case ArtifactFormat.Dll:
+                    publishArgs.AddRange(new[]
+                    {
+                        "--self-contained", "false",
+                    });
+                    break;
+                default:
+                    publishArgs.AddRange(new[]
+                    {
+                        "--self-contained", "true",
+                        "-p:PublishSingleFile=true",
+                        "-p:EnableCompressionInSingleFile=true",
+                    });
+                    break;
+            }
+            publishArgs.AddRange(new[] { "-o", outputDir, "--nologo", "/clp:NoSummary" });
             // The trim's compile half: with no stream module the implant csproj
             // generates the rod.v1 message types only and drops the
             // Grpc.Net.Client reference (its RodGrpcServices switch).
@@ -219,31 +267,93 @@ public sealed class DotNetBuildUnit : IBuildUnit
                     $"dotnet publish failed (exit {result.ExitCode}):\n{diag}");
             }
 
-            // The single-file executable is the artifact: the compiled component
-            // with the runtime bundled, ready to drop on the target and run. A
-            // Windows target gets an .exe; everything else gets the extensionless
-            // native binary.
-            var exeName = rid.StartsWith("win", StringComparison.Ordinal)
-                ? (isStager ? "Rod.Stager.exe" : "Rod.Implant.exe")
-                : (isStager ? "Rod.Stager" : "Rod.Implant");
-            var exePath = Path.Combine(outputDir, exeName);
-            if (!File.Exists(exePath))
-                throw new InvalidOperationException(
-                    $"dotnet publish reported success but produced no {exeName}.");
-
-            var content = await File.ReadAllBytesAsync(exePath, cancellationToken);
+            // The artifact is the format's output. The executable forms pick
+            // the native single file (a Windows target gets .exe, everything
+            // else the extensionless binary); the dll form packs the
+            // framework-dependent publish output into the one zip a host
+            // fetches and loads in-process.
+            byte[] content;
+            string contentType;
+            if (@params.Format == ArtifactFormat.Dll)
+            {
+                var entryDll = (isStager ? "Rod.Stager.dll" : "Rod.Implant.dll");
+                if (!File.Exists(Path.Combine(outputDir, entryDll)))
+                    throw new InvalidOperationException(
+                        $"dotnet publish reported success but produced no {entryDll}.");
+                content = await ZipDllOutputAsync(outputDir, cancellationToken);
+                contentType = "application/zip";
+            }
+            else
+            {
+                var exeName = rid!.StartsWith("win", StringComparison.Ordinal)
+                    ? (isStager ? "Rod.Stager.exe" : "Rod.Implant.exe")
+                    : (isStager ? "Rod.Stager" : "Rod.Implant");
+                var exePath = Path.Combine(outputDir, exeName);
+                if (!File.Exists(exePath))
+                    throw new InvalidOperationException(
+                        $"dotnet publish reported success but produced no {exeName}.");
+                content = await File.ReadAllBytesAsync(exePath, cancellationToken);
+                contentType = "application/octet-stream";
+            }
             return BuildArtifact.Of(
                 Language,
                 artifactId: Guid.NewGuid(),
                 @params,
                 content,
-                contentType: "application/octet-stream",
+                contentType: contentType,
                 builtAt: now);
         }
         finally
         {
             TryCleanup(workDir);
         }
+    }
+
+    // Retargets the work-dir copy of the shared build props to a different
+    // framework: a one-line swap of the pinned TargetFramework, so the staging
+    // tree restores, compiles, and publishes against it. Fails loudly when the
+    // copy is missing or does not pin the expected line -- a dll build that
+    // silently compiled net10.0 would produce a bundle no .NET 8 host loads.
+    private static void RetargetStagingProps(string workDir, string targetFramework)
+    {
+        var propsPath = Path.Combine(workDir, "Directory.Build.props");
+        if (!File.Exists(propsPath))
+            throw new InvalidOperationException(
+                "The dll format needs the shared build props in the staging copy; the repo walk-up found none.");
+        var text = File.ReadAllText(propsPath);
+        var retargeted = text.Replace(
+            "<TargetFramework>net10.0</TargetFramework>",
+            $"<TargetFramework>{targetFramework}</TargetFramework>");
+        if (retargeted == text)
+            throw new InvalidOperationException(
+                $"The shared build props do not pin net10.0; cannot retarget the staging copy to {targetFramework}.");
+        File.WriteAllText(propsPath, retargeted);
+    }
+
+    // Packs the framework-dependent publish output into the single zip a host
+    // fetches and loads in-process: the entry assembly, its dependency
+    // assemblies, and the deps/runtimeconfig files, sorted by name so the
+    // entry order is stable. The native apphost and symbols stay out -- a
+    // host loading bytes has no use for either.
+    private static async Task<byte[]> ZipDllOutputAsync(string outputDir, CancellationToken cancellationToken)
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var file in Directory.EnumerateFiles(outputDir)
+                         .OrderBy(f => Path.GetFileName(f), StringComparer.Ordinal))
+            {
+                var fileName = Path.GetFileName(file);
+                if (!fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                    && !fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var entry = archive.CreateEntry(fileName, System.IO.Compression.CompressionLevel.Optimal);
+                await using var entryStream = entry.Open();
+                await using var source = File.OpenRead(file);
+                await source.CopyToAsync(entryStream, cancellationToken);
+            }
+        }
+        return stream.ToArray();
     }
 
     // Maps a build target onto a .NET runtime identifier. The contract speaks

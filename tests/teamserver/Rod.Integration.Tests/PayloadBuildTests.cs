@@ -442,4 +442,63 @@ public class PayloadBuildTests
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task BuildPayload_Returns400_ForUnknownFormat()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: null,
+                    Class: null,
+                    TargetOs: null,
+                    TargetArch: null,
+                    Endpoint: null,
+                    UriPath: null,
+                    SleepSeconds: null,
+                    JitterSeconds: null,
+                    KillDate: null,
+                    Format: "shellcode")); // not a form factor
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task BuildPayload_Returns400_ForTheDllFormatOnAStagerBuild()
+    {
+        // The dll bundle is an implant shape: a stager IS the loader, so a
+        // loader with no host to run it is refused at parse time rather than
+        // built into an artifact nothing can execute.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: null,
+                    Class: "Stager",
+                    TargetOs: null,
+                    TargetArch: null,
+                    Endpoint: null,
+                    UriPath: null,
+                    SleepSeconds: null,
+                    JitterSeconds: null,
+                    KillDate: null,
+                    Format: "dll"));
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
 }

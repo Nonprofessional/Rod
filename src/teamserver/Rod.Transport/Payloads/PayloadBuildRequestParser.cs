@@ -56,11 +56,24 @@ internal static class PayloadBuildRequestParser
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
 
+        // The artifact form factor (architecture.md Sec 6): the wire names map
+        // to the enum once here, so the refusal can name every accepted
+        // spelling. The dll bundle is an implant shape -- a stager IS the
+        // loader, so an in-memory-loadable stager has no host to run it; the
+        // stager class takes the executable forms.
+        if (!ArtifactFormats.TryParse(body.Format, out var format))
+            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', 'aot', or 'dll'.");
+        if (format == ArtifactFormat.Dll && @class == ImplantClass.Stager)
+            return (null,
+                "The dll format is an in-memory load for an implant; build a stager as 'exe', 'exe-trimmed', or 'aot'.");
+
         // The in-tree .NET toolchain bundles a runtime for every pair it maps
         // except x86 off Windows (no linux-x86/osx-x86 runtime exists), so the
         // pair is refused here with the reason instead of failing the queued
-        // job at restore with the toolchain's own error.
+        // job at restore with the toolchain's own error. The dll bundle is
+        // AnyCPU -- no runtime pair is bundled, so the gate does not apply.
         if (language == Language.DotNet
+            && format != ArtifactFormat.Dll
             && string.Equals(body.TargetArch ?? "amd64", "x86", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(body.TargetOs ?? "linux", "windows", StringComparison.OrdinalIgnoreCase))
         {
@@ -160,7 +173,8 @@ internal static class PayloadBuildRequestParser
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
             mode,
-            stage2), null);
+            stage2,
+            Format: format), null);
     }
 
     // Exports the teamserver CA as the PEM the artifact pins: the implant's

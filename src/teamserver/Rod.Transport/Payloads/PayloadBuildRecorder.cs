@@ -76,6 +76,7 @@ internal static class PayloadBuildRecorder
                     FallbackEndpoints = artifact.Params.Transport.FallbackEndpoints.Count == 0
                         ? null
                         : artifact.Params.Transport.FallbackEndpoints.ToArray(),
+                    Format = ArtifactFormats.Name(artifact.Params.Format),
                 }),
             cancellationToken);
         await audit.AppendAsync(
@@ -87,7 +88,7 @@ internal static class PayloadBuildRecorder
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {artifact.Params.Transport.Endpoint}{beaconTrail}{transformTrail}{tokenTrail}",
+                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {ArtifactFormats.Name(artifact.Params.Format)} {artifact.Params.Transport.Endpoint}{beaconTrail}{transformTrail}{tokenTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),
@@ -103,6 +104,7 @@ internal static class PayloadBuildRecorder
             artifact.Fingerprint,
             artifact.BuiltAt,
             artifact.Transforms.Select(t => t.Name).ToArray(),
-            TokenId: artifact.Params.TokenId?.ToString());
+            TokenId: artifact.Params.TokenId?.ToString(),
+            Format: ArtifactFormats.Name(artifact.Params.Format));
     }
 }
