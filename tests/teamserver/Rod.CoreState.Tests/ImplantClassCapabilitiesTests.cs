@@ -109,6 +109,8 @@ public class ImplantClassCapabilitiesTests
                 "lateral.move", "lateral.token", "lateral.exec_remote",
                 "persist.install", "persist.remove", "persist.list",
                 "collect.cred", "collect.keylog", "collect.screenshot",
+                "collect.minidump",
+                "inject.shellcode",
                 "exfil.push", "exfil.stage",
             },
             verbs);

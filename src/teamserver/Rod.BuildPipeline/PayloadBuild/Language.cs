@@ -15,6 +15,11 @@ public enum Language
     /// <summary>C#/.NET -- the in-tree reference toolchain (Sec 12.2).</summary>
     DotNet,
 
+    /// <summary>Rust -- the in-tree reach implant (Sec 12.2): native size,
+    /// static musl, and the platform breadth a managed runtime cannot cover.
+    /// One build unit per language; the registry routes by this value.</summary>
+    Rust,
+
     /// <summary>C/C++ -- small footprint implants.</summary>
     C,
 

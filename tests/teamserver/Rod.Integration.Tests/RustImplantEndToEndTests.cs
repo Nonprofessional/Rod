@@ -143,6 +143,109 @@ public class RustImplantEndToEndTests
         }
     }
 
+    [RustFact]
+    public async Task RustImplant_BuildsThroughThePipeline_AndRunsFromTheBake()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await env.CreateEngagementAsync();
+
+        // The full operable loop through the operator API: a language "rust"
+        // build request bakes the profile (sealed contacts on, the default
+        // posture) and mints the credential; the artifact is downloaded and
+        // run in its fielded shape -- no arguments, no environment, the bake
+        // is the configuration. The sealed contact path (AES-256-GCM bodies
+        // under the per-artifact key, counter over the frames) is what this
+        // leg proves beyond the dev-shape plaintext one.
+        var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+        var built = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "rust",
+                Class: "Stage2",
+                TargetOs: "linux",
+                TargetArch: "amd64",
+                Endpoint: enrollUrl,
+                UriPath: null,
+                SleepSeconds: 1.0,
+                JitterSeconds: 0.0,
+                KillDate: null,
+                Mode: "poll"));
+        Assert.True(built.IsSuccessStatusCode, await built.Content.ReadAsStringAsync());
+        var artifact = await built.Content.ReadFromJsonAsync<ArtifactBody>();
+        Assert.NotNull(artifact);
+
+        var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-rust-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var binaryPath = Path.Combine(outDir, "rod-implant");
+        Process? process = null;
+        try
+        {
+            using (var download = await env.Http.GetAsync(
+                $"/engagements/{artifact!.EngagementId}/payloads/{artifact.ArtifactId}"))
+            {
+                download.EnsureSuccessStatusCode();
+                await File.WriteAllBytesAsync(binaryPath, await download.Content.ReadAsByteArrayAsync());
+            }
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(binaryPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            var stderr = new StringBuilder();
+            process = Process.Start(new ProcessStartInfo
+            {
+                FileName = binaryPath,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+            });
+            Assert.NotNull(process);
+            process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            process.BeginErrorReadLine();
+
+            var implantId = await WaitForOnlineAsync(env, TimeSpan.FromSeconds(90), stderr);
+            Assert.False(string.IsNullOrEmpty(implantId));
+
+            var marker = "rod-rust-baked-" + Guid.NewGuid().ToString("N")[..8];
+            var issued = await env.Http.PostAsJsonAsync(
+                $"/engagements/{env.EngagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(implantId, "shell.exec", $"echo {marker}"));
+            issued.EnsureSuccessStatusCode();
+            var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                var read = await env.Http.GetFromJsonAsync<TaskBody>(
+                    $"/engagements/{env.EngagementId}/tasks/{task!.TaskId}");
+                if (read?.Status == "Completed")
+                {
+                    Assert.Equal("Succeeded", read.Outcome);
+                    Assert.Contains(marker, read.Output);
+                    return;
+                }
+                await Task.Delay(500);
+            }
+            Assert.Fail($"the dispatched task did not complete. Implant stderr:\n{stderr}");
+        }
+        finally
+        {
+            if (process is { HasExited: false })
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                process.WaitForExit(5000);
+            }
+            process?.Dispose();
+            try { Directory.Delete(outDir, recursive: true); } catch { }
+        }
+    }
+
+    private sealed record ArtifactBody
+    {
+        public string ArtifactId { get; set; } = "";
+        public string EngagementId { get; set; } = "";
+    }
+
     private static async Task<string> WaitForOnlineAsync(
         TestEnv env, TimeSpan deadline, StringBuilder stderr)
     {

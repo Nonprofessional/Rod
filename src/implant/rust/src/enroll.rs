@@ -120,20 +120,11 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
         return Err(format!("enroll transport: status {status}"));
     }
 
-    // Both the OK and the refusal bodies may carry the envelope; unwrap the
-    // same way the teamserver wrapped its answer (an aesgcm bake answers
-    // sealed under the same key).
-    let plain = if profile.envelope == "aesgcm" {
-        let (key_id, key) = envelope::parse_baked_key(&profile.envelope_key)
-            .ok_or("aesgcm envelope baked with no usable key")?;
-        let trimmed = text.trim().trim_matches('"');
-        envelope::try_open_contact_body(trimmed.as_bytes(), &key_id, &key, envelope::ENROLL_AAD)
-            .ok_or("enroll answer did not verify under the baked key")?
-    } else {
-        text.into_bytes()
-    };
+    // Both the OK and the refusal bodies answer as plain JSON (the .NET
+    // client reads the answer with ReadFromJsonAsync, so the envelope shapes
+    // the request only -- the answer never rides sealed on the web route).
     let answer: serde_json::Value =
-        serde_json::from_slice(&plain).map_err(|_| "enroll answer was not valid JSON".to_string())?;
+        serde_json::from_slice(text.as_bytes()).map_err(|_| "enroll answer was not valid JSON".to_string())?;
     let status_value = answer
         .get("status")
         .and_then(serde_json::Value::as_i64)

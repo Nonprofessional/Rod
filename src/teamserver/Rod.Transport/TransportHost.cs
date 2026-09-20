@@ -341,6 +341,17 @@ public static class TransportHost
             implantSourceDir: implantSourceDirectory,
             stagerSourceDir: stagerSourceDirectory,
             extensionDir: implantExtensionDirectory));
+        // The Rust reach implant (Sec 12.2): its unit follows the same
+        // explicit-config shape -- unset keeps the walk-up default, a
+        // configured-but-missing directory fails startup loudly. An absent
+        // cargo on PATH does not fail startup (the unit fails its builds
+        // loudly instead), so a .NET-only install keeps running.
+        var rustSourceDirectory = configuration?["Build:RustSourceDirectory"];
+        if (!string.IsNullOrWhiteSpace(rustSourceDirectory)
+            && !Directory.Exists(rustSourceDirectory))
+            throw new InvalidOperationException(
+                $"The configured rust source directory '{rustSourceDirectory}' does not exist.");
+        buildUnits.Register(new Rod.BuildPipeline.PayloadBuild.RustBuildUnit(rustSourceDirectory));
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         // The post-build transform chain (architecture.md Sec 6, the transform
         // seam): config-listed out-of-tree transforms under Build:Transforms,

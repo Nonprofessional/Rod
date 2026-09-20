@@ -66,6 +66,14 @@ internal static class PayloadBuildRequestParser
         if (format == ArtifactFormat.Dll && @class == ImplantClass.Stager)
             return (null,
                 "The dll format is an in-memory load for an implant; build a stager as 'exe', 'exe-trimmed', or 'aot'.");
+        // The Rust unit's own gates, mirrored at parse time so the pairings
+        // answer 400 with the fix named instead of failing the queued job.
+        if (language == Language.Rust && @class == ImplantClass.Stager)
+            return (null,
+                "The Rust stager is not ported; build the .NET stager or deliver the Rust implant through a one-liner.");
+        if (language == Language.Rust && format == ArtifactFormat.Dll)
+            return (null,
+                "The Rust implant builds native executables; the dll bundle is the .NET shape.");
 
         // The in-tree .NET toolchain bundles a runtime for every pair it maps
         // except x86 off Windows (no linux-x86/osx-x86 runtime exists), so the

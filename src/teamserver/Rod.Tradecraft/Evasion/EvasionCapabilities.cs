@@ -38,6 +38,16 @@ public static class EvasionCapabilities
     /// <summary>Unload or remove a defensive component from the target.</summary>
     public const string Unload = "evasion.unload";
 
+    /// <summary>
+    /// Inject shellcode into a remote process on the target
+    /// (VirtualAllocEx/WriteProcessMemory/CreateRemoteThread, the documented
+    /// classic pattern): `<pid> <base64>`. Unlike the contract-only verbs
+    /// above it carries a concrete reference handler -- the Rust reference
+    /// implant implements it on Windows builds -- so it is gated to Stage-2
+    /// in the class table like every reference verb.
+    /// </summary>
+    public const string InjectShellcode = "inject.shellcode";
+
     // The OPSEC attribute flagging an evasion verb as altering the target's
     // defensive posture, so a future tradecraft filter can surface or suppress it
     // (architecture.md Sec 7).
@@ -45,6 +55,13 @@ public static class EvasionCapabilities
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["modifies-defenses"] = "true",
+        };
+
+    private static readonly IReadOnlyDictionary<string, string> ModifiesDefensesAndRunsCode =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["modifies-defenses"] = "true",
+            ["executes-code"] = "true",
         };
 
     /// <summary>
@@ -55,11 +72,12 @@ public static class EvasionCapabilities
     {
         CapabilityDescriptor.Of(Avoid, CapabilityCategory.Evasion, "1.0", ModifiesDefenses),
         CapabilityDescriptor.Of(Unload, CapabilityCategory.Evasion, "1.0", ModifiesDefenses),
+        CapabilityDescriptor.Of(InjectShellcode, CapabilityCategory.Evasion, "1.0", ModifiesDefensesAndRunsCode),
     };
 
     /// <summary>Every evasion verb string, in declared order.</summary>
     public static readonly string[] Verbs =
     {
-        Avoid, Unload,
+        Avoid, Unload, InjectShellcode,
     };
 }

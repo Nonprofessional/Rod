@@ -429,7 +429,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "Rust", // not a registered build language
+                    Language: "Zig", // not a registered build language
                     Class: null,
                     TargetOs: null,
                     TargetArch: null,

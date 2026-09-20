@@ -401,8 +401,9 @@ unit's baked `verbs` key reaches the implant through the profile (mapped onto
 class set) advertises its full compiled handler set, so the checked-in stub
 keeps running from flags/env. The implant tests pin both halves of the
 contract: the advertised set is the baked-verbs/handlers intersection for
-every class, an added registration widens it, and the reference registry
-contains no contract-only verb.
+every class, an added registration widens it, and the .NET reference registry
+contains no contract-only verb (the Rust reference carries its own compiled
+set -- core verbs everywhere, the sensitive three on Windows builds).
 
 The class verb set is also a compile-time boundary, not only an
 advertise-time one: the bake trims each implant-class build to the verbs its
@@ -429,12 +430,17 @@ The flow: **operator build request -> teamserver emits build params -> the
 language's build unit compiles -> artifact + stager returned -> fingerprinted and
 recorded.**
 
-- **One in-tree build unit (.NET); polyglot by contract.** `DotNetBuildUnit`
-  owns the .NET toolchain and compiles the reference implant on demand. The
-  teamserver drives it through a **uniform build contract** and is coupled to
-  it only by that contract, so a community build unit in Go, C/C++, or Nim can
-  register and compile against the same contract with no in-language coupling
-  (the `Language` enum keeps those slots, Sec 12.2).
+- **Two in-tree build units (.NET and Rust); polyglot by contract.**
+  `DotNetBuildUnit` owns the .NET toolchain for the full-capability reference
+  implant and stager; `RustBuildUnit` drives cargo for the Rust reach
+  implant (Sec 12.2). The teamserver drives either through the **uniform
+  build contract** and is coupled to each only by that contract, so a
+  community build unit in Go, C/C++, or Nim can register and compile against
+  the same contract with no in-language coupling (the `Language` enum keeps
+  those slots, Sec 12.2). The Rust unit maps the target onto a cargo triple,
+  bakes the same base64url profile into the staging copy's `src/baked.rs`,
+  and refuses the stager class (not ported) and the dll format (the
+  in-memory bundle is the .NET shape) with the fix named at parse time.
 - **Artifacts ship in four form factors; the format is a build request
   knob.** `ArtifactFormat` rides the build contract beside the class and
   target, and the unit maps it onto one publish invocation:
@@ -1301,10 +1307,12 @@ exfil channel, so the capture lands as an artifact joined to its task with no
 new server-side path; a headless target refuses cleanly naming the missing
 display), and `exfil.push` /
 `exfil.stage` (data transferred over the C2 channel into engagement-scoped
-artifact storage, Sec 11). Two collection surfaces stay out-of-tree as
-pluggable contracts: LSASS memory dumping (no benign-system-tool side, tightly
-coupled to active credential theft) and `collect.keylog` input capture. Each of
-those runs only when an operator supplies an out-of-tree module for the verb.
+artifact storage, Sec 11). Two collection surfaces ride the Rust reference
+implant's Windows builds (the .NET reference keeps them contract-only):
+LSASS memory dumping (`collect.minidump`, the dbghelp minidump path) and
+`collect.keylog` input capture. On the .NET implant -- and on every platform
+the Rust build does not gate in -- each runs only when an operator supplies a
+module for the verb.
 
 The tunnel verbs are registered the same way
 (`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
@@ -1676,12 +1684,23 @@ EF-migration command the toolchain already commits to); **Dapper over Npgsql**
 abstraction** (premature -- it defers the access question this answers without
 resolving how the host reaches the database today).
 
-### 12.2 Toolchain: a single in-tree .NET stack
+### 12.2 Toolchain: .NET plus Rust in-tree, polyglot by contract
 
-Rod ships one in-tree toolchain end to end: **.NET 10**. The reference implant
-and the in-tree redirector are both .NET; the Go reference implant and its
-build unit were removed. The wire protocol remains the language-neutral product
-and the `Language` enum (Go/DotNet/C/Nim) and build contract stay, so an
+Rod ships two in-tree toolchains, each with a job the other cannot do. The
+**control plane and the full-capability reference implant are .NET 10** (the
+teamserver, the stager, the richest verb set, the extension overlay, the
+in-memory dll form); the **reach implant is Rust**
+(`src/implant/rust/`, built by `RustBuildUnit`): a ~2 MB native binary for
+the targets a managed runtime cannot serve -- static musl on routers,
+32-bit ARM/MIPS IoT Linux, native shells for mobile platforms -- carrying the
+core verb set plus the Windows sensitive verbs (inject.shellcode,
+collect.minidump, collect.keylog) that self-gate on `cfg(windows)` so a
+Linux build compiles none of them. Both speak the same wire protocol
+(rod.proto, the baked profile's base64url JSON, the sealed envelope) and are
+proven against it by the same end-to-end acceptance; the .NET implant retires
+when the Rust one reaches core-verb parity and the conformance suite runs
+green against it. The wire protocol remains the language-neutral product and
+the `Language` enum (Go/DotNet/Rust/C/Nim) and build contract stay, so an
 out-of-tree community implant in Go, C, or Nim registers a build unit and
 compiles against the same contract -- polyglot by contract, not by in-tree
 parity. .NET is cross-platform via self-contained publishes
@@ -1690,18 +1709,14 @@ single-file, no-runtime binary that was the original reason to reach for Go on
 the redirector edge -- the same AOT publish the build pipeline now offers for
 implants and stagers, alongside the trimmed and in-memory-loadable dll forms.
 
-Rejected alternatives: **keep both reference implants in lockstep** (recurring
-cost of writing and maintaining every verb twice, no longer forced by
-cross-platform reach); **collapse to Go instead of .NET** (the control plane
-is .NET 10, so standardizing on .NET keeps the whole stack in one toolchain);
-and **asymmetric polyglot -- .NET full, a second language specialist only**
-(still leaves a second toolchain to build and test in CI for a small team,
-with no benefit over the opt-in contract path). The trade-off the .NET-only
-choice accepts: a larger self-contained footprint than a Go static binary, and
-a CLR/AMSI/ETW surface more heavily instrumented by Windows AV/EDR --
-acceptable for the reference/learning posture, with the class of tradecraft
-that needs another language arriving as an out-of-tree community implant
-through the contract this keeps open.
+Rejected alternatives: **a single language end to end** (neither .NET alone
+reaches 32-bit ARM/MIPS IoT or a ~2 MB footprint, nor Rust alone carries the
+teamserver's velocity and the extension overlay -- two references each doing
+their own job beats one doing both badly); **collapse to Go instead of .NET**
+(the control plane is .NET 10, so standardizing on .NET keeps the control
+plane in one toolchain); and **asymmetric polyglot -- .NET full, a second
+language specialist only** (still leaves a second toolchain to build and test
+in CI for a small team, with no benefit over the opt-in contract path).
 
 ## 13. Capability surface statement
 
