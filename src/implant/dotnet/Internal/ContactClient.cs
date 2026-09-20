@@ -97,6 +97,10 @@ internal sealed record EnrollDial(
     string? ImplantClass = null,
     HostIdentity? Host = null,
     string? KillDate = null,
+    // The baked contact cadence the enrollment reports about the implant, in
+    // seconds; null leaves it unreported.
+    double? SleepSeconds = null,
+    double? JitterSeconds = null,
     TextWriter? Log = null)
 {
     /// <summary>

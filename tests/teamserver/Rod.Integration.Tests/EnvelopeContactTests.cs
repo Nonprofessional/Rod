@@ -94,6 +94,41 @@ public class EnvelopeContactTests
     }
 
     [Fact]
+    public async Task Cadence_AdvertisedAtEnrollAndHandshake_LandsOnTheImplantRecord()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var secret = await env.MintStagerTokenAsync();
+
+        // Enrolls reporting the baked cadence: 30s base, 10s jitter
+        // half-width.
+        using var implant = await ScratchImplant.EnrollAsync(
+            env.EnrollUrl, env.MtlsBaseAddress, secret, sleepSeconds: 30, jitterSeconds: 10);
+
+        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
+        Assert.True(ImplantId.TryParse(implant.ImplantId, out var implantId));
+        var enrolled = await implants.FindAsync(implantId);
+        Assert.NotNull(enrolled);
+        Assert.Equal(30, enrolled!.SleepSeconds);
+        Assert.Equal(10, enrolled.JitterSeconds);
+
+        // A contact whose handshake carries no advertisement keeps the
+        // record -- a pre-field client must not erase an enrolled cadence.
+        await implant.ContactAsync();
+        Assert.Equal(30, (await implants.FindAsync(implantId))!.SleepSeconds);
+
+        // The retune: the next handshake advertises the new pair, and the
+        // record moves with it (what the fleet's detail panel reads).
+        await implant.ContactAsync(sleepSeconds: 5, jitterSeconds: 1);
+        var retuned = await implants.FindAsync(implantId);
+        Assert.Equal(5, retuned!.SleepSeconds);
+        Assert.Equal(1, retuned.JitterSeconds);
+
+        // Re-advertising the same pair is a no-op the record survives.
+        await implant.ContactAsync(sleepSeconds: 5, jitterSeconds: 1);
+        Assert.Equal(5, (await implants.FindAsync(implantId))!.SleepSeconds);
+    }
+
+    [Fact]
     public async Task Envelope_ExfilChunksInRequestBody_MaterializeArtifact()
     {
         await using var env = await TestEnv.StartAsync();
@@ -559,7 +594,8 @@ public class EnvelopeContactTests
         /// endpoint, distinct from the plain enroll listener.
         /// </summary>
         public static async Task<ScratchImplant> EnrollAsync(
-            string enrollUrl, string beaconBaseAddress, string stagerToken)
+            string enrollUrl, string beaconBaseAddress, string stagerToken,
+            double? sleepSeconds = null, double? jitterSeconds = null)
         {
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             using var plain = new HttpClient();
@@ -567,6 +603,8 @@ public class EnvelopeContactTests
             {
                 stagerTokenSecret = stagerToken,
                 publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()),
+                sleepSeconds,
+                jitterSeconds,
             };
             using var response = await plain.PostAsJsonAsync(enrollUrl, body);
             response.EnsureSuccessStatusCode();
@@ -649,9 +687,10 @@ public class EnvelopeContactTests
 
         /// <summary>One poll contact: POST the frames, parse the response.</summary>
         public async Task<List<Frame>> ContactAsync(
-            IEnumerable<Frame>? upstream = null, int major = 1, int minor = 0)
+            IEnumerable<Frame>? upstream = null, int major = 1, int minor = 0,
+            double? sleepSeconds = null, double? jitterSeconds = null)
         {
-            var frames = new List<Frame> { HandshakeFrame(major, minor) };
+            var frames = new List<Frame> { HandshakeFrame(major, minor, sleepSeconds, jitterSeconds) };
             if (upstream is not null)
                 frames.AddRange(upstream);
             using var content = new ByteArrayContent(Encode(frames));
@@ -769,16 +808,20 @@ public class EnvelopeContactTests
 
         public void Dispose() => _beacon.Dispose();
 
-        private Frame HandshakeFrame(int major, int minor)
-            => new()
+        private Frame HandshakeFrame(int major, int minor, double? sleepSeconds = null, double? jitterSeconds = null)
+        {
+            var request = new HandshakeRequest
             {
-                Payload = ByteString.CopyFrom(new HandshakeRequest
-                {
-                    Version = new ProtocolVersion { Major = major, Minor = minor },
-                    ImplantId = ImplantId,
-                    Capabilities = { "shell.exec", "file.pull", "file.push" },
-                }.ToByteArray()),
+                Version = new ProtocolVersion { Major = major, Minor = minor },
+                ImplantId = ImplantId,
+                Capabilities = { "shell.exec", "file.pull", "file.push" },
             };
+            if (sleepSeconds is { } sleep)
+                request.SleepSeconds = sleep;
+            if (jitterSeconds is { } jitter)
+                request.JitterSeconds = jitter;
+            return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
+        }
 
         // The envelope codec: the protobuf canonical delimited-stream shape --
         // an unsigned varint length before each marshaled Frame.

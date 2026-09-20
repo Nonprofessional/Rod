@@ -75,6 +75,14 @@ public static class ImplantEndpoints
                 Os: i.Os,
                 Arch: i.Arch,
                 Username: i.Username,
+                // The cadence the implant last advertised (the enroll bake,
+                // then every changed handshake advertisement); null on either
+                // half means "not reported".
+                SleepSeconds: i.SleepSeconds,
+                JitterSeconds: i.JitterSeconds,
+                // The operator the implant's events attribute to (the token
+                // issuer) -- the "who deployed this" the detail panel reads.
+                DeployedBy: i.DeployedBy.ToString(),
                 // The listener stamp renders in the same no-dash form the
                 // listener routes and listings use, so an operator can join
                 // the two by eye.
@@ -83,7 +91,10 @@ public static class ImplantEndpoints
                 // The degraded-mode contract (architecture.md Sec 8): the
                 // carrier the live session's last contact rode, null when
                 // none recorded -- the posture's default, not degraded.
-                LastCarrier: sessionById.GetValueOrDefault(i.Id)?.LastCarrier))
+                LastCarrier: sessionById.GetValueOrDefault(i.Id)?.LastCarrier,
+                // The baked carrier set the artifact's endpoints dial; null
+                // for implants the enroll could not derive one for.
+                Carriers: i.Carriers))
             .ToArray();
 
         return Results.Ok(body);
@@ -321,6 +332,12 @@ public static class ImplantEndpoints
         string? Os = null,
         string? Arch = null,
         string? Username = null,
+        // The contact cadence the implant last advertised, in seconds; null
+        // on either half means "not reported".
+        double? SleepSeconds = null,
+        double? JitterSeconds = null,
+        // The operator the implant's events attribute to (the token issuer).
+        string? DeployedBy = null,
         // The listener whose socket carried the enrollment, when the transport
         // could attribute one -- what a listener deletion warns about.
         string? EnrolledViaListenerId = null,
@@ -331,7 +348,10 @@ public static class ImplantEndpoints
         // The carrier the live session's last contact rode (the degraded
         // vocabulary on Session.LastCarrier); null while offline or when no
         // contact recorded one.
-        string? LastCarrier = null);
+        string? LastCarrier = null,
+        // The baked carrier set the artifact's endpoints dial; null when the
+        // enroll derived none.
+        IReadOnlyList<string>? Carriers = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,

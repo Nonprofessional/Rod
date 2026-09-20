@@ -220,7 +220,7 @@ internal sealed class WsBeacon : IContactClient
         // the handshake frame alone -- re-opens (or reuses) the session and
         // re-advertises the baked class verbs intersected with the compiled
         // handlers (architecture.md Sec 5.3), both negotiation arms offered.
-        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs), _cadence);
         await SendMessageAsync(
             ws, new[] { new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) } },
             CancellationToken.None);

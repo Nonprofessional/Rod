@@ -127,7 +127,8 @@ public sealed class EnrollmentService
         var implantId = ImplantId.New();
         var implant = Implant.EnrollChild(
             implantId, redeemed.EngagementId, command.KillDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
-            command.Hostname, command.Os, command.Arch, command.Username, command.EnrolledViaListenerId,
+            command.Hostname, command.Os, command.Arch, command.Username,
+            command.SleepSeconds, command.JitterSeconds, command.EnrolledViaListenerId,
             command.Carriers,
             originShell?.Id);
         await _implants.SaveAsync(implant, cancellationToken);
@@ -241,6 +242,11 @@ public sealed class EnrollmentService
 /// token's build (the URL-shape rule over its transport profile), stamped once
 /// at enroll; null means no build profile resolved or its endpoint shapes were
 /// unrecognized -- the permissive shape either way.
+///
+/// <see cref="SleepSeconds"/> and <see cref="JitterSeconds"/> are the baked
+/// contact cadence the implant reported about itself (the same report shape
+/// as the host fields): null on either means "not reported", and later
+/// handshake advertisements refresh the pair.
 /// </summary>
 public sealed record EnrollCommand(
     string StagerTokenSecret,
@@ -251,6 +257,8 @@ public sealed record EnrollCommand(
     string? Os = null,
     string? Arch = null,
     string? Username = null,
+    double? SleepSeconds = null,
+    double? JitterSeconds = null,
     DateTimeOffset? KillDate = null,
     Guid? EnrolledViaListenerId = null,
     IReadOnlyList<string>? Carriers = null);

@@ -241,7 +241,7 @@ internal sealed class SocketBeacon : IContactClient
         var pending = _poll.SnapshotPending();
         var sending = _held.Undelivered();
         var frames = new List<Frame>(1 + pending.Count);
-        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs), _cadence);
         // The store-and-forward channel carriage rides the advertisement:
         // the server's parking hub reads it off the session and parks
         // operator input for the cycles to carry.

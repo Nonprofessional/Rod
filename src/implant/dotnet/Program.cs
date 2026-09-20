@@ -205,6 +205,11 @@ internal static class ImplantApp
                 serverCAs,
                 config.Transport,
                 Host: host,
+                // The baked cadence rides the same report: the teamserver
+                // records it as what this artifact runs until a handshake
+                // advertises a retune.
+                SleepSeconds: config.Sleep.TotalSeconds,
+                JitterSeconds: config.Jitter.TotalSeconds,
                 KillDate: config.HasKillDate ? config.KillDate.ToString("O") : null,
                 Log: log);
             try

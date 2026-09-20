@@ -307,7 +307,7 @@ internal sealed class Beacon : IContactClient
         // identity. The advertised capability set is the baked class verbs
         // intersected with the compiled handlers (architecture.md Sec 5.3),
         // and both negotiation arms ride it (Sec 9, Sec 10.3).
-        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs));
+        var handshake = BeaconFrames.Handshake(_implantId, _handlers.AdvertisedVerbs(_classVerbs), _cadence);
         // The poll run's channel carriage rides the advertisement: the
         // server's parking hub reads it off the session and parks operator
         // input for the cycles to carry.

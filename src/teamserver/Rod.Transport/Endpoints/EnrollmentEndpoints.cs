@@ -158,7 +158,9 @@ public static class EnrollmentEndpoints
                 body.Os,
                 body.Arch,
                 body.Username,
-                body.KillDate),
+                body.KillDate,
+                body.SleepSeconds,
+                body.JitterSeconds),
             ingress,
             service,
             tokens,
@@ -297,7 +299,12 @@ public static class EnrollmentEndpoints
         string? Os = null,
         string? Arch = null,
         string? Username = null,
-        string? KillDate = null);
+        string? KillDate = null,
+        // The baked contact cadence the implant reported about itself, in
+        // seconds; null on either means "not supplied", the same shape the
+        // proto's optional fields carry.
+        double? SleepSeconds = null,
+        double? JitterSeconds = null);
 
 
     /// <summary>

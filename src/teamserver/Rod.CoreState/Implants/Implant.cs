@@ -108,6 +108,21 @@ public sealed class Implant
     public IReadOnlyList<string>? Carriers { get; }
 
     /// <summary>
+    /// The contact cadence the implant last advertised -- the base sleep and
+    /// the jitter half-width, in seconds. Set at enroll from the baked profile
+    /// and re-stamped by every handshake that carries a cadence
+    /// advertisement, so a <c>beacon.sleep</c> retune lands on the record at
+    /// the implant's next contact. Null on either half means "not reported" --
+    /// an implant that predates the advertisement or never sent one -- and the
+    /// fleet shows no cadence rather than an invented one. The pair moves
+    /// together: a handshake that advertises replaces both halves.
+    /// </summary>
+    public double? SleepSeconds { get; private set; }
+
+    /// <summary>The jitter half-width around <see cref="SleepSeconds"/>, in seconds.</summary>
+    public double? JitterSeconds { get; private set; }
+
+    /// <summary>
     /// When the teamserver last heard from this implant, whether or not a
     /// session is active now -- the durable heartbeat the operator list reads
     /// for an offline implant ("when did we last see this beacon"). Advanced
@@ -142,6 +157,8 @@ public sealed class Implant
         string? os = null,
         string? arch = null,
         string? username = null,
+        double? sleepSeconds = null,
+        double? jitterSeconds = null,
         Guid? enrolledViaListenerId = null,
         IReadOnlyList<string>? carriers = null,
         ShellSessionId? originShellSessionId = null)
@@ -158,6 +175,8 @@ public sealed class Implant
         Os = os;
         Arch = arch;
         Username = username;
+        SleepSeconds = sleepSeconds;
+        JitterSeconds = jitterSeconds;
         EnrolledViaListenerId = enrolledViaListenerId;
         Carriers = carriers;
     }
@@ -199,6 +218,9 @@ public sealed class Implant
     /// <paramref name="arch"/>, <paramref name="username"/>) are what the implant
     /// reported about the machine it runs on; all default to null so callers
     /// that do not know them (tests, pre-field clients) compile unchanged.
+    /// <paramref name="sleepSeconds"/> and <paramref name="jitterSeconds"/> are
+    /// the baked cadence the implant reported about itself, in the same
+    /// not-supplied-when-null shape.
     /// <paramref name="enrolledViaListenerId"/> is the listener whose socket carried
     /// the enrollment, when the transport could name one.
     /// <paramref name="carriers"/> is the baked carrier set the enrollment derived
@@ -216,6 +238,8 @@ public sealed class Implant
         string? os = null,
         string? arch = null,
         string? username = null,
+        double? sleepSeconds = null,
+        double? jitterSeconds = null,
         Guid? enrolledViaListenerId = null,
         IReadOnlyList<string>? carriers = null,
         ShellSessionId? originShellSessionId = null)
@@ -227,7 +251,7 @@ public sealed class Implant
         if (parentImplantId is { } parent && parent == default)
             throw new ArgumentException("Parent implant id must be a non-default identifier.", nameof(parentImplantId));
 
-        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, enrolledViaListenerId, carriers, originShellSessionId);
+        return new Implant(id, engagementId, killDate, @class, createdAt, deployedBy, parentImplantId, hostname, os, arch, username, sleepSeconds, jitterSeconds, enrolledViaListenerId, carriers, originShellSessionId);
     }
 
     /// <summary>
@@ -262,6 +286,27 @@ public sealed class Implant
             return false;
 
         ReplayNonces = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Records a cadence advertisement from a handshake: replaces both halves
+    /// of the pair (they travel together) and returns whether the record
+    /// moved, so the handshake use case persists only on a change -- a poll
+    /// cadence re-advertises the same pair every contact, and only a
+    /// <c>beacon.sleep</c> retune writes. Both null is "not advertised" and
+    /// changes nothing, so a pre-field client keeps whatever the enrollment
+    /// recorded.
+    /// </summary>
+    public bool NoteCadence(double? sleepSeconds, double? jitterSeconds)
+    {
+        if (sleepSeconds is null && jitterSeconds is null)
+            return false;
+        if (SleepSeconds == sleepSeconds && JitterSeconds == jitterSeconds)
+            return false;
+
+        SleepSeconds = sleepSeconds;
+        JitterSeconds = jitterSeconds;
         return true;
     }
 

@@ -50,6 +50,11 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         builder.Property(i => i.Os).HasColumnName("os");
         builder.Property(i => i.Arch).HasColumnName("arch");
         builder.Property(i => i.Username).HasColumnName("username");
+        // The contact cadence the implant last advertised (enroll bake, then
+        // every changed handshake advertisement): nullable double seconds,
+        // null for implants that never reported a cadence.
+        builder.Property(i => i.SleepSeconds).HasColumnName("sleep_seconds");
+        builder.Property(i => i.JitterSeconds).HasColumnName("jitter_seconds");
         // The listener whose socket carried the enrollment, when the transport
         // could attribute one; the listener-delete guard counts against it.
         builder.Property(i => i.EnrolledViaListenerId).HasColumnName("enrolled_via_listener_id");

@@ -202,6 +202,14 @@ public sealed class HandshakeService
         //     implant promised them on.
         var taskAcks = command.TaskAcks;
 
+        // 7c. Cadence advertisement: a handshake may carry the implant's
+        //     current sleep/jitter pair (the fresh value, not the baked one --
+        //     beacon.sleep retunes it at run time). Recorded only on a change,
+        //     because every contact of a poll cadence re-advertises the same
+        //     pair and the record must not turn into a per-contact write.
+        if (implant.NoteCadence(command.SleepSeconds, command.JitterSeconds))
+            await _implants.SaveAsync(implant, cancellationToken);
+
         return new HandshakeResult(
             session.Id, implant.Id, implant.EngagementId, implant.DeployedBy, now,
             ReusedSession: priorActive is not null,
@@ -228,6 +236,10 @@ public sealed class HandshakeService
 /// <see cref="TaskAcks"/> is the implant's advertisement of the receive-ack arm
 /// (architecture.md Sec 10.3): the advertisement of this handshake only, not a
 /// sticky implant flag -- see HandshakeAsync for why the two arms differ.
+/// <see cref="SleepSeconds"/> and <see cref="JitterSeconds"/> are the implant's
+/// current contact cadence as this handshake advertises it (null when the
+/// implant reports none); the service records a changed pair onto the implant,
+/// so the fleet reads the live cadence rather than the baked one.
 /// </summary>
 public sealed record HandshakeCommand(
     ImplantId ImplantId,
@@ -236,7 +248,9 @@ public sealed record HandshakeCommand(
     IReadOnlyCollection<string> Capabilities,
     EngagementId? CertificateEngagementId,
     bool ReplayNonces = false,
-    bool TaskAcks = false);
+    bool TaskAcks = false,
+    double? SleepSeconds = null,
+    double? JitterSeconds = null);
 
 /// <summary>
 /// Result of a successful handshake: the session the implant holds (freshly

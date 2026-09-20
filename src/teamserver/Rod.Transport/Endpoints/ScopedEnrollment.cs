@@ -24,7 +24,8 @@ namespace Rod.Transport.Endpoints;
 /// The enroll fields exactly as a wire body carries them, pre-parse: the
 /// JSON DTO and the rod.v1 frame marshal into this one shape, so the shared
 /// flow never knows a carriage. Optional strings arrive null when the wire
-/// left them empty.
+/// left them empty; the optional cadence pair arrives null when the implant
+/// did not advertise one.
 /// </summary>
 internal sealed record EnrollWireFields(
     string StagerTokenSecret,
@@ -35,7 +36,9 @@ internal sealed record EnrollWireFields(
     string? Os,
     string? Arch,
     string? Username,
-    string? KillDate);
+    string? KillDate,
+    double? SleepSeconds = null,
+    double? JitterSeconds = null);
 
 /// <summary>
 /// One enrollment attempt's outcome: accepted with the result and the build
@@ -161,6 +164,13 @@ internal static class ScopedEnrollment
             killDate = parsed;
         }
 
+        // The cadence the implant reported about itself, in the same
+        // not-supplied-when-null shape as the host facts. A negative or
+        // non-finite value is a client mistake the record must not paper
+        // over; a zero sleep is legitimate (the back-to-back posture).
+        if (!IsReportableSeconds(fields.SleepSeconds) || !IsReportableSeconds(fields.JitterSeconds))
+            return ScopedEnrollmentOutcome.Malformed("Sleep/jitter must be non-negative finite seconds.");
+
         // The scope check before the token is spent: when the socket this
         // request arrived on belongs to a listener, a token minted for any
         // other engagement is refused whole -- it keeps its uses for the
@@ -199,6 +209,7 @@ internal static class ScopedEnrollment
                     fields.StagerTokenSecret, @class, fields.PublicKey, parentImplantId,
                     CleanHostFact(fields.Hostname), CleanHostFact(fields.Os),
                     CleanHostFact(fields.Arch), CleanHostFact(fields.Username),
+                    fields.SleepSeconds, fields.JitterSeconds,
                     killDate, ingress?.Id.Value, BakedCarriers.From(build)),
                 cancellationToken);
 
@@ -290,6 +301,11 @@ internal static class ScopedEnrollment
             ? null
             : trimmed.Length <= MaxHostFactLength ? trimmed : trimmed[..MaxHostFactLength];
     }
+
+    // A cadence half the record may hold: null (not supplied) or a finite,
+    // non-negative second count. Anything else is a malformed report.
+    private static bool IsReportableSeconds(double? value)
+        => value is null || (double.IsFinite(value.Value) && value.Value >= 0);
 
     // The enroll audit payload: class, lineage, and the reported host -- the
     // words an operator reads back in the audit trail for "what enrolled where".

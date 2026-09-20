@@ -167,7 +167,9 @@ internal sealed class BeaconEndpoint : Beacon.BeaconBase
                     Capabilities: request.Capabilities,
                     CertificateEngagementId: resolved.CertificateEngagementId,
                     ReplayNonces: request.ReplayNonces,
-                    TaskAcks: request.TaskAcks),
+                    TaskAcks: request.TaskAcks,
+                    SleepSeconds: request.HasSleepSeconds ? request.SleepSeconds : null,
+                    JitterSeconds: request.HasJitterSeconds ? request.JitterSeconds : null),
                 CancellationToken.None);
 
             // The full result is returned (not just the session id) so Contact can

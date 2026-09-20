@@ -258,6 +258,13 @@ re-checks it at the top of each beacon cycle, so a long-running implant
 self-terminates the moment the date passes rather than waiting for a reconnect
 or restart.
 
+The contact cadence reports the same way the kill date does: the enrollment
+carries the artifact's baked sleep/jitter pair, and every contact's handshake
+re-advertises the implant's current pair, so the teamserver's record tracks a
+`beacon.sleep` retune at the next contact -- what the fleet's detail view
+reads. An implant that reports no cadence (a pre-field client) records none;
+the record shows the honest absence rather than an invented pair.
+
 ### 5.2 Implant classes (by operational purpose)
 
 Implants differ by purpose, not by a "managed device flavor":
@@ -888,7 +895,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   paste-ready one-liners (the standard fetch-credential-run stager shape
   against the engagement's web listener) -- the paste is the operator's
   action through the input route, not a server-side write into the
-  session. Shellcatch serves no contact carrier -- nothing here is
+  session. The standalone launchers endpoint renders the same one-liners
+  without a caught shell -- the cut-ahead delivery surface, where the
+  credential's use budget and lifetime are the operator's choice (the
+  shell upgrade always mints single-use for thirty minutes: one paste,
+  one beacon). Shellcatch serves no contact carrier -- nothing here is
   implant ingress, and a build may never name it as a beacon. The
   exposure is inherent and named: a shellcatch port accepts whoever
   reaches it (the one-liner carries no secret); the mitigations are a

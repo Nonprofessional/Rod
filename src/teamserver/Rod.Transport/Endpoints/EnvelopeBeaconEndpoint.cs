@@ -382,7 +382,9 @@ internal sealed class EnvelopeBeaconContact
                     Capabilities: request.Capabilities,
                     CertificateEngagementId: identity?.EngagementId,
                     ReplayNonces: request.ReplayNonces,
-                    TaskAcks: request.TaskAcks),
+                    TaskAcks: request.TaskAcks,
+                    SleepSeconds: request.HasSleepSeconds ? request.SleepSeconds : null,
+                    JitterSeconds: request.HasJitterSeconds ? request.JitterSeconds : null),
                 CancellationToken.None);
             return (BeaconHandshake.Response(
                 HandshakeStatus.Ok, result.EngagementId.ToString(),

@@ -436,7 +436,9 @@ internal sealed class QuicListenerService : BackgroundService
                 NullWhenEmpty(request.Os),
                 NullWhenEmpty(request.Arch),
                 NullWhenEmpty(request.Username),
-                NullWhenEmpty(request.KillDate)),
+                NullWhenEmpty(request.KillDate),
+                request.HasSleepSeconds ? request.SleepSeconds : null,
+                request.HasJitterSeconds ? request.JitterSeconds : null),
             _listener,
             _enrollment,
             _tokens,
@@ -522,7 +524,9 @@ internal sealed class QuicListenerService : BackgroundService
                     // kill-date, and retired gates still apply.
                     CertificateEngagementId: null,
                     ReplayNonces: request.ReplayNonces,
-                    TaskAcks: request.TaskAcks),
+                    TaskAcks: request.TaskAcks,
+                    SleepSeconds: request.HasSleepSeconds ? request.SleepSeconds : null,
+                    JitterSeconds: request.HasJitterSeconds ? request.JitterSeconds : null),
                 CancellationToken.None);
             return (BeaconHandshake.Response(
                 HandshakeStatus.Ok, result.EngagementId.ToString(),
