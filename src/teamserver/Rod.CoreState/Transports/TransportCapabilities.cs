@@ -116,9 +116,11 @@ public static class TransportCapabilities
 
     /// <summary>
     /// The self-delimited message framing the named-pipe and raw-TCP
-    /// listeners share: one connection is one poll check-in,
-    /// store-and-forward channels carried on every check-in -- the same
-    /// bodies the envelope carries.
+    /// listeners share: a poll-mode build cycles one connection per check-in
+    /// with the store-and-forward channels carried on every exchange, and a
+    /// stream-mode build holds the live session instead -- the handshake's
+    /// live advertisement switches the server to the shared session runner.
+    /// The poll shape is the degraded baseline this entry declares.
     /// </summary>
     public static readonly CarrierCapabilities MessagePipe = new(ChannelSupport.Degraded);
 

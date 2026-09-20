@@ -319,18 +319,14 @@ internal static class PayloadBuildRequestParser
                 return (dnsDial.Dial, null);
             }
             // The socket family's beacon arm (Sec 8): the named-pipe and
-            // raw-TCP listeners are poll-only carriers -- one connection is
-            // one check-in, the interactive verbs riding the cycles
-            // store-and-forward -- so a poll-mode build may name one and the
-            // baked beacon is the transport's own dial. A stream-mode naming
-            // is the incoherent pair (no live stream exists to hold),
-            // refused with the fix.
+            // raw-TCP listeners serve both shapes -- one connection is one
+            // poll check-in on a poll-mode bake, and a stream-mode bake
+            // holds the live session the handshake's live advertisement
+            // opens -- so either mode may name one and the baked beacon is
+            // the transport's own dial either way (the baked mode picks the
+            // client that dials it).
             if (listener.Transport is "smb" or "tcp")
             {
-                if (mode != "poll")
-                    return (null,
-                        $"The {listener.Transport} carrier is one-connection-one-check-in; build it mode 'poll' "
-                        + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
                 var (dial, _, dialError) = SocketDial(listener.Transport, listener.PublicEndpoint);
                 return (dial, dialError);
             }
@@ -391,20 +387,15 @@ internal static class PayloadBuildRequestParser
         // baked mode picks the client. A quic front's derived beacon is its
         // own session dial (the quic-schemed enroll endpoint carries no path
         // to strip), and either mode bakes -- the client holds the session or
-        // cycles it on the idle window at the baked cadence.
-        // The poll-only families' derived shape: an smb, tcp, dns, or doh
-        // front holds no live stream, so the walk's own mode gate applies
-        // here too -- stream mode names one the carrier does not hold. The
-        // same gate covers a typed socket- or DNS-schemed endpoint: the
-        // scheme is the protocol pick, and what it picks carries no stream.
+        // cycles it on the idle window at the baked cadence. The socket family
+        // bakes the same dial under either mode (the client the mode picks
+        // holds the session or cycles the connection), so no gate applies to
+        // it here. The DNS family stays poll-only: a datagram poll has no
+        // stream to hold, named listener or typed scheme alike.
         if (TypedPollOnlyScheme(enrollEndpoint) is { } typedCarrier && mode != "poll")
             return (null,
-                $"The {typedCarrier} carrier is {(typedCarrier is "dns" or "doh" ? "one-answer-one-poll" : "one-connection-one-check-in")}; build it mode 'poll' "
-                + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
-        if (enrollTransport is "smb" or "tcp" && mode != "poll")
-            return (null,
-                $"The {enrollTransport} carrier is one-connection-one-check-in; build it mode 'poll' "
-                + "(the interactive verbs ride the cycles store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
+                $"The {typedCarrier} carrier is one-answer-one-poll; build it mode 'poll' "
+                + "(the interactive verbs ride the polls store-and-forward), or name a web, mTLS, or QUIC front for a live stream.");
         if (enrollTransport is "dns" or "doh" && mode != "poll")
             return (null,
                 $"The {enrollTransport} carrier is one-answer-one-poll; build it mode 'poll' "
@@ -530,16 +521,16 @@ internal static class PayloadBuildRequestParser
                 || uri.Scheme.Equals("dns", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
 
-    // The carrier a typed endpoint's scheme names, when that carrier holds
-    // no live stream -- the typed-endpoint twin of the named-listener mode
-    // gate, so a stream-mode build cannot bake a poll-only dial just because
-    // it was typed instead of picked.
+    // The DNS carrier a typed endpoint's scheme names -- the typed-endpoint
+    // twin of the named-listener mode gate, so a stream-mode build cannot
+    // bake a datagram poll just because it was typed instead of picked. The
+    // socket schemes are absent: both their shapes bake.
     private static string? TypedPollOnlyScheme(string? endpoint)
     {
         var trimmed = endpoint?.Trim();
         if (trimmed is null || trimmed.Length < 7)
             return null;
-        foreach (var scheme in new[] { "tcp://", "smb://", "dns://", "doh://" })
+        foreach (var scheme in new[] { "dns://", "doh://" })
         {
             if (trimmed.StartsWith(scheme, StringComparison.OrdinalIgnoreCase))
                 return scheme[..^3];

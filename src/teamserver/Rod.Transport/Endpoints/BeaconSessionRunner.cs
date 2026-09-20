@@ -90,11 +90,17 @@ internal sealed class BeaconSessionRunner
     /// staleness sweeper closes the session after the configured silence
     /// threshold, and retirement closes it immediately.
     /// </summary>
+    /// <param name="carrier">
+    /// The carrier name the session's presence stamps ride (the roster's
+    /// degraded-mode badge reads it): "grpc" for the mTLS stream, "quic" for
+    /// the QUIC session, "pipe" for the socket family's held connection.
+    /// </param>
     public async Task RunAsync(
         BeaconSessionContext session,
         BeaconFrameReader read,
         BeaconFrameWriter write,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string carrier = "grpc")
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         // This stream's connection share of the shared frame ingest: the exfil
@@ -133,7 +139,7 @@ internal sealed class BeaconSessionRunner
         // connection rides the next check-in instead of stranding Dispatched.
         // Concurrent because the writer adds while the reader clears.
         var unacked = new ConcurrentDictionary<TaskId, byte>();
-        var reader = ReadResultsAsync(session, connection, read, pulls, unacked, linked);
+        var reader = ReadResultsAsync(session, connection, read, pulls, unacked, linked, carrier);
         var writer = DispatchTasksAsync(session, pulls, inputs, write, unacked, linked.Token);
 
         // Whichever finishes first cancels the other. The writer only ever ends
@@ -205,13 +211,14 @@ internal sealed class BeaconSessionRunner
         BeaconFrameReader read,
         ConcurrentQueue<Guid> stagedPulls,
         ConcurrentDictionary<TaskId, byte> unacked,
-        CancellationTokenSource linked)
+        CancellationTokenSource linked,
+        string carrier)
     {
         var cancellationToken = linked.Token;
         while (await read(cancellationToken) is { } frame)
         {
             await _sessions.TouchAsync(
-                session.Implant, session.Capabilities, _clock.GetUtcNow(), "grpc", cancellationToken);
+                session.Implant, session.Capabilities, _clock.GetUtcNow(), carrier, cancellationToken);
 
             // The session may have been closed out from under this stream -- the
             // staleness sweep, or a reconnect that opened a newer session for the

@@ -373,7 +373,8 @@ internal sealed class QuicListenerService : BackgroundService
                 },
                 (frame, cancellationToken) => StreamCheckInFraming.WriteMessageAsync(
                     stream, EnvelopeFraming.Encode(new[] { frame }), cancellationToken),
-                stoppingToken);
+                stoppingToken,
+                carrier: "quic");
         }
         catch (Exception ex) when (
             ex is OperationCanceledException

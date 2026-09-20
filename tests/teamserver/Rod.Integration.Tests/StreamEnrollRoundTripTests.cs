@@ -86,15 +86,19 @@ public class StreamEnrollRoundTripTests
             Assert.Null(dnsPoll.Error);
             Assert.Equal("dns://10.0.0.6:53/c2.example.test", dnsPoll.Request!.Transport.Endpoint);
 
+            // The socket family's stream mode (Sec 8): the same dial bakes
+            // under either mode -- the client the mode picks holds the live
+            // session or cycles the connection.
             var streamMode = await PayloadBuildRequestParser.ParseAsync(
                 EnrollRequest(tcp.Id.ToString(), mode: "stream"), engagement, operatorId, payloads, registry, ca,
                 CancellationToken.None);
-            Assert.NotNull(streamMode.Error);
-            Assert.Contains("one-connection-one-check-in", streamMode.Error!, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(streamMode.Error);
+            Assert.Equal("tcp://10.0.0.5:9444", streamMode.Request!.Transport.Endpoint);
+            Assert.Equal("stream", streamMode.Request.Mode);
 
             // The DNS family's own mode gate (Sec 8): the carrier is
             // one-answer-one-poll, so a stream-mode bake is refused with the
-            // fix -- the same rule the socket family applies.
+            // fix -- the datagram poll has no stream to hold.
             var dnsStream = await PayloadBuildRequestParser.ParseAsync(
                 EnrollRequest(dns.Id.ToString(), mode: "stream"), engagement, operatorId, payloads, registry, ca,
                 CancellationToken.None);
@@ -204,6 +208,82 @@ public class StreamEnrollRoundTripTests
                 enroll.ImplantId, Frames.Result(request.TaskId, TaskOutcome.Succeeded, marker));
             Assert.Equal(HandshakeStatus.Ok, result.Handshake.Status);
 
+            var task = await WaitUntilAsync(async () =>
+            {
+                var fetched = await client.GetFromJsonAsync<TaskBody>(
+                    $"/engagements/{engagementId}/tasks/{issuedBody.TaskId}");
+                return fetched?.Status == "Completed" ? fetched : null;
+            });
+            Assert.Contains(marker, task!.Output);
+        }
+    }
+
+    // The socket family's stream mode (architecture.md Sec 8): a handshake
+    // advertising the live capability switches the connection from the poll
+    // exchange to the held live session -- the same runner the gRPC stream,
+    // the WebSocket beacon, and the QUIC session run. The proof is the push:
+    // a task queued after the handshake arrives as its own message with no
+    // request preceding it, and the result frame sent back completes the
+    // task on the held connection.
+    [Fact]
+    public async Task TheTcpListener_HoldsALiveSession_WhenTheHandshakeAdvertisesIt()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+            var token = await MintStagerTokenAsync(client, engagementId);
+
+            var port = GetFreeTcpPort();
+            var created = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "runtime-tcp-live",
+                    Transport: "tcp",
+                    BindAddress: $"127.0.0.1:{port}",
+                    PublicEndpoint: $"10.0.0.5:{port}"));
+            created.EnsureSuccessStatusCode();
+
+            using var implantKey = System.Security.Cryptography.ECDsa.Create(
+                System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+            using var enrollSession = await StreamImplant.ConnectAsync(port);
+            var enroll = await enrollSession.EnrollExchangeAsync(new Rod.V1.EnrollRequest
+            {
+                StagerTokenSecret = token,
+                PublicKey = ByteString.CopyFrom(implantKey.ExportSubjectPublicKeyInfo()),
+                Hostname = "tcp-live-host01",
+            });
+            Assert.Equal(EnrollStatus.Ok, enroll.Status);
+            enrollSession.Dispose();
+
+            // The live connection: handshake with the capability advertised,
+            // answered by the handshake response as its own message.
+            using var session = await StreamImplant.ConnectAsync(port);
+            var handshake = await session.LiveHandshakeAsync(enroll.ImplantId);
+            Assert.Equal(HandshakeStatus.Ok, handshake.Status);
+
+            // A task queued AFTER the session opened: the poll shape cannot
+            // deliver it (nothing of ours is in flight), so the frame that
+            // arrives below is the push -- the held session's defining
+            // property.
+            var marker = "rod-tcp-live-marker-" + Guid.NewGuid().ToString("N")[..8];
+            var issued = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/tasks",
+                new { ImplantId = enroll.ImplantId, Verb = "shell.exec", Arguments = $"echo {marker}" });
+            issued.EnsureSuccessStatusCode();
+            var issuedBody = await issued.Content.ReadFromJsonAsync<IssuedBody>();
+
+            var pushed = await session.ReadFramesAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            var request = TaskRequest.Parser.ParseFrom(Assert.Single(pushed).Payload);
+            Assert.Equal(issuedBody!.TaskId, request.TaskId);
+            Assert.Equal("shell.exec", request.Verb);
+            Assert.NotEmpty(request.Signature.ToByteArray());
+
+            // The result frame rides the held connection as its own message;
+            // the task completes off it.
+            await session.SendFramesAsync(Frames.Result(request.TaskId, TaskOutcome.Succeeded, marker));
             var task = await WaitUntilAsync(async () =>
             {
                 var fetched = await client.GetFromJsonAsync<TaskBody>(
@@ -395,6 +475,33 @@ public class StreamEnrollRoundTripTests
             Assert.NotEmpty(inbound);
             return (HandshakeResponse.Parser.ParseFrom(inbound[0].Payload), inbound);
         }
+
+        // The stream mode's opening handshake: the same shape with the live
+        // capability advertised, so the server holds the connection as a
+        // live session instead of one poll exchange. The handshake response
+        // rides as its own message; everything after it is the session.
+        public async Task<HandshakeResponse> LiveHandshakeAsync(string implantId)
+        {
+            var handshake = new HandshakeRequest
+            {
+                Version = new ProtocolVersion { Major = 1, Minor = 0 },
+                ImplantId = implantId,
+                ReplayNonces = true,
+            };
+            handshake.Capabilities.Add("shell.exec");
+            handshake.Capabilities.Add("channels.live");
+            await WriteMessageAsync(new Frame { Payload = ByteString.CopyFrom(handshake.ToByteArray()) });
+
+            var inbound = ParseFrames(await ReadMessageAsync());
+            Assert.NotEmpty(inbound);
+            return HandshakeResponse.Parser.ParseFrom(inbound[0].Payload);
+        }
+
+        /// <summary>One live-session message out: the frames, varint-length-prefixed.</summary>
+        public Task SendFramesAsync(params Frame[] frames) => WriteMessageAsync(frames);
+
+        /// <summary>One live-session message in: the frames the server pushed.</summary>
+        public async Task<IReadOnlyList<Frame>> ReadFramesAsync() => ParseFrames(await ReadMessageAsync());
 
         // One message out: the varint length prefix, then exactly that many
         // body bytes of delimited frames.

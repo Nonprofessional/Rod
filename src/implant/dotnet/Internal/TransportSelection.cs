@@ -17,6 +17,7 @@ internal static class TransportSelection
         StreamCheckIn.Create(setup),
         QuicCheckIn.Create(setup),
         DnsCheckIn.Create(setup),
+        SocketStreamCheckIn.Create(setup),
         SocketCheckIn.Create(setup),
     ];
 

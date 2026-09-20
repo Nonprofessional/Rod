@@ -125,13 +125,13 @@ export function PayloadBuildView({
   // the whole story and the form offers no split.
   const selectedListener = listeners.find((l) => l.id === listenerId)
 
-  // The poll-only families: no live stream exists to hold, so stream mode
-  // is incoherent on them -- the form keeps the mode honest (the server
-  // refuses the pairing with the same fix).
+  // The poll-only family: DNS/DoH carry no live stream to hold -- one
+  // answer per poll -- so stream mode is incoherent on them and the form
+  // keeps the mode honest (the server refuses the pairing with the same
+  // fix). The socket family (SMB/TCP) bakes either mode: stream holds the
+  // live session, poll cycles one connection per check-in.
   const pollOnly =
-    selectedListener?.transport === 'smb' || selectedListener?.transport === 'tcp'
-    || selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
-    || /^smb:\/\//i.test(endpoint.trim()) || /^tcp:\/\//i.test(endpoint.trim())
+    selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
     || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim())
 
   useEffect(() => {

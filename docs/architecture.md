@@ -784,10 +784,16 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   transport's own dial (`tcp://host:port`, the pipe path in URL form
   `smb://host/pipe/name`), the enroll exchange runs the frame grammar on
   the dial, and the poll cycles ride the envelope's own request/response
-  shape over the message framing -- the carrier is poll-only (one
-  connection is one check-in), a stream-mode naming refused with the fix,
-  and the interactive verbs ride the shared store-and-forward carriage
-  every poll client runs. The sealed body rides by default: the enroll
+  shape over the message framing -- one connection is one check-in, the
+  interactive verbs on the shared store-and-forward carriage every poll
+  client runs. **The stream mode holds the connection instead:** the
+  handshake's live advertisement switches the server to the shared session
+  runner (the gRPC stream's, the WebSocket beacon's, and the QUIC
+  session's own), so a stream-mode bake over a pipe or socket gets
+  server-push tasking and live channels on the held connection -- the same
+  dial, the mode picking the client that dials it, and an older teamserver
+  serving the connection as an ordinary poll check-in when it does not
+  know the advertisement. The sealed body rides by default: the enroll
   exchange and every check-in message are AES-256-GCM under the baked
   per-artifact key (counter-floored on the check-in side, purpose-tagged
   on both), the same application-layer seal the cleartext http posture

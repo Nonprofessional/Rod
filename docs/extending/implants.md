@@ -374,11 +374,24 @@ counter the server floors; each direction under its own purpose tag), the
 same seal the cleartext http posture carries, so a bare wire leaks no
 frame bytes. The reference implant's socket module
 carries all of it: the dial shapes are `tcp://host:port` and
-`smb://host/pipe/name` (a dot host is the local machine), the carrier is
-poll-only -- a stream-mode build naming one of these fronts is refused
-at parse -- and the check-in cycle is the envelope's own request/response
-shape over the message framing, with the interactive verbs on the shared
-store-and-forward carriage.
+`smb://host/pipe/name` (a dot host is the local machine), and the check-in
+cycle is the envelope's own request/response shape over the message framing,
+with the interactive verbs on the shared store-and-forward carriage.
+
+**The stream mode (the held live session).** A stream-mode bake over these
+fronts holds the connection instead of cycling it: the handshake advertises
+the `channels.live` capability, the server answers the handshake response as
+its own message, and the connection then runs the live session the web
+WebSocket beacon and the QUIC session run -- queued tasking pushed as its
+own message the moment it is issued (no request preceding it), result and
+channel-output messages sent as they happen, live channels for the
+streaming verbs, staged pulls answered by pushed chunk runs. A dropped
+connection is a reconnect, not a termination: the session survives
+server-side, the next cycle re-handshakes on a fresh connection. The seal
+is the poll shape's own (a fresh counter per message, each direction under
+its own purpose tag). An older teamserver that does not know the
+advertisement serves the connection as an ordinary poll check-in, so the
+capability is a graceful step up, never a break.
 
 No client certificate rides these transports: the implant is identified by
 the id in its handshake (the DNS posture, extended to a handshake-capable

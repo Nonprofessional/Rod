@@ -11,9 +11,9 @@ namespace Rod.Transport.Listeners.Streams;
 // sockets but no HTTP shape. The entry binds its TCP endpoint (the bind
 // address), registers itself into the listener registry the same
 // bind-then-register way every transport follows, and accepts connections in
-// a loop: one connection is one check-in through the shared StreamBeaconBridge,
-// then closed -- the same one-connection-one-check-in cadence the named pipe
-// serves, over the transport a locked-down segment still permits.
+// a loop: each connection serves the shape its handshake advertises -- the
+// poll exchange (one check-in, then closed) or the held live session the
+// stream mode runs -- through the shared StreamBeaconBridge.
 
 /// <summary>
 /// Binds the entry's TCP endpoint and serves check-ins until the host stops.

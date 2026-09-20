@@ -11,10 +11,12 @@ namespace Rod.Transport.Listeners.Streams;
 // segment still allows. Each listener entry binds its pipe (the bind address
 // is the bare pipe name), registers itself into the listener registry the
 // same bind-then-register way every transport follows, and then accepts
-// connections in a loop: one connection is one check-in, served through the
-// shared StreamBeaconBridge and closed. The next server instance is already
-// waiting while the current one is served, so concurrent check-ins from
-// several implants overlap instead of queueing.
+// connections in a loop: each connection serves the shape its handshake
+// advertises -- the poll exchange (one check-in, then closed) or the held
+// live session the stream mode runs -- through the shared StreamBeaconBridge.
+// The next server instance is already waiting while the current one is
+// served, so concurrent connections from several implants overlap instead of
+// queueing.
 
 /// <summary>
 /// Binds the entry's named pipe and serves check-ins until the host stops.
