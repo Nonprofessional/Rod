@@ -22,6 +22,14 @@
     -->
     <AssemblyName>Rod.Stager</AssemblyName>
     <RootNamespace>Rod.Stager</RootNamespace>
+    <!--
+      The native AOT build defines ROD_NATIVE_AOT: the dll-host path (runtime
+      assembly loading) compiles out under it, because a native host cannot
+      load IL, and the build pipeline refuses the aot-stager with a dll
+      stage-2 pairing at parse time and inside the build unit, so the
+      compiled-out branch is unreachable by construction.
+    -->
+    <DefineConstants Condition="'$(PublishAot)' == 'true'">$(DefineConstants);ROD_NATIVE_AOT</DefineConstants>
   </PropertyGroup>
 
 </Project>

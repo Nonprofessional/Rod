@@ -682,6 +682,40 @@ public class DotNetBuildUnitTests
             $"the trimmed executable ({trimmed.Size} bytes) must be smaller than the single-file default ({singleFile.Size} bytes)");
     }
 
+    [Fact]
+    public void RenderStagerProfile_BakesTheStage2Format()
+    {
+        // The loader's run path follows the fetched artifact's form factor
+        // (in-process host for a dll bundle, child process for the executable
+        // forms), so the format bakes beside the payload id and fingerprint --
+        // in the same wire name the build request accepts.
+        var @params = Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123", ArtifactFormat.Dll),
+        };
+
+        var baked = DotNetBuildUnit.RenderStagerProfile(@params);
+
+        using var doc = JsonDocument.Parse(Base64UrlDecode(baked));
+        Assert.Equal("dll", doc.RootElement.GetProperty("stage2Format").GetString());
+    }
+
+    [Fact]
+    public async Task Build_AnAotStagerForADllStage2IsRefused()
+    {
+        // A native-AOT host cannot load IL, so the pairing is refused before
+        // any toolchain runs (the parser's gate has its twin here for a
+        // hand-assembled BuildParams).
+        var unit = new DotNetBuildUnit();
+        var @params = Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123", ArtifactFormat.Dll),
+            Format = ArtifactFormat.NativeAot,
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
+    }
+
     [DotNetFact]
     public async Task Build_TheNativeAotFormat_PublishesARuntimeFreeExecutable()
     {

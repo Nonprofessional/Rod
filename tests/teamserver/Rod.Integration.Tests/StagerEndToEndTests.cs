@@ -63,7 +63,128 @@ public class StagerEndToEndTests
         // Download the stager executable and run it as the operator would drop
         // it on a target: a bare binary, no arguments, no environment -- each
         // build's bake carries its own credential (the loader's gates the
-        // fetch, the stage-2's enrolls), the beacon host, and the CA pin.
+        // fetch, the stage-2's enrolls), the beacon host, and the CA pin. The
+        // single-file stage-2 runs from the loader's temp write (a bundle
+        // reads its own file to mount the runtime); the memory paths have
+        // their own legs below.
+        var (process, stderr, outDir) = await LaunchStagerAsync(env, stager);
+
+        try
+        {
+            // The acceptance point: the stage-2 enrolled through the stager's
+            // fetch-and-run, and it is live on the roster. The loader's own
+            // exit is not the AC (it waits on the stage-2, which runs until
+            // killed); the enrolled, online stage-2 is.
+            var implantId = await WaitForStage2OnlineAsync(env, stager.EngagementId, TimeSpan.FromSeconds(60), stderr);
+            Assert.False(string.IsNullOrEmpty(implantId));
+        }
+        finally
+        {
+            StopStager(process, outDir);
+        }
+    }
+
+    [DotNetFact]
+    public async Task Stager_RunsAnAotStage2_FromMemory_NothingLands()
+    {
+        // The native AOT stage-2 is a plain ELF with no self-reference, the
+        // one executable shape that runs from an anonymous fd: the loader
+        // writes the fetched bytes to a memfd and execveat's into them, so
+        // the stage-2 exists only in memory. The acceptance is the enrolled,
+        // online stage-2 plus an empty rod-stager-* temp footprint -- the
+        // loader's temp-file fallback never ran.
+        await using var env = await TestEnv.StartAsync();
+        await env.CreateEngagementAsync();
+
+        var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+        var stage2 = await env.BuildAsync(new
+        {
+            Class = "Stage2",
+            TargetOs = "linux",
+            TargetArch = "amd64",
+            Endpoint = enrollUrl,
+            BeaconEndpoint = $"https://127.0.0.1:{env.MtlsPort}",
+            SleepSeconds = 1.0,
+            JitterSeconds = 0.0,
+            Format = "aot",
+        });
+        var stager = await env.BuildAsync(new
+        {
+            Class = "Stager",
+            TargetOs = "linux",
+            TargetArch = "amd64",
+            Endpoint = enrollUrl,
+            Stage2PayloadId = stage2.ArtifactId,
+        });
+
+        var landedBefore = StagerTempDirs();
+        var (process, stderr, outDir) = await LaunchStagerAsync(env, stager);
+        try
+        {
+            var implantId = await WaitForStage2OnlineAsync(env, stager.EngagementId, TimeSpan.FromSeconds(60), stderr);
+            Assert.False(string.IsNullOrEmpty(implantId));
+            Assert.Equal(landedBefore.Length, StagerTempDirs().Length);
+        }
+        finally
+        {
+            StopStager(process, outDir);
+        }
+    }
+
+    [DotNetFact]
+    public async Task Stager_HostsADllStage2_InProcess_NothingLands()
+    {
+        // The dll stage-2 turns the loader into an in-memory host: the
+        // fetched bundle loads inside the stager process (dependencies
+        // pre-loaded from the zip, entry point invoked), enrols from that
+        // same process, and no byte of the stage-2 appears on any filesystem
+        // -- the acceptance is the enrolled, online stage-2 plus an empty
+        // rod-stager-* temp footprint.
+        await using var env = await TestEnv.StartAsync();
+        await env.CreateEngagementAsync();
+
+        var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+        var stage2 = await env.BuildAsync(new
+        {
+            Class = "Stage2",
+            TargetOs = "linux",
+            TargetArch = "amd64",
+            Endpoint = enrollUrl,
+            BeaconEndpoint = $"https://127.0.0.1:{env.MtlsPort}",
+            SleepSeconds = 1.0,
+            JitterSeconds = 0.0,
+            Format = "dll",
+        });
+        var stager = await env.BuildAsync(new
+        {
+            Class = "Stager",
+            TargetOs = "linux",
+            TargetArch = "amd64",
+            Endpoint = enrollUrl,
+            Stage2PayloadId = stage2.ArtifactId,
+        });
+
+        var landedBefore = StagerTempDirs();
+        var (process, stderr, outDir) = await LaunchStagerAsync(env, stager);
+        try
+        {
+            var implantId = await WaitForStage2OnlineAsync(env, stager.EngagementId, TimeSpan.FromSeconds(60), stderr);
+            Assert.False(string.IsNullOrEmpty(implantId));
+            Assert.Equal(landedBefore.Length, StagerTempDirs().Length);
+        }
+        finally
+        {
+            StopStager(process, outDir);
+        }
+    }
+
+    // Downloads a built stager and runs it exactly as it lands in the field:
+    // a bare executable, no arguments, no environment. Returns the running
+    // process with stderr captured (for the failure message) and the download
+    // dir to clean up.
+    private static async Task<(Process Process, StringBuilder Stderr, string OutDir)> LaunchStagerAsync(
+        TestEnv env, BuildBody stager)
+    {
         var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-stager-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outDir);
         var stagerPath = Path.Combine(outDir, "Rod.Stager");
@@ -80,7 +201,7 @@ public class StagerEndToEndTests
         }
 
         var stderr = new StringBuilder();
-        using var process = Process.Start(new ProcessStartInfo
+        var process = Process.Start(new ProcessStartInfo
         {
             FileName = stagerPath,
             UseShellExecute = false,
@@ -89,26 +210,24 @@ public class StagerEndToEndTests
         Assert.NotNull(process);
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
         process.BeginErrorReadLine();
-
-        try
-        {
-            // The acceptance point: the stage-2 enrolled through the stager's
-            // fetch-and-run, and it is live on the roster. The loader's own
-            // exit is not the AC (it waits on the stage-2, which runs until
-            // killed); the enrolled, online stage-2 is.
-            var implantId = await WaitForStage2OnlineAsync(env, stager.EngagementId, TimeSpan.FromSeconds(60), stderr);
-            Assert.False(string.IsNullOrEmpty(implantId));
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                try { process.Kill(entireProcessTree: true); } catch { }
-                process.WaitForExit(5000);
-            }
-            try { Directory.Delete(outDir, recursive: true); } catch { }
-        }
+        return (process!, stderr, outDir);
     }
+
+    private static void StopStager(Process process, string outDir)
+    {
+        if (!process.HasExited)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            process.WaitForExit(5000);
+        }
+        process.Dispose();
+        try { Directory.Delete(outDir, recursive: true); } catch { }
+    }
+
+    // The loader's temp-file fallback lands under this prefix; the in-memory
+    // paths (the dll host, the Linux memfd exec) never create one.
+    private static string[] StagerTempDirs()
+        => Directory.GetDirectories(Path.GetTempPath(), "rod-stager-*");
 
     // Polls the engagement's implant listing until a Stage-2 is enrolled and
     // online -- the state the stager's fetch-and-run exists to produce.

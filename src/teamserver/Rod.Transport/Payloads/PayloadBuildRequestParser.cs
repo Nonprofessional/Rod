@@ -155,7 +155,18 @@ internal static class PayloadBuildRequestParser
             if (payload is null)
                 return (null,
                     "Stage2PayloadId does not name a payload in this engagement; build the stage-2 first.");
-            stage2 = new Stage2Payload(stage2Value, payload.Fingerprint);
+            // The referenced payload's form factor decides the loader's run
+            // path (a dll bundle is hosted in-process, an executable form
+            // runs as the child), so it resolves here the same way the
+            // fingerprint does -- old records without a recorded format are
+            // the single-file executable every build produced then.
+            var stage2Format = ArtifactFormat.SingleFileExe;
+            if (payload.Build?.Format is { } wire && ArtifactFormats.TryParse(wire, out var parsedFormat))
+                stage2Format = parsedFormat;
+            if (format == ArtifactFormat.NativeAot && stage2Format == ArtifactFormat.Dll)
+                return (null,
+                    "A native-AOT stager cannot host a dll stage-2 in memory; build the stager as 'exe' or 'exe-trimmed' (the managed host shape).");
+            stage2 = new Stage2Payload(stage2Value, payload.Fingerprint, stage2Format);
         }
         else if (body.Stage2PayloadId is not null)
         {

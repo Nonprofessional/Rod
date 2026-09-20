@@ -4,7 +4,8 @@ namespace Rod.Stager;
 // development; the .NET build unit overwrites it with the per-build profile in
 // its staging copy (the same mechanism the reference implant's BakedProfile
 // uses). The generated shape is a base64url-encoded JSON object with the keys
-// the stager consumes: enrollURL, stage2PayloadId, stage2Sha256, killDate.
+// the stager consumes: enrollURL, stage2PayloadId, stage2Format, stage2Sha256,
+// killDate, and the token when the build minted one.
 internal static class BakedProfile
 {
     public const string Json = "";
