@@ -683,6 +683,69 @@ public class DotNetBuildUnitTests
     }
 
     [DotNetFact]
+    public async Task Build_TheNativeAotFormat_PublishesARuntimeFreeExecutable()
+    {
+        // The AOT format compiles ahead of time to a native binary with no
+        // runtime to bundle or bootstrap -- the same deployment property a C
+        // or Go artifact has, at a fraction of the trimmed bundle's bytes
+        // (measured on linux-x64: 6.2 MB stager and 10.3 MB implant, against
+        // 14 MB trimmed and 37-40 MB single-file). The strict inequality
+        // against the trimmed format pins that the AOT pass actually ran.
+        var unit = new DotNetBuildUnit();
+
+        var stager = await unit.BuildAsync(Params(ImplantClass.Stager) with
+        {
+            Stage2 = new Stage2Payload(Guid.NewGuid(), "abc123"),
+            Format = ArtifactFormat.NativeAot,
+        });
+        var implant = await unit.BuildAsync(Params() with { Format = ArtifactFormat.NativeAot });
+        var trimmed = await unit.BuildAsync(Params() with { Format = ArtifactFormat.TrimmedExe });
+
+        Assert.Equal("application/octet-stream", stager.ContentType);
+        Assert.True(stager.Size < trimmed.Size,
+            $"the AOT stager ({stager.Size} bytes) must be smaller than the trimmed implant ({trimmed.Size} bytes)");
+        Assert.True(implant.Size < 40_000_000, "the AOT implant is a native binary, not a bundled runtime");
+
+        // On a Linux host the built artifacts prove they are native code the
+        // loader accepts: both run, report the missing baked profile, and
+        // exit 2 -- the fielded shape's only console output.
+        AssertNativeRunsAndRefusesWithoutABake(stager.Content, "rod-stager");
+        AssertNativeRunsAndRefusesWithoutABake(implant.Content, "rod-implant");
+    }
+
+    // Runs a built native artifact from a temp file and asserts the no-bake
+    // refusal: the exact fatal one-liner and exit code 2 the fielded shape
+    // prints. Proves the bytes are a working native executable, not just a
+    // smaller file. Linux only -- the build targets linux-x64 native code.
+    private static void AssertNativeRunsAndRefusesWithoutABake(byte[] content, string name)
+    {
+        if (!OperatingSystem.IsLinux())
+            return;
+        var path = Path.Combine(Path.GetTempPath(), name + "-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            File.WriteAllBytes(path, content);
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var start = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+            };
+            using var process = System.Diagnostics.Process.Start(start)!;
+            var stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit(30_000);
+            Assert.Equal(2, process.ExitCode);
+            Assert.Contains("no baked profile", stderr);
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { /* best-effort */ }
+        }
+    }
+
+    [DotNetFact]
     public async Task Build_TheDllFormat_ShipsAZippedFrameworkDependentBundle()
     {
         // The dll format (architecture.md Sec 6) is the in-memory-loadable
