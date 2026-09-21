@@ -83,6 +83,12 @@ Hand-edit only where no tool equivalent exists (a `Cargo.toml` feature
 section or profile block, for example, is configuration rather than a
 dependency operation, and is hand-written).
 
+One known suite caveat: under a full parallel `dotnet test` run, the
+pipeline-build tests that shell out to cargo occasionally contend on the
+shared cargo target-dir lock and time out around the two-minute mark; a
+standalone rerun or a whole-suite rerun is green. That is machine
+scheduling, not a regression -- rerun before bisecting.
+
 ## 5. Architecture -- monolithic kernel, layered
 
 The teamserver is a single .NET process with six internal layers: core state,
