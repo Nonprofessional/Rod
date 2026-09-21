@@ -1015,8 +1015,11 @@ fleet-wide code execution. Security is a first-class concern.
   handshake-negotiated with a plaintext fallback, so Tier 0 implants keep
   interoperating (see [extending/implants.md](extending/implants.md)).
 - **Per-implant identity and rotation.** Each implant owns a keypair it
-  generated itself; the server binds it with a CA-signed leaf at enroll and
-  never sees the private half (Sec 7, Sec 9). Identity key material stays out
+  generated itself; enrollment presents the public half as a Tier 0
+  obligation the route validates (a malformed key is refused, and no
+  transport certificate is minted for it -- that was the retired mTLS
+  posture), and the server never sees the private half (Sec 7, Sec 9).
+  Identity key material stays out
   of artifacts; the one symmetric key a build bakes is the per-artifact
   contact/envelope key above -- it seals wire bodies, not identity, and it
   is per-artifact and revocable with the payload it is recorded beside.
