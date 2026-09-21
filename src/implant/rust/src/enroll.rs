@@ -146,9 +146,9 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
     let _leaf = base64::engine::general_purpose::STANDARD
         .decode(leaf_b64)
         .map_err(|_| "leafCertificate")?;
-    // The web poll posture authenticates at the application layer; the leaf
-    // is for mTLS fronts the MVP does not dial, so it is validated (parses)
-    // and dropped. The CA chain is kept: it carries the tasking signer.
+    // The web posture authenticates at the application layer; the leaf is
+    // validated (parses) and dropped. The CA chain is kept: it carries the
+    // tasking signer.
     let mut ca_chain = Vec::new();
     if let Some(chain) = answer.get("caChain").and_then(serde_json::Value::as_array) {
         for entry in chain {

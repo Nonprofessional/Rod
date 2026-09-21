@@ -57,7 +57,7 @@ export interface Implant {
   // kept after the session is gone. Null when it never contacted past enroll.
   lastSeenAt: string | null
   // The carrier the live session's last contact rode (the degraded-mode
-  // vocabulary: web, grpc, quic, dns, pipe); 'dns' is the constrained
+  // vocabulary: web, dns, pipe); 'dns' is the constrained
   // carrier. Null while offline or when no contact recorded one.
   lastCarrier: string | null
   // The baked carrier set the artifact's endpoints dial; null when the
