@@ -1,17 +1,10 @@
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Pki;
 using Rod.CoreState.Tasks;
 using Rod.Transport;
 using Rod.V1;
@@ -35,20 +28,14 @@ public class DispatchPushTests
     {
         var tasks = new CountingTaskRepository(new InMemoryTaskRepository());
         await using var env = await TestEnv.StartAsync(tasks);
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
         // Open the beacon stream and complete the handshake first.
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         // Let the writer's opening claim land, then watch an idle window. The
         // writer claims once per session and parks on the wake; the retired
@@ -68,43 +55,22 @@ public class DispatchPushTests
             new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "whoami" });
         issued.EnsureSuccessStatusCode();
 
-        using var readDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        Assert.True(await call.ResponseStream.MoveNext(readDeadline.Token));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
         Assert.Equal("shell.exec", request.Verb);
         Assert.Equal("whoami", request.Arguments);
 
-        await call.RequestStream.CompleteAsync();
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
-
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
-
-    private static Frame HandshakeFrame(ImplantId implant)
-    {
-        var request = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = implant.ToString(),
-            Capabilities = { "shell.exec" },
-        };
-        return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
-    }
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
     /// <summary>
     /// Delegates to the in-memory repository and counts dispatch claims -- the
@@ -178,22 +144,19 @@ public class DispatchPushTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator API. Mirrors the task round-trip harness, with the
-    /// counting task repository layered in so the test can read the claim
-    /// count.
+    /// A real Kestrel teamserver with the plain-HTTP operator API and the
+    /// WebSocket beacon riding the same listener family, with the counting
+    /// task repository layered in so the test can read the claim count.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync(ITaskRepository tasks)
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
@@ -203,7 +166,6 @@ public class DispatchPushTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -213,33 +175,6 @@ public class DispatchPushTests
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
             };
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()

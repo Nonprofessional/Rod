@@ -1,19 +1,12 @@
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
 using Rod.CoreState;
-using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.V1;
 
@@ -21,12 +14,13 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance: task an implant, see its output, and an audit event.
-/// Drives the full slice end to end through a real Kestrel mTLS endpoint -- the
-/// operator POSTs a <c>shell.exec</c> task over HTTP, the beacon stream pushes it
-/// to the implant, the implant writes back a result, and the operator reads the
-/// captured output alongside the audit event the capture appended. The task
-/// state lives in core, the audit event in the audit layer, and the beacon stream
-/// is where both meet on a completed task (architecture.md Sec 10.3/11).
+/// Drives the full slice end to end through a real Kestrel endpoint -- the
+/// operator POSTs a <c>shell.exec</c> task over HTTP, the WebSocket beacon
+/// pushes it to the implant, the implant writes back a result, and the
+/// operator reads the captured output alongside the audit event the capture
+/// appended. The task state lives in core, the audit event in the audit
+/// layer, and the beacon stream is where both meet on a completed task
+/// (architecture.md Sec 10.3/11).
 /// </summary>
 public class TaskRoundTripTests
 {
@@ -34,21 +28,15 @@ public class TaskRoundTripTests
     public async Task ShellExec_Task_RoundTrips_AndIsAudited()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
         // Open the beacon stream and complete the handshake first.
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         // Operator tasks the implant over HTTP. The operator session is the gate;
         // the issuer is the logged-in operator, not a body field.
@@ -62,8 +50,7 @@ public class TaskRoundTripTests
         Assert.Equal("shell.exec", issuedBody!.Verb);
 
         // The server pushes the task downstream; the implant reads it.
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
         Assert.Equal(issuedBody.TaskId, request.TaskId);
         Assert.Equal("shell.exec", request.Verb);
         Assert.Equal("whoami", request.Arguments);
@@ -75,7 +62,7 @@ public class TaskRoundTripTests
             Outcome = TaskOutcome.Succeeded,
             Output = "red-team\\operator",
         };
-        await call.RequestStream.WriteAsync(ResultFrame(result));
+        await beacon.SendFramesAsync(new[] { ResultFrame(result) });
 
         // Give the server a beat to capture the result and append the audit event
         // (both happen on the stream thread before the next dispatch round). A
@@ -108,28 +95,20 @@ public class TaskRoundTripTests
         // The task arc is attributed to the authenticated operator, not any
         // client-supplied identity.
         Assert.Contains(trail, e => e.Kind == AuditEventKind.TaskIssued && e.OperatorId == env.OperatorId.Value);
-
-        await call.RequestStream.CompleteAsync();
     }
 
     [Fact]
     public async Task RetransmittedResult_IsIgnored_AndTheStreamStaysOpen()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         await AuthenticatedHost.LoginAsync(env.Http);
         var issued = await env.Http.PostAsJsonAsync(
@@ -138,8 +117,7 @@ public class TaskRoundTripTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
 
         // The implant's result arrives twice (a retransmission after a drop):
         // the first capture completes the task, the second must be ignored, not
@@ -150,8 +128,8 @@ public class TaskRoundTripTests
             Outcome = TaskOutcome.Succeeded,
             Output = "uid=0",
         };
-        await call.RequestStream.WriteAsync(ResultFrame(result));
-        await call.RequestStream.WriteAsync(ResultFrame(result));
+        await beacon.SendFramesAsync(new[] { ResultFrame(result) });
+        await beacon.SendFramesAsync(new[] { ResultFrame(result) });
 
         await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
@@ -165,39 +143,28 @@ public class TaskRoundTripTests
         secondIssued.EnsureSuccessStatusCode();
         var secondBody = await secondIssued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var secondRequest = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var secondRequest = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
         Assert.Equal(secondBody!.TaskId, secondRequest.TaskId);
-
-        await call.RequestStream.CompleteAsync();
     }
 
     [Fact]
     public async Task ForeignImplantResult_ForAnotherEngagementsTask_IsIgnored()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
         // Two implants in two engagements. The victim holds the task; the
         // impostor is a fully authenticated session of its own -- the strongest
-        // position a forged result can come from short of a stolen certificate.
-        var (victim, victimCert, victimKey) = await EnrollImplantAsync(implants, ca, clock);
-        var (impostor, impostorCert, impostorKey) = await EnrollImplantAsync(implants, ca, clock);
+        // position a forged result can come from.
+        var victim = await EnrollImplantAsync(implants, clock);
+        var impostor = await EnrollImplantAsync(implants, clock);
 
-        using var victimChannel = env.ConnectBeacon(victimCert, victimKey);
-        var victimCall = new Beacon.BeaconClient(victimChannel).Contact();
-        await victimCall.RequestStream.WriteAsync(HandshakeFrame(victim.Id, 1, 0));
-        Assert.True(await victimCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(victimCall.ResponseStream.Current).Status);
-
-        using var impostorChannel = env.ConnectBeacon(impostorCert, impostorKey);
-        var impostorCall = new Beacon.BeaconClient(impostorChannel).Contact();
-        await impostorCall.RequestStream.WriteAsync(HandshakeFrame(impostor.Id, 1, 0));
-        Assert.True(await impostorCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(impostorCall.ResponseStream.Current).Status);
+        using var victimBeacon = await WsBeaconClient.ConnectAsync(env.HttpPort, victim.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await victimBeacon.ReceiveHandshakeAsync()).Status);
+        using var impostorBeacon = await WsBeaconClient.ConnectAsync(env.HttpPort, impostor.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await impostorBeacon.ReceiveHandshakeAsync()).Status);
 
         // The operator tasks the victim; the victim's stream claims the task
         // (it is now Dispatched to the victim).
@@ -208,8 +175,7 @@ public class TaskRoundTripTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await victimCall.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(victimCall.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await victimBeacon.ReceiveSingleFrameAsync());
         Assert.Equal(issuedBody!.TaskId, request.TaskId);
 
         // The impostor answers first with a forged result for the victim's task
@@ -217,22 +183,28 @@ public class TaskRoundTripTests
         // on exfil, staged-pull, and channel output: a session can only
         // complete its own (or a fronted Pivot child's) task, never another
         // engagement's.
-        await impostorCall.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await impostorBeacon.SendFramesAsync(new[]
         {
-            TaskId = request.TaskId,
-            Outcome = TaskOutcome.Succeeded,
-            Output = "forged",
-        }));
+            ResultFrame(new TaskResult
+            {
+                TaskId = request.TaskId,
+                Outcome = TaskOutcome.Succeeded,
+                Output = "forged",
+            }),
+        });
 
         // The victim's real answer follows immediately: whichever frame the
         // server processes first, only the victim's may complete the task, so
         // the final record discriminates the guard without racing the stream.
-        await victimCall.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await victimBeacon.SendFramesAsync(new[]
         {
-            TaskId = request.TaskId,
-            Outcome = TaskOutcome.Succeeded,
-            Output = "uid=0",
-        }));
+            ResultFrame(new TaskResult
+            {
+                TaskId = request.TaskId,
+                Outcome = TaskOutcome.Succeeded,
+                Output = "uid=0",
+            }),
+        });
 
         await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
@@ -243,42 +215,21 @@ public class TaskRoundTripTests
         Assert.Equal("uid=0", fetched.Output);
         Assert.Equal(1, fetched.Audit.Count(e => e.Kind == "TaskCompleted"));
         Assert.Equal("uid=0", fetched.Audit.Single(e => e.Kind == "TaskCompleted").Output);
-
-        await victimCall.RequestStream.CompleteAsync();
-        await impostorCall.RequestStream.CompleteAsync();
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
-
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
-    }
-
-    private static Frame HandshakeFrame(ImplantId implant, int major, int minor)
-    {
-        var request = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = major, Minor = minor },
-            ImplantId = implant.ToString(),
-            Capabilities = { "shell.exec" },
-        };
-        return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
+        return implant;
     }
 
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
     // Polls until condition is true or the timeout elapses. The capture/audit
     // append runs on the stream thread, asynchronously to the HTTP readback, so
@@ -319,33 +270,30 @@ public class TaskRoundTripTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator API. Mirrors the handshake test harness.
+    /// A real Kestrel teamserver with the plain-HTTP operator API and the
+    /// WebSocket beacon riding the same listener family.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public OperatorId OperatorId { get; private set; }
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             // Compose the operator + auth layers so the operator API requires a
             // cookie session; the operator id is the seeded one, read back from
-            // the host. The beacon mTLS endpoint is unaffected.
+            // the host.
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
                     configureServices: services => AuthenticatedHost.ComposeServices(services, config),
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -356,33 +304,6 @@ public class TaskRoundTripTests
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
             };
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()
