@@ -79,125 +79,34 @@ or a same-named dll in the application directory) -- it never scans
 directories. A module reaches the process exactly when an operator built it,
 placed it, and named it.
 
-## Implant-side half: register a handler
+## Implant-side half: the plugin seam ahead
 
-Implement `ICapabilityHandler` (or use the `CapabilityHandler` delegate
-wrapper) and register it in `HandlerRegistry.Default`'s `additional` seam --
-registration is compile-time by design (no runtime assembly loading for
-handler plugins: it would break Native AOT, enlarge the artifact, and put
-plugin files on disk; the in-memory loading the tree does have is the
-loader's stage-2 carriage, not a plugin mechanism -- architecture.md
-Sec 5.3):
+The compile-time handler overlay these pages used to teach -- a directory of
+`ICapabilityHandler` sources the .NET build unit compiled into every
+artifact -- retired with the .NET implant it compiled. The Rust reference
+carries its handler set in the crate (`handlers::dispatch`), and the
+implant-side extension seam ahead is the C-ABI plugin module on the todo:
+a `rod-plugin-sdk` crate (a normal Rust trait plus the macro that emits the
+`extern "C"` shim), delivered over the sealed task channel by a module.load
+verb and staged the way the old stager staged a stage-2. Until that lands,
+the implant-side answer is the escape hatch below: point the build unit at
+your own tree, or build it directly with cargo.
 
-```csharp
-var registry = HandlerRegistry.Default(
-    enroll: enrollBundle,
-    additional: new[]
-    {
-        new CapabilityHandler(
-            "demo.ping",
-            args => (TaskOutcome.Succeeded, $"pong at {DateTimeOffset.UtcNow:O}")),
-    });
-```
-
-The handler owns its argument grammar -- the argument string arrives opaque
-and unparsed by anyone upstream (architecture.md Sec 10). Return a result and,
-for bulk data, `ExfilChunk` frames; the beacon loop writes them to the
-engagement artifact store on your behalf.
-
-The handshake advertisement is the baked verb set -- the class set plus the
-contract-only verbs no class gates -- intersected with the compiled handlers,
-so the implant never advertises a verb it cannot run. Two consequences for
-extension authors:
-
-- A verb inside the baked set (adding a new `recon.*` handler, say) is
-  advertised automatically.
-- A contract-only verb (`evasion.*`, `exploit.*`) rides along in every bake,
-  so a handler you compile in for one advertises at handshake -- and an
-  artifact without the handler still claims nothing.
+The dispatch grammar your code answers either way is the task contract's
+own: string arguments in, outcome plus output back, with exfil chunks for
+bulk -- the same shape the compiled handlers speak, so an operator's console
+reads a module verb exactly like a built-in one.
 
 ## Building an artifact that carries your handler
 
-Point the build unit at an extension directory: a folder of handler sources
-you maintain outside the repository, named as a path under
-`Build:ImplantExtensionDirectory` in `appsettings.json`:
-
-```json
-{
-  "Build": {
-    "ImplantExtensionDirectory": "/opt/rod/extensions"
-  }
-}
-```
-
-Every implant-class build then overlays the directory onto the per-build
-staging tree: the `.cs` files compile in, and the build unit generates the
-`ExtensionRegistrations` file that feeds `HandlerRegistry.Default`'s
-`additional` seam -- dropping a handler source into the directory and building
-yields an artifact that runs it, for every class whose verb set admits the
-handler's verb (the rule the section below spells out). No fork of the
-implant tree to maintain. The
-build unit still bakes the per-artifact profile (mode, endpoint,
-sleep/jitter/kill date, verb set) into whatever tree it compiles, and
-publishes the requested artifact format -- the self-contained single-file
-executable default, its trimmed twin, the native AOT binary, or the
-in-memory-loadable dll bundle (architecture.md Sec 6).
-
-A handler source follows one authoring shape: a top-level concrete class with
-a parameterless constructor whose base list names `ICapabilityHandler`. Any
-namespace works -- the generated registrations qualify each class fully:
-
-```csharp
-using Rod.Implant.Internal;
-using Rod.V1;
-
-namespace MyTradecraft.Evasion;
-
-internal sealed class MyAvoidHandler : ICapabilityHandler
-{
-    public string Verb => "evasion.avoid";
-
-    public HandlerResult Handle(string arguments)
-        => (TaskOutcome.Succeeded, "ack");
-}
-```
-
-Helper classes, extra files, and subdirectories are fine -- only discovered
-handlers register. Sources under `bin/`/`obj/` are skipped, so an extension
-built standalone does not compile its output in twice.
-
-Failures are loud on both ends, the same rule as `Tradecraft:Modules`:
-
-- A configured directory that is missing, or that contains no handler class,
-  aborts the build -- and a missing directory aborts teamserver startup. An
-  operator must never get an artifact that silently lacks the handlers they
-  believe it carries.
-- A discovered class the compiler cannot instantiate (abstract, nested, or
-  without a parameterless constructor) fails the publish with the type named
-  in the diagnostic.
-
-The verb each handler serves decides which builds compile it. The bake trims
-an artifact to the verbs its class runs (architecture.md Sec 5.2/5.3), and
-the overlay reads each handler's expression-bodied `Verb => "..."` declaration
-to place it: a verb the class table gates (`collect.keylog`, say) compiles
-only into builds whose class carries it, while the ungated contract verbs
-(`evasion.*`, `exploit.*`) and any verb no class lists -- your own -- ride
-every build. Two practical consequences for authoring:
-
-- One handler class per file keeps the trim clean: a source file whose
-  handlers all drop stays behind whole, so a file mixing a kept and a
-  withheld handler keeps them both.
-- Keep the `Verb` declaration expression-bodied. A shape the scan cannot
-  read (a block-bodied property) compiles into every build rather than being
-  silently dropped.
-
-Current limits, deliberate: the overlay feeds the one-shot `additional` seam
-only -- a staged or channel verb still needs the fork -- and stager-class
-builds are never overlaid (a stage-1 loader carries no tradecraft handlers).
-The fork itself remains available: `src/implant/rust` is an independent,
-disposable component coupled to the teamserver only by the wire contracts,
-and pointing the build unit at your own tree (or building it directly with
-cargo) is the escape hatch for anything the seams do not cover.
+The build unit compiles the Rust crate through the uniform build contract
+(`Build:RustSourceDirectory` names your tree on an installed teamserver;
+unset keeps the repo walk-up): a hermetic staging copy, the per-artifact
+profile baked into `src/baked.rs`, and a `cargo build --release --target
+<triple>` for the requested target. Your tree is independent and disposable
+-- coupled to the teamserver only by the wire contracts (rod.proto, the
+baked profile's base64url JSON, the sealed envelope), so a fork tracks the
+contract, not the teamserver's code.
 
 ## OPSEC metadata and ROE
 

@@ -2,7 +2,7 @@
 
 > **Status:** Living document. This is the agreed architecture for Rod as an
 > authorized-use red-team command-and-control (C2) platform. The repository
-> holds the teamserver and a .NET reference implant, with a Postgres persistence
+> holds the teamserver (the .NET control plane) and the Rust reference implant, with a Postgres persistence
 > layer; [todo.md](todo.md) tracks open work. Sections marked _(future)_ are
 > designed for but not yet implemented.
 
@@ -278,7 +278,7 @@ the record shows the honest absence rather than an invented pair.
 Implants differ by purpose, not by a "managed device flavor":
 
 - **Stage-2 implant** -- the primary long-haul implant; full capability set and
-  module support. (e.g. the .NET reference implant, cross-platform.)
+  module support. (the Rust reference implant, cross-platform.)
 - **Stager** -- retired as a build output: delivery rides the launcher
   one-liners (the disk families plus the Linux in-memory memfd family),
   which fetch the stage-2 over the same token-gated route a loader ever
@@ -393,18 +393,14 @@ leaves no growth seam); and making the implant class-aware but
 keeping the switch (solves advertising but not extensibility -- the registry
 is what makes the design durable).
 
-The reference .NET implant implements this end to end. `HandlerRegistry`
-holds one compiled handler per verb and is the implant's only dispatch path:
-the beacon loop calls it directly and advertises `AdvertisedVerbs` -- the
-registry verbs filtered by the baked verb set -- at handshake. The build
-unit's baked `verbs` key reaches the implant through the profile (mapped onto
-`ROD_VERBS`, parsed into `Config.ClassVerbs`); an un-baked dev binary (empty
-class set) advertises its full compiled handler set, so the checked-in stub
-keeps running from flags/env. The implant tests pin both halves of the
-contract: the advertised set is the baked-verbs/handlers intersection for
-every class, an added registration widens it, and the .NET reference registry
-contains no contract-only verb (the Rust reference carries its own compiled
-set -- core verbs everywhere, the sensitive three on Windows builds).
+The reference Rust implant implements this end to end: `handlers::dispatch`
+is the implant's only dispatch path, and the run advertises the baked verb
+set intersected with `handlers::COMPILED_VERBS` at every handshake -- the
+same intersection rule, in the crate's own shape. An un-baked dev binary
+ advertises its full compiled handler set. The end-to-end legs pin the
+advertised behavior (the dev-shape run and the pipeline-built run each
+complete dispatched tasking); the sensitive three compile only into Windows
+builds, so a Linux artifact never advertises them.
 
 The class verb set is also a compile-time boundary, not only an
 advertise-time one: the bake trims each implant-class build to the verbs its
@@ -1628,7 +1624,7 @@ scrape.
 | Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and dev deployments (see Sec 12.1). |
 | Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
 | Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). |
-| Implants | .NET (reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One .NET reference implant; community implants slot in by contract for targets .NET does not fit. |
+| Implants | Rust (the reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One Rust reference implant, static and cross-platform; community implants slot in by contract for targets it does not fit. |
 | Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. |
 
 The wire protocol and capability registry are the long-lived, language-neutral

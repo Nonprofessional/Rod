@@ -80,7 +80,7 @@ tunneling), then close out -- freeze, export the evidence package, retire.
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
 | Operator UI | React 19, Vite | Lives in the teamserver project; served same-origin. |
-| Implants | .NET reference; Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
+| Implants | Rust reference (static musl / mingw); Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
 | Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |
 | Stager | .NET | Fetch-and-exec only; verifies stage-2 against the baked sha256. |
 | Build units | .NET in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
