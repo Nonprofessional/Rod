@@ -18,6 +18,11 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     // keys, an ops concern).
     private const int RsaKeySize = 2048;
     private static readonly TimeSpan CaLifetime = TimeSpan.FromDays(365);
+
+    // Pinned empirically, not a free knob: a 365-day server leaf here made
+    // the DoH e2e legs drop TLS handshakes intermittently (isolated by
+    // file-by-file bisection; 30 days ran 24 consecutive passes, and no
+    // mechanism was established). Lengthen only with those legs re-proven.
     private static readonly TimeSpan LeafLifetime = TimeSpan.FromDays(30);
 
     private readonly X509Certificate2 _caCertificate;

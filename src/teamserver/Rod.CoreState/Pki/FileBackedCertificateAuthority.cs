@@ -12,7 +12,8 @@ namespace Rod.CoreState.Pki;
 /// the https fronts' server-leaf issuer, and the enrollment chain's root.
 /// The CA is provisioned out-of-band by the operator's PKI; this authority
 /// consumes it, it never generates the CA itself.
-/// </summary>/// <remarks>
+/// </summary>
+/// <remarks>
 /// The loaded CA certificate and key are held for the singleton lifetime.
 /// Construction is eager and validates the inputs, so a missing, unreadable, or
 /// mismatched CA fails the host at startup rather than at the first enrollment.
@@ -20,6 +21,11 @@ namespace Rod.CoreState.Pki;
 public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthority
 {
     private readonly X509Certificate2 _caCertificate;
+
+    // Pinned empirically, not a free knob: a 365-day server leaf made the
+    // DoH e2e legs drop TLS handshakes intermittently (isolated by
+    // file-by-file bisection; 30 days ran 24 consecutive passes, and no
+    // mechanism was established). Lengthen only with those legs re-proven.
     private static readonly TimeSpan ServerLeafLifetime = TimeSpan.FromDays(30);
     private readonly object _serverCertificateLock = new();
     private X509Certificate2? _serverCertificate;
