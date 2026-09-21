@@ -1,11 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
+using System.Net.Security;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -135,47 +133,6 @@ public class ListenerTests
     }
 
     [Fact]
-    public async Task MtlsListener_AcceptsImplantConnection_EndToEnd()
-    {
-        // An mTLS listener terminates mutual TLS using the implant CA and carries
-        // the beacon stream. This is the end-to-end  AC for the mTLS transport:
-        // an implant connects through the listener, completes the handshake, and
-        // appears online -- the same path the UseRodMtls handshake test drives, but
-        // here through a named listener populated via UseRodListeners.
-        await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            Name: "mtls-1",
-            Transport: "mtls",
-            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-            PublicEndpoint: "https://c2.example.test"));
-
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
-        var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
-        var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
-
-        // Enroll an implant directly through the core ports, then present its leaf
-        // over the listener's mTLS socket.
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca);
-
-        using var channel = env.ConnectBeacon(env.MtlsBind, leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var response = ParseResponse(call.ResponseStream.Current);
-        Assert.Equal(HandshakeStatus.Ok, response.Status);
-        Assert.Equal(implant.EngagementId.ToString(), response.EngagementId);
-
-        // The acceptance point: the implant connected through the listener and is
-        // online in its engagement.
-        var online = await sessions.ListActiveAsync(implant.EngagementId);
-        Assert.Single(online, s => s.ImplantId == implant.Id);
-
-        await call.RequestStream.CompleteAsync();
-    }
-
-    [Fact]
     public async Task ListenerListing_RendersTheTransportWireNames()
     {
         // The stable label contract: the listing renders each transport's
@@ -272,19 +229,15 @@ public class ListenerTests
         return created!;
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Stage2)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Stage2, now);
+            now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
-
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
 
     private static Frame HandshakeFrame(ImplantId implant, int major, int minor)
@@ -388,36 +341,6 @@ public class ListenerTests
             // Wrap in CookieHandler so the operator session persists across the
             // listener-routed requests.
             return new HttpClient(new CookieHandler(handler)) { BaseAddress = new Uri(baseAddress) };
-        }
-
-        // Connects a gRPC channel that performs the client side of mTLS against the
-        // given listener bind address: presents the implant leaf (with its private
-        // key) and trusts the dev CA as the server identity.
-        public GrpcChannel ConnectBeacon(string bindAddress, X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://{bindAddress}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()

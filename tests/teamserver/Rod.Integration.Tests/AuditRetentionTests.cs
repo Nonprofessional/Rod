@@ -1,10 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Security;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,7 +139,6 @@ public class AuditRetentionTests
     private static async Task<(Guid EngagementId, OperatorId Owner, OperatorId TaskIssuer, string ImplantId, string TaskId)>
         DriveLifecycleAsync(TestEnv env)
     {
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
 
         var owner = env.OperatorId;
         var created = await env.Http.PostAsJsonAsync("/engagements", new EngagementEndpoints.CreateEngagementRequest(
@@ -155,15 +151,10 @@ public class AuditRetentionTests
         minted.EnsureSuccessStatusCode();
         var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
 
-        var (implantId, leafCert, leafKey) = await EnrollImplantAsync(env.Http, token!.Secret, ca);
+        var implantId = await EnrollImplantAsync(env.Http, token!.Secret);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implantId, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implantId);
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         var taskIssuer = env.OperatorId;
         var issued = await env.Http.PostAsJsonAsync(
@@ -172,20 +163,17 @@ public class AuditRetentionTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
 
-        await call.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await beacon.SendFramesAsync(new[] { ResultFrame(new TaskResult
         {
             TaskId = request.TaskId,
             Outcome = TaskOutcome.Succeeded,
             Output = "red-team\\operator",
-        }));
+        }) });
 
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
-
-        await call.RequestStream.CompleteAsync();
 
         // Retire the implant: the ImplantRetired event joins the trail.
         var retire = await env.Http.PostAsync(
@@ -225,8 +213,7 @@ public class AuditRetentionTests
         return issued.TaskId;
     }
 
-    private static async Task<(string ImplantId, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        HttpClient http, string secret, IImplantCertificateAuthority ca)
+    private static async Task<string> EnrollImplantAsync(HttpClient http, string secret)
     {
         var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var spki = leafKey.ExportSubjectPublicKeyInfo();
@@ -236,7 +223,7 @@ public class AuditRetentionTests
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
 
-        return (enrolled!.ImplantId!, X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.LeafCertificate!)), leafKey);
+        return enrolled!.ImplantId!;
     }
 
     private static Frame HandshakeFrame(string implantId, int major, int minor)
@@ -301,13 +288,11 @@ public class AuditRetentionTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public OperatorId OperatorId { get; private set; }
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync(string dataDirectory)
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             // The Audit:DataDirectory section selects the file-backed stores
@@ -321,7 +306,6 @@ public class AuditRetentionTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -333,33 +317,6 @@ public class AuditRetentionTests
             };
             await AuthenticatedHost.LoginAsync(env.Http);
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()

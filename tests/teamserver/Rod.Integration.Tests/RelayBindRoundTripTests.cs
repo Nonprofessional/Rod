@@ -1,13 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +35,6 @@ public class RelayBindRoundTripTests
     public async Task RelayBind_CarriesAnUnmodifiedToolThroughTheTunnel_AndAttributesTheFlow()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
@@ -49,15 +43,11 @@ public class RelayBindRoundTripTests
         // operator-side tool below never opens a socket to it -- everything
         // crosses the tunnel.
         await using var thirdHost = EchoHost.Start();
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.forward"));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(
+            env.HttpPort, implant.Id.ToString(), new[] { "tunnel.forward" });
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         // The tunnel opens like any other task; the implant bridges it to a
         // TCP connection of its own to the third host.
@@ -74,7 +64,7 @@ public class RelayBindRoundTripTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
 
-        var request = await NextTaskRequestAsync(call, issuedBody!.TaskId);
+        var request = await NextTaskRequestAsync(beacon, issuedBody!.TaskId);
         Assert.Equal("tunnel.forward", request.Verb);
         using var tunnel = new TcpClient();
         await tunnel.ConnectAsync(IPAddress.Loopback, thirdHost.Port);
@@ -102,13 +92,13 @@ public class RelayBindRoundTripTests
         // The tool's bytes arrive on the channel as ChannelInput -- the relay
         // drove them through the same enqueue the input route uses -- and the
         // implant relays them to the third host, whose answer streams back.
-        var input = await NextChannelInputAsync(call, request.TaskId);
+        var input = await NextChannelInputAsync(beacon, request.TaskId);
         Assert.Equal("ping", Encoding.UTF8.GetString(input.Data.Span));
         await peerStream.WriteAsync(Encoding.UTF8.GetBytes("ping"));
         var buffer = new byte[16 * 1024];
         var echoed = await peerStream.ReadAsync(buffer);
         Assert.Equal("ping", Encoding.UTF8.GetString(buffer, 0, echoed));
-        await call.RequestStream.WriteAsync(OutputFrame(request.TaskId, "ping"));
+        await beacon.SendFramesAsync(new[] { OutputFrame(request.TaskId, "ping") });
 
         // The answer lands on the tool's socket raw -- the bytes the channel
         // carried, not a transcript projection of them.
@@ -119,16 +109,16 @@ public class RelayBindRoundTripTests
         // implant half-closes the tunnel, the third host ends its side, and
         // the tunnel's final TaskResult closes the task and the relay.
         tool.Client.Shutdown(SocketShutdown.Send);
-        var eof = await NextChannelInputAsync(call, request.TaskId);
+        var eof = await NextChannelInputAsync(beacon, request.TaskId);
         Assert.True(eof.Eof);
         tunnel.Client.Shutdown(SocketShutdown.Send);
         Assert.Equal(0, await peerStream.ReadAsync(buffer));
-        await call.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await beacon.SendFramesAsync(new[] { ResultFrame(new TaskResult
         {
             TaskId = request.TaskId,
             Outcome = TaskOutcome.Succeeded,
             Output = "tunnel closed: relayed 4 bytes up, 4 bytes down",
-        }));
+        }) });
 
         // The attributed arc: issued, dispatched, bound, completed, closed --
         // and not one ChannelInput event, because the tool never posted any.
@@ -147,18 +137,15 @@ public class RelayBindRoundTripTests
         Assert.NotNull(fetched);
         Assert.Equal("Completed", fetched!.Status);
         Assert.Equal("pingtunnel closed: relayed 4 bytes up, 4 bytes down", fetched.Output);
-
-        await call.RequestStream.CompleteAsync();
     }
 
     [Fact]
     public async Task RelayBind_IsRefusedForAnythingButADispatchedTunnel()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
-        var (implant, _, _) = await EnrollImplantAsync(implants, ca, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
 
         await AuthenticatedHost.LoginAsync(env.Http);
 
@@ -197,17 +184,11 @@ public class RelayBindRoundTripTests
         Assert.Equal(StatusCodes.Status400BadRequest, (int)badAddress.StatusCode);
     }
 
-    // The deadline every downstream read waits under: a frame that never
-    // arrives must fail the test, not park it forever.
-    private static readonly TimeSpan ReadDeadline = TimeSpan.FromSeconds(30);
-
-    private static async Task<TaskRequest> NextTaskRequestAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call, string taskId)
+    private static async Task<TaskRequest> NextTaskRequestAsync(WsBeaconClient beacon, string taskId)
     {
         while (true)
         {
-            Assert.True(await MoveNextAsync(call, "task request"), "stream ended early");
-            var frame = call.ResponseStream.Current;
+            var frame = await beacon.ReceiveFrameAsync();
             if (frame.Kind != FrameKind.Unspecified)
                 continue;
             var request = TaskRequest.Parser.ParseFrom(frame.Payload);
@@ -216,13 +197,11 @@ public class RelayBindRoundTripTests
         }
     }
 
-    private static async Task<ChannelInput> NextChannelInputAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call, string taskId)
+    private static async Task<ChannelInput> NextChannelInputAsync(WsBeaconClient beacon, string taskId)
     {
         while (true)
         {
-            Assert.True(await MoveNextAsync(call, "channel input"), "stream ended early");
-            var frame = call.ResponseStream.Current;
+            var frame = await beacon.ReceiveFrameAsync();
             if (frame.Kind != FrameKind.ChannelInput)
                 continue;
             var input = ChannelInput.Parser.ParseFrom(frame.Payload);
@@ -231,23 +210,6 @@ public class RelayBindRoundTripTests
         }
     }
 
-    private static async Task<bool> MoveNextAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call, string awaiting)
-    {
-        using var deadline = new CancellationTokenSource(ReadDeadline);
-        try
-        {
-            return await call.ResponseStream.MoveNext(deadline.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
-        }
-        catch (RpcException) when (deadline.IsCancellationRequested)
-        {
-            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
-        }
-    }
 
     // Reads exactly count bytes; a relay delivering the tool's answer is a
     // byte-exact bridge, and a short read would hide a split delivery.
@@ -257,7 +219,7 @@ public class RelayBindRoundTripTests
         var offset = 0;
         while (offset < count)
         {
-            using var deadline = new CancellationTokenSource(ReadDeadline);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var read = await stream.ReadAsync(received.AsMemory(offset), deadline.Token);
             if (read <= 0)
                 throw new IOException("the relay closed the socket before the answer arrived");
@@ -280,8 +242,8 @@ public class RelayBindRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock, ImplantClass @class)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Stage2)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
@@ -289,25 +251,8 @@ public class RelayBindRoundTripTests
             now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
-
-    private static Frame HandshakeFrame(ImplantId implant, params string[] capabilities)
-    {
-        var request = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = implant.ToString(),
-        };
-        request.Capabilities.Add(capabilities);
-        return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
-    }
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
@@ -438,13 +383,11 @@ public class RelayBindRoundTripTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public OperatorId OperatorId { get; private set; }
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
@@ -453,7 +396,6 @@ public class RelayBindRoundTripTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -464,33 +406,6 @@ public class RelayBindRoundTripTests
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
             };
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()
