@@ -389,6 +389,48 @@ public class RustImplantEndToEndTests
         Assert.Contains("shell exited", done.Output);
     }
 
+    [RustFact]
+    public async Task RustImplant_EnrollsAndPollsOverClassicDns()
+    {
+        // The datagram family end to end: a runtime-created dns listener owns
+        // the UDP socket, the bake dials it typed, and the whole lifecycle --
+        // the chunked enroll exchange, presence polls, a short-argument task,
+        // the chunked result with its delivery confirmation -- rides TXT
+        // queries under the zone.
+        var zone = "e2e-dns.test";
+        await using var implant = await BuildRunAndAwaitOnlineAsync(
+            "poll", bindFront: env => DnsFrontAsync(env, zone));
+        var env = implant.Env;
+
+        var marker = "rod-dns-" + Guid.NewGuid().ToString("N")[..8];
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(implant.ImplantId, "shell.exec", $"echo {marker}"));
+        issued.EnsureSuccessStatusCode();
+        var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+
+        var done = await WaitForTaskAsync(env, task!.TaskId,
+            body => body.Status == "Completed", implant.Stderr, "the DNS task's completion");
+        Assert.Equal("Succeeded", done.Outcome);
+        Assert.Contains(marker, done.Output);
+    }
+
+    /// Creates the engagement's runtime dns listener on a free loopback port
+    /// and returns the typed dial the build bakes.
+    private static async Task<string> DnsFrontAsync(TestEnv env, string zone)
+    {
+        var port = TestSupport.GetFreeUdpPort();
+        var created = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/listeners",
+            new Rod.Transport.Endpoints.ListenerEndpoints.CreateListenerRequest(
+                Name: "e2e-dns",
+                Transport: "dns",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: zone));
+        created.EnsureSuccessStatusCode();
+        return $"dns://127.0.0.1:{port}/{zone}";
+    }
+
     /// Creates the engagement's runtime tcp listener on a free loopback port
     /// and returns the typed dial the build bakes -- the operator path an
     /// engagement's own socket takes (bind-then-register, the public
@@ -549,15 +591,19 @@ public class RustImplantEndToEndTests
         TestEnv env, string taskId, Func<TaskBody, bool> done, StringBuilder stderr, string awaiting)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+        TaskBody? last = null;
         while (DateTimeOffset.UtcNow < deadline)
         {
             var read = await env.Http.GetFromJsonAsync<TaskBody>(
                 $"/engagements/{env.EngagementId}/tasks/{taskId}");
+            if (read is not null)
+                last = read;
             if (read is not null && done(read))
                 return read;
             await Task.Delay(500);
         }
-        Assert.Fail($"timed out waiting for {awaiting}. Implant stderr:\n{stderr}");
+        Assert.Fail(
+            $"timed out waiting for {awaiting}. Task status: {last?.Status} {last?.Outcome} {last?.Output}. Implant stderr:\n{stderr}");
         throw new InvalidOperationException("unreachable");
     }
 

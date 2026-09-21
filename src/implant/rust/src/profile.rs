@@ -157,8 +157,13 @@ impl Profile {
 }
 
 /// Applies the profile's enroll path onto an enroll URL: the path is
-/// replaceable per the malleable profile; scheme and authority stand.
+/// replaceable per the malleable profile; scheme and authority stand. The
+/// non-web families carry their own dial data in the path -- the DNS zone
+/// above all -- so the web knob never touches them.
 pub fn apply_path(url: &str, path: &str) -> String {
+    if url.starts_with("tcp://") || url.starts_with("dns://") || url.starts_with("doh://") {
+        return url.to_string();
+    }
     let Some(scheme_at) = url.find("://") else {
         return url.to_string();
     };

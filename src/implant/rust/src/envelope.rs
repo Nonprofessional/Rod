@@ -17,6 +17,12 @@ pub const CONTACT_RESPONSE_AAD: &str = "rod-contact-response-v1";
 /// body, so one exchange's ciphertext must not replay as the other's.
 pub const SOCKET_ENROLL_REQUEST_AAD: &str = "rod-enroll-v1";
 pub const SOCKET_ENROLL_RESPONSE_AAD: &str = "rod-enroll-response-v1";
+/// The DNS carriage's purpose tags: one per direction the datagram wire
+/// carries, so no purpose's ciphertext reflects down the resolver chain as
+/// another's.
+pub const DNS_POLL_AAD: &str = "rod-dns-poll-v1";
+pub const DNS_RESULT_AAD: &str = "rod-dns-result-v1";
+pub const DNS_CHANNEL_AAD: &str = "rod-dns-channel-v1";
 
 /// The baked envelope key split into its halves: standard base64 of
 /// keyId(16) || key(32); None when absent or malformed -- a bad bake falls
@@ -70,6 +76,23 @@ pub fn seal_contact_body(
     base64::engine::general_purpose::STANDARD
         .encode(seal_body(plaintext, key_id, key, aad))
         .into_bytes()
+}
+
+/// The raw R1 body (no base64): the DNS carriage's TXT payloads and
+/// upstream chunks carry the sealed shape as raw bytes inside their base32
+/// labels.
+pub fn seal_raw_body(plaintext: &[u8], key_id: &[u8; 16], key: &[u8; 32], aad: &str) -> Vec<u8> {
+    seal_body(plaintext, key_id, key, aad)
+}
+
+/// Opens what [`seal_raw_body`] sealed.
+pub fn try_open_raw_body(
+    body: &[u8],
+    key_id: &[u8; 16],
+    key: &[u8; 32],
+    aad: &str,
+) -> Option<Vec<u8>> {
+    try_open_body(body, key_id, key, aad)
 }
 
 /// Opens what [`seal_contact_body`] sealed: None on any mismatch (wrong key,

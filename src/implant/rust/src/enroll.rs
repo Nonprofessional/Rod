@@ -183,6 +183,9 @@ pub fn enroll_any(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enroll
     if url.starts_with("tcp://") {
         return enroll_over_socket(url, profile, keys);
     }
+    if url.starts_with("dns://") || url.starts_with("doh://") {
+        return crate::transport::dns::enroll_over_dns(url, profile, keys);
+    }
     enroll(url, profile, keys)
 }
 

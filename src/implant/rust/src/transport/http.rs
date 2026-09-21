@@ -39,7 +39,11 @@ impl Contact for Poll {
         // A schemed web URL polls on a poll bake (the stream bake's web URL
         // belongs to the WebSocket carriage; the socket family's dial
         // belongs to the raw-TCP carriage).
-        url.contains("://") && !url.starts_with("tcp") && mode != "stream"
+        url.contains("://")
+            && !url.starts_with("tcp")
+            && !url.starts_with("dns")
+            && !url.starts_with("doh")
+            && mode != "stream"
     }
 
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {

