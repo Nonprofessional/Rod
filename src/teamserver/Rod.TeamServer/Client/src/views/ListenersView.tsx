@@ -53,7 +53,6 @@ const TRANSPORT_GROUPS: readonly {
       { value: 'https', label: 'HTTPS — TLS web front (recommended)', port: '443' },
       { value: 'mtls', label: 'mTLS — TLS + client certs', port: '443' },
       { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '8080' },
-      { value: 'quic', label: 'QUIC — UDP/443, TLS 1.3', port: '443' },
       { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '443' },
       { value: 'smb', label: 'SMB — named pipe, internal segment', port: '' },
     ],
@@ -130,7 +129,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // the pipe path. One placeholder/title per shape, so the field itself
   // names what the transport's validation will demand.
   const isDnsFamily = transport === 'dns' || transport === 'doh'
-  const isBareDial = transport === 'quic' || transport === 'tcp' || transport === 'shellcatch'
+  const isBareDial = transport === 'tcp' || transport === 'shellcatch'
   const endpointPlaceholder = isSmb
     ? '\\\\target\\pipe\\rod-pipe — the pipe implants open'
     : isDnsFamily
@@ -206,7 +205,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // Proposes the public endpoint from the current picks: the dialable host
   // (the chosen interface, or the host's first dialable NIC when the bind
   // is the wildcard), the bind port, and the transport's own scheme where
-  // one applies. The socket-owning family (quic, tcp, shellcatch) stores
+  // one applies. The socket-owning family (tcp, shellcatch) stores
   // the bare host:port -- the scheme is the bake's completion, not the
   // listener record's shape. A redirector replaces it later -- this fills
   // the common no-redirector shape so the field never blocks on typing.
@@ -222,7 +221,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     if (!host || !bindPort.trim()) return
     const dial = hostPort(host, bindPort.trim())
     setPublicEndpoint(
-      transport === 'tcp' || transport === 'quic' || transport === 'shellcatch'
+      transport === 'tcp' || transport === 'shellcatch'
         ? dial
         : `${transport === 'http' ? 'http' : 'https'}://${dial}`,
     )

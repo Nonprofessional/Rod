@@ -53,11 +53,10 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 const RECENT_BUILDS_SHOWN = 5
 
 // The transports an implant can enroll through -- the HTTP-shaped fronts,
-// QUIC (architecture.md Sec 8, enrollment over QUIC), the socket family
-// (enrollment over the stream contact), and the DNS family (enrollment
-// over DNS: the chunked TXT exchange a DNS-only target runs); the listener
-// select offers these and greys everything else out.
-const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'quic', 'smb', 'tcp', 'dns', 'doh'])
+// the socket family (enrollment over the stream contact), and the DNS
+// family (enrollment over DNS: the chunked TXT exchange a DNS-only target
+// runs); the listener select offers these and greys everything else out.
+const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'smb', 'tcp', 'dns', 'doh'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.
@@ -338,7 +337,7 @@ export function PayloadBuildView({
                 // open the section it lives in.
                 if (e.target.value === '') setAdvancedOpen(true)
               }}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped, QUIC, and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are contact carriers only (pair one below)."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are contact carriers only (pair one below)."
             >
               <option value="">-- none: public endpoint under Advanced --</option>
               {listeners.map((l) =>
@@ -360,7 +359,7 @@ export function PayloadBuildView({
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS/QUIC listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
+                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
               >
                 <option value="">-- same front as enrollment --</option>
                 {carriers.map((l) => (
@@ -487,12 +486,12 @@ export function PayloadBuildView({
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://redirect.example.test — or quic://, tcp://, smb://, dns://, doh://"
+                placeholder="https://redirect.example.test — or tcp://, smb://, dns://, doh://"
                 disabled={!!listenerId}
                 title={
                   listenerId
                     ? 'An enroll + contact listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
-                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), quic://host:port, tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
+                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
                 }
               />
             </label>
@@ -759,11 +758,10 @@ function BuildSummary({
   const front = listener?.publicEndpoint ?? (endpoint.trim() || 'the typed endpoint under Advanced')
   const via = listener ? `${listener.name} (${listener.transport})` : 'manual endpoint'
   const cadence = `every ${sleep.trim() || '30'}s ± ${jitter.trim() || '10'}s`
-  const quic = listener?.transport === 'quic' || /^quic:\/\//i.test(endpoint.trim())
   const mtls = listener?.transport === 'mtls'
   // The socket family's dial shape, from the listener or a typed endpoint.
-  const socket = !quic && (listener?.transport === 'smb' || listener?.transport === 'tcp'
-    || /^tcp:\/\//i.test(endpoint.trim()) || /^smb:\/\//i.test(endpoint.trim()))
+  const socket = listener?.transport === 'smb' || listener?.transport === 'tcp'
+    || /^tcp:\/\//i.test(endpoint.trim()) || /^smb:\/\//i.test(endpoint.trim())
   const socketName = listener?.transport === 'smb' || /^smb:\/\//i.test(endpoint.trim()) ? 'named-pipe' : 'socket'
   // The DNS family as the enroll front itself (the DNS-only target's shape).
   const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh'
@@ -771,21 +769,17 @@ function BuildSummary({
 
   const contact = carrier
     ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
-    : quic
-      ? mode === 'poll'
-        ? `one QUIC session per contact, ${cadence}, on ${front}`
-        : `one QUIC session on ${front}, enrollment on the same socket`
-      : socket
-        ? `one ${socketName} connection per contact, ${cadence}, on ${front}`
-        : dnsFront
-          ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
-          : mtls
-            ? mode === 'poll'
-              ? `gRPC drain cycles ${cadence} on ${front} (client-cert TLS)`
-              : `gRPC stream on ${front} (client-cert TLS)`
-            : mode === 'poll'
-              ? `sealed envelope POSTs ${cadence} on ${front}`
-              : `WebSocket beacon held open on ${front}`
+    : socket
+      ? `one ${socketName} connection per contact, ${cadence}, on ${front}`
+      : dnsFront
+        ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
+        : mtls
+          ? mode === 'poll'
+            ? `gRPC drain cycles ${cadence} on ${front} (client-cert TLS)`
+            : `gRPC stream on ${front} (client-cert TLS)`
+          : mode === 'poll'
+            ? `sealed envelope POSTs ${cadence} on ${front}`
+            : `WebSocket beacon held open on ${front}`
 
   const interactive = carrier
     ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
@@ -793,11 +787,9 @@ function BuildSummary({
         ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
         : mode === 'poll'
           ? 'store-and-forward over those contacts — input rides the next cycle (sleep 0 approaches live)'
-          : quic
-            ? 'live channel over the QUIC stream'
-            : mtls
-              ? 'live channel over the gRPC stream'
-              : 'live channel over the WebSocket beacon'
+          : mtls
+            ? 'live channel over the gRPC stream'
+            : 'live channel over the WebSocket beacon'
 
   return (
     <div className="build-summary" title="What this build bakes, composed from the picks above">

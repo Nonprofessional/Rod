@@ -59,47 +59,6 @@ internal static class TestSupport
         }
     }
 
-    /// <summary>
-    /// The installed libmsquic's version string, or null when no package
-    /// manager reports it (a non-packaged library, or a platform without dpkg
-    /// or rpm on PATH) -- null means "cannot judge", and the caller runs
-    /// rather than skips. This is what <c>QuicFactAttribute</c> reads to
-    /// stand down on the known-broken releases.
-    /// </summary>
-    internal static string? LibMsQuicVersion()
-    {
-        foreach (var query in new[]
-        {
-            "dpkg-query -W -f=${Version} libmsquic",
-            "rpm -q --qf %{VERSION} libmsquic",
-        })
-        {
-            try
-            {
-                var split = query.Split(' ', 2);
-                var psi = new ProcessStartInfo(split[0], split[1])
-                {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                };
-                using var process = Process.Start(psi);
-                if (process is null)
-                    continue;
-                var output = process.StandardOutput.ReadToEnd().Trim();
-                process.WaitForExit(5000);
-                if (process.ExitCode == 0 && output.Length > 0)
-                    return output;
-            }
-            catch
-            {
-                // Not this package manager; try the next.
-            }
-        }
-
-        return null;
-    }
-
     // Builds a "<start>-<end>" port range for a recon.portscan argument that
     // covers a tight window around the given open port, so the scan finishes
     // promptly while still reporting the port as open. Clamped to [1, 65535].
@@ -173,7 +132,7 @@ internal static class TestSupport
 
     // The UDP sibling of GetFreeTcpPort: the same process-wide counter and
     // probe discipline (below the ephemeral zone, skip held ports) for the
-    // quic listener's datagram socket.
+    // dns listener's datagram socket.
     internal static int GetFreeUdpPort()
     {
         lock (PortGate)

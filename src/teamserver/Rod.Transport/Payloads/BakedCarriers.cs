@@ -40,8 +40,7 @@ public static class BakedCarriers
         // mTLS authority dials the live stream, while the DNS family's
         // dns:// or doh:// dial names the TXT poll carrier -- the one
         // carrier with no channel support at all. Every other endpoint
-        // must classify as a schemed web URL, the QUIC dial, or the set is
-        // undeclared.
+        // must classify as a schemed web URL or the set is undeclared.
         if (!string.IsNullOrWhiteSpace(payload.BeaconEndpoint))
         {
             var beacon = payload.BeaconEndpoint.Trim();
@@ -75,23 +74,16 @@ public static class BakedCarriers
     }
 
     // Adds the carrier an endpoint's shape dials: a schemed http(s) endpoint
-    // runs the envelope POST cycle, the QUIC dial (enroll front or fallback --
-    // enrollment over QUIC, architecture.md Sec 8) serves the native stream
-    // carrier, the DNS family's dns:// or doh:// dial serves the TXT poll
-    // carrier, and the socket family's tcp:// or smb:// dial serves the
-    // one-connection-one-contact message-pipe carrier; an empty field adds
-    // nothing, and an unrecognized shape returns false so the caller
-    // undeclares the whole set instead of guessing.
+    // runs the envelope POST cycle, the DNS family's dns:// or doh:// dial
+    // serves the TXT poll carrier, and the socket family's tcp:// or smb://
+    // dial serves the one-connection-one-contact message-pipe carrier; an
+    // empty field adds nothing, and an unrecognized shape returns false so
+    // the caller undeclares the whole set instead of guessing.
     private static bool TryAddEndpoint(List<string> names, string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
             return true;
         var trimmed = endpoint.Trim();
-        if (trimmed.StartsWith("quic://", StringComparison.OrdinalIgnoreCase))
-        {
-            Add(names, TransportCapabilities.BeaconStreamName);
-            return true;
-        }
         if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("smb://", StringComparison.OrdinalIgnoreCase))
         {

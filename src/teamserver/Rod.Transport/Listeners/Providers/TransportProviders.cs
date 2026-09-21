@@ -13,7 +13,6 @@ using Rod.CoreState.Transports;
 using Rod.Transport.Channels;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners.Dns;
-using Rod.Transport.Listeners.Quic;
 using Rod.Transport.Listeners.ShellCatch;
 using Rod.Transport.Listeners.Streams;
 
@@ -21,9 +20,9 @@ namespace Rod.Transport.Listeners.Providers;
 
 /// <summary>
 /// The transport-to-provider registry: the wire name a listener names, the
-/// provider that binds it. The in-tree seven register themselves in the
+/// provider that binds it. The in-tree transports register themselves in the
 /// static constructor -- the HTTP family as one Kestrel-publication shape
-/// under its three TLS postures, the socket-owning four as hosted-service
+/// under its TLS postures, the socket-owning family as hosted-service
 /// shapes -- and a transport arriving later registers the same way instead
 /// of editing an enumeration and every switch over it. The same
 /// open-registration shape the carrier capability table uses on the
@@ -78,42 +77,6 @@ public static class TransportProviders
                 services.GetRequiredService<StreamBeaconBridge>(),
                 registry,
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<TcpListenerService>())));
-
-        // The socket-owning family's duplex variant: a QUIC listener over the
-        // UDP reservation, for egress that passes UDP/443 but blocks TCP. The
-        // public endpoint stays the bare host:port the family dials; the
-        // scheme the transport completes it with is its own (quic://), the
-        // URL shape the artifact's contact client picks by. The carrier is
-        // the native stream carrier: one connection is one live session
-        // (server-push tasking, live channels), not the family's poll cycle.
-        // The opening stream also carries enrollment (Sec 8, enrollment over
-        // QUIC), so the service drives the same shared enrollment flow the
-        // web route drives, scoped by the listener's own engagement.
-        Register(new HostedServiceTransportProvider("quic",
-            new HostedBindShape(BindReservation.UdpPort, BarePipeName: false, PublicEndpointShape.HostPort),
-            new[] { TransportCapabilities.BeaconStreamName },
-            (services, registry, listener) => new QuicListenerService(
-                listener,
-                services.GetRequiredService<HandshakeService>(),
-                services.GetRequiredService<ISessionRegistry>(),
-                services.GetRequiredService<TaskService>(),
-                services.GetRequiredService<IAuditStore>(),
-                services.GetRequiredService<TimeProvider>(),
-                services.GetRequiredService<ITaskDispatchWake>(),
-                services.GetRequiredService<LiveChannelHub>(),
-                services.GetRequiredService<Channels.DegradedChannelHub>(),
-                services.GetRequiredService<TaskRelayHub>(),
-                services.GetRequiredService<SocksProxyHub>(),
-                services.GetRequiredService<BeaconIngest>(),
-                services.GetRequiredService<BeaconTasking>(),
-                services.GetRequiredService<IImplantCertificateAuthority>(),
-                registry,
-                services.GetRequiredService<EnrollmentService>(),
-                services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>(),
-                services.GetRequiredService<IPayloadStore>(),
-                services.GetRequiredService<Endpoints.EnvelopeContactKeys>(),
-                services.GetRequiredService<ILoggerFactory>().CreateLogger<QuicListenerService>()),
-            publicEndpointScheme: "quic"));
 
         // The DNS grammar's second carriage (RFC 8484): the same TXT
         // contact wire the UDP listener answers, as DNS wire messages over
