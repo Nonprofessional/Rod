@@ -1,10 +1,5 @@
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,22 +29,16 @@ public class ExfilRoundTripTests
     public async Task ExfilPush_ChunksRoundTrip_ToEngagementScopedArtifact()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var artifacts = env.Host.Services.GetRequiredService<IArtifactStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
         // Open the beacon stream and complete the handshake first.
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         // Operator tasks the implant over HTTP. exfil.push is Stage-2 gated, and
         // the enrolled implant is Stage-2, so issuance succeeds.
@@ -62,8 +51,7 @@ public class ExfilRoundTripTests
         Assert.Equal("exfil.push", issuedBody!.Verb);
 
         // The server pushes the task downstream; the implant reads it.
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
         Assert.Equal("exfil.push", request.Verb);
 
         // The implant writes back a TaskResult (kind = TASK_RESULT), then the
@@ -75,7 +63,7 @@ public class ExfilRoundTripTests
             Outcome = TaskOutcome.Succeeded,
             Output = "pushed loot.txt: 18 bytes, 1 chunks",
         };
-        await call.RequestStream.WriteAsync(ResultFrame(result));
+        await beacon.SendFramesAsync(new[] { ResultFrame(result) });
 
         var payload = System.Text.Encoding.UTF8.GetBytes("loot file contents\n");
         var chunk = new ExfilChunk
@@ -87,7 +75,7 @@ public class ExfilRoundTripTests
             Terminal = true,
             Data = ByteString.CopyFrom(payload),
         };
-        await call.RequestStream.WriteAsync(ExfilChunkFrame(chunk));
+        await beacon.SendFramesAsync(new[] { ExfilChunkFrame(chunk) });
 
         // Wait for the server to capture the result and the exfil chunk. The
         // three-event task arc (Issued/Dispatched/Completed) plus the
@@ -119,8 +107,6 @@ public class ExfilRoundTripTests
         // The engagement-wide trail also reflects the capture.
         var trail = await audit.ListAsync(implant.EngagementId.Value);
         Assert.Contains(trail, e => e.Kind == AuditEventKind.ExfilCaptured);
-
-        await call.RequestStream.CompleteAsync();
     }
 
     [Fact]
@@ -130,21 +116,15 @@ public class ExfilRoundTripTests
         // the third closes the stream. The server must reassemble them in
         // sequence order and store the full payload as one artifact.
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var artifacts = env.Host.Services.GetRequiredService<IArtifactStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
@@ -153,17 +133,16 @@ public class ExfilRoundTripTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
 
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
         var taskId = Guid.Parse(request.TaskId);
 
         // Result first.
-        await call.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await beacon.SendFramesAsync(new[] { ResultFrame(new TaskResult
         {
             TaskId = request.TaskId,
             Outcome = TaskOutcome.Succeeded,
             Output = "pushed blob.bin",
-        }));
+        }) });
 
         // Three chunks: the first chunk size mirrors the implant's 512 KiB slice,
         // kept small here so the test is fast while still exercising the
@@ -179,7 +158,7 @@ public class ExfilRoundTripTests
         Array.Copy(partB, 0, full, partA.Length, partB.Length);
         Array.Copy(partC, 0, full, partA.Length + partB.Length, partC.Length);
 
-        await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
+        await beacon.SendFramesAsync(new[] { ExfilChunkFrame(new ExfilChunk
         {
             TaskId = request.TaskId,
             Name = "blob.bin",
@@ -187,8 +166,8 @@ public class ExfilRoundTripTests
             Sequence = 1,
             Terminal = false,
             Data = ByteString.CopyFrom(partA),
-        }));
-        await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
+        }) });
+        await beacon.SendFramesAsync(new[] { ExfilChunkFrame(new ExfilChunk
         {
             TaskId = request.TaskId,
             Name = "blob.bin",
@@ -196,8 +175,8 @@ public class ExfilRoundTripTests
             Sequence = 2,
             Terminal = false,
             Data = ByteString.CopyFrom(partB),
-        }));
-        await call.RequestStream.WriteAsync(ExfilChunkFrame(new ExfilChunk
+        }) });
+        await beacon.SendFramesAsync(new[] { ExfilChunkFrame(new ExfilChunk
         {
             TaskId = request.TaskId,
             Name = "blob.bin",
@@ -205,7 +184,7 @@ public class ExfilRoundTripTests
             Sequence = 3,
             Terminal = true,
             Data = ByteString.CopyFrom(partC),
-        }));
+        }) });
 
         await WaitUntilAsync(async () => (await artifacts.ForTaskAsync(taskId)).Count >= 1);
 
@@ -213,12 +192,10 @@ public class ExfilRoundTripTests
         Assert.Equal("blob.bin", captured.Name);
         Assert.Equal(full, captured.Content);
         Assert.Equal(full.Length, captured.Size);
-
-        await call.RequestStream.CompleteAsync();
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
@@ -226,21 +203,7 @@ public class ExfilRoundTripTests
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
-    }
-
-    private static Frame HandshakeFrame(ImplantId implant, int major, int minor)
-    {
-        var request = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = major, Minor = minor },
-            ImplantId = implant.ToString(),
-            Capabilities = { "exfil.push", "exfil.stage" },
-        };
-        return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
+        return implant;
     }
 
     private static Frame ResultFrame(TaskResult result)
@@ -256,9 +219,6 @@ public class ExfilRoundTripTests
             Payload = ByteString.CopyFrom(chunk.ToByteArray()),
             Kind = FrameKind.ExfilChunk,
         };
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
     // Polls until condition is true or the timeout elapses. The capture/audit
     // append runs on the stream thread, asynchronously to the HTTP readback, so
@@ -290,13 +250,11 @@ public class ExfilRoundTripTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
@@ -305,7 +263,6 @@ public class ExfilRoundTripTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -316,33 +273,6 @@ public class ExfilRoundTripTests
             };
             await AuthenticatedHost.LoginAsync(env.Http);
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()

@@ -1,10 +1,7 @@
 using System.Net.Http.Json;
-using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,41 +19,31 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance: a connecting implant appears online in its
-/// engagement. Drives the full slice end to end through a real Kestrel mTLS
-/// endpoint -- the implant opens the gRPC beacon stream presenting its bound
-/// client certificate, completes the handshake, and the operator sees it online
-/// via the presence query (now backed by the session registry). Failure
-/// paths assert each refusal maps to the right wire status.
-///
-/// This is the real mTLS handshake the rest of only inspected certificates
-/// for: the client cert chains to the dev CA, and the server's identity check
-/// binds it to the enrolled engagement (architecture.md Sec 9).
+/// engagement. Drives the full slice end to end through a real Kestrel
+/// endpoint -- the implant opens the WebSocket beacon stream, completes the
+/// handshake, and the operator sees it online via the presence query (now
+/// backed by the session registry). Failure paths assert each refusal maps
+/// to the right wire status, and the file-backed CA path proves enrollment
+/// binds to the externally provisioned CA through the tasking signature it
+/// issues.
 /// </summary>
 public class HandshakePresenceTests
 {
     [Fact]
-    public async Task Handshake_MtlsImplant_AppearsOnlineInEngagement()
+    public async Task Handshake_Implant_AppearsOnlineInEngagement()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        // Enroll an implant directly through the core ports, then issue a leaf
-        // certificate over a key pair we keep so we can present it in the mTLS
-        // handshake (IssueAsync discards the key; IssueWithKeyAsync keeps it).
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
+        using var beacon = await WsBeaconClient.ConnectAsync(
+            env.HttpPort, implant.Id.ToString(), new[] { "shell.exec", "file.push" });
 
         // Receive the server's handshake response.
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var response = ParseResponse(call.ResponseStream.Current);
+        var response = await beacon.ReceiveHandshakeAsync();
         Assert.Equal(HandshakeStatus.Ok, response.Status);
         Assert.Equal(ProtocolVersions.Major, response.Version.Major);
         Assert.Equal(implant.EngagementId.ToString(), response.EngagementId);
@@ -78,8 +65,7 @@ public class HandshakePresenceTests
         // implant's live channel, not one TCP connection -- a poll-mode implant
         // ends every contact stream and reconnects seconds later, so liveness
         // is last-seen based and the staleness sweeper is the close path.
-        await call.RequestStream.CompleteAsync();
-        await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()); // server ends the stream
+        beacon.Dispose();
         await Task.Delay(50);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id));
 
@@ -91,59 +77,20 @@ public class HandshakePresenceTests
     }
 
     [Fact]
-    public async Task Handshake_RefusesVersionMismatch_OverMtls()
+    public async Task Handshake_RefusesVersionMismatch()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
+        var implant = await EnrollImplantAsync(implants, clock);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
+        using var beacon = await WsBeaconClient.ConnectAsync(
+            env.HttpPort, implant.Id.ToString(), new[] { "shell.exec", "file.push" },
+            handshakeVersion: (2, 0));
 
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, major: 2, minor: 0));
-
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var response = ParseResponse(call.ResponseStream.Current);
+        var response = await beacon.ReceiveHandshakeAsync();
         Assert.Equal(HandshakeStatus.VersionMismatch, response.Status);
-    }
-
-    [Fact]
-    public async Task Handshake_RejectsUnknownClientCertificate_AtTls()
-    {
-        // A client cert that does NOT chain to the dev CA is refused at the TLS
-        // layer, before any beacon handler runs -- this is the "unknown implant"
-        // path for mTLS. The connection never completes the gRPC call.
-        await using var env = await TestEnv.StartAsync();
-
-        using var rogueKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var rogue = BuildSelfSignedLeaf(rogueKey, "rogue-implant", "rogue-engagement");
-
-        using var channel = env.ConnectBeacon(rogue, rogueKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        // The server refuses the TLS handshake (the cert does not chain to the
-        // dev CA), so the connection is torn down before any beacon handler
-        // runs. Where that surfaces in the client stack depends on the .NET
-        // runtime patch and the exact frame the connection dies in: gRPC may
-        // own the failure (RpcException) or the HTTP/2 layer may give up first
-        // (HttpIOException). Both confirm the TLS refusal; accepting either
-        // keeps the assertion honest across runtimes instead of pinning it to
-        // whichever one the local machine happens to produce.
-        var thrown = await Record.ExceptionAsync(async () =>
-        {
-            await call.RequestStream.WriteAsync(HandshakeFrame(ImplantId.New(), 1, 0));
-            await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline());
-        });
-        Assert.NotNull(thrown);
-        Assert.True(
-            thrown is RpcException or HttpIOException,
-            $"Expected the TLS refusal to surface as RpcException or HttpIOException, " +
-            $"but got {thrown.GetType().FullName}: {thrown.Message}");
     }
 
     [Fact]
@@ -151,10 +98,11 @@ public class HandshakePresenceTests
     {
         // The production CA path (architecture.md Sec 9): when
         // Pki:CaCertificatePath and Pki:CaPrivateKeyPath are configured, the
-        // teamserver signs implant leaves with that externally provisioned CA.
-        // An implant enrolled through it completes the mTLS handshake -- its leaf
-        // chains to the configured CA, which is what the server trusts -- so
-        // enrollment binds to a non-dev CA chain.
+        // teamserver signs its tasking with that externally provisioned CA.
+        // The proof on the web posture is the signature itself: a task
+        // dispatched to the enrolled implant verifies under the external CA's
+        // public key, so enrollment bound the engagement to the configured CA
+        // chain -- no dev CA key was involved anywhere.
         using var dir = new TempDir();
         var (caCert, caKey) = BuildExternalCa();
         WritePem(dir, "ca.crt", Pem("CERTIFICATE", caCert.Export(X509ContentType.Cert)));
@@ -166,34 +114,37 @@ public class HandshakePresenceTests
             d["Pki:CaPrivateKeyPath"] = Path.Combine(dir.Root, "ca.key");
         });
 
-        // The config-driven swap registered the file-backed authority, not the dev CA.
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
-        Assert.IsType<FileBackedCertificateAuthority>(ca);
         var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, 1, 0));
-
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var response = ParseResponse(call.ResponseStream.Current);
+        var implant = await EnrollImplantAsync(implants, clock);
+        using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        var response = await beacon.ReceiveHandshakeAsync();
         Assert.Equal(HandshakeStatus.Ok, response.Status);
 
-        // The leaf chained to the external CA at TLS and the implant is now online.
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id" });
+        issued.EnsureSuccessStatusCode();
+
+        // The dispatched tasking carries the external CA's signature over the
+        // canonical tuple -- the chain the enrollment bound, proven on the
+        // surviving surface.
+        var task = TaskRequest.Parser.ParseFrom(await beacon.ReceiveSingleFrameAsync());
+        using var rsa = caCert.GetRSAPublicKey()!;
+        Assert.True(rsa.VerifyData(
+            Canonical(implant.Id.ToString(), task.TaskId, task.Verb, task.Arguments),
+            task.Signature.Span,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pss));
         var online = await sessions.ListActiveAsync(implant.EngagementId);
         Assert.Single(online);
         Assert.Equal(implant.Id, online[0].ImplantId);
-
-        await call.RequestStream.CompleteAsync();
-        await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline());
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
@@ -201,120 +152,25 @@ public class HandshakePresenceTests
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
 
-    private static Frame HandshakeFrame(ImplantId implant, int major, int minor)
+    // The canonical signed encoding from rod.proto: for each field, the
+    // little-endian uint32 length of its UTF-8 bytes followed by the bytes.
+    private static byte[] Canonical(params string[] fields)
     {
-        var request = new HandshakeRequest
+        using var buffer = new MemoryStream();
+        foreach (var field in fields)
         {
-            Version = new ProtocolVersion { Major = major, Minor = minor },
-            ImplantId = implant.ToString(),
-            Capabilities = { "shell.exec", "file.push" },
-        };
-        return new Frame { Payload = Google.Protobuf.ByteString.CopyFrom(request.ToByteArray()) };
-    }
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
-
-    /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
-    /// plain-HTTP operator API. Disposed to tear the listener down.
-    /// </summary>
-    private sealed class TestEnv : IAsyncDisposable
-    {
-        public IHost Host { get; private set; } = null!;
-        public HttpClient Http { get; private set; } = null!;
-        public int MtlsPort { get; private set; }
-        public int HttpPort { get; private set; }
-
-        public static async Task<TestEnv> StartAsync(Action<Dictionary<string, string?>>? extendConfig = null)
-        {
-            var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
-            env.HttpPort = TestSupport.GetFreeTcpPort();
-
-            var config = AuthenticatedHost.BuildConfig(extendConfig);
-            env.Host = TransportHost.CreateHostBuilder(
-                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
-                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
-                    configuration: config)
-                .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
-                    .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
-                .Build();
-            await env.Host.StartAsync();
-
-            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
-            {
-                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
-            };
-            await AuthenticatedHost.LoginAsync(env.Http);
-            return env;
+            var bytes = System.Text.Encoding.UTF8.GetBytes(field);
+            var length = (uint)bytes.Length;
+            buffer.WriteByte((byte)length);
+            buffer.WriteByte((byte)(length >> 8));
+            buffer.WriteByte((byte)(length >> 16));
+            buffer.WriteByte((byte)(length >> 24));
+            buffer.Write(bytes);
         }
-
-        // Connects a gRPC channel that performs the client side of mTLS: presents
-        // the implant leaf (with its private key) and trusts the dev CA as the
-        // server identity. The CA is resolved from the same teamserver the channel
-        // connects to. The channel owns its handler and disposes it.
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            // Some leaves already carry their private key (e.g. a self-signed test
-            // cert); others are DER-only and need the key attached for the TLS
-            // handshake to prove possession.
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            Http?.Dispose();
-            if (Host is not null)
-                await Host.StopAsync();
-            Host?.Dispose();
-        }
-    }
-
-    // A self-signed leaf that does NOT chain to the dev CA, for the TLS-rejection
-    // path. Mimics the implant leaf shape (conventional subject + URI SAN
-    // identity entries, ECDSA key) but is its own issuer, so the server's
-    // ClientCertificateValidation refuses it.
-    private static X509Certificate2 BuildSelfSignedLeaf(ECDsa key, string implantId, string engagementId)
-    {
-        var notBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var notAfter = notBefore.AddDays(1);
-        var request = new CertificateRequest(
-            "CN=rod-implant,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256);
-        request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(
-                new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, critical: true));
-        request.CertificateExtensions.Add(ImplantSubjectAlternativeNames.Build(implantId, engagementId));
-        return request.CreateSelfSigned(notBefore, notAfter);
+        return buffer.ToArray();
     }
 
     // A self-signed CA root for the file-backed-authority path, written to PEM so
@@ -353,6 +209,49 @@ public class HandshakePresenceTests
             try { Directory.Delete(Root, recursive: true); }
             catch (IOException) { /* best effort */ }
             catch (UnauthorizedAccessException) { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// A real Kestrel teamserver with the plain-HTTP operator API and the
+    /// WebSocket beacon riding the same listener family. Disposed to tear
+    /// the listener down.
+    /// </summary>
+    private sealed class TestEnv : IAsyncDisposable
+    {
+        public IHost Host { get; private set; } = null!;
+        public HttpClient Http { get; private set; } = null!;
+        public int HttpPort { get; private set; }
+
+        public static async Task<TestEnv> StartAsync(Action<Dictionary<string, string?>>? extendConfig = null)
+        {
+            var env = new TestEnv();
+            env.HttpPort = TestSupport.GetFreeTcpPort();
+
+            var config = AuthenticatedHost.BuildConfig(extendConfig);
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
+                .ConfigureWebHost(webBuilder => webBuilder
+                    .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
+                .Build();
+            await env.Host.StartAsync();
+
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
+            };
+            await AuthenticatedHost.LoginAsync(env.Http);
+            return env;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Http?.Dispose();
+            if (Host is not null)
+                await Host.StopAsync();
+            Host?.Dispose();
         }
     }
 }

@@ -16,28 +16,42 @@ namespace Rod.Integration.Tests;
 /// </summary>
 internal sealed class WsBeaconClient : IDisposable
 {
+    // The inbound pump: a background read loops frames into a buffered
+    // channel, so a negative assertion can poll the queue with a short
+    // window without damaging the socket the way an abandoned receive
+    // would -- the streaming semantics the gRPC call gave the old
+    // harnesses.
+    private readonly System.Threading.Channels.Channel<Frame> _inbound =
+        System.Threading.Channels.Channel.CreateUnbounded<Frame>();
     private readonly WebSocket _ws;
 
-    private WsBeaconClient(WebSocket ws) => _ws = ws;
+    private WsBeaconClient(WebSocket ws)
+    {
+        _ws = ws;
+        _ = PumpAsync();
+    }
 
     /// <summary>
     /// Connects to the beacon route on the given plain-HTTP port and speaks
     /// first: the handshake frame advertising the capabilities the test's
     /// implant carries. The negotiation arms default off -- the bare
     /// handshake the round-trip harnesses always sent -- and a test pinning
-    /// an arm names it.
+    /// an arm names it. <paramref name="handshakeVersion"/> overrides the
+    /// protocol version the handshake claims (the mismatch refusal path).
     /// </summary>
     public static async Task<WsBeaconClient> ConnectAsync(
         int httpPort, string implantId, IReadOnlyList<string>? capabilities = null,
-        bool replayNonces = false, bool taskAcks = false)
+        bool replayNonces = false, bool taskAcks = false,
+        (int Major, int Minor)? handshakeVersion = null)
     {
         var ws = new ClientWebSocket();
         await ws.ConnectAsync(
             new Uri($"ws://127.0.0.1:{httpPort}/implants/beacon/stream"), CancellationToken.None);
         var client = new WsBeaconClient(ws);
+        var version = handshakeVersion ?? (1, 0);
         var handshake = new HandshakeRequest
         {
-            Version = new ProtocolVersion { Major = 1 },
+            Version = new ProtocolVersion { Major = version.Major, Minor = version.Minor },
             ImplantId = implantId,
             ReplayNonces = replayNonces,
             TaskAcks = taskAcks,
@@ -62,9 +76,32 @@ internal sealed class WsBeaconClient : IDisposable
     /// </summary>
     public async Task<Frame> ReceiveFrameAsync()
     {
-        var frames = Parse(await ReceiveMessageAsync());
-        Assert.Single(frames);
-        return frames[0];
+        try
+        {
+            return await _inbound.Reader.ReadAsync(CancellationToken.None);
+        }
+        catch (System.Threading.Channels.ChannelClosedException)
+        {
+            throw new InvalidOperationException("The beacon stream closed under the test.");
+        }
+    }
+
+    /// <summary>
+    /// Whether any frame arrives within the window -- the negative
+    /// assertion shape (a redelivery that must not happen), answered off
+    /// the buffered queue so the connection stays usable after a miss.
+    /// </summary>
+    public async Task<bool> FrameArrivesAsync(TimeSpan window)
+    {
+        using var deadline = new CancellationTokenSource(window);
+        try
+        {
+            return await _inbound.Reader.WaitToReadAsync(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -74,11 +111,10 @@ internal sealed class WsBeaconClient : IDisposable
     /// </summary>
     public async Task<byte[]> ReceiveSingleFrameAsync(FrameKind expectKind = FrameKind.Unspecified)
     {
-        var frames = Parse(await ReceiveMessageAsync());
-        Assert.Single(frames);
+        var frame = await ReceiveFrameAsync();
         if (expectKind != FrameKind.Unspecified)
-            Assert.Equal(expectKind, frames[0].Kind);
-        return frames[0].Payload.ToByteArray();
+            Assert.Equal(expectKind, frame.Kind);
+        return frame.Payload.ToByteArray();
     }
 
     /// <summary>
@@ -94,11 +130,9 @@ internal sealed class WsBeaconClient : IDisposable
         var end = DateTimeOffset.UtcNow + (deadline ?? TimeSpan.FromSeconds(30));
         while (DateTimeOffset.UtcNow < end)
         {
-            foreach (var frame in Parse(await ReceiveMessageAsync()))
-            {
-                if (match(frame) is { } hit)
-                    return hit;
-            }
+            var hit = match(await ReceiveFrameAsync());
+            if (hit is not null)
+                return hit;
         }
         throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
     }
@@ -109,7 +143,30 @@ internal sealed class WsBeaconClient : IDisposable
             Encode(frames), WebSocketMessageType.Binary, endOfMessage: true, CancellationToken.None);
     }
 
-    public void Dispose() => _ws.Dispose();
+    public void Dispose()
+    {
+        _ws.Dispose();
+        _inbound.Writer.TryComplete();
+    }
+
+    // The pump: every parsed frame lands in the queue; a closed or failed
+    // socket ends it, which the next receive surfaces as the closed-stream
+    // error.
+    private async Task PumpAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                foreach (var frame in Parse(await ReceiveMessageAsync()))
+                    await _inbound.Writer.WriteAsync(frame);
+            }
+        }
+        catch
+        {
+            _inbound.Writer.TryComplete();
+        }
+    }
 
     private async Task<byte[]> ReceiveMessageAsync()
     {

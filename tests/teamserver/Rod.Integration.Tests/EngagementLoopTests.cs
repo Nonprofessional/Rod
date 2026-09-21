@@ -1,9 +1,7 @@
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
 using Google.Protobuf;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,23 +31,19 @@ public class EngagementLoopTests
     public async Task EngagementCriticalLoop_WalksHandshakeTaskingExfilPagingAndRecovery()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var sessions = env.Host.Services.GetRequiredService<ISessionRegistry>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock);
-        var caCert = ca.GetCaCertificate();
+        var implant = await EnrollImplantAsync(implants, clock);
+        var authority = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
+        var caCert = authority.GetCaCertificate();
 
         // --- Phase 1: handshake + signed task dispatch + captured result. ---
-        using var channelA = env.ConnectBeacon(leafCert, leafKey);
-        var clientA = new Beacon.BeaconClient(channelA);
-        var callA = clientA.Contact();
-        await callA.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(callA.ResponseStream.Current).Status);
+        using var beaconA = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beaconA.ReceiveHandshakeAsync()).Status);
 
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
@@ -57,8 +51,7 @@ public class EngagementLoopTests
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
 
-        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var request = TaskRequest.Parser.ParseFrom(callA.ResponseStream.Current.Payload);
+        var request = TaskRequest.Parser.ParseFrom(await beaconA.ReceiveSingleFrameAsync());
         Assert.Equal("shell.exec", request.Verb);
 
         // The dispatched task carries the teamserver's signature over the
@@ -73,7 +66,7 @@ public class EngagementLoopTests
             Outcome = TaskOutcome.Succeeded,
             Output = "loop\\operator",
         };
-        await callA.RequestStream.WriteAsync(ResultFrame(result));
+        await beaconA.SendFramesAsync(new[] { ResultFrame(result) });
         await WaitUntilAsync(async () =>
             (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
@@ -83,16 +76,15 @@ public class EngagementLoopTests
             new { ImplantId = implant.Id.ToString(), Verb = "exfil.push", Arguments = "loot.txt /opt/loot" });
         exfilIssued.EnsureSuccessStatusCode();
 
-        Assert.True(await callA.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        var exfilRequest = TaskRequest.Parser.ParseFrom(callA.ResponseStream.Current.Payload);
+        var exfilRequest = TaskRequest.Parser.ParseFrom(await beaconA.ReceiveSingleFrameAsync());
         Assert.Equal("exfil.push", exfilRequest.Verb);
 
-        await callA.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await beaconA.SendFramesAsync(new[] { ResultFrame(new TaskResult
         {
             TaskId = exfilRequest.TaskId,
             Outcome = TaskOutcome.Succeeded,
             Output = "pushed loot.txt",
-        }));
+        }) });
         var chunk = new ExfilChunk
         {
             TaskId = exfilRequest.TaskId,
@@ -102,11 +94,11 @@ public class EngagementLoopTests
             ContentType = "text/plain",
         };
         chunk.Data = ByteString.CopyFromUtf8("engagement-loop loot");
-        await callA.RequestStream.WriteAsync(new Frame
+        await beaconA.SendFramesAsync(new[] { new Frame
         {
             Payload = ByteString.CopyFrom(chunk.ToByteArray()),
             Kind = FrameKind.ExfilChunk,
-        });
+        } });
 
         Guid artifactId = Guid.Empty;
         await WaitUntilAsync(async () =>
@@ -124,8 +116,7 @@ public class EngagementLoopTests
 
         // End the working stream cleanly; the history and recovery phases need
         // no live stream.
-        await callA.RequestStream.CompleteAsync();
-        channelA.Dispose();
+        beaconA.Dispose();
 
         // Wait out the dead stream's server-side teardown before seeding the
         // queue. The moment the probes enqueue, the dispatch wake releases --
@@ -176,29 +167,24 @@ public class EngagementLoopTests
         Assert.Null(artifactPage.NextCursor);
 
         // --- Phase 4: silent stream death swept, recovered implant re-handshakes. ---
-        using var channelB = env.ConnectBeacon(leafCert, leafKey);
-        var clientB = new Beacon.BeaconClient(channelB);
-        var callB = clientB.Contact();
-        await callB.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callB.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(callB.ResponseStream.Current).Status);
+        var beaconB = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beaconB.ReceiveHandshakeAsync()).Status);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id, CancellationToken.None));
 
         // The recovered implant drains the tasking that queued while it was
         // away -- the five probes dispatch downstream on the fresh stream.
         for (var i = 0; i < 5; i++)
         {
-            Assert.True(await callB.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-            var queued = TaskRequest.Parser.ParseFrom(callB.ResponseStream.Current.Payload);
+            var queued = TaskRequest.Parser.ParseFrom(await beaconB.ReceiveSingleFrameAsync());
             Assert.Equal("shell.exec", queued.Verb);
             Assert.True(VerifyTasking(caCert, implant.Id.ToString(), queued));
         }
 
-        // Now the stream dies silently: abandoned without a graceful complete,
+        // Now the stream dies silently: abandoned without a graceful close,
         // the connection stays up but no frame ever advances its last-seen, so
         // only the staleness sweep can close the session (architecture.md
         // Sec 10.3). Not disposed on purpose.
-        _ = callB;
+        _ = beaconB;
 
         await WaitUntilAsync(
             async () => await sessions.GetActiveAsync(implant.Id, CancellationToken.None) is null,
@@ -206,14 +192,9 @@ public class EngagementLoopTests
 
         // The recovered implant reconnects on a fresh stream and re-handshakes
         // -- the sweep ended the old session, and the handshake opens a new one.
-        using var channelC = env.ConnectBeacon(leafCert, leafKey);
-        var clientC = new Beacon.BeaconClient(channelC);
-        var callC = clientC.Contact();
-        await callC.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await callC.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(callC.ResponseStream.Current).Status);
+        var beaconC = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
+        Assert.Equal(HandshakeStatus.Ok, (await beaconC.ReceiveHandshakeAsync()).Status);
         Assert.NotNull(await sessions.GetActiveAsync(implant.Id, CancellationToken.None));
-        await callC.RequestStream.CompleteAsync();
     }
 
     // Verifies a dispatched task's signature exactly as the implant does
@@ -246,8 +227,8 @@ public class EngagementLoopTests
         return buffer.ToArray();
     }
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
@@ -255,10 +236,7 @@ public class EngagementLoopTests
             now.AddDays(30), ImplantClass.Stage2, now);
         await implants.SaveAsync(implant);
 
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
 
     private static Frame HandshakeFrame(ImplantId implant)
@@ -326,13 +304,11 @@ public class EngagementLoopTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig(settings =>
@@ -345,7 +321,6 @@ public class EngagementLoopTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -355,33 +330,6 @@ public class EngagementLoopTests
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
             };
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()

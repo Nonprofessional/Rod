@@ -1,10 +1,7 @@
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,8 +32,8 @@ public class ReplayNonceTests
     public async Task ReplayedTaskFrame_IsRejected_AndTheRejectionSurfacesOnTheTask()
     {
         await using var env = await TestEnv.StartAsync();
-        var (implant, leaf, key) = await env.EnrollImplantAsync();
-        using var connection = await env.ConnectBeaconAsync(implant, leaf, key, advertiseReplayNonces: true);
+        var implant = await env.EnrollImplantAsync();
+        using var connection = await env.ConnectBeaconAsync(implant, advertiseReplayNonces: true);
 
         // Negotiated: the server echoes the arm, so every dispatched task for
         // this implant carries a nonce covered by the signature.
@@ -88,8 +85,8 @@ public class ReplayNonceTests
         // original wire shape -- no nonce field, the four-element signed
         // tuple -- and tasking verifies exactly as before the arm existed.
         await using var env = await TestEnv.StartAsync();
-        var (implant, leaf, key) = await env.EnrollImplantAsync();
-        using var connection = await env.ConnectBeaconAsync(implant, leaf, key, advertiseReplayNonces: false);
+        var implant = await env.EnrollImplantAsync();
+        using var connection = await env.ConnectBeaconAsync(implant, advertiseReplayNonces: false);
 
         Assert.False(connection.HandshakeEcho);
 
@@ -111,9 +108,9 @@ public class ReplayNonceTests
         // implant advertised the arm, a later handshake that stops advertising
         // cannot downgrade its tasking back to the nonce-less shape.
         await using var env = await TestEnv.StartAsync();
-        var (implant, leaf, key) = await env.EnrollImplantAsync();
+        var implant = await env.EnrollImplantAsync();
 
-        using (var first = await env.ConnectBeaconAsync(implant, leaf, key, advertiseReplayNonces: true))
+        using (var first = await env.ConnectBeaconAsync(implant, advertiseReplayNonces: true))
         {
             Assert.True(first.HandshakeEcho);
             var (taskId, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo one");
@@ -124,7 +121,7 @@ public class ReplayNonceTests
         }
 
         // Reconnect without advertising: the sticky flag keeps the nonce shape.
-        using (var second = await env.ConnectBeaconAsync(implant, leaf, key, advertiseReplayNonces: false))
+        using (var second = await env.ConnectBeaconAsync(implant, advertiseReplayNonces: false))
         {
             Assert.True(second.HandshakeEcho, "the negotiation is sticky: the echo survives a downgrade handshake");
             var (taskId, _) = await env.IssueTaskAsync(implant, "shell.exec", "echo two");
@@ -146,13 +143,11 @@ public class ReplayNonceTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public int HttpPort { get; private set; }
-        public int MtlsPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
             env.HttpPort = TestSupport.GetFreeTcpPort();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
@@ -160,7 +155,6 @@ public class ReplayNonceTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -173,25 +167,19 @@ public class ReplayNonceTests
             return env;
         }
 
-        public async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa Key)> EnrollImplantAsync()
+        public async Task<Implant> EnrollImplantAsync()
         {
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>();
             var implants = Host.Services.GetRequiredService<IImplantRepository>();
             var clock = Host.Services.GetRequiredService<TimeProvider>();
             var now = clock.GetUtcNow();
             var implant = Implant.Enroll(
                 ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Stage2, now);
             await implants.SaveAsync(implant);
-
-            var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            var issued = await ca.IssueWithKeyAsync(
-                new ImplantCertificateSubject(implant.Id, implant.EngagementId), key, CancellationToken.None);
-            return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), key);
+            return implant;
         }
 
-        public async Task<BeaconConnection> ConnectBeaconAsync(
-            Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseReplayNonces)
-            => await BeaconConnection.OpenAsync(this, implant, leaf, key, advertiseReplayNonces);
+        public async Task<BeaconConnection> ConnectBeaconAsync(Implant implant, bool advertiseReplayNonces)
+            => await BeaconConnection.OpenAsync(this, implant, advertiseReplayNonces);
 
         public async Task<(string TaskId, string Verb)> IssueTaskAsync(
             Implant implant, string verb, string arguments)
@@ -238,66 +226,38 @@ public class ReplayNonceTests
     {
         public bool HandshakeEcho { get; private set; }
 
-        private readonly GrpcChannel _channel;
-        private readonly AsyncDuplexStreamingCall<Frame, Frame> _call;
+        private readonly WsBeaconClient _beacon;
         private readonly string _implantId;
         private readonly X509Certificate2[] _cas;
         private readonly TaskNonceFloor _floor = new();
 
         private BeaconConnection(
-            GrpcChannel channel, AsyncDuplexStreamingCall<Frame, Frame> call,
-            string implantId, X509Certificate2[] cas, bool echo)
+            WsBeaconClient beacon, string implantId, X509Certificate2[] cas, bool echo)
         {
-            _channel = channel;
-            _call = call;
+            _beacon = beacon;
             _implantId = implantId;
             _cas = cas;
             HandshakeEcho = echo;
         }
 
         public static async Task<BeaconConnection> OpenAsync(
-            TestEnv env, Implant implant, X509Certificate2 leaf, ECDsa key, bool advertiseReplayNonces)
+            TestEnv env, Implant implant, bool advertiseReplayNonces)
         {
+            // The verification posture needs the CA's public key: tasking is
+            // signed by it no matter which carriage delivered the frame.
             var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>()
                 .GetCaCertificate();
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, key);
-            var handler = new SocketsHttpHandler
-            {
-                SslOptions = new SslClientAuthenticationOptions
-                {
-                    ClientCertificates = new X509CertificateCollection { leafWithKey },
-                    RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
-                },
-            };
-            var channel = GrpcChannel.ForAddress($"https://127.0.0.1:{env.MtlsPort}",
-                new GrpcChannelOptions { HttpHandler = handler, DisposeHttpClient = true });
-            var call = new Beacon.BeaconClient(channel).Contact();
-
-            var handshake = new HandshakeRequest
-            {
-                Version = new ProtocolVersion { Major = 1, Minor = 0 },
-                ImplantId = implant.Id.ToString(),
-                ReplayNonces = advertiseReplayNonces,
-            };
-            handshake.Capabilities.Add("shell.exec");
-            await call.RequestStream.WriteAsync(new Frame
-            {
-                Payload = ByteString.CopyFrom(handshake.ToByteArray()),
-            });
-
-            Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-            var response = HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload);
+            var beacon = await WsBeaconClient.ConnectAsync(
+                env.HttpPort, implant.Id.ToString(), new[] { "shell.exec" },
+                replayNonces: advertiseReplayNonces);
+            var response = await beacon.ReceiveHandshakeAsync();
             Assert.Equal(HandshakeStatus.Ok, response.Status);
-            return new BeaconConnection(
-                channel, call, implant.Id.ToString(), [ca], response.ReplayNonces);
+            return new BeaconConnection(beacon, implant.Id.ToString(), [ca], response.ReplayNonces);
         }
 
         /// <summary>Awaits the next dispatched task frame.</summary>
         public async Task<TaskRequest> ReadTaskAsync()
-        {
-            Assert.True(await _call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-            return TaskRequest.Parser.ParseFrom(_call.ResponseStream.Current.Payload);
-        }
+            => TaskRequest.Parser.ParseFrom(await _beacon.ReceiveSingleFrameAsync());
 
         /// <summary>
         /// The reference verification posture: the signature over the tuple
@@ -323,7 +283,7 @@ public class ReplayNonceTests
         }
 
         public async Task ReportAsync(TaskRequest task, TaskOutcome outcome, string output)
-            => await _call.RequestStream.WriteAsync(new Frame
+            => await _beacon.SendFramesAsync(new[] { new Frame
             {
                 Kind = FrameKind.TaskResult,
                 Payload = ByteString.CopyFrom(new TaskResult
@@ -332,13 +292,11 @@ public class ReplayNonceTests
                     Outcome = outcome,
                     Output = output,
                 }.ToByteArray()),
-            });
+            } });
 
         public void Dispose()
         {
-            try { _call.RequestStream.CompleteAsync().GetAwaiter().GetResult(); } catch { }
-            _call.Dispose();
-            _channel.Dispose();
+            try { _beacon.Dispose(); } catch { }
         }
 
         // The canonical signed encoding from rod.proto, nonce appended as its
