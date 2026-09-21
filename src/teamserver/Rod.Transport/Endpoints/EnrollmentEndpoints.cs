@@ -127,21 +127,29 @@ public static class EnrollmentEndpoints
                 "Request body is not an enroll request (raw JSON, a base64-wrapped JSON string, or an AES-GCM-wrapped one)."));
         }
 
-        // The implant's own public key (DER SubjectPublicKeyInfo, base64 over JSON).
-        // When present the leaf is signed over it so the implant keeps its private
-        // key for mTLS (architecture.md Sec 9). Optional: a request without it gets
-        // a server-generated ephemeral leaf (the shape).
+        // The implant's own public key (DER SubjectPublicKeyInfo, base64 over
+        // JSON): a Tier 0 obligation the server accepts and validates -- an
+        // ECDSA key an implant generates and keeps the private half of. No
+        // in-tree consumer mints over it (the transport certificate posture
+        // retired with the mTLS family); validation is the contract's own
+        // gate, so a recognizable SPKI is enforced here, malformed shapes
+        // are a bad request, and the token stays intact either way.
         byte[]? clientPublicKey = null;
         if (!string.IsNullOrWhiteSpace(body.PublicKey))
         {
             try
             {
                 clientPublicKey = Convert.FromBase64String(body.PublicKey);
+                using var validated = System.Security.Cryptography.ECDsa.Create();
+                validated.ImportSubjectPublicKeyInfo(clientPublicKey, out _);
             }
             catch (FormatException)
             {
-                // Malformed base64 is a bad request, not a token failure.
                 return Results.BadRequest(new Problem("Public key is not valid base64."));
+            }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                return Results.BadRequest(new Problem("Public key is not a recognizable SubjectPublicKeyInfo."));
             }
         }
 
@@ -188,7 +196,7 @@ public static class EnrollmentEndpoints
             EnrollStatus.Ok,
             enrolled.ImplantId.ToString(),
             enrolled.EngagementId.ToString(),
-            Convert.ToBase64String(enrolled.LeafCertificate),
+            "",
             enrolled.CaChain.Select(Convert.ToBase64String).ToArray(),
             enrolled.ParentImplantId?.ToString()));
     }

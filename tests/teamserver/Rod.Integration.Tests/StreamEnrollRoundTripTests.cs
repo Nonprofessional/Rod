@@ -152,10 +152,11 @@ public class StreamEnrollRoundTripTests
             Assert.Equal(EnrollStatus.Ok, enroll.Status);
             Assert.False(string.IsNullOrWhiteSpace(enroll.ImplantId));
             Assert.Equal(engagementId, enroll.EngagementId);
-            Assert.NotEmpty(enroll.LeafCertificate.ToByteArray());
-            using var leaf = X509CertificateLoader.LoadCertificate(enroll.LeafCertificate.ToByteArray());
-            using var leafKey = leaf.GetECDsaPublicKey()!;
-            Assert.Equal(implantKey.ExportSubjectPublicKeyInfo(), leafKey.ExportSubjectPublicKeyInfo());
+            // No transport leaf is minted (the certificate posture retired
+            // with the mTLS family); the accepted public key rode the frame
+            // exchange and the CA chain is the answer's substance.
+            Assert.True(enroll.LeafCertificate.IsEmpty);
+            Assert.NotEmpty(enroll.CaChain);
 
             // A manually minted token names no build, so the answer carries
             // no per-artifact contact key.

@@ -88,7 +88,9 @@ internal static class ScopedEnrollmentResponse
             Status = EnrollStatus.Ok,
             ImplantId = enrolled.ImplantId.ToString(),
             EngagementId = enrolled.EngagementId.ToString(),
-            LeafCertificate = Google.Protobuf.ByteString.CopyFrom(enrolled.LeafCertificate),
+            // The leaf stays empty: no in-tree family mints transport
+            // certificates (architecture.md Sec 8/9), and the frozen field
+            // reads as not-supplied.
         };
         if (enrolled.ParentImplantId is { } parent)
             response.ParentImplantId = parent.ToString();

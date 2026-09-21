@@ -6,20 +6,17 @@ namespace Rod.CoreState.Pki;
 
 /// <summary>
 /// Self-signed development <see cref="IImplantCertificateAuthority"/> for dev
-/// runs and tests. Generates a throwaway CA root once at construction and signs
-/// each implant leaf with it, binding <c>(implant_id, engagement_id)</c> into
-/// URI SAN entries under a conventional service-certificate profile. Not for
-/// production: the CA key lives in process
-/// memory and is non-rotatable. Real deployments substitute an externally
-/// provisioned, per-engagement CA behind the same port.
+/// runs and tests. Generates a throwaway CA root once at construction; the
+/// root is the tasking signer and the issuer of the listeners' TLS server
+/// leaves. Not for production: the CA key lives in process memory and is
+/// non-rotatable. Real deployments substitute an externally provisioned,
+/// per-engagement CA behind the same port.
 /// </summary>
 public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 {
     // The CA root and the listener server leaf stay RSA (signing and serving
-    // keys, an ops concern); implant leaves carry the P-256 curve the implant
-    // leaf path speaks.
+    // keys, an ops concern).
     private const int RsaKeySize = 2048;
-    private static readonly ECCurve LeafCurve = ECCurve.NamedCurves.nistP256;
     private static readonly TimeSpan CaLifetime = TimeSpan.FromDays(365);
     private static readonly TimeSpan LeafLifetime = TimeSpan.FromDays(30);
 
@@ -32,37 +29,6 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     {
         _caKey = RSA.Create(RsaKeySize);
         _caCertificate = BuildCaCertificate(_caKey);
-    }
-
-    public Task<IssuedCertificate> IssueAsync(
-        ImplantCertificateSubject subject,
-        CancellationToken cancellationToken = default)
-    {
-        // The leaf key is the implant's own; it is not retained server-side after
-        // the certificate is returned (the implant owns its private key).
-        using var leafKey = ECDsa.Create(LeafCurve);
-        return Task.FromResult(IssueLeaf(subject, leafKey));
-    }
-
-    public Task<IssuedCertificate> IssueWithKeyAsync(
-        ImplantCertificateSubject subject,
-        ECDsa leafPrivateKey,
-        CancellationToken cancellationToken = default)
-        => Task.FromResult(IssueLeaf(subject, leafPrivateKey));
-
-    public Task<IssuedCertificate> IssueWithPublicKeyAsync(
-        ImplantCertificateSubject subject,
-        ECDsa leafPublicKey,
-        CancellationToken cancellationToken = default)
-    {
-        // Re-import only the public parameters so the signing path can never see,
-        // or accidentally retain, the caller's private key. The CA key signs the
-        // leaf; the leaf's public key is the implant's, bound to its engagement
-        // (architecture.md Sec 9). CertificateRequest accepts a public-only ECDsa.
-        var publicParams = leafPublicKey.ExportParameters(includePrivateParameters: false);
-        using var publicKeyOnly = ECDsa.Create();
-        publicKeyOnly.ImportParameters(publicParams);
-        return Task.FromResult(IssueLeaf(subject, publicKeyOnly));
     }
 
     /// <summary>
@@ -90,58 +56,6 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
         => _caKey.SignData(
             TaskingCanonical.Bytes(implantId, taskId, verb, arguments, nonce),
             HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-
-    // Builds and signs an implant leaf over the supplied key material, binding
-    // (implant_id, engagement_id). The CA key signs; the leaf's public key is
-    // whatever the supplied ECDsa carries -- a full key pair (IssueAsync/
-    // IssueWithKeyAsync) or a public-only ECDsa (IssueWithPublicKeyAsync, the wire
-    // enroll path). CertificateRequest needs only the public half to populate the
-    // leaf; the private half never has to be present here.
-    private IssuedCertificate IssueLeaf(ImplantCertificateSubject subject, ECDsa leafKey)
-    {
-        var implantId = subject.ImplantId.ToString();
-        var engagementId = subject.EngagementId.ToString();
-
-        var notBefore = DateTimeOffset.UtcNow;
-        var notAfter = notBefore + LeafLifetime;
-
-        // Every implant leaf shares this fixed conventional subject; the ids
-        // ride the SAN entries below. A GUID common name is itself a toolchain
-        // fingerprint, on the wire and in host forensics.
-        var subjectDn = "CN=rod-implant,O=Rod,C=ZZ";
-        var request = new CertificateRequest(subjectDn, leafKey, HashAlgorithmName.SHA256);
-
-        // An implant leaf is an end-entity certificate: not a CA, may not sign
-        // others. DigitalSignature alone -- keyEncipherment is the RSA
-        // key-transport bit, which no conventional EC service certificate
-        // carries.
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
-        request.CertificateExtensions.Add(
-            new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, critical: true));
-        request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(
-                new OidCollection { new("1.3.6.1.5.5.7.3.2", "Client Authentication") }, // TLS client auth.
-                critical: true));
-        // The (implant_id, engagement_id) binding -- the half of the leaf an
-        // ordinary service certificate would carry in SANs, not in the DN.
-        request.CertificateExtensions.Add(ImplantSubjectAlternativeNames.Build(implantId, engagementId));
-
-        // A random serial, the conventional shape -- not the implant id's bytes,
-        // which would republish the identity in one more field.
-        var serial = Guid.NewGuid().ToByteArray();
-        // The generator overload signs cross-algorithm: the CA key here is RSA
-        // while the leaf key is ECDSA, a pair the issuerCertificate overload
-        // refuses. X.509 itself carries no such restriction -- any CA algorithm
-        // signing any leaf algorithm is the standard PKI shape.
-        var leaf = request.Create(
-            _caCertificate.SubjectName,
-            X509SignatureGenerator.CreateForRSA(_caKey, RSASignaturePadding.Pkcs1),
-            notBefore, notAfter, serial);
-
-        return new IssuedCertificate(
-            leaf.Export(X509ContentType.Cert),
-            new[] { _caCertificate.Export(X509ContentType.Cert) });
-    }
 
     // Builds a self-signed CA root: CA:TRUE, key-cert-sign, self-issued.
     private static X509Certificate2 BuildCaCertificate(RSA caKey)

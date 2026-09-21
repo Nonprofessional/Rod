@@ -97,8 +97,8 @@ public sealed class EnrollmentService
         //    from its baked profile -- the fuse the artifact carries is the fuse
         //    the record shows, and a null (an open-ended build) records null
         //    rather than an invented window. The implant carries no key
-        //    material -- its identity is the keypair it generated itself, bound
-        //    by the CA-signed leaf in step 5.
+        //    material -- its identity is the keypair it generated itself; the
+        //    enroll answer in step 5 names the CA that signs its tasking.
         //    EnrollChild records the parent when present; a null parent yields the
         //    top-level shape, so the two paths share one factory. The implant's
         //    DeployedBy is the operator who minted the redeemed token -- the one
@@ -113,21 +113,26 @@ public sealed class EnrollmentService
             command.Carriers);
         await _implants.SaveAsync(implant, cancellationToken);
 
-        // 5. Issue the certificate bound to (implant_id, engagement_id). Over the
-        //    implant's own public key when it supplied one (the mTLS-capable path);
-        //    over a server-generated ephemeral key otherwise.
-        var subject = new ImplantCertificateSubject(implant.Id, redeemed.EngagementId);
-        var issued = command.ClientPublicKey is { } publicKeyDer
-            ? await IssueOverClientPublicKeyAsync(subject, publicKeyDer, cancellationToken)
-            : await _certificateAuthority.IssueAsync(subject, cancellationToken);
+        // 5. The certificate answer is the CA chain alone: it carries the
+        //    tasking signer every implant verifies its dispatches under. No
+        //    leaf is minted -- the transport certificate posture retired with
+        //    the mTLS family, and identity is the per-artifact contact key
+        //    (architecture.md Sec 8/9). The client public key stays a
+        //    validated enroll obligation (the wire contract's Tier 0), and a
+        //    community family reviving transport certificates mints over it
+        //    out-of-tree.
+        var caChain = new[]
+        {
+            _certificateAuthority.GetCaCertificate().Export(
+                System.Security.Cryptography.X509Certificates.X509ContentType.Cert),
+        };
 
         return new EnrollmentResult(
             implant.Id,
             redeemed.EngagementId,
             command.KillDate,
             command.Class,
-            issued.Leaf,
-            issued.CaChain,
+            caChain,
             implant.DeployedBy,
             implant.ParentImplantId,
             implant.Hostname,
@@ -174,15 +179,6 @@ public sealed class EnrollmentService
     // CA to sign a leaf over it. ECDSA is the key type the leaf path speaks (the
     // SPKI names its own curve, P-256 in the reference implant); anything else is a
     // malformed request, mapped to a 400 by the transport endpoint.
-    private Task<IssuedCertificate> IssueOverClientPublicKeyAsync(
-        ImplantCertificateSubject subject,
-        byte[] publicKeyDer,
-        CancellationToken cancellationToken)
-    {
-        using var publicKey = ECDsa.Create();
-        publicKey.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
-        return _certificateAuthority.IssueWithPublicKeyAsync(subject, publicKey, cancellationToken);
-    }
 }
 
 /// <summary>
@@ -237,8 +233,7 @@ public sealed record EnrollCommand(
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
 /// the recorded kill date (null for an open-ended artifact), the bound
-/// certificate plus CA chain, the operator who
-/// deployed it (the
+/// CA chain (the tasking signer), the operator who deployed it (the
 /// token issuer, used to attribute the enrollment), the parent it was derived
 /// from (null for a top-level implant), the hostname it reported (null when
 /// unreported -- carried so the audit trail can name the host), and the
@@ -249,7 +244,6 @@ public sealed record EnrollmentResult(
     EngagementId EngagementId,
     DateTimeOffset? KillDate,
     ImplantClass Class,
-    byte[] LeafCertificate,
     IReadOnlyList<byte[]> CaChain,
     OperatorId DeployedBy,
     ImplantId? ParentImplantId,

@@ -104,60 +104,44 @@ public class EnrollmentTests
     }
 
     [Fact]
-    public async Task Enroll_IssuesCertificateBoundToImplantAndEngagement_WithCaChain()
+    public async Task Enroll_AnswersWithTheCaChain_TheTaskingSigner()
     {
+        // The enrollment's certificate answer is the CA chain alone: it
+        // carries the tasking signer every implant verifies its dispatched
+        // work under, and no transport leaf is minted (the certificate
+        // posture retired with the mTLS family -- the per-artifact key is
+        // the identity).
         var (client, host) = CreateClient();
         using (client)
         using (host)
         {
             await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
-
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
-
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
             var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(enrolled);
             Assert.Equal(EnrollStatus.Ok, enrolled!.Status);
 
-            // The engagement was resolved from the token; the implant id is new.
             Assert.False(string.IsNullOrWhiteSpace(enrolled.ImplantId));
             Assert.False(string.IsNullOrWhiteSpace(enrolled.EngagementId));
 
-            // Cert material is present.
-            Assert.False(string.IsNullOrWhiteSpace(enrolled.LeafCertificate));
+            // The chain is the dev CA root, and it verifies tasking: what
+            // the implant pins from this answer is exactly the signer.
             Assert.NotNull(enrolled.CaChain);
-            Assert.True(enrolled.CaChain!.Length >= 1);
-
-            using var leaf = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.LeafCertificate!));
-            using var root = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.CaChain[0]));
-
-            // Binding: the ids ride labeled URI SAN entries under the fixed
-            // conventional subject every implant leaf shares -- no GUID common
-            // name, no custom OID.
-            Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
-            Assert.True(
-                ImplantSubjectAlternativeNames.TryRead(leaf, out var implantFromCert, out var engagementFromCert),
-                "Leaf certificate must carry the implant and engagement URI SAN entries.");
-            Assert.Equal(enrolled.ImplantId, implantFromCert);
-            Assert.Equal(enrolled.EngagementId, engagementFromCert);
-
-            // Chain: the leaf is issued by the dev CA, and the only chain-status is
-            // UntrustedRoot (the dev root is not in a system trust store). Any other
-            // status -- a bad signature, a name mismatch, a broken link -- would
-            // fail this. This is the precise "chains to the CA root" claim for a
-            // self-signed dev CA.
-            Assert.Equal(root.Subject, leaf.Issuer);
-            using var chain = new X509Chain();
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-            chain.ChainPolicy.ExtraStore.Add(root);
-            var chainOk = chain.Build(leaf);
-            Assert.True(chainOk,
-                "Leaf must chain to the CA root: " +
-                string.Join(", ", chain.ChainStatus.Select(s => $"{s.Status}({s.StatusInformation.Trim()})")));
+            Assert.Single(enrolled.CaChain!);
+            using var root = X509CertificateLoader.LoadCertificate(
+                Convert.FromBase64String(enrolled.CaChain[0]));
+            var ca = host.Services.GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>();
+            Assert.Equal(ca.GetCaCertificate().Thumbprint, root.Thumbprint);
+            var signature = ca.SignTasking(enrolled.ImplantId, "t1", "shell.exec", "id");
+            using var rsa = root.GetRSAPublicKey()!;
+            Assert.True(rsa.VerifyData(
+                Rod.CoreState.Pki.TaskingCanonical.Bytes(enrolled.ImplantId, "t1", "shell.exec", "id"),
+                signature,
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pss));
         }
     }
 
@@ -282,13 +266,13 @@ public class EnrollmentTests
     }
 
     [Fact]
-    public async Task Enroll_WithClientPublicKey_SignsLeafOverImplantKey()
+    public async Task Enroll_WithClientPublicKey_AcceptsTheKey_NoLeafIssued()
     {
-        // The mTLS-capable enroll path (architecture.md Sec 9): the implant sends
-        // only its public key and the CA signs a leaf over it, so the implant keeps
-        // its private key and can present the leaf in a handshake. The issued leaf's
-        // public key must equal the key the implant retained -- proof the server
-        // never had to see the private half.
+        // The implant's key pair is a Tier 0 obligation: it sends only the
+        // public half with its enroll request. The server accepts and
+        // validates it, but mints nothing over it in-tree -- the transport
+        // certificate posture retired with the mTLS family, and the answer's
+        // leaf field carries the not-supplied shape.
         var (client, host) = CreateClient();
         using (client)
         using (host)
@@ -310,22 +294,8 @@ public class EnrollmentTests
             var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(enrolled);
             Assert.Equal(EnrollStatus.Ok, enrolled!.Status);
-
-            using var leaf = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(enrolled.LeafCertificate!));
-
-            // The leaf's public key is the implant's -- the server signed over the
-            // public half the implant supplied and never saw the private key.
-            using var leafEc = leaf.GetECDsaPublicKey()!;
-            var leafPublicKey = leafEc.ExportSubjectPublicKeyInfo();
-            Assert.Equal(publicKeyDer, leafPublicKey);
-
-            // The binding is intact regardless of which key path was taken:
-            // both ids ride the leaf's URI SAN entries.
-            Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
-            Assert.True(
-                ImplantSubjectAlternativeNames.TryRead(leaf, out var implantFromCert, out var engagementFromCert));
-            Assert.Equal(enrolled.ImplantId, implantFromCert);
-            Assert.Equal(enrolled.EngagementId, engagementFromCert);
+            Assert.True(string.IsNullOrEmpty(enrolled.LeafCertificate));
+            Assert.Single(enrolled.CaChain!);
         }
     }
 

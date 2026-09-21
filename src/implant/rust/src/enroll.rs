@@ -139,16 +139,9 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
         return Err(format!("enroll rejected: status {status_value}"));
     }
 
-    let leaf_b64 = answer
-        .get("leafCertificate")
-        .and_then(serde_json::Value::as_str)
-        .ok_or("enroll OK but missing leafCertificate")?;
-    let _leaf = base64::engine::general_purpose::STANDARD
-        .decode(leaf_b64)
-        .map_err(|_| "leafCertificate")?;
-    // The web posture authenticates at the application layer; the leaf is
-    // validated (parses) and dropped. The CA chain is kept: it carries the
-    // tasking signer.
+    // The leaf field carries the not-supplied shape (no in-tree family
+    // mints transport certificates); the CA chain is the answer's substance:
+    // it carries the tasking signer.
     let mut ca_chain = Vec::new();
     if let Some(chain) = answer.get("caChain").and_then(serde_json::Value::as_array) {
         for entry in chain {

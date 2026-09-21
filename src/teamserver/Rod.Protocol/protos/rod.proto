@@ -201,8 +201,10 @@ enum EnrollStatus {
 // enrollment over QUIC, the JSON body promoted into the frame grammar).
 // stager_token_secret is the deployment credential the enrollment redeems;
 // class names an implant class (empty defaults server-side); public_key is
-// the implant's own DER SubjectPublicKeyInfo the CA signs a leaf over (the
-// implant keeps its private half, architecture.md Sec 9); parent_implant_id
+// the implant's own DER SubjectPublicKeyInfo, a Tier 0 obligation the
+// server validates (the implant keeps its private half; no in-tree family
+// mints a transport certificate over it -- a community family reviving one
+// builds its issuer on it); parent_implant_id
 // derives a child; the host fields are the implant's report about the
 // machine it runs on; kill_date is the artifact's baked time fuse as the
 // implant reported it, RFC 3339. Strings left empty mean "not supplied",

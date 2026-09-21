@@ -1,82 +1,19 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Rod.CoreState.Engagements;
 using Rod.CoreState.Pki;
 
 namespace Rod.CoreState.Tests;
 
 /// <summary>
-/// Direct checks of the production implant CA
-/// (<see cref="FileBackedCertificateAuthority"/>, architecture.md Sec 9). The
-/// default self-signed <see cref="DevCertificateAuthority"/> issues
-/// leaves off an in-memory CA; the file-backed authority consumes an externally
-/// provisioned CA (PEM cert + RSA key on disk) and must produce leaves that bind
-/// <c>(implant_id, engagement_id)</c> the same way and chain to that CA. These
-/// tests generate a throwaway CA in-process, drop it to PEM files, and drive the
-/// authority through the same ports enrollment uses.
+/// Direct checks of the production engagement CA
+/// (<see cref="FileBackedCertificateAuthority"/>, architecture.md Sec 9): it
+/// consumes an externally provisioned CA (PEM cert + RSA key on disk), serves
+/// the tasking signer and the server-leaf issuer off it, and fails fast on
+/// malformed provisioning. These tests generate a throwaway CA in-process,
+/// drop it to PEM files, and drive the authority's ports.
 /// </summary>
 public class FileBackedCertificateAuthorityTests
 {
-    [Fact]
-    public async Task IssuedLeaf_ChainsToLoadedCa()
-    {
-        // The acceptance criterion: a leaf issued by the file-backed authority
-        // chains to the externally provisioned CA, not a dev root.
-        using var dir = TempDir.Create();
-        var (ca, caKey) = BuildCa();
-        var certPath = WritePemCert(dir, "ca.crt", ca);
-        var keyPath = WritePemKey(dir, "ca.key", caKey);
-
-        var authority = new FileBackedCertificateAuthority(
-            new FileBackedCertificateAuthorityOptions(certPath, keyPath, CaPrivateKeyPassphrase: null));
-
-        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await authority.IssueWithKeyAsync(
-            new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), leafKey, CancellationToken.None);
-        using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
-
-        using var chain = new X509Chain();
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-        chain.ChainPolicy.ExtraStore.Add(ca);
-
-        Assert.True(chain.Build(leaf));
-        // The chain terminates at the loaded CA, not some other accepted root.
-        Assert.Equal(ca.Thumbprint, chain.ChainElements[^1].Certificate.Thumbprint);
-    }
-
-    [Fact]
-    public async Task IssuedLeaf_BindsImplantAndEngagement()
-    {
-        using var dir = TempDir.Create();
-        var (ca, caKey) = BuildCa();
-        var authority = new FileBackedCertificateAuthority(
-            new FileBackedCertificateAuthorityOptions(
-                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
-
-        var implantId = ImplantId.New();
-        var engagementId = EngagementId.New();
-        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await authority.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implantId, engagementId), leafKey, CancellationToken.None);
-        using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
-
-        // Binding: the ids ride labeled URI SAN entries under the fixed
-        // conventional subject every implant leaf shares -- no GUID common name.
-        Assert.Equal("rod-implant", leaf.GetNameInfo(X509NameType.SimpleName, forIssuer: false));
-        Assert.True(ImplantSubjectAlternativeNames.TryRead(leaf, out var readImplant, out var readEngagement));
-        Assert.Equal(implantId.ToString(), readImplant);
-        Assert.Equal(engagementId.ToString(), readEngagement);
-
-        // Profile hardening: neither id leaks into the subject DN or serial, and
-        // the retired custom-OID engagement extension is gone (its OID was
-        // 1.3.6.1.4.1.65535.1.1 -- a GUID CN plus an unknown OID is itself a
-        // toolchain fingerprint).
-        Assert.DoesNotContain(implantId.ToString(), leaf.Subject);
-        Assert.DoesNotContain(engagementId.ToString(), leaf.Subject);
-        Assert.DoesNotContain(leaf.Extensions, ext => ext.Oid?.Value == "1.3.6.1.4.1.65535.1.1");
-    }
-
     [Fact]
     public void GetCaCertificate_ReturnsTheLoadedCa()
     {
@@ -90,33 +27,10 @@ public class FileBackedCertificateAuthorityTests
     }
 
     [Fact]
-    public async Task Issue_OverClientPublicKey_SignsLeafOverImplantKey()
+    public void EncryptedPrivateKey_LoadsAndSignsTasking()
     {
-        // The wire enroll path: the implant sends only its public key, the CA signs
-        // a leaf over it, and the CA never sees the private half.
-        using var dir = TempDir.Create();
-        var (ca, caKey) = BuildCa();
-        var authority = new FileBackedCertificateAuthority(
-            new FileBackedCertificateAuthorityOptions(
-                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
-
-        using var implantKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var publicKeyDer = implantKey.ExportSubjectPublicKeyInfo();
-        using var publicKeyOnly = ECDsa.Create();
-        publicKeyOnly.ImportSubjectPublicKeyInfo(publicKeyDer, out _);
-
-        var issued = await authority.IssueWithPublicKeyAsync(
-            new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), publicKeyOnly, CancellationToken.None);
-        using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
-
-        using var leafPublic = leaf.GetECDsaPublicKey()!;
-        Assert.Equal(publicKeyDer, leafPublic.ExportSubjectPublicKeyInfo());
-    }
-
-    [Fact]
-    public async Task EncryptedPrivateKey_LoadsAndSigns()
-    {
-        // An encrypted PKCS#8 key round-trips through the passphrase path.
+        // An encrypted PKCS#8 key round-trips through the passphrase path:
+        // the signer works off it, which is the authority's live obligation.
         using var dir = TempDir.Create();
         var (ca, caKey) = BuildCa();
         var authority = new FileBackedCertificateAuthority(
@@ -125,16 +39,49 @@ public class FileBackedCertificateAuthorityTests
                 WriteEncryptedPemKey(dir, "ca.key", caKey, "secret-passphrase"),
                 "secret-passphrase"));
 
-        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await authority.IssueWithKeyAsync(
-            new ImplantCertificateSubject(ImplantId.New(), EngagementId.New()), leafKey, CancellationToken.None);
-        using var leaf = X509CertificateLoader.LoadCertificate(issued.Leaf);
+        var signature = authority.SignTasking("implant", "task", "shell.exec", "id");
+        using var rsa = caKey;
+        Assert.True(rsa.VerifyData(
+            TaskingCanonical.Bytes("implant", "task", "shell.exec", "id"),
+            signature,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pss));
+    }
 
+    [Fact]
+    public void SignTasking_VerifiesUnderTheLoadedCa()
+    {
+        using var dir = TempDir.Create();
+        var (ca, caKey) = BuildCa();
+        var authority = new FileBackedCertificateAuthority(
+            new FileBackedCertificateAuthorityOptions(
+                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
+
+        var signature = authority.SignTasking("implant", "task", "shell.exec", "id");
+        using var publicKey = ca.GetRSAPublicKey()!;
+        Assert.True(publicKey.VerifyData(
+            TaskingCanonical.Bytes("implant", "task", "shell.exec", "id"),
+            signature,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pss));
+    }
+
+    [Fact]
+    public void GetServerCertificate_ChainsToTheLoadedCa()
+    {
+        using var dir = TempDir.Create();
+        var (ca, caKey) = BuildCa();
+        var authority = new FileBackedCertificateAuthority(
+            new FileBackedCertificateAuthorityOptions(
+                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
+
+        using var server = authority.GetServerCertificate();
         using var chain = new X509Chain();
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
         chain.ChainPolicy.ExtraStore.Add(ca);
-        Assert.True(chain.Build(leaf));
+        Assert.True(chain.Build(server));
+        Assert.Equal(ca.Thumbprint, chain.ChainElements[^1].Certificate.Thumbprint);
     }
 
     [Fact]
