@@ -171,7 +171,7 @@ under, and a note on its current state are listed.
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The gRPC/protobuf wire protocol: frames, the enrollment/handshake/tasking messages, and the `Beacon` contact stream (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, mTLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S) and mTLS listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
-| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `DotNetBuildUnit` -- the sole in-tree unit -- publishes the reference implant in a per-build staging copy in any of the four artifact formats (self-contained single-file default, trimmed, native AOT, or the in-memory-loadable dll bundle; runtime identifier mapped from the build target for the executable shapes), baking the profile (transport shape, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class and the dll format refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, stager tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
@@ -402,24 +402,22 @@ advertised behavior (the dev-shape run and the pipeline-built run each
 complete dispatched tasking); the sensitive three compile only into Windows
 builds, so a Linux artifact never advertises them.
 
-The class verb set is also a compile-time boundary, not only an
-advertise-time one: the bake trims each implant-class build to the verbs its
-class runs. The reference registrations sit behind a selection seam
-(`HandlerSelection`) the build unit rewrites per bake -- a reduced-class
-build generates the registrations naming only the class's verbs and deletes
-the unused handler sources from the compilation whole, the same whole-file
-trim the transport selection applies -- so a reduced class is a genuinely
-reduced binary: the code for capabilities the artifact will never run
-neither links nor ships. The trim is per source file (a file keeping one
-verb keeps all its handlers, and its support files with it; the handlers
-themselves register only for the class's own verbs), and the shared dispatch
-infrastructure -- the registry machinery, the channel contract, the enroll
-bundle, the chunker -- is always compiled. Out-of-tree handlers follow their
-verb through the extension overlay: a verb the class table gates compiles
-only into builds whose class carries it, while the ungated contract verbs
-and any verb the class table does not know ride every build, keeping the
-kit's drop-in promise; a handler whose verb the source scan cannot read is
-conservatively kept.
+The class verb set also bounds what a build runs, not only what it
+advertises: the bake carries the class's verb list, and the run dispatches
+the baked set intersected with the crate's compiled handlers -- a dispatch
+for a verb the build does not carry fails cleanly at the handler table
+with the grammar named. Whole-source trimming per class -- the deleted
+.NET unit's `HandlerSelection` rewrite, which deleted unused handler
+sources from each staging copy -- did not carry into the Rust unit: the
+crate compiles one lean handler set per platform (the sensitive three
+behind `cfg(windows)`), and per-class tailoring rides the baked verb list
+instead, because the handler code is tens of kilobytes against a carriage
+that dominates the artifact's size. Out-of-tree handlers are the crate
+fork (extending/tradecraft.md) today and the C-ABI plugin seam on the todo
+tomorrow; the plugin domain is the long tail -- recon sweeps, lateral
+movement, persistence, credential and screen collection -- while the
+channel verbs and the file/exec core stay compiled, because a plugin
+cannot own a live channel or a carriage.
 
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 
@@ -427,17 +425,17 @@ The flow: **operator build request -> teamserver emits build params -> the
 language's build unit compiles -> artifact + stager returned -> fingerprinted and
 recorded.**
 
-- **Two in-tree build units (.NET and Rust); polyglot by contract.**
-  `DotNetBuildUnit` owns the .NET toolchain for the full-capability reference
-  implant and stager; `RustBuildUnit` drives cargo for the Rust reach
-  implant (Sec 12.2). The teamserver drives either through the **uniform
-  build contract** and is coupled to each only by that contract, so a
-  community build unit in Go, C/C++, or Nim can register and compile against
-  the same contract with no in-language coupling (the `Language` enum keeps
-  those slots, Sec 12.2). The Rust unit maps the target onto a cargo triple,
-  bakes the same base64url profile into the staging copy's `src/baked.rs`,
-  and refuses the stager class (not ported) and the dll format (the
-  in-memory bundle is the .NET shape) with the fix named at parse time.
+- **One in-tree build unit (Rust); polyglot by contract.** `RustBuildUnit`
+  drives cargo for the reference implant (Sec 12.2); the .NET unit that
+  once built the managed implant and stager is deleted with them. The
+  teamserver drives the unit through the **uniform build contract** and is
+  coupled to it only by that contract, so a community build unit in Go,
+  C/C++, or Nim can register and compile against the same contract with no
+  in-language coupling (the `Language` enum keeps those slots, Sec 12.2).
+  The Rust unit maps the target onto a cargo triple, bakes the same
+  base64url profile into the staging copy's `src/baked.rs`, and refuses the
+  stager class (retired with the .NET tree) and the dll format (the
+  in-memory bundle was the .NET shape) with the fix named at parse time.
 - **Artifacts ship in four form factors; the format is a build request
   knob.** `ArtifactFormat` rides the build contract beside the class and
   target, and the unit maps it onto one publish invocation:
@@ -1670,9 +1668,13 @@ operator's own infrastructure). The **implant is Rust**
 binary for every target a managed runtime cannot serve -- routers,
 appliances, 32-bit ARM IoT Linux, native shells for mobile platforms --
 with both web carriages (the envelope POST cycle on poll bakes, the
-WebSocket stream on stream bakes), core verbs plus the Windows sensitive
-set (inject.shellcode, collect.minidump, collect.keylog) that self-gate on
-`cfg(windows)` so a Linux build compiles none of them. The wire protocol is
+WebSocket stream on stream bakes), the streaming channel layer
+(`shell.interact` under a pseudo-terminal, `tunnel.forward`, and
+`tunnel.socks`'s connection-multiplexed proxy -- live on the stream
+carriage, the degraded park-and-drain discipline over the poll cycle), the
+one-shot core verbs, and the Windows sensitive set (inject.shellcode,
+collect.minidump, collect.keylog) that self-gate on `cfg(windows)` so a
+Linux build compiles none of them. The wire protocol is
 the language-neutral product (rod.proto, the baked profile's base64url
 JSON, the sealed envelope); the Rust implant is proven against it by the
 conformance harness (its reference candidate) and the end-to-end legs
@@ -1698,12 +1700,23 @@ Rod's capability surface is governed by **contracts, not by a technique
 allowlist**. The core defines the interfaces, registration, dispatch, and data
 models for every capability family; concrete implementations arrive either
 in-tree (the reference set the framework ships with) or as opt-in modules
-through the extension seams (server-side modules, the implant handler overlay,
-the transform chain). Nothing in this repository maintains a list of which
+through the extension seams (server-side modules, the crate fork, the
+transform chain). Nothing in this repository maintains a list of which
 technique kinds may exist -- an operator building for an authorized engagement
 composes the surface they need from the reference set plus their own modules,
 and the discipline that governs that work is the authorized-use premise below,
 not a taxonomy curated here.
+
+The reference implant draws its own line the same way: the compiled core is
+the machinery no plugin could own -- the carriages, the session and channel
+layer, command execution (one-shot and interactive), file transfer both ways
+with the staged and chunked arms, filesystem listing, process termination,
+cadence retuning, and the tunnel pair -- plus the Windows-gated sensitive
+set, while the long tail (recon sweeps, lateral movement, persistence,
+credential and screen collection) is plugin-domain work for the C-ABI seam,
+composed per engagement rather than compiled into every artifact. The
+carriages the Rust build does not yet dial (mTLS gRPC, QUIC, DNS, TCP, SMB)
+are core additive work on the same contract, not plugin work.
 
 - All use assumes an authorized context; see [SECURITY.md](../SECURITY.md).
 

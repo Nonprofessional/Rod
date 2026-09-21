@@ -243,7 +243,12 @@ starts from a gap an actual engagement surfaces.
   resolves the entry through dlsym/GetProcAddress. Dispatch keeps the
   string-in/string-out task grammar, so a module verb reads exactly like a
   compiled one; the advertised set widens at load and reports on the next
-  contact. Unload is best-effort; replacement is last-registration-wins,
+  contact. The domain is the stateless long tail -- the recon set, lateral
+  movement, persistence, credential and screen collection (the verbs the
+  retired .NET implant compiled and the Rust core deliberately leaves to
+  this seam); the channel verbs and the file/exec core stay compiled,
+  because a plugin cannot own a live channel or a carriage.
+  Unload is best-effort; replacement is last-registration-wins,
   the same rule the server-side module seam applies.
   _AC:_ a module built against the SDK, delivered through module.load,
   executes a verb the artifact did not compile, and its result lands in the

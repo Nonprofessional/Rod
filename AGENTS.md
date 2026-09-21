@@ -44,6 +44,7 @@ guidance file tracked in git.
   the product, so every implant builds against the same contract without
   coupling the teamserver to its language. The Rust crate is the reference:
   static musl on Linux, mingw on Windows, both web carriages, the
+  streaming channel set (interactive shell and the tunnel pair), the
   conformance harness's reference candidate. See architecture.md Sec 12.2.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do not

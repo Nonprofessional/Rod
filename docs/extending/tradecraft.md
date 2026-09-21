@@ -92,6 +92,14 @@ verb and staged the way the old stager staged a stage-2. Until that lands,
 the implant-side answer is the escape hatch below: point the build unit at
 your own tree, or build it directly with cargo.
 
+The verb families the seam is *for* are the long tail -- recon sweeps,
+lateral movement, persistence, credential and screen collection -- the
+stateless run-code-return-bytes work a plugin shape holds naturally. The
+channel verbs (`shell.interact`, `tunnel.forward`, `tunnel.socks`) and the
+file/exec core stay compiled on purpose: a live channel owns process
+handles and carriage multiplexing that spans tasking cycles, which no
+post-build module can reach (architecture.md Sec 13's line).
+
 The dispatch grammar your code answers either way is the task contract's
 own: string arguments in, outcome plus output back, with exfil chunks for
 bulk -- the same shape the compiled handlers speak, so an operator's console
