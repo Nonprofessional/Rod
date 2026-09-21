@@ -118,12 +118,10 @@ internal sealed class EnvelopeBeaconContact
 
     public async Task<IResult> HandleAsync(HttpContext http, CancellationToken cancellationToken)
     {
-        // The identity the transport itself presented, when it presented one:
-        // a client certificate on an mTLS front. The https and http listeners
-        // never ask for a certificate (a TLS CertificateRequest is itself a
-        // fingerprint), so most contacts carry none -- the sealed body below
-        // is what authenticates those.
-        var identity = ClientCertificateIdentity.Read(http);
+        // No transport certificate exists anywhere in the surface (the
+        // per-artifact key sealing the body below is the identity), so the
+        // handshake's certificate binding is permanently null.
+
 
         byte[] body;
         try
@@ -228,7 +226,7 @@ internal sealed class EnvelopeBeaconContact
         // TLS with neither, there is no identity to offer and the handshake
         // refuses the unknown implant.
         var (response, handshake) = await TryHandshakeAsync(
-            _handshake, identity, handshakeRequest, isSealed || !http.Request.IsHttps);
+            _handshake, handshakeRequest, isSealed || !http.Request.IsHttps);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
             return Reply(new[] { HandshakeFrame(response) });
 
@@ -367,7 +365,6 @@ internal sealed class EnvelopeBeaconContact
     // reach it without sharing state.
     internal static async Task<(HandshakeResponse Response, HandshakeResult? Handshake)> TryHandshakeAsync(
         HandshakeService handshake,
-        ClientIdentity? identity,
         HandshakeRequest request,
         bool cleartextFallback)
     {
@@ -375,12 +372,11 @@ internal sealed class EnvelopeBeaconContact
         {
             var result = await handshake.HandshakeAsync(
                 new HandshakeCommand(
-                    ImplantId: identity?.ImplantId
-                        ?? (cleartextFallback && ImplantId.TryParse(request.ImplantId, out var byId) ? byId : default),
+                    ImplantId: cleartextFallback && ImplantId.TryParse(request.ImplantId, out var byId) ? byId : default,
                     MajorVersion: request.Version?.Major ?? -1,
                     MinorVersion: request.Version?.Minor ?? -1,
                     Capabilities: request.Capabilities,
-                    CertificateEngagementId: identity?.EngagementId,
+                    CertificateEngagementId: null,
                     ReplayNonces: request.ReplayNonces,
                     TaskAcks: request.TaskAcks,
                     SleepSeconds: request.HasSleepSeconds ? request.SleepSeconds : null,

@@ -98,8 +98,6 @@ public sealed class ListenerManager
     {
         https.ServerCertificateSelector = (_, _) =>
             _services.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
-        https.ClientCertificateValidation = (certificate, chain, _) =>
-            TransportHost.ClientCertificateChainsToCa(certificate, chain, _services);
         https.CheckCertificateRevocation = false;
     }
 

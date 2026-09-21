@@ -535,46 +535,6 @@ public static class TransportHost
         return (host, port);
     }
 
-    // True when the presented client cert chains to the configured implant CA.
-    // Resolved per-connection from the DI container (ApplicationServices is
-    // available by the time connections are accepted).
-    //
-    // AllowUnknownCertificateAuthority lets the chain resolve past our dev root
-    // (which is not in a system trust store), but that flag alone would also
-    // accept a self-signed cert -- its only error is UntrustedRoot, exactly what
-    // the flag suppresses. So after building, we confirm the chain's root IS our
-    // CA by thumbprint. A cert issued by any other root, or self-signed, is
-    // refused here, before any beacon handler runs.
-    // Internal: the runtime listener manager's dynamic HTTPS defaults validate
-    // client certificates with the same chain-to-CA rule the startup mTLS
-    // listeners apply.
-    internal static bool ClientCertificateChainsToCa(
-        X509Certificate2? certificate,
-        X509Chain? chain,
-        IServiceProvider services)
-        => ClientCertificateChainsToCaCore(certificate, chain, services);
-
-    private static bool ClientCertificateChainsToCaCore(
-        X509Certificate2? certificate,
-        X509Chain? chain,
-        IServiceProvider services)
-    {
-        if (certificate is null || chain is null)
-            return false;
-
-        var ca = services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-        chain.ChainPolicy.ExtraStore.Add(ca);
-
-        if (!chain.Build(certificate))
-            return false;
-
-        // The chain must terminate at our CA, not some other accepted root.
-        return chain.ChainElements.Count > 0
-            && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
-    }
-
     /// <summary>Maps the operator- and implant-facing endpoints onto a built application.</summary>
     public static WebApplication MapRodEndpoints(this WebApplication app)
     {

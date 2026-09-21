@@ -195,12 +195,12 @@ internal sealed class WebSocketBeaconStream
             }
         }
 
-        // The identity for the handshake: the certificate binding when the
-        // transport presented one, else the sealed body's posture -- which
-        // stands by reach alone only in the cleartext lab shape.
-        var identity = ClientCertificateIdentity.Read(http);
+        // The handshake's identity binding: no transport certificate exists
+        // anywhere in the surface (the per-artifact key is the identity), so
+        // the binding is the sealed body's posture -- which stands by reach
+        // alone only in the cleartext lab shape.
         var (response, handshake) = await EnvelopeBeaconContact.TryHandshakeAsync(
-            _handshake, identity, handshakeRequest, isSealed || !http.Request.IsHttps);
+            _handshake, handshakeRequest, isSealed || !http.Request.IsHttps);
         await SendFramesAsync(ws, isSealed, new[] { EnvelopeBeaconContact.HandshakeFrame(response) },
             sealedKey, linked.Token);
         if (response.Status != HandshakeStatus.Ok || handshake is null)
