@@ -1,5 +1,12 @@
 # Rehearsal engagement -- the pre-deployment walk
 
+> **Dated record.** This walk was executed against the surface as it stood
+> then, and the mTLS beacon it exercises front to back is since retired
+> (architecture.md Sec 8's four-family decision). The procedures are sound;
+> read every `Mtls` listener below as the `Https` one-port shape with the
+> WebSocket beacon, and every mTLS handshake as the sealed envelope
+> contact. A refresh of the walk against the settled surface is queued.
+
 Operational runbook for the rehearsal every deployment gets before it faces
 a client network: one full engagement lifecycle on production-shaped
 infrastructure -- an externally provisioned CA, Postgres persistence, a

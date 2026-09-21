@@ -38,7 +38,7 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Teamserver** | The monolithic .NET control-plane kernel: core state, transport, build pipeline, operator layer, storage/audit, tradecraft. |
-| **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), mTLS, DNS, SMB, TCP, QUIC, DoH). Decoupled from the public endpoint. |
+| **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), DNS, TCP, DoH). Decoupled from the public endpoint. |
 | **Redirector** | A near-stateless .NET Native AOT forwarder (a single static binary) that fronts a listener for OPSEC and infra flexibility, splicing the byte stream without inspecting it. Burned redirectors are swappable at runtime by repointing the listener. No engagement state, no business logic. |
 | **Repoint** | Repointing a listener swaps its public endpoint at runtime (`POST /engagements/{engagementId}/listeners/{id}:repoint`) without touching the Kestrel bind; the old endpoint stops resolving, which severs it. |
 | **Build unit** | A per-language compilation service driven by the teamserver through the build contract (.NET in-tree; Go, C/C++, and Nim as out-of-tree community units). |

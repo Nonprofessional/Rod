@@ -28,9 +28,10 @@ so a restart rebinds them, unique across ports, and enforced at enrollment --
 anything but that engagement's own token is refused whole on the socket
 (architecture.md Sec 8). A payload build names its engagement's listener and
 the baked endpoint comes from the listener's record; a build against a
-cleartext `Http` listener also names the mTLS listener its beacon dials
+cleartext `Http` listener needs no beacon split -- the WebSocket beacon
+hangs off the same schemed front (architecture.md Sec
 (`beaconListenerId`/`beaconEndpoint` -- the split-socket shape, because the
-gRPC beacon cannot ride a cleartext socket; see
+sealing keeps the clear socket confidential; see
 [operator-ui.md](operator-ui.md)). The build also mints and
 bakes the artifact's enrollment credential, so the artifact deploys with zero
 run-time arguments. The manual mint endpoint stays server-side for the
@@ -140,7 +141,7 @@ standard `Section__Key` mapping):
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
 | `Operators:Initial` | The first loginable account, provisioned idempotently at startup (`Handle`, `DisplayName`, `Password`). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Development: the built-in `operator`/`operator` account. Production: **no account** -- a server configured without one has no login. |
-| `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Mtls`, `Dns`, `Doh`, `Smb`, `Tcp`, or `Quic`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and contacts on the sealed envelope under the per-artifact key, both halves on one socket; `Doh` carries the DNS grammar over RFC 8484 HTTPS bodies and, like `Dns`, takes the zone as its public endpoint), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT contacts live under). mTLS/Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Smb`/`Tcp` entries bind a pipe or raw socket under the certificate-less identity posture; `Quic` binds a UDP socket under TLS 1.3 (needs libmsquic on Linux) and serves the live contact stream, no enrollment. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
+| `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Dns`, `Doh`, or `Tcp`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and contacts on the sealed envelope under the per-artifact key, both halves on one socket; `Doh` carries the DNS grammar over RFC 8484 HTTPS bodies and, like `Dns`, takes the zone as its public endpoint), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT contacts live under). Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Tcp` entries bind a raw socket under the certificate-less identity posture. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
 | `Pki` | An externally provisioned engagement CA as PEM files (`CaCertificatePath`, `CaPrivateKeyPath`, optional `CaPrivateKeyPassphrase`) -- production leaf issuance. Unparseable or mismatched material fails at startup, not at the first enrollment. RSA only. | The self-signed dev CA (key lives in process -- not for production). |
@@ -423,7 +424,7 @@ trail ends one event before the export's own record -- a later re-export
 
 ## Production posture
 
-- Terminate the beacon on an **mTLS listener** and front it with a redirector;
+- Terminate the beacon on an **https listener** and front it with a redirector;
   the listener's public endpoint is repointable at runtime so burned
   infrastructure swaps without touching the backend
   ([redirectors.md](redirectors.md)).

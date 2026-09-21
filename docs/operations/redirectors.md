@@ -10,9 +10,9 @@ The reference redirector does one thing: accept a TCP connection on its public
 endpoint and splice the byte stream to the listener's bind address, in both
 directions, with correct half-close. It never terminates TLS, never inspects or
 alters the payload, and never enforces engagement tenancy. That is the whole
-point -- it carries the mTLS beacon channel (HTTP/2 + client cert) and the HTTPS
-enroll request through end to end, so the client-certificate authentication the
-security model depends on is preserved.
+point -- it carries the beacon channel and the HTTPS enroll request
+through end to end, so the application-layer seal the security model
+depends on is preserved intact.
 
 This is the deploy/rotate half of the "Redirector deployment story." The
 teamserver-side half -- repointing a listener's public endpoint without touching
@@ -98,9 +98,9 @@ WantedBy=multi-user.target
 
 The redirector's `-allow` CIDR list is the only routing an L4 forwarder can do,
 and it is a deployment-time tightening -- **not the security boundary**. The
-real identity gate is the teamserver's mTLS handshake (Sec 9): a connection that
-reaches the listener without a valid client certificate is refused at the
-handshake regardless of what the redirector forwarded. Use the host firewall and
+real identity gate is the teamserver's per-artifact key (Sec 9): a contact
+that does not verify under the artifact's seal is dropped regardless of
+what the redirector forwarded. Use the host firewall and
 `-allow` together to keep the redirector off public port-scans and to limit the
 connection surface; treat engagement identity as the teamserver's job.
 
@@ -133,7 +133,7 @@ The same pair is the first line the forwarder logs at startup. From a host that
 can reach the redirector's public endpoint:
 
 ```
-# The enroll route is HTTPS and mTLS-protected, so a plain TCP connect is enough
+# The enroll route is HTTPS-protected, so a plain TCP connect is enough
 # to prove the forwarder reached the teamserver's TLS listener:
 openssl s_client -connect 203.0.113.10:443 -servername <expected-host>
 # Expect a TLS handshake response from the teamserver listener (the redirector
@@ -284,10 +284,11 @@ openssl s_client -connect 203.0.113.10:443 -servername c2.example.com
 ```
 
 HAProxy's `tcp` mode with SNI content rules or an edge CDN's TCP pass-through
-tier are drop-in equivalents. What never works is a front that terminates TLS
-for the C2 name: it cannot carry the implant's client certificate to the
-listener, and relaxing mTLS to accommodate one moves trust to the wrong layer
-(Sec 7, architecture.md Sec 9).
+tier are drop-in equivalents. A front that terminates TLS for the C2 name
+sees only the sealed contact bodies -- ciphertext either way -- but adds
+a hop the engagement does not control; keep termination at the teamserver
+unless the deployment knowingly chooses an edge (Sec 7, architecture.md
+Sec 9).
 
 ## 7. Security notes
 
@@ -296,10 +297,10 @@ listener, and relaxing mTLS to accommodate one moves trust to the wrong layer
   forwards -- which are TLS-protected in transit. Treat it as disposable: a
   compromised redirector should yield nothing but a TCP splice. (The future
   Sealing layer, Sec 9, will make this explicit end to end.)
-- **Identity is the teamserver's job.** mTLS authenticates the implant at the
-  listener; the redirector cannot and does not participate. Never relax the
-  mTLS requirement to accommodate a redirector -- if a deployment needs to, it
-  has chosen the wrong layer to terminate trust.
+- **Identity is the teamserver's job.** The per-artifact key authenticates
+  the implant at the application layer; the redirector cannot and does not
+  participate. A hop that cannot see the key cannot forge it -- which is
+  exactly why the seal, not the transport, carries the trust.
 - **Allow-list hygiene.** Keep `-allow` as tight as the engagement permits and
   revisit it when the source ranges change. An empty allow-list (allow all) is
   acceptable when a host firewall already restricts the source; do not run both

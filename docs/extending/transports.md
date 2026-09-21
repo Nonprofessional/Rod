@@ -22,7 +22,7 @@ A transport is three declarations, not a switch arm:
    registered: an unregistered name answers "no channels" and binds
    nothing.
 
-The in-tree eight (`http`, `https`, `mtls`, `dns`, `smb`, `tcp`, `quic`,
+The in-tree five (`http`, `https`, `dns`, `tcp`,
 `doh`) register in the static constructors and are the reference
 implementations.
 The listener record, the operator API, the persistence, and the restore path
@@ -52,14 +52,14 @@ neither implements the interface directly:
 
 - **`KestrelEndpointProvider`** — the HTTP family: the listener rides
   Kestrel's endpoint-configuration reloader under a declared
-  `ListenerTlsPosture` (scheme + client-certificate mode as data: plain,
-  server-TLS, or the certificate-asking mTLS shape). The per-transport
+  `ListenerTlsPosture` (scheme as data: plain or server-TLS). The
+  per-transport
   differences are constructor parameters: the posture, the carriers, and
   (optionally) a public-endpoint shape other than the web dial.
 - **`HostedServiceTransportProvider`** — the socket-owning family: each
   listener runs a hosted service built by a factory, with the bind shape
-  (pipe-name vs host:port, UDP vs TCP reservation) and the public-endpoint
-  dial shape as data.
+  (host:port, UDP vs TCP reservation) and the public-endpoint dial shape
+  as data.
 
 ## The carrier table
 
@@ -94,20 +94,16 @@ core state.
 
 ## Identity and auth
 
-A transport declares which of the three identity models its contacts
+A transport declares which of the two identity models its contacts
 carry, by construction rather than by registry entry:
 
-- **Client certificate** (the mTLS shape): the TLS layer asks -- a presented
-  certificate must chain to the CA, and none is demanded in-handshake
-  (enrollment precedes the leaf) -- so the handshake's
-  `(implant_id, engagement_id)` check is the enforcement: a certificate-less
-  connection completes TLS but opens no session.
-- **Application-layer key** (the web family): the per-artifact key seals
-  the contact bodies; possession is the authentication.
-- **Id alone** (the DNS/SMB/TCP/QUIC family): the egress-restricted
-  tradeoff, documented in the contract per transport -- QUIC pairs it with
-  server-side TLS (chain-to-CA pinned), so the transport is encrypted even
-  though the implant itself is not certificate-authenticated.
+- **Application-layer key** (the web family and the keyed socket/datagram
+  shapes): the per-artifact key seals the contact bodies; possession is
+  the authentication.
+- **Id alone** (the DNS/TCP family's plaintext posture): the
+  egress-restricted tradeoff, documented in the contract per transport --
+  the sealed shapes pair it with the application-layer seal, so the wire
+  carries no frame bytes in the clear even where no TLS rides it.
 
 A new transport picks one and says so in its XML docs and its
 `extending/implants.md` section; the wire contract is the product, and the

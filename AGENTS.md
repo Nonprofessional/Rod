@@ -100,7 +100,7 @@ tests encode the layer rules; adding a forbidden reference must fail a test.
 
 - Small, focused commits.
 - **Subject:** English, imperative mood, self-describing without milestone
-  tags -- `Add listener abstraction with HTTP(S) and mTLS transports`, not
+  tags -- `Add listener abstraction with HTTP(S) and DNS transports`, not
   `... (M2.2)`. The subject must read well on its own; the rest of the message
   adds context, not identity.
 - **Body:** explain the *why* first, then what changed as bullets. Reference

@@ -30,8 +30,8 @@
 
 ## What you get
 
-- **Eight transports, one task grammar.** `http`, `https`, `mtls`, `dns`,
-  `smb`, `tcp`, `quic`, and `doh` listeners ship in-tree; every verb works
+- **Five transports, one task grammar.** `http`, `https`, `dns`, `tcp`,
+  and `doh` listeners ship in-tree; every verb works
   over every carrier, with live channels on the stream transports and
   store-and-forward channels on the poll transports.
 - **Disposable implants with baked profiles.** Each implant generates its
@@ -78,7 +78,7 @@ tunneling), then close out -- freeze, export the evidence package, retire.
 
 | Component | Stack | Notes |
 |-----------|-------|-------|
-| Teamserver | .NET 10 (LTS), ASP.NET Core, gRPC | Monolithic kernel, six internal layers. |
+| Teamserver | .NET 10 (LTS), ASP.NET Core | Monolithic kernel, six internal layers. |
 | Operator UI | React 19, Vite | Lives in the teamserver project; served same-origin. |
 | Implants | Rust reference (static musl / mingw); Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
 | Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |

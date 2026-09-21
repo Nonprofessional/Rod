@@ -23,8 +23,8 @@ and the UI uses them precisely:
   on the record at the next contact.
 - **Interactive** -- not "everything else": it is the on-demand live channel
   (`shell.interact`, tunnels) for real-time typing -- held open over the
-  stream on a stream-mode build (the gRPC stream on mTLS, the WebSocket
-  beacon on a web front), or carried store-and-forward on a poll build's
+  stream on a stream-mode build (the WebSocket beacon on a web front, the
+  held socket on a TCP front), or carried store-and-forward on a poll build's
   contacts (operator input arrives on the next response, at the contact
   cadence). An implant that never opens one still fully operates through
   contacts.
@@ -69,8 +69,8 @@ deliberate act that updates this section first.
 - **Listener (enroll + contact)** -- the Build form's first field: the
   listener whose public endpoint gets baked. The implant registers on it
   once and contacts on it for the rest of its life, interactive riding
-  the same front (the gRPC stream on mTLS, the WebSocket beacon on a web
-  front's stream build, the contacts themselves on a poll build). The
+  the same front (the WebSocket beacon on a web front's stream build, the
+  contacts themselves on a poll build). The
   Payloads library's **Listener** column names the same thing
   per artifact.
 - **Public endpoint (enroll + contact, manual)** -- the typed-address
@@ -84,14 +84,11 @@ deliberate act that updates this section first.
 
 Transport labels in the listener form follow the same rule -- they name
 what each transport carries, not how a build makes it ride: every
-transport -- HTTPS, mTLS, cleartext HTTP, QUIC, the socket family (named
-pipe, raw TCP), and the DNS family (TXT over UDP, the same grammar over
-HTTPS on DoH) -- carries **enroll + contact + interactive** (mTLS
-additionally enforces client certificates at the TLS layer; QUIC's opening
-stream also carries enrollment, the full-independence step,
-architecture.md Sec 8; the socket family is poll-only -- enrollment on
-the opening exchange; the DNS family enrolls through a chunked TXT
-exchange and opens the session itself -- a DNS-only target's whole
+transport -- HTTPS, cleartext HTTP, raw TCP, and the DNS family (TXT over
+UDP, the same grammar over HTTPS on DoH) -- carries **enroll + contact +
+interactive** (the socket enrolls on its opening exchange and holds the
+live session on a stream build; the DNS family enrolls through a chunked
+TXT exchange and opens the session itself -- a DNS-only target's whole
 lifecycle rides the one carrier). Interactive rides the stream fronts
 live or the poll cycles store-and-forward -- over DNS, the input arrives
 on the TXT answers and the output chunks up as queries, at the query-rate
@@ -195,9 +192,8 @@ An engagement's C2 ingress. Each listener owns two addresses:
 - **Bind** -- the socket *this server* opens. Picked from the host's
   interfaces (the dropdown is built from `GET /network/interfaces`): one NIC,
   the all-interfaces wildcard (`0.0.0.0`), or a custom address; the port is
-  its own field, defaulted per transport (https 443, mTLS 5443, http 5090,
-  DNS 53, TCP 4444, QUIC 443). SMB has no interface/port -- its bind is
-  a bare pipe name.
+  its own field, defaulted per transport (https 443, http 5090,
+  DNS 53, TCP 4444).
 - **Public endpoint** -- the address *implants dial* (enroll + contact,
   and interactive), baked into payloads. The create form's
   field of the same name takes a bare host, host:port, or full URL and
@@ -213,11 +209,11 @@ transport's scheme and the listener's own port; a `host:port` pair takes the
 transport's scheme; a complete URL passes through. The stored form is always a
 full URL, so the roster and every build read one uniform shape. A wildcard
 bind (`0.0.0.0`) names no dialable address, so it cannot derive -- give it a
-hostname. DNS, SMB, and TCP cannot derive at all; their endpoint (zone /
-pipe path / host:port) is required.
+hostname. DNS and TCP cannot derive at all; their endpoint (zone /
+  host:port) is required.
 
-The transport dropdown is grouped by role -- payload ingress (https, mTLS,
-http, quic), alternate reach & pivots (DNS, DoH, SMB, TCP), catchers
+The transport dropdown is grouped by role -- payload ingress (https,
+http), alternate reach & pivots (DNS, DoH, TCP), catchers
 (shellcatch) -- and the form opens on https: the one-port posture that
 carries every behavior, so the untouched default is already the recommended
 shape.
@@ -235,30 +231,26 @@ dependents, and only its explicit accept (or `?force=true` on the API)
 unbinds and forgets the listener. A listener nothing depends on dies in two
 clicks and no dialogs.
 
-One transport caveat shapes the whole panel: **the interactive stream is
-gRPC (HTTP/2 over TLS) and cannot ride a cleartext socket** (Kestrel
-serves cleartext HTTP/2 only on an HTTP/2-only endpoint, which cannot also
-serve the HTTP/1.x enrollment). The shapes that follow from that:
+The panel's transport shapes, one per family:
 
 - **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
   no client certificate requested anywhere -- the handshake is
   indistinguishable from an ordinary website's. Enrollment rides the socket
   on the stager token and contacts ride the sealed envelope under the
   per-artifact key, both authenticated at the application layer. One
-  listener, one port: enroll + contact. The interactive stream does not
-  ride it -- name an `mTLS` beacon when the engagement wants live channels.
-- **`HTTP` (cleartext) carries enroll + contact over the envelope POST
-  cycle** (poll mode): every contact body and its response seal as
+  listener, one port: enroll + contact, and the WebSocket beacon hangs off
+  the same front when the build runs stream mode.
+- **`HTTP` (cleartext, loopback) carries enroll + contact over the envelope
+  POST cycle** (poll mode): every contact body and its response seal as
   AES-256-GCM under the per-artifact key -- the authentication cleartext
-  http lacks a TLS client certificate for. What it cannot carry is the
-  interactive stream: build against it with an interactive listener named
-  (the split-socket shape) when you want live channels.
-- **`mTLS`** is the strict posture and the interactive tier: the client
-  certificate is demanded at the TLS layer itself, carrying the persistent
-  gRPC stream, live channels, and sealed contacts for certificated
-  implants. Enrollment cannot ride it (the leaf does not exist yet); pair
-  one with an `HTTP` or `HTTPS` listener for enrollment when you want
-  hard-mode entry.
+  http lacks a TLS layer for. The WebSocket beacon rides it the same way
+  for a lab stream build.
+- **`TCP`** carries the socket family: enrollment on the opening exchange,
+  one connection per contact on a poll build, the held live session on a
+  stream build.
+- **`DNS`/`DoH`** carries the datagram family: the chunked TXT enroll
+  exchange, poll contacts under the zone, the store-and-forward
+  interactive discipline at the query-rate cadence.
 
 Every payload build pins the teamserver CA into the artifact, so the
 implant's first contact (enroll) validates the server it dials against the
@@ -322,17 +314,16 @@ baked in -- drop it on the target and run, zero arguments. A summary
 above the **Build payload** button composes from the picks live, labeled
 with the fixed vocabulary: the front it enrolls on (name, transport,
 public endpoint), how it contacts (envelope POSTs at the picked cadence,
-a held WebSocket beacon, the gRPC stream, one QUIC session -- held or one
-per contact at the cadence -- one pipe or socket connection per
-contact, or the DNS TXT carrier), and how
+a held WebSocket beacon, a held or per-contact socket connection, or the
+DNS TXT carrier), and how
 interactive rides (the live channel's stream, or store-and-forward over
 the contacts -- the same discipline whichever wire the poll runs on).
 
 The form's pick is the vocabulary's core role: the **enroll + contact
 listener** is where the implant calls home (it registers there once and
 contacts there for the rest of its life), interactive riding the same
-front -- the gRPC stream on mTLS, the WebSocket beacon on a web front,
-sealed frames under the per-artifact key, or the contacts themselves on
+front -- the WebSocket beacon on a web front, the held socket on a
+TCP front, sealed frames under the per-artifact key, or the contacts themselves on
 a poll build. Everything else -- "enroll",
 "contact" in the hover texts -- names the moments inside that one
 relationship. (The build API still accepts a `beaconListenerId` for the
@@ -382,18 +373,18 @@ its kill date; beacon timing belongs to the Stage2 it fetches.
 
 - **Public endpoint (enroll + contact, manual)** -- the dial address
   when you deliberately build without naming a listener.
-- **Public endpoint (interactive, manual)** -- the mTLS host the
-  interactive stream dials when it differs from the enroll + contact
-  address (empty = contacts poll the enroll + contact address's
-  envelope cycle); the typed twin of the Interactive listener pick above.
+- **Public endpoint (interactive, manual)** -- the stream front the
+  held beacon dials when it differs from the enroll + contact address
+  (empty = the beacon hangs off the enroll + contact front itself); the
+  typed twin of the Interactive listener pick above.
 - **Fallback public endpoints** -- backup enroll + contact addresses
   baked in behind the primary and dialed in order when it burns; they
   share the enroll path and the fixed contact route.
 - **Enroll path** -- the URI path of the one-time registration POST. The
   only path knob: contacts ride the fixed `/implants/beacon` route and the
-  interactive stream rides the mTLS socket's own gRPC path, so no other path
-  exists to set. Change it only when a redirector rewrites to the real
-  route. Default `/implants/enroll`.
+  held beacon its own fixed stream route, so no other path exists to set.
+  Change it only when a redirector rewrites to the real route. Default
+  `/implants/enroll`.
 - **User agent** -- the `User-Agent` the implant presents, to blend with a
   known-good client. Empty leaves the HTTP client's default.
 - **Request timeout (s)** -- per-request HTTP timeout. Default 30.
@@ -492,8 +483,8 @@ Design decisions recorded for later rounds; nothing here is built yet.
 ### Three independent channels (enroll / contact / interactive)
 
 Today enroll and contact always share one listener (the Build form's single
-"Listener (enroll + contact)" pick) and only interactive can split onto its
-own mTLS socket. The deferred shape generalizes the split: three channel
+"Listener (enroll + contact)" pick) and only the held beacon can split onto
+its own front. The deferred shape generalizes the split: three channel
 picks, each with a "same as enroll + contact" checkbox that is checked by
 default, so the common case stays one address and the operator only touches
 the rows they want to diverge:
@@ -502,8 +493,8 @@ the rows they want to diverge:
 - **Contact** -- a checkbox riding beside the enroll pick; checked means the
   same listener (today's behavior), unchecked reveals its own listener select.
 - **Interactive** -- a checkbox riding beside the enroll pick; checked means
-  the same listener, unchecked reveals the mTLS select (only meaningful on a
-  cleartext front; the control disables where it cannot apply).
+  the same listener, unchecked reveals the web-front select (the held beacon
+  hangs off any web front; the control disables where it cannot apply).
 
 Server side this needs a separately baked `contactEndpoint` (the transport
 profile already models the split for interactive via `BeaconEndpoint`; the
