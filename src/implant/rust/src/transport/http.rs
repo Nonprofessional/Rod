@@ -22,7 +22,7 @@ pub struct Poll {
 
 impl Poll {
     pub fn new(profile: &Profile) -> Poll {
-        let url = super::beacon_url(&profile.enroll_url);
+        let url = super::dialed_beacon_url(profile);
         let pinned = crate::trust::parse_pem(&profile.ca_pem)
             .iter()
             .filter_map(|der| crate::trust::parse_der(der))

