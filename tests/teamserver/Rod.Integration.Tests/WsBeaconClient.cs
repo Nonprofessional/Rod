@@ -57,6 +57,17 @@ internal sealed class WsBeaconClient : IDisposable
         => HandshakeResponse.Parser.ParseFrom(await ReceiveSingleFrameAsync());
 
     /// <summary>
+    /// One downstream frame as-is: the scanning helpers' read -- they skip
+    /// kind-bearing frames themselves, the way the gRPC-era loops did.
+    /// </summary>
+    public async Task<Frame> ReceiveFrameAsync()
+    {
+        var frames = Parse(await ReceiveMessageAsync());
+        Assert.Single(frames);
+        return frames[0];
+    }
+
+    /// <summary>
     /// One downstream frame: the session runner writes one frame per message,
     /// so a read is a frame. <paramref name="expectKind"/> asserts the
     /// kind-bearing shapes (channel input) when the test waits on one.

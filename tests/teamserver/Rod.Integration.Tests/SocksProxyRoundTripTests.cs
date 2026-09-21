@@ -1,14 +1,9 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Google.Protobuf;
-using Grpc.Core;
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +11,6 @@ using Microsoft.Extensions.Hosting;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
@@ -39,7 +33,6 @@ public class SocksProxyRoundTripTests
     public async Task SocksBind_SpeaksSocks5_AndBridgesTheConnectionOverTheChannel()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
@@ -48,15 +41,11 @@ public class SocksProxyRoundTripTests
         // per connection -- arbitrary, not baked at task time.
         await using var thirdOne = EchoHost.Start();
         await using var thirdTwo = EchoHost.Start();
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
 
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        using var beacon = await WsBeaconClient.ConnectAsync(
+            env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         // The proxy opens like any other task: no arguments, because every
         // destination arrives per connection.
@@ -72,7 +61,7 @@ public class SocksProxyRoundTripTests
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
         Assert.NotNull(issuedBody);
 
-        var request = await NextTaskRequestAsync(call, issuedBody!.TaskId);
+        var request = await NextTaskRequestAsync(beacon, issuedBody!.TaskId);
         Assert.Equal("tunnel.socks", request.Verb);
         Assert.Equal(string.Empty, request.Arguments);
 
@@ -88,7 +77,7 @@ public class SocksProxyRoundTripTests
         // The fake implant's fronting of the multiplexed grammar: connections
         // under their id, bridged to the third hosts. A miniature of the
         // reference handler -- enough harness to prove the server half.
-        using var bridge = new FakeProxyBridge(call, thirdOne.Port, thirdTwo.Port);
+        using var bridge = new FakeProxyBridge(beacon, thirdOne.Port, thirdTwo.Port);
         _ = bridge.ServeAsync();
 
         // One SOCKS client to each third host: handshake, CONNECT, traffic.
@@ -111,12 +100,15 @@ public class SocksProxyRoundTripTests
             $"/engagements/{implant.EngagementId}/tasks/{request.TaskId}/input",
             new { Eof = true });
         closed.EnsureSuccessStatusCode();
-        await call.RequestStream.WriteAsync(ResultFrame(new TaskResult
+        await beacon.SendFramesAsync(new[]
         {
-            TaskId = request.TaskId,
-            Outcome = TaskOutcome.Succeeded,
-            Output = "socks proxy closed: 2 connections (0 refused), 8 bytes up, 8 bytes down",
-        }));
+            ResultFrame(new TaskResult
+            {
+                TaskId = request.TaskId,
+                Outcome = TaskOutcome.Succeeded,
+                Output = "socks proxy closed: 2 connections (0 refused), 8 bytes up, 8 bytes down",
+            }),
+        });
         await WaitUntilAsync(async () =>
             (await env.Http.GetFromJsonAsync<TaskBody>(
                 $"/engagements/{implant.EngagementId}/tasks/{request.TaskId}"))!.Status == "Completed");
@@ -124,14 +116,12 @@ public class SocksProxyRoundTripTests
             (await audit.ForTaskAsync(Guid.Parse(request.TaskId)))
             .Any(e => e.Kind == AuditEventKind.RelayClosed));
 
-        await call.RequestStream.CompleteAsync();
     }
 
     [Fact]
     public async Task SocksBind_FailsTheConnectWhenTheImplantRefusesTheDial()
     {
         await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
@@ -142,13 +132,10 @@ public class SocksProxyRoundTripTests
         var deadPort = ((IPEndPoint)taken.LocalEndpoint).Port;
         taken.Stop();
 
-        var (implant, leafCert, leafKey) = await EnrollImplantAsync(implants, ca, clock, ImplantClass.Stage2);
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id, "tunnel.socks"));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, ParseResponse(call.ResponseStream.Current).Status);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
+        using var beacon = await WsBeaconClient.ConnectAsync(
+            env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
+        Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
         await AuthenticatedHost.LoginAsync(env.Http);
         var issued = await env.Http.PostAsJsonAsync(
@@ -156,7 +143,7 @@ public class SocksProxyRoundTripTests
             new { ImplantId = implant.Id.ToString(), Verb = "tunnel.socks" });
         issued.EnsureSuccessStatusCode();
         var issuedBody = await issued.Content.ReadFromJsonAsync<TaskIssuedBody>();
-        var request = await NextTaskRequestAsync(call, issuedBody!.TaskId);
+        var request = await NextTaskRequestAsync(beacon, issuedBody!.TaskId);
 
         var bound = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks/{request.TaskId}/relay",
@@ -166,7 +153,7 @@ public class SocksProxyRoundTripTests
 
         // The fake implant refuses every dial: the opened packet carries the
         // failure, and the SOCKS reply tells the client where it stands.
-        _ = RefuseDialsAsync(call, request.TaskId);
+        _ = RefuseDialsAsync(beacon, request.TaskId);
 
         using var tool = new TcpClient();
         await tool.ConnectAsync(IPAddress.Loopback, relay!.Port);
@@ -187,18 +174,15 @@ public class SocksProxyRoundTripTests
         Assert.Equal(5, reply[0]);
         Assert.NotEqual(0, reply[1]); // the SOCKS failure the dial refusal maps to
 
-        await call.RequestStream.CompleteAsync();
     }
 
     // Answers every open packet with a refused dial -- the implant half of a
     // destination that will not connect.
-    private static async Task RefuseDialsAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call,
-        string taskId)
+    private static async Task RefuseDialsAsync(WsBeaconClient beacon, string taskId)
     {
-        while (await MoveNextAsync(call, "channel input"))
+        while (true)
         {
-            var frame = call.ResponseStream.Current;
+            var frame = await beacon.ReceiveFrameAsync();
             if (frame.Kind != FrameKind.ChannelInput)
                 continue;
             var input = ChannelInput.Parser.ParseFrom(frame.Payload);
@@ -210,7 +194,7 @@ public class SocksProxyRoundTripTests
                 continue; // only open packets open dials
 
             var id = BinaryPrimitives.ReadUInt32LittleEndian(input.Data.Span.Slice(1, 4));
-            await call.RequestStream.WriteAsync(OutputFrame(taskId, EncodePacket(4, id, new byte[] { 1 })));
+            await beacon.SendFramesAsync(new[] { OutputFrame(taskId, EncodePacket(4, id, new byte[] { 1 })) });
         }
     }
 
@@ -275,14 +259,14 @@ public class SocksProxyRoundTripTests
     /// </summary>
     private sealed class FakeProxyBridge : IDisposable
     {
-        private readonly AsyncDuplexStreamingCall<Frame, Frame> _call;
+        private readonly WsBeaconClient _call;
         private readonly Dictionary<uint, TcpClient> _connections = new();
         private readonly List<byte> _parsed = new();
         private readonly int _portOne;
         private readonly int _portTwo;
 
         public FakeProxyBridge(
-            AsyncDuplexStreamingCall<Frame, Frame> call,
+            WsBeaconClient call,
             int portOne,
             int portTwo)
         {
@@ -295,9 +279,9 @@ public class SocksProxyRoundTripTests
 
         private async Task ServeCoreAsync()
         {
-            while (await MoveNextAsync(_call, "channel input"))
+            while (true)
             {
-                var frame = _call.ResponseStream.Current;
+                var frame = await _call.ReceiveFrameAsync();
                 if (frame.Kind != FrameKind.ChannelInput)
                     continue;
                 var input = ChannelInput.Parser.ParseFrom(frame.Payload);
@@ -335,7 +319,7 @@ public class SocksProxyRoundTripTests
             var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Loopback, port == _portOne || port == _portTwo ? port : _portOne);
             _connections[id] = client;
-            await _call.RequestStream.WriteAsync(OutputFrame(taskId, EncodePacket(4, id, new byte[] { 0 })));
+            await _call.SendFramesAsync(new[] { OutputFrame(taskId, EncodePacket(4, id, new byte[] { 0 })) });
             _ = PumpDownAsync(taskId, id, client);
         }
 
@@ -349,8 +333,8 @@ public class SocksProxyRoundTripTests
                     var read = await client.GetStream().ReadAsync(buffer);
                     if (read <= 0)
                         return;
-                    await _call.RequestStream.WriteAsync(
-                        OutputFrame(taskId, EncodePacket(2, id, buffer[..read])));
+                    await _call.SendFramesAsync(
+                        new[] { OutputFrame(taskId, EncodePacket(2, id, buffer[..read])) });
                 }
             }
             catch (Exception ex) when (ex is IOException or SocketException or ObjectDisposedException)
@@ -379,40 +363,18 @@ public class SocksProxyRoundTripTests
         }
     }
 
-    // The deadline every downstream read waits under: a frame that never
-    // arrives must fail the test, not park it forever.
-    private static readonly TimeSpan ReadDeadline = TimeSpan.FromSeconds(30);
-
-    private static async Task<TaskRequest> NextTaskRequestAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call, string taskId)
+    // Reads downstream frames until the TaskRequest for taskId arrives;
+    // kind-bearing frames are skipped.
+    private static async Task<TaskRequest> NextTaskRequestAsync(WsBeaconClient beacon, string taskId)
     {
         while (true)
         {
-            Assert.True(await MoveNextAsync(call, "task request"), "stream ended early");
-            var frame = call.ResponseStream.Current;
+            var frame = await beacon.ReceiveFrameAsync();
             if (frame.Kind != FrameKind.Unspecified)
                 continue;
             var request = TaskRequest.Parser.ParseFrom(frame.Payload);
             if (request.TaskId == taskId)
                 return request;
-        }
-    }
-
-    private static async Task<bool> MoveNextAsync(
-        AsyncDuplexStreamingCall<Frame, Frame> call, string awaiting)
-    {
-        using var deadline = new CancellationTokenSource(ReadDeadline);
-        try
-        {
-            return await call.ResponseStream.MoveNext(deadline.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
-        }
-        catch (RpcException) when (deadline.IsCancellationRequested)
-        {
-            throw new TimeoutException($"Timed out waiting for the downstream {awaiting} frame.");
         }
     }
 
@@ -437,34 +399,16 @@ public class SocksProxyRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync(
-        IImplantRepository implants, IImplantCertificateAuthority ca, TimeProvider clock, ImplantClass @class)
+    private static async Task<Implant> EnrollImplantAsync(
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
             now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
-
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-        return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+        return implant;
     }
-
-    private static Frame HandshakeFrame(ImplantId implant, params string[] capabilities)
-    {
-        var request = new HandshakeRequest
-        {
-            Version = new ProtocolVersion { Major = 1, Minor = 0 },
-            ImplantId = implant.ToString(),
-        };
-        request.Capabilities.Add(capabilities);
-        return new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) };
-    }
-
-    private static HandshakeResponse ParseResponse(Frame frame)
-        => HandshakeResponse.Parser.ParseFrom(frame.Payload);
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
@@ -593,13 +537,11 @@ public class SocksProxyRoundTripTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public OperatorId OperatorId { get; private set; }
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
 
         public static async Task<TestEnv> StartAsync()
         {
             var env = new TestEnv();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
             env.HttpPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
@@ -608,7 +550,6 @@ public class SocksProxyRoundTripTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
@@ -619,33 +560,6 @@ public class SocksProxyRoundTripTests
                 BaseAddress = new Uri($"http://127.0.0.1:{env.HttpPort}"),
             };
             return env;
-        }
-
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
         }
 
         public async ValueTask DisposeAsync()
