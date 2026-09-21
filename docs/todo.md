@@ -14,6 +14,10 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
+The list is in priority order: start from the top. An item that names
+its own blocker (a build host, an environment) is worked the moment the
+blocker clears, not skipped.
+
 - **Server-side automation: triggers and scheduled tasking** (serves
   architecture.md Sec 10.3; design lands as a new subsection there before
   any code). What an engagement cannot do without it: act on a cadence or
@@ -32,7 +36,7 @@ starts from a gap an actual engagement surfaces.
   (JS/Lua) is a possible follow-on evaluator, not the first one --
   declarative rules are auditable and testable and cover the
   engagement-shown needs.
-  _AC:_ a rule that runs a recon verb on one implant every 30 minutes
+  _AC:_ a rule that issues shell.exec on one implant every 30 minutes
   survives a teamserver restart, shows automation attribution in the audit
   trail, and is cancelable from the operator API.
 
@@ -102,7 +106,7 @@ starts from a gap an actual engagement surfaces.
   is an engagement-scoped implant entity, so attribution, live events,
   audit, and the automation engine treat it like any other implant.
   Where the hook script itself lives -- a second reference artifact beside
-  the .NET implant, or transport-owned like the webshell adapters -- is
+  the Rust implant, or transport-owned like the webshell adapters -- is
   the first design question.
   _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
   over the envelope carrier, and an operator tasks a fingerprint and a
@@ -228,6 +232,42 @@ starts from a gap an actual engagement surfaces.
   _AC:_ a two-recipient campaign mints per-recipient lure links, and
   the recipient who executes the lure enrolls with campaign and
   recipient attribution visible in the audit trail.
+
+- **Rehearsal refresh against the settled surface** (serves
+  [operations/rehearsal.md](operations/rehearsal.md); the walk's own
+  dated header already queues this). What an engagement cannot do
+  without it: a pre-deployment walk that matches what would actually be
+  deployed -- the recorded walk predates the four-family decision
+  (architecture.md Sec 8), the engagement-scoped listener model, and
+  the Rust artifact, and reads through patch notes instead of as one
+  procedure. Shape: re-execute the single-host walk and the redirector
+  composition on the current surface (Https one-port listener, the
+  envelope and WebSocket beacons, raw-TCP and DNS/DoH fronts,
+  pipeline-built Rust payloads), then rewrite the record as the
+  procedure it now is, dated-header patch notes folded in or dropped;
+  the CA rotation drill carries over where it still holds. The
+  multi-host Windows leg waits for the host the item below names;
+  everything else runs from Linux now.
+  _AC:_ the single-host walk and the redirector composition re-executed
+  end to end on the settled surface, the refreshed record quoting
+  acceptance evidence from the new run rather than the retired one.
+
+- **Windows host verification of the Rust implant** (serves
+  architecture.md Sec 12.2's reach story and the rehearsal walk above;
+  blocked on a Windows host the developer provides). What an engagement
+  cannot do without it: confidence on the OS engagements actually land
+  on -- the e2e legs prove the wire on Linux, while the Windows-only
+  code paths never execute there: the sensitive verbs (proc.kill,
+  inject.shellcode, collect.minidump, collect.keylog) and the
+  pipes-backed interactive shell. Shape: run a pipeline-built win-x64
+  Rust artifact on the provided host against a teamserver and exercise
+  shell.exec, file.push and file.pull, the channel verbs over the
+  raw-TCP carriage, and the sensitive four, with the same adversarial
+  eye the retired win-x64 surface pass applied; the outcome lands as
+  the refreshed walk's multi-host Windows legs.
+  _AC:_ the sensitive verbs and the channel verbs answer tasking from a
+  Windows host through the same e2e shape the Linux legs run, recorded
+  in the rehearsal walk.
 
 - **Implant-side plugin seam: C-ABI capability modules** (serves
   architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
