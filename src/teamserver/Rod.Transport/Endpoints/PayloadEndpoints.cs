@@ -179,7 +179,7 @@ public static class PayloadEndpoints
         // path does (the shared parser): same refusals, same defaults, same
         // stager stage-2 resolution, same listener-name endpoint resolution.
         var (parsed, parseError) = await PayloadBuildRequestParser.ParseAsync(
-            body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners,
+            body, new EngagementId(engagementValue), requestedBy.Value, listeners,
             ca, cancellationToken);
         if (parseError is not null)
             return Results.BadRequest(new Problem(parseError));

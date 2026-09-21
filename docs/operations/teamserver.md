@@ -76,7 +76,7 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
 3. Build a payload for it (class, target OS/arch, beacon profile, malleable
    transport) and download the artifact from the payload store.
 4. Run the reference implant for a quick end-to-end check:
-   `dotnet run --project src/implant/dotnet -- -enroll-url
+   cargo run --manifest-path src/implant/rust/Cargo.toml (with ROD_ENROLL_URL
    http://127.0.0.1:8080/implants/enroll -token <secret>` -- the address is
    the listener from step 2, not the operator front -- or add `-mode poll`
    for the low-and-slow cadence. It appears in the implants list (grouped
@@ -148,7 +148,7 @@ standard `Section__Key` mapping):
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
 | `Build:ImplantExtensionDirectory` | The tradecraft extension kit's implant half: a directory of out-of-tree handler sources overlaid onto every implant-class build ([extending/tradecraft.md](../extending/tradecraft.md)). A configured-but-missing directory fails startup loudly. | Empty -- the reference implant builds as-is. |
-| `Build:ImplantSourceDirectory` / `Build:StagerSourceDirectory` | An installed teamserver (a publish with no repo above it) names the implant/stager source trees the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/dotnet`, `src/stager/dotnet`). |
+| `Build:RustSourceDirectory` | An installed teamserver (a publish with no repo above it) names the Rust crate the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/rust`). |
 
 ## Production install and recovery
 
@@ -238,7 +238,7 @@ deployed tree both keys can point at:
 ```
 /opt/rod/src/
   Directory.Build.props  Directory.Packages.props  global.json
-  src/implant/dotnet/    src/stager/dotnet/        # build sources, no bin/obj
+  src/implant/rust/                               # the build source, no target/
   src/teamserver/Rod.Protocol/protos/              # the wire contract the implant compiles against
   tests/                 # the repo-root marker the build unit walks up to
 ```

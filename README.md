@@ -111,7 +111,7 @@ dotnet run --project src/teamserver/Rod.TeamServer
    enrolls on run.
 4. To try the fleet without a build, run the source-tree dev implant: mint
    a token (`POST /engagements/{id}/stager-tokens`) and run
-   `src/implant/dotnet` with `-enroll-url <listener endpoint>/implants/enroll
+   the Rust implant (`src/implant/rust`) with `ROD_ENROLL_URL=<listener endpoint>/implants/enroll
    -token ...`.
 
 The full lifecycle walk -- single-host and multi-host runs, the win-x64

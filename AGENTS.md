@@ -31,22 +31,20 @@ guidance file tracked in git.
 
 ## 3. Platform and tooling
 
-- **Teamserver target: .NET 10 (LTS).** Use `net10.0` TFMs and the latest C#
-  language features. The SDK is pinned in `global.json` for reproducible builds.
+- **Teamserver (the control plane) target: .NET 10 (LTS).** Use `net10.0`
+  TFMs and the latest C# language features. The SDK is pinned in
+  `global.json` for reproducible builds. .NET exists for the control plane
+  only; there is no .NET implant and no .NET stager.
 - **Redirectors: .NET (Native AOT).** A single-file native forwarder when one
   ships in-tree; no Go. See architecture.md Sec 12.2.
-- **Build units: two in-tree -- .NET and Rust.** Additional languages (Go,
-  C/C++, Nim) stay available through the language-neutral build contract and
-  the `Language` enum, supplied as out-of-tree community units.
-- **Implants: two in-tree references -- .NET (full-capability) and Rust
-  (reach).** The wire protocol is the product, so every implant builds
-  against the same contract without coupling the teamserver to its language.
-  The .NET implant is the full-capability reference; the Rust implant is the
-  reach implant for targets a managed runtime cannot serve (native size,
-  static musl, 32-bit ARM IoT, mobile shells), with both web carriages --
-  the poll POST cycle and the WebSocket stream. The .NET implant retires
-  when the Rust one reaches core-verb parity and the conformance suite runs
-  green against it. See architecture.md Sec 12.2.
+- **Build units: one in-tree -- Rust.** Additional languages (Go, C/C++,
+  Nim) stay available through the language-neutral build contract and the
+  `Language` enum, supplied as out-of-tree community units.
+- **Implants: the Rust reference is the implant.** The wire protocol is
+  the product, so every implant builds against the same contract without
+  coupling the teamserver to its language. The Rust crate is the reference:
+  static musl on Linux, mingw on Windows, both web carriages, the
+  conformance harness's reference candidate. See architecture.md Sec 12.2.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do not
   duplicate these per-project.
@@ -140,14 +138,13 @@ authoritative statement.
 
 - **Teamserver**: the `Rod.*` .NET projects under `src/teamserver/`, monolithic
   kernel, six internal layers, clean dependency rules.
-- **Build units**: the in-tree .NET and Rust build units; community units in
-  other languages plug in through the build contract.
+- **Build units**: the in-tree Rust build unit; community units in other
+  languages plug in through the build contract.
 - **Redirectors**: the in-tree .NET Native AOT forwarder
   (`src/redirector/dotnet/`) and its runbook
   (`docs/operations/redirectors.md`).
-- **Implants**: the .NET reference implant under `src/implant/dotnet/` and
-  the Rust reach implant under `src/implant/rust/`, independent and
-  disposable; community implants in other languages arrive out-of-tree.
+- **Implants**: the Rust reference under `src/implant/rust/`, independent
+  and disposable; community implants in other languages arrive out-of-tree.
 - **Wire protocol and capability registry**: the long-lived, language-neutral
   contract implants build against.
 - All domain data is engagement-scoped; cross-engagement access is impossible by

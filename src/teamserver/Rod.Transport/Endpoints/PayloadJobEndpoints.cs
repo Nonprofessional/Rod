@@ -63,7 +63,7 @@ public static class PayloadJobEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var (parsed, error) = await PayloadBuildRequestParser.ParseAsync(
-            body, new EngagementId(engagementValue), requestedBy.Value, payloads, listeners, ca, cancellationToken);
+            body, new EngagementId(engagementValue), requestedBy.Value, listeners, ca, cancellationToken);
         if (error is not null)
             return Results.BadRequest(new Problem(error));
 

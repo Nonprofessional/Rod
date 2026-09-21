@@ -45,7 +45,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -60,7 +60,7 @@ public class PayloadBuildTests
             Assert.NotNull(body);
             Assert.False(string.IsNullOrWhiteSpace(body!.ArtifactId));
             Assert.Equal("Stage2", body.Class);
-            Assert.Equal("DotNet", body.Language);
+            Assert.Equal("Rust", body.Language);
             Assert.False(string.IsNullOrWhiteSpace(body.ContentType));
             Assert.True(body.Size > 0);
             // SHA-256 lowercase hex, 64 chars.
@@ -88,7 +88,7 @@ public class PayloadBuildTests
             var garbage = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -104,7 +104,7 @@ public class PayloadBuildTests
             var garbageFallback = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -234,7 +234,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -265,7 +265,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -337,7 +337,7 @@ public class PayloadBuildTests
         var response = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                Language: "DotNet",
+                Language: "Rust",
                 Class: "Stage2",
                 TargetOs: "linux",
                 TargetArch: "amd64",
@@ -364,7 +364,7 @@ public class PayloadBuildTests
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "DotNet",
+                    Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
@@ -472,11 +472,10 @@ public class PayloadBuildTests
     }
 
     [Fact]
-    public async Task BuildPayload_Returns400_ForTheDllFormatOnAStagerBuild()
+    public async Task BuildPayload_Returns400_ForTheRetiredStagerClass()
     {
-        // The dll bundle is an implant shape: a stager IS the loader, so a
-        // loader with no host to run it is refused at parse time rather than
-        // built into an artifact nothing can execute.
+        // The stager class retired with the .NET trees; the request answers
+        // with the current delivery story instead of building a loader.
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
@@ -489,6 +488,35 @@ public class PayloadBuildTests
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: null,
                     Class: "Stager",
+                    TargetOs: null,
+                    TargetArch: null,
+                    Endpoint: null,
+                    UriPath: null,
+                    SleepSeconds: null,
+                    JitterSeconds: null,
+                    KillDate: null));
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task BuildPayload_Returns400_ForTheRetiredDllFormat()
+    {
+        // The dll bundle was the .NET in-memory shape; with the .NET implant
+        // gone there is no producer, and the parse says so.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: null,
+                    Class: null,
                     TargetOs: null,
                     TargetArch: null,
                     Endpoint: null,

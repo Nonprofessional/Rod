@@ -66,8 +66,15 @@ pub fn run(profile: &Profile) -> Exit {
     let mut carriage = carriage_for(profile);
 
     // Contacts never re-enroll: the artifact's identity is bound, and the
-    // walk only crosses fronts.
-    let walk: Vec<String> = fronts.iter().map(|url| beacon_url(url)).collect();
+    // walk only crosses fronts. A named beacon front (the split-socket
+    // shape) leads the walk; the fallback fronts follow as derived contacts.
+    let mut walk: Vec<String> = Vec::new();
+    if !profile.beacon_url.is_empty() {
+        walk.push(profile.beacon_url.clone());
+    }
+    for url in &fronts {
+        walk.push(beacon_url(url));
+    }
     let mut index = 0usize;
     let mut failures = 0u32;
     loop {

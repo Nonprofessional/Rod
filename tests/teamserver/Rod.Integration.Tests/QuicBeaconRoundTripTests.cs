@@ -210,7 +210,6 @@ public class QuicBeaconRoundTripTests
                 Request(beaconListenerId: listener.Id),
                 new EngagementId(Guid.Parse(engagementId)),
                 operatorId,
-                host.Services.GetRequiredService<Rod.Audit.IPayloadStore>(),
                 host.Services.GetRequiredService<IListenerRegistry>(),
                 host.Services.GetRequiredService<IImplantCertificateAuthority>(),
                 CancellationToken.None);
@@ -451,7 +450,6 @@ public class QuicBeaconRoundTripTests
                 EnrollRequest(listener.Id.ToString(), mode: "poll"),
                 new EngagementId(Guid.Parse(engagementId)),
                 operatorId,
-                host.Services.GetRequiredService<Rod.Audit.IPayloadStore>(),
                 registry,
                 host.Services.GetRequiredService<IImplantCertificateAuthority>(),
                 CancellationToken.None);
@@ -463,7 +461,6 @@ public class QuicBeaconRoundTripTests
                 EnrollRequest(listener.Id.ToString()),
                 new EngagementId(Guid.Parse(engagementId)),
                 operatorId,
-                host.Services.GetRequiredService<Rod.Audit.IPayloadStore>(),
                 registry,
                 host.Services.GetRequiredService<IImplantCertificateAuthority>(),
                 CancellationToken.None);

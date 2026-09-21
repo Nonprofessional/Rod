@@ -33,7 +33,7 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // beacon with a gutted verb set and stay API-only), this engagement's
 // HTTP-shaped listeners (the ones implants can enroll through -- DNS/SMB/TCP
 // listeners appear greyed out), and the arch set the toolchain bundles a
-// runtime for (x86 only pairs with Windows). A stager names the completed
+// runtime for (x86 only pairs with Windows).
 // Stage-2 artifact it fetches, so that select lists the finished Stage2 builds
 // below. Interactive needs no second listener: every web front carries the
 // WebSocket beacon (stream mode holds it open; the API still accepts a named
@@ -85,7 +85,6 @@ export function PayloadBuildView({
   // artifacts are made.
   const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
   const [klass, setKlass] = useState('Stage2')
-  const [stage2PayloadId, setStage2PayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [format, setFormat] = useState('exe')
@@ -119,7 +118,6 @@ export function PayloadBuildView({
   const [contactProtection, setContactProtection] = useState(true)
   const [tokenHours, setTokenHours] = useState('')
 
-  const isStager = klass === 'Stager'
 
   // Every web front carries its own contacts -- the envelope POST cycle
   // for poll, the WebSocket beacon for stream -- so one listener is always
@@ -214,12 +212,6 @@ export function PayloadBuildView({
     preselected.current = true
   }, [pickable, listenerId, listeners.length])
 
-  // The finished Stage2 builds a stager can fetch -- the artifact ids the
-  // request resolves against the payload store.
-  const stage2Artifacts = jobs.filter(
-    (j) => j.state === 'completed' && j.class === 'Stage2' && j.artifact,
-  )
-
   // Poll only while a job is in flight -- the list is otherwise quiet, and a
   // completed build changes nothing until the next submit.
   const timer = useRef<number | null>(null)
@@ -260,10 +252,6 @@ export function PayloadBuildView({
       setError('Pick a listener (or fill the endpoint under Advanced).')
       return
     }
-    if (isStager && !stage2PayloadId) {
-      setError('A stager fetches a Stage-2 payload -- build one first and pick it.')
-      return
-    }
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
@@ -275,7 +263,6 @@ export function PayloadBuildView({
         targetArch,
         listenerId: listenerId || null,
         endpoint: !listenerId && endpoint ? endpoint : null,
-        stage2PayloadId: isStager ? stage2PayloadId : null,
         beaconListenerId: carrierId || null,
         beaconEndpoint: null,
         fallbackEndpoints: fallbacks(fallbackEndpoints),
@@ -386,29 +373,13 @@ export function PayloadBuildView({
           )}
           <label>
             Class
+            {/* The stager class retired with the .NET trees: delivery rides
+                the launcher one-liners, which the Launchers tab renders per
+                payload. */}
             <select value={klass} onChange={(e) => setKlass(e.target.value)}>
               <option value="Stage2">Stage2 — full implant</option>
-              <option value="Stager">Stager — small loader, fetches a Stage2</option>
             </select>
           </label>
-          {isStager && (
-            <label>
-              Stage-2 payload
-              <select
-                value={stage2PayloadId}
-                onChange={(e) => setStage2PayloadId(e.target.value)}
-                title="The finished Stage2 build the loader fetches and runs at launch."
-              >
-                <option value="">-- pick the Stage2 it fetches --</option>
-                {stage2Artifacts.map((j) => (
-                  <option key={j.artifact!.artifactId} value={j.artifact!.artifactId}>
-                    {j.artifact!.fingerprint.slice(0, 12)} · {j.target} ·{' '}
-                    {new Date(j.completedAt ?? j.requestedAt).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           <label>
             OS
             {/* The build unit maps these onto a runtime identifier and refuses
@@ -440,20 +411,17 @@ export function PayloadBuildView({
           </label>
           <label>
             Format
-            {/* The artifact's form factor: the single-file default drops and
-                runs anywhere, trimmed and AOT shrink it (AOT carries no
-                runtime at all), and the dll bundle loads in memory inside a
-                host with a .NET 8+ runtime. A stager IS a loader, so the dll
-                shape is implant-only -- the server refuses the pairing. */}
+            {/* The artifact's form factor: every Rust artifact is a native
+                executable, so the spellings differ only in posture -- 'exe'
+                the default, 'aot' the one the memfd one-liner family keys
+                on for in-memory delivery. */}
             <select value={format} onChange={(e) => setFormat(e.target.value)}>
-              <option value="exe">exe — self-contained single file</option>
-              <option value="exe-trimmed">exe-trimmed — smaller single file</option>
-              <option value="aot">aot — runtime-free native binary</option>
-              {!isStager && <option value="dll">dll — in-memory load bundle</option>}
+              <option value="exe">exe — native executable</option>
+              <option value="aot">aot — native, in-memory deliverable</option>
             </select>
           </label>
         </fieldset>
-        <fieldset disabled={isStager}>
+        <fieldset>
           <legend>Beacon profile</legend>
           <label>
             Mode
@@ -499,12 +467,6 @@ export function PayloadBuildView({
             and the credential's enroll window ride under Advanced — hover each field for
             specifics.
           </p>
-          {isStager && (
-            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              The stager bakes only its kill date (under Advanced); beacon timing belongs to the
-              Stage2 it fetches.
-            </p>
-          )}
         </fieldset>
         <details
           className="build-advanced"
@@ -623,7 +585,6 @@ export function PayloadBuildView({
           mode={mode}
           sleep={sleepSeconds}
           jitter={jitterSeconds}
-          stager={isStager}
         />
         <button className="primary" type="submit" disabled={submitting}>
           Build payload
@@ -787,7 +748,6 @@ function BuildSummary({
   mode,
   sleep,
   jitter,
-  stager,
 }: {
   listener?: ListenerSummary
   endpoint: string
@@ -795,7 +755,6 @@ function BuildSummary({
   mode: string
   sleep: string
   jitter: string
-  stager: boolean
 }) {
   const front = listener?.publicEndpoint ?? (endpoint.trim() || 'the typed endpoint under Advanced')
   const via = listener ? `${listener.name} (${listener.transport})` : 'manual endpoint'
@@ -830,8 +789,6 @@ function BuildSummary({
 
   const interactive = carrier
     ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
-    : stager
-      ? 'none — a stager fetches its Stage-2 and never contacts'
       : dnsFront
         ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
         : mode === 'poll'
@@ -846,7 +803,6 @@ function BuildSummary({
     <div className="build-summary" title="What this build bakes, composed from the picks above">
       <div>
         <span className="summary-key">enroll</span> once on <code>{front}</code> via {via}
-        {stager && ' — then stages its Stage-2 from the same front'}
       </div>
       <div>
         <span className="summary-key">contact</span> {contact}

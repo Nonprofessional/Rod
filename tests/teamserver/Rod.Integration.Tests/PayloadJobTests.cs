@@ -19,7 +19,7 @@ public class PayloadJobTests
     // The record's positional parameters are required up front; nulls keep a
     // minimal request (server defaults apply).
     private static PayloadEndpoints.BuildPayloadRequest Request(
-        string language = "DotNet",
+        string language = "Rust",
         string @class = "Stage2",
         string? mode = null,
         string? endpoint = null,
@@ -93,28 +93,6 @@ public class PayloadJobTests
             $"/engagements/{engagementId}/payload-jobs",
             Request(mode: "sometimes"));
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-
-        var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
-            $"/engagements/{engagementId}/payload-jobs");
-        Assert.NotNull(jobs);
-        Assert.Empty(jobs!);
-    }
-
-    [Fact]
-    public async Task BuildJob_DotNetX86OffWindows_IsRefusedWithoutQueuing()
-    {
-        var (client, _, _) = AuthenticatedHost.Create();
-        await AuthenticatedHost.LoginAsync(client);
-        var engagementId = await CreateEngagementAsync(client);
-
-        // No linux-x86 runtime exists to bundle, so the pair is a 400 naming
-        // the fix, not a queued job that dies at restore.
-        var refused = await client.PostAsJsonAsync(
-            $"/engagements/{engagementId}/payload-jobs",
-            Request() with { TargetOs = "linux", TargetArch = "x86" });
-        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-        var problem = await refused.Content.ReadFromJsonAsync<Problem>();
-        Assert.Contains("x86", problem!.Error);
 
         var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
             $"/engagements/{engagementId}/payload-jobs");

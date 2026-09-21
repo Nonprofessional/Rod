@@ -1235,9 +1235,6 @@ export interface BuildPayloadInput {
   // envelope POST cycle.
   beaconListenerId: string | null
   beaconEndpoint: string | null
-  // A stager-class build only: the completed Stage-2 artifact the loader
-  // fetches at run time. Null everywhere else.
-  stage2PayloadId: string | null
   fallbackEndpoints: string[] | null
   enrollPath: string | null
   userAgent: string | null

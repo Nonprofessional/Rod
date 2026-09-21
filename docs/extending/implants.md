@@ -5,7 +5,8 @@ protocol is the product (architecture.md Sec 4.2, Sec 12.2): any language that
 can speak it can be a Rod implant. This file defines what "speak it" minimally
 means, every byte-level shape an implant author needs, what is optional
 hardening, and the rules that keep the minimum small while the platform grows.
-The reference .NET implant (`src/implant/dotnet/`) implements every tier; it
+The reference Rust implant (`src/implant/rust/`) implements every tier it
+carries; it
 is the worked example, not the obligation.
 
 The contract sources are `src/teamserver/Rod.Protocol/protos/rod.proto` (the

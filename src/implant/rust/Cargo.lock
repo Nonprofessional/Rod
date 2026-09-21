@@ -1065,6 +1065,7 @@ version = "1.0.0-dev"
 dependencies = [
  "aes-gcm",
  "base64",
+ "libc",
  "p256",
  "prost",
  "prost-build",

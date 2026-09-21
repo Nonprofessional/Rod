@@ -47,9 +47,10 @@ public sealed class RustBuildUnit : IBuildUnit
         if (!Directory.Exists(_rustSourceDir))
             throw new InvalidOperationException($"Rust implant source tree not found at '{_rustSourceDir}'.");
 
-        // The bake: the same base64url profile JSON the .NET unit emits --
-        // one language-neutral contract, decoded identically by both trees.
-        var baked = DotNetBuildUnit.RenderBakedProfile(@params);
+        // The bake: the same base64url profile JSON every unit emits --
+        // one language-neutral contract, decoded identically by every
+        // implant.
+        var baked = ProfileBake.Render(@params);
         var triple = MapTriple(@params.Target);
 
         var workDir = Path.Combine(Path.GetTempPath(), "rod-rust-build-" + Guid.NewGuid().ToString("N"));

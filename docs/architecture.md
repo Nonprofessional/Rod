@@ -132,7 +132,7 @@ in-house. The dependency rule is enforced by architecture tests.
   maintains one in-tree reference, not one per language (Sec 12.2).
 - **Implants.** Target-resident, disposable, speaking the wire protocol and
   independent of the teamserver language. (Sec. 5.) The **reference .NET
-  implant** lives in the `src/implant/dotnet/` tree: a benign, readable
+  implant** lives in the `src/implant/rust` crate: a benign, readable
   stage-2 implant that enrolls over HTTP (submitting its own public key),
   beacons over mTLS, and runs the standard-category verb set (Sec 10.1). It
   compiles its wire bindings
@@ -279,9 +279,10 @@ Implants differ by purpose, not by a "managed device flavor":
 
 - **Stage-2 implant** -- the primary long-haul implant; full capability set and
   module support. (e.g. the .NET reference implant, cross-platform.)
-- **Stager** -- a stage-1 loader that fetches a stage-2 implant and runs it by
-  its format: hosting a dll bundle in its own process, or executing a native
-  stage-2 (from memory on Linux). Separate generation output class.
+- **Stager** -- retired as a build output: delivery rides the launcher
+  one-liners (the disk families plus the Linux in-memory memfd family),
+  which fetch the stage-2 over the same token-gated route a loader ever
+  used. The class remains in the taxonomy for history's rows.
 - **Web-shell class** -- a script placed in a web root, bound to the web
   transport; code execution over HTTP, no interactive PTY. The endpoint is
   operator-initiated in every phase: registration creates the class's
@@ -496,35 +497,14 @@ recorded.**
   describes (the selection-seam rewrite, the reduced binary, the overlay's
   verbs riding every build). The stager tree is never trimmed: a stage-1
   loader carries no handlers.
-- **Staging** is a separate output class with its own generation path: a
-  stager-class build compiles the stage-1 loader, not the implant, and
-  bakes in a fetch reference -- the stage-2 payload's id, sha256
-  fingerprint, and format -- alongside the listener, kill date, and its
-  own minted credential (a deployment secret, not key material). The
-  loader runs with zero arguments and zero environment -- the bake is
-  authoritative, and no flag or variable re-points or re-credentials a
-  fielded artifact: the loader presents its token for the fetch
-  (`GET /implants/stage2/{id}`, each served fetch spending one use -- the
-  download gate is that credential's whole job), refuses bytes that do not
-  hash to the baked fingerprint, runs the fetched artifact by its baked
-  format, and hands nothing operational across the process boundary --
-  the stage-2 spends its own baked token at its enroll and appears on the
-  roster as a top-level implant. The run path follows the format: a
-  **dll** stage-2 is hosted in the loader's own process (the bundle
-  unpacks into memory, dependencies pre-load from bytes, the entry point
-  invokes) -- no byte of the stage-2 on any filesystem, any OS; a
-  **native AOT** stage-2 runs from an anonymous memfd on Linux
-  (`memfd_create` + `execveat`, the documented kernel facilities -- the
-  loader's process image becomes the stage-2), equally disk-free, because
-  an AOT binary is a plain ELF with no self-reference; the single-file
-  shapes keep the temp-file child, because a single-file bundle reads its
-  own file to mount the runtime (observed: the bundle host cannot resolve
-  the current executable from an anonymous fd). An AOT stager pairs only
-  with executable stage-2 shapes -- a native host cannot load IL -- and
-  the build refuses the pairing with the fix named. The .NET reference
-  loader lives in `src/stager/dotnet/`; the fetch route is
-  engagement-scoped by the token and by the listener it arrived on
-  (Sec 8).
+- **Delivery rides the launcher one-liners.** The stage-1 loader class is
+  retired with the .NET trees: the render families -- the disk fetch-and-run
+  trio for every payload, plus the Linux in-memory family for the native
+  artifact (python3 stages the bytes in a memfd and execs through
+  /proc/self/fd, so nothing lands) -- deliver the stage-2 over the same
+  engagement-scoped, token-gated fetch route (`GET /implants/stage2/{id}`,
+  each served fetch spending one use), with the mints, budgets, and
+  revocations the launchers endpoint already keeps.
 - **Every build mints the enrollment credential it bakes.** The token is
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --
@@ -1684,40 +1664,37 @@ EF-migration command the toolchain already commits to); **Dapper over Npgsql**
 abstraction** (premature -- it defers the access question this answers without
 resolving how the host reaches the database today).
 
-### 12.2 Toolchain: .NET plus Rust in-tree, polyglot by contract
+### 12.2 Toolchain: .NET control plane, Rust implant
 
-Rod ships two in-tree toolchains, each with a job the other cannot do. The
-**control plane and the full-capability reference implant are .NET 10** (the
-teamserver, the stager, the richest verb set, the extension overlay, the
-in-memory dll form); the **reach implant is Rust**
-(`src/implant/rust/`, built by `RustBuildUnit`): a ~2.25 MB fully static
-musl binary for the targets a managed runtime cannot serve -- routers,
-appliances, 32-bit ARM IoT Linux, native shells for mobile platforms -- with
-both web carriages (the envelope POST cycle on poll bakes, the WebSocket
-stream on stream bakes) and the Windows sensitive verbs
-(inject.shellcode, collect.minidump, collect.keylog) that self-gate on
-`cfg(windows)` so a Linux build compiles none of them. Both speak the same
-wire protocol (rod.proto, the baked profile's base64url JSON, the sealed
-envelope) and are proven against it by the same end-to-end acceptance; the
-.NET implant retires when the Rust one reaches core-verb parity and the
-conformance suite runs green against it. The wire protocol remains the language-neutral product and
-the `Language` enum (Go/DotNet/Rust/C/Nim) and build contract stay, so an
-out-of-tree community implant in Go, C, or Nim registers a build unit and
-compiles against the same contract -- polyglot by contract, not by in-tree
-parity. .NET is cross-platform via self-contained publishes
-(Linux/Windows/macOS from one source), and Native AOT produces the
-single-file, no-runtime binary that was the original reason to reach for Go on
-the redirector edge -- the same AOT publish the build pipeline now offers for
-implants and stagers, alongside the trimmed and in-memory-loadable dll forms.
+Rod ships two toolchains with one job each. The **control plane is .NET 10**
+-- the teamserver, the transport, the persistence, the operator layer; the
+C2's logic lives where a managed runtime costs nothing (it runs on the
+operator's own infrastructure). The **implant is Rust**
+(`src/implant/rust/`, built by `RustBuildUnit`): a ~2.25 MB static musl
+binary for every target a managed runtime cannot serve -- routers,
+appliances, 32-bit ARM IoT Linux, native shells for mobile platforms --
+with both web carriages (the envelope POST cycle on poll bakes, the
+WebSocket stream on stream bakes), core verbs plus the Windows sensitive
+set (inject.shellcode, collect.minidump, collect.keylog) that self-gate on
+`cfg(windows)` so a Linux build compiles none of them. The wire protocol is
+the language-neutral product (rod.proto, the baked profile's base64url
+JSON, the sealed envelope); the Rust implant is proven against it by the
+conformance harness (its reference candidate) and the end-to-end legs
+(dev-shape and pipeline-built, both contact modes). The `Language` enum
+(Go/DotNet/Rust/C/Nim) and build contract stay, so a community implant in
+any language registers a build unit and compiles against the same contract.
 
-Rejected alternatives: **a single language end to end** (neither .NET alone
-reaches 32-bit ARM/MIPS IoT or a ~2 MB footprint, nor Rust alone carries the
-teamserver's velocity and the extension overlay -- two references each doing
-their own job beats one doing both badly); **collapse to Go instead of .NET**
-(the control plane is .NET 10, so standardizing on .NET keeps the control
-plane in one toolchain); and **asymmetric polyglot -- .NET full, a second
-language specialist only** (still leaves a second toolchain to build and test
-in CI for a small team, with no benefit over the opt-in contract path).
+The .NET implant and the .NET stager that preceded this shape are deleted:
+their history is the commit record, and their delivery answers -- the
+launcher one-liners, the token-gated stage-2 fetch -- carry forward
+unchanged.
+
+Rejected alternatives: **one language end to end** (neither .NET alone
+reaches 32-bit ARM/MIPS IoT or a ~2 MB static footprint, nor Rust alone
+carries the control plane's velocity); **Go for either half** (a runtime on
+the implant side and an alien toolchain on the control side);
+**asymmetric polyglot -- the reach implant out-of-tree** (the reach story is
+the product's own, not a community add-on).
 
 ## 13. Capability surface statement
 

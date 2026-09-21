@@ -194,10 +194,10 @@ every build. Two practical consequences for authoring:
 Current limits, deliberate: the overlay feeds the one-shot `additional` seam
 only -- a staged or channel verb still needs the fork -- and stager-class
 builds are never overlaid (a stage-1 loader carries no tradecraft handlers).
-The fork itself remains available: `src/implant/dotnet` is an independent,
-disposable component coupled to the teamserver only by the proto, and pointing
-the build unit at your own tree (or building it directly) is the escape hatch
-for anything the overlay does not cover.
+The fork itself remains available: `src/implant/rust` is an independent,
+disposable component coupled to the teamserver only by the wire contracts,
+and pointing the build unit at your own tree (or building it directly with
+cargo) is the escape hatch for anything the seams do not cover.
 
 ## OPSEC metadata and ROE
 

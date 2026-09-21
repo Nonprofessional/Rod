@@ -43,7 +43,6 @@ internal static class PayloadBuildRequestParser
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
         OperatorId requestedBy,
-        IPayloadStore payloads,
         IListenerRegistry listeners,
         IImplantCertificateAuthority ca,
         CancellationToken cancellationToken)
@@ -55,39 +54,22 @@ internal static class PayloadBuildRequestParser
             return (null, "Language is not recognized.");
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
-
-        // The artifact form factor (architecture.md Sec 6): the wire names map
-        // to the enum once here, so the refusal can name every accepted
-        // spelling. The dll bundle is an implant shape -- a stager IS the
-        // loader, so an in-memory-loadable stager has no host to run it; the
-        // stager class takes the executable forms.
+        // The stager class is retired with the .NET trees: delivery rides the
+        // launcher one-liners (the disk families plus the in-memory memfd
+        // family), which fetch the stage-2 over the same token-gated route a
+        // loader ever used.
+        if (@class == ImplantClass.Stager)
+            return (null,
+                "The stager class is retired; deliver the stage-2 through the launcher one-liners (launchers render them per payload).");
+        // The dll bundle was the .NET in-memory shape; with the .NET implant
+        // retired there is no producer -- the Rust implant is native in every
+        // format, and its 'aot' spelling is the one the memfd one-liner
+        // family keys on.
         if (!ArtifactFormats.TryParse(body.Format, out var format))
-            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', 'aot', or 'dll'.");
-        if (format == ArtifactFormat.Dll && @class == ImplantClass.Stager)
+            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', or 'aot'.");
+        if (format == ArtifactFormat.Dll)
             return (null,
-                "The dll format is an in-memory load for an implant; build a stager as 'exe', 'exe-trimmed', or 'aot'.");
-        // The Rust unit's own gates, mirrored at parse time so the pairings
-        // answer 400 with the fix named instead of failing the queued job.
-        if (language == Language.Rust && @class == ImplantClass.Stager)
-            return (null,
-                "The Rust stager is not ported; build the .NET stager or deliver the Rust implant through a one-liner.");
-        if (language == Language.Rust && format == ArtifactFormat.Dll)
-            return (null,
-                "The Rust implant builds native executables; the dll bundle is the .NET shape.");
-
-        // The in-tree .NET toolchain bundles a runtime for every pair it maps
-        // except x86 off Windows (no linux-x86/osx-x86 runtime exists), so the
-        // pair is refused here with the reason instead of failing the queued
-        // job at restore with the toolchain's own error. The dll bundle is
-        // AnyCPU -- no runtime pair is bundled, so the gate does not apply.
-        if (language == Language.DotNet
-            && format != ArtifactFormat.Dll
-            && string.Equals(body.TargetArch ?? "amd64", "x86", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(body.TargetOs ?? "linux", "windows", StringComparison.OrdinalIgnoreCase))
-        {
-            return (null,
-                "The .NET toolchain builds x86 artifacts only for Windows targets; choose amd64 or arm64.");
-        }
+                "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
 
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
@@ -147,39 +129,15 @@ internal static class PayloadBuildRequestParser
         if (body.KillDate is { } pinned && pinned <= DateTimeOffset.UtcNow)
             return (null, "KillDate must be in the future; leave it empty for an open-ended artifact.");
 
-        // The stager output class (architecture.md Sec 6) references the
-        // stage-2 payload it fetches at run time: resolve it here so the build
-        // contract carries a verified reference -- the payload's id and
-        // fingerprint -- rather than a raw operator string.
+        // The stager class retired with the .NET trees, so no build carries a
+        // stage-2 reference anymore; a request naming one is a leftover from
+        // the retired flow and is refused with the current delivery answer.
+        if (body.Stage2PayloadId is not null)
+        {
+            return (null,
+                "stage2PayloadId rides the retired stager class; deliver the stage-2 through the launcher one-liners.");
+        }
         Stage2Payload? stage2 = null;
-        if (@class == ImplantClass.Stager)
-        {
-            if (body.Stage2PayloadId is not { } stage2Id)
-                return (null,
-                    "A stager build requires stage2PayloadId: the built stage-2 payload the stager fetches.");
-            if (!Guid.TryParse(stage2Id, out var stage2Value))
-                return (null, "Stage2PayloadId is not a valid identifier.");
-            var payload = await payloads.FindAsync(stage2Value, engagementId.Value, cancellationToken);
-            if (payload is null)
-                return (null,
-                    "Stage2PayloadId does not name a payload in this engagement; build the stage-2 first.");
-            // The referenced payload's form factor decides the loader's run
-            // path (a dll bundle is hosted in-process, an executable form
-            // runs as the child), so it resolves here the same way the
-            // fingerprint does -- old records without a recorded format are
-            // the single-file executable every build produced then.
-            var stage2Format = ArtifactFormat.SingleFileExe;
-            if (payload.Build?.Format is { } wire && ArtifactFormats.TryParse(wire, out var parsedFormat))
-                stage2Format = parsedFormat;
-            if (format == ArtifactFormat.NativeAot && stage2Format == ArtifactFormat.Dll)
-                return (null,
-                    "A native-AOT stager cannot host a dll stage-2 in memory; build the stager as 'exe' or 'exe-trimmed' (the managed host shape).");
-            stage2 = new Stage2Payload(stage2Value, payload.Fingerprint, stage2Format);
-        }
-        else if (body.Stage2PayloadId is not null)
-        {
-            return (null, "stage2PayloadId is only valid on a stager-class build.");
-        }
 
         return (new BuildRequest(
             engagementId,
@@ -518,7 +476,7 @@ internal static class PayloadBuildRequestParser
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            language = Language.DotNet; // the in-tree reference unit is .NET (ADR 0009).
+            language = Language.Rust; // the in-tree reference unit is Rust (Sec 12.2).
             return true;
         }
         return Enum.TryParse(text, ignoreCase: true, out language);

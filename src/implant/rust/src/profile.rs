@@ -9,6 +9,10 @@ use serde_json::Value;
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub enroll_url: String,
+    /// The contact front when the bake names a split (enroll on one front,
+    /// contacts on another); empty derives each contact URL from the enroll
+    /// front that answered.
+    pub beacon_url: String,
     pub fallback_enroll_urls: Vec<String>,
     pub ca_pem: String,
     pub kill_date: Option<String>,
@@ -47,6 +51,10 @@ impl Profile {
         let map: Value = serde_json::from_slice(&raw).ok()?;
         Some(Profile {
             enroll_url: field(&map, "enrollURL")?.to_string(),
+            // The split-socket shape's contact front (the beaconURL key,
+            // already path-stripped by the bake); absent keeps the derived
+            // single-front walk.
+            beacon_url: strip_trailing_path(field(&map, "beaconURL").unwrap_or("")),
             fallback_enroll_urls: map
                 .get("fallbackEnrollURLs")
                 .and_then(Value::as_array)
@@ -90,6 +98,10 @@ impl Profile {
         let envelope_key = std::env::var("ROD_ENVELOPE_KEY").unwrap_or_default();
         Some(Profile {
             enroll_url,
+            // The dev shape's split-socket override: the contact front when
+            // enroll and contacts ride different fronts (the probe-shaped
+            // harness runs ride exactly this).
+            beacon_url: strip_trailing_path(&std::env::var("ROD_BEACON_URL").unwrap_or_default()),
             fallback_enroll_urls: fallbacks,
             ca_pem: std::env::var("ROD_CA_CERT").unwrap_or_default(),
             kill_date: std::env::var("ROD_KILL_DATE").ok().filter(|s| !s.is_empty()),
@@ -144,6 +156,22 @@ pub fn apply_path(url: &str, path: &str) -> String {
     match after.find('/') {
         Some(slash) => format!("{}://{}{}", &url[..scheme_at], &after[..slash], path),
         None => format!("{}://{}{}", &url[..scheme_at], after, path),
+    }
+}
+
+/// Reduces a beacon URL to scheme and authority: the contact route is fixed,
+/// so whatever path a baked or typed beacon URL carries is dropped.
+fn strip_trailing_path(url: &str) -> String {
+    if url.is_empty() {
+        return String::new();
+    }
+    match url.find("://") {
+        Some(at) => {
+            let after = &url[at + 3..];
+            let authority = after.split('/').next().unwrap_or(after);
+            format!("{}://{authority}", &url[..at])
+        }
+        None => url.to_string(),
     }
 }
 
