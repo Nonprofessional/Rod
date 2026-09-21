@@ -18,8 +18,8 @@ use crate::trust::Certificate;
 /// (full webpki validation against the baked CAs as the only roots, no
 /// system store consulted).
 pub fn build_agent(url: &str, pinned_cas: &[Certificate], timeout_seconds: f64) -> ureq::Agent {
-    let mut builder = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs_f64(timeout_seconds.max(1.0)));
+    let mut builder =
+        ureq::AgentBuilder::new().timeout(Duration::from_secs_f64(timeout_seconds.max(1.0)));
     if url.starts_with("https://") && !pinned_cas.is_empty() {
         let mut roots = RootCertStore::empty();
         for ca in pinned_cas {
@@ -69,14 +69,18 @@ pub fn beacon_url(enroll_url: &str) -> String {
 }
 
 /// Reads a contact response past its handshake frame: the shared body every
-/// carriage serves. Channel input frames are dropped (this build runs no
-/// live channels); a staged task enters its pull cycle; everything else
-/// parses as tasking or the frame is skipped.
+/// carriage serves. Channel input frames route to the live channel they
+/// name (a task with no live channel is at most a completion race, and is
+/// dropped); a staged task enters its pull cycle; everything else parses as
+/// tasking or the frame is skipped.
 pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], acks: bool) {
+    use crate::wire::{ChannelInput, TaskRequest};
     use prost::Message;
-    use crate::wire::TaskRequest;
     for frame in inbound {
         if frame.kind() == crate::wire::FrameKind::ChannelInput {
+            if let Ok(input) = ChannelInput::decode(frame.payload.as_ref()) {
+                session.channels.feed(&input.task_id, input.data, input.eof);
+            }
             continue;
         }
         if let Ok(task) = TaskRequest::decode(frame.payload.as_ref()) {

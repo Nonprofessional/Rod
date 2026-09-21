@@ -1,13 +1,15 @@
-
-
 use prost::Message;
 
+use crate::channel::{self, Channels};
 use crate::envelope;
 use crate::handlers::{self, Cadence};
 use crate::outbox::Outbox;
 use crate::trust::Certificate;
 use crate::verify::{self, NonceTracker, Verdict};
-use crate::wire::{Frame, FrameKind, HandshakeRequest, HandshakeResponse, ProtocolVersion, TaskRequest};
+use crate::wire::{
+    ChannelOutput, Frame, FrameKind, HandshakeRequest, HandshakeResponse, ProtocolVersion,
+    TaskRequest,
+};
 
 /// Everything a contact carriage needs to serve one run: identity, the
 /// advertisement, the live cadence, the seal, the signer pool, and the
@@ -24,6 +26,7 @@ pub struct Session {
     pub kill_date: Option<String>,
     pub nonces: NonceTracker,
     pub outbox: Outbox,
+    pub channels: Channels,
     contact_counter: u64,
 }
 
@@ -64,15 +67,25 @@ impl Session {
         signer_pool: Vec<Certificate>,
         seal: Option<Seal>,
         kill_date: Option<String>,
+        poll_carriage: bool,
     ) -> Session {
         // The advertisement is the baked class verbs intersected with this
         // build's compiled handlers: the server only dispatches what this
-        // binary can run (architecture.md Sec 5.3).
-        let advertised = baked_verbs
+        // binary can run (architecture.md Sec 5.3). A poll bake carrying a
+        // channel verb also opts into the degraded channel discipline: the
+        // wire-contract capability that parks operator input server-side and
+        // drains it onto this implant's poll contacts. A stream bake must
+        // NOT opt in -- the input route prefers the park whenever it sees
+        // the advertisement, and a long-lived stream never drains one, so
+        // its input rides the live sink instead.
+        let mut advertised = baked_verbs
             .iter()
             .filter(|verb| handlers::COMPILED_VERBS.contains(&verb.as_str()))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+        if poll_carriage && advertised.iter().any(|verb| channel::is_channel_verb(verb)) {
+            advertised.push("channels.poll".to_string());
+        }
         Session {
             implant_id,
             advertised,
@@ -82,6 +95,7 @@ impl Session {
             kill_date,
             nonces: NonceTracker::default(),
             outbox: Outbox::default(),
+            channels: Channels::new(),
             contact_counter: 0,
         }
     }
@@ -104,7 +118,9 @@ impl Session {
         } else {
             0.0
         };
-        std::thread::sleep(std::time::Duration::from_secs_f64((widened + slack).max(0.1)));
+        std::thread::sleep(std::time::Duration::from_secs_f64(
+            (widened + slack).max(0.1),
+        ));
     }
 
     /// The handshake this run opens every contact with: identity, protocol
@@ -186,12 +202,7 @@ impl Session {
             // here with the flag set means the carriage declined it.
             return;
         }
-        let verdict = verify::verify(
-            &self.implant_id,
-            task,
-            &self.signer_pool,
-            &mut self.nonces,
-        );
+        let verdict = verify::verify(&self.implant_id, task, &self.signer_pool, &mut self.nonces);
         match verdict {
             Verdict::Accepted => {
                 if self.outbox.holds(&task.task_id) {
@@ -203,10 +214,27 @@ impl Session {
                     }
                     return;
                 }
+                if self.channels.holds(&task.task_id) {
+                    // A live channel: already accepted above, and its result
+                    // comes when the channel ends -- a redelivery re-acks and
+                    // nothing re-spawns.
+                    return;
+                }
+                if channel::is_channel_verb(&task.verb) {
+                    // The streaming task shape: the TaskRequest opens a
+                    // channel instead of a completion. Output streams as
+                    // ChannelOutput frames, input arrives as ChannelInput
+                    // frames the carriages route in, and the final result
+                    // queues when the channel reports it finished.
+                    self.channels
+                        .spawn(&task.verb, &task.task_id, &task.arguments);
+                    return;
+                }
                 // Dispatch runs exactly once: the result and its out-of-band
                 // chunks both come off this one execution.
                 let handler = handlers::dispatch(&task.verb, &task.arguments, &self.cadence);
-                self.outbox.result(&task.task_id, handler.outcome, &handler.output);
+                self.outbox
+                    .result(&task.task_id, handler.outcome, &handler.output);
                 for mut chunk in handler.chunks {
                     chunk.task_id = task.task_id.clone();
                     self.outbox.queue(Frame {
@@ -226,7 +254,38 @@ impl Session {
                     }
                     _ => "task rejected: signature verification failed; not executed".to_string(),
                 };
-                self.outbox.result(&task.task_id, crate::handlers::Outcome::Failed, &cause);
+                self.outbox
+                    .result(&task.task_id, crate::handlers::Outcome::Failed, &cause);
+            }
+        }
+    }
+
+    /// Moves the channel layer's produce into the batch: output chunks queue
+    /// as ChannelOutput frames (upstream under the same seal and counter as
+    /// every other frame), and a finished channel reports its task like any
+    /// one-shot dispatch. The carriages call this at their delivery edges --
+    /// the poll cycle's boundaries, the stream's message ticks -- so no
+    /// pump ever touches a carriage.
+    pub fn drain_channels(&mut self) {
+        while let Some(event) = self.channels.next_event() {
+            match event {
+                channel::Event::Output { task, data } => {
+                    self.outbox.queue(Frame {
+                        payload: ChannelOutput {
+                            task_id: task,
+                            data,
+                        }
+                        .encode_to_vec(),
+                        kind: FrameKind::ChannelOutput as i32,
+                    });
+                }
+                channel::Event::Finished {
+                    task,
+                    outcome,
+                    output,
+                } => {
+                    self.outbox.result(&task, outcome, &output);
+                }
             }
         }
     }

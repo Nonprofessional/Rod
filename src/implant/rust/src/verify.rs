@@ -50,7 +50,9 @@ pub fn verify(
         None => canonical_bytes(implant_id, &task.task_id, &task.verb, &task.arguments, None),
     };
     for ca in cas {
-        let Some(key) = trust::rsa_key_of(ca) else { continue };
+        let Some(key) = trust::rsa_key_of(ca) else {
+            continue;
+        };
         if !trust::verify_pss_sha256(&key, &canonical, &task.signature) {
             continue;
         }

@@ -37,7 +37,8 @@ impl Outbox {
     /// numeric outcome codes live behind this boundary -- the rest of the
     /// implant speaks `Outcome`.
     pub fn result(&mut self, task_id: &str, outcome: Outcome, output: &str) {
-        self.ledger.insert(task_id.to_string(), (outcome, output.to_string()));
+        self.ledger
+            .insert(task_id.to_string(), (outcome, output.to_string()));
         let wire = if outcome == Outcome::Succeeded { 1 } else { 2 };
         self.queue.push_back(Frame {
             payload: TaskResult {
@@ -74,7 +75,10 @@ impl Outbox {
 
     pub fn acknowledge(&mut self, task_id: &str) {
         self.queue.push_back(Frame {
-            payload: TaskAck { task_id: task_id.to_string() }.encode_to_vec(),
+            payload: TaskAck {
+                task_id: task_id.to_string(),
+            }
+            .encode_to_vec(),
             kind: FrameKind::TaskAck as i32,
         });
     }
@@ -85,7 +89,10 @@ impl Outbox {
         self.demands.push(task.task_id.clone());
         let id = task.task_id.clone();
         self.queue.push_back(Frame {
-            payload: StagedPull { task_id: id.clone() }.encode_to_vec(),
+            payload: StagedPull {
+                task_id: id.clone(),
+            }
+            .encode_to_vec(),
             kind: FrameKind::StagedPull as i32,
         });
         self.staged.insert(id, task);

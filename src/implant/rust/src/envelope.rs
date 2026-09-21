@@ -56,7 +56,12 @@ fn seal_body(plaintext: &[u8], key_id: &[u8; 16], key: &[u8; 32], aad: &str) -> 
 
 /// The sealed contact wire shape: the R1 body base64-encoded as text, the
 /// body an opaque string rather than structured binary.
-pub fn seal_contact_body(plaintext: &[u8], key_id: &[u8; 16], key: &[u8; 32], aad: &str) -> Vec<u8> {
+pub fn seal_contact_body(
+    plaintext: &[u8],
+    key_id: &[u8; 16],
+    key: &[u8; 32],
+    aad: &str,
+) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .encode(seal_body(plaintext, key_id, key, aad))
         .into_bytes()
@@ -65,9 +70,16 @@ pub fn seal_contact_body(plaintext: &[u8], key_id: &[u8; 16], key: &[u8; 32], aa
 /// Opens what [`seal_contact_body`] sealed: None on any mismatch (wrong key,
 /// tampered bytes, foreign shape) -- the caller drops the whole cycle rather
 /// than acting on a partial read.
-pub fn try_open_contact_body(body: &[u8], key_id: &[u8; 16], key: &[u8; 32], aad: &str) -> Option<Vec<u8>> {
+pub fn try_open_contact_body(
+    body: &[u8],
+    key_id: &[u8; 16],
+    key: &[u8; 32],
+    aad: &str,
+) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(body).ok()?;
-    let packed = base64::engine::general_purpose::STANDARD.decode(text.trim()).ok()?;
+    let packed = base64::engine::general_purpose::STANDARD
+        .decode(text.trim())
+        .ok()?;
     try_open_body(&packed, key_id, key, aad)
 }
 

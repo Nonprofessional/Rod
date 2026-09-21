@@ -12,11 +12,11 @@ pub mod rod {
     include!(concat!(env!("OUT_DIR"), "/rod.v1.rs"));
 }
 
-pub use rod::{FrameKind, HandshakeStatus};
 pub use rod::{
-    ExfilChunk, Frame, HandshakeRequest, HandshakeResponse, ProtocolVersion, StagedChunk,
-    StagedPull, TaskAck, TaskRequest, TaskResult,
+    ChannelInput, ChannelOutput, ExfilChunk, Frame, HandshakeRequest, HandshakeResponse,
+    ProtocolVersion, StagedChunk, StagedPull, TaskAck, TaskRequest, TaskResult,
 };
+pub use rod::{FrameKind, HandshakeStatus};
 
 /// Encodes frames as one delimited sequence for a request body.
 pub fn encode(frames: &[Frame]) -> Vec<u8> {

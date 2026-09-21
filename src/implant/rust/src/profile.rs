@@ -73,7 +73,9 @@ impl Profile {
             sleep_seconds: parse_duration(field(&map, "sleep").unwrap_or("30s")),
             jitter_seconds: parse_duration(field(&map, "jitter").unwrap_or("10s")),
             mode: field(&map, "mode").unwrap_or("poll").to_string(),
-            enroll_path: field(&map, "enrollPath").unwrap_or("/implants/enroll").to_string(),
+            enroll_path: field(&map, "enrollPath")
+                .unwrap_or("/implants/enroll")
+                .to_string(),
             request_timeout_seconds: parse_duration(field(&map, "requestTimeout").unwrap_or("30s")),
             envelope: field(&map, "envelope").unwrap_or("aesgcm").to_string(),
             contact_envelope: field(&map, "contactEnvelope").unwrap_or("none").to_string(),
@@ -104,9 +106,15 @@ impl Profile {
             beacon_url: strip_trailing_path(&std::env::var("ROD_BEACON_URL").unwrap_or_default()),
             fallback_enroll_urls: fallbacks,
             ca_pem: std::env::var("ROD_CA_CERT").unwrap_or_default(),
-            kill_date: std::env::var("ROD_KILL_DATE").ok().filter(|s| !s.is_empty()),
-            sleep_seconds: parse_duration(&std::env::var("ROD_SLEEP").unwrap_or_else(|_| "30s".into())),
-            jitter_seconds: parse_duration(&std::env::var("ROD_JITTER").unwrap_or_else(|_| "10s".into())),
+            kill_date: std::env::var("ROD_KILL_DATE")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            sleep_seconds: parse_duration(
+                &std::env::var("ROD_SLEEP").unwrap_or_else(|_| "30s".into()),
+            ),
+            jitter_seconds: parse_duration(
+                &std::env::var("ROD_JITTER").unwrap_or_else(|_| "10s".into()),
+            ),
             mode: std::env::var("ROD_MODE").unwrap_or_else(|_| "poll".into()),
             enroll_path: "/implants/enroll".into(),
             request_timeout_seconds: 30.0,
@@ -151,7 +159,9 @@ impl Profile {
 /// Applies the profile's enroll path onto an enroll URL: the path is
 /// replaceable per the malleable profile; scheme and authority stand.
 pub fn apply_path(url: &str, path: &str) -> String {
-    let Some(scheme_at) = url.find("://") else { return url.to_string() };
+    let Some(scheme_at) = url.find("://") else {
+        return url.to_string();
+    };
     let after = &url[scheme_at + 3..];
     match after.find('/') {
         Some(slash) => format!("{}://{}{}", &url[..scheme_at], &after[..slash], path),

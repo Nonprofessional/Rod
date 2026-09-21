@@ -3,15 +3,14 @@ name = "rod-implant"
 version = "1.0.0-dev"
 edition = "2021"
 
-# The reference Rust implant (architecture.md Sec 12.2): the reach implant
-# that covers what a managed runtime cannot -- 32-bit ARM/MIPS IoT Linux,
-# static musl, small-footprint servers -- at a native binary's size. Coupled
-# to the teamserver only by the wire protocol (rod.proto) and the baked
-# profile format, both language-neutral contracts; the .NET reference implant
-# remains the full-capability reference until this one reaches parity.
+# The reference Rust implant (architecture.md Sec 12.2): the implant of
+# record, covering what a managed runtime cannot -- 32-bit ARM/MIPS IoT
+# Linux, static musl, small-footprint servers -- at a native binary's size.
+# Coupled to the teamserver only by the wire protocol (rod.proto) and the
+# baked profile format, both language-neutral contracts.
 #
-# Like the .NET trees, this project is an EXTERNAL component: it is not part
-# of Rod.slnx. The Rust build unit compiles it per build request.
+# Like the retired .NET tree, this project is an EXTERNAL component: it is
+# not part of Rod.slnx. The Rust build unit compiles it per build request.
 
 [[bin]]
 name = "rod-implant"

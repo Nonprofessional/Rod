@@ -43,7 +43,9 @@ pub struct KeyPair {
 impl KeyPair {
     pub fn generate() -> KeyPair {
         let signing = SigningKey::random(&mut OsRng);
-        KeyPair { verifying: *signing.verifying_key() }
+        KeyPair {
+            verifying: *signing.verifying_key(),
+        }
     }
 
     /// The public half as a DER SubjectPublicKeyInfo, base64 over JSON --
@@ -123,8 +125,8 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
     // Both the OK and the refusal bodies answer as plain JSON: the envelope
     // shapes the request only -- the answer never rides sealed on the web
     // route.
-    let answer: serde_json::Value =
-        serde_json::from_slice(text.as_bytes()).map_err(|_| "enroll answer was not valid JSON".to_string())?;
+    let answer: serde_json::Value = serde_json::from_slice(text.as_bytes())
+        .map_err(|_| "enroll answer was not valid JSON".to_string())?;
     let status_value = answer
         .get("status")
         .and_then(serde_json::Value::as_i64)

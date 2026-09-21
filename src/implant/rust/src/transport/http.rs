@@ -4,8 +4,8 @@ use prost::Message;
 
 use super::{accept_tasking, Contact};
 use crate::error::ContactError;
-use crate::profile::Profile;
 use crate::handlers::Outcome;
+use crate::profile::Profile;
 use crate::session::{Attempt, Session};
 use crate::wire::{Frame, StagedChunk, TaskRequest};
 
@@ -42,6 +42,9 @@ impl Contact for Poll {
     }
 
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
+        // Channel output produced since the last cycle rides this request --
+        // the poll discipline's delivery edge.
+        session.drain_channels();
         let demands = session.outbox.take_demands();
         let batch = session.outbox.batch();
         let mut frames = Vec::with_capacity(1 + batch.len());
@@ -56,7 +59,10 @@ impl Contact for Poll {
             .send_bytes(&body)?;
         let status = response.status();
         let mut bytes = Vec::new();
-        response.into_reader().take(64 << 20).read_to_end(&mut bytes)?;
+        response
+            .into_reader()
+            .take(64 << 20)
+            .read_to_end(&mut bytes)?;
         if status != 200 {
             return Err(ContactError::Transport(format!("status {status}")));
         }
@@ -65,9 +71,9 @@ impl Contact for Poll {
             .ok_or(ContactError::Protocol(
                 "the contact response did not verify under the baked key",
             ))?;
-        let first = inbound
-            .first()
-            .ok_or(ContactError::Protocol("the contact response carried no frames"))?;
+        let first = inbound.first().ok_or(ContactError::Protocol(
+            "the contact response carried no frames",
+        ))?;
         let (acks, attempt) = session
             .handshake_answered(first)
             .map_err(ContactError::Protocol)?;
@@ -80,6 +86,9 @@ impl Contact for Poll {
         session.outbox.batch_crossed(batch.len());
         accept_staged(session, &inbound, &demands);
         accept_tasking(session, &inbound[1..], acks);
+        // Echoes the channel input just routed may already have produced
+        // output; it queues now and rides the next cycle.
+        session.drain_channels();
         Ok(Attempt::Crossed)
     }
 }
@@ -105,7 +114,11 @@ fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskReques
             terminal = chunk.terminal;
         }
         if !terminal {
-            session.outbox.result(&task.task_id, Outcome::Failed, "staged payload stream ended without a terminal chunk");
+            session.outbox.result(
+                &task.task_id,
+                Outcome::Failed,
+                "staged payload stream ended without a terminal chunk",
+            );
             continue;
         }
         let (outcome, output) = dispatch_staged(&task.verb, &task.arguments, &payload);
@@ -119,24 +132,44 @@ fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskReques
 pub fn dispatch_staged(verb: &str, arguments: &str, payload: &[u8]) -> (Outcome, String) {
     use sha2::{Digest, Sha256};
     if verb != "file.push" {
-        return (Outcome::Failed, format!("{verb}: this build carries no staged handler for the verb"));
+        return (
+            Outcome::Failed,
+            format!("{verb}: this build carries no staged handler for the verb"),
+        );
     }
     let Some(space) = arguments.rfind(' ') else {
-        return (Outcome::Failed, "file.push staged expects '<path> sha256:<hex>'".into());
+        return (
+            Outcome::Failed,
+            "file.push staged expects '<path> sha256:<hex>'".into(),
+        );
     };
     let path = arguments[..space].trim();
     let Some(expected) = arguments[space + 1..].trim().strip_prefix("sha256:") else {
-        return (Outcome::Failed, "file.push staged expects '<path> sha256:<hex>'".into());
+        return (
+            Outcome::Failed,
+            "file.push staged expects '<path> sha256:<hex>'".into(),
+        );
     };
-    let actual: String = Sha256::digest(payload).iter().map(|b| format!("{b:02x}")).collect();
+    let actual: String = Sha256::digest(payload)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     if !actual.eq_ignore_ascii_case(expected) {
-        return (Outcome::Failed, format!("file.push staged: payload hash mismatch: expected {expected}, received {actual}"));
+        return (
+            Outcome::Failed,
+            format!(
+                "file.push staged: payload hash mismatch: expected {expected}, received {actual}"
+            ),
+        );
     }
     if let Some(parent) = std::path::Path::new(path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     match std::fs::write(path, payload) {
-        Ok(()) => (Outcome::Succeeded, format!("{path}: {} bytes written", payload.len())),
+        Ok(()) => (
+            Outcome::Succeeded,
+            format!("{path}: {} bytes written", payload.len()),
+        ),
         Err(err) => (Outcome::Failed, format!("write {path}: {err}")),
     }
 }

