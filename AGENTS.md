@@ -43,7 +43,8 @@ guidance file tracked in git.
   against the same contract without coupling the teamserver to its language.
   The .NET implant is the full-capability reference; the Rust implant is the
   reach implant for targets a managed runtime cannot serve (native size,
-  static musl, 32-bit ARM/MIPS IoT, mobile shells). The .NET implant retires
+  static musl, 32-bit ARM IoT, mobile shells), with both web carriages --
+  the poll POST cycle and the WebSocket stream. The .NET implant retires
   when the Rust one reaches core-verb parity and the conformance suite runs
   green against it. See architecture.md Sec 12.2.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root

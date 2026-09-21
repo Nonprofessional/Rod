@@ -145,17 +145,25 @@ public class RustImplantEndToEndTests
 
     [RustFact]
     public async Task RustImplant_BuildsThroughThePipeline_AndRunsFromTheBake()
+        => await BuildRunAndRoundtripAsync("poll", "rod-rust-baked-");
+
+    [RustFact]
+    public async Task RustImplant_StreamsOverTheWebSocketBeacon_FromTheBake()
+        => await BuildRunAndRoundtripAsync("stream", "rod-rust-stream-");
+
+    /// The full operable loop through the operator API at the given contact
+    /// mode: a language "rust" build bakes the profile (sealed contacts on,
+    /// the default posture) and mints the credential; the artifact downloads
+    /// and runs in its fielded shape -- no arguments, no environment, the
+    /// bake is the configuration. The sealed contact path (AES-256-GCM
+    /// bodies under the per-artifact key, counter over the frames) rides
+    /// whichever carriage the mode names: the POST cycle on poll, the
+    /// WebSocket stream on stream.
+    private static async Task BuildRunAndRoundtripAsync(string mode, string markerPrefix)
     {
         await using var env = await TestEnv.StartAsync();
         await env.CreateEngagementAsync();
 
-        // The full operable loop through the operator API: a language "rust"
-        // build request bakes the profile (sealed contacts on, the default
-        // posture) and mints the credential; the artifact is downloaded and
-        // run in its fielded shape -- no arguments, no environment, the bake
-        // is the configuration. The sealed contact path (AES-256-GCM bodies
-        // under the per-artifact key, counter over the frames) is what this
-        // leg proves beyond the dev-shape plaintext one.
         var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
         var built = await env.Http.PostAsJsonAsync(
             $"/engagements/{env.EngagementId}/payloads",
@@ -169,7 +177,7 @@ public class RustImplantEndToEndTests
                 SleepSeconds: 1.0,
                 JitterSeconds: 0.0,
                 KillDate: null,
-                Mode: "poll"));
+                Mode: mode));
         Assert.True(built.IsSuccessStatusCode, await built.Content.ReadAsStringAsync());
         var artifact = await built.Content.ReadFromJsonAsync<ArtifactBody>();
         Assert.NotNull(artifact);
@@ -206,7 +214,7 @@ public class RustImplantEndToEndTests
             var implantId = await WaitForOnlineAsync(env, TimeSpan.FromSeconds(90), stderr);
             Assert.False(string.IsNullOrEmpty(implantId));
 
-            var marker = "rod-rust-baked-" + Guid.NewGuid().ToString("N")[..8];
+            var marker = markerPrefix + Guid.NewGuid().ToString("N")[..8];
             var issued = await env.Http.PostAsJsonAsync(
                 $"/engagements/{env.EngagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(implantId, "shell.exec", $"echo {marker}"));

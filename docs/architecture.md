@@ -1690,16 +1690,17 @@ Rod ships two in-tree toolchains, each with a job the other cannot do. The
 **control plane and the full-capability reference implant are .NET 10** (the
 teamserver, the stager, the richest verb set, the extension overlay, the
 in-memory dll form); the **reach implant is Rust**
-(`src/implant/rust/`, built by `RustBuildUnit`): a ~2 MB native binary for
-the targets a managed runtime cannot serve -- static musl on routers,
-32-bit ARM/MIPS IoT Linux, native shells for mobile platforms -- carrying the
-core verb set plus the Windows sensitive verbs (inject.shellcode,
-collect.minidump, collect.keylog) that self-gate on `cfg(windows)` so a
-Linux build compiles none of them. Both speak the same wire protocol
-(rod.proto, the baked profile's base64url JSON, the sealed envelope) and are
-proven against it by the same end-to-end acceptance; the .NET implant retires
-when the Rust one reaches core-verb parity and the conformance suite runs
-green against it. The wire protocol remains the language-neutral product and
+(`src/implant/rust/`, built by `RustBuildUnit`): a ~2.25 MB fully static
+musl binary for the targets a managed runtime cannot serve -- routers,
+appliances, 32-bit ARM IoT Linux, native shells for mobile platforms -- with
+both web carriages (the envelope POST cycle on poll bakes, the WebSocket
+stream on stream bakes) and the Windows sensitive verbs
+(inject.shellcode, collect.minidump, collect.keylog) that self-gate on
+`cfg(windows)` so a Linux build compiles none of them. Both speak the same
+wire protocol (rod.proto, the baked profile's base64url JSON, the sealed
+envelope) and are proven against it by the same end-to-end acceptance; the
+.NET implant retires when the Rust one reaches core-verb parity and the
+conformance suite runs green against it. The wire protocol remains the language-neutral product and
 the `Language` enum (Go/DotNet/Rust/C/Nim) and build contract stay, so an
 out-of-tree community implant in Go, C, or Nim registers a build unit and
 compiles against the same contract -- polyglot by contract, not by in-tree

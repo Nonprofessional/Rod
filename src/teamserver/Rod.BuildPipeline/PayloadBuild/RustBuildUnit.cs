@@ -92,6 +92,23 @@ public sealed class RustBuildUnit : IBuildUnit
                 cargo.ArgumentList.Add(argument);
             cargo.Environment["CARGO_TARGET_DIR"] = targetDir;
             cargo.Environment["CARGO_NET_GIT_FETCH_WITH_CLI"] = "true";
+            // The static (musl) triples: rust ships their std, and the C
+            // bits -- ring's primitives -- need a musl cross compiler the
+            // build host names per target. A host without the cross fails
+            // inside cargo with the toolchain's own error, loudly.
+            if (triple.EndsWith("-musl", StringComparison.Ordinal))
+            {
+                var envStem = triple.Replace('-', '_').ToUpperInvariant();
+                var prefix = triple.Split('-')[0] switch
+                {
+                    "x86_64" => "musl-gcc",
+                    "aarch64" => "aarch64-linux-musl-gcc",
+                    "armv7" => "armv7-linux-musleabihf-gcc",
+                    _ => "musl-gcc",
+                };
+                cargo.Environment[$"CC_{envStem}"] = prefix;
+                cargo.Environment[$"AR_{envStem}"] = prefix.Replace("gcc", "ar");
+            }
             var result = await RunAsync(cargo, cancellationToken);
             if (result.ExitCode != 0)
             {
@@ -126,39 +143,33 @@ public sealed class RustBuildUnit : IBuildUnit
         }
     }
 
-    // Maps the contract's os/arch pairs onto Rust target triples. The set is
-    // what this unit supports toolchain-wise today: glibc Linux and the GNU
-    // Windows cross. Apple targets need the Apple SDK a Linux build host
-    // does not carry, and ARM Windows has no GNU target, so both refuse with
-    // the supported set named rather than failing inside cargo with a less
-    // fixable error. Musl (the static-router shape) and 32-bit ARM arrive
-    // with their rust-std targets installed on the build host.
+    // Maps the contract's os/arch pairs onto Rust target triples. Linux is
+    // musl everywhere -- the static, runtime-free deployment shape that is
+    // the reach implant's whole point (routers, appliances, IoT); measured
+    // x86_64: 2.25 MB fully static. Apple targets need the Apple SDK a
+    // Linux build host does not carry, and ARM Windows has no GNU target, so
+    // both refuse with the supported set named rather than failing inside
+    // cargo with a less fixable error. The ARM musl triples map too; they
+    // build once the host carries their cross toolchains.
     public static string MapTriple(TargetProfile target)
     {
         var os = target.OperatingSystem.Trim().ToLowerInvariant();
         var arch = target.Architecture.Trim().ToLowerInvariant();
-        var tripleArch = arch switch
+        return (os, arch) switch
         {
-            "amd64" or "x64" or "x86_64" => "x86_64",
-            "x86" or "386" => "i686",
-            "arm64" or "aarch64" => "aarch64",
-            _ => throw new InvalidOperationException(
-                $"Unsupported target architecture '{target.Architecture}' for the Rust build unit " +
-                "(supported: amd64/x64, x86/386, arm64/aarch64)."),
-        };
-        return (os, tripleArch) switch
-        {
-            ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
-            ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
-            ("linux", "i686") => "i686-unknown-linux-gnu",
-            ("windows" or "win", "x86_64") => "x86_64-pc-windows-gnu",
-            ("windows" or "win", "i686") => "i686-pc-windows-gnu",
+            ("linux", "amd64" or "x64" or "x86_64") => "x86_64-unknown-linux-musl",
+            ("linux", "arm64" or "aarch64") => "aarch64-unknown-linux-musl",
+            ("linux", "arm" or "armv7") => "armv7-unknown-linux-musleabihf",
+            ("linux", "x86" or "386") => "i686-unknown-linux-musl",
+            ("windows" or "win", "amd64" or "x64" or "x86_64") => "x86_64-pc-windows-gnu",
+            ("windows" or "win", "x86" or "386") => "i686-pc-windows-gnu",
             ("osx" or "darwin" or "macos", _) => throw new InvalidOperationException(
                 "The Rust build unit does not cross Apple targets (the link needs the Apple SDK); build on a macOS host."),
-            ("windows" or "win", "aarch64") => throw new InvalidOperationException(
+            ("windows" or "win", "arm64" or "aarch64") => throw new InvalidOperationException(
                 "The Rust build unit has no GNU target for ARM Windows."),
             _ => throw new InvalidOperationException(
-                $"Unsupported target OS '{target.OperatingSystem}' for the Rust build unit (supported: linux, windows)."),
+                $"Unsupported target '{target.OperatingSystem}/{target.Architecture}' for the Rust build unit " +
+                "(supported: linux amd64/arm64/arm/x86, windows amd64/x86)."),
         };
     }
 
