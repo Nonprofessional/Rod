@@ -10,9 +10,6 @@ namespace Rod.Transport.Listeners.Providers;
 /// <summary>How a socket-owning transport's bind reserves its port.</summary>
 public enum BindReservation
 {
-    /// <summary>No port to reserve: the bind address is a bare pipe name.</summary>
-    None,
-
     /// <summary>A UDP socket's port: the datagram reservation.</summary>
     UdpPort,
 
@@ -32,23 +29,18 @@ public enum PublicEndpointShape
     /// <summary>A DNS zone the listener answers for (e.g. c2.example.test).</summary>
     DnsZone,
 
-    /// <summary>The pipe path implants dial (e.g. \\host\pipe\name).</summary>
-    PipePath,
-
     /// <summary>The host:port implants dial (e.g. 203.0.113.10:443).</summary>
     HostPort,
 }
 
 /// <summary>
 /// The address shape and port reservation a socket-owning transport binds
-/// with: whether the bind address is a bare pipe name (validated as one,
-/// reserved not at all) or a host:port pair (validated as one, reserved over
-/// UDP or TCP per the socket the transport opens), and the dial shape its
-/// public endpoint takes.
+/// with: the host:port bind address (validated as one, reserved over UDP or
+/// TCP per the socket the transport opens), and the dial shape its public
+/// endpoint takes.
 /// </summary>
 public sealed record HostedBindShape(
     BindReservation Reservation,
-    bool BarePipeName,
     PublicEndpointShape EndpointShape);
 
 /// <summary>
@@ -64,7 +56,7 @@ public sealed record HostedBindShape(
 public sealed class HostedServiceTransportProvider : ITransportProvider
 {
     // How long a started service gets to register its bound socket; the
-    // UDP listener and the pipe server both come up well inside it.
+    // UDP listener and the TCP listener both come up well inside it.
     private static readonly TimeSpan RegistrationTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan RegistrationPollInterval = TimeSpan.FromMilliseconds(100);
 
@@ -76,9 +68,8 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
     /// Initializes a provider serving <paramref name="transport"/> with the
     /// given shape, carriers, and service factory. The public endpoint scheme
     /// defaults to the TLS shape the HTTP family's non-plain members use; a
-    /// transport whose dial is a scheme of its own (the QUIC stream's
-    /// <c>quic://</c>) names it, and the operator surface completes bare
-    /// endpoints with it.
+    /// transport whose dial is a scheme of its own names it, and the operator
+    /// surface completes bare endpoints with it.
     /// </summary>
     public HostedServiceTransportProvider(
         string transport,
@@ -116,7 +107,6 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
         return _shape.EndpointShape switch
         {
             PublicEndpointShape.DnsZone => PublicEndpointShapes.IsDnsZone(value),
-            PublicEndpointShape.PipePath => PublicEndpointShapes.IsPipePath(value),
             _ => PublicEndpointShapes.IsSocketDial(value),
         };
     }
@@ -125,35 +115,22 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
     public string DescribePublicEndpointRule(string got) => _shape.EndpointShape switch
     {
         PublicEndpointShape.DnsZone => $"Public endpoint must be the DNS zone this listener answers for (e.g. c2.example.test), got '{got}'.",
-        PublicEndpointShape.PipePath => $"Public endpoint must be the pipe path implants dial (e.g. \\\\host\\pipe\\name), got '{got}'.",
         _ => $"Public endpoint must be the host:port implants dial (e.g. 203.0.113.10:443), got '{got}'.",
     };
 
     /// <summary>
-    /// Rejects a malformed bind address: a pipe-named transport refuses a
-    /// host:port pair, everything else must parse as one.
+    /// Rejects a malformed bind address: it must parse as a host:port pair.
     /// </summary>
     public void Validate(ListenerConfig config)
     {
-        if (_shape.BarePipeName)
-        {
-            // A bare pipe name; the pipe server creates it on bind.
-            if (config.BindAddress.Contains(':', StringComparison.Ordinal))
-                throw new InvalidOperationException(
-                    $"SMB bind address '{config.BindAddress}' is a bare pipe name, not host:port.");
-            return;
-        }
-
         _ = TransportHost.ParseBindAddress(config.BindAddress);
     }
 
-    /// <summary>Reserves per the shape: nothing for a pipe, a UDP or TCP port otherwise.</summary>
+    /// <summary>Reserves per the shape: a UDP or TCP port.</summary>
     public void ReserveBind(ListenerConfig config)
     {
         switch (_shape.Reservation)
         {
-            case BindReservation.None:
-                return;
             case BindReservation.UdpPort:
                 {
                     // Wrapped the way the runtime bind wraps: a raw

@@ -31,7 +31,7 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // unit (no language picker for units that are not registered), the Stage2 and
 // Stager classes (the deployable shapes; the reduced classes compile the same
 // beacon with a gutted verb set and stay API-only), this engagement's
-// HTTP-shaped listeners (the ones implants can enroll through -- DNS/SMB/TCP
+// HTTP-shaped listeners (the ones implants can enroll through -- DNS/TCP
 // listeners appear greyed out), and the arch set the toolchain bundles a
 // runtime for (x86 only pairs with Windows).
 // Stage-2 artifact it fetches, so that select lists the finished Stage2 builds
@@ -56,7 +56,7 @@ const RECENT_BUILDS_SHOWN = 5
 // the socket family (enrollment over the stream contact), and the DNS
 // family (enrollment over DNS: the chunked TXT exchange a DNS-only target
 // runs); the listener select offers these and greys everything else out.
-const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'smb', 'tcp', 'dns', 'doh'])
+const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'tcp', 'dns', 'doh'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.
@@ -126,7 +126,7 @@ export function PayloadBuildView({
   // The poll-only family: DNS/DoH carry no live stream to hold -- one
   // answer per poll -- so stream mode is incoherent on them and the form
   // keeps the mode honest (the server refuses the pairing with the same
-  // fix). The socket family (SMB/TCP) bakes either mode: stream holds the
+  // fix). The socket family (TCP) bakes either mode: stream holds the
   // live session, poll cycles one connection per contact.
   const pollOnly =
     selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
@@ -359,7 +359,7 @@ export function PayloadBuildView({
               <select
                 value={carrierId}
                 onChange={(e) => setCarrierId(e.target.value)}
-                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS listener: its native session (stream holds it, poll cycles it). An SMB/TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
+                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS listener: its native session (stream holds it, poll cycles it). A TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
               >
                 <option value="">-- same front as enrollment --</option>
                 {carriers.map((l) => (
@@ -486,12 +486,12 @@ export function PayloadBuildView({
               <input
                 value={endpoint}
                 onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://redirect.example.test — or tcp://, smb://, dns://, doh://"
+                placeholder="https://redirect.example.test — or tcp://, dns://, doh://"
                 disabled={!!listenerId}
                 title={
                   listenerId
                     ? 'An enroll + contact listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
-                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), tcp://host:port, smb://\\\\host\\pipe\\name, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
+                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), tcp://host:port, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
                 }
               />
             </label>
@@ -760,9 +760,7 @@ function BuildSummary({
   const cadence = `every ${sleep.trim() || '30'}s ± ${jitter.trim() || '10'}s`
   const mtls = listener?.transport === 'mtls'
   // The socket family's dial shape, from the listener or a typed endpoint.
-  const socket = listener?.transport === 'smb' || listener?.transport === 'tcp'
-    || /^tcp:\/\//i.test(endpoint.trim()) || /^smb:\/\//i.test(endpoint.trim())
-  const socketName = listener?.transport === 'smb' || /^smb:\/\//i.test(endpoint.trim()) ? 'named-pipe' : 'socket'
+  const socket = listener?.transport === 'tcp' || /^tcp:\/\//i.test(endpoint.trim())
   // The DNS family as the enroll front itself (the DNS-only target's shape).
   const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh'
     || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim()))
@@ -770,7 +768,7 @@ function BuildSummary({
   const contact = carrier
     ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
     : socket
-      ? `one ${socketName} connection per contact, ${cadence}, on ${front}`
+      ? `one socket connection per contact, ${cadence}, on ${front}`
       : dnsFront
         ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
         : mtls

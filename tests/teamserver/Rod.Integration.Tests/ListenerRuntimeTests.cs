@@ -412,7 +412,7 @@ public class ListenerRuntimeTests
         // The refusal names the registered transports -- each in-tree member
         // appears, whatever order the registry lists or what later
         // registrations a test suite has added around them.
-        foreach (var transport in new[] { "http", "https", "mtls", "dns", "smb", "tcp" })
+        foreach (var transport in new[] { "http", "https", "mtls", "dns", "tcp" })
             Assert.Contains(transport, problem!.Error);
 
         // A definition saved before the retirement runs the restore path (what

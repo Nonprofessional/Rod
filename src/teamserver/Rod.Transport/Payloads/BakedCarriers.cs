@@ -75,8 +75,8 @@ public static class BakedCarriers
 
     // Adds the carrier an endpoint's shape dials: a schemed http(s) endpoint
     // runs the envelope POST cycle, the DNS family's dns:// or doh:// dial
-    // serves the TXT poll carrier, and the socket family's tcp:// or smb://
-    // dial serves the one-connection-one-contact message-pipe carrier; an
+    // serves the TXT poll carrier, and the socket family's tcp:// dial
+    // serves the one-connection-one-contact message-pipe carrier; an
     // empty field adds nothing, and an unrecognized shape returns false so
     // the caller undeclares the whole set instead of guessing.
     private static bool TryAddEndpoint(List<string> names, string? endpoint)
@@ -84,8 +84,7 @@ public static class BakedCarriers
         if (string.IsNullOrWhiteSpace(endpoint))
             return true;
         var trimmed = endpoint.Trim();
-        if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
-            || trimmed.StartsWith("smb://", StringComparison.OrdinalIgnoreCase))
+        if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
         {
             Add(names, TransportCapabilities.MessagePipeName);
             return true;

@@ -1,4 +1,3 @@
-using System.IO.Pipes;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.Sockets;
@@ -21,39 +20,19 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance: an implant written from the contract doc completes a contact
-/// and a task over the stream listeners (architecture.md Sec 8) -- the named
-/// pipe for Windows segments without HTTP or DNS egress, and the raw TCP
-/// socket for segment networks that allow sockets but no HTTP shape. Both
-/// carry the same rod.v1 frames as the envelope in one self-delimited
+/// and a task over the raw-TCP listener (architecture.md Sec 8) -- the
+/// socket for segment networks that allow sockets but no HTTP shape. It
+/// carries the same rod.v1 frames as the envelope in one self-delimited
 /// message per direction, through the shared frame paths: a result captured
-/// over a pipe or socket is indistinguishable in core state, the audit
-/// trail, and the live bus from one captured over the gRPC stream. The
-/// identity is the certificate-less posture -- the implant id in the
-/// handshake, the DNS tradeoff extended to a handshake-capable transport --
-/// and dispatched tasking keeps the full Sec 9 signature, verified here the
-/// way an implant verifies it.
+/// over a socket is indistinguishable in core state, the audit trail, and
+/// the live bus from one captured over the gRPC stream. The identity is the
+/// certificate-less posture -- the implant id in the handshake, the DNS
+/// tradeoff extended to a handshake-capable transport -- and dispatched
+/// tasking keeps the full Sec 9 signature, verified here the way an implant
+/// verifies it.
 /// </summary>
 public class StreamContactTests
 {
-    [Fact]
-    public async Task Implant_ContactsOverTheNamedPipe_AndCompletesATask()
-    {
-        var pipeName = $"rod-test-{Guid.NewGuid():N}";
-        await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            "test-smb", "smb", pipeName, $@"\\host\pipe\{pipeName}"));
-
-        await ContactAndCompleteATaskAsync(
-            env,
-            endpoint: $@"\\host\pipe\{pipeName}",
-            expectedTransport: "smb",
-            connect: async () =>
-            {
-                var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut);
-                await pipe.ConnectAsync(10_000);
-                return pipe;
-            });
-    }
-
     [Fact]
     public async Task Implant_ContactsOverRawTcp_AndCompletesATask()
     {

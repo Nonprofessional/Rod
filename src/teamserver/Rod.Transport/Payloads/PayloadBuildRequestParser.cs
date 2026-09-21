@@ -81,7 +81,7 @@ internal static class PayloadBuildRequestParser
             return (null, refusal);
         if (endpoint.Value is { } dialable && !IsDialableEndpoint(dialable))
             return (null,
-                $"Endpoint must be a schemed dial the implant can serve -- http(s)://, tcp://, smb://, dns://, or doh:// -- got '{dialable}'.");
+                $"Endpoint must be a schemed dial the implant can serve -- http(s)://, tcp://, dns://, or doh:// -- got '{dialable}'.");
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             foreach (var fallback in fallbacks)
@@ -90,7 +90,7 @@ internal static class PayloadBuildRequestParser
                     continue;
                 if (!IsDialableEndpoint(fallback))
                     return (null,
-                        $"Each fallback endpoint must be a schemed dial (http(s)://, tcp://, smb://, dns://, doh://), got '{fallback}'.");
+                        $"Each fallback endpoint must be a schemed dial (http(s)://, tcp://, dns://, doh://), got '{fallback}'.");
             }
         }
 
@@ -202,12 +202,11 @@ internal static class PayloadBuildRequestParser
             return (null, null, "ListenerId names another engagement's listener.");
 
         // The socket family's enroll arm (Sec 8, enrollment over the stream
-        // contact): an smb or tcp listener is enroll-nameable the same way
-        // -- the opening exchange on the pipe or socket carries the
-        // EnrollRequest frames -- and the baked endpoint is the transport's
-        // own dial: the pipe path in URL form, the host:port under tcp://.
-        if (listener.Transport is "smb" or "tcp")
-            return SocketDial(listener.Transport, listener.PublicEndpoint);
+        // contact): a tcp listener is enroll-nameable -- the opening exchange
+        // on the socket carries the EnrollRequest frames -- and the baked
+        // endpoint is the transport's own dial: the host:port under tcp://.
+        if (listener.Transport == "tcp")
+            return SocketDial(listener.PublicEndpoint);
 
         // The DNS family's enroll arm (Sec 8, enrollment over DNS -- the
         // full-independence step for a DNS-only target): the enroll body
@@ -292,16 +291,15 @@ internal static class PayloadBuildRequestParser
                     return (null, dnsError);
                 return (dnsDial.Dial, null);
             }
-            // The socket family's beacon arm (Sec 8): the named-pipe and
-            // raw-TCP listeners serve both shapes -- one connection is one
-            // poll contact on a poll-mode bake, and a stream-mode bake
-            // holds the live session the handshake's live advertisement
-            // opens -- so either mode may name one and the baked beacon is
-            // the transport's own dial either way (the baked mode picks the
-            // client that dials it).
-            if (listener.Transport is "smb" or "tcp")
+            // The socket family's beacon arm (Sec 8): the raw-TCP listener
+            // serves both shapes -- one connection is one poll contact on a
+            // poll-mode bake, and a stream-mode bake holds the live session
+            // the handshake's live advertisement opens -- so either mode may
+            // name one and the baked beacon is the transport's own dial
+            // either way (the baked mode picks the client that dials it).
+            if (listener.Transport == "tcp")
             {
-                var (dial, _, dialError) = SocketDial(listener.Transport, listener.PublicEndpoint);
+                var (dial, _, dialError) = SocketDial(listener.PublicEndpoint);
                 return (dial, dialError);
             }
             if (beaconProvider?.ServesNativeChannel != true)
@@ -467,8 +465,8 @@ internal static class PayloadBuildRequestParser
             : fallback;
 
     // An endpoint the implant can dial: an absolute http(s) URL, or the
-    // socket or DNS family's dial (architecture.md Sec 8 -- a tcp-, smb-,
-    // dns-, or doh-schemed enroll endpoint runs the frame or chunk
+    // socket or DNS family's dial (architecture.md Sec 8 -- a tcp-, dns-,
+    // or doh-schemed enroll endpoint runs the frame or chunk
     // exchange its module dials, and the egress walk treats every entry as
     // a URL). A bare host or a typo'd scheme strands the payload on target.
     private static bool IsDialableEndpoint(string text)
@@ -476,7 +474,6 @@ internal static class PayloadBuildRequestParser
             && (uri.Scheme == Uri.UriSchemeHttp
                 || uri.Scheme == Uri.UriSchemeHttps
                 || uri.Scheme.Equals("tcp", StringComparison.OrdinalIgnoreCase)
-                || uri.Scheme.Equals("smb", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("dns", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
 
@@ -517,24 +514,12 @@ internal static class PayloadBuildRequestParser
 
     // The socket family's baked dial (Sec 8, enrollment over the stream
     // contact): the raw-TCP listener's host:port public endpoint completes
-    // under tcp://, and the smb listener's pipe path (\\host\pipe\name)
-    // becomes the URL form smb://host/pipe/name -- a dot host naming the
-    // local machine.
-    private static (string? Value, string? Transport, string? Error) SocketDial(string transport, string publicEndpoint)
+    // under tcp://.
+    private static (string? Value, string? Transport, string? Error) SocketDial(string publicEndpoint)
     {
         var trimmed = publicEndpoint.Trim();
-        if (transport == "tcp")
-        {
-            if (Uri.TryCreate(trimmed, UriKind.Absolute, out var dial) && dial.Scheme == "tcp")
-                return (trimmed, transport, null);
-            return ($"tcp://{trimmed}", transport, null);
-        }
-
-        var parts = trimmed.TrimStart('\\').Split('\\');
-        if (parts.Length < 3 || !string.Equals(parts[1], "pipe", StringComparison.OrdinalIgnoreCase))
-            return (null, transport,
-                $"The smb listener's public endpoint must be the pipe path implants dial (\\\\host\\pipe\\name), got '{publicEndpoint}'.");
-        var pipeName = string.Join('/', parts.Skip(2));
-        return ($"smb://{parts[0]}/pipe/{pipeName}", transport, null);
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var dial) && dial.Scheme == "tcp")
+            return (trimmed, "tcp", null);
+        return ($"tcp://{trimmed}", "tcp", null);
     }
 }

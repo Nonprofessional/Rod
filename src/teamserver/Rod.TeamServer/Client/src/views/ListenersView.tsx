@@ -35,8 +35,7 @@ import { StatusBadge } from '../components/StatusBadge'
 // every behavior, so the label names the wire's own properties (its
 // encryption, its posture, its mode shape), not a capability list; how each
 // behavior rides is the build's pick, spelled out by the Build form's
-// summary. SMB is the odd one out: its bind is a bare pipe name, not
-// interface + port.
+// summary.
 interface TransportOption {
   value: string
   label: string
@@ -54,7 +53,6 @@ const TRANSPORT_GROUPS: readonly {
       { value: 'mtls', label: 'mTLS — TLS + client certs', port: '443' },
       { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '8080' },
       { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '443' },
-      { value: 'smb', label: 'SMB — named pipe, internal segment', port: '' },
     ],
   },
 ]
@@ -119,31 +117,25 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [bindInterface, setBindInterface] = useState('')
   const [customHost, setCustomHost] = useState('')
   const [bindPort, setBindPort] = useState('443')
-  const [pipeName, setPipeName] = useState('')
   const [publicEndpoint, setPublicEndpoint] = useState('')
-  const isSmb = transport === 'smb'
 
   // The endpoint field speaks each transport's own dial shape: the web
   // family completes scheme-less hosts and can derive from the bind, the
-  // socket family wants the bare host:port, the DNS family the zone, SMB
-  // the pipe path. One placeholder/title per shape, so the field itself
-  // names what the transport's validation will demand.
+  // socket family wants the bare host:port, the DNS family the zone. One
+  // placeholder/title per shape, so the field itself names what the
+  // transport's validation will demand.
   const isDnsFamily = transport === 'dns' || transport === 'doh'
   const isBareDial = transport === 'tcp' || transport === 'shellcatch'
-  const endpointPlaceholder = isSmb
-    ? '\\\\target\\pipe\\rod-pipe — the pipe implants open'
-    : isDnsFamily
-      ? 'c2.example.test — the zone this listener answers for'
-      : isBareDial
-        ? 'host:port implants dial (e.g. 203.0.113.10:8443)'
-        : 'host, host:port, or URL — empty = the bind'
-  const endpointTitle = isSmb
-    ? 'The pipe path baked into payloads — \\\\host\\pipe\\name on the target segment. Required: a pipe path cannot be derived from this host.'
-    : isDnsFamily
-      ? 'The DNS zone this listener answers TXT contacts under — the domain delegated to this host (its NS records point here). Required: a zone is a fact about the target network, not derivable from the bind.'
-      : isBareDial
-        ? `The host:port implants dial (your redirector in production). The ${transport} scheme is completed at bake time, so type no scheme here. Required: the bare dial cannot be left empty.`
-        : "The address baked into payloads — what deployed implants enroll and contact on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
+  const endpointPlaceholder = isDnsFamily
+    ? 'c2.example.test — the zone this listener answers for'
+    : isBareDial
+      ? 'host:port implants dial (e.g. 203.0.113.10:8443)'
+      : 'host, host:port, or URL — empty = the bind'
+  const endpointTitle = isDnsFamily
+    ? 'The DNS zone this listener answers TXT contacts under — the domain delegated to this host (its NS records point here). Required: a zone is a fact about the target network, not derivable from the bind.'
+    : isBareDial
+      ? `The host:port implants dial (your redirector in production). The ${transport} scheme is completed at bake time, so type no scheme here. Required: the bare dial cannot be left empty.`
+      : "The address baked into payloads — what deployed implants enroll and contact on (your redirector in production). Type just the hostname and the transport's scheme and this listener's port are added; a full URL or host:port is completed with the scheme; empty derives it from the bind. A wildcard bind cannot derive — type the hostname implants should reach."
 
   const refresh = useCallback(async () => {
     setBusy(true)
@@ -210,7 +202,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // listener record's shape. A redirector replaces it later -- this fills
   // the common no-redirector shape so the field never blocks on typing.
   const onFillEndpoint = () => {
-    if (isSmb || transport === 'dns' || transport === 'doh') return
+    if (transport === 'dns' || transport === 'doh') return
     const host =
       bindInterface === CUSTOM
         ? customHost.trim()
@@ -232,11 +224,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     // An unresolved interface (the list never loaded, or no default picked
     // yet) reads as the wildcard the dropdown already shows as selected.
     const iface = bindInterface === '' ? ALL_INTERFACES : bindInterface
-    const bindAddress = isSmb
-      ? pipeName.trim()
-      : iface === CUSTOM
-        ? hostPort(customHost.trim(), bindPort.trim())
-        : hostPort(iface, bindPort.trim())
+    const bindAddress = iface === CUSTOM
+      ? hostPort(customHost.trim(), bindPort.trim())
+      : hostPort(iface, bindPort.trim())
     try {
       await createListener(engagementId, {
         name,
@@ -248,7 +238,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         publicEndpoint: publicEndpoint.trim(),
       })
       setName('')
-      setPipeName('')
       setPublicEndpoint('')
       setError(null)
       await refresh()
@@ -386,33 +375,20 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             />
           </span>
         </label>
-        {isSmb ? (
-          <label>
-            Pipe name
-            <input
-              placeholder="rod-pipe"
-              value={pipeName}
-              onChange={(e) => setPipeName(e.target.value)}
-              title="SMB has no interface or port — its bind is the named pipe implants open."
-              required
-            />
-          </label>
-        ) : (
-          <>
-            <label>
-              Bind interface
-              <select
-                value={bindInterface}
-                onChange={(e) => setBindInterface(e.target.value)}
-                title="The interface this listener opens its socket on"
-              >
-                <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
-                {interfaces.map((i) => (
-                  <option key={`${i.name}-${i.address}`} value={i.address}>
-                    {i.name} ({i.address})
-                  </option>
-                ))}
-                {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
+        <label>
+          Bind interface
+          <select
+            value={bindInterface}
+            onChange={(e) => setBindInterface(e.target.value)}
+            title="The interface this listener opens its socket on"
+          >
+            <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
+            {interfaces.map((i) => (
+              <option key={`${i.name}-${i.address}`} value={i.address}>
+                {i.name} ({i.address})
+              </option>
+            ))}
+            {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
                 <option value={CUSTOM}>Custom address…</option>
               </select>
             </label>
@@ -449,8 +425,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                 required
               />
             </label>
-          </>
-        )}
         <label className="endpoint-label">
           Public endpoint
           <input
@@ -466,10 +440,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             className="ghost"
             type="button"
             onClick={onFillEndpoint}
-            disabled={isSmb || transport === 'dns' || transport === 'doh'}
+            disabled={transport === 'dns' || transport === 'doh'}
             title={
-              isSmb || transport === 'dns' || transport === 'doh'
-                ? 'A pipe path or a DNS zone is a fact about the target network — a host this server runs on cannot derive it from its interfaces. Type it directly.'
+              transport === 'dns' || transport === 'doh'
+                ? 'A DNS zone is a fact about the target network — a host this server runs on cannot derive it from its interfaces. Type it directly.'
                 : 'Compose the public endpoint from the picks above: the dialable host (the interface, or the host\'s first dialable NIC for a wildcard bind), the bind port, and this transport\'s own dial shape. A redirector replaces it later.'
             }
           >

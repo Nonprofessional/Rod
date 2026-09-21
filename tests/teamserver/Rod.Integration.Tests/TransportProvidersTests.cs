@@ -29,7 +29,6 @@ public class TransportProvidersTests
 
     [Theory]
     [InlineData("dns")]
-    [InlineData("smb")]
     [InlineData("tcp")]
     public void Find_ServesTheSocketOwningFamily(string transport)
     {
@@ -50,7 +49,6 @@ public class TransportProvidersTests
     [InlineData("https", true)]
     [InlineData("mtls", true)]
     [InlineData("dns", false)]
-    [InlineData("smb", false)]
     [InlineData("tcp", false)]
     public void Carriers_DeclareTheNativeChannelTruthPerTransport(string transport, bool servesNative)
     {

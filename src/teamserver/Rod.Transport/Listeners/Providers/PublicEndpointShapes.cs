@@ -7,7 +7,7 @@ namespace Rod.Transport.Listeners.Providers;
 /// -- an absolute http(s) URL is already what a payload build bakes, a bare
 /// host:port is the redirector front, and a hostname without a port is
 /// completed against the listener's own bind port. The socket-owning
-/// transports dial their own shapes: a DNS zone, a pipe path, a host:port.
+/// transports dial their own shapes: a DNS zone or a host:port.
 /// </summary>
 public static class PublicEndpointShapes
 {
@@ -54,11 +54,6 @@ public static class PublicEndpointShapes
     public static bool IsDnsZone(string value)
         => value.Length > 0
             && value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-');
-
-    /// <summary>A pipe path: the Windows pipe prefix's backslashes included.</summary>
-    public static bool IsPipePath(string value)
-        => value.Length > 0
-            && value.All(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '\\' or '_');
 
     /// <summary>A socket host:port or host shape for the raw-TCP dial.</summary>
     public static bool IsSocketDial(string value)

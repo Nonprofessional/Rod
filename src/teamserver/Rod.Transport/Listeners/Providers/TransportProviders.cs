@@ -50,27 +50,19 @@ public static class TransportProviders
         Register(new KestrelEndpointProvider("mtls", ListenerTlsPosture.MutualAsk,
             new[] { TransportCapabilities.BeaconStreamName, TransportCapabilities.EnvelopeName }));
 
-        // The socket-owning family: a datagram reservation and a bare pipe
-        // name's absence of one, per each transport's socket -- and each its
-        // own public endpoint dial shape (a zone, a pipe path, a host:port).
+        // The socket-owning family: a datagram reservation for DNS, a stream
+        // reservation for the raw socket -- and each its own public endpoint
+        // dial shape (a zone, a host:port).
         Register(new HostedServiceTransportProvider("dns",
-            new HostedBindShape(BindReservation.UdpPort, BarePipeName: false, PublicEndpointShape.DnsZone),
+            new HostedBindShape(BindReservation.UdpPort, PublicEndpointShape.DnsZone),
             new[] { TransportCapabilities.DnsName },
             (services, registry, listener) => new DnsListenerService(
                 listener,
                 services.GetRequiredService<DnsBeaconBridge>(),
                 registry,
                 services.GetRequiredService<ILoggerFactory>().CreateLogger<DnsListenerService>())));
-        Register(new HostedServiceTransportProvider("smb",
-            new HostedBindShape(BindReservation.None, BarePipeName: true, PublicEndpointShape.PipePath),
-            new[] { TransportCapabilities.MessagePipeName },
-            (services, registry, listener) => new SmbListenerService(
-                listener,
-                services.GetRequiredService<StreamBeaconBridge>(),
-                registry,
-                services.GetRequiredService<ILoggerFactory>().CreateLogger<SmbListenerService>())));
         Register(new HostedServiceTransportProvider("tcp",
-            new HostedBindShape(BindReservation.TcpPort, BarePipeName: false, PublicEndpointShape.HostPort),
+            new HostedBindShape(BindReservation.TcpPort, PublicEndpointShape.HostPort),
             new[] { TransportCapabilities.MessagePipeName },
             (services, registry, listener) => new TcpListenerService(
                 listener,
@@ -94,7 +86,7 @@ public static class TransportProviders
         // may never name it as a beacon), and its public endpoint is the
         // bare host:port the one-liners dial, the family's dial shape.
         Register(new HostedServiceTransportProvider("shellcatch",
-            new HostedBindShape(BindReservation.TcpPort, BarePipeName: false, PublicEndpointShape.HostPort),
+            new HostedBindShape(BindReservation.TcpPort, PublicEndpointShape.HostPort),
             Array.Empty<string>(),
             (services, registry, listener) => new ShellCatchListenerService(
                 listener,

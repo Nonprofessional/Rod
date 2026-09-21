@@ -17,23 +17,21 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance for enrollment over the stream contact (architecture.md
-/// Sec 8, the same full-independence step QUIC took): the named-pipe and
-/// raw-TCP listeners' opening message may carry an EnrollRequest ahead of
-/// its handshake, so a no-egress segment can enroll its first implant over
-/// the pipe or socket it already reaches. A from-scratch TCP implant -- a
+/// Sec 8, the same full-independence step the deleted QUIC family took):
+/// the raw-TCP listener's opening message may carry an EnrollRequest ahead
+/// of its handshake, so a no-egress segment can enroll its first implant
+/// over the socket it already reaches. A from-scratch TCP implant -- a
 /// plain socket, the stream contact framing, and the protobuf messages --
 /// drives the whole exchange: enroll, then the ordinary handshake, then
 /// tasking and results on the poll cadence one-connection-one-contact
-/// serves. The raw-TCP transport pins the shared StreamBeaconBridge the
-/// named pipe rides too.
+/// serves.
 /// </summary>
 public class StreamEnrollRoundTripTests
 {
     // The build story (architecture.md Sec 8, enrollment over the stream
-    // contact): the socket family's listeners are enroll-nameable, the
-    // parser baking the transport's own dial -- tcp://host:port for the raw
-    // socket, the pipe path in URL form (smb://host/pipe/name) for the
-    // named pipe -- with the beacon deriving from it. The carrier is
+    // contact): the socket family's listener is enroll-nameable, the
+    // parser baking the transport's own dial -- tcp://host:port for the
+    // raw socket -- with the beacon deriving from it. The carrier is
     // poll-only, so a stream-mode bake is refused with the fix. Registry-
     // seeded (no socket binds), so it runs wherever the parser does.
     [Fact]
@@ -52,10 +50,6 @@ public class StreamEnrollRoundTripTests
                 Rod.Transport.Listeners.ListenerId.New(), "parser-tcp", "tcp",
                 "127.0.0.1:9444", "10.0.0.5:9444", DateTimeOffset.UtcNow, engagement);
             await registry.RegisterAsync(tcp);
-            var smb = Rod.Transport.Listeners.Listener.Define(
-                Rod.Transport.Listeners.ListenerId.New(), "parser-smb", "smb",
-                "rod-pipe", "\\\\host.example\\pipe\\rod-pipe", DateTimeOffset.UtcNow, engagement);
-            await registry.RegisterAsync(smb);
             var dns = Rod.Transport.Listeners.Listener.Define(
                 Rod.Transport.Listeners.ListenerId.New(), "parser-dns", "dns",
                 "10.0.0.6:53", "c2.example.test", DateTimeOffset.UtcNow, engagement);
@@ -70,12 +64,6 @@ public class StreamEnrollRoundTripTests
             Assert.Null(tcpPoll.Error);
             Assert.Equal("tcp://10.0.0.5:9444", tcpPoll.Request!.Transport.Endpoint);
             Assert.Equal("poll", tcpPoll.Request.Mode);
-
-            var smbPoll = await PayloadBuildRequestParser.ParseAsync(
-                EnrollRequest(smb.Id.ToString(), mode: "poll"), engagement, operatorId, registry, ca,
-                CancellationToken.None);
-            Assert.Null(smbPoll.Error);
-            Assert.Equal("smb://host.example/pipe/rod-pipe", smbPoll.Request!.Transport.Endpoint);
 
             // The DNS family's enroll arm (Sec 8, enrollment over DNS): the
             // baked endpoint is the listener's own bind as the resolver plus
