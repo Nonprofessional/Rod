@@ -11,8 +11,6 @@ namespace Rod.Conformance.Tests;
 /// </summary>
 public sealed class ReferenceImplantCandidate : IImplantCandidate
 {
-    public CandidateTransport Transport => CandidateTransport.Envelope;
-
     private readonly string _binary;
     private Process? _process;
 

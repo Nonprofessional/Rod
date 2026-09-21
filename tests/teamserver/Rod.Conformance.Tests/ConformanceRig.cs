@@ -31,13 +31,6 @@ namespace Rod.Conformance.Tests;
 // pointing it at a deliberately broken one fails with the violated clause
 // named.
 
-/// <summary>The contact shape a candidate speaks.</summary>
-public enum CandidateTransport
-{
-    /// <summary>The plain-HTTP envelope: one POST per poll contact.</summary>
-    Envelope,
-}
-
 /// <summary>
 /// Where a candidate phase points: the endpoints to dial, the credential to
 /// redeem, the CA to pin, and -- for the kill-date phase -- the baked kill
@@ -61,8 +54,6 @@ public sealed record ConformanceTarget(
 /// </summary>
 public interface IImplantCandidate : IDisposable
 {
-    CandidateTransport Transport { get; }
-
     /// <summary>Launch the candidate against the target; returns once started.</summary>
     Task StartAsync(ConformanceTarget target);
 

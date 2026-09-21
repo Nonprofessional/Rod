@@ -159,30 +159,6 @@ internal static class TestSupport
         }
     }
 
-    // Pairs an enrolled leaf with its private key for the in-process beacon
-    // client. Windows cannot present a certificate whose key exists only as an
-    // ephemeral in-memory handle (the same SChannel constraint the teamserver's
-    // server leaf works around in Rod.CoreState.Pki, and the implant at its
-    // enroll), so the pair travels through a PFX import with a persisted key
-    // set there. On Linux this is the plain pairing.
-    internal static X509Certificate2 BeaconClientCertificate(X509Certificate2 leaf, ECDsa leafKey)
-    {
-        if (leaf.HasPrivateKey)
-            return leaf;
-
-        var paired = leaf.CopyWithPrivateKey(leafKey);
-        if (!OperatingSystem.IsWindows())
-            return paired;
-
-        using (paired)
-        {
-            return X509CertificateLoader.LoadPkcs12(
-                paired.Export(X509ContentType.Pfx),
-                (string?)null,
-                X509KeyStorageFlags.DefaultKeySet | X509KeyStorageFlags.Exportable);
-        }
-    }
-
     // A throwaway self-signed client certificate for the no-CertificateRequest
     // probe (architecture.md Sec 8/9): the client offers it over TLS, and the
     // moment a listener asks to see a client certificate it fails the

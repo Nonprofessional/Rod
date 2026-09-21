@@ -28,8 +28,6 @@ public sealed record ImplantDefects(
 /// </summary>
 public sealed class MinimalImplant : IImplantCandidate
 {
-    public CandidateTransport Transport => CandidateTransport.Envelope;
-
     private readonly ImplantDefects _defects;
     private readonly HttpClient _http = new();
     private CancellationTokenSource? _running;
