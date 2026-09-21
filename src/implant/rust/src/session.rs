@@ -94,8 +94,8 @@ impl Session {
             .unwrap_or(false)
     }
 
-    /// The jittered inter-cycle sleep, widened by consecutive failures (the
-    /// exponential backoff both .NET clients apply).
+    /// The jittered inter-cycle sleep, widened by consecutive failures --
+    /// the exponential reconnect backoff the low-and-slow posture calls for.
     pub fn backoff_sleep(&self, failures: u32) {
         let (base, jitter) = *self.cadence.lock().expect("cadence");
         let widened = (base.max(1.0) * 2f64.powi(failures.min(5) as i32)).min(600.0);
@@ -206,8 +206,7 @@ impl Session {
                 // Dispatch runs exactly once: the result and its out-of-band
                 // chunks both come off this one execution.
                 let handler = handlers::dispatch(&task.verb, &task.arguments, &self.cadence);
-                let outcome = if handler.outcome == handlers::Outcome::Succeeded { 1 } else { 2 };
-                self.outbox.result(&task.task_id, outcome, &handler.output);
+                self.outbox.result(&task.task_id, handler.outcome, &handler.output);
                 for mut chunk in handler.chunks {
                     chunk.task_id = task.task_id.clone();
                     self.outbox.queue(Frame {
@@ -227,7 +226,7 @@ impl Session {
                     }
                     _ => "task rejected: signature verification failed; not executed".to_string(),
                 };
-                self.outbox.result(&task.task_id, 2, &cause);
+                self.outbox.result(&task.task_id, crate::handlers::Outcome::Failed, &cause);
             }
         }
     }

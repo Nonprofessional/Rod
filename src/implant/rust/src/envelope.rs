@@ -6,8 +6,8 @@ use rand::RngCore;
 // The sealed-body shapes (the teamserver's AesGcmEnvelope contract,
 // extending/implants.md): base64 of
 // b"R1" || keyId(16) || nonce(12) || ciphertext || tag(16), AES-256-GCM under
-// the per-artifact key with a purpose tag binding each direction. The exact
-// byte layout the .NET EnvelopeWire emits -- wire-identical or nothing.
+// the per-artifact key with a purpose tag binding each direction -- the byte
+// layout the sealed-body contract pins (extending/implants.md).
 
 pub const ENROLL_AAD: &str = "rod-envelope-v1";
 pub const CONTACT_REQUEST_AAD: &str = "rod-contact-v1";

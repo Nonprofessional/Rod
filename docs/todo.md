@@ -228,3 +228,48 @@ starts from a gap an actual engagement surfaces.
   _AC:_ a two-recipient campaign mints per-recipient lure links, and
   the recipient who executes the lure enrolls with campaign and
   recipient attribution visible in the audit trail.
+
+- **Implant-side plugin seam: C-ABI capability modules** (serves
+  architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
+  first). What an engagement cannot do without it: add a capability to a
+  deployed implant without a rebuild-and-redeploy -- a per-engagement
+  tradecraft module loads on demand over the task channel and never rides a
+  standing artifact. Shape: a `rod-plugin-sdk` crate (the authoring surface
+  -- a normal Rust trait plus the macro that emits the `extern "C"` shim;
+  the C ABI is the only boundary stable across compiler versions), a
+  module.load verb family that carries the module bytes over the existing
+  sealed task channel, and a loader that stages the bytes the way the
+  stager stages a stage-2 (memfd on Linux, a manual PE map on Windows) and
+  resolves the entry through dlsym/GetProcAddress. Dispatch keeps the
+  string-in/string-out task grammar, so a module verb reads exactly like a
+  compiled one; the advertised set widens at load and reports on the next
+  contact. Unload is best-effort; replacement is last-registration-wins,
+  the same rule the server-side module seam applies.
+  _AC:_ a module built against the SDK, delivered through module.load,
+  executes a verb the artifact did not compile, and its result lands in the
+  audit trail attributed like any task.
+
+- **Android shell for the Rust implant** (serves architecture.md Sec 12.2,
+  the reach story). What an engagement cannot do without it: a presence on
+  an Android device -- the lab and the target base both carry phones, and
+  today Rod has no artifact for them. Shape: the Rust crate grows a
+  `cdylib`/`staticlib` output and the NDK cross (aarch64-linux-android via
+  the SDK's toolchain, wired through the build unit's cargo environment
+  like the musl crosses), plus a thin carrier app shell that loads the
+  library and keeps the contact loop alive under Android's background
+  execution limits (a foreground service is the documented shape).
+  Enroll/contact behavior is the shared wire, unchanged; the shell is
+  plumbing, not protocol.
+  _AC:_ the library cross-compiles for aarch64-linux-android from the Linux
+  build host, and loaded by a carrier app on a device it enrolls and
+  answers tasking through the same e2e the desktop legs run.
+
+- **iOS shell for the Rust implant** (serves architecture.md Sec 12.2;
+  blocked on a macOS build host -- the Apple link needs Xcode's SDK, which
+  the Linux host cannot carry). Shape: the same library-plus-shell pattern
+  as the Android item against aarch64-apple-ios; delivery is inherently
+  sideloading territory (a signed carrier app or a jailbroken device), an
+  operational constraint the runbook documents rather than something the
+  build can remove.
+  _AC:_ cross-compiling from a macOS host produces a static library a
+  carrier app links, and the enrollment leg runs.

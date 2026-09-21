@@ -3,8 +3,8 @@ use serde_json::Value;
 // The baked profile (the language-neutral wire contract, architecture.md
 // Sec 6): base64url JSON with the keys every build unit emits. The bake is
 // authoritative in a fielded artifact; an empty profile (the checked-in stub
-// or a dev build) falls back to ROD_* environment variables, the dev shape
-// the .NET implant keeps behind its own DEBUG flag.
+// or a dev build) falls back to ROD_* environment variables -- the documented
+// dev shape, unbaked and driven from the environment.
 
 #[derive(Clone, Debug)]
 pub struct Profile {
@@ -126,7 +126,7 @@ impl Profile {
     }
 
     /// The egress walk: the primary enroll URL then the fallbacks, all with
-    /// the enroll path applied (the .NET ResolveEnrollUrl rule).
+    /// the enroll path applied (the malleable profile's path rule).
     pub fn enroll_walk(&self) -> Vec<String> {
         let mut walk = vec![apply_path(&self.enroll_url, &self.enroll_path)];
         for fallback in &self.fallback_enroll_urls {

@@ -5,6 +5,7 @@ use prost::Message;
 use super::{accept_tasking, Contact};
 use crate::error::ContactError;
 use crate::profile::Profile;
+use crate::handlers::Outcome;
 use crate::session::{Attempt, Session};
 use crate::wire::{Frame, StagedChunk, TaskRequest};
 
@@ -104,7 +105,7 @@ fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskReques
             terminal = chunk.terminal;
         }
         if !terminal {
-            session.outbox.result(&task.task_id, 2, "staged payload stream ended without a terminal chunk");
+            session.outbox.result(&task.task_id, Outcome::Failed, "staged payload stream ended without a terminal chunk");
             continue;
         }
         let (outcome, output) = dispatch_staged(&task.verb, &task.arguments, &payload);
@@ -115,27 +116,27 @@ fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskReques
 /// The staged dispatch arm: the payload arrived, the arguments carry the
 /// grammar. Only file.push uses the staged arm today; anything else fails
 /// with the grammar named.
-pub fn dispatch_staged(verb: &str, arguments: &str, payload: &[u8]) -> (i32, String) {
+pub fn dispatch_staged(verb: &str, arguments: &str, payload: &[u8]) -> (Outcome, String) {
     use sha2::{Digest, Sha256};
     if verb != "file.push" {
-        return (2, format!("{verb}: this build carries no staged handler for the verb"));
+        return (Outcome::Failed, format!("{verb}: this build carries no staged handler for the verb"));
     }
     let Some(space) = arguments.rfind(' ') else {
-        return (2, "file.push staged expects '<path> sha256:<hex>'".into());
+        return (Outcome::Failed, "file.push staged expects '<path> sha256:<hex>'".into());
     };
     let path = arguments[..space].trim();
     let Some(expected) = arguments[space + 1..].trim().strip_prefix("sha256:") else {
-        return (2, "file.push staged expects '<path> sha256:<hex>'".into());
+        return (Outcome::Failed, "file.push staged expects '<path> sha256:<hex>'".into());
     };
     let actual: String = Sha256::digest(payload).iter().map(|b| format!("{b:02x}")).collect();
     if !actual.eq_ignore_ascii_case(expected) {
-        return (2, format!("file.push staged: payload hash mismatch: expected {expected}, received {actual}"));
+        return (Outcome::Failed, format!("file.push staged: payload hash mismatch: expected {expected}, received {actual}"));
     }
     if let Some(parent) = std::path::Path::new(path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     match std::fs::write(path, payload) {
-        Ok(()) => (1, format!("{path}: {} bytes written", payload.len())),
-        Err(err) => (2, format!("write {path}: {err}")),
+        Ok(()) => (Outcome::Succeeded, format!("{path}: {} bytes written", payload.len())),
+        Err(err) => (Outcome::Failed, format!("write {path}: {err}")),
     }
 }

@@ -14,8 +14,8 @@ mod verify;
 mod wire;
 
 // The Rust reference implant (architecture.md Sec 12.2): the reach implant
-// for targets a managed runtime cannot serve, speaking the same wire
-// protocol as the .NET reference. The fielded shape runs entirely off the
+// for targets a managed runtime cannot serve, speaking the shared wire
+// protocol. The fielded shape runs entirely off the
 // bake; the dev shape (empty bake) runs from ROD_* environment variables.
 // The entry point stays deliberately thin: load the profile, run the state
 // machine, exit with its answer.
