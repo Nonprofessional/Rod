@@ -27,21 +27,11 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- gRPC server: terminates the implant-initiated beacon stream. The
-       wire contract (services/messages) is generated in Rod.Protocol; this
-       package binds those server stubs to ASP.NET Core endpoint routing. -->
-  <ItemGroup>
-    <PackageReference Include="Grpc.AspNetCore" />
-  </ItemGroup>
-
   <!-- The DNS contact codec, name grammar, and bridge are internal transport
        machinery; the integration tests exercise them directly (the same
        same-package access pattern the reference implant grants its tests). -->
   <ItemGroup>
     <InternalsVisibleTo Include="Rod.Integration.Tests" />
   </ItemGroup>
-
-  <PropertyGroup>
-  </PropertyGroup>
 
 </Project>

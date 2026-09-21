@@ -52,13 +52,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     env:
-      # The core lane: the unit and integration suites minus the two
-      # environment-sensitive families -- the QUIC acceptance (see the
-      # libmsquic note in the extended lane) and the conformance harness,
-      # which compiles and runs the real Rust implant and reads best on its
-      # own lane, not as a red run on every push. The retry steps below
-      # inherit this scope.
-      CORE_FILTER: "FullyQualifiedName!~QuicBeaconRoundTripTests&FullyQualifiedName!~Rod.Conformance.Tests"
+      # The core lane: the unit and integration suites minus the
+      # environment-sensitive conformance harness, which compiles and runs
+      # the real Rust implant and reads best on its own lane, not as a red
+      # run on every push. The retry steps below inherit this scope.
+      CORE_FILTER: "FullyQualifiedName!~Rod.Conformance.Tests"
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -175,16 +173,15 @@ jobs:
     name: Test (extended)
     runs-on: ubuntu-latest
     needs: build
-    # Non-blocking by design: this lane carries the slowest, most
-    # environment-sensitive family -- the conformance harness, which
-    # compiles the real Rust implant via cargo and proves it against a
-    # live teamserver, plus the QUIC acceptance -- whose failures are
-    # worth triage without being worth a red run on every push. The
-    # nightly schedule gives it a standing verdict; a failure here shows
-    # on the job, not on the run.
+    # Non-blocking by design: this lane carries the environment-sensitive
+    # family -- the conformance harness, which compiles the real Rust
+    # implant via cargo and proves it against a live teamserver -- whose
+    # failures are worth triage without being worth a red run on every
+    # push. The nightly schedule gives it a standing verdict; a failure
+    # here shows on the job, not on the run.
     continue-on-error: true
     env:
-      EXTENDED_FILTER: "FullyQualifiedName~QuicBeaconRoundTripTests|FullyQualifiedName~Rod.Conformance.Tests"
+      EXTENDED_FILTER: "FullyQualifiedName~Rod.Conformance.Tests"
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -204,31 +201,6 @@ jobs:
         run: dotnet restore Rod.slnx
       - name: Build
         run: dotnet build Rod.slnx --configuration Release --no-restore
-      - name: Install libmsquic
-        # System.Net.Quic needs libmsquic on Linux, and the QUIC transport
-        # acceptance (QuicBeaconRoundTripTests -- this lane's, see the core
-        # filter's note) dials a real listener. Ubuntu carries it only in
-        # Microsoft's prod repo; the runner image ships none.
-        #
-        # The 24.04 repo floats a single release (2.6.1 as of 2026-09) whose
-        # TLS handshake System.Net.Quic cannot complete, and it carries
-        # nothing older to pin -- but the 22.04 pool keeps every release, so
-        # the known-good 2.4.16 (the version local runs verify) installs
-        # straight from there. If that URL ever goes away, the fallback is
-        # the repo's latest and QuicFactAttribute stands the tests down on
-        # the broken releases rather than reddening the lane.
-        run: |
-          curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/keyrings/microsoft.asc >/dev/null
-          curl -sSL "https://packages.microsoft.com/config/ubuntu/$(. /etc/os-release && echo $VERSION_ID)/prod.list" | sudo tee /etc/apt/sources.list.d/microsoft-prod.list >/dev/null
-          sudo apt-get update
-          if curl -fsSL -o libmsquic_2.4.16_amd64.deb \
-              "https://packages.microsoft.com/ubuntu/22.04/prod/pool/main/libm/libmsquic/libmsquic_2.4.16_amd64.deb" \
-              && sudo apt-get install -y ./libmsquic_2.4.16_amd64.deb; then
-            echo "installed the pinned libmsquic 2.4.16 (22.04 pool)"
-          else
-            echo "the 22.04-pool pin failed; falling back to the repo's latest"
-            sudo apt-get install -y libmsquic
-          fi
       - name: Test (extended lane)
         id: test_extended_first
         # The same blame-hang posture the core lane runs with: a hang names
