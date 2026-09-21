@@ -36,19 +36,15 @@ public static class TransportProviders
 
     static TransportProviders()
     {
-        // The HTTP family: one publication shape, three TLS postures -- the
-        // plain loopback dev posture, the single-port app-key https shape,
-        // and the client-certificate-asking mTLS shape (architecture.md
-        // Sec 8/9). Every web front serves the envelope carrier; the
-        // stream-mode web build dials the WebSocket beacon, so the web
-        // fronts carry the beacon-stream carrier too, alongside the mTLS
-        // shape's gRPC stream -- both native channel carriers.
+        // The HTTP family: one publication shape, two TLS postures -- the
+        // plain loopback dev posture and the single-port app-key https shape
+        // (architecture.md Sec 8/9). Every web front serves the envelope
+        // carrier and the WebSocket beacon (the stream-mode web build dials
+        // it) -- both native channel carriers.
         Register(new KestrelEndpointProvider("http", ListenerTlsPosture.Plain,
             new[] { TransportCapabilities.EnvelopeName, TransportCapabilities.BeaconStreamName }));
         Register(new KestrelEndpointProvider("https", ListenerTlsPosture.ServerTls,
             new[] { TransportCapabilities.EnvelopeName, TransportCapabilities.BeaconStreamName }));
-        Register(new KestrelEndpointProvider("mtls", ListenerTlsPosture.MutualAsk,
-            new[] { TransportCapabilities.BeaconStreamName, TransportCapabilities.EnvelopeName }));
 
         // The socket-owning family: a datagram reservation for DNS, a stream
         // reservation for the raw socket -- and each its own public endpoint

@@ -126,12 +126,10 @@ public class PayloadJobTests
     public async Task BuildJob_CleartextEnrollWithABeaconEndpoint_IsAccepted()
     {
         // The split-socket shape (the hardened option): enroll dials the
-        // cleartext endpoint, the gRPC stream the named mTLS one. The
-        // accepted job carries the resolved beacon as the bare authority the
-        // stream dials -- a schemed beacon URL is the envelope cycle's shape,
-        // so the mTLS dial shape carries no scheme. A Go language request
-        // keeps the worker from invoking the toolchain; the parser's
-        // acceptance is what this pins.
+        // cleartext endpoint, the beacon the named web front. The accepted
+        // job carries the resolved beacon as the schemed front the WebSocket
+        // beacon hangs off. A Go language request keeps the worker from
+        // invoking the toolchain; the parser's acceptance is what this pins.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
@@ -142,7 +140,7 @@ public class PayloadJobTests
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
         Assert.NotNull(job);
-        Assert.Equal("10.0.0.5:5443", job!.BeaconEndpoint);
+        Assert.Equal("https://10.0.0.5:5443", job!.BeaconEndpoint);
     }
 
     [Fact]

@@ -50,7 +50,6 @@ const TRANSPORT_GROUPS: readonly {
     label: 'Payload ingress',
     transports: [
       { value: 'https', label: 'HTTPS — TLS web front (recommended)', port: '443' },
-      { value: 'mtls', label: 'mTLS — TLS + client certs', port: '443' },
       { value: 'http', label: 'HTTP — cleartext, app-layer sealed (lab)', port: '8080' },
       { value: 'tcp', label: 'Raw TCP — arbitrary sockets out, weak inspection', port: '443' },
     ],

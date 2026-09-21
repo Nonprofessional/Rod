@@ -10,13 +10,11 @@ namespace Rod.Transport.Listeners.Providers;
 
 /// <summary>
 /// The TLS posture one HTTP-family transport binds with: the endpoint URL's
-/// scheme and the per-endpoint <c>ClientCertificateMode</c> riding it -- the
-/// two knobs (and the only two knobs) the HTTP-shaped transports differ on.
-/// The posture is data so the transport set is a registration, not a switch:
-/// plain HTTP carries no TLS, the single-port https shape requests no client
-/// certificate anywhere (the app-layer artifact key is the identity), and the
-/// mTLS shape asks for the certificate at the TLS layer (architecture.md
-/// Sec 8/9).
+/// scheme and the per-endpoint <c>ClientCertificateMode</c> riding it. The
+/// posture is data so the transport set is a registration, not a switch:
+/// plain HTTP carries no TLS, and the single-port https shape requests no
+/// client certificate anywhere (the app-layer artifact key is the identity,
+/// architecture.md Sec 8/9).
 /// </summary>
 public sealed record ListenerTlsPosture(string Scheme, string? ClientCertificateMode)
 {
@@ -25,16 +23,6 @@ public sealed record ListenerTlsPosture(string Scheme, string? ClientCertificate
 
     /// <summary>TLS with no client-certificate request: the app-key identity.</summary>
     public static readonly ListenerTlsPosture ServerTls = new("https", null);
-
-    /// <summary>
-    /// TLS that asks for the client certificate and validates it chain-to-CA,
-    /// never demanding one in-handshake -- enrollment rides the same socket
-    /// and precedes any leaf, so the requirement lands where identity is
-    /// consumed. The mTLS shape, and the one posture every mTLS endpoint
-    /// binds: the startup bind enforces the same mode (architecture.md Sec 9).
-    /// </summary>
-    public static readonly ListenerTlsPosture MutualAsk =
-        new("https", nameof(KestrelClientCertificateMode.AllowCertificate));
 }
 
 /// <summary>

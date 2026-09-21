@@ -39,7 +39,7 @@ public class EnvelopeContactTests
         // The from-scratch implant: ECDSA P-256 keypair, JSON enroll over plain
         // HTTP, envelope contacts over mTLS with the issued leaf. No gRPC
         // library anywhere on this path.
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         Assert.False(string.IsNullOrEmpty(implant.ImplantId));
 
         // First contact: the handshake alone. The response's first frame is
@@ -102,7 +102,7 @@ public class EnvelopeContactTests
         // Enrolls reporting the baked cadence: 30s base, 10s jitter
         // half-width.
         using var implant = await ScratchImplant.EnrollAsync(
-            env.EnrollUrl, env.MtlsBaseAddress, secret, sleepSeconds: 30, jitterSeconds: 10);
+            env.EnrollUrl, secret, sleepSeconds: 30, jitterSeconds: 10);
 
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         Assert.True(ImplantId.TryParse(implant.ImplantId, out var implantId));
@@ -133,7 +133,7 @@ public class EnvelopeContactTests
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
         // A file.pull task names a path on the target; the from-scratch
@@ -176,7 +176,7 @@ public class EnvelopeContactTests
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
         // A file.push larger than the inline cap stages the bytes server-side;
@@ -230,7 +230,7 @@ public class EnvelopeContactTests
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
         // A shell.interact task is a live channel: its input half needs a
@@ -252,7 +252,7 @@ public class EnvelopeContactTests
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
         // Nine tasks whose argument strings each marshal to ~0.5 MB of
@@ -296,7 +296,6 @@ public class EnvelopeContactTests
         // refusal test uses. The envelope handshake must answer the same
         // wire status, and the refusal closes the contact after the
         // handshake response.
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
@@ -304,15 +303,9 @@ public class EnvelopeContactTests
             ImplantId.New(), EngagementId.New(),
             now.AddDays(-1), ImplantClass.Stage2, now.AddDays(-2));
         await implants.SaveAsync(expired);
-        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var issued = await ca.IssueWithKeyAsync(
-            new ImplantCertificateSubject(expired.Id, expired.EngagementId), key, CancellationToken.None);
 
-        using var expiredClient = ScratchImplant.ConnectBeacon(
-            env.MtlsBaseAddress,
-            X509CertificateLoader.LoadCertificate(issued.Leaf),
-            new[] { ca.GetCaCertificate() }, key,
-            expired.Id.ToString(), expired.EngagementId.ToString());
+        using var expiredClient = ScratchImplant.ConnectBeaconCertless(
+            $"http://127.0.0.1:{env.HttpPort}", expired.Id.ToString(), expired.EngagementId.ToString());
         var response = await expiredClient.ContactAsync();
         var handshake = HandshakeResponse.Parser.ParseFrom(response[0].Payload);
         Assert.Equal(HandshakeStatus.KillDateExpired, handshake.Status);
@@ -320,7 +313,7 @@ public class EnvelopeContactTests
 
         // Version mismatch maps the same way it does on the stream.
         var secret = await env.MintStagerTokenAsync();
-        using var fresh = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var fresh = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         var mismatch = await fresh.ContactAsync(major: 2);
         var mismatchHandshake = HandshakeResponse.Parser.ParseFrom(mismatch[0].Payload);
         Assert.Equal(HandshakeStatus.VersionMismatch, mismatchHandshake.Status);
@@ -351,38 +344,6 @@ public class EnvelopeContactTests
     }
 
     [Fact]
-    public async Task Envelope_OverStartupMtlsWithoutCertificate_AnswersTheRefusedHandshake()
-    {
-        // The same refusal over the startup-bound mTLS socket (the
-        // UseRodMtls tier), pinning the one mTLS posture on the other bind
-        // path (architecture.md Sec 9): the endpoint asks for the client
-        // certificate and never demands one in-handshake, so the
-        // certificate-less client completes TLS and is turned away where
-        // identity is consumed -- over TLS the beacon resolves the implant
-        // from the certificate alone, and this body carries none.
-        await using var env = await TestEnv.StartAsync();
-        var ca = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>().GetCaCertificate();
-        using var handler = new SocketsHttpHandler
-        {
-            SslOptions = new SslClientAuthenticationOptions
-            {
-                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
-            },
-        };
-        using var client = new HttpClient(handler) { BaseAddress = new Uri(env.MtlsBaseAddress) };
-
-        // One zero-length frame, the cleartext test's shape: the refused
-        // handshake answers in the response envelope, never a TLS-layer
-        // refusal -- the connection itself completed.
-        var response = await client.PostAsync(
-            "/implants/beacon", new ByteArrayContent(new byte[] { 0x00 }));
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var frames = ScratchImplant.Parse(await response.Content.ReadAsByteArrayAsync());
-        var handshake = HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
-        Assert.Equal(HandshakeStatus.VersionMismatch, handshake.Status);
-    }
-
-    [Fact]
     public async Task Envelope_CleartextContact_IdentifiesByTheHandshakeId()
     {
         // The pure-HTTP posture: an implant with an HTTP client and no
@@ -392,7 +353,7 @@ public class EnvelopeContactTests
         // document. The session opens and the implant is online.
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
 
         // The same implant identity, dialing the cleartext port with a bare
         // HTTP client: no client certificate anywhere on the path.
@@ -426,7 +387,7 @@ public class EnvelopeContactTests
         // The enrollment redeems the payload's own token, so the bind rides
         // with it; the contact client is the sealed cleartext twin -- no
         // certificate anywhere on the path.
-        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         using var sealedImplant = ScratchImplant.ConnectBeaconSealed(
             $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId, bakedKey);
 
@@ -481,7 +442,7 @@ public class EnvelopeContactTests
         // not a decode error -- nothing about the route's handling leaks.
         await using var env = await TestEnv.StartAsync();
         var (_, secret, bakedKey) = await env.MintSealedArtifactShapeAsync();
-        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var enrolled = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         using var sealedImplant = ScratchImplant.ConnectBeaconSealed(
             $"http://127.0.0.1:{env.HttpPort}", enrolled.ImplantId, enrolled.EngagementId, bakedKey);
 
@@ -511,7 +472,7 @@ public class EnvelopeContactTests
     {
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
-        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, env.MtlsBaseAddress, secret);
+        using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
 
         // A body whose first byte starts a varint that never terminates within
         // the uint32 budget is malformed framing, not a frame sequence.
@@ -589,12 +550,12 @@ public class EnvelopeContactTests
 
         /// <summary>
         /// The Tier 0 obligation, first half: generate the keypair, POST the
-        /// public half with the stager token, keep the private half, and hold
-        /// the issued leaf plus CA chain. The beacon base address is the mTLS
-        /// endpoint, distinct from the plain enroll listener.
+        /// public half with the stager token, and contact over the same
+        /// listener's envelope route, identified by the handshake id (the
+        /// cleartext lab posture).
         /// </summary>
         public static async Task<ScratchImplant> EnrollAsync(
-            string enrollUrl, string beaconBaseAddress, string stagerToken,
+            string enrollUrl, string stagerToken,
             double? sleepSeconds = null, double? jitterSeconds = null)
         {
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -611,50 +572,16 @@ public class EnvelopeContactTests
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var document = await System.Text.Json.JsonDocument.ParseAsync(stream);
             var root = document.RootElement;
-
-            var leaf = X509CertificateLoader.LoadCertificate(
-                Convert.FromBase64String(root.GetProperty("leafCertificate").GetString()!));
-            var cas = root.GetProperty("caChain").EnumerateArray()
-                .Select(b64 => X509CertificateLoader.LoadCertificate(Convert.FromBase64String(b64.GetString()!)))
-                .ToArray();
-
-            var implant = ConnectBeacon(
-                beaconBaseAddress,
-                leaf, cas, key,
+            var at = enrollUrl.IndexOf("://", StringComparison.Ordinal);
+            var baseAddress = at < 0 ? enrollUrl : enrollUrl[..enrollUrl.IndexOf('/', at + 3)];
+            var implant = ConnectBeaconCertless(
+                baseAddress,
                 root.GetProperty("implantId").GetString()!,
                 root.GetProperty("engagementId").GetString()!);
-            return implant;
-        }
-
-        /// <summary>
-        /// The Tier 0 obligation, second half: a beacon client that presents
-        /// the leaf over mTLS and pins chain-to-CA for the server identity.
-        /// </summary>
-        public static ScratchImplant ConnectBeacon(
-            string baseAddress,
-            X509Certificate2 leaf,
-            IReadOnlyList<X509Certificate2> cas,
-            ECDsa key,
-            string implantId,
-            string engagementId)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, key);
-            var handler = new SocketsHttpHandler
-            {
-                SslOptions = new SslClientAuthenticationOptions
-                {
-                    ClientCertificates = new X509CertificateCollection { leafWithKey },
-                    RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                        PinServerChain(cert, chain, cas),
-                },
-            };
-            var implant = new ScratchImplant(
-                new HttpClient(handler) { BaseAddress = new Uri(baseAddress) })
-            {
-                ImplantId = implantId,
-                EngagementId = engagementId,
-            };
-            implant._cas.AddRange(cas);
+            // Tasking verification is the transport-independent half: the CA
+            // chain the enrollment answered with signs every dispatched task.
+            implant._cas.AddRange(root.GetProperty("caChain").EnumerateArray()
+                .Select(b64 => X509CertificateLoader.LoadCertificate(Convert.FromBase64String(b64.GetString()!))));
             return implant;
         }
 
@@ -958,9 +885,7 @@ public class EnvelopeContactTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public int HttpPort { get; private set; }
-        public int MtlsPort { get; private set; }
         public string EnrollUrl => $"http://127.0.0.1:{HttpPort}/implants/enroll";
-        public string MtlsBaseAddress => $"https://127.0.0.1:{MtlsPort}";
 
         private string? _engagementId;
 
@@ -968,7 +893,6 @@ public class EnvelopeContactTests
         {
             var env = new TestEnv();
             env.HttpPort = TestSupport.GetFreeTcpPort();
-            env.MtlsPort = TestSupport.GetFreeTcpPort();
 
             var config = AuthenticatedHost.BuildConfig();
             env.Host = TransportHost.CreateHostBuilder(
@@ -976,7 +900,6 @@ public class EnvelopeContactTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
-                    .UseRodMtls(env.MtlsPort)
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();

@@ -2,9 +2,9 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Google.Protobuf;
-using Grpc.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
@@ -34,9 +34,6 @@ namespace Rod.Conformance.Tests;
 /// <summary>The contact shape a candidate speaks.</summary>
 public enum CandidateTransport
 {
-    /// <summary>gRPC over mTLS: the reference implant's transport.</summary>
-    GRpc,
-
     /// <summary>The plain-HTTP envelope: one POST per poll contact.</summary>
     Envelope,
 }
@@ -94,12 +91,13 @@ public sealed record ConformanceReport(IReadOnlyList<ConformanceClause> Clauses)
 /// <summary>
 /// One live teamserver plus the hostile tasking probe, and the clause battery
 /// that drives a candidate against them. The main host is a real Kestrel
-/// teamserver (plain-HTTP enroll, mTLS beacon); the probe is a second mTLS
-/// endpoint presenting the same CA that feeds an enrolled implant crafted
-/// tasking -- unsigned, wrongly signed, signed for another implant, and a
-/// correctly signed control -- and records what came back. The signature
-/// clause reads the probe: a conforming implant refuses the first three and
-/// runs the control.
+/// teamserver (plain HTTP: enroll, the envelope beacon, the WebSocket
+/// stream); the probe is a second plain-HTTP endpoint serving the envelope
+/// route that feeds an enrolled implant crafted tasking -- unsigned, wrongly
+/// signed, signed for another implant, a correctly signed control, and a
+/// replay of it -- and records what came back. The signature clause reads
+/// the probe: a conforming implant refuses the hostile four and runs the
+/// control.
 /// </summary>
 public sealed class ConformanceRig : IAsyncDisposable
 {
@@ -157,14 +155,13 @@ public sealed class ConformanceRig : IAsyncDisposable
     public static async Task<ConformanceRig> StartAsync()
     {
         var enrollPort = GetFreeTcpPort();
-        var beaconPort = GetFreeTcpPort();
         var probePort = GetFreeTcpPort();
 
         // The live teamserver: the transport core on a real Kestrel host --
-        // plain-HTTP enroll, mTLS beacon. The harness observes outcomes
-        // through the core services the operator API drives.
+        // plain HTTP carrying enroll, the envelope beacon, and the WebSocket
+        // stream on one listener. The harness observes outcomes through the
+        // core services the operator API drives.
         var host = TransportHost.CreateHostBuilder().ConfigureWebHost(web => web
-                .UseRodMtls(beaconPort)
                 .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(enrollPort)))
             .Build();
 
@@ -182,25 +179,29 @@ public sealed class ConformanceRig : IAsyncDisposable
         await File.WriteAllTextAsync(caPemPath, Pem(
             ca.GetCaCertificate().Export(X509ContentType.Cert)));
 
-        // The hostile tasking probe: a second mTLS endpoint presenting the same
-        // CA as its server identity, so an enrolled implant's pinning accepts
-        // it, feeding crafted tasking and recording the results.
+        // The hostile tasking probe: a second plain-HTTP endpoint serving the
+        // envelope route, feeding crafted tasking one contact at a time and
+        // recording the results. An enrolled implant reaches it by pointing
+        // its beacon at the probe -- the identity posture under test is the
+        // tasking signature, which travels inside the frames.
         var taskingProbe = new TaskingProbe(ca);
-        var probe = WebApplication.CreateBuilder();
-        probe.Services.AddGrpc();
+        var probe = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
         probe.Services.AddSingleton(taskingProbe);
-        probe.WebHost.ConfigureKestrel(kestrel => kestrel.ListenLocalhost(probePort, listen =>
-            listen.UseHttps(https =>
-            {
-                https.ServerCertificateSelector = (_, _) => ca.GetCaCertificate();
-                https.ClientCertificateMode =
-                    Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.NoCertificate;
-            })));
+        probe.WebHost.ConfigureKestrel(kestrel => kestrel.ListenLocalhost(probePort));
         var probeApp = probe.Build();
-        probeApp.MapGrpcService<ProbeBeaconService>();
+        probeApp.MapPost("/implants/beacon", async (HttpContext http) =>
+        {
+            using var body = new MemoryStream();
+            await http.Request.Body.CopyToAsync(body);
+            var inbound = EnvelopeProbeCodec.Parse(body.ToArray());
+            var session = taskingProbe.SessionFor(inbound);
+            var outbound = session.Handle(inbound);
+            File.AppendAllText("/tmp/probe-diag.log", $"contact: inbound={inbound.Count} outbound={outbound.Count}\n");
+            await http.Response.Body.WriteAsync(EnvelopeProbeCodec.Encode(outbound));
+        });
         await probeApp.StartAsync();
 
-        return new ConformanceRig(host, probeApp, taskingProbe, caPemPath, enrollPort, beaconPort, probePort);
+        return new ConformanceRig(host, probeApp, taskingProbe, caPemPath, enrollPort, enrollPort, probePort);
     }
 
     /// <summary>
@@ -287,12 +288,6 @@ public sealed class ConformanceRig : IAsyncDisposable
         }
 
         // ---- Phase 2: the hostile tasking probe.
-        if (candidate.Transport != CandidateTransport.GRpc)
-        {
-            clauses.Add(new ConformanceClause(SignatureClause, false,
-                "the probe speaks the gRPC stream; an envelope-only candidate cannot be probed"));
-        }
-        else
         {
             var probeEngagement = await MintEngagementTokenAsync();
             _taskingProbe.Reset();
@@ -411,8 +406,13 @@ internal sealed class TaskingProbe
         {
             _results.Clear();
             _negotiated = false;
+            _sessions.Clear();
         }
     }
+
+    internal byte[] SignFor(
+        string implantId, string taskId, string verb, string arguments, ulong? nonce)
+        => _ca.SignTasking(implantId, taskId, verb, arguments, nonce);
 
     /// <summary>
     /// Waits for every crafted task's outcome (or the deadline), then renders
@@ -463,59 +463,142 @@ internal sealed class TaskingProbe
     }
 
     /// <summary>
-    /// The probe script, transport-neutral: handshake, then one crafted task
-    /// at a time, each awaited for its result. Returns when the connection
-    /// ends or every case resolved; unrelated frames are ignored.
+    /// The per-candidate session the envelope probe holds: one crafted case
+    /// rides each contact's response, each awaited for its result on a later
+    /// request; the replay case re-delivers the control frame verbatim once
+    /// its result has been observed.
     /// </summary>
-    public async Task RunScriptAsync(
-        Func<Task<Frame?>> readFrame,
-        Func<Frame, Task> writeFrame,
-        CancellationToken cancellationToken)
+    public ProbeSession SessionFor(IReadOnlyList<Frame> inbound)
     {
-        // Handshake: the implant speaks first; echo OK whatever it advertised,
-        // and mirror the server's replay-nonce echo so a negotiating candidate
-        // switches to its strict posture against the probe too.
-        var first = await readFrame();
-        if (first is null)
-            return;
-        HandshakeRequest handshake;
-        try
+        lock (_gate)
         {
-            handshake = HandshakeRequest.Parser.ParseFrom(first.Payload);
-        }
-        catch (InvalidProtocolBufferException)
-        {
-            return; // Not a handshake: the missing results are the outcome.
-        }
-        _negotiated = handshake.ReplayNonces;
-
-        await writeFrame(new Frame
-        {
-            Payload = ByteString.CopyFrom(new HandshakeResponse
+            foreach (var frame in inbound)
             {
-                Status = HandshakeStatus.Ok,
-                Version = new ProtocolVersion { Major = 1, Minor = 0 },
-                EngagementId = string.Empty,
-                ReplayNonces = _negotiated,
-            }.ToByteArray()),
-        });
+                HandshakeRequest handshake;
+                try
+                {
+                    handshake = HandshakeRequest.Parser.ParseFrom(frame.Payload);
+                }
+                catch (InvalidProtocolBufferException)
+                {
+                    continue;
+                }
+                if (_sessions.TryGetValue(handshake.ImplantId, out var existing))
+                    return existing;
+                var session = new ProbeSession(this, handshake.ImplantId, handshake.ReplayNonces);
+                _sessions[handshake.ImplantId] = session;
+                return session;
+            }
+            // A contact with no readable handshake names no session; the
+            // empty answers are the outcome.
+            return new ProbeSession(this, string.Empty, false);
+        }
+    }
 
-        // The probe's own nonce floor: high enough to sit above whatever the
-        // live server already dispatched to this candidate in phase 1.
-        ulong probeNonce = 1000;
-        var control = (TaskRequest?)null;
-        var cases = new[] { "unsigned tasking", "wrongly signed tasking",
-                            "tasking signed for another implant", "correctly signed control",
-                            "replayed tasking" };
-        foreach (var kind in cases)
+    internal void Record(string kind, Rod.V1.TaskOutcome outcome)
+    {
+        File.AppendAllText("/tmp/probe-diag.log", $"record: {kind} -> {outcome}\n");
+        lock (_gate)
+            _results[kind] = outcome;
+    }
+
+    internal void NoteNegotiated(bool negotiated)
+    {
+        lock (_gate)
+            _negotiated = negotiated;
+    }
+
+    private readonly Dictionary<string, ProbeSession> _sessions = new();
+}
+
+/// <summary>One candidate's walk through the crafted cases, one per contact.</summary>
+internal sealed class ProbeSession
+{
+    private static readonly string[] Cases =
+        ["unsigned tasking", "wrongly signed tasking", "tasking signed for another implant",
+         "correctly signed control", "replayed tasking"];
+
+    private readonly TaskingProbe _probe;
+    private readonly string _implantId;
+    private readonly bool _negotiated;
+    private readonly Dictionary<string, TaskRequest> _delivered = new();
+    private TaskRequest? _control;
+    private int _caseIndex;
+    // The case whose result this contact cycle awaits: the replay re-delivers
+    // the control's frame verbatim, so matching by task id alone would
+    // overwrite the control's own verdict with the replay's refusal.
+    private (string Kind, string TaskId)? _awaited;
+
+    internal ProbeSession(TaskingProbe probe, string implantId, bool negotiated)
+    {
+        _probe = probe;
+        _implantId = implantId;
+        _negotiated = negotiated;
+        _probe.NoteNegotiated(negotiated);
+    }
+
+    /// <summary>One contact: record any awaited results, answer the next case.</summary>
+    public List<Frame> Handle(IReadOnlyList<Frame> inbound)
+    {
+        var outbound = new List<Frame>();
+
+        // Every contact opens with the handshake; echo OK and mirror the
+        // replay-nonce negotiation so a strict candidate stays strict against
+        // the probe too.
+        foreach (var frame in inbound)
         {
-            // The replay case re-delivers the control frame verbatim: same
-            // bytes, same signature, same nonce -- everything a captured frame
-            // carries on the wire.
+            try
+            {
+                var handshake = HandshakeRequest.Parser.ParseFrom(frame.Payload);
+                outbound.Add(new Frame
+                {
+                    Payload = ByteString.CopyFrom(new HandshakeResponse
+                    {
+                        Status = HandshakeStatus.Ok,
+                        Version = new ProtocolVersion { Major = 1, Minor = 0 },
+                        EngagementId = string.Empty,
+                        ReplayNonces = _negotiated,
+                    }.ToByteArray()),
+                });
+                break;
+            }
+            catch (InvalidProtocolBufferException)
+            {
+                // Not the handshake; keep looking.
+            }
+        }
+
+        // Results for the case this cycle awaits.
+        foreach (var frame in inbound)
+        {
+            TaskResult result;
+            try
+            {
+                result = TaskResult.Parser.ParseFrom(frame.Payload);
+            }
+            catch (InvalidProtocolBufferException)
+            {
+                continue;
+            }
+            if (_awaited is { } awaited && awaited.TaskId == result.TaskId)
+            {
+                _probe.Record(awaited.Kind, result.Outcome);
+                _awaited = null;
+            }
+        }
+
+        // The next crafted case, replay included, rides this response.
+        if (_caseIndex < Cases.Length)
+        {
+            var kind = Cases[_caseIndex];
             TaskRequest request;
             if (kind == "replayed tasking")
             {
-                request = control!;
+                // The control's result must have landed before its frame is
+                // worth replaying; otherwise wait for the next contact.
+                if (_control is null)
+                    return outbound;
+                request = _control;
             }
             else
             {
@@ -526,7 +609,7 @@ internal sealed class TaskingProbe
                     Arguments = "echo probe-" + Guid.NewGuid().ToString("N")[..8],
                 };
                 if (_negotiated)
-                    request.TaskNonce = ++probeNonce;
+                    request.TaskNonce = (ulong)(1000 + _caseIndex);
                 switch (kind)
                 {
                     case "wrongly signed tasking":
@@ -535,76 +618,76 @@ internal sealed class TaskingProbe
                     case "tasking signed for another implant":
                         // Validly signed by the real CA, but over a tuple naming a
                         // different implant: the verifier's own id must reject it.
-                        request.Signature = ByteString.CopyFrom(_ca.SignTasking(
+                        request.Signature = ByteString.CopyFrom(_probe.SignFor(
                             Guid.NewGuid().ToString(), request.TaskId, request.Verb, request.Arguments,
                             _negotiated ? request.TaskNonce : null));
                         break;
                     case "correctly signed control":
-                        request.Signature = ByteString.CopyFrom(_ca.SignTasking(
-                            handshake.ImplantId, request.TaskId, request.Verb, request.Arguments,
+                        request.Signature = ByteString.CopyFrom(_probe.SignFor(
+                            _implantId, request.TaskId, request.Verb, request.Arguments,
                             _negotiated ? request.TaskNonce : null));
-                        control = request;
+                        _control = request;
                         break;
                 }
             }
 
-            await writeFrame(new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) });
-
-            // Await this case's result with its own bound; the connection
-            // ending first leaves the rest of the cases unrecorded.
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(ResultWait);
-            try
-            {
-                while (true)
-                {
-                    var incoming = await readFrame();
-                    if (incoming is null)
-                        return;
-                    TaskResult result;
-                    try
-                    {
-                        result = TaskResult.Parser.ParseFrom(incoming.Payload);
-                    }
-                    catch (InvalidProtocolBufferException)
-                    {
-                        continue;
-                    }
-                    if (result.TaskId != request.TaskId)
-                        continue;
-                    lock (_gate)
-                        _results[kind] = result.Outcome;
-                    break;
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
+            _delivered[kind] = request;
+            _caseIndex++;
+            _awaited = (kind, request.TaskId);
+            outbound.Add(new Frame { Payload = ByteString.CopyFrom(request.ToByteArray()) });
         }
+
+        return outbound;
     }
 }
 
-/// <summary>The probe's gRPC surface: one scripted connection per Contact.</summary>
-internal sealed class ProbeBeaconService : Beacon.BeaconBase
+/// <summary>The envelope codec the probe's HTTP surface speaks.</summary>
+internal static class EnvelopeProbeCodec
 {
-    private readonly TaskingProbe _probe;
-
-    public ProbeBeaconService(TaskingProbe probe)
+    public static byte[] Encode(IReadOnlyList<Frame> frames)
     {
-        _probe = probe;
+        var body = new MemoryStream();
+        foreach (var frame in frames)
+        {
+            var marshaled = frame.ToByteArray();
+            WriteVarint(body, marshaled.Length);
+            body.Write(marshaled);
+        }
+        return body.ToArray();
     }
 
-    public override async Task Contact(
-        IAsyncStreamReader<Frame> requestStream,
-        IServerStreamWriter<Frame> responseStream,
-        ServerCallContext context)
+    public static List<Frame> Parse(byte[] body)
     {
-        async Task<Frame?> Read()
-            => await requestStream.MoveNext(context.CancellationToken) ? requestStream.Current : null;
+        var frames = new List<Frame>();
+        var position = 0;
+        while (position < body.Length)
+        {
+            uint length = 0;
+            var shift = 0;
+            int delimiter;
+            for (delimiter = 0; delimiter < 5; delimiter++)
+            {
+                var b = body[position + delimiter];
+                length |= (uint)(b & 0x7f) << shift;
+                if ((b & 0x80) == 0)
+                    break;
+                shift += 7;
+            }
+            position += delimiter + 1;
+            frames.Add(Frame.Parser.ParseFrom(body, position, (int)length));
+            position += (int)length;
+        }
+        return frames;
+    }
 
-        Task Write(Frame frame) => responseStream.WriteAsync(frame);
-
-        await _probe.RunScriptAsync(Read, Write, context.CancellationToken);
+    private static void WriteVarint(MemoryStream target, int value)
+    {
+        uint remaining = (uint)value;
+        while (remaining >= 0x80)
+        {
+            target.WriteByte((byte)(remaining | 0x80));
+            remaining >>= 7;
+        }
+        target.WriteByte((byte)remaining);
     }
 }

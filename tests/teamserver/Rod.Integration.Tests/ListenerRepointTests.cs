@@ -27,7 +27,7 @@ public class ListenerRepointTests
 
         await using var env = await TestEnv.StartAsync();
         var engagementId = await CreateEngagementAsync(env.Http);
-        var listener = await CreateListenerAsync(env.Http, engagementId, "mtls-redirected", "mtls", oldEndpoint);
+        var listener = await CreateListenerAsync(env.Http, engagementId, "tls-redirected", "https", oldEndpoint);
         var recordedBind = listener.BindAddress;
 
         // Repoint the public endpoint to a fresh redirector.

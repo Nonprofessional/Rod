@@ -24,11 +24,10 @@ public class ConformanceHarnessTests
         using var reference = ReferenceImplantCandidate.Build();
 
         var report = await rig.RunAsync(reference);
-        // The envelope reference cannot ride the gRPC probe, so the signature
-        // clause lands as its documented skip rather than a pass; everything
-        // else must hold.
-        var expected = report.Clauses.Where(c => c.Clause != ConformanceRig.SignatureClause).ToList();
-        Assert.True(expected.All(c => c.Passed),
+        // The envelope probe serves every candidate now, so the signature
+        // clause runs for the reference like the rest: the Rust implant
+        // verifies its tasking, and the probe proves it.
+        Assert.True(report.Failed.Count == 0,
             $"reference implant failed clauses:{Environment.NewLine}{report}");
     }
 

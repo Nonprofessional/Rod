@@ -16,7 +16,6 @@ public class TransportProvidersTests
     [Theory]
     [InlineData("http", "http", null)]
     [InlineData("https", "https", null)]
-    [InlineData("mtls", "https", "AllowCertificate")]
     public void Find_ServesTheHttpFamilyUnderItsTlsPosture(string transport, string scheme, string? certMode)
     {
         var provider = TransportProviders.Find(transport);
@@ -47,7 +46,6 @@ public class TransportProvidersTests
     [Theory]
     [InlineData("http", true)]
     [InlineData("https", true)]
-    [InlineData("mtls", true)]
     [InlineData("dns", false)]
     [InlineData("tcp", false)]
     public void Carriers_DeclareTheNativeChannelTruthPerTransport(string transport, bool servesNative)

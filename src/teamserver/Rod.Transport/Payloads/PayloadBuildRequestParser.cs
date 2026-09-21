@@ -237,14 +237,13 @@ internal static class PayloadBuildRequestParser
     }
 
     // Resolves the contact the baked artifact runs. A named beacon listener
-    // or a typed beacon endpoint names the mTLS socket the gRPC stream dials,
-    // and bakes as the bare authority -- to the implant a schemed beacon URL
-    // means the envelope POST cycle, so the stream's dial shape carries no
-    // scheme. With neither named the contact derives from the enroll front:
-    // an mTLS front carries the gRPC stream on the same socket, every web
-    // front (http, https, or a typed http(s) URL) the envelope POST cycle on
-    // its own port -- the mainstream single-port shape, no split required.
-    // Stagers never contact, so beacon fields are refused on their builds.
+    // or a typed beacon endpoint names the web front the WebSocket beacon
+    // dials, hanging off the schemed front itself. With neither named the
+    // contact derives from the enroll front: every web front (http, https,
+    // or a typed http(s) URL) carries the envelope POST cycle on its own
+    // port -- the mainstream single-port shape, no split required, and the
+    // baked mode picks the client. Stagers never contact, so beacon fields
+    // are refused on their builds.
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
@@ -285,7 +284,7 @@ internal static class PayloadBuildRequestParser
                 if (mode != "poll")
                     return (null,
                         $"The {listener.Transport} carrier is one-answer-one-poll; build it mode 'poll' "
-                        + "(the interactive verbs ride the polls store-and-forward), or name a web or mTLS front for a live stream.");
+                        + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
                 var dnsDial = DnsDial(listener);
                 if (dnsDial.Error is { } dnsError)
                     return (null, dnsError);
@@ -304,12 +303,10 @@ internal static class PayloadBuildRequestParser
             }
             if (beaconProvider?.ServesNativeChannel != true)
                 return (null,
-                    $"The beacon is a live stream and the {listener.Transport} listener carries none; name the mTLS listener or a web listener.");
-            // The baked beacon URL's shape is the client the artifact dials: the
-            // mTLS shape's gRPC stream dials the bare authority, the web family's
-            // WebSocket beacon hangs off the schemed front itself.
-            if (beaconProvider is KestrelEndpointProvider { Posture: ListenerTlsPosture mutual } && mutual == ListenerTlsPosture.MutualAsk)
-                return (BeaconAuthority(listener.PublicEndpoint), null);
+                    $"The beacon is a live stream and the {listener.Transport} listener carries none; name a web listener.");
+            // The baked beacon URL's shape is the client the artifact dials:
+            // the web family's WebSocket beacon hangs off the schemed front
+            // itself.
             return (listener.PublicEndpoint, null);
         }
 
@@ -327,7 +324,7 @@ internal static class PayloadBuildRequestParser
                 if (mode != "poll")
                     return (null,
                         $"The {trimmed[..trimmed.IndexOf("://", StringComparison.Ordinal)]} carrier is one-answer-one-poll; build it mode 'poll' "
-                        + "(the interactive verbs ride the polls store-and-forward), or name a web or mTLS front for a live stream.");
+                        + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
                 var rest = trimmed[(trimmed.IndexOf("://", StringComparison.Ordinal) + 3)..];
                 if (rest.Length == 0)
                     return (null,
@@ -336,16 +333,15 @@ internal static class PayloadBuildRequestParser
             }
             if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
                 return (null,
-                    $"Beacon endpoint must be an absolute https URL naming the mTLS socket the contact stream dials, or a dns:// dial, got '{beaconEndpoint}'.");
-            return (BeaconAuthority(trimmed), null);
+                    $"Beacon endpoint must be an absolute https URL naming the web front the WebSocket beacon dials, or a dns:// dial, got '{beaconEndpoint}'.");
+            return (trimmed, null);
         }
 
-        // The derived single-front bake names the beacon only when the front's
-        // own socket IS the stream's socket -- the mTLS shape, whose gRPC
-        // stream dials the bare authority. A web front's native carrier is the
-        // WebSocket beacon hanging off the schemed front, which the single-port
-        // shape already dials without a split: the beacon stays unnamed and the
-        // baked mode picks the client. The socket family bakes the same dial
+        // The derived single-front bake never names the beacon: a web front's
+        // native carrier is the WebSocket beacon hanging off the schemed
+        // front, which the single-port shape already dials without a split --
+        // the beacon stays unnamed and the baked mode picks the client. The
+        // socket family bakes the same dial
         // under either mode (the client the mode picks holds the session or
         // cycles the connection), so no gate applies to it here. The DNS
         // family stays poll-only: a datagram poll has no stream to hold,
@@ -353,32 +349,14 @@ internal static class PayloadBuildRequestParser
         if (TypedPollOnlyScheme(enrollEndpoint) is { } typedCarrier && mode != "poll")
             return (null,
                 $"The {typedCarrier} carrier is one-answer-one-poll; build it mode 'poll' "
-                + "(the interactive verbs ride the polls store-and-forward), or name a web or mTLS front for a live stream.");
+                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
         if (enrollTransport is "dns" or "doh" && mode != "poll")
             return (null,
                 $"The {enrollTransport} carrier is one-answer-one-poll; build it mode 'poll' "
-                + "(the interactive verbs ride the polls store-and-forward), or name a web or mTLS front for a live stream.");
-        if (enrollTransport is not null
-            && TransportProviders.Find(enrollTransport) is KestrelEndpointProvider { Posture: ListenerTlsPosture frontMutual }
-            && frontMutual == ListenerTlsPosture.MutualAsk
-            && enrollEndpoint is { } front)
-            return (BeaconAuthority(front), null);
+                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
         return (null, (string?)null);
     }
 
-    // Strips a TLS endpoint down to the authority the gRPC stream dials. The
-    // listener record normalizes its TLS public endpoints to https URLs and a
-    // typed beacon endpoint arrives as one; the baked mTLS dial shape must
-    // carry none, because to the implant a schemed beacon URL is the envelope
-    // POST cycle's.
-    private static string BeaconAuthority(string endpoint)
-    {
-        var trimmed = endpoint.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
-            return uri.Authority;
-        return trimmed;
-    }
 
     // Builds the malleable transport profile off the request body
     // (architecture.md Sec 7). Endpoint and uri path are the always-set

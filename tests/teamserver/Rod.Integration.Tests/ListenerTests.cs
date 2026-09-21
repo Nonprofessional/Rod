@@ -148,14 +148,14 @@ public class ListenerTests
 
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http);
-        await CreateListenerAsync(env.Http, engagementId, "mtls-1", "mtls", "https://c2.example.test");
+        await CreateListenerAsync(env.Http, engagementId, "tls-1", "https", "https://c2.example.test");
         await CreateListenerAsync(env.Http, engagementId, "http-1", "http", "http://c2.example.test");
 
         var listeners = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>(
             $"/engagements/{engagementId}/listeners");
         Assert.NotNull(listeners);
         var transports = listeners!.ToDictionary(l => l.Name, l => l.Transport);
-        Assert.Equal("mtls", transports["mtls-1"]);
+        Assert.Equal("https", transports["tls-1"]);
         Assert.Equal("http", transports["http-1"]);
     }
 
@@ -176,7 +176,7 @@ public class ListenerTests
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http);
         var listener = await CreateListenerAsync(
-            env.Http, engagementId, "mtls-redirected", "mtls", "https://redirect-a.example.test");
+            env.Http, engagementId, "tls-redirected", "https", "https://redirect-a.example.test");
 
         // The record carries the listener with its decoupled public endpoint.
         Assert.Equal("https://redirect-a.example.test", listener.PublicEndpoint);
@@ -273,7 +273,7 @@ public class ListenerTests
             // Pick free ports up front so the config's bind addresses match the
             // sockets Kestrel opens, and so tests can dial them.
             var httpListener = listeners.FirstOrDefault(l => l.Transport == "http");
-            var mtlsListener = listeners.FirstOrDefault(l => l.Transport == "mtls");
+            var mtlsListener = listeners.FirstOrDefault(l => l.Transport == "https");
             var rewritten = new List<ListenerConfig>();
             if (httpListener is not null)
             {
@@ -290,7 +290,7 @@ public class ListenerTests
             // way when it is host:port shaped (envelope, DNS, raw TCP); a pipe
             // name is kept as configured.
             foreach (var other in listeners.Where(
-                l => l.Transport is not ("http" or "mtls")))
+                l => l.Transport is not ("http" or "https")))
             {
                 var bind = other.BindAddress.Contains(':', StringComparison.Ordinal)
                     ? $"127.0.0.1:{TestSupport.GetFreeTcpPort()}"

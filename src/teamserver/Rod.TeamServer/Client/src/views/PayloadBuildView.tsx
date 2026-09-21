@@ -56,7 +56,7 @@ const RECENT_BUILDS_SHOWN = 5
 // the socket family (enrollment over the stream contact), and the DNS
 // family (enrollment over DNS: the chunked TXT exchange a DNS-only target
 // runs); the listener select offers these and greys everything else out.
-const ENROLL_TRANSPORTS = new Set(['http', 'https', 'mtls', 'tcp', 'dns', 'doh'])
+const ENROLL_TRANSPORTS = new Set(['http', 'https', 'tcp', 'dns', 'doh'])
 
 // The arch set per OS that the .NET toolchain bundles a runtime for: x86
 // exists only as a Windows target.
@@ -758,7 +758,6 @@ function BuildSummary({
   const front = listener?.publicEndpoint ?? (endpoint.trim() || 'the typed endpoint under Advanced')
   const via = listener ? `${listener.name} (${listener.transport})` : 'manual endpoint'
   const cadence = `every ${sleep.trim() || '30'}s ± ${jitter.trim() || '10'}s`
-  const mtls = listener?.transport === 'mtls'
   // The socket family's dial shape, from the listener or a typed endpoint.
   const socket = listener?.transport === 'tcp' || /^tcp:\/\//i.test(endpoint.trim())
   // The DNS family as the enroll front itself (the DNS-only target's shape).
@@ -771,13 +770,9 @@ function BuildSummary({
       ? `one socket connection per contact, ${cadence}, on ${front}`
       : dnsFront
         ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
-        : mtls
-          ? mode === 'poll'
-            ? `gRPC drain cycles ${cadence} on ${front} (client-cert TLS)`
-            : `gRPC stream on ${front} (client-cert TLS)`
-          : mode === 'poll'
-            ? `sealed envelope POSTs ${cadence} on ${front}`
-            : `WebSocket beacon held open on ${front}`
+        : mode === 'poll'
+          ? `sealed envelope POSTs ${cadence} on ${front}`
+          : `WebSocket beacon held open on ${front}`
 
   const interactive = carrier
     ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
@@ -785,9 +780,7 @@ function BuildSummary({
         ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
         : mode === 'poll'
           ? 'store-and-forward over those contacts — input rides the next cycle (sleep 0 approaches live)'
-          : mtls
-            ? 'live channel over the gRPC stream'
-            : 'live channel over the WebSocket beacon'
+          : 'live channel over the WebSocket beacon'
 
   return (
     <div className="build-summary" title="What this build bakes, composed from the picks above">

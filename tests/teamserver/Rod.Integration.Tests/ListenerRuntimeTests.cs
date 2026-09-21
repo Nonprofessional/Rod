@@ -172,85 +172,6 @@ public class ListenerRuntimeTests
     }
 
     [Fact]
-    public async Task MtlsListener_ServesBothHalvesWithoutAClientCertificateAtTLS()
-    {
-        // The one mTLS posture (architecture.md Sec 9), pinned on the runtime
-        // bind: the listener asks each connection for the client certificate
-        // and refuses one that does not chain to the CA in the handshake, but
-        // never demands one there -- enrollment rides this same socket and
-        // precedes any leaf. A certificate-less client completes TLS and
-        // reaches both halves; identity is enforced where it is consumed.
-        var port = TestSupport.GetFreeTcpPort();
-        await using var env = await TestEnv.StartAsync(new ListenerConfig(
-            Name: "operator-http",
-            Transport: "http",
-            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
-            PublicEndpoint: "http://localhost:5080"));
-        await AuthenticatedHost.LoginAsync(env.Http);
-        var engagementId = await CreateEngagementAsync(env.Http);
-
-        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
-            new ListenerEndpoints.CreateListenerRequest(
-                Name: "one-socket-mtls",
-                Transport: "mtls",
-                BindAddress: $"127.0.0.1:{port}",
-                PublicEndpoint: $"127.0.0.1:{port}"));
-        created.EnsureSuccessStatusCode();
-
-        var ca = env.Host.Services
-            .GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>()
-            .GetCaCertificate();
-
-        // The certificate-less client: trusts the teamserver's CA, presents
-        // nothing -- the shape a fresh implant's enroll client has on this
-        // very socket.
-        using var handler = new SocketsHttpHandler
-        {
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-            {
-                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
-            },
-        };
-        using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
-
-        // Enrollment reaches its token check over TLS without a certificate:
-        // the bad token's 401 proves the route answered, not the TLS layer.
-        var enroll = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
-        Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
-
-        // The contact is turned away where identity is consumed: over TLS
-        // the beacon resolves the implant from the certificate alone, so the
-        // certificate-less body gets the refused handshake, never a session.
-        var beacon = await client.PostAsync("/implants/beacon",
-            new ByteArrayContent(new byte[] { 0x00 }));
-        Assert.Equal(HttpStatusCode.OK, beacon.StatusCode);
-        var frames = ParseFrames(await beacon.Content.ReadAsByteArrayAsync());
-        var handshake = Rod.V1.HandshakeResponse.Parser.ParseFrom(frames[0].Payload);
-        Assert.Equal(Rod.V1.HandshakeStatus.VersionMismatch, handshake.Status);
-
-        // The ask itself is pinned from the other side: a client that OFFERS
-        // a self-signed certificate cannot complete the handshake, because
-        // the CertificateRequest rode it and the chain-to-CA validation
-        // refused the offer -- an mTLS endpoint that stopped asking (the
-        // https posture) would carry this connection instead.
-        using var offered = TestSupport.OfferedCertificate();
-        using var offeredHandler = new SocketsHttpHandler
-        {
-            SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-            {
-                ClientCertificates =
-                    new System.Security.Cryptography.X509Certificates.X509CertificateCollection { offered },
-                RemoteCertificateValidationCallback = TestSupport.PinTo(ca),
-            },
-        };
-        using var refused = new HttpClient(offeredHandler) { BaseAddress = new Uri($"https://127.0.0.1:{port}") };
-        await Assert.ThrowsAsync<HttpRequestException>(
-            () => refused.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null)));
-    }
-
-    [Fact]
     public async Task HttpsListener_Enrollment_StampsItsListenerId_AndRefusesAForeignEngagementsToken()
     {
         // The enrollment-ingress lookup once matched only the http and mtls
@@ -387,7 +308,7 @@ public class ListenerRuntimeTests
     }
 
     [Fact]
-    public async Task StoredHttpsEnvelopeDefinition_RebindsAsMtls_AndTheRetiredEntryIsRefused()
+    public async Task StoredHttpsEnvelopeDefinition_RebindsAsHttps_AndTheRetiredEntryIsRefused()
     {
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
@@ -412,7 +333,7 @@ public class ListenerRuntimeTests
         // The refusal names the registered transports -- each in-tree member
         // appears, whatever order the registry lists or what later
         // registrations a test suite has added around them.
-        foreach (var transport in new[] { "http", "https", "mtls", "dns", "tcp" })
+        foreach (var transport in new[] { "http", "https", "dns", "tcp" })
             Assert.Contains(transport, problem!.Error);
 
         // A definition saved before the retirement runs the restore path (what
@@ -427,12 +348,12 @@ public class ListenerRuntimeTests
         var manager = env.Host.Services.GetRequiredService<ListenerManager>();
         var restored = await manager.RestoreAsync(definition);
         Assert.NotNull(restored);
-        Assert.Equal("mtls", restored!.Transport);
+        Assert.Equal("https", restored!.Transport);
 
         var registry = env.Host.Services.GetRequiredService<IListenerRegistry>();
         var bound = await registry.FindAsync(new ListenerId(definition.Id));
         Assert.NotNull(bound);
-        Assert.Equal("mtls", bound!.Transport);
+        Assert.Equal("https", bound!.Transport);
         Assert.Equal("running", bound.State.ToString().ToLowerInvariant());
 
         // The migrated shape is a real socket: the port accepts connections.
@@ -619,7 +540,7 @@ public class ListenerRuntimeTests
         var mtlsPort = TestSupport.GetFreeTcpPort();
         var fronted = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
-                Name: "mtls-front", Transport: "mtls",
+                Name: "tls-front", Transport: "https",
                 BindAddress: $"127.0.0.1:{mtlsPort}", PublicEndpoint: "front.internal"));
         fronted.EnsureSuccessStatusCode();
         var frontListener = await fronted.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
@@ -675,13 +596,13 @@ public class ListenerRuntimeTests
         var engagementId = await CreateEngagementAsync(env.Http);
 
         // The listener publishes the bare host:port redirector shape; a build
-        // naming it dials that shape with the transport's scheme. An mTLS
+        // naming it dials that shape with the transport's scheme. An https
         // front carries enroll and beacon on one socket, so the build needs
         // no beacon split; a cleartext front would have to name one.
         var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
                 Name: "build-front",
-                Transport: "mtls",
+                Transport: "https",
                 BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
                 PublicEndpoint: "203.0.113.10:8443"));
         created.EnsureSuccessStatusCode();

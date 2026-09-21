@@ -266,17 +266,17 @@ public class DnsContactTests
     public async Task Implant_ContactsOverDns_AgainstARealListenerEntry()
     {
         await using var env = await DnsTestEnv.StartAsync();
-        var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
+        var implant = await env.EnrollImplantAsync();
 
         // The implant opens its session on the mTLS beacon first: DNS refreshes
         // a session, it does not handshake (the documented transport tradeoff).
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
-        await call.RequestStream.CompleteAsync();
+        // The implant opens its session on the WebSocket beacon first: DNS
+        // refreshes a session, it does not handshake (the documented
+        // transport tradeoff).
+        using (var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString()))
+        {
+            Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
+        }
 
         // A queued task is claimed over DNS: the poll answer carries the
         // signed TaskRequest in TXT, base32 across its strings.
@@ -344,14 +344,14 @@ public class DnsContactTests
     public async Task Sealed_KeyedArtifact_PollsAndReportsUnderCiphertext()
     {
         await using var env = await DnsTestEnv.StartAsync();
-        var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        Assert.Equal(HandshakeStatus.Ok, HandshakeResponse.Parser.ParseFrom(call.ResponseStream.Current.Payload).Status);
-        await call.RequestStream.CompleteAsync();
+        var implant = await env.EnrollImplantAsync();
+        // The implant opens its session on the WebSocket beacon first: DNS
+        // refreshes a session, it does not handshake (the documented
+        // transport tradeoff).
+        using (var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString()))
+        {
+            Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
+        }
 
         // The artifact's build minted an envelope key: the payload record
         // carries the teamserver's half, and the enrollment bound the implant
@@ -436,13 +436,13 @@ public class DnsContactTests
     public async Task Retransmission_AGappedChunkDropRecoversOnReSend()
     {
         await using var env = await DnsTestEnv.StartAsync();
-        var (implant, leafCert, leafKey) = await env.EnrollImplantAsync();
-        using var channel = env.ConnectBeacon(leafCert, leafKey);
-        var client = new Beacon.BeaconClient(channel);
-        var call = client.Contact();
-        await call.RequestStream.WriteAsync(HandshakeFrame(implant.Id));
-        Assert.True(await call.ResponseStream.MoveNext(TestSupport.BeaconDeadline()));
-        await call.RequestStream.CompleteAsync();
+        var implant = await env.EnrollImplantAsync();
+        // The implant opens its session on the WebSocket beacon first: DNS
+        // refreshes a session, it does not handshake (the documented
+        // transport tradeoff).
+        using (var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString()))
+        {
+        }
 
         await env.LoginAsync();
         var issued = await env.Http.PostAsJsonAsync(
@@ -640,7 +640,6 @@ public class DnsContactTests
     {
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
-        public int MtlsPort { get; private set; }
         public int HttpPort { get; private set; }
         public int DnsPort { get; private set; }
         private UdpClient _dns = null!;
@@ -649,7 +648,6 @@ public class DnsContactTests
         public static async Task<DnsTestEnv> StartAsync()
         {
             var env = new DnsTestEnv();
-            env.MtlsPort = FreePort();
             env.HttpPort = FreePort();
             env.DnsPort = FreePort();
 
@@ -661,7 +659,6 @@ public class DnsContactTests
                 .ConfigureWebHost(webBuilder => webBuilder
                     .UseRodListeners(new List<ListenerConfig>
                     {
-                        new("test-mtls", "mtls", $"127.0.0.1:{env.MtlsPort}", $"127.0.0.1:{env.MtlsPort}"),
                         new("test-dns", "dns", $"127.0.0.1:{env.DnsPort}", Zone),
                     })
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
@@ -683,7 +680,7 @@ public class DnsContactTests
 
         public async Task LoginAsync() => await AuthenticatedHost.LoginAsync(Http);
 
-        public async Task<(Implant Implant, X509Certificate2 Leaf, ECDsa LeafKey)> EnrollImplantAsync()
+        public async Task<Implant> EnrollImplantAsync()
         {
             var implants = Host.Services.GetRequiredService<IImplantRepository>();
             var engagements = Host.Services.GetRequiredService<IEngagementRepository>();
@@ -692,37 +689,9 @@ public class DnsContactTests
             var implant = Implant.Enroll(
                 ImplantId.New(), engagement.Id, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Stage2, DateTimeOffset.UtcNow);
             await implants.SaveAsync(implant);
-
-            var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-            var issued = await _ca.IssueWithKeyAsync(
-                new ImplantCertificateSubject(implant.Id, implant.EngagementId), leafKey, CancellationToken.None);
-            return (implant, X509CertificateLoader.LoadCertificate(issued.Leaf), leafKey);
+            return implant;
         }
 
-        public GrpcChannel ConnectBeacon(X509Certificate2 leaf, ECDsa leafKey)
-        {
-            var leafWithKey = TestSupport.BeaconClientCertificate(leaf, leafKey);
-            var ca = _ca.GetCaCertificate();
-            var handler = new SocketsHttpHandler();
-            handler.SslOptions = new System.Net.Security.SslClientAuthenticationOptions
-            {
-                ClientCertificates = new X509CertificateCollection { leafWithKey },
-                RemoteCertificateValidationCallback = (_, cert, chain, _) =>
-                {
-                    if (cert is null)
-                        return false;
-                    chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                    chain!.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-                    chain!.ChainPolicy.ExtraStore.Add(ca);
-                    return chain.Build((X509Certificate2)cert);
-                },
-            };
-            return GrpcChannel.ForAddress($"https://127.0.0.1:{MtlsPort}", new GrpcChannelOptions
-            {
-                HttpHandler = handler,
-                DisposeHttpClient = true,
-            });
-        }
 
         /// <summary>
         /// One contact exchange: send the query, read the answer, return the

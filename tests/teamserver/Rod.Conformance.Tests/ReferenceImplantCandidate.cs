@@ -71,6 +71,7 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
         // enrollment, and the plaintext lab posture keeps the harness's
         // frame reads simple.
         psi.Environment["ROD_ENROLL_URL"] = target.EnrollUrl;
+        psi.Environment["ROD_BEACON_URL"] = $"http://{target.BeaconHostPort}/implants/beacon";
         psi.Environment["ROD_STAGER_TOKEN"] = target.StagerToken;
         psi.Environment["ROD_SLEEP"] = "1";
         psi.Environment["ROD_JITTER"] = "0";
@@ -80,6 +81,12 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
         if (target.KillDate is { } killDate)
             psi.Environment["ROD_KILL_DATE"] = killDate.ToString("O");
         _process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the implant.");
+        _process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+                File.AppendAllText("/tmp/candidate-diag.log", e.Data + "\n");
+        };
+        _process.BeginErrorReadLine();
         return Task.CompletedTask;
     }
 

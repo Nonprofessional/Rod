@@ -62,17 +62,6 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
-        // gRPC server: the beacon stream terminates here. The
-        // message caps enforce the rod.proto sizing contract (a single frame
-        // stays well under 1 MiB; bulk data is chunked): 2 MiB leaves headroom
-        // for the envelope and protobuf overhead above the 1 MiB payload budget,
-        // and bounds every TaskResult/ExfilChunk an implant can send in one
-        // frame.
-        services.AddGrpc(options =>
-        {
-            options.MaxReceiveMessageSize = 2 * 1024 * 1024;
-            options.MaxSendMessageSize = 2 * 1024 * 1024;
-        });
 
         // Core-state ports -> default in-memory adapters.
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();
@@ -341,32 +330,6 @@ public static class TransportHost
         return services;
     }
 
-    /// <summary>
-    /// Configures Kestrel to terminate mTLS using the configured implant CA
-    /// (architecture.md Sec 9): the server presents the CA-issued server leaf
-    /// and asks for a client certificate, refusing one that does not chain to
-    /// the CA in the handshake. A connection without one still completes TLS
-    /// -- enrollment rides the same socket and precedes any leaf -- and is
-    /// turned away where identity is consumed: over TLS the beacon opens no
-    /// session without the certificate.
-    /// </summary>
-    /// <remarks>
-    /// Opt-in: existing TestServer-based tests and the operator API keep working
-    /// over plain HTTP when this is not applied. A real deployment always applies
-    /// it on the implant-facing endpoint. The CA is resolved from the DI container
-    /// at connection time via <see cref="KestrelServerOptions.ApplicationServices"/>.
-    /// Kept for the existing mTLS tests; <see cref="UseRodListeners"/> is the
-    /// general path and an <c>mtls</c> entry routes
-    /// through the same <see cref="ConfigureMtlsHttps"/> helper.
-    /// </remarks>
-    public static IWebHostBuilder UseRodMtls(this IWebHostBuilder builder, int httpsPort)
-    {
-        builder.ConfigureKestrel(kestrel =>
-        {
-            kestrel.ListenAnyIP(httpsPort, listen => ConfigureMtlsHttps(listen, kestrel));
-        });
-        return builder;
-    }
 
     /// <summary>
     /// Binds one socket per configured listener (, architecture.md Sec 8)
@@ -468,14 +431,6 @@ public static class TransportHost
                 // listener's State moves to Running inside RegisterAsync.
                 kestrel.Listen(host, port, listen =>
                 {
-                    // The startup tier's TLS termination is code-bound per the
-                    // in-tree shapes: the mTLS listener asks for the client
-                    // certificate and validates it chain-to-CA on the same
-                    // CA-issued server leaf every TLS endpoint presents -- the
-                    // one mTLS posture (architecture.md Sec 9), identical to
-                    // the one a runtime-created mTLS listener binds.
-                    if (string.Equals(provider.Transport, "mtls", StringComparison.OrdinalIgnoreCase))
-                        ConfigureMtlsHttps(listen, kestrel);
                     // The single-port https shapes never request a client
                     // certificate: a TLS CertificateRequest is itself a
                     // fingerprint (an ordinary website never asks the visitor
@@ -507,37 +462,6 @@ public static class TransportHost
         return builder;
     }
 
-    // Applies the mTLS HTTPS configuration shared by UseRodMtls and the Mtls
-    // listener: the authority's server leaf presents as the server identity,
-    // the client certificate is asked for, and one that does not chain to the
-    // CA is refused in the handshake. It is never demanded there -- enrollment
-    // rides the same socket and precedes any leaf -- so possession is enforced
-    // where identity is consumed: over TLS the beacon resolves the implant
-    // from the certificate alone, and a certificate-less handshake opens no
-    // session (architecture.md Sec 9, the one mTLS posture: the startup bind
-    // and a runtime-created listener enforce exactly this).
-    // ApplicationServices resolves the authority per connection.
-    private static void ConfigureMtlsHttps(ListenOptions listen, KestrelServerOptions kestrel)
-    {
-        listen.UseHttps(https =>
-        {
-            // A CA-issued server leaf, not the CA root itself: the root's key
-            // usage is certificate signing only, which SChannel (the Windows
-            // TLS stack the .NET implant rides) rejects mid-handshake -- a
-            // leaf-presentation defect OpenSSL tolerates and SChannel does not.
-            // Implant clients pin the CA and chain to it (see test client
-            // validation).
-            https.ServerCertificateSelector = (_, _) =>
-                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
-            // The same mode the runtime path publishes as data
-            // (ListenerTlsPosture.MutualAsk): ask and validate, never require.
-            https.ClientCertificateMode =
-                Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
-            https.ClientCertificateValidation = (cert, chain, errors) =>
-                ClientCertificateChainsToCa(cert, chain, kestrel.ApplicationServices);
-            https.CheckCertificateRevocation = false;
-        });
-    }
 
     // The single-port https termination: the CA-issued server leaf presents
     // as the server identity and nothing else is negotiated -- no client
@@ -700,11 +624,6 @@ public static class TransportHost
         // export the evidence package, retire -- the path a finished
         // engagement takes out of service.
         endpoints.MapCloseoutEndpoints();
-        // The implant-initiated beacon stream: gRPC over the
-        // mTLS-terminated HTTPS endpoint. Mapped alongside the operator API.
-        // The binding is an IEndpointRouteBuilder extension, so it works the
-        // same on the raw pipeline (TestServer host) and the built application.
-        endpoints.MapGrpcService<BeaconEndpoint>();
         // The plain-HTTP envelope contact (architecture.md Sec 8): the same
         // frames as delimited sequences in ordinary request/response bodies,
         // for implants with an HTTP client and a protobuf codec but no

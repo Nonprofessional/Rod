@@ -141,16 +141,16 @@ public sealed class ListenerManager
     {
         // The stored transport is the wire name a provider registered under,
         // case-insensitive. The retired https-envelope entry maps to its
-        // nearest surviving transport, Mtls -- the bind and the mTLS
+        // nearest surviving transport, https -- the bind and the TLS
         // termination it always shared -- so a definition saved before the
         // retirement rebinds under its migrated shape instead of dying as
         // unknown.
         var transport = definition.Transport.Trim();
         if (transport.Replace("-", "").Equals("httpsenvelope", StringComparison.OrdinalIgnoreCase))
         {
-            transport = "mtls";
+            transport = "https";
             _logger.LogInformation(
-                "Stored listener {ListenerId} ({Name}) carries the retired https-envelope transport; rebinding as mtls.",
+                "Stored listener {ListenerId} ({Name}) carries the retired https-envelope transport; rebinding as https.",
                 definition.Id, definition.Name);
         }
         else if (TransportProviders.Find(transport) is null)
