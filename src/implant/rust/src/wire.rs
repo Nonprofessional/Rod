@@ -13,8 +13,9 @@ pub mod rod {
 }
 
 pub use rod::{
-    ChannelInput, ChannelOutput, ExfilChunk, Frame, HandshakeRequest, HandshakeResponse,
-    ProtocolVersion, StagedChunk, StagedPull, TaskAck, TaskRequest, TaskResult,
+    ChannelInput, ChannelOutput, EnrollRequest, EnrollResponse, ExfilChunk, Frame,
+    HandshakeRequest, HandshakeResponse, ProtocolVersion, StagedChunk, StagedPull, TaskAck,
+    TaskRequest, TaskResult,
 };
 pub use rod::{FrameKind, HandshakeStatus};
 

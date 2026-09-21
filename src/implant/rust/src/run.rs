@@ -29,7 +29,7 @@ pub fn run(profile: &Profile) -> Exit {
     let mut enrollment: Option<Enrollment> = None;
     let mut last_error = String::new();
     for url in &fronts {
-        match enroll::enroll(url, profile, &keys) {
+        match enroll::enroll_any(url, profile, &keys) {
             Ok(done) => {
                 enrollment = Some(done);
                 break;

@@ -348,6 +348,65 @@ public class RustImplantEndToEndTests
         Assert.Contains("2 connections (0 refused)", done.Output);
     }
 
+    [RustFact]
+    public async Task RustImplant_EnrollsAndContactsOverRawTcp_PollShape()
+    {
+        // The socket family end to end: a runtime-created tcp listener owns
+        // the socket, the bake dials it typed, and the whole lifecycle --
+        // enrollment over the opening stream exchange, poll contacts one
+        // connection each, tasking and results -- never touches HTTP.
+        await using var implant = await BuildRunAndAwaitOnlineAsync(
+            "poll", bindFront: env => TcpFrontAsync(env));
+    }
+
+    [RustFact]
+    public async Task RustImplant_HoldsTheLiveSessionOverRawTcp_AndRunsTheInteractiveChannel()
+    {
+        await using var implant = await BuildRunAndAwaitOnlineAsync(
+            "stream", bindFront: env => TcpFrontAsync(env));
+        var env = implant.Env;
+
+        // The held live session: the handshake's live advertisement switches
+        // the connection, tasking pushes the moment it queues, and the
+        // interactive channel runs over the same socket.
+        var marker = "rod-tcp-live-" + Guid.NewGuid().ToString("N")[..8];
+        var issued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks",
+            new TaskEndpoints.IssueTaskRequest(implant.ImplantId, "shell.interact", $"echo {marker}"));
+        issued.EnsureSuccessStatusCode();
+        var task = await issued.Content.ReadFromJsonAsync<TaskBody>();
+
+        await WaitForTaskAsync(env, task!.TaskId,
+            body => body.Output?.Contains(marker) == true,
+            implant.Stderr, "the live shell's first output");
+
+        var closed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/tasks/{task.TaskId}/input", new { Eof = true });
+        closed.EnsureSuccessStatusCode();
+        var done = await WaitForTaskAsync(env, task.TaskId,
+            body => body.Status == "Completed", implant.Stderr, "the live shell's completion");
+        Assert.Equal("Succeeded", done.Outcome);
+        Assert.Contains("shell exited", done.Output);
+    }
+
+    /// Creates the engagement's runtime tcp listener on a free loopback port
+    /// and returns the typed dial the build bakes -- the operator path an
+    /// engagement's own socket takes (bind-then-register, the public
+    /// endpoint the bare host:port implants dial).
+    private static async Task<string> TcpFrontAsync(TestEnv env)
+    {
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/listeners",
+            new Rod.Transport.Endpoints.ListenerEndpoints.CreateListenerRequest(
+                Name: "e2e-tcp",
+                Transport: "tcp",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        created.EnsureSuccessStatusCode();
+        return $"tcp://127.0.0.1:{port}";
+    }
+
     /// The interactive shell through a baked artifact at the named contact
     /// mode: the task opens the channel with its initial command, the
     /// transcript goes live before any completion, typed input crosses as
@@ -414,14 +473,18 @@ public class RustImplantEndToEndTests
 
     /// Builds the artifact through the operator API at the given contact
     /// mode, runs it in its fielded shape, and waits for the roster to show
-    /// it online -- the channel legs' shared prefix.
-    private static async Task<RunningRust> BuildRunAndAwaitOnlineAsync(string mode)
+    /// it online -- the channel legs' shared prefix. The endpoint names the
+    /// front (the socket family's typed tcp:// dial included).
+    private static async Task<RunningRust> BuildRunAndAwaitOnlineAsync(
+        string mode, Func<TestEnv, Task<string>>? bindFront = null)
     {
         var env = await TestEnv.StartAsync();
         try
         {
             await env.CreateEngagementAsync();
-            var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+            var enrollUrl = bindFront is null
+                ? $"http://127.0.0.1:{env.HttpPort}/implants/enroll"
+                : await bindFront(env);
             var built = await env.Http.PostAsJsonAsync(
                 $"/engagements/{env.EngagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(

@@ -12,6 +12,11 @@ use rand::RngCore;
 pub const ENROLL_AAD: &str = "rod-envelope-v1";
 pub const CONTACT_REQUEST_AAD: &str = "rod-contact-v1";
 pub const CONTACT_RESPONSE_AAD: &str = "rod-contact-response-v1";
+/// The socket family's enroll exchange rides its own purpose tags (the same
+/// key, a different binding): the frame grammar carries the web route's JSON
+/// body, so one exchange's ciphertext must not replay as the other's.
+pub const SOCKET_ENROLL_REQUEST_AAD: &str = "rod-enroll-v1";
+pub const SOCKET_ENROLL_RESPONSE_AAD: &str = "rod-enroll-response-v1";
 
 /// The baked envelope key split into its halves: standard base64 of
 /// keyId(16) || key(32); None when absent or malformed -- a bad bake falls

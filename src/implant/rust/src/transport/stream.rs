@@ -131,7 +131,7 @@ impl ReadWrite for rustls::StreamOwned<rustls::ClientConnection, TcpStream> {
 
 impl Contact for Stream {
     fn serves(&self, url: &str, mode: &str) -> bool {
-        url.contains("://") && mode == "stream"
+        url.contains("://") && !url.starts_with("tcp") && mode == "stream"
     }
 
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {

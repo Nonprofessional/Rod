@@ -100,6 +100,15 @@ impl Session {
         }
     }
 
+    /// Extends the advertisement with a carriage-negotiation capability --
+    /// the socket family's live-session switch -- before the first
+    /// handshake. Idempotent.
+    pub fn advertise(&mut self, capability: &str) {
+        if !self.advertised.iter().any(|held| held == capability) {
+            self.advertised.push(capability.to_string());
+        }
+    }
+
     pub fn kill_date_passed(&self) -> bool {
         self.kill_date
             .as_deref()

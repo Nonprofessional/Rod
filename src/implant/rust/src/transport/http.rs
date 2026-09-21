@@ -37,8 +37,9 @@ impl Poll {
 impl Contact for Poll {
     fn serves(&self, url: &str, mode: &str) -> bool {
         // A schemed web URL polls on a poll bake (the stream bake's web URL
-        // belongs to the WebSocket carriage).
-        url.contains("://") && !url.starts_with("quic") && mode != "stream"
+        // belongs to the WebSocket carriage; the socket family's dial
+        // belongs to the raw-TCP carriage).
+        url.contains("://") && !url.starts_with("tcp") && mode != "stream"
     }
 
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
@@ -97,7 +98,7 @@ impl Contact for Poll {
 /// terminal-flagged, in demand order (the server answers demands before new
 /// tasking). A run that never terminates fails the task -- the operator sees
 /// the cause on the task itself.
-fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskRequest]) {
+pub fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskRequest]) {
     let mut index = 1;
     for task in demands {
         let mut payload: Vec<u8> = Vec::new();
