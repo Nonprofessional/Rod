@@ -52,18 +52,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     env:
-      # The core lane: everything except the subprocess-behavior tests -- the
-      # real-implant classes and the conformance harness run in the
-      # non-blocking extended job (they are the slowest and the flakiest
-      # family, and their failures read best on their own lane, not as a red
-      # run on every push). The retry steps below inherit this scope.
-      # The QUIC acceptance sits in the extended lane too, temporarily:
-      # the runner's libmsquic 2.6.1 (apt's current) regressed the TLS
-      # handshake System.Net.Quic rides -- local runs against 2.4.16 stay
-      # green -- so the lane keeps its coverage without external breakage
-      # reddening every push. Move it back (and drop the note) once a good
-      # libmsquic ships.
-      CORE_FILTER: "FullyQualifiedName!~DotNetImplantTests&FullyQualifiedName!~ExtensionKitEndToEndTests&FullyQualifiedName!~StagerEndToEndTests&FullyQualifiedName!~QuicBeaconRoundTripTests&FullyQualifiedName!~Rod.Conformance.Tests"
+      # The core lane: the unit and integration suites minus the two
+      # environment-sensitive families -- the QUIC acceptance (see the
+      # libmsquic note in the extended lane) and the conformance harness,
+      # which compiles and runs the real Rust implant and reads best on its
+      # own lane, not as a red run on every push. The retry steps below
+      # inherit this scope.
+      CORE_FILTER: "FullyQualifiedName!~QuicBeaconRoundTripTests&FullyQualifiedName!~Rod.Conformance.Tests"
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -181,13 +176,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     # Non-blocking by design: this lane carries the slowest, most
-    # environment-sensitive family -- the real-implant subprocess classes and
-    # the conformance harness -- whose failures are worth triage without
-    # being worth a red run on every push. The nightly schedule gives it a
-    # standing verdict; a failure here shows on the job, not on the run.
+    # environment-sensitive family -- the conformance harness, which
+    # compiles the real Rust implant via cargo and proves it against a
+    # live teamserver, plus the QUIC acceptance -- whose failures are
+    # worth triage without being worth a red run on every push. The
+    # nightly schedule gives it a standing verdict; a failure here shows
+    # on the job, not on the run.
     continue-on-error: true
     env:
-      EXTENDED_FILTER: "FullyQualifiedName~DotNetImplantTests|FullyQualifiedName~ExtensionKitEndToEndTests|FullyQualifiedName~StagerEndToEndTests|FullyQualifiedName~QuicBeaconRoundTripTests|FullyQualifiedName~Rod.Conformance.Tests"
+      EXTENDED_FILTER: "FullyQualifiedName~QuicBeaconRoundTripTests|FullyQualifiedName~Rod.Conformance.Tests"
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -304,57 +301,55 @@ jobs:
       - name: Verify formatting
         run: dotnet format Rod.slnx --verify-no-changes
 
-  dotnet-implant:
-    name: .NET implant
+  rust-implant:
+    name: Rust implant
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup .NET
-        # The reference .NET implant targets net10.0; the latest SDK satisfies it.
-        uses: actions/setup-dotnet@v4
-      - name: .NET implant unit tests
-        # The per-handler unit tests live in a separate xUnit project
-        # (tests/implant/dotnet) that is intentionally external to Rod.slnx,
-        # mirroring the implant itself. Restoring it compiles the implant's
-        # gRPC client bindings from the canonical rod.proto via Grpc.Tools (no
-        # committed generated code), so this step also proves the proto compile
-        # path. It exercises the internal handlers (collect/exfil/recon/persist/
-        # lateral) and runner dispatch via InternalsVisibleTo, without standing
-        # up a real teamserver.
-        run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
-      - name: .NET implant end-to-end
-        # DotNetImplantTests publishes the reference .NET implant to a temp dir
-        # via `dotnet publish`, then runs `dotnet Rod.Implant.dll` as a real
-        # subprocess against a real teamserver -- enrolls over HTTP, beacons over
-        # mTLS, runs a dispatched shell.exec task. This is the job that proves the
-        # .NET implant contacts and tasks end-to-end; it is otherwise skipped
-        # when dotnet is not on PATH.
-        run: dotnet test Rod.slnx --configuration Release --no-build --filter "FullyQualifiedName~DotNetImplantTests"
-
-  dotnet-implant-windows:
-    name: .NET implant (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-      - name: .NET implant unit tests (Windows)
-        # The same per-handler suite as the ubuntu lane, run where those
-        # handlers take their Windows paths: the toolhelp snapshot, the
-        # NTFS file transfer, the schtasks/sc argument construction. The
-        # win-x64 surface walk (rehearsal.md Sec 5) caught Windows-only
-        # defect classes -- the recon.ps snapshot marshaling, the
-        # native-tool payload quoting -- that an ubuntu-only CI lane
-        # structurally cannot see; this lane makes them fail a build.
-        run: dotnet test tests/implant/dotnet/Rod.Implant.Tests.csproj --configuration Release
-      - name: .NET implant end-to-end (Windows)
-        # The same end-to-end slice as the ubuntu lane, on Windows: the
-        # implant's mTLS beacon rides SChannel there, so a leaf-presentation
-        # defect that Linux's OpenSSL tolerates fails the handshake here.
-        # The teamserver host builds API-only when the operator-UI bundle is
-        # absent (the npm probe in Rod.TeamServer.csproj), which is all this
-        # slice needs.
-        run: dotnet test Rod.slnx --configuration Release --filter "FullyQualifiedName~DotNetImplantTests"
+      - name: Install protoc and the cross linkers
+        # prost-build compiles rod.proto through a system protoc (the .NET
+        # side rides Grpc.Tools' bundled one, so this is the tree's first
+        # protoc need); musl-tools and mingw-w64 link the two reference
+        # crosses the implant ships as.
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler musl-tools mingw-w64
+      - name: Add the cross targets
+        # The runner image ships a stable rustup; the targets and components
+        # join it rather than pinning a second toolchain manager.
+        run: |
+          rustup component add clippy rustfmt
+          rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
+      - name: Format check
+        run: cargo fmt --manifest-path src/implant/rust/Cargo.toml -- --check
+      - name: Lint
+        run: cargo clippy --manifest-path src/implant/rust/Cargo.toml --all-targets -- -D warnings
+      - name: Unit tests
+        # The crate's #[cfg(test)] suites: the seal, wire codec, profile
+        # bake, tasking verifier, outbox, session, and handler surfaces.
+        # The live-behavior half -- enrolls, contacts, and tasking against
+        # a real teamserver -- is the conformance harness's domain in the
+        # extended lane.
+        run: cargo test --manifest-path src/implant/rust/Cargo.toml
+      - name: Build the reference crosses
+        # The implant of record's shipped shapes (architecture.md Sec 12.2):
+        # static musl on Linux, mingw on Windows. Building both on every
+        # push keeps the crosses from rotting behind host-only builds.
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl --manifest-path src/implant/rust/Cargo.toml
+          cargo build --release --target x86_64-pc-windows-gnu --manifest-path src/implant/rust/Cargo.toml
+      - name: Verify the static binary
+        # The unbaked binary's documented refusal -- no profile, no run,
+        # exit 2 -- proves the static artifact actually executes on the
+        # runner.
+        run: |
+          set -e
+          bin=src/implant/rust/target/x86_64-unknown-linux-musl/release/rod-implant
+          test -x "$bin"
+          ls -lh "$bin"
+          set +e
+          "$bin"
+          code=$?
+          set -e
+          test "$code" -eq 2
 
   dotnet-redirector:
     name: .NET redirector (Native AOT)
