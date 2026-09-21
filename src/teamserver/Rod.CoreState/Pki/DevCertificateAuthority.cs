@@ -44,15 +44,25 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
     /// <summary>
-    /// The listener server leaf, minted on first use and then reused for every
-    /// connection -- see the interface contract for why the CA's own root cannot
-    /// ride this position on Windows.
+    /// The listener server leaf, minted on first use, reused for every
+    /// connection, and re-minted when it nears expiry
+    /// (<see cref="ServerLeafRotation"/>) -- see the interface contract for
+    /// why the CA's own root cannot ride this position on Windows.
     /// </summary>
     public X509Certificate2 GetServerCertificate()
     {
         lock (_serverCertificateLock)
         {
-            _serverCertificate ??= BuildServerCertificate();
+            // Kestrel's ServerCertificateSelector asks per handshake, so the
+            // re-mint reaches every new connection. The replaced leaf is
+            // dropped, not disposed: a handshake that already selected it may
+            // still be reading it.
+            if (_serverCertificate is null
+                || ServerLeafRotation.Due(_serverCertificate, DateTimeOffset.UtcNow))
+            {
+                _serverCertificate = BuildServerCertificate();
+            }
+
             return _serverCertificate;
         }
     }

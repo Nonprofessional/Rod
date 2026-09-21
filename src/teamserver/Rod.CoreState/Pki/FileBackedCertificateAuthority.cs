@@ -85,17 +85,28 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
     /// <summary>
-    /// The listener server leaf, minted on first use and then reused for every
-    /// connection -- see the interface contract for why the CA's own root cannot
-    /// ride this position on Windows. An operator who wants a provisioned server
-    /// identity instead fronts the listener with their own certificate at the
-    /// transport seam; this is the self-sufficient default.
+    /// The listener server leaf, minted on first use, reused for every
+    /// connection, and re-minted when it nears expiry
+    /// (<see cref="ServerLeafRotation"/>) -- see the interface contract for
+    /// why the CA's own root cannot ride this position on Windows. An
+    /// operator who wants a provisioned server identity instead fronts the
+    /// listener with their own certificate at the transport seam; this is
+    /// the self-sufficient default.
     /// </summary>
     public X509Certificate2 GetServerCertificate()
     {
         lock (_serverCertificateLock)
         {
-            _serverCertificate ??= BuildServerCertificate();
+            // Kestrel's ServerCertificateSelector asks per handshake, so the
+            // re-mint reaches every new connection. The replaced leaf is
+            // dropped, not disposed: a handshake that already selected it may
+            // still be reading it.
+            if (_serverCertificate is null
+                || ServerLeafRotation.Due(_serverCertificate, DateTimeOffset.UtcNow))
+            {
+                _serverCertificate = BuildServerCertificate();
+            }
+
             return _serverCertificate;
         }
     }
@@ -103,8 +114,8 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     public byte[] SignTasking(string implantId, string taskId, string verb, string arguments, ulong? nonce = null)
     {
         // The ctor attached the loaded CA private key to the retained copy, so
-        // the same key that signs implant leaves signs dispatched tasking
-        // (architecture.md Sec 9).
+        // the same key that issues the listeners' server leaves signs
+        // dispatched tasking (architecture.md Sec 9).
         using var key = _caCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("The CA certificate does not carry an RSA private key.");
         return key.SignData(
@@ -112,8 +123,6 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
             HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
     }
 
-    // Builds and signs an implant leaf over the supplied key material, binding
-    // (implant_id, engagement_id). The CA key signs; the leaf's public key is
     // Builds and signs the TLS server leaf the listeners present: end-entity,
     // digitalSignature/keyEncipherment, server-auth EKU -- the usage set
     // SChannel demands before it will shake hands with us. Mirrors the dev

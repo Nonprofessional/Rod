@@ -31,9 +31,11 @@ public interface IImplantCertificateAuthority
     /// presenting the CA's own root -- whose key usage is certificate
     /// signing only -- aborts on Windows even though Linux's OpenSSL
     /// tolerates it. The authority issues a real end-entity server leaf
-    /// instead; the same certificate serves every connection for the
-    /// authority's lifetime. Implant clients pin the CA and do no name
-    /// matching, so the leaf carries no hostname promises.
+    /// instead; the same certificate serves every connection until it nears
+    /// expiry, at which point the authority re-mints it -- the authority
+    /// outlives any single leaf, and a long-running engagement host must
+    /// never present an expired one. Implant clients pin the CA and do no
+    /// name matching, so the leaf carries no hostname promises.
     /// </summary>
     X509Certificate2 GetServerCertificate();
 

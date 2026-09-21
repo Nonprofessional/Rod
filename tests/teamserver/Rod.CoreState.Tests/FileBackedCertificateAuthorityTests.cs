@@ -85,6 +85,22 @@ public class FileBackedCertificateAuthorityTests
     }
 
     [Fact]
+    public void GetServerCertificate_ReusesTheMintedLeafAcrossCalls()
+    {
+        // The selector asks per handshake; between renewals every connection
+        // must see the same leaf (mint once, reuse -- ServerLeafRotation).
+        // Not disposed: the authority owns the cached leaf.
+        using var dir = TempDir.Create();
+        var (ca, caKey) = BuildCa();
+        var authority = new FileBackedCertificateAuthority(
+            new FileBackedCertificateAuthorityOptions(
+                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
+
+        var first = authority.GetServerCertificate();
+        Assert.Same(first, authority.GetServerCertificate());
+    }
+
+    [Fact]
     public void Constructor_ThrowsWhenPrivateKeyMismatchesCertificate()
     {
         using var dir = TempDir.Create();

@@ -15,6 +15,12 @@
   -->
   <ItemGroup>
     <InternalsVisibleTo Include="Rod.Persistence" />
+    <!--
+      The renewal rule the certificate authorities share (ServerLeafRotation)
+      is internal like the rest of the Pki machinery's moving parts; the test
+      assembly drives it directly with crafted validity dates.
+    -->
+    <InternalsVisibleTo Include="Rod.CoreState.Tests" />
   </ItemGroup>
 
 </Project>
