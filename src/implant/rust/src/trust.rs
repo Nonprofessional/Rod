@@ -67,3 +67,60 @@ pub fn verify_pss_sha256(key: &rsa::RsaPublicKey, message: &[u8], signature: &[u
         .verify(message, &signature)
         .is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsa::signature::{RandomizedSigner, SignatureEncoding};
+
+    #[test]
+    fn pem_bundles_split_into_their_members() {
+        use base64::Engine;
+        let encode = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+        // The splitter is shape-driven: preamble and interstitial noise
+        // are ignored, and only the guarded blocks decode in.
+        let pem = format!(
+            "preamble noise\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\nnoise\n-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            encode(&[1, 2, 3]),
+            encode(&[4, 5, 6]),
+        );
+        assert_eq!(parse_pem(&pem), vec![vec![1, 2, 3], vec![4, 5, 6]]);
+    }
+
+    #[test]
+    fn pss_signatures_verify_and_refuse_tampering() {
+        let mut rng = rand::thread_rng();
+        let private = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
+        let key = private.to_public_key();
+        let signing = rsa::pss::SigningKey::<Sha256>::new(private);
+        let signature = signing.sign_with_rng(&mut rng, b"canonical").to_vec();
+        assert!(verify_pss_sha256(&key, b"canonical", &signature));
+        assert!(!verify_pss_sha256(&key, b"tampered", &signature));
+        let mut flipped = signature.clone();
+        let last = flipped.len() - 1;
+        flipped[last] ^= 1;
+        assert!(!verify_pss_sha256(&key, b"canonical", &flipped));
+        assert!(!verify_pss_sha256(&key, b"canonical", b"short"));
+    }
+
+    #[test]
+    fn rsa_keys_read_from_the_certificate_spki() {
+        use rsa::pkcs8::EncodePublicKey;
+        let mut rng = rand::thread_rng();
+        let private = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
+        let spki = private
+            .to_public_key()
+            .to_public_key_der()
+            .expect("spki der");
+        let cert = Certificate {
+            raw: Vec::new(),
+            spki: spki.as_bytes().to_vec(),
+        };
+        assert!(rsa_key_of(&cert).is_some());
+        let garbage = Certificate {
+            raw: Vec::new(),
+            spki: vec![0u8; 8],
+        };
+        assert!(rsa_key_of(&garbage).is_none());
+    }
+}

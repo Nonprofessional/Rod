@@ -107,3 +107,77 @@ impl Outbox {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handlers::Outcome;
+
+    #[test]
+    fn failed_attempts_resend_the_batch_verbatim() {
+        let mut outbox = Outbox::default();
+        outbox.result("t-1", Outcome::Succeeded, "ok");
+        outbox.result("t-2", Outcome::Failed, "no");
+        let batch = outbox.batch();
+        assert_eq!(batch.len(), 2);
+        // A snapshot consumes nothing: the next attempt re-sends it whole.
+        assert_eq!(outbox.batch(), batch);
+        outbox.batch_crossed(batch.len());
+        assert!(outbox.batch().is_empty());
+    }
+
+    #[test]
+    fn results_carry_the_wire_outcome_codes_and_feed_the_ledger() {
+        let mut outbox = Outbox::default();
+        outbox.result("t-1", Outcome::Succeeded, "ok");
+        outbox.result("t-2", Outcome::Failed, "no");
+        let frames = outbox.batch();
+        let ok = TaskResult::decode(frames[0].payload.as_ref()).expect("frame one");
+        assert_eq!(ok.outcome, 1);
+        assert_eq!(ok.task_id, "t-1");
+        let failed = TaskResult::decode(frames[1].payload.as_ref()).expect("frame two");
+        assert_eq!(failed.outcome, 2);
+        assert!(outbox.holds("t-1"));
+        assert_eq!(
+            outbox.cached("t-1"),
+            Some((Outcome::Succeeded, "ok".to_string()))
+        );
+        assert_eq!(outbox.cached("missing"), None);
+    }
+
+    #[test]
+    fn acknowledgments_queue_as_ack_frames() {
+        let mut outbox = Outbox::default();
+        outbox.acknowledge("t-9");
+        let batch = outbox.batch();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].kind(), FrameKind::TaskAck);
+        let ack = TaskAck::decode(batch[0].payload.as_ref()).expect("the ack decodes");
+        assert_eq!(ack.task_id, "t-9");
+    }
+
+    #[test]
+    fn staged_demands_keep_their_arrival_order() {
+        let mut outbox = Outbox::default();
+        for id in ["a", "b"] {
+            let task = TaskRequest {
+                task_id: id.into(),
+                verb: "file.push".into(),
+                staged_bytes: Some(2048),
+                ..Default::default()
+            };
+            outbox.demand_staged(task);
+        }
+        let demands = outbox.take_demands();
+        let ids: Vec<&str> = demands.iter().map(|task| task.task_id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+        // Taken demands are spent.
+        assert!(outbox.take_demands().is_empty());
+        // Each demand queued its pull frame.
+        let batch = outbox.batch();
+        assert_eq!(batch.len(), 2);
+        assert!(batch
+            .iter()
+            .all(|frame| frame.kind() == FrameKind::StagedPull));
+    }
+}

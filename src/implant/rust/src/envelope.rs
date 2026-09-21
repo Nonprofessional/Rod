@@ -131,3 +131,106 @@ fn try_open_body(body: &[u8], key_id: &[u8; 16], key: &[u8; 32], aad: &str) -> O
         )
         .ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn baked_key() -> ([u8; 16], [u8; 32]) {
+        ([0x11; 16], [0x22; 32])
+    }
+
+    fn pack_key(key_id: &[u8; 16], key: &[u8; 32]) -> String {
+        let mut packed = Vec::with_capacity(48);
+        packed.extend_from_slice(key_id);
+        packed.extend_from_slice(key);
+        base64::engine::general_purpose::STANDARD.encode(packed)
+    }
+
+    #[test]
+    fn baked_keys_round_trip_the_packed_shape() {
+        let (key_id, key) = baked_key();
+        let parsed = parse_baked_key(&pack_key(&key_id, &key)).expect("the packed shape parses");
+        assert_eq!(parsed, (key_id, key));
+        // Whitespace around the bake is tolerated; the wrong sizes are not.
+        assert!(parse_baked_key(&format!(" {} ", pack_key(&key_id, &key))).is_some());
+        assert_eq!(parse_baked_key(""), None);
+        assert_eq!(parse_baked_key("!!!"), None);
+        let short = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
+        assert_eq!(parse_baked_key(&short), None);
+    }
+
+    #[test]
+    fn raw_bodies_round_trip_under_their_purpose_tag() {
+        let (key_id, key) = baked_key();
+        let body = seal_raw_body(b"tasking", &key_id, &key, DNS_POLL_AAD);
+        assert_eq!(&body[..2], b"R1");
+        assert_eq!(
+            try_open_raw_body(&body, &key_id, &key, DNS_POLL_AAD),
+            Some(b"tasking".to_vec())
+        );
+    }
+
+    #[test]
+    fn raw_bodies_refuse_foreign_material() {
+        let (key_id, key) = baked_key();
+        let body = seal_raw_body(b"tasking", &key_id, &key, DNS_POLL_AAD);
+        // A different purpose tag, key, or key id, a tampered byte, and a
+        // truncated body each refuse the whole read.
+        assert_eq!(
+            try_open_raw_body(&body, &key_id, &key, DNS_RESULT_AAD),
+            None
+        );
+        let mut wrong_key = key;
+        wrong_key[0] ^= 1;
+        assert_eq!(
+            try_open_raw_body(&body, &key_id, &wrong_key, DNS_POLL_AAD),
+            None
+        );
+        let mut wrong_id = key_id;
+        wrong_id[0] ^= 1;
+        assert_eq!(
+            try_open_raw_body(&body, &wrong_id, &key, DNS_POLL_AAD),
+            None
+        );
+        let mut tampered = body.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 1;
+        assert_eq!(
+            try_open_raw_body(&tampered, &key_id, &key, DNS_POLL_AAD),
+            None
+        );
+        assert_eq!(
+            try_open_raw_body(&body[..body.len() - 8], &key_id, &key, DNS_POLL_AAD),
+            None
+        );
+    }
+
+    #[test]
+    fn contact_bodies_ride_as_text_and_never_as_raw() {
+        let (key_id, key) = baked_key();
+        let text = seal_contact_body(b"contact", &key_id, &key, CONTACT_REQUEST_AAD);
+        assert!(
+            std::str::from_utf8(&text).is_ok(),
+            "the contact body is base64 text"
+        );
+        assert_eq!(
+            try_open_contact_body(&text, &key_id, &key, CONTACT_REQUEST_AAD),
+            Some(b"contact".to_vec())
+        );
+        // The text and raw shapes must not cross: the base64 body opened as
+        // an R1 body is a mismatch on its face.
+        assert_eq!(
+            try_open_raw_body(&text, &key_id, &key, CONTACT_REQUEST_AAD),
+            None
+        );
+    }
+
+    #[test]
+    fn every_seal_mints_a_fresh_nonce() {
+        let (key_id, key) = baked_key();
+        let first = seal_raw_body(b"same", &key_id, &key, DNS_POLL_AAD);
+        let second = seal_raw_body(b"same", &key_id, &key, DNS_POLL_AAD);
+        assert_ne!(first, second);
+    }
+}

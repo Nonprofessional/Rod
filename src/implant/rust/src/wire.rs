@@ -74,3 +74,52 @@ fn write_varint(target: &mut Vec<u8>, mut value: u32) {
     }
     target.push(value as u8);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result_frame(id: &str, output: &str) -> Frame {
+        Frame {
+            payload: TaskResult {
+                task_id: id.into(),
+                outcome: 1,
+                output: output.into(),
+            }
+            .encode_to_vec(),
+            kind: FrameKind::TaskResult as i32,
+        }
+    }
+
+    #[test]
+    fn batches_round_trip() {
+        let frames = vec![result_frame("one", "ok"), result_frame("two", "also ok")];
+        let body = encode(&frames);
+        assert_eq!(parse(&body).expect("the batch parses"), frames);
+        assert_eq!(parse(&[]), Some(Vec::new()));
+    }
+
+    #[test]
+    fn multibyte_lengths_ride_the_same_varint_grammar() {
+        // A frame past 127 bytes needs a two-byte varint length.
+        let frame = result_frame("big", &"x".repeat(300));
+        let body = encode(std::slice::from_ref(&frame));
+        assert_eq!(
+            parse(&body).expect("the two-byte length parses"),
+            vec![frame]
+        );
+    }
+
+    #[test]
+    fn malformed_batches_refuse_the_whole_cycle() {
+        let body = encode(&[result_frame("one", "ok")]);
+        // A truncated tail.
+        assert_eq!(parse(&body[..body.len() - 1]), None);
+        // A declared length past the body.
+        assert_eq!(parse(&[9u8, b'1', b'2', b'3', b'4']), None);
+        // Five continuation bytes cannot be a u32 varint.
+        assert_eq!(parse(&[0x80u8; 5]), None);
+        // A parseable length over unparseable frame bytes.
+        assert_eq!(parse(&[4u8, 0xff, 0xff, 0xff, 0xff]), None);
+    }
+}

