@@ -1219,6 +1219,42 @@ a:hover {
   margin-top: 12px;
 }
 
+/* The fallback picker: one full-width row per the advanced grid -- the
+   caption, the walked fronts as chips (reorder and drop inline), the
+   add-from-inventory select, and the typed tail for fronts this teamserver
+   does not serve. */
+.fallback-fronts {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fallback-fronts .fallback-caption {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.fallback-fronts label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.fallback-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fallback-chips .chip {
+  color: var(--text);
+}
+
 /* The shells roster's catch disclosures: one collapsed line per shellcatch
    listener (the roster stays the page), the one-liners one click away.
    Same quiet shape as the build form's advanced disclosure. */

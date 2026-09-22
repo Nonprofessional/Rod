@@ -28,16 +28,18 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // WebShellGenerateForm beside the implant form under one toggle.
 //
 // The form offers only what the pipeline actually delivers: the in-tree Rust
-// unit (no language picker for units that are not registered), the Stage2 and
-// Stager classes (the deployable shapes; the reduced classes compile the same
-// beacon with a gutted verb set and stay API-only), this engagement's
-// HTTP-shaped listeners (the ones implants can enroll through -- DNS/TCP
-// listeners appear greyed out), and the arch set the toolchain bundles a
+// unit (no language picker for units that are not registered), the Stage2
+// class (the one deployable shape left -- the stager class retired with the
+// .NET trees, delivery rides the launcher one-liners), this engagement's
+// family listeners (http/https/tcp/dns/doh all serve enrollment; only the
+// shell catcher greys out), and the arch set the toolchain bundles a
 // runtime for (x86 only pairs with Windows).
-// Stage-2 artifact it fetches, so that select lists the finished Stage2 builds
-// below. Interactive needs no second listener: every web front carries the
-// WebSocket beacon (stream mode holds it open; the API still accepts a named
-// beacon listener for the split-socket shape the form no longer offers).
+// Interactive needs no second listener in the common case: every front
+// carries its own contacts -- the envelope POST cycle for poll, the
+// WebSocket beacon for stream, the socket family's held session. The
+// Contact carrier pick is the deliberate exception: it names a different
+// front for steady-state contacts while enrollment keeps riding the picked
+// listener (the split shape, single-point by design).
 //
 // The build runs as a server-side job: submitting queues it and returns
 // immediately; the recent-builds list below is the in-process view of the
@@ -109,7 +111,11 @@ export function PayloadBuildView({
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
   const [endpoint, setEndpoint] = useState('')
-  const [fallbackEndpoints, setFallbackEndpoints] = useState('')
+  // Fallbacks come from the inventory, not free text: the ordered ids of the
+  // engagement's same-family listeners picked as walked fallbacks, plus a
+  // typed tail for fronts this teamserver does not serve.
+  const [fallbackIds, setFallbackIds] = useState<string[]>([])
+  const [manualFallbacks, setManualFallbacks] = useState('')
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
@@ -143,10 +149,75 @@ export function PayloadBuildView({
     return Number.isFinite(parsed) ? parsed : null
   }
 
-  // The fallback list is entered comma-separated, in walk order.
+  // The typed fallback tail: comma-separated, appended after the picked
+  // fronts in walk order.
   const fallbacks = (value: string): string[] | null => {
     const list = value.split(',').map((f) => f.trim()).filter((f) => f !== '')
     return list.length > 0 ? list : null
+  }
+
+  // The scheme families the egress walk serves -- the server's own rule:
+  // the web pair, the DNS pair, and the raw socket. Fallbacks dial the
+  // front's family only, so both the picker and the chips stay inside it.
+  const familyOf = (transport: string): string =>
+    transport === 'http' || transport === 'https' ? 'web'
+      : transport === 'dns' || transport === 'doh' ? 'dns'
+        : transport === 'tcp' ? 'tcp' : ''
+
+  // The front's family: the picked listener's transport, or the typed
+  // endpoint's scheme when no listener is named.
+  const frontFamily = selectedListener
+    ? familyOf(selectedListener.transport)
+    : /^https?:\/\//i.test(endpoint.trim()) ? 'web'
+      : /^(dns|doh):\/\//i.test(endpoint.trim()) ? 'dns'
+        : /^tcp:\/\//i.test(endpoint.trim()) ? 'tcp' : ''
+
+  // The dial a picked fallback bakes -- the same normalization the server
+  // applies when the listener itself is named: an absolute public endpoint
+  // stands as typed, a bare one completes under the transport's scheme, and
+  // the DNS family's dial names the listener's own bind as the resolver
+  // with its public endpoint as the zone.
+  const dialOf = (l: ListenerSummary): string => {
+    const pub = l.publicEndpoint.trim()
+    if (l.transport === 'dns' || l.transport === 'doh') {
+      const zone = pub.replace(/\.+$/, '').toLowerCase()
+      return `${l.transport}://${l.bindAddress.trim()}/${zone}`
+    }
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pub)) return pub
+    return `${l.transport}://${pub}`
+  }
+
+  // A wildcard-bound DNS listener names no resolver an implant can dial --
+  // the same refusal the named-listener path applies -- so it stays off the
+  // fallback offer.
+  const wildcardBound = (l: ListenerSummary): boolean =>
+    (l.transport === 'dns' || l.transport === 'doh')
+    && /^(0\.0\.0\.0:|\[::\]:|:::)/.test(l.bindAddress.trim())
+
+  // The picker's offer and the picked chips, both held to the front's own
+  // family; a changed front filters the picks for free (an id its family no
+  // longer serves resolves to no chip and bakes nothing).
+  const eligible = useMemo(
+    () => listeners.filter((l) =>
+      l.id !== listenerId && familyOf(l.transport) === frontFamily && !wildcardBound(l)),
+    [listeners, listenerId, frontFamily],
+  )
+  const picked = useMemo(
+    () => fallbackIds
+      .map((id) => eligible.find((l) => l.id === id))
+      .filter((l): l is ListenerSummary => l !== undefined),
+    [fallbackIds, eligible],
+  )
+
+  const movePick = (id: string, delta: number) => {
+    setFallbackIds((prev) => {
+      const from = prev.indexOf(id)
+      const to = from + delta
+      if (from < 0 || to < 0 || to >= prev.length) return prev
+      const next = [...prev]
+      ;[next[from], next[to]] = [next[to], next[from]]
+      return next
+    })
   }
 
   const refreshJobs = useCallback(async () => {
@@ -264,7 +335,13 @@ export function PayloadBuildView({
         endpoint: !listenerId && endpoint ? endpoint : null,
         beaconListenerId: carrierId || null,
         beaconEndpoint: null,
-        fallbackEndpoints: fallbacks(fallbackEndpoints),
+        // The walked fallback list: the picked fronts' dials in walk order,
+        // then any typed tail -- one list, family-checked server side.
+        fallbackEndpoints: (() => {
+          const manual = fallbacks(manualFallbacks) ?? []
+          const all = [...picked.map(dialOf), ...manual]
+          return all.length > 0 ? all : null
+        })(),
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
         headers: null,
@@ -475,11 +552,11 @@ export function PayloadBuildView({
           <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Manual overrides only, for builds without a picked listener: the enroll + contact
-              public endpoint, backup enroll + contact endpoints, and the one path knob --
-              registration's. The artifact's kill-date fuse and the credential's enroll window
-              ride here too. Contacts ride a fixed route and the interactive stream rides the
-              same front's WebSocket beacon, so no other address or path exists to set.
+              Wire shape and credential timing. The fallback fronts are picked from this
+              engagement's same-family listeners, in walk order; manual entries stay for fronts
+              this teamserver does not serve. The manual endpoint names a front only for builds
+              without a picked listener, and the one path knob is registration's. The artifact's
+              kill-date fuse and the credential's enroll window ride here too.
             </p>
             <label>
               Public endpoint (enroll + contact, manual)
@@ -495,15 +572,78 @@ export function PayloadBuildView({
                 }
               />
             </label>
-            <label>
-              Fallback public endpoints
-              <input
-                value={fallbackEndpoints}
-                onChange={(e) => setFallbackEndpoints(e.target.value)}
-                placeholder="https://alt1.example.test, https://alt2.example.test"
-                title="Backup enroll + contact addresses the implant walks, in order, when the primary is unreachable — full addresses like the primary; they share the enroll path and the fixed contact route. Empty bakes the single-address shape."
-              />
-            </label>
+            <div className="fallback-fronts">
+              <span className="fallback-caption">Fallback fronts (walk order)</span>
+              {picked.length === 0 ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  None — the primary front is the whole walk.
+                </p>
+              ) : (
+                <div className="fallback-chips">
+                  {picked.map((l, i) => (
+                    <span className="chip" key={l.id}>
+                      <strong>{l.name}</strong>
+                      {dialOf(l)}
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={i === 0}
+                        onClick={() => movePick(l.id, -1)}
+                        title="Walk this front earlier"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="link"
+                        disabled={i === picked.length - 1}
+                        onClick={() => movePick(l.id, 1)}
+                        title="Walk this front later"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() =>
+                          setFallbackIds((prev) => prev.filter((x) => x !== l.id))
+                        }
+                        title="Drop this fallback"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) setFallbackIds((prev) => [...prev, e.target.value])
+                }}
+                title="Add one of this engagement's same-family listeners as a walked fallback. The baked entry is its public endpoint as of this build (the DNS family: its bind as the resolver plus its zone) — a later repoint does not update already-deployed artifacts, the walk only bridges until a rebuild."
+              >
+                <option value="">
+                  {eligible.filter((l) => !fallbackIds.includes(l.id)).length === 0
+                    ? 'No same-family listeners left to add'
+                    : '-- add a fallback front --'}
+                </option>
+                {eligible.filter((l) => !fallbackIds.includes(l.id)).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.transport} → {dialOf(l)})
+                  </option>
+                ))}
+              </select>
+              <label>
+                Manual fallback endpoints
+                <input
+                  value={manualFallbacks}
+                  onChange={(e) => setManualFallbacks(e.target.value)}
+                  placeholder="https://alt.example.test"
+                  title="Typed fallbacks for fronts without a listener record (a redirector in front of the same bind), appended after the picked fronts in walk order. Same scheme family as the front — the server refuses the mix."
+                />
+              </label>
+            </div>
             <label>
               Enroll path
               <input
