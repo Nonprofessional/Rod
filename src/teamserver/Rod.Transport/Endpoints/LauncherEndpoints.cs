@@ -30,10 +30,12 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The engagement-scoped launcher registry endpoints: render-and-keep a
-/// launcher set, list what was kept, revoke a credential, and delete a row.
-/// The credential policy is the operator's -- the shell upgrade always mints
-/// single-use for thirty minutes (one paste, one download), while a kept
-/// render can widen the budget and window for a many-host deployment.
+/// launcher set, list what was kept, revoke a credential, and delete a row
+/// (which revokes the credential first -- one action closes the lifecycle,
+/// and the audit trail keeps the mint's history). The credential policy is
+/// the operator's -- the shell upgrade always mints single-use for thirty
+/// minutes (one paste, one download), while a kept render can widen the
+/// budget and window for a many-host deployment.
 /// </summary>
 public static class LauncherEndpoints
 {
@@ -221,6 +223,9 @@ public static class LauncherEndpoints
         string launcherId,
         ClaimsPrincipal user,
         ILauncherStore launchers,
+        IStagerTokenService tokens,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         var operatorId = user.TryGetOperatorId();
@@ -231,12 +236,42 @@ public static class LauncherEndpoints
         if (!LauncherId.TryParse(launcherId, out var rowId))
             return Results.BadRequest(new Problem("Launcher id is not a valid identifier."));
 
-        // Deleting the row is tidying, not disabling: the credential dies by
-        // its own revocation or expiry, and the trail keeps the mint. The
-        // engagement in the path must own the row.
+        // The engagement in the path must own the row.
         var row = await launchers.FindAsync(rowId, cancellationToken);
         if (row is null || row.EngagementId != engagement)
             return Results.NotFound(new Problem("Launcher does not exist in this engagement."));
+
+        // Delete closes the whole lifecycle: the credential dies wherever its
+        // copies live first (a pasted command stops working at its next
+        // fetch), then the row goes -- a spent row is safe to drop outright,
+        // and the mint's history is the audit trail, not the list. A
+        // credential already dead (spent to zero, expired and swept) needs no
+        // killing; the row still goes.
+        if (row.RevokedAt is null)
+        {
+            var at = clock.GetUtcNow();
+            await tokens.RevokeAsync(row.TokenId, cancellationToken);
+            row.Revoke(at);
+            // The revocation is recorded like every engagement fact
+            // (architecture.md Sec 11) -- deleting a live launcher is a
+            // credential kill, and the trail is where "what happened to it"
+            // lives after the row is gone.
+            await audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: engagement.Value,
+                    operatorId: operatorId.Value.Value,
+                    implantId: Guid.Empty,
+                    taskId: Guid.Empty,
+                    verb: "revoke-stager-token",
+                    kind: AuditEventKind.StagerTokenRevoked,
+                    payload: $"origin=launcher-delete requestedBy={operatorId.Value.Value}",
+                    output: null,
+                    outcome: row.TokenId.ToString(),
+                    at),
+                cancellationToken);
+        }
+
         if (!await launchers.RemoveAsync(rowId, cancellationToken))
             return Results.NotFound(new Problem("Launcher does not exist in this engagement."));
 

@@ -135,7 +135,7 @@ public class LauncherRenderTests
     }
 
     [Fact]
-    public async Task Renders_AreKeptAsRows_ThatListRevokeAndDelete()
+    public async Task Renders_AreKeptAsRows_AndDeleteClosesTheWholeLifecycle()
     {
         await using var env = await TestEnv.StartAsync();
         var engagementId = await CreateEngagementAsync(env.Http);
@@ -174,10 +174,52 @@ public class LauncherRenderTests
         Assert.Equal(row.LauncherId, kept.LauncherId);
         Assert.Contains(kept.Launchers, l => l.Command.Contains(kept.TokenSecret));
 
-        // Revocation kills the credential and marks the row; a second pull
-        // of the handle is refused.
+        // Delete closes the whole lifecycle, not just the row: the credential
+        // dies wherever a copy of the command carries it, then the row goes.
+        var deleted = await env.Http.DeleteAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
+        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            () => tokens.VerifyAsync(row.TokenSecret, DateTimeOffset.UtcNow));
+        var listedAfterDelete = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
+            $"/engagements/{engagementId}/launchers");
+        Assert.Empty(listedAfterDelete!);
+
+        var deleteAgain = await env.Http.DeleteAsync(
+            $"/engagements/{engagementId}/launchers/{row.LauncherId}");
+        Assert.Equal(HttpStatusCode.NotFound, deleteAgain.StatusCode);
+    }
+
+    [Fact]
+    public async Task TheRevokeEndpoint_IsTheSurgicalForm_ThatKeepsTheRow()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var engagement = new EngagementId(Guid.Parse(engagementId));
+
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-http",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: "http://stage.example.test"));
+        created.EnsureSuccessStatusCode();
+
+        var payloads = env.Host.Services.GetRequiredService<IPayloadStore>();
+        var payloadId = Guid.NewGuid();
+        await payloads.SaveAsync(Payload(payloadId, engagement, DateTimeOffset.UtcNow));
+
+        var rendered = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { });
+        rendered.EnsureSuccessStatusCode();
+        var row = await rendered.Content.ReadFromJsonAsync<LauncherRowDto>();
+
+        // The surgical revoke kills the credential and marks the row; the row
+        // stays, and a second pull of the handle is refused.
         var revoke = await env.Http.PostAsync(
-            $"/engagements/{engagementId}/launchers/{row.LauncherId}:revoke", content: null);
+            $"/engagements/{engagementId}/launchers/{row!.LauncherId}:revoke", content: null);
         revoke.EnsureSuccessStatusCode();
         var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
         await Assert.ThrowsAsync<StagerTokenRedeemException>(
@@ -190,14 +232,10 @@ public class LauncherRenderTests
             $"/engagements/{engagementId}/launchers/{row.LauncherId}:revoke", content: null);
         Assert.Equal(HttpStatusCode.BadRequest, revokeAgain.StatusCode);
 
-        // Deletion is tidying: the row goes, a repeat answers 404, and the
-        // listing is empty.
+        // Deleting a revoked row is pure removal: no credential left to kill.
         var deleted = await env.Http.DeleteAsync(
             $"/engagements/{engagementId}/launchers/{row.LauncherId}");
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-        var deleteAgain = await env.Http.DeleteAsync(
-            $"/engagements/{engagementId}/launchers/{row.LauncherId}");
-        Assert.Equal(HttpStatusCode.NotFound, deleteAgain.StatusCode);
         var listedAfterDelete = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
             $"/engagements/{engagementId}/launchers");
         Assert.Empty(listedAfterDelete!);

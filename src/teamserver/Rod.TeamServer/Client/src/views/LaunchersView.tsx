@@ -8,7 +8,6 @@ import {
   listListeners,
   listPayloads,
   renderLaunchers,
-  revokeLauncher,
 } from '../api'
 import { catchLaunchers } from '../catchOneLiners'
 import { Icon } from '../components/Icons'
@@ -140,24 +139,8 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
     }
   }, [engagementId, payloadId, listenerId, maxUses, lifetimeMinutes, refreshRows])
 
-  const onRevoke = async (row: LauncherRow) => {
-    if (
-      !window.confirm(
-        `Revoke this launcher's credential? Every copy of its command stops working at the next fetch.`,
-      )
-    )
-      return
-    try {
-      await revokeLauncher(engagementId, row.launcherId)
-      await refreshRows()
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
   const onDelete = async (row: LauncherRow) => {
-    if (!window.confirm('Delete this launcher row? Tidying only -- the credential dies by its own revocation or expiry, and the mint stays on the trail.'))
+    if (!window.confirm('Delete this launcher? Its credential stops working at the next fetch (every pasted copy dies with it), and the row goes -- the mint\'s history stays on the audit trail.'))
       return
     try {
       await deleteLauncher(engagementId, row.launcherId)
@@ -199,8 +182,8 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
       <p className="muted">
         Every paste-ready one-liner this engagement can cut, in one place: reverse shells that land
         in the Shells roster, and payload fetches that grow a beacon in the Implants table. Every
-        fetch render is kept below — re-copy it any time, revoke its credential the moment it
-        leaks, delete the row when it is spent.
+        fetch render is kept below — re-copy it any time; Delete closes its lifecycle (the
+        credential dies with the row, and the mint's history is the audit trail's to keep).
       </p>
       {error && <p className="error">{error}</p>}
 
@@ -341,14 +324,13 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                 <th>Payload</th>
                 <th>Front</th>
                 <th>Credential</th>
-                <th>State</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={5}>
                     <div className="empty">
                       <Icon name="copy" />
                       No launchers kept yet — every render above lands here, re-copyable until its
@@ -359,15 +341,24 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
               )}
               {rows.map((row) => {
                 const expired = new Date(row.expiresAt).getTime() <= now
-                const spent = row.tokenRemainingUses != null && row.tokenRemainingUses <= 0
                 const revoked = row.revokedAt != null
+                // A bounded credential whose token is no longer stored is out
+                // of downloads no matter which end it met -- spent to zero,
+                // revoked, or expired and swept; reading null as "alive" was
+                // exactly the contradiction the old two-column display showed.
+                const spent =
+                  row.maxUses !== 0 &&
+                  (row.tokenRemainingUses == null || row.tokenRemainingUses <= 0)
                 const live = !revoked && !expired && !spent
-                const usesLeft =
-                  row.maxUses === 0
-                    ? 'unlimited'
-                    : row.tokenRemainingUses == null
-                      ? '—'
-                      : `${row.tokenRemainingUses} left`
+                const status = revoked
+                  ? `revoked ${new Date(row.revokedAt!).toLocaleTimeString()}`
+                  : expired
+                    ? `expired ${new Date(row.expiresAt).toLocaleTimeString()}`
+                    : spent
+                      ? 'no downloads left'
+                      : row.maxUses === 0
+                        ? `usable · unlimited downloads · until ${new Date(row.expiresAt).toLocaleTimeString()}`
+                        : `usable · ${row.tokenRemainingUses} of ${row.maxUses} downloads left · until ${new Date(row.expiresAt).toLocaleTimeString()}`
                 // The commands expand under their own row -- the operator
                 // clicks Commands on the row they care about, so the
                 // one-liners belong beside it, not pooled below the table.
@@ -381,30 +372,14 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                         <code title={row.payloadId}>{row.payloadId.slice(0, 8)}</code>
                       </td>
                       <td title={row.frontEndpoint}>{row.frontName}</td>
-                      <td>
-                        {usesLeft}
-                        {!revoked && (
-                          <span className="muted">
-                            {' '}
-                            ·{' '}
-                            {expired
-                              ? 'expired'
-                              : `expires ${new Date(row.expiresAt).toLocaleTimeString()}`}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {revoked ? (
-                          <span title={row.revokedAt ? `Revoked ${new Date(row.revokedAt).toLocaleString()}` : undefined}>
-                            revoked
-                          </span>
-                        ) : expired ? (
-                          <span title="The credential's window closed">expired</span>
-                        ) : spent ? (
-                          <span title="The budget was downloaded out">spent</span>
-                        ) : (
-                          <span title="The credential serves fetches">live</span>
-                        )}
+                      <td
+                        title={
+                          live
+                            ? 'The credential still serves fetches: copies of the command download until the budget or the window closes'
+                            : 'This credential no longer serves fetches; the row stays until deleted (Delete also kills a live credential)'
+                        }
+                      >
+                        {status}
                       </td>
                       <td>
                         <div className="row-actions">
@@ -418,11 +393,6 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                           >
                             {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
                           </button>
-                          {!revoked && (
-                            <button className="sm" onClick={() => void onRevoke(row)}>
-                              Revoke
-                            </button>
-                          )}
                           <button className="ghost sm" onClick={() => void onDelete(row)}>
                             Delete
                           </button>
@@ -431,7 +401,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                     </tr>
                     {commandsFor === row.launcherId && (
                       <tr className="payload-detail-row">
-                        <td colSpan={6}>
+                        <td colSpan={5}>
                           <div className="upgrade-panel">
                             <p>
                               Fetch URL <code>{row.url}</code> · credential{' '}
@@ -473,8 +443,9 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
         {rows.length > 0 && (
           <p className="muted">
             Commands re-render from each row's URL and credential, so an old row always copies in
-            the current shape. Revoking kills the credential wherever a copy of the command carries
-            it; deleting a row is tidying — the credential dies by its own revocation or expiry.
+            the current shape. Delete closes a row's whole lifecycle: the credential dies wherever
+            a copy of the command carries it, the row goes, and the mint's history is the audit
+            trail's to keep.
           </p>
         )}
       </div>

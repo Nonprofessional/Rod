@@ -299,16 +299,18 @@ token; a refused fetch (wrong front, unknown payload) spends nothing, and
 the credential dies by budget, expiry, or revocation.
 
 **Kept launchers** is the list every render lands in: when it was cut, for
-which payload, over which front, the credential's remaining budget and
-window, and its state -- live, spent, expired, or revoked. **Commands**
-expands the row's one-liners directly beneath it (re-rendered from the
-row's URL and credential, so an old row always copies in the current
-shape).
-**Revoke** kills the credential wherever a copy of the command carries it,
-and stays on the audit trail; **Delete** removes the row -- tidying only,
-since the credential dies by its own revocation or expiry either way. The
-rows survive a teamserver restart when the durable store is configured,
-like every other engagement fact.
+which payload, over which front, and the credential's standing as one
+plain line -- `usable · 1 of 1 downloads left · until 19:00`, or `no
+downloads left`, `expired 19:00`, `revoked 18:35` when it is done (a
+bounded credential whose token has left the store is out of downloads
+whichever end it met). **Commands** expands the row's one-liners directly
+beneath it (re-rendered from the row's URL and credential, so an old row
+always copies in the current shape). **Delete** closes the row's whole
+lifecycle: the credential dies wherever a copy of the command carries it,
+the row goes, and the mint's history stays on the audit trail -- for a
+surgical revoke that keeps the row, the API's `:revoke` endpoint remains.
+The rows survive a teamserver restart when the durable store is
+configured, like every other engagement fact.
 
 ## Build
 

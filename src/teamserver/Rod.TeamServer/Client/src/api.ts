@@ -1042,8 +1042,9 @@ export async function listLaunchers(engagementId: string): Promise<LauncherRow[]
   return jsonOrThrow(await fetch(`engagements/${engagementId}/launchers`))
 }
 
-// Kills the row's credential wherever a copy of the command carries it; the
-// row stays, marked revoked.
+// Revokes the row's credential wherever a copy of the command carries it;
+// the row stays, marked revoked. The UI deletes instead (delete revokes
+// first); the endpoint remains the API's surgical form.
 export async function revokeLauncher(
   engagementId: string,
   launcherId: string,
