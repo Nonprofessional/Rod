@@ -219,6 +219,20 @@ public static class PayloadEndpoints
             // failure): an operator mistake, not a server fault.
             return Results.BadRequest(new Problem(ex.Message));
         }
+        catch (Rod.BuildPipeline.PayloadBuild.BuildUnitFailureException ex)
+        {
+            // The toolchain failed (cargo missing or errored, source tree
+            // incomplete): a server-side fault with the same treatment the
+            // generic path gives -- a 500 and the detail in the log. It once
+            // rode the 400 branch above, and a missing musl target on a CI
+            // runner read as three hundred bad requests instead of one
+            // broken environment.
+            loggerFactory.CreateLogger("Rod.Transport.Endpoints.PayloadEndpoints")
+                .LogError(ex, "Payload build failed for language {Language}.", request!.Language);
+            return Results.Problem(
+                title: "Payload build failed.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
         catch (Exception ex)
         {
             // The build unit failed (toolchain error, disk, cancellation of a

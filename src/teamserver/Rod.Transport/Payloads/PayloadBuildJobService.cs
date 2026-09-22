@@ -140,10 +140,19 @@ public sealed class PayloadBuildJobService : IHostedService
                 // contract failure): an operator mistake, surfaced verbatim.
                 job.MarkFailed(ex.Message, _clock.GetUtcNow());
             }
+            catch (BuildUnitFailureException ex)
+            {
+                // A toolchain fault, not an operator mistake: the job's error
+                // stays generic and the log carries the detail -- the same
+                // split the synchronous build endpoint applies.
+                _logger.LogError(ex, "Background payload build {JobId} failed.", job.JobId);
+                job.MarkFailed("Payload build failed; see the teamserver log.", _clock.GetUtcNow());
+            }
             catch (Exception ex)
             {
-                // The build unit failed (toolchain error, disk). Keep the job's
-                // error generic; the server log carries the detail.
+                // The build unit failed (disk, cancellation of a child
+                // process). Keep the job's error generic; the server log
+                // carries the detail.
                 _logger.LogError(ex, "Background payload build {JobId} failed.", job.JobId);
                 job.MarkFailed("Payload build failed; see the teamserver log.", _clock.GetUtcNow());
             }

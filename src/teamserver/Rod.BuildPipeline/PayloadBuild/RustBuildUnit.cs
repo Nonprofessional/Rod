@@ -20,11 +20,20 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// features (compile only the contact clients and handlers the bake dials),
 /// and the Windows-sensitive verbs already self-gate on <c>cfg(windows)</c>
 /// so a Linux build compiles none of them.
+///
+/// Build failures throw <see cref="BuildUnitFailureException"/> (a
+/// server-side fault: the toolchain, the source tree, or the host is wrong)
+/// while contract refusals -- retired classes and formats, unsupported
+/// target triples -- throw <see cref="InvalidOperationException"/> (the
+/// request is wrong). Set <c>ROD_RUST_TARGET_DIR</c> to point builds at a
+/// shared, persistent cargo target dir and reuse dependency compilation
+/// across builds.
 /// </remarks>
 public sealed class RustBuildUnit : IBuildUnit
 {
     private readonly string _rustSourceDir;
     private readonly string _cargoBinary;
+    private readonly string? _sharedTargetDir;
 
     public Language Language => Language.Rust;
 
@@ -34,7 +43,15 @@ public sealed class RustBuildUnit : IBuildUnit
             ? ResolveDefaultRustSourceDir()
             : rustSourceDir;
         _cargoBinary = cargoBinary ?? "cargo";
+        // The shared-target opt-in rides the environment rather than the
+        // caller's configuration: the unit is composed once in the transport
+        // host, and a deployment (or a CI test lane) should not have to
+        // re-compose it to point builds at a warm compile cache.
+        _sharedTargetDir = NonEmptyOrNull(Environment.GetEnvironmentVariable("ROD_RUST_TARGET_DIR"));
     }
+
+    private static string? NonEmptyOrNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
@@ -45,7 +62,7 @@ public sealed class RustBuildUnit : IBuildUnit
             throw new InvalidOperationException(
                 "The Rust implant builds native executables; the dll bundle is the .NET shape.");
         if (!Directory.Exists(_rustSourceDir))
-            throw new InvalidOperationException($"Rust implant source tree not found at '{_rustSourceDir}'.");
+            throw new BuildUnitFailureException($"Rust implant source tree not found at '{_rustSourceDir}'.");
 
         // The bake: the same base64url profile JSON every unit emits --
         // one language-neutral contract, decoded identically by every
@@ -61,7 +78,15 @@ public sealed class RustBuildUnit : IBuildUnit
         // relative dance the .NET unit performs for its csproj's proto
         // reference.
         var stagingDir = Path.Combine(workDir, "src", "implant", "rust");
-        var targetDir = Path.Combine(workDir, "target");
+        // Hermetic by default: a per-build target dir under the disposable
+        // work dir. ROD_RUST_TARGET_DIR opts a deployment into a shared,
+        // persistent dir instead: every registry dependency's compiled
+        // artifacts are reused across builds (only the implant crate itself
+        // recompiles, since its staging path is per-build), which turns a
+        // cold full cross-compile into a one-time cost. Concurrent builds
+        // through a shared dir queue on cargo's own target-dir lock -- they
+        // wait, not fail.
+        var targetDir = _sharedTargetDir ?? Path.Combine(workDir, "target");
         try
         {
             CopyTree(_rustSourceDir, stagingDir);
@@ -116,7 +141,7 @@ public sealed class RustBuildUnit : IBuildUnit
                 var diag = result.Stdout;
                 if (result.Stderr.Length > 0)
                     diag = (diag.Length > 0 ? diag + "\n" : "") + result.Stderr;
-                throw new InvalidOperationException(
+                throw new BuildUnitFailureException(
                     $"cargo build failed (exit {result.ExitCode}):\n{diag}");
             }
 
@@ -125,7 +150,7 @@ public sealed class RustBuildUnit : IBuildUnit
                 : "rod-implant";
             var binaryPath = Path.Combine(targetDir, triple, "release", binaryName);
             if (!File.Exists(binaryPath))
-                throw new InvalidOperationException(
+                throw new BuildUnitFailureException(
                     $"cargo reported success but produced no {binaryName} for {triple}.");
 
             var content = await File.ReadAllBytesAsync(binaryPath, cancellationToken);
@@ -213,7 +238,7 @@ public sealed class RustBuildUnit : IBuildUnit
             }
             dir = dir.Parent!;
         }
-        throw new InvalidOperationException(
+        throw new BuildUnitFailureException(
             "The Rust build needs the teamserver proto tree (src/teamserver/Rod.Protocol/protos) beside the crate; the repo walk-up found none.");
     }
 
@@ -222,7 +247,7 @@ public sealed class RustBuildUnit : IBuildUnit
     {
         using var process = new Process { StartInfo = start };
         if (!process.Start())
-            throw new InvalidOperationException($"Failed to start cargo ('{start.FileName}').");
+            throw new BuildUnitFailureException($"Failed to start cargo ('{start.FileName}').");
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
         try

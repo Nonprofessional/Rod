@@ -21,11 +21,14 @@ jobs:
     # and an unpinned label lets a runner image change the toolchain under us.
     runs-on: ubuntu-24.04
     env:
-      # The blocking lane: every suite that stays inside .NET -- no cargo, no
-      # real implant processes. The classes excluded here are the ones that
-      # shell out to cargo (the pipeline-build acceptance and the Rust
-      # end-to-end family) plus the conformance harness; they are the
-      # implant-toolchain lane below, non-blocking by design.
+      # The blocking lane: every suite that neither runs the real Rust
+      # implant as a process nor drives the conformance harness. The
+      # classes excluded here are the ones that do; they are the
+      # implant-toolchain lane below, non-blocking by design. The core lane
+      # still compiles through cargo -- the listener, stager-token, and
+      # audit suites build real artifacts as part of their flows -- so the
+      # Rust toolchain below must be complete, and the shared target dir
+      # keeps those compiles incremental after the first.
       CORE_FILTER: >-
         FullyQualifiedName!~Rod.Conformance.Tests
         &FullyQualifiedName!~RustImplantEndToEndTests
@@ -68,6 +71,23 @@ jobs:
         run: dotnet restore Rod.slnx
       - name: Build
         run: dotnet build Rod.slnx --configuration Release --no-restore
+      - name: Install the Rust build toolchain
+        # The payload pipeline compiles the reference implant through cargo on
+        # request, and the reference shape for linux/amd64 is the static musl
+        # cross. A runner without the musl target and the musl C tools fails
+        # every build in seconds -- three suite-level build tests went red
+        # this way for two days while the runner image's Rust rolled forward
+        # under an unchanged tree. prost-build also needs a system protoc.
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          echo "ROD_RUST_TARGET_DIR=${RUNNER_TEMP}/rod-rust-target" >> "$GITHUB_ENV"
+      - name: Warm the shared Rust target dir
+        # One full musl compile up front, outside any test, so no single test
+        # pays the cold-build minutes and the per-build staging copies only
+        # recompile the implant crate itself. Builds run serially here, so
+        # the shared dir never contends on cargo's lock.
+        run: cargo build --release --target x86_64-unknown-linux-musl --manifest-path src/implant/rust/Cargo.toml
       - name: Test (core lane)
         id: test_core
         # Blame-hang turns a silent hang into a five-minute failure that dumps
