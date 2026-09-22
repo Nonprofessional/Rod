@@ -135,7 +135,11 @@ in-house. The dependency rule is enforced by architecture tests.
   implant** lives in the `src/implant/rust` crate: a benign, readable
   long-haul implant that enrolls over any of the four families' fronts
   (submitting its own public key), contacts under the baked seal, and runs
-  the standard-category verb set (Sec 10.1). It
+  the standard-category verb set (Sec 10.1). The fielded artifact is
+  terminal-silent by default -- nothing it prints on the host it runs on
+  -- with diagnostics behind the `ROD_VERBOSE` opt-in for the operator's
+  own testing (the e2e suite runs verbose so a failed leg's stderr says
+  why). It
   compiles its wire bindings
   from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
   committed generated code), and `DotNetBuildUnit` bakes the per-implant

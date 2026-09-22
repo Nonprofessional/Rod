@@ -132,7 +132,10 @@ one-liner fetches the artifact over the engagement's web front
 credential -- each served fetch spends one use of it -- and the fetched
 artifact then enrols with the credential baked into it at build time and
 appears on the roster. On Linux the memfd family stages the bytes in
-memory and runs them without landing a file.
+memory and runs them without landing a file. The artifact prints nothing
+to the terminal it was launched from (exit codes alone tell the bare
+story); run it with `ROD_VERBOSE=1` while testing to see enrollment and
+contact diagnostics.
 
 ## Configuration reference
 

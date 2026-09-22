@@ -40,18 +40,19 @@ pub fn run(profile: &Profile) -> Exit {
                 last_error = cause;
             }
             Err(refusal) => {
-                eprintln!("rod-implant: {refusal}");
+                crate::diag!("{refusal}");
                 return Exit::Terminated(1);
             }
         }
     }
     let Some(enrollment) = enrollment else {
-        eprintln!("rod-implant: no enroll front answered ({last_error})");
+        crate::diag!("no enroll front answered ({last_error})");
         return Exit::NoFront;
     };
-    eprintln!(
-        "rod-implant: enrolled {} into engagement {}",
-        enrollment.implant_id, enrollment.engagement_id
+    crate::diag!(
+        "enrolled {} into engagement {}",
+        enrollment.implant_id,
+        enrollment.engagement_id
     );
 
     let cadence: Cadence = Arc::new(Mutex::new((profile.sleep_seconds, profile.jitter_seconds)));
@@ -93,11 +94,11 @@ pub fn run(profile: &Profile) -> Exit {
         match carriage.attempt(&mut session) {
             Ok(Attempt::Crossed) => failures = 0,
             Ok(Attempt::Refused) => {
-                eprintln!("rod-implant: the server refused the handshake; terminating");
+                crate::diag!("the server refused the handshake; terminating");
                 return Exit::Terminated(0);
             }
             Err(cause) => {
-                eprintln!("rod-implant: contact ended: {cause}");
+                crate::diag!("contact ended: {cause}");
                 index += 1;
                 failures += 1;
             }

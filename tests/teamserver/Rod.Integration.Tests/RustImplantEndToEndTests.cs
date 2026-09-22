@@ -94,6 +94,9 @@ public class RustImplantEndToEndTests
         };
         start.Environment["ROD_ENROLL_URL"] = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
         start.Environment["ROD_STAGER_TOKEN"] = token!.Secret;
+        // The fielded artifact is terminal-silent by default; the suite runs
+        // verbose so a failed leg's stderr says why.
+        start.Environment["ROD_VERBOSE"] = "1";
         start.Environment["ROD_SLEEP"] = "1";
         start.Environment["ROD_JITTER"] = "0";
         start.Environment["ROD_ENVELOPE"] = "none";
@@ -208,6 +211,9 @@ public class RustImplantEndToEndTests
                 FileName = binaryPath,
                 UseShellExecute = false,
                 RedirectStandardError = true,
+                // The fielded artifact is terminal-silent by default; the
+                // suite runs verbose so a failed leg's stderr says why.
+                Environment = { ["ROD_VERBOSE"] = "1" },
             });
             Assert.NotNull(process);
             process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
@@ -601,6 +607,9 @@ public class RustImplantEndToEndTests
                 FileName = binaryPath,
                 UseShellExecute = false,
                 RedirectStandardError = true,
+                // The fielded artifact is terminal-silent by default; the
+                // suite runs verbose so a failed leg's stderr says why.
+                Environment = { ["ROD_VERBOSE"] = "1" },
             });
             Assert.NotNull(process);
             process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };

