@@ -10,6 +10,7 @@ import {
   upgradeShell,
 } from '../api'
 import { launcherHint } from '../launcherFamilies'
+import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
 
 // The caught-shell console, styled as a terminal: the held connection's
@@ -37,7 +38,6 @@ export function ShellConsole({
   const [error, setError] = useState<string | null>(null)
   const [upgrade, setUpgrade] = useState<ShellUpgrade | null>(null)
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
-  const [copied, setCopied] = useState<string | null>(null)
   const transcriptRef = useRef<HTMLPreElement>(null)
   // The output cursor survives re-renders; the console never re-reads what
   // it already holds.
@@ -145,17 +145,6 @@ export function ShellConsole({
     }
   }
 
-  const copy = async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(id)
-      window.setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // Clipboard permission denied: the command stays selectable to copy
-      // by hand.
-    }
-  }
-
   return (
     <div className="terminal">
       <div className="terminal-header">
@@ -227,9 +216,7 @@ export function ShellConsole({
             <div key={launcher.id} className="upgrade-launcher" title={launcherHint(launcher.id)}>
               <code>{launcher.id}</code>
               <code className="upgrade-command">{launcher.command}</code>
-              <button className="ghost sm" onClick={() => void copy(launcher.id, launcher.command)}>
-                {copied === launcher.id ? 'Copied' : 'Copy'}
-              </button>
+              <CopyButton text={launcher.command} />
             </div>
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { type GeneratedWebShellScript, ApiError, generateWebShellScript } from '../api'
+import { CopyButton } from './CopyButton'
 
 // The web-shell half of the Build tab: render a placement script with its
 // credential baked in, decoupled from any endpoint -- prepare the artifact
@@ -50,7 +51,6 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
   const [credential, setCredential] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState<GeneratedWebShellScript | null>(null)
-  const [copied, setCopied] = useState<'script' | 'credential' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const shape = ENCRYPTIONS.find((e) => e.id === encryption) ?? ENCRYPTIONS[0]
@@ -73,16 +73,6 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
       setGenerating(false)
-    }
-  }
-
-  const copy = async (what: 'script' | 'credential', text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(what)
-      window.setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // Clipboard permission denied: the text stays selectable.
     }
   }
 
@@ -163,19 +153,12 @@ export function WebShellGenerateForm({ engagementId }: { engagementId: string })
           <div className="upgrade-launcher">
             <code>{sealed ? 'key' : 'password'}</code>
             <code className="upgrade-command">{generated.password}</code>
-            <button
-              className="ghost sm"
-              onClick={() => void copy('credential', generated.password)}
-            >
-              {copied === 'credential' ? 'Copied' : 'Copy'}
-            </button>
+            <CopyButton text={generated.password} />
           </div>
           <div className="upgrade-launcher">
             <code>script</code>
             <code className="upgrade-command">{generated.script}</code>
-            <button className="ghost sm" onClick={() => void copy('script', generated.script)}>
-              {copied === 'script' ? 'Copied' : 'Copy'}
-            </button>
+            <CopyButton text={generated.script} />
             <a
               className="download-link"
               href={`engagements/${engagementId}/payloads/${generated.payloadId}`}

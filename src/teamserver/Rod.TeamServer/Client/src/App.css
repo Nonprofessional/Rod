@@ -645,9 +645,10 @@ th {
 
 /* --- Table toolbar / sorting / paging ---------------------------------------- */
 
-/* The task log's disclosure chevron: the row's click-to-expand stays, but
-   the affordance must be visible -- a quiet icon button, not a hidden
-   gesture. */
+/* The shared disclosure chevron: every table whose rows unfold a detail
+   pane carries it in a dedicated first column, and the whole row toggles
+   too -- the affordance is visible and the gesture is generous, platform-
+   wide rather than per-screen. */
 button.row-expand {
   width: 26px;
   height: 22px;
@@ -662,6 +663,12 @@ button.row-expand:hover:not(:disabled) {
   background: var(--surface-3);
   border-color: transparent;
   color: var(--accent);
+}
+
+/* A row that toggles its own detail pane: the pointer says so before the
+   click does. */
+tr.console-row {
+  cursor: pointer;
 }
 
 /* The one-line answer preview under a collapsed task-log row: the log shows
@@ -1649,11 +1656,14 @@ tr.device-row:hover td {
   margin-right: 7px;
 }
 
+/* The group-fold caret leads the device row on the left -- the same side
+   every table's detail chevron sits on, so folding a group and unfolding a
+   detail read as one gesture platform-wide. */
 .device-caret {
-  float: right;
   width: 14px;
   height: 14px;
-  margin-top: 3px;
+  margin-right: 7px;
+  vertical-align: -2.5px;
   color: var(--muted);
   transition: transform 0.12s ease;
 }

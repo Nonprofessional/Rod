@@ -11,6 +11,7 @@ import {
   registerWebShell,
   removeWebShell,
 } from '../api'
+import { CopyButton } from '../components/CopyButton'
 import { StatusBadge } from '../components/StatusBadge'
 import { Icon } from '../components/Icons'
 
@@ -41,7 +42,6 @@ export function WebShellsView({
   const [scripts, setScripts] = useState<PayloadSummary[]>([])
   const [registering, setRegistering] = useState(false)
   const [placed, setPlaced] = useState<RegisteredWebShell | null>(null)
-  const [copied, setCopied] = useState(false)
 
   const claim = scripts.find((s) => s.artifactId === claimId) ?? null
   const isRod = (claim ? claim.target : registerAdapter)?.startsWith('rod-')
@@ -114,16 +114,6 @@ export function WebShellsView({
       await refresh()
     } catch (e) {
       setError(String(e))
-    }
-  }
-
-  const copyScript = async (script: string) => {
-    try {
-      await navigator.clipboard.writeText(script)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Clipboard permission denied: the script stays selectable.
     }
   }
 
@@ -203,9 +193,7 @@ export function WebShellsView({
           </p>
           <div className="upgrade-launcher">
             <code className="upgrade-command">{placed.script}</code>
-            <button className="ghost sm" onClick={() => void copyScript(placed.script)}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+            <CopyButton text={placed.script} />
           </div>
         </div>
       )}

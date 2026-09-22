@@ -472,6 +472,7 @@ export function ImplantsView({
         <table>
             <thead>
               <tr>
+                <th></th>
                 <th>{sortHeader('id', 'Implant')}</th>
                 <th>Status</th>
                 <th>User</th>
@@ -484,7 +485,7 @@ export function ImplantsView({
           <tbody>
             {pageGroups.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <div className="empty">
                     <Icon name="cpu" />
                     {implants.length === 0
@@ -501,9 +502,16 @@ export function ImplantsView({
                   onClick={() => toggleGroup(group.key)}
                 >
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     title="Devices are grouped by the hostname reported at enroll. Two hosts that report the same hostname (cloned machines, a shared image) share a group -- the implant count and the rows underneath stay per-identity, so nothing merges beyond the presentation."
                   >
+                    {/* The same left-side chevron every expandable row in the
+                        platform carries -- a group folds, a detail unfolds,
+                        one affordance either way. */}
+                    <Icon
+                      name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'}
+                      className="device-caret"
+                    />
                     <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
                     <strong>{group.hostname ?? 'unknown host'}</strong>
                     <span
@@ -518,10 +526,6 @@ export function ImplantsView({
                       {group.implants.length} implant{group.implants.length === 1 ? '' : 's'}
                       {group.online > 0 ? ` · ${group.online} online` : ''}
                     </span>
-                    <Icon
-                      name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'}
-                      className="device-caret"
-                    />
                   </td>
                 </tr>
                 {!collapsed.has(group.key) &&
@@ -532,13 +536,40 @@ export function ImplantsView({
                     return (
                       <Fragment key={implant.implantId}>
                         <tr
-                          className={implant.isOnline || retired ? undefined : 'row-dim'}
+                          className={implant.isOnline || retired ? 'console-row' : 'row-dim'}
                           onContextMenu={(e) => {
                             e.preventDefault()
                             setMenuFor(implant.implantId)
                             menu.openAt(e)
                           }}
+                          onClick={() =>
+                            setDetailsFor((current) =>
+                              current === implant.implantId ? null : implant.implantId,
+                            )
+                          }
                         >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className={`ghost sm row-expand${detailsFor === implant.implantId ? ' open' : ''}`}
+                              aria-label={
+                                detailsFor === implant.implantId
+                                  ? 'Hide the implant details'
+                                  : 'Expand the implant details'
+                              }
+                              title="Everything the record holds about this implant"
+                              onClick={() =>
+                                setDetailsFor((current) =>
+                                  current === implant.implantId ? null : implant.implantId,
+                                )
+                              }
+                            >
+                              <Icon
+                                name={
+                                  detailsFor === implant.implantId ? 'chevronDown' : 'chevronRight'
+                                }
+                              />
+                            </button>
+                          </td>
                           <td>
                             <span
                               className={`dot ${!retired && implant.isOnline ? 'online' : 'offline'}`}
@@ -604,7 +635,7 @@ export function ImplantsView({
                               <span className="muted">&mdash;</span>
                             )}
                           </td>
-                          <td>
+                          <td onClick={(e) => e.stopPropagation()}>
                             <div className="row-actions">
                               <a
                                 className="button-link sm"
@@ -613,17 +644,6 @@ export function ImplantsView({
                               >
                                 Interact
                               </a>
-                              <button
-                                className="sm"
-                                onClick={() =>
-                                  setDetailsFor((current) =>
-                                    current === implant.implantId ? null : implant.implantId,
-                                  )
-                                }
-                                title="Everything the record holds about this implant"
-                              >
-                                {detailsFor === implant.implantId ? 'Hide details' : 'Details'}
-                              </button>
                               <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
                                 {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
                               </button>
@@ -644,7 +664,7 @@ export function ImplantsView({
                         </tr>
                         {detailsFor === implant.implantId && (
                           <tr className="notes-row">
-                            <td colSpan={7}>
+                            <td colSpan={8}>
                               <ImplantDetail
                                 implant={implant}
                                 lastSeen={seenOf(implant)}
@@ -655,7 +675,7 @@ export function ImplantsView({
                         )}
                         {notesFor === implant.implantId && (
                           <tr className="notes-row">
-                            <td colSpan={7}>
+                            <td colSpan={8}>
                               <div className="notes-panel">
                                 <ul className="notes-list">
                                   {notes.length === 0 ? (
