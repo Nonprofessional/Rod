@@ -702,6 +702,47 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   the delivery-confirmed upstream chunks.
 - An implant is always the **connection initiator** (reverse connection). The
   teamserver and redirectors never dial targets.
+- **A redirector control plane grows over the manual fleet** _(future,
+  deferred -- direction recorded, not yet built)_. Today a redirector is
+  out-of-band infrastructure: a hand-deployed binary with command-line
+  rules, and the teamserver's only knowledge of it is the public-endpoint
+  string on a listener record. The end state enrolls redirectors as managed
+  nodes and drives them from the teamserver, and the settled decisions are:
+  - **The redirector dials home.** The control channel is
+    redirector-initiated and outbound-only: no management listener sits on
+    the edge box, so the fleet adds no fingerprint beyond the beacon ports
+    that must be open anyway, and nodes behind NAT or egress policy still
+    reach the teamserver. This is the same shape as the platform's own
+    rule above -- everything dials home -- but the channel is its own
+    deployment-scoped surface; it must never ride the implant ingress,
+    which is engagement-scoped by construction.
+  - **Nodes are deployment capacity; attachment grants scope.** A
+    redirector node belongs to the deployment (the machine pool), and
+    inherits an engagement's scope only by being attached to that
+    engagement's listener -- machines are shared, isolation is not.
+  - **A listener grows an ordered front list.** The record's single public
+    endpoint becomes the primary front of `fronts[]`, each front an
+    attachment to an enrolled redirector that the control plane
+    provisions with the forwarding rule (listen here, splice to the
+    listener's bind); repoint becomes re-attaching the primary front, and
+    the one-bind-many-fronts shape stops needing one listener record per
+    front. Front order is a deployment property owned by the listener --
+    when this lands, the build form's per-build fallback picker is
+    expected to dissolve into picking the listener.
+  - **The control protocol stays small.** Enroll once against
+    pre-provisioned credential, heartbeat, receive configuration pushes
+    (forwarding rules, the Sec 7 filter/decoy split). It is not a second
+    wire protocol and grows no capability surface of its own.
+  - **The data plane stays dumb.** The forwarder remains an opaque L4
+    splice -- no TLS termination, no payload inspection, no engagement
+    tenancy. The application-layer seal crosses it intact, which is the
+    security model's load-bearing wall; the smarts live in the control
+    plane only.
+  Landing this dissolves three recorded seams: the typed DNS dial (a
+  DNS front becomes an attached front like any other), the
+  one-listener-per-front workaround, and most of the manual deploy/rotate
+  runbook. The wire protocol, the implant, and the carrier family rules
+  are untouched -- the whole feature is control plane.
 - **Listener and public endpoint are decoupled, and the endpoint is repointable
   at runtime.** A redirector fronts the listener; a burned redirector is replaced
   without touching the backend by repointing the listener's public endpoint
@@ -1555,7 +1596,7 @@ scrape.
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core | Strong async networking, strong typing, mature web UI. LTS to ~2028. |
 | Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and dev deployments (see Sec 12.1). |
 | Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
-| Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). |
+| Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). The enrolled-fleet control plane is a recorded future direction (Sec 8). |
 | Implants | Rust (the reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One Rust reference implant, static and cross-platform; community implants slot in by contract for targets it does not fit. |
 | Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. |
 
