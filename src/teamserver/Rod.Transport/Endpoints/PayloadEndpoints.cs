@@ -303,8 +303,9 @@ public static class PayloadEndpoints
     // Envelope pick: on unless explicitly false (the lab-debug plaintext
     // frame), sealing every contact body under the per-artifact key the
     // mint below then makes sure exists. Format picks the artifact form
-    // factor ('exe' default, 'exe-trimmed', 'aot', 'dll'); the dll bundle
-    // is an implant shape, so a stager build refuses it.
+    // factor ('exe' default, 'exe-trimmed', 'aot'); every spelling is the
+    // same native binary over the in-tree Rust unit, and 'dll' is retired
+    // with the .NET implant and refused.
     public sealed record BuildPayloadRequest(
         string? Language,
         string? Class,

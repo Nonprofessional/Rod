@@ -438,24 +438,26 @@ recorded.**
   base64url profile into the staging copy's `src/baked.rs`, and refuses the
   stager class (retired with the .NET tree) and the dll format (the
   in-memory bundle was the .NET shape) with the fix named at parse time.
-- **The format is a build request knob; over the Rust unit it names
-  delivery posture, not a compile mode.** `ArtifactFormat` rides the build
+- **The format is a build request knob; over the Rust unit it is recorded
+  metadata, not a compile mode.** `ArtifactFormat` rides the build
   contract beside the class and target, and the unit maps it onto one
   cargo invocation: **`exe`** (the default), **`exe-trimmed`**, and
   **`aot`** all produce the same native executable for the requested
   target (ELF or PE) -- Rust is always ahead-of-time, and the size
   posture lives in the crate's release profile (opt-level, LTO, strip),
-  not a publish variant. The spellings differ only in posture: `exe` is
-  the drop-and-run default, `aot` the marker the in-memory launcher
-  family keys on for memfd delivery, `exe-trimmed` a compatibility name
-  that changes nothing. They survive the retired .NET unit's publish
-  shapes (single-file, trimmed, NativeAOT) so the wire contract stayed
-  stable across the toolchain switch; a community unit maps them onto its
-  own closest equivalents. **`dll`** -- the in-memory-loadable managed
-  bundle a .NET host loaded via `Assembly.Load` with no bytes on disk --
-  is retired with the .NET implant and refused at parse time with the
-  native spellings named. An unmappable target fails the build with the
-  supported set named rather than silently building for the build host.
+  not a publish variant. The spellings are compatibility names over that
+  one artifact: they survive the retired .NET unit's publish shapes
+  (single-file, trimmed, NativeAOT) so the wire contract stayed stable
+  across the toolchain switch, and a community unit maps them onto its
+  own closest equivalents. The delivery posture the spellings once
+  flagged -- disk versus in-memory -- belongs to the launcher step
+  (below): the render offers the memfd family for every native Linux
+  payload, so the operator picks per paste, not per build. **`dll`** --
+  the in-memory-loadable managed bundle a .NET host loaded via
+  `Assembly.Load` with no bytes on disk -- is retired with the .NET
+  implant and refused at parse time with the native spellings named. An
+  unmappable target fails the build with the supported set named rather
+  than silently building for the build host.
 - **Build params** include the implant class, artifact format, target OS/arch,
   transport profile, and beacon parameters (mode, sleep, jitter, kill date).
   They are produced at request time so each artifact is unique -- this is
@@ -485,9 +487,9 @@ recorded.**
   loader carries no handlers.
 - **Delivery rides the launcher one-liners.** The stage-1 loader class is
   retired with the .NET trees: the render families -- the disk fetch-and-run
-  trio for every payload, plus the Linux in-memory family for the native
-  artifact (python3 stages the bytes in a memfd and execs through
-  /proc/self/fd, so nothing lands) -- deliver the stage-2 over the same
+  trio plus the Linux in-memory family, both for every payload (python3
+  stages the bytes in a memfd and execs through /proc/self/fd, so nothing
+  lands) -- deliver the stage-2 over the same
   engagement-scoped, token-gated fetch route (`GET /implants/stage2/{id}`,
   each served fetch spending one use), with the mints, budgets, and
   revocations the launchers endpoint already keeps.

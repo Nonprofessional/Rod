@@ -28,10 +28,10 @@ public enum ArtifactFormat
     TrimmedExe = 1,
 
     /// <summary>
-    /// The spelling the in-memory delivery family keys on: the same native
-    /// binary as 'exe' (Rust is always ahead-of-time), distinguished only as
-    /// the marker the memfd launcher one-liners select so nothing lands on
-    /// disk. The name survives the retired .NET unit's NativeAOT publish.
+    /// A compatibility spelling for the retired .NET unit's NativeAOT
+    /// publish: byte-identical to 'exe' over the Rust unit. The in-memory
+    /// delivery it once flagged is not a build-time axis anymore -- the
+    /// launcher render offers the memfd family for every native payload.
     /// </summary>
     NativeAot = 2,
 

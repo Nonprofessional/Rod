@@ -12,8 +12,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract), and compiles a release binary for the requested target
 /// triple. Rust is always native code: the executable formats are synonyms
 /// here (the size posture lives in the crate's release profile -- opt-level,
-/// LTO, strip; 'aot' differs only as the spelling the memfd launcher family
-/// keys on), and the dll format is refused outright.
+/// LTO, strip), and the dll format is refused outright.
 /// </summary>
 /// <remarks>
 /// The transport and handler trims the .NET unit applies have Rust

