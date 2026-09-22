@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type LauncherRow,
   type ListenerSummary,
@@ -20,7 +20,7 @@ import { useNow } from '../when'
 // paste-ready reverse-shell one-liners per shellcatch listener -- no
 // credential is involved, the address is the listener's public endpoint,
 // and the caught shell lands in the Shells roster. "Deliver a beacon"
-// cuts a stage-2 fetch render: pick the payload, the server mints the
+// cuts a payload-fetch render: pick the payload, the server mints the
 // download credential and answers with the downloader one-liner per shell
 // family. "Kept launchers" is the list those renders land in -- every cut
 // is kept, so the operator can come back to it: re-copy the command any
@@ -47,7 +47,9 @@ const LIFETIME_OPTIONS: { value: number; label: string }[] = [
 function payloadLabel(p: PayloadSummary): string {
   const target = p.target ?? p.language
   return [
-    p.class,
+    // The wire class reads as noise for the only implant class there is;
+    // the other kinds (a web-shell script) still stand out.
+    p.class === 'Stage2' ? null : p.class,
     target,
     p.fingerprint ? p.fingerprint.slice(0, 12) : null,
     new Date(p.builtAt).toLocaleString(),
@@ -186,7 +188,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
     [lifetimeMinutes],
   )
   const frontLabel = useMemo(() => {
-    if (!listenerId) return 'preferred front'
+    if (!listenerId) return 'auto front'
     const named = webListeners.find((l) => l.id === listenerId)
     return named ? named.name : 'named front'
   }, [listenerId, webListeners])
@@ -196,7 +198,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
       <h2>Launchers</h2>
       <p className="muted">
         Every paste-ready one-liner this engagement can cut, in one place: reverse shells that land
-        in the Shells roster, and stage-2 fetches that grow a beacon in the Implants table. Every
+        in the Shells roster, and payload fetches that grow a beacon in the Implants table. Every
         fetch render is kept below — re-copy it any time, revoke its credential the moment it
         leaks, delete the row when it is spent.
       </p>
@@ -248,9 +250,9 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
           <div className="empty">
             <Icon name="copy" />
             {payloads.length === 0 && webListeners.length === 0
-              ? 'Delivery needs a stage-2 payload (Build) and an HTTP(S) listener (Listeners) — create both first.'
+              ? 'Delivery needs a payload (Build) and an HTTP(S) listener (Listeners) — create both first.'
               : payloads.length === 0
-                ? 'No stage-2 payload in this engagement yet — build one under Build first.'
+                ? 'No payload in this engagement yet — build one under Build first.'
                 : 'No HTTP(S) listener in this engagement yet — create one under Listeners first.'}
           </div>
         </div>
@@ -258,7 +260,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
         <div className="card">
           <h3>Deliver a beacon</h3>
           <p className="muted">
-            A one-liner that fetches the stage-2 payload over the engagement's web front and runs
+            A one-liner that fetches the payload over the engagement's web front and runs
             it. Each served fetch spends one use of a freshly minted credential; the enrollment
             that follows rides the credential baked into the fetched artifact.
           </p>
@@ -266,7 +268,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
             <select
               value={payloadId}
               onChange={(e) => setPayloadId(e.target.value)}
-              title="The stage-2 payload the fetch delivers; the newest build stands in when unnamed"
+              title="The payload the fetch delivers; the newest build stands in when unnamed"
             >
               <option value="">Newest build</option>
               {payloads.map((p) => (
@@ -293,9 +295,9 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
               <select
                 value={listenerId}
                 onChange={(e) => setListenerId(e.target.value)}
-                title="The web front the fetch rides; the hardened members are preferred when unnamed"
+                title="Every HTTP(S)/mTLS listener serves the payload fetch on its own public endpoint -- there is no separate file host, and the teamserver's own address never appears in a command. Name a listener when the fetch must cross a specific front (a redirector, say); unnamed prefers https, then mTLS, then the newest."
               >
-                <option value="">Preferred HTTP(S) front</option>
+                <option value="">Auto — hardened front first</option>
                 {webListeners.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name} · {l.transport} · {l.publicEndpoint}
@@ -366,63 +368,103 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                     : row.tokenRemainingUses == null
                       ? '—'
                       : `${row.tokenRemainingUses} left`
+                // The commands expand under their own row -- the operator
+                // clicks Commands on the row they care about, so the
+                // one-liners belong beside it, not pooled below the table.
                 return (
-                  <tr key={row.launcherId} className={live ? undefined : 'row-dim'}>
-                    <td title={`Cut by ${row.createdBy}`}>
-                      {new Date(row.createdAt).toLocaleString()}
-                    </td>
-                    <td>
-                      <code title={row.payloadId}>{row.payloadId.slice(0, 8)}</code>
-                    </td>
-                    <td title={row.frontEndpoint}>{row.frontName}</td>
-                    <td>
-                      {usesLeft}
-                      {!revoked && (
-                        <span className="muted">
-                          {' '}
-                          ·{' '}
-                          {expired
-                            ? 'expired'
-                            : `expires ${new Date(row.expiresAt).toLocaleTimeString()}`}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {revoked ? (
-                        <span title={row.revokedAt ? `Revoked ${new Date(row.revokedAt).toLocaleString()}` : undefined}>
-                          revoked
-                        </span>
-                      ) : expired ? (
-                        <span title="The credential's window closed">expired</span>
-                      ) : spent ? (
-                        <span title="The budget was downloaded out">spent</span>
-                      ) : (
-                        <span title="The credential serves fetches">live</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          className="sm"
-                          onClick={() =>
-                            setCommandsFor((current) =>
-                              current === row.launcherId ? null : row.launcherId,
-                            )
-                          }
-                        >
-                          {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
-                        </button>
+                  <Fragment key={row.launcherId}>
+                    <tr className={live ? undefined : 'row-dim'}>
+                      <td title={`Cut by ${row.createdBy}`}>
+                        {new Date(row.createdAt).toLocaleString()}
+                      </td>
+                      <td>
+                        <code title={row.payloadId}>{row.payloadId.slice(0, 8)}</code>
+                      </td>
+                      <td title={row.frontEndpoint}>{row.frontName}</td>
+                      <td>
+                        {usesLeft}
                         {!revoked && (
-                          <button className="sm" onClick={() => void onRevoke(row)}>
-                            Revoke
-                          </button>
+                          <span className="muted">
+                            {' '}
+                            ·{' '}
+                            {expired
+                              ? 'expired'
+                              : `expires ${new Date(row.expiresAt).toLocaleTimeString()}`}
+                          </span>
                         )}
-                        <button className="ghost sm" onClick={() => void onDelete(row)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td>
+                        {revoked ? (
+                          <span title={row.revokedAt ? `Revoked ${new Date(row.revokedAt).toLocaleString()}` : undefined}>
+                            revoked
+                          </span>
+                        ) : expired ? (
+                          <span title="The credential's window closed">expired</span>
+                        ) : spent ? (
+                          <span title="The budget was downloaded out">spent</span>
+                        ) : (
+                          <span title="The credential serves fetches">live</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="sm"
+                            onClick={() =>
+                              setCommandsFor((current) =>
+                                current === row.launcherId ? null : row.launcherId,
+                              )
+                            }
+                          >
+                            {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
+                          </button>
+                          {!revoked && (
+                            <button className="sm" onClick={() => void onRevoke(row)}>
+                              Revoke
+                            </button>
+                          )}
+                          <button className="ghost sm" onClick={() => void onDelete(row)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {commandsFor === row.launcherId && (
+                      <tr className="payload-detail-row">
+                        <td colSpan={6}>
+                          <div className="upgrade-panel">
+                            <p>
+                              Fetch URL <code>{row.url}</code> · credential{' '}
+                              <code className="upgrade-command">{row.tokenSecret}</code>{' '}
+                              <button
+                                className="ghost sm"
+                                onClick={() => void copy(`token:${row.launcherId}`, row.tokenSecret)}
+                              >
+                                {copied === `token:${row.launcherId}` ? 'Copied' : 'Copy'}
+                              </button>
+                            </p>
+                            {row.launchers.map((launcher) => (
+                              <div key={launcher.id} className="upgrade-launcher">
+                                <span title={`For ${launcher.os} targets`}>
+                                  <Icon name={osIconFor(launcher.os)} className="wire-icon" />
+                                </span>
+                                <code>{launcher.id}</code>
+                                <code className="upgrade-command">{launcher.command}</code>
+                                <button
+                                  className="ghost sm"
+                                  onClick={() =>
+                                    void copy(`${row.launcherId}:${launcher.id}`, launcher.command)
+                                  }
+                                >
+                                  {copied === `${row.launcherId}:${launcher.id}` ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -434,40 +476,6 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
             the current shape. Revoking kills the credential wherever a copy of the command carries
             it; deleting a row is tidying — the credential dies by its own revocation or expiry.
           </p>
-        )}
-        {rows.map(
-          (row) =>
-            commandsFor === row.launcherId && (
-              <div key={row.launcherId} className="upgrade-panel">
-                <p>
-                  Fetch URL <code>{row.url}</code> · credential{' '}
-                  <code className="upgrade-command">{row.tokenSecret}</code>{' '}
-                  <button
-                    className="ghost sm"
-                    onClick={() => void copy(`token:${row.launcherId}`, row.tokenSecret)}
-                  >
-                    {copied === `token:${row.launcherId}` ? 'Copied' : 'Copy'}
-                  </button>
-                </p>
-                {row.launchers.map((launcher) => (
-                  <div key={launcher.id} className="upgrade-launcher">
-                    <span title={`For ${launcher.os} targets`}>
-                      <Icon name={osIconFor(launcher.os)} className="wire-icon" />
-                    </span>
-                    <code>{launcher.id}</code>
-                    <code className="upgrade-command">{launcher.command}</code>
-                    <button
-                      className="ghost sm"
-                      onClick={() =>
-                        void copy(`${row.launcherId}:${launcher.id}`, launcher.command)
-                      }
-                    >
-                      {copied === `${row.launcherId}:${launcher.id}` ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ),
         )}
       </div>
     </section>

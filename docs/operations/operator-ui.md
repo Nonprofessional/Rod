@@ -268,11 +268,11 @@ PHP/socat one-liner, a PowerShell client). No credential is involved: the
 address is the listener's public endpoint, and the caught shell lands in
 the Shells roster.
 
-**Deliver a beacon** cuts the stage-2 fetch command, so a target with any
+**Deliver a beacon** cuts the payload fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's
 Upgrade render produces the same commands for a shell it already caught;
 this panel is where an operator cuts them ahead of any catch. The one pick
-that matters is the **payload** -- the stage-2 build the fetch delivers
+that matters is the **payload** -- the build the fetch delivers
 (the engagement's newest stands in). The rest live behind the "fetch front
 & credential" fold because the defaults are almost always right: the
 hardened HTTP(S) front for the fetch URL, a single-use credential (one
@@ -296,8 +296,9 @@ the credential dies by budget, expiry, or revocation.
 **Kept launchers** is the list every render lands in: when it was cut, for
 which payload, over which front, the credential's remaining budget and
 window, and its state -- live, spent, expired, or revoked. **Commands**
-re-opens the row's one-liners (re-rendered from the row's URL and
-credential, so an old row always copies in the current shape).
+expands the row's one-liners directly beneath it (re-rendered from the
+row's URL and credential, so an old row always copies in the current
+shape).
 **Revoke** kills the credential wherever a copy of the command carries it,
 and stays on the audit trail; **Delete** removes the row -- tidying only,
 since the credential dies by its own revocation or expiry either way. The
@@ -307,9 +308,10 @@ like every other engagement fact.
 ## Build
 
 The main path is the mainstream shape: pick the **Listener (enroll +
-contact)** and the **target** (OS/arch; x86 pairs with Windows only),
+contact)** and the **target** (OS/arch -- the Rust build unit's supported
+set: Linux amd64/arm64/arm/x86, Windows amd64/x86),
 leave the rest at the defaults, and build. The artifact is a
-self-contained single-file executable with its enrollment credential
+self-contained native executable with its enrollment credential
 baked in -- drop it on the target and run, zero arguments. A summary
 above the **Build payload** button composes from the picks live, labeled
 with the fixed vocabulary: the front it enrolls on (name, transport,
@@ -350,10 +352,11 @@ payload library's detail row reads the credential back out of the stored
 script, so "what was the key" stays answerable long after the generate
 panel closed.
 
-**Class**: `Stage2` is the full implant; `Stager` is a small loader that
-fetches a finished Stage2 (picked from the builds below) at launch and runs
-it -- the two-stage shape for size-sensitive delivery. A stager bakes only
-its kill date; beacon timing belongs to the Stage2 it fetches.
+**Class**: there is no class pick -- the form builds the full implant
+alone. The stager class is retired with the .NET trees: staged delivery
+rides the Launchers tab's one-liners, which fetch the artifact over the
+token-gated route and (on Linux, via the memfd family) can run it without
+landing a file.
 
 **Beacon profile**:
 
