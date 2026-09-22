@@ -365,7 +365,7 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("tasks", (string)null);
                 });
 
-            modelBuilder.Entity("Rod.Persistence.Configurations.StoredStagerToken", b =>
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredDeployToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")

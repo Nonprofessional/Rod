@@ -1,12 +1,12 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.CoreState.Application;
 
 /// <summary>
 /// The first engagement use cases: create an engagement, and mint
-/// a stager token for it. Orchestrates the core-state ports; holds no state of
+/// a deploy token for it. Orchestrates the core-state ports; holds no state of
 /// its own. The owner is the authenticated operator the transport layer resolved
 /// off the session principal  (operator auth); the
 /// service trusts that caller to have already proven its identity.
@@ -15,18 +15,18 @@ public sealed class EngagementService
 {
     private readonly IOperatorRepository _operators;
     private readonly IEngagementRepository _engagements;
-    private readonly IStagerTokenService _stagerTokens;
+    private readonly IDeployTokenService _deployTokens;
     private readonly TimeProvider _clock;
 
     public EngagementService(
         IOperatorRepository operators,
         IEngagementRepository engagements,
-        IStagerTokenService stagerTokens,
+        IDeployTokenService deployTokens,
         TimeProvider clock)
     {
         _operators = operators;
         _engagements = engagements;
-        _stagerTokens = stagerTokens;
+        _deployTokens = deployTokens;
         _clock = clock;
     }
 
@@ -60,14 +60,14 @@ public sealed class EngagementService
     }
 
     /// <summary>
-    /// Mints a stager token for an engagement, issued by its owner. The secret is
+    /// Mints a deploy token for an engagement, issued by its owner. The secret is
     /// returned once; only the caller sees it. A closed engagement (frozen for
     /// close-out or retired) mints nothing -- it accepts no new deployments. The
     /// command's optional scope (max uses, lifetime) sizes the token for a
     /// deployment batch; absent values keep the single-use, one-hour default.
     /// </summary>
-    public async Task<StagerTokenMinted> MintStagerTokenForOwnerAsync(
-        MintStagerTokenCommand command,
+    public async Task<DeployTokenMinted> MintDeployTokenForOwnerAsync(
+        MintDeployTokenCommand command,
         CancellationToken cancellationToken = default)
     {
         var now = _clock.GetUtcNow();
@@ -81,11 +81,11 @@ public sealed class EngagementService
                 "; it mints no deployment tokens.");
         }
 
-        var token = await _stagerTokens.MintAsync(
+        var token = await _deployTokens.MintAsync(
             engagement.Id, engagement.OwnerId, now, command.MaxUses, command.Lifetime,
             cancellationToken: cancellationToken);
 
-        return new StagerTokenMinted(
+        return new DeployTokenMinted(
             token.Id,
             token.EngagementId,
             token.Secret,
@@ -208,11 +208,11 @@ public sealed record EngagementCreated(
     DateTimeOffset CreatedAt);
 
 /// <summary>
-/// Request to mint a stager token for an engagement's owner. The optional scope
+/// Request to mint a deploy token for an engagement's owner. The optional scope
 /// sizes the token for a deployment batch: <see cref="MaxUses"/> implants may
 /// each spend one use inside <see cref="Lifetime"/>.
 /// </summary>
-public sealed record MintStagerTokenCommand(
+public sealed record MintDeployTokenCommand(
     EngagementId EngagementId,
     int? MaxUses = null,
     TimeSpan? Lifetime = null);
@@ -257,11 +257,11 @@ public sealed record EngagementRetired(EngagementId EngagementId, DateTimeOffset
 public sealed record RoeApplied(EngagementId EngagementId, RoeProfile Profile);
 
 /// <summary>
-/// Result of minting a stager token. <see cref="Secret"/> is the plaintext,
+/// Result of minting a deploy token. <see cref="Secret"/> is the plaintext,
 /// shown exactly once at mint time.
 /// </summary>
-public sealed record StagerTokenMinted(
-    StagerTokenId StagerTokenId,
+public sealed record DeployTokenMinted(
+    DeployTokenId DeployTokenId,
     EngagementId EngagementId,
     string Secret,
     OperatorId IssuedBy,

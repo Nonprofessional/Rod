@@ -53,7 +53,7 @@ public class EngagementCloseoutTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(implant.Id.ToString(), "shell.exec", "id"));
             Assert.Equal(HttpStatusCode.UnprocessableEntity, refusedTask.StatusCode);
-            var refusedMint = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", null);
+            var refusedMint = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", null);
             Assert.Equal(HttpStatusCode.Conflict, refusedMint.StatusCode);
 
             // The export: one ZIP carrying the trail, the artifacts, and the
@@ -144,7 +144,7 @@ public class EngagementCloseoutTests
                 $"/engagements/{engagementId}/tasks",
                 new TaskEndpoints.IssueTaskRequest(implant.Id.ToString(), "shell.exec", "id"));
             Assert.Equal(HttpStatusCode.Created, issued.StatusCode);
-            var minted = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", null);
+            var minted = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", null);
             Assert.Equal(HttpStatusCode.OK, minted.StatusCode);
 
             // Both events stay in the trail: the mistaken freeze is part of the
@@ -207,7 +207,7 @@ public class EngagementCloseoutTests
         var clock = host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.Stage2, now);
+            ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
         return implant;
     }

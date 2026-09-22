@@ -22,7 +22,7 @@ namespace Rod.Persistence.Configurations;
 /// exists but has not been provisioned with a password simply has no row here,
 /// and <see cref="global::Rod.CoreState.Operators.IOperatorCredentialStore.FindHashAsync"/>
 /// returns null. See the operator-auth ADR for the hash-only rule and its
-/// stager-token twin.
+/// deploy-token twin.
 /// </remarks>
 internal sealed class StoredOperatorCredential
 {

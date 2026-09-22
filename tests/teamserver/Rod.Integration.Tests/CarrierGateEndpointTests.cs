@@ -30,7 +30,7 @@ public class CarrierGateEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
                 endpoint: "https://front.example.com:8443", beaconEndpoint: null);
             var implantId = await EnrollAsync(client, secret);
@@ -56,7 +56,7 @@ public class CarrierGateEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
                 endpoint: "dns://10.0.0.1:53/c2.example.test", beaconEndpoint: null);
             var implantId = await EnrollAsync(client, secret);
@@ -80,7 +80,7 @@ public class CarrierGateEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
                 endpoint: "https://front.example.com:8443", beaconEndpoint: "mtls.example.com:9443");
             var implantId = await EnrollAsync(client, secret);
@@ -106,7 +106,7 @@ public class CarrierGateEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintStagerTokenAsync(client, engagementId);
+            var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
                 endpoint: "https://front.example.com:8443", beaconEndpoint: null, mode: "stream");
             var implantId = await EnrollAsync(client, secret);
@@ -130,7 +130,7 @@ public class CarrierGateEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var (secret, _) = await MintStagerTokenAsync(client, engagementId);
+            var (secret, _) = await MintDeployTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             var issued = await client.PostAsJsonAsync(
@@ -150,20 +150,20 @@ public class CarrierGateEndpointTests
         return created!.EngagementId;
     }
 
-    private static async Task<(string Secret, Guid TokenId)> MintStagerTokenAsync(
+    private static async Task<(string Secret, Guid TokenId)> MintDeployTokenAsync(
         HttpClient client,
         string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
-        return (token!.Secret, Guid.Parse(token.StagerTokenId));
+        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
+        return (token!.Secret, Guid.Parse(token.DeployTokenId));
     }
 
     private static async Task<string> EnrollAsync(HttpClient client, string secret)
     {
         var response = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: null));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
         return enrolled!.ImplantId!;
@@ -184,7 +184,7 @@ public class CarrierGateEndpointTests
         await payloads.SaveAsync(new PayloadRecord(
             PayloadId: Guid.NewGuid(),
             EngagementId: Guid.Parse(engagementId),
-            Class: "Stage2",
+            Class: "Implant",
             Language: "dotnet",
             ContentType: "application/octet-stream",
             Fingerprint: "sha256:" + new string('a', 64),

@@ -1,6 +1,6 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Task = System.Threading.Tasks.Task;
 
 namespace Rod.CoreState.Tests;
@@ -11,11 +11,11 @@ namespace Rod.CoreState.Tests;
 /// anything past its expiry, verify never consumes, and a mint that names no
 /// scope keeps the single-use, one-hour default.
 /// </summary>
-public class StagerTokenMultiUseTests
+public class DeployTokenMultiUseTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
 
-    private sealed record Harness(InMemoryStagerTokenService Service, EngagementId EngagementId, OperatorId Owner);
+    private sealed record Harness(InMemoryDeployTokenService Service, EngagementId EngagementId, OperatorId Owner);
 
     private static async Task<Harness> HarnessAsync()
     {
@@ -23,7 +23,7 @@ public class StagerTokenMultiUseTests
         var owner = OperatorId.New();
         var engagements = new InMemoryEngagementRepository();
         await engagements.SaveAsync(Engagement.Create(engagementId, "multi-use-test", owner, Now));
-        return new Harness(new InMemoryStagerTokenService(engagements), engagementId, owner);
+        return new Harness(new InMemoryDeployTokenService(engagements), engagementId, owner);
     }
 
     [Fact]
@@ -40,12 +40,13 @@ public class StagerTokenMultiUseTests
         Assert.Equal(h.EngagementId, first.EngagementId);
         Assert.Equal(h.EngagementId, second.EngagementId);
 
-        // The in-memory service deletes a token at zero remaining uses, so the
-        // over-spend reads Unknown; the Postgres analogue keeps the row and
-        // reports Spent (the deliberate durable difference, per its remarks).
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        // The over-spend reads Spent, not Unknown: the spent row stays
+        // resolvable so the refusal carries its attribution -- both stores
+        // now share the one contract.
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.RedeemAsync(token.Secret, Now.AddMinutes(3)));
-        Assert.Equal(StagerTokenRedeemReason.Unknown, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Spent, ex.Reason);
+        Assert.Equal(h.EngagementId, ex.EngagementId);
     }
 
     [Fact]
@@ -70,9 +71,9 @@ public class StagerTokenMultiUseTests
         var h = await HarnessAsync();
         var token = await h.Service.MintAsync(h.EngagementId, h.Owner, Now, maxUses: 5, lifetime: TimeSpan.FromMinutes(30));
 
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.RedeemAsync(token.Secret, Now.AddMinutes(31)));
-        Assert.Equal(StagerTokenRedeemReason.Expired, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Expired, ex.Reason);
     }
 
     [Fact]
@@ -110,13 +111,13 @@ public class StagerTokenMultiUseTests
 
         // Past the window the credential still dies: unlimited counts uses,
         // not time.
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.RedeemAsync(token.Secret, Now.AddHours(5)));
-        Assert.Equal(StagerTokenRedeemReason.Expired, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Expired, ex.Reason);
     }
 
     [Fact]
-    public async Task State_Reads_The_Budget_By_Id_And_Disappears_When_Spent()
+    public async Task State_Reads_The_Budget_By_Id_And_KeepsTheSpentPageAtZero()
     {
         var h = await HarnessAsync();
         var token = await h.Service.MintAsync(h.EngagementId, h.Owner, Now, maxUses: 3, lifetime: TimeSpan.FromHours(2));
@@ -139,13 +140,15 @@ public class StagerTokenMultiUseTests
         Assert.Equal(3, partlySpent!.MaxUses);
         Assert.Equal(2, partlySpent.RemainingUses);
 
-        // This store drops a token at zero remaining uses, so the spent
-        // credential's state reads gone -- the payload library renders that
-        // as "no enrollments left."
+        // The spent credential stays readable at zero remaining uses -- the
+        // budget's ledger keeps its last page, and the payload library
+        // renders zero as "no enrollments left." Only revocation reads gone.
         _ = await h.Service.RedeemAsync(token.Secret, Now.AddMinutes(2));
         _ = await h.Service.RedeemAsync(token.Secret, Now.AddMinutes(3));
-        Assert.Null(await h.Service.FindAsync(token.Id));
+        var spentState = await h.Service.FindAsync(token.Id);
+        Assert.NotNull(spentState);
+        Assert.Equal(0, spentState!.RemainingUses);
 
-        Assert.Null(await h.Service.FindAsync(StagerTokenId.New()));
+        Assert.Null(await h.Service.FindAsync(DeployTokenId.New()));
     }
 }

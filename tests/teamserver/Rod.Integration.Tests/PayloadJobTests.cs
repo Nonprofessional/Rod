@@ -20,7 +20,7 @@ public class PayloadJobTests
     // minimal request (server defaults apply).
     private static PayloadEndpoints.BuildPayloadRequest Request(
         string language = "Rust",
-        string @class = "Stage2",
+        string @class = "Implant",
         string? mode = null,
         string? listenerId = null,
         string? beaconListenerId = null,

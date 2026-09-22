@@ -91,4 +91,16 @@ public enum LiveEventKind
     /// and how it ended.
     /// </summary>
     ShellSessionEnded,
+
+    /// <summary>
+    /// An artifact was fetched over an engagement web front's delivery route
+    /// (architecture.md Sec 6): a launcher credential was spent by an actual
+    /// download. Connected operators refresh their kept-launcher rows on it,
+    /// seeing the remaining budget move the moment a target pulls it -- without
+    /// waiting for the enrollment that may follow (and may never come: a
+    /// burned one-liner pulled by a scanner never enrolls). System-initiated
+    /// (the fetch), so it carries the null operator; the payload names the
+    /// fetcher's address and user agent.
+    /// </summary>
+    PayloadFetched,
 }

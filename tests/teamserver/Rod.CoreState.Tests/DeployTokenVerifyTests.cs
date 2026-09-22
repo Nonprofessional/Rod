@@ -1,23 +1,23 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Task = System.Threading.Tasks.Task;
 
 namespace Rod.CoreState.Tests;
 
 /// <summary>
-/// The non-consuming verify on the stager token service (architecture.md
+/// The non-consuming verify on the deploy token service (architecture.md
 /// Sec 6): the pre-enrollment read a stage-1 stager's payload fetch performs.
 /// It must accept exactly what redeem accepts -- a valid, unexpired token with
 /// uses remaining -- and refuse exactly what redeem refuses, while leaving the
 /// token whole: a fetch may never spend the deployment credential the stage-2
 /// needs at its own enroll.
 /// </summary>
-public class StagerTokenVerifyTests
+public class DeployTokenVerifyTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
 
-    private sealed record Harness(InMemoryStagerTokenService Service, StagerToken Token);
+    private sealed record Harness(InMemoryDeployTokenService Service, DeployToken Token);
 
     private static async Task<Harness> HarnessAsync()
     {
@@ -26,7 +26,7 @@ public class StagerTokenVerifyTests
         var engagements = new InMemoryEngagementRepository();
         await engagements.SaveAsync(Engagement.Create(engagementId, "verify-test", owner, Now));
 
-        var service = new InMemoryStagerTokenService(engagements);
+        var service = new InMemoryDeployTokenService(engagements);
         var token = await service.MintAsync(engagementId, owner, Now);
         return new Harness(service, token);
     }
@@ -51,15 +51,15 @@ public class StagerTokenVerifyTests
     {
         var h = await HarnessAsync();
 
-        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.VerifyAsync("not-a-token", Now));
-        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.VerifyAsync(h.Token.Secret, Now.AddHours(2)));
 
         // A spent token is refused by verify too: fetch and enroll share the
         // same remaining-uses budget.
         await h.Service.RedeemAsync(h.Token.Secret, Now.AddMinutes(1));
-        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => h.Service.VerifyAsync(h.Token.Secret, Now.AddMinutes(2)));
     }
 }

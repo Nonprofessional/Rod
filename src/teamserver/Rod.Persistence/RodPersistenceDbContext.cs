@@ -18,7 +18,7 @@ namespace Rod.Persistence;
 /// </summary>
 /// <remarks>
 /// The context holds no domain logic: it is the persistence detail the ports
-/// hide. Concurrency lives at the adapters (stager-token redeem, task FIFO), not
+/// hide. Concurrency lives at the adapters (deploy-token redeem, task FIFO), not
 /// on the entities, so the domain model stays persistence-ignorant.
 /// </remarks>
 public sealed class RodPersistenceDbContext : DbContext
@@ -39,7 +39,7 @@ public sealed class RodPersistenceDbContext : DbContext
     public DbSet<Rod.CoreState.Launchers.Launcher> Launchers => Set<Rod.CoreState.Launchers.Launcher>();
     public DbSet<Task> Tasks => Set<Task>();
     internal DbSet<StoredImplantTaskNonce> ImplantTaskNonces => Set<StoredImplantTaskNonce>();
-    internal DbSet<StoredStagerToken> StagerTokens => Set<StoredStagerToken>();
+    internal DbSet<StoredDeployToken> DeployTokens => Set<StoredDeployToken>();
     internal DbSet<StoredListenerDefinition> ListenerDefinitions => Set<StoredListenerDefinition>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();

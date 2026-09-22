@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Live;
+using Rod.CoreState.Deployment;
 using Rod.Transport.Payloads;
 using Rod.V1;
 
@@ -39,37 +40,54 @@ public static class EnrollmentEndpoints
 
         group.MapPost("/enroll", EnrollAsync)
             .WithName(nameof(EnrollAsync));
-        group.MapGet("/stage2/{payloadId}", FetchStage2Async)
-            .WithName(nameof(FetchStage2Async));
+        group.MapGet("/payloads/{payloadId}", FetchPayloadAsync)
+            .WithName(nameof(FetchPayloadAsync));
 
         return endpoints;
     }
 
-    // Serves a built stage-2 payload to a presenting stage-1 stager. The
-    // stager token in the X-Stager-Token header resolves the engagement; the
-    // payload must exist in that engagement, so a token for one engagement
-    // never reaches another engagement's payloads (architecture.md Sec 3).
-    // The fetch REDEEMS one use of the token: the download gate is the
-    // token's whole job -- the enrollment that follows rides the credential
-    // baked into the fetched artifact, not this one. A single-use token
-    // authorizes exactly one download; an unlimited budget (maxUses 0)
-    // serves until expiry.
-    private static async Task<IResult> FetchStage2Async(
+    // Serves a built payload to a presenting downloader one-liner. The deploy
+    // token in the X-Deploy-Token header resolves the engagement; the payload
+    // must exist in that engagement, so a token for one engagement never
+    // reaches another engagement's payloads (architecture.md Sec 3). The
+    // fetch REDEEMS one use of the token: the download gate is the token's
+    // whole job -- the enrollment that follows rides the credential baked
+    // into the fetched artifact, not this one. A single-use token authorizes
+    // exactly one download; an unlimited budget (maxUses 0) serves until
+    // expiry.
+    // Every fetch a resolvable credential gate-keeps lands on the audit
+    // trail, served or refused -- the fetcher speaks no Rod protocol yet,
+    // so the fact is system-attributed and carries what the wire showed
+    // (source address, user agent, the socket it landed on). A credential
+    // whose secret resolves to no engagement (unknown, or hard-deleted with
+    // its launcher row) leaves no record: it belongs to nobody.
+    private static async Task<IResult> FetchPayloadAsync(
         string payloadId,
         HttpRequest http,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         Rod.Transport.Listeners.IListenerRegistry listeners,
         TimeProvider clock,
         IPayloadStore payloads,
+        IAuditStore audit,
+        ILiveEventBus live,
         CancellationToken cancellationToken)
     {
-        var secret = http.Headers["X-Stager-Token"].ToString();
+        var secret = http.Headers["X-Deploy-Token"].ToString();
         if (string.IsNullOrWhiteSpace(secret))
             return Results.Json(
-                new Problem("X-Stager-Token header is required."),
+                new Problem("X-Deploy-Token header is required."),
                 statusCode: StatusCodes.Status401Unauthorized);
         if (!Guid.TryParse(payloadId, out var payloadValue))
             return Results.BadRequest(new Problem("Payload id is not a valid identifier."));
+
+        // What the wire showed, captured before any branching: every fact --
+        // served or refused -- describes the same fetcher.
+        var remote = http.HttpContext.Connection.RemoteIpAddress is { } remoteIp
+            ? $"{remoteIp}:{http.HttpContext.Connection.RemotePort}"
+            : "unknown";
+        var userAgent = http.Headers.UserAgent.ToString();
+        var fetcher = $"remote={remote} listenerPort={http.HttpContext.Connection.LocalPort} "
+            + $"ua={(string.IsNullOrWhiteSpace(userAgent) ? "none" : userAgent)}";
 
         try
         {
@@ -84,36 +102,96 @@ public static class EnrollmentEndpoints
             // any bytes leave -- and a shared-tier socket (the operator
             // front) refuses implant ingress outright.
             if (!await TokenMatchesListenerScopeAsync(http, listeners, token, cancellationToken))
+            {
+                await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
+                    fetcher, "refused:scope", cancellationToken);
                 return Results.Json(
-                    new Problem("Stager token was not accepted."),
+                    new Problem("Deploy token was not accepted."),
                     statusCode: StatusCodes.Status401Unauthorized);
+            }
 
             // Scoped by the token's engagement: a payload id from another
             // engagement is indistinguishable from a nonexistent one.
             var payload = await payloads.FindAsync(payloadValue, token.EngagementId.Value, cancellationToken);
             if (payload is null)
+            {
+                await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
+                    fetcher, "refused:payload", cancellationToken);
                 return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+            }
 
             // The download's redemption, after every refusal: one served
             // fetch spends one use, and a token at zero serves no more.
-            await tokens.RedeemAsync(secret, clock.GetUtcNow(), cancellationToken);
-            return Results.File(payload.Content, payload.ContentType, $"rod-stage2-{payloadValue:N}.bin");
+            var redeemed = await tokens.RedeemAsync(secret, clock.GetUtcNow(), cancellationToken);
+
+            // The serve is the deployment's first observable footprint. The
+            // same frame reaches connected operators live, so a launcher
+            // row's remaining budget moves the moment a target pulls it. The
+            // enrollment that may follow is the identity-bearing half of the
+            // exchange; a burned one-liner pulled by a scanner enrolls never,
+            // and this is the only record it leaves.
+            await RecordFetchAsync(audit, clock, redeemed.EngagementId, redeemed.Id, payloadValue,
+                fetcher, "served", cancellationToken);
+            await live.PublishAsync(
+                LiveEvent.PayloadFetched(
+                    redeemed.EngagementId,
+                    $"{fetcher} payload={payloadValue:N} served",
+                    clock.GetUtcNow()),
+                cancellationToken);
+
+            return Results.File(payload.Content, payload.ContentType, $"rod-payload-{payloadValue:N}.bin");
         }
-        catch (StagerTokenRedeemException)
+        catch (DeployTokenRedeemException ex)
         {
-            // The same refusal shape enroll gives: no distinction between
-            // unknown, expired, and spent on the wire.
+            // A credential that still resolves keeps its attempts on the
+            // trail: expired, spent, or revoked, the fact says who came back
+            // and why it was refused -- the budget-burned retry is exactly
+            // the fact an operator wants while the launcher row lives. The
+            // wire answer stays uniform: no distinction between unknown,
+            // expired, spent, and revoked for the fetcher to read.
+            if (ex.EngagementId is { } engagement && ex.TokenId is { } tokenId)
+                await RecordFetchAsync(audit, clock, engagement, tokenId, payloadValue,
+                    fetcher, $"refused:{ex.Reason.ToString().ToLowerInvariant()}", cancellationToken);
             return Results.Json(
-                new Problem("Stager token was not accepted."),
+                new Problem("Deploy token was not accepted."),
                 statusCode: StatusCodes.Status401Unauthorized);
         }
+    }
+
+    // The one fetch fact: what the wire showed, which credential gated it,
+    // and how it ended. Audit-only -- the live push rides the served frame
+    // alone, because a refusal moves no state an operator's row displays.
+    private static async Task RecordFetchAsync(
+        IAuditStore audit,
+        TimeProvider clock,
+        EngagementId engagement,
+        DeployTokenId tokenId,
+        Guid payloadId,
+        string fetcher,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagement.Value,
+                operatorId: OperatorId.Empty.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "payload.fetched",
+                kind: AuditEventKind.PayloadFetched,
+                payload: $"{fetcher} payload={payloadId:N} token={tokenId}",
+                output: null,
+                outcome,
+                at: clock.GetUtcNow()),
+            cancellationToken);
     }
 
     private static async Task<IResult> EnrollAsync(
         HttpRequest http,
         EnrollmentService service,
         Rod.Transport.Listeners.IListenerRegistry listeners,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         TimeProvider clock,
         IAuditStore audit,
         IPayloadStore payloads,
@@ -169,7 +247,7 @@ public static class EnrollmentEndpoints
 
         var outcome = await ScopedEnrollment.EnrollAsync(
             new EnrollWireFields(
-                body.StagerTokenSecret,
+                body.DeployTokenSecret,
                 body.Class,
                 clientPublicKey,
                 body.ParentImplantId,
@@ -225,7 +303,7 @@ public static class EnrollmentEndpoints
     private static async Task<bool> TokenMatchesListenerScopeAsync(
         HttpRequest http,
         Rod.Transport.Listeners.IListenerRegistry listeners,
-        Rod.CoreState.Staging.RedeemedStagerToken token,
+        Rod.CoreState.Deployment.RedeemedDeployToken token,
         CancellationToken cancellationToken)
     {
         var listener = await listeners.FindByLocalPortAsync(http.HttpContext.Connection.LocalPort, cancellationToken);
@@ -310,7 +388,7 @@ public static class EnrollmentEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     public sealed record EnrollRequest(
-        string StagerTokenSecret,
+        string DeployTokenSecret,
         string? Class = null,
         string? PublicKey = null,
         string? ParentImplantId = null,

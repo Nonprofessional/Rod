@@ -20,7 +20,7 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance: every per-engagement action produces an attributed,
 /// immutable event in the engagement trail (architecture.md Sec 11). Drives the
-/// full operational lifecycle -- engagement created, stager token minted, implant
+/// full operational lifecycle -- engagement created, deploy token minted, implant
 /// enrolled, session opened, task issued/dispatched/completed, payload built,
 /// implant retired -- and asserts each landed as an attributed, hash-chained
 /// event on the per-engagement trail, readable through the audit endpoint. The
@@ -49,10 +49,10 @@ public class OperationalEventLogTests
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         var engagementId = Guid.Parse(engagement!.EngagementId);
 
-        // 2. Stager token minted -> StagerTokenMinted.
-        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        // 2. Deploy token minted -> DeployTokenMinted.
+        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         minted.EnsureSuccessStatusCode();
-        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         Assert.Equal(owner.Value, Guid.Parse(token!.IssuedBy));
 
         // 3. Implant enrolled (implant-initiated, attributed to the token issuer)
@@ -124,7 +124,7 @@ public class OperationalEventLogTests
         Assert.NotNull(trailResponse);
 
         // A build mints and bakes its own enrollment credential, so this walk's
-        // trail carries two StagerTokenMinted facts -- the manual mint and the
+        // trail carries two DeployTokenMinted facts -- the manual mint and the
         // baked one. The readback keys by first-of-kind and the baked shape is
         // asserted explicitly below.
         var byKind = trailResponse!.Items
@@ -132,7 +132,7 @@ public class OperationalEventLogTests
             .ToDictionary(g => g.Key, g => g.First());
         // Every lifecycle kind is present.
         Assert.Contains("EngagementCreated", byKind.Keys);
-        Assert.Contains("StagerTokenMinted", byKind.Keys);
+        Assert.Contains("DeployTokenMinted", byKind.Keys);
         Assert.Contains("ImplantEnrolled", byKind.Keys);
         Assert.Contains("SessionOpened", byKind.Keys);
         Assert.Contains("TaskIssued", byKind.Keys);
@@ -144,14 +144,14 @@ public class OperationalEventLogTests
         // The build's minted credential is on the trail with the baked shape
         // named, attributed to the owner (who authorizes the deployment
         // channel) while the build fact attributes to its requester.
-        var mints = trailResponse.Items.Where(e => e.Kind == "StagerTokenMinted").ToArray();
+        var mints = trailResponse.Items.Where(e => e.Kind == "DeployTokenMinted").ToArray();
         Assert.Equal(2, mints.Length);
         Assert.Contains(mints, e => e.Payload.Contains("bakedIntoPayload"));
         Assert.All(mints, e => Assert.Equal(owner.Value, e.OperatorId));
 
         // Each event carries the correct attribution.
         Assert.Equal(owner.Value, byKind["EngagementCreated"].OperatorId);
-        Assert.Equal(owner.Value, byKind["StagerTokenMinted"].OperatorId);
+        Assert.Equal(owner.Value, byKind["DeployTokenMinted"].OperatorId);
         // The build fact attributes to the requesting operator (the owner
         // here); the baked mint's attribution is asserted above with the mints.
         Assert.Equal(owner.Value, byKind["PayloadBuilt"].OperatorId);
@@ -196,7 +196,7 @@ public class OperationalEventLogTests
         var spki = leafKey.ExportSubjectPublicKeyInfo();
 
         var response = await http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
 

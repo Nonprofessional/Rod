@@ -52,7 +52,7 @@ public class PivotFrontingRoundTripTests
         // connects: no handshake, no session, no stream of its own.
         var now = clock.GetUtcNow();
         var engagement = EngagementId.New();
-        var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(parent);
         var child = Implant.EnrollChild(
             ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Pivot, now, parentImplantId: parent.Id);
@@ -175,7 +175,7 @@ public class PivotFrontingRoundTripTests
 
         var now = clock.GetUtcNow();
         var engagement = EngagementId.New();
-        var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(parent);
         var child = Implant.EnrollChild(
             ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Pivot, now, parentImplantId: parent.Id);

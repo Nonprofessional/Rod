@@ -116,7 +116,7 @@ public class TaskTranscriptTests
             var implants = new InMemoryImplantRepository();
             var engagement = EngagementId.New();
             var implant = Implant.Enroll(ImplantId.New(), engagement, DateTimeOffset.UnixEpoch.AddDays(30),
-                ImplantClass.Stage2, DateTimeOffset.UnixEpoch);
+                ImplantClass.Implant, DateTimeOffset.UnixEpoch);
             await implants.SaveAsync(implant);
             var tasks = new InMemoryTaskRepository();
             var service = new TaskService(tasks, implants, new InMemoryEngagementRepository(), TimeProvider.System);
@@ -144,7 +144,7 @@ public class TaskTranscriptTests
             var implants = new InMemoryImplantRepository();
             var engagement = EngagementId.New();
             var implant = Implant.Enroll(ImplantId.New(), engagement, DateTimeOffset.UnixEpoch.AddDays(30),
-                ImplantClass.Stage2, DateTimeOffset.UnixEpoch);
+                ImplantClass.Implant, DateTimeOffset.UnixEpoch);
             await implants.SaveAsync(implant);
             var service = new TaskService(
                 new InMemoryTaskRepository(), implants, new InMemoryEngagementRepository(), TimeProvider.System);

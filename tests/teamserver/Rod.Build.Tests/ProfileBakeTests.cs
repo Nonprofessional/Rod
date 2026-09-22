@@ -27,7 +27,7 @@ public class ProfileBakeTests
         => ProfileBake.Render(new BuildParams(
             new EngagementId(Guid.NewGuid()),
             new OperatorId(Guid.NewGuid()),
-            ImplantClass.Stage2,
+            ImplantClass.Implant,
             new TargetProfile("linux", "amd64"),
             new TransportProfile("https://front.example", "/beacon") { TlsTrust = trust },
             new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), KillDate: null)));

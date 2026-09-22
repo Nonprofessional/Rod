@@ -44,7 +44,7 @@ public static class PayloadJobEndpoints
         IPayloadStore payloads,
         Rod.Transport.Listeners.IListenerRegistry listeners,
         Rod.CoreState.Pki.IImplantCertificateAuthority ca,
-        Rod.CoreState.Staging.IStagerTokenService tokens,
+        Rod.CoreState.Deployment.IDeployTokenService tokens,
         TimeProvider clock,
         IAuditStore audit,
         PayloadBuildJobService jobs,

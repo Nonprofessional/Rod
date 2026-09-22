@@ -37,10 +37,9 @@ public class TaskServiceGatingTests
         => new(new InMemoryTaskRepository(), implants, new InMemoryEngagementRepository(), TimeProvider.System);
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec")]
-    [InlineData(ImplantClass.Stage2, "file.pull")]
-    [InlineData(ImplantClass.Stage2, "tunnel.forward")]
-    [InlineData(ImplantClass.Stager, "file.pull")]
+    [InlineData(ImplantClass.Implant, "shell.exec")]
+    [InlineData(ImplantClass.Implant, "file.pull")]
+    [InlineData(ImplantClass.Implant, "tunnel.forward")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Pivot, "tunnel.forward")]
     public async Task IssueAsync_AcceptsAVerbInFromClassSet(ImplantClass @class, string verb)
@@ -58,7 +57,6 @@ public class TaskServiceGatingTests
     }
 
     [Theory]
-    [InlineData(ImplantClass.Stager, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "file.push")]
     [InlineData(ImplantClass.Pivot, "shell.exec")]
     public async Task IssueAsync_RejectsAVerbOutsideTheClassSet(ImplantClass @class, string verb)
@@ -91,7 +89,7 @@ public class TaskServiceGatingTests
     public async Task IssueAsync_RejectsImplantFromAnotherEngagement()
     {
         var implants = new InMemoryImplantRepository();
-        var implant = await EnrollAsync(implants, EngagementId.New(), ImplantClass.Stage2);
+        var implant = await EnrollAsync(implants, EngagementId.New(), ImplantClass.Implant);
         var service = NewService(implants);
 
         var ex = await Assert.ThrowsAsync<TaskRejectedException>(
@@ -109,7 +107,7 @@ public class TaskServiceGatingTests
         // in the implant's class set is refused once the implant is retired.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
-        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Implant);
         implant.Retire(Now);
         var service = NewService(implants);
 
@@ -128,7 +126,7 @@ public class TaskServiceGatingTests
         IReadOnlyList<string>? carriers)
     {
         var implant = Implant.EnrollChild(
-            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now,
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Implant, Now,
             carriers: carriers);
         await implants.SaveAsync(implant);
         return implant;
@@ -251,7 +249,7 @@ public class TaskServiceGatingTests
         // core-state unit tests keep the behavior they had before .
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
-        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Implant);
         var service = NewService(implants);
 
         var ex = await Assert.ThrowsAsync<TaskRejectedException>(
@@ -271,7 +269,7 @@ public class TaskServiceGatingTests
         // resolver, not the class table alone, is the gate authority.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
-        var implant = await EnrollAsync(implants, engagement, ImplantClass.Stage2);
+        var implant = await EnrollAsync(implants, engagement, ImplantClass.Implant);
         var service = new TaskService(
             new InMemoryTaskRepository(),
             implants,

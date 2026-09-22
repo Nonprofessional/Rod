@@ -22,7 +22,7 @@ public class ImplantRetirementTests
             ImplantId.New(),
             EngagementId.New(),
             KillDate,
-            ImplantClass.Stage2,
+            ImplantClass.Implant,
             createdAt ?? Created);
 
     [Fact]

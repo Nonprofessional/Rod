@@ -68,7 +68,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,
@@ -81,7 +81,7 @@ public class PayloadBuildTests
             var body = await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
             Assert.NotNull(body);
             Assert.False(string.IsNullOrWhiteSpace(body!.ArtifactId));
-            Assert.Equal("Stage2", body.Class);
+            Assert.Equal("Implant", body.Class);
             Assert.Equal("Rust", body.Language);
             Assert.False(string.IsNullOrWhiteSpace(body.ContentType));
             Assert.True(body.Size > 0);
@@ -111,7 +111,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     Endpoint: "not a url",
@@ -127,7 +127,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,
@@ -162,7 +162,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: tcpListenerId,
@@ -177,7 +177,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: tcpListenerId,
@@ -192,7 +192,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     Endpoint: "dns://c2.example.test",
@@ -225,7 +225,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,
@@ -305,9 +305,9 @@ public class PayloadBuildTests
             // The join is live: revoking the baked credential removes the
             // token, and the next listing keeps the historical id but reads
             // no budget -- "no enrollments left" on the operator's row.
-            var tokens = host.Services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>();
+            var tokens = host.Services.GetRequiredService<Rod.CoreState.Deployment.IDeployTokenService>();
             Assert.True(await tokens.RevokeAsync(
-                new Rod.CoreState.StagerTokenId(Guid.Parse(built.TokenId!))));
+                new Rod.CoreState.DeployTokenId(Guid.Parse(built.TokenId!))));
             var revoked = await client.GetFromJsonAsync<PayloadEndpoints.PayloadSummaryResponse[]>(
                 $"/engagements/{engagementId}/payloads");
             var revokedRow = Assert.Single(revoked!);
@@ -356,7 +356,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,
@@ -388,7 +388,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,
@@ -461,7 +461,7 @@ public class PayloadBuildTests
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
                 Language: "Rust",
-                Class: "Stage2",
+                Class: "Implant",
                 TargetOs: "linux",
                 TargetArch: "amd64",
                 ListenerId: listenerId,
@@ -489,7 +489,7 @@ public class PayloadBuildTests
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: listenerId,

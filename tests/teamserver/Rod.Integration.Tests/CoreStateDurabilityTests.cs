@@ -12,7 +12,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.Persistence;
 using Rod.Transport;
@@ -138,7 +138,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
                 ImplantId.New(),
                 engagementId,
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
-                @class: ImplantClass.Stage2,
+                @class: ImplantClass.Implant,
                 createdAt: DateTimeOffset.UtcNow,
                 deployedBy: ownerId);
             parentId = parent.Id;
@@ -275,7 +275,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
                 ImplantId.New(),
                 engagementId,
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
-                @class: ImplantClass.Stage2,
+                @class: ImplantClass.Implant,
                 createdAt: DateTimeOffset.UtcNow,
                 deployedBy: ownerId);
             implantId = implant.Id;
@@ -378,7 +378,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
                 ImplantId.New(),
                 engagementId,
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
-                @class: ImplantClass.Stage2,
+                @class: ImplantClass.Implant,
                 createdAt: DateTimeOffset.UtcNow,
                 deployedBy: envA.OperatorId);
             implant.EnableReplayNonces();
@@ -415,7 +415,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
-    public async Task StagerTokens_SurviveRestart_AndRedeemAtomically_WhenPostgresWired()
+    public async Task DeployTokens_SurviveRestart_AndRedeemAtomically_WhenPostgresWired()
     {
         if (!_postgres.IsAvailable)
         {
@@ -441,7 +441,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
 
-            var tokens = envA.Host.Services.GetRequiredService<IStagerTokenService>();
+            var tokens = envA.Host.Services.GetRequiredService<IDeployTokenService>();
             var minted = await tokens.MintAsync(engagementId, ownerId, DateTimeOffset.UtcNow);
             secret = minted.Secret;
         }
@@ -453,25 +453,25 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         //     zero rather than deleting it). ---
         await using var envB = await TestEnv.StartAsync(_postgres);
 
-        var tokensB = envB.Host.Services.GetRequiredService<IStagerTokenService>();
+        var tokensB = envB.Host.Services.GetRequiredService<IDeployTokenService>();
 
         var redeemed = await tokensB.RedeemAsync(secret, DateTimeOffset.UtcNow);
         Assert.Equal(engagementId, redeemed.EngagementId);
         Assert.Equal(ownerId, redeemed.IssuedBy);
 
-        var second = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var second = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokensB.RedeemAsync(secret, DateTimeOffset.UtcNow));
-        Assert.Equal(StagerTokenRedeemReason.Spent, second.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Spent, second.Reason);
 
         // An unknown secret refuses as Unknown, and a malformed one never reaches
         // the lookup (also Unknown).
-        var unknown = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var unknown = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokensB.RedeemAsync("not-a-real-secret", DateTimeOffset.UtcNow));
-        Assert.Equal(StagerTokenRedeemReason.Unknown, unknown.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Unknown, unknown.Reason);
 
-        var malformed = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var malformed = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokensB.RedeemAsync("???!", DateTimeOffset.UtcNow));
-        Assert.Equal(StagerTokenRedeemReason.Unknown, malformed.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Unknown, malformed.Reason);
     }
 
     [Fact]
@@ -515,7 +515,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             var implants = envA.Host.Services.GetRequiredService<IImplantRepository>();
             var sessions = envA.Host.Services.GetRequiredService<ISessionRegistry>();
             var tasks = envA.Host.Services.GetRequiredService<ITaskRepository>();
-            var tokens = envA.Host.Services.GetRequiredService<IStagerTokenService>();
+            var tokens = envA.Host.Services.GetRequiredService<IDeployTokenService>();
             var audit = envA.Host.Services.GetRequiredService<IAuditStore>();
             var artifacts = envA.Host.Services.GetRequiredService<IArtifactStore>();
 
@@ -524,7 +524,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
                 ImplantId.New(),
                 engagementId,
                 killDate: DateTimeOffset.UtcNow.AddHours(1),
-                @class: ImplantClass.Stage2,
+                @class: ImplantClass.Implant,
                 createdAt: DateTimeOffset.UtcNow,
                 deployedBy: ownerId);
             implantId = implant.Id;
@@ -546,7 +546,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             dispatched!.Complete("red-team\\operator", TaskOutcome.Succeeded, DateTimeOffset.UtcNow);
             await tasks.SaveAsync(dispatched);
 
-            // A stager token minted and redeemed (so its row is spent on host B).
+            // A deploy token minted and redeemed (so its row is spent on host B).
             var minted = await tokens.MintAsync(engagementId, ownerId, DateTimeOffset.UtcNow);
             await tokens.RedeemAsync(minted.Secret, DateTimeOffset.UtcNow);
 
@@ -598,7 +598,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var implantsB = envB.Host.Services.GetRequiredService<IImplantRepository>();
         var sessionsB = envB.Host.Services.GetRequiredService<ISessionRegistry>();
         var tasksB = envB.Host.Services.GetRequiredService<ITaskRepository>();
-        var tokensB = envB.Host.Services.GetRequiredService<IStagerTokenService>();
+        var tokensB = envB.Host.Services.GetRequiredService<IDeployTokenService>();
         var auditB = envB.Host.Services.GetRequiredService<IAuditStore>();
         var artifactsB = envB.Host.Services.GetRequiredService<IArtifactStore>();
 

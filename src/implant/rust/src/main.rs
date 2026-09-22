@@ -32,7 +32,7 @@ fn main() {
         std::process::exit(2);
     };
     if profile.token.is_empty() {
-        crate::diag!("no enrollment credential (bake or ROD_STAGER_TOKEN)");
+        crate::diag!("no enrollment credential (bake or ROD_DEPLOY_TOKEN)");
         std::process::exit(2);
     }
     if profile.kill_date_passed() {

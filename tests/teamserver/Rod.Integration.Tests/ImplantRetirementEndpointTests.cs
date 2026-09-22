@@ -34,7 +34,7 @@ public class ImplantRetirementEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var secret = await MintDeployTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             // Retire the implant through the operator API. The retiring operator
@@ -106,7 +106,7 @@ public class ImplantRetirementEndpointTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var secret = await MintDeployTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             var first = await client.PostAsync(
@@ -168,18 +168,18 @@ public class ImplantRetirementEndpointTests
         return created!.EngagementId;
     }
 
-    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return token!.Secret;
     }
 
     private static async Task<string> EnrollAsync(HttpClient client, string secret)
     {
         var response = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: null));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
         return enrolled!.ImplantId!;

@@ -24,8 +24,8 @@ internal static class IdConverters
     public static ValueConverter<EngagementId, Guid> EngagementId { get; } =
         new(id => id.Value, value => new EngagementId(value));
 
-    public static ValueConverter<StagerTokenId, Guid> StagerTokenId { get; } =
-        new(id => id.Value, value => new StagerTokenId(value));
+    public static ValueConverter<DeployTokenId, Guid> DeployTokenId { get; } =
+        new(id => id.Value, value => new DeployTokenId(value));
 
     public static ValueConverter<LauncherId, Guid> LauncherId { get; } =
         new(id => id.Value, value => new LauncherId(value));

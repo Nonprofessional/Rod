@@ -12,8 +12,8 @@ using Rod.Persistence;
 namespace Rod.Persistence.Migrations
 {
     [DbContext(typeof(RodPersistenceDbContext))]
-    [Migration("20260812044442_AddOperatorCredentials")]
-    partial class AddOperatorCredentials
+    [Migration("20260922130508_RenameDeployTokensAndSoftRevoke")]
+    partial class RenameDeployTokensAndSoftRevoke
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -165,6 +165,14 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset?>("FrozenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("frozen_at");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -174,6 +182,15 @@ namespace Rod.Persistence.Migrations
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_id");
+
+                    b.Property<DateTimeOffset?>("RetiredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("retired_at");
+
+                    b.Property<string>("Roe")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("roe");
 
                     b.HasKey("Id");
 
@@ -185,6 +202,14 @@ namespace Rod.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("implant_id");
+
+                    b.Property<string>("Arch")
+                        .HasColumnType("text")
+                        .HasColumnName("arch");
+
+                    b.Property<string>("Carriers")
+                        .HasColumnType("text")
+                        .HasColumnName("carriers");
 
                     b.Property<int>("Class")
                         .HasColumnType("integer")
@@ -202,23 +227,49 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("engagement_id");
 
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasColumnName("key");
+                    b.Property<Guid?>("EnrolledViaListenerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrolled_via_listener_id");
 
-                    b.Property<DateTimeOffset>("KillDate")
+                    b.Property<string>("Hostname")
+                        .HasColumnType("text")
+                        .HasColumnName("hostname");
+
+                    b.Property<double?>("JitterSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("jitter_seconds");
+
+                    b.Property<DateTimeOffset?>("KillDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("kill_date");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Os")
+                        .HasColumnType("text")
+                        .HasColumnName("os");
 
                     b.Property<Guid?>("ParentImplantId")
                         .HasColumnType("uuid")
                         .HasColumnName("parent_implant_id");
 
+                    b.Property<bool>("ReplayNonces")
+                        .HasColumnType("boolean")
+                        .HasColumnName("replay_nonces");
+
                     b.Property<DateTimeOffset?>("RetiredAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("retired_at");
+
+                    b.Property<double?>("SleepSeconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("sleep_seconds");
+
+                    b.Property<string>("Username")
+                        .HasColumnType("text")
+                        .HasColumnName("username");
 
                     b.HasKey("Id");
 
@@ -226,6 +277,76 @@ namespace Rod.Persistence.Migrations
                         .HasDatabaseName("ix_implants_engagement_id");
 
                     b.ToTable("implants", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.CoreState.Launchers.Launcher", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("launcher_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("FrontEndpoint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("front_endpoint");
+
+                    b.Property<string>("FrontName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("front_name");
+
+                    b.Property<Guid>("ListenerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("listener_id");
+
+                    b.Property<int>("MaxUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_uses");
+
+                    b.Property<Guid>("PayloadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payload_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("TokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_id");
+
+                    b.Property<string>("TokenSecret")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_secret");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_launchers_engagement_id");
+
+                    b.ToTable("launchers", (string)null);
                 });
 
             modelBuilder.Entity("Rod.CoreState.Operators.Operator", b =>
@@ -278,6 +399,10 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("implant_id");
 
+                    b.Property<string>("LastCarrier")
+                        .HasColumnType("text")
+                        .HasColumnName("last_carrier");
+
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_seen_at");
@@ -301,6 +426,52 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("sessions", (string)null);
                 });
 
+            modelBuilder.Entity("Rod.CoreState.ShellSessions.ShellSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("shell_session_id");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<DateTimeOffset?>("LastInputAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_input_at");
+
+                    b.Property<DateTimeOffset?>("LastOutputAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_output_at");
+
+                    b.Property<Guid>("ListenerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("listener_id");
+
+                    b.Property<DateTimeOffset>("OpenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("opened_at");
+
+                    b.Property<int>("Os")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RemoteAddress")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("shell_sessions", (string)null);
+                });
+
             modelBuilder.Entity("Rod.CoreState.Tasks.Task", b =>
                 {
                     b.Property<Guid>("Id")
@@ -311,6 +482,10 @@ namespace Rod.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("arguments");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
 
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
@@ -351,6 +526,10 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("output");
 
+                    b.Property<long?>("StagedBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("staged_bytes");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -375,31 +554,67 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("tasks", (string)null);
                 });
 
-            modelBuilder.Entity("Rod.Persistence.Configurations.StoredOperatorCredential", b =>
+            modelBuilder.Entity("Rod.CoreState.WebShells.WebShellProfile", b =>
                 {
-                    b.Property<Guid>("OperatorId")
+                    b.Property<Guid>("ImplantId")
                         .HasColumnType("uuid")
-                        .HasColumnName("operator_id");
+                        .HasColumnName("implant_id");
 
-                    b.Property<string>("PasswordHash")
+                    b.Property<string>("AdapterId")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("password_hash");
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
-                    b.Property<DateTimeOffset>("UpdatedAt")
+                    b.Property<string>("Decoder")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Encoder")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<DateTimeOffset?>("LastProbeAt")
                         .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
+                        .HasColumnName("last_probe_at");
 
-                    b.HasKey("OperatorId");
+                    b.Property<bool?>("LastProbeOk")
+                        .HasColumnType("boolean")
+                        .HasColumnName("last_probe_ok");
 
-                    b.ToTable("operator_credentials", (string)null);
+                    b.Property<string>("Password")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("RegisteredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("registered_at");
+
+                    b.Property<Guid>("RegisteredBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("registered_by");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.HasKey("ImplantId");
+
+                    b.ToTable("webshell_profiles", (string)null);
                 });
 
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredDeployToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
-                        .HasColumnName("stager_token_id");
+                        .HasColumnName("deploy_token_id");
 
                     b.Property<Guid>("EngagementId")
                         .HasColumnType("uuid")
@@ -430,44 +645,151 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("remaining_uses");
 
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Hash")
                         .IsUnique()
-                        .HasDatabaseName("ux_stager_tokens_secret_hash");
+                        .HasDatabaseName("ux_deploy_tokens_secret_hash");
 
-                    b.ToTable("stager_tokens", (string)null);
+                    b.ToTable("deploy_tokens", (string)null);
                 });
 
-            modelBuilder.Entity("Rod.CoreState.Engagements.Engagement", b =>
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredImplantTaskNonce", b =>
                 {
-                    b.OwnsMany("Rod.CoreState.Engagements.EngagementMembership", "Members", b1 =>
-                        {
-                            b1.Property<Guid>("EngagementId")
-                                .HasColumnType("uuid")
-                                .HasColumnName("engagement_id");
+                    b.Property<Guid>("ImplantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("implant_id");
 
-                            b1.Property<Guid>("OperatorId")
-                                .HasColumnType("uuid")
-                                .HasColumnName("operator_id");
+                    b.Property<long>("NonceFloor")
+                        .HasColumnType("bigint")
+                        .HasColumnName("nonce_floor");
 
-                            b1.Property<DateTimeOffset>("AddedAt")
-                                .HasColumnType("timestamp with time zone")
-                                .HasColumnName("added_at");
+                    b.HasKey("ImplantId");
 
-                            b1.Property<int>("Role")
-                                .HasColumnType("integer")
-                                .HasColumnName("role");
+                    b.ToTable("implant_task_nonces", (string)null);
+                });
 
-                            b1.HasKey("EngagementId", "OperatorId");
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredListenerDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("listener_id");
 
-                            b1.ToTable("engagement_members", (string)null);
+                    b.Property<string>("BindAddress")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("bind_address");
 
-                            b1.WithOwner()
-                                .HasForeignKey("EngagementId");
-                        });
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
 
-                    b.Navigation("Members");
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PublicEndpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("public_endpoint");
+
+                    b.Property<DateTimeOffset?>("RepointedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("repointed_at");
+
+                    b.Property<string>("Transport")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("transport");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_listener_definitions_engagement_id");
+
+                    b.ToTable("listener_definitions", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredOperatorApiToken", b =>
+                {
+                    b.Property<Guid>("TokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("Hash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("hash");
+
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operator_id");
+
+                    b.HasKey("TokenId");
+
+                    b.HasIndex("Hash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_operator_api_tokens_hash");
+
+                    b.HasIndex("OperatorId");
+
+                    b.ToTable("operator_api_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredOperatorCredential", b =>
+                {
+                    b.Property<Guid>("OperatorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operator_id");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("OperatorId");
+
+                    b.ToTable("operator_credentials", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredImplantTaskNonce", b =>
+                {
+                    b.HasOne("Rod.CoreState.Implants.Implant", null)
+                        .WithOne()
+                        .HasForeignKey("Rod.Persistence.Configurations.StoredImplantTaskNonce", "ImplantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredOperatorApiToken", b =>
+                {
+                    b.HasOne("Rod.CoreState.Operators.Operator", null)
+                        .WithMany()
+                        .HasForeignKey("OperatorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredOperatorCredential", b =>

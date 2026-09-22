@@ -90,7 +90,7 @@ public class WebShellServiceTests
 
         // An implant row that is not a web-shell never resolves here.
         var stage2 = Implant.Enroll(
-            ImplantId.New(), engagement.Id, At.AddDays(30), ImplantClass.Stage2, At);
+            ImplantId.New(), engagement.Id, At.AddDays(30), ImplantClass.Implant, At);
         Assert.Null(await service.FindAsync(engagement.Id, stage2.Id));
     }
 

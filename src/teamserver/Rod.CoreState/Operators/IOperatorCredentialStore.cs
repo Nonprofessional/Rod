@@ -6,7 +6,7 @@ namespace Rod.CoreState.Operators;
 /// password -- keyed by operator id. The domain neither produces nor interprets
 /// the value: provisioning hashes a chosen password in the auth layer and calls
 /// <see cref="SetHashAsync"/>; login reads the stored hash back and the auth
-/// layer verifies it. This is the operator-facing twin of the stager-token
+/// layer verifies it. This is the operator-facing twin of the deploy-token
 /// hash-only rule (the stager service keeps a digest, never the secret), and
 /// like that port the in-memory implementation lives in core state while the
 /// durable PostgreSQL adapter lives in Rod.Persistence (ADR 0003).

@@ -154,4 +154,18 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, kind, OperatorId.Empty, ImplantId: null, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a payload-fetched event: an artifact was fetched over an
+    /// engagement front's delivery route (architecture.md Sec 6), spending one
+    /// use of the launcher credential it presented. System-initiated (the
+    /// fetch), so it is attributed to the null operator; no implant or task
+    /// exists yet, and <paramref name="payload"/> describes the fetcher for
+    /// direct rendering.
+    /// </summary>
+    public static LiveEvent PayloadFetched(
+        EngagementId engagement,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.PayloadFetched, OperatorId.Empty, ImplantId: null, TaskId: null, payload, at);
 }

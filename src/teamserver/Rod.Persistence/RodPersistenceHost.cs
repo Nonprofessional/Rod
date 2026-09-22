@@ -10,7 +10,7 @@ using Rod.CoreState.Operators;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.ShellSessions;
 using Rod.CoreState.WebShells;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.Persistence.Stores;
 
@@ -70,7 +70,7 @@ public static class RodPersistenceHost
         // application services that consume the ports. All ten core-state and
         // audit/artifact ports are now Postgres-backed when this extension runs:
         // operators, operator credentials, operator API tokens, engagements,
-        // implants, sessions, tasks, stager tokens, audit, and artifacts.
+        // implants, sessions, tasks, deploy tokens, audit, and artifacts.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
         // The operator password verifier: the in-memory adapter registered by
         // AddRodTransport is replaced by its durable twin so a provisioned
@@ -94,7 +94,7 @@ public static class RodPersistenceHost
         services.Replace(ServiceDescriptor.Singleton<IShellSessionRegistry, Stores.PostgresShellSessionRegistry>());
         services.Replace(ServiceDescriptor.Singleton<CoreState.WebShells.IWebShellProfileRepository, Stores.PostgresWebShellProfileRepository>());
         services.Replace(ServiceDescriptor.Singleton<ITaskRepository, PostgresTaskRepository>());
-        services.Replace(ServiceDescriptor.Singleton<IStagerTokenService, PostgresStagerTokenService>());
+        services.Replace(ServiceDescriptor.Singleton<IDeployTokenService, PostgresDeployTokenService>());
         // Engagement-scoped listener definitions: the durable pair so a restart
         // rebinds the listeners the operator created per engagement.
         services.Replace(ServiceDescriptor.Singleton<IListenerStore, PostgresListenerStore>());

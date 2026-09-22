@@ -9,7 +9,7 @@ namespace Rod.Transport.Listeners;
 /// presented token against <see cref="EngagementId"/>), and the startup-
 /// configuration tier -- the operator front and any deliberately shared
 /// ingress -- which leaves <see cref="EngagementId"/> null and carries no
-/// implant ingress at all: enrollment and the stage-2 fetch are refused on
+/// implant ingress at all: enrollment and the payload fetch are refused on
 /// it outright. A redirector fronts a listener;
 /// a burned redirector is replaced without touching the backend.
 ///

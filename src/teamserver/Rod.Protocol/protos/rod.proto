@@ -184,7 +184,7 @@ message TaskAck {
   string task_id = 1;
 }
 
-// Enrollment outcome, mapped from the stager-token redeem result
+// Enrollment outcome, mapped from the deploy-token redeem result
 // (architecture.md Sec.9). The transport endpoint maps each redeem failure to a
 // distinct status so an implant gets an actionable reason, not just "no".
 enum EnrollStatus {
@@ -199,7 +199,7 @@ enum EnrollStatus {
 // (camelCase keys, base64 certificate material); the QUIC opening exchange
 // carries the same fields as this frame payload (architecture.md Sec 8 --
 // enrollment over QUIC, the JSON body promoted into the frame grammar).
-// stager_token_secret is the deployment credential the enrollment redeems;
+// deploy_token_secret is the deployment credential the enrollment redeems;
 // class names an implant class (empty defaults server-side); public_key is
 // the implant's own DER SubjectPublicKeyInfo, a Tier 0 obligation the
 // server validates (the implant keeps its private half; no in-tree family
@@ -217,7 +217,7 @@ enum EnrollStatus {
 // no cadence for it. The live cadence re-advertises at every handshake, so a
 // beacon.sleep retune lands on the record at the next contact.
 message EnrollRequest {
-  string stager_token_secret = 1;
+  string deploy_token_secret = 1;
   string class = 2;
   bytes public_key = 3;
   string parent_implant_id = 4;

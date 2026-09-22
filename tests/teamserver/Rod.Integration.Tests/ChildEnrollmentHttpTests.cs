@@ -37,20 +37,20 @@ public class ChildEnrollmentHttpTests
 
             // A parent enrolls first (top-level, no parent of its own).
             var parentResponse = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             Assert.Equal(HttpStatusCode.OK, parentResponse.StatusCode);
             var parent = await parentResponse.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(parent);
             Assert.Null(parent!.ParentImplantId); // top-level implant has no parent
 
             // Mint a fresh token for the same engagement so the child can enroll
-            // (stager tokens are single-use).
-            var childSecret = await MintStagerTokenAsync(client, engagementId);
+            // (deploy tokens are single-use).
+            var childSecret = await MintDeployTokenAsync(client, engagementId);
 
             // The child enrolls carrying the parent id.
             var childResponse = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: childSecret,
+                    DeployTokenSecret: childSecret,
                     Class: null,
                     PublicKey: null,
                     ParentImplantId: parent.ImplantId));
@@ -86,7 +86,7 @@ public class ChildEnrollmentHttpTests
             // Two independent engagements with their own tokens and parents.
             var (_, parentSecret) = await MintTokenForNewEngagementAsync(client);
             var parentResponse = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: parentSecret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: parentSecret, Class: null));
             var parent = await parentResponse.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
 
             var (otherEngagement, childSecret) = await MintTokenForNewEngagementAsync(client);
@@ -95,7 +95,7 @@ public class ChildEnrollmentHttpTests
             // foreign parent.
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: childSecret,
+                    DeployTokenSecret: childSecret,
                     Class: null,
                     PublicKey: null,
                     ParentImplantId: parent!.ImplantId));
@@ -126,7 +126,7 @@ public class ChildEnrollmentHttpTests
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: secret,
+                    DeployTokenSecret: secret,
                     Class: null,
                     PublicKey: null,
                     ParentImplantId: "not-a-guid"));
@@ -143,7 +143,7 @@ public class ChildEnrollmentHttpTests
         return (client, host);
     }
 
-    // Creates an engagement and mints its first stager token in one shot. Returns
+    // Creates an engagement and mints its first deploy token in one shot. Returns
     // (engagementId, secret) so a test can derive further tokens for siblings.
     private static async Task<(string EngagementId, string Secret)> MintTokenForNewEngagementAsync(HttpClient client)
     {
@@ -152,15 +152,15 @@ public class ChildEnrollmentHttpTests
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);
-        var secret = await MintStagerTokenAsync(client, created!.EngagementId);
+        var secret = await MintDeployTokenAsync(client, created!.EngagementId);
         return (created.EngagementId, secret);
     }
 
-    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return token!.Secret;
     }
 }

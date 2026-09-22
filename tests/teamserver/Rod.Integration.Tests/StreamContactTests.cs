@@ -68,7 +68,7 @@ public class StreamContactTests
 
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Stage2, now);
+            ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
 
         // The listener entry is registered and running, with the endpoint

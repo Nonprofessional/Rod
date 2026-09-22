@@ -4,7 +4,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.Integration.Tests;
 
@@ -30,12 +30,12 @@ public class ChildEnrollmentServiceTests
 
     // Builds the service against the in-memory ports, mirroring
     // EnrollmentServiceTests.NewService. The engagements repo is shared with the
-    // stager-token service so a minted token resolves to a real engagement.
-    private static (EnrollmentService Service, IStagerTokenService Tokens, IEngagementRepository Engagements, IImplantRepository Implants) NewService(
+    // deploy-token service so a minted token resolves to a real engagement.
+    private static (EnrollmentService Service, IDeployTokenService Tokens, IEngagementRepository Engagements, IImplantRepository Implants) NewService(
         TimeProvider? clock = null)
     {
         var engagements = new InMemoryEngagementRepository();
-        var tokens = new InMemoryStagerTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements);
         var implants = new InMemoryImplantRepository();
         var ca = new DevCertificateAuthority();
         var service = new EnrollmentService(engagements, tokens, implants, ca, clock ?? new FakeClock(Now));
@@ -46,7 +46,7 @@ public class ChildEnrollmentServiceTests
     // owner is a member of the engagement it mints for (required by the token
     // service).
     private static async Task<(string Secret, EngagementId Engagement)> MintTokenAsync(
-        IEngagementRepository engagements, IStagerTokenService tokens)
+        IEngagementRepository engagements, IDeployTokenService tokens)
     {
         var owner = OperatorId.New();
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
@@ -62,7 +62,7 @@ public class ChildEnrollmentServiceTests
         IImplantRepository implants, EngagementId engagement)
     {
         var parent = Implant.Enroll(
-            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Implant, Now);
         await implants.SaveAsync(parent);
         return parent;
     }

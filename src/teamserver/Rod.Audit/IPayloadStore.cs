@@ -48,7 +48,7 @@ public interface IPayloadStore
 
     /// <summary>
     /// Removes a payload from the engagement: the stored bytes and the library
-    /// listing are gone, a stager fetching this payload 404s from now on, and
+    /// listing are gone, a fetch of this payload 404s from now on, and
     /// the deletion is the caller's to audit. Returns false when no such
     /// payload exists in that engagement.
     /// </summary>

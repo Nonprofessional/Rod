@@ -25,8 +25,8 @@ public class CapabilityRegistryTaskResolverTests
         // first and short-circuits before the registry is consulted.
         var resolver = new CapabilityRegistryTaskResolver(new InMemoryCapabilityRegistry());
 
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, "shell.exec"));
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stager, "file.pull"));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Implant, "shell.exec"));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Pivot, "tunnel.socks"));
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class CapabilityRegistryTaskResolverTests
         // refuses it, so a nonsense verb never reaches the queue.
         var resolver = new CapabilityRegistryTaskResolver(new InMemoryCapabilityRegistry());
 
-        Assert.False(resolver.IsDispatchable(ImplantClass.Stage2, "does.not.exist"));
+        Assert.False(resolver.IsDispatchable(ImplantClass.Implant, "does.not.exist"));
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class CapabilityRegistryTaskResolverTests
                 CapabilityDescriptor.Of(EvasionCapabilities.Avoid, CapabilityCategory.Evasion, "1.0")));
         var resolver = new CapabilityRegistryTaskResolver(registry);
 
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stager, EvasionCapabilities.Avoid));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Pivot, EvasionCapabilities.Avoid));
         Assert.True(resolver.IsDispatchable(ImplantClass.WebShell, EvasionCapabilities.Avoid));
     }
 
@@ -67,7 +67,7 @@ public class CapabilityRegistryTaskResolverTests
         await registry.RegisterAsync(new FixedModule(ExploitCapabilities.Invoke));
         var resolver = new CapabilityRegistryTaskResolver(registry);
 
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, ExploitCapabilities.Invoke));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Implant, ExploitCapabilities.Invoke));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class CapabilityRegistryTaskResolverTests
         // narrows it.
         var resolver = new CapabilityRegistryTaskResolver(new InMemoryCapabilityRegistry());
 
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, "recon.portscan"));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Implant, "recon.portscan"));
     }
 
     // A module whose descriptor is fixed, standing in for an operator-supplied

@@ -24,7 +24,7 @@ function iconForKind(kind: string) {
   if (kind.startsWith('Roe') || kind.startsWith('Channel') || kind.startsWith('Relay'))
     return 'list'
   if (kind.startsWith('Payload')) return 'package'
-  if (kind.startsWith('Stager')) return 'inbox'
+  if (kind.startsWith('DeployToken')) return 'inbox'
   return 'clock'
 }
 

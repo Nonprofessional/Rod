@@ -90,6 +90,9 @@ export function EngagementView({
       onSessionClosed: () => setTick((t) => t + 1),
       onShellSessionOpened: () => setTick((t) => t + 1),
       onShellSessionEnded: () => setTick((t) => t + 1),
+      // A launcher credential was spent by an actual download: the kept
+      // rows' budgets and the audit trail both move on it.
+      onPayloadFetched: () => setTick((t) => t + 1),
     })
     return close
   }, [engagementId])
@@ -162,7 +165,7 @@ export function EngagementView({
       {tab === 'timeline' && <TimelineView engagementId={engagementId} />}
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
-      {tab === 'launchers' && <LaunchersView engagementId={engagementId} />}
+      {tab === 'launchers' && <LaunchersView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
       {tab === 'payloads' && <PayloadsView engagementId={engagementId} />}
     </LiveContext.Provider>

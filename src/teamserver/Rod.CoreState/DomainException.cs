@@ -18,24 +18,28 @@ public abstract class DomainException : InvalidOperationException
     }
 }
 
-/// <summary>A stager-token operation violated its rules -- e.g. unknown engagement.</summary>
-public class StagerTokenException : DomainException
+/// <summary>A deploy-token operation violated its rules -- e.g. unknown engagement.</summary>
+public class DeployTokenException : DomainException
 {
-    public StagerTokenException(string message)
+    public DeployTokenException(string message)
         : base(message)
     {
     }
 }
 
 /// <summary>
-/// Why a stager-token redeem failed. Carried on
-/// <see cref="StagerTokenRedeemException"/> so the enroll endpoint can map each
+/// Why a deploy-token redeem failed. Carried on
+/// <see cref="DeployTokenRedeemException"/> so the enroll endpoint can map each
 /// reason to a distinct wire status code (architecture.md Sec 9) without the
 /// core depending on the wire protocol.
 /// </summary>
-public enum StagerTokenRedeemReason
+public enum DeployTokenRedeemReason
 {
-    /// <summary>No token matched the presented secret (unknown, malformed, or wrong).</summary>
+    /// <summary>
+    /// No token matched the presented secret (unknown, malformed, or wrong) --
+    /// including a credential whose row was hard-deleted: deletion removes the
+    /// resolution itself, so a deleted credential's secrets read as nobody's.
+    /// </summary>
     Unknown,
 
     /// <summary>The matched token had passed its hard expiry.</summary>
@@ -43,21 +47,46 @@ public enum StagerTokenRedeemReason
 
     /// <summary>The matched token had no remaining uses.</summary>
     Spent,
+
+    /// <summary>The matched token had been revoked; it still resolves to its engagement.</summary>
+    Revoked,
 }
 
 /// <summary>
-/// A stager-token redeem was refused -- the secret matched no token, or the
-/// matched token was expired or spent. <see cref="Reason"/> is the actionable
-/// cause; the caller maps it to a wire status.
+/// A deploy-token redeem was refused -- the secret matched no token, or the
+/// matched token was expired, spent, or revoked. <see cref="Reason"/> is the
+/// actionable cause; the caller maps it to a wire status. When the secret did
+/// resolve a stored token, <see cref="EngagementId"/> and
+/// <see cref="TokenId"/> carry the attribution so a caller can record the
+/// refusal against the engagement it targeted; an unknown secret belongs to
+/// no engagement and carries nothing.
 /// </summary>
-public sealed class StagerTokenRedeemException : StagerTokenException
+public sealed class DeployTokenRedeemException : DeployTokenException
 {
-    public StagerTokenRedeemReason Reason { get; }
+    public DeployTokenRedeemReason Reason { get; }
 
-    public StagerTokenRedeemException(StagerTokenRedeemReason reason, string message)
+    /// <summary>The engagement the resolved token belongs to; null when unknown.</summary>
+    public EngagementId? EngagementId { get; }
+
+    /// <summary>The resolved token; null when unknown.</summary>
+    public DeployTokenId? TokenId { get; }
+
+    public DeployTokenRedeemException(DeployTokenRedeemReason reason, string message)
         : base(message)
     {
         Reason = reason;
+    }
+
+    public DeployTokenRedeemException(
+        DeployTokenRedeemReason reason,
+        string message,
+        EngagementId engagementId,
+        DeployTokenId tokenId)
+        : base(message)
+    {
+        Reason = reason;
+        EngagementId = engagementId;
+        TokenId = tokenId;
     }
 }
 
@@ -65,7 +94,7 @@ public sealed class StagerTokenRedeemException : StagerTokenException
 /// Why a handshake was refused. Carried on <see cref="HandshakeException"/> so
 /// the transport endpoint can map each reason to a distinct wire status
 /// (architecture.md Sec 9) without the core depending on the wire protocol --
-/// mirroring <see cref="StagerTokenRedeemReason"/>.
+/// mirroring <see cref="DeployTokenRedeemReason"/>.
 /// </summary>
 public enum HandshakeReason
 {
@@ -118,7 +147,7 @@ public sealed class HandshakeException : DomainException
 /// Why a task issuance was refused. Carried on <see cref="TaskRejectedException"/>
 /// so the task endpoint can map each reason to a distinct HTTP status
 /// (architecture.md Sec 10.3) without the core depending on the transport --
-/// mirroring <see cref="HandshakeReason"/> and <see cref="StagerTokenRedeemReason"/>.
+/// mirroring <see cref="HandshakeReason"/> and <see cref="DeployTokenRedeemReason"/>.
 /// </summary>
 public enum TaskRejectionReason
 {
@@ -193,7 +222,7 @@ public sealed class TaskRejectedException : DomainException
 /// <see cref="InvalidParentImplantException"/> so the enroll endpoint can map
 /// each reason to a distinct wire status code (architecture.md Sec 5.2/9)
 /// without the core depending on the wire protocol -- mirroring
-/// <see cref="StagerTokenRedeemReason"/>.
+/// <see cref="DeployTokenRedeemReason"/>.
 /// </summary>
 public enum InvalidParentImplantReason
 {
@@ -237,7 +266,7 @@ public sealed class InvalidParentImplantException : DomainException
 
 /// <summary>
 /// The engagement is closed for close-out -- frozen or retired (architecture.md
-/// Sec 2 step 10). Thrown by the deployment paths (enrollment, stager-token
+/// Sec 2 step 10). Thrown by the deployment paths (enrollment, deploy-token
 /// mint) so a closed engagement accepts no new implants; the caller maps it to
 /// a wire status. Distinct from the aggregate's own transition guards, which
 /// reject an out-of-order freeze or retire.

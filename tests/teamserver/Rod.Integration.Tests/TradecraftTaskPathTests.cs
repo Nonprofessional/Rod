@@ -66,7 +66,7 @@ public class TradecraftTaskPathTests
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
         return implant;
     }
@@ -105,7 +105,7 @@ public class TradecraftTaskPathTests
     {
         // The evasion/exploit verbs are not class-gated (architecture.md Sec
         // 5.2/10.1), so the resolver admits them on a reduced class too: a
-        // stager or web-shell can be tasked with one when a module is registered,
+        // web-shell can be tasked with one when a module is registered,
         // because the operator decides which class runs the out-of-tree module,
         // not a baked-in rule.
         var (client, host) = CreateClient();
@@ -117,7 +117,7 @@ public class TradecraftTaskPathTests
             var clock = host.Services.GetRequiredService<TimeProvider>();
             var now = clock.GetUtcNow();
             var implant = Implant.Enroll(
-                ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.Stager, now);
+                ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.WebShell, now);
             await implants.SaveAsync(implant);
 
             var response = await client.PostAsJsonAsync(

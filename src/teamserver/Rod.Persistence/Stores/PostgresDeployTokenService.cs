@@ -2,13 +2,13 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Persistence.Configurations;
 
 namespace Rod.Persistence.Stores;
 
 /// <summary>
-/// PostgreSQL-backed <see cref="IStagerTokenService"/> (ADR 0003). Mints a
+/// PostgreSQL-backed <see cref="IDeployTokenService"/> (ADR 0003). Mints a
 /// 32-byte crypto-random secret, returns the base64url plaintext exactly once,
 /// and stores only its SHA-256 hash so the clear secret is never persisted.
 /// Redeem is the entry point of enrollment: the presented plaintext is hashed,
@@ -29,12 +29,12 @@ namespace Rod.Persistence.Stores;
 /// <para>
 /// A spent token is kept at <c>remaining_uses = 0</c> rather than deleted (the
 /// in-memory service deletes at zero), so a later redeem attempt reads
-/// <see cref="StagerTokenRedeemReason.Spent"/> instead of
-/// <see cref="StagerTokenRedeemReason.Unknown"/> and the spent row stays in the
+/// <see cref="DeployTokenRedeemReason.Spent"/> instead of
+/// <see cref="DeployTokenRedeemReason.Unknown"/> and the spent row stays in the
 /// store for auditing. This is the deliberate durable analogue.
 /// </para>
 /// </remarks>
-internal sealed class PostgresStagerTokenService : IStagerTokenService
+internal sealed class PostgresDeployTokenService : IDeployTokenService
 {
     // The fall-back shape when a mint names no scope: single-use, one hour.
     // A batch mint passes explicit maxUses/lifetime through the service.
@@ -44,7 +44,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
     private readonly IEngagementRepository _engagements;
     private readonly IDbContextFactory<RodPersistenceDbContext> _factory;
 
-    public PostgresStagerTokenService(
+    public PostgresDeployTokenService(
         IEngagementRepository engagements,
         IDbContextFactory<RodPersistenceDbContext> factory)
     {
@@ -52,7 +52,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         _factory = factory;
     }
 
-    public async Task<StagerToken> MintAsync(
+    public async Task<DeployToken> MintAsync(
         EngagementId engagementId,
         OperatorId issuedBy,
         DateTimeOffset issuedAt,
@@ -61,19 +61,19 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         CancellationToken cancellationToken = default)
     {
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
-            ?? throw new StagerTokenException($"Engagement {engagementId} does not exist.");
+            ?? throw new DeployTokenException($"Engagement {engagementId} does not exist.");
 
         if (engagement.OwnerId != issuedBy)
-            throw new StagerTokenException(
-                $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint stager tokens for it.");
+            throw new DeployTokenException(
+                $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint deploy tokens for it.");
 
         var effectiveMaxUses = maxUses ?? DefaultMaxUses;
         var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);
         var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var id = StagerTokenId.New();
+        var id = DeployTokenId.New();
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        db.StagerTokens.Add(new StoredStagerToken
+        db.DeployTokens.Add(new StoredDeployToken
         {
             Id = id,
             EngagementId = engagementId,
@@ -86,7 +86,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        return new StagerToken
+        return new DeployToken
         {
             Id = id,
             EngagementId = engagementId,
@@ -98,7 +98,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         };
     }
 
-    public async Task<RedeemedStagerToken> RedeemAsync(
+    public async Task<RedeemedDeployToken> RedeemAsync(
         string secret,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
@@ -112,7 +112,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         }
         catch (FormatException)
         {
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is malformed.");
+            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
         }
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -121,20 +121,21 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         // Read the row by digest for the result and the refusal reason. The
         // consumed columns (Id, EngagementId, IssuedBy) are immutable, so reading
         // them before the consume is safe.
-        var entry = await db.StagerTokens
+        var entry = await db.DeployTokens
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Hash == presentedHash, cancellationToken);
         if (entry is null)
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
+            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is unknown.");
 
         // Atomic check-then-consume: the UPDATE matches only when every
         // precondition holds, so two concurrent redeems of a single-use token
         // cannot both succeed. An unlimited budget (max_uses 0) matches without
         // decrementing -- the row stays whole for every redeem until it expires
         // or is revoked. rowsAffected tells consume vs. refusal; the prior read
-        // distinguishes Expired from Spent.
-        var rowsAffected = await db.StagerTokens
+        // distinguishes Revoked, Expired, and Spent.
+        var rowsAffected = await db.DeployTokens
             .Where(t => t.Hash == presentedHash
+                && t.RevokedAt == null
                 && now <= t.ExpiresAt
                 && (t.MaxUses == 0 || t.RemainingUses > 0))
             .ExecuteUpdateAsync(
@@ -146,7 +147,7 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         if (rowsAffected == 1)
         {
             await tx.CommitAsync(cancellationToken);
-            return new RedeemedStagerToken
+            return new RedeemedDeployToken
             {
                 Id = entry.Id,
                 EngagementId = entry.EngagementId,
@@ -154,37 +155,65 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
             };
         }
 
-        // The row exists but the conditional UPDATE matched nothing: either the
-        // token has passed its expiry or it has no uses left. The order matches
-        // the in-memory service (Expired before Spent).
-        throw now > entry.ExpiresAt
-            ? new StagerTokenRedeemException(StagerTokenRedeemReason.Expired, "Stager token has expired.")
-            : new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
+        // The row exists but the conditional UPDATE matched nothing: revoked,
+        // expired, or out of uses. The order matches the in-memory service
+        // (Revoked, then Expired, then Spent), and every refusal carries the
+        // matched row's attribution.
+        throw Refusal(entry, now);
     }
 
-    public async Task<bool> RevokeAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+    // Builds the refusal for a matched row, reason first and attribution
+    // always aboard -- the durable twin of the in-memory service's ordering.
+    private static DeployTokenRedeemException Refusal(StoredDeployToken entry, DateTimeOffset now)
+        => entry.RevokedAt is not null
+            ? new DeployTokenRedeemException(
+                DeployTokenRedeemReason.Revoked, "Deploy token was revoked.",
+                entry.EngagementId, entry.Id)
+            : now > entry.ExpiresAt
+                ? new DeployTokenRedeemException(
+                    DeployTokenRedeemReason.Expired, "Deploy token has expired.",
+                    entry.EngagementId, entry.Id)
+                : new DeployTokenRedeemException(
+                    DeployTokenRedeemReason.Spent, "Deploy token has no remaining uses.",
+                    entry.EngagementId, entry.Id);
+
+    public async Task<bool> RevokeAsync(DeployTokenId id, CancellationToken cancellationToken = default)
     {
+        // The soft kill: stamp revoked_at and keep the row, so later attempts
+        // read Revoked with their engagement attribution. True only on the
+        // flip -- an already-revoked row answers false, the same honesty an
+        // absent one does.
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        var stored = await db.StagerTokens.FindAsync(new object[] { id }, cancellationToken);
-        if (stored is null)
-            return false;
-        db.StagerTokens.Remove(stored);
-        await db.SaveChangesAsync(cancellationToken);
-        return true;
+        var rows = await db.DeployTokens
+            .Where(t => t.Id == id && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTimeOffset.UtcNow), cancellationToken);
+        return rows == 1;
     }
 
-    public async Task<StagerTokenState?> FindAsync(StagerTokenId id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(DeployTokenId id, CancellationToken cancellationToken = default)
+    {
+        // The hard kill that rides a launcher row's deletion: the resolution
+        // itself goes, and the secret belongs to no engagement afterwards.
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var rows = await db.DeployTokens
+            .Where(t => t.Id == id)
+            .ExecuteDeleteAsync(cancellationToken);
+        return rows == 1;
+    }
+
+    public async Task<DeployTokenState?> FindAsync(DeployTokenId id, CancellationToken cancellationToken = default)
     {
         // A spent row survives here at remaining_uses = 0 (see the class
         // remarks), so the durable read reports the full budget even after the
-        // token is spent; only revocation removes the row.
+        // token is spent; a revoked row reads as gone (the launcher row
+        // carries its own revocation stamp).
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        var stored = await db.StagerTokens
+        var stored = await db.DeployTokens
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == id && t.RevokedAt == null, cancellationToken);
         if (stored is null)
             return null;
-        return new StagerTokenState
+        return new DeployTokenState
         {
             Id = stored.Id,
             EngagementId = stored.EngagementId,
@@ -196,15 +225,15 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         };
     }
 
-    public async Task<RedeemedStagerToken> VerifyAsync(
+    public async Task<RedeemedDeployToken> VerifyAsync(
         string secret,
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
-        // The same checks redeem runs, minus the consume: a stage-1 stager's
-        // payload fetch must leave the token whole for the stage-2's enroll
-        // (architecture.md Sec 6). A plain read suffices -- nothing mutates, so
-        // no transaction and no conditional UPDATE are needed.
+        // The same checks redeem runs, minus the consume: a downloader's
+        // payload fetch must leave the credential whole for the artifact's
+        // enroll (architecture.md Sec 6). A plain read suffices -- nothing
+        // mutates, so no transaction and no conditional UPDATE are needed.
         byte[] presentedHash;
         try
         {
@@ -212,23 +241,19 @@ internal sealed class PostgresStagerTokenService : IStagerTokenService
         }
         catch (FormatException)
         {
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is malformed.");
+            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
         }
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        var entry = await db.StagerTokens
+        var entry = await db.DeployTokens
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Hash == presentedHash, cancellationToken);
         if (entry is null)
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Unknown, "Stager token is unknown.");
-        if (now > entry.ExpiresAt)
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Expired, "Stager token has expired.");
-        // The spent refusal is a budgeted token's condition: an unlimited
-        // budget keeps remaining_uses at 0 as "not counted", never "spent".
-        if (entry.MaxUses != 0 && entry.RemainingUses <= 0)
-            throw new StagerTokenRedeemException(StagerTokenRedeemReason.Spent, "Stager token has no remaining uses.");
+            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is unknown.");
+        if (entry.RevokedAt is not null || now > entry.ExpiresAt || (entry.MaxUses != 0 && entry.RemainingUses <= 0))
+            throw Refusal(entry, now);
 
-        return new RedeemedStagerToken
+        return new RedeemedDeployToken
         {
             Id = entry.Id,
             EngagementId = entry.EngagementId,

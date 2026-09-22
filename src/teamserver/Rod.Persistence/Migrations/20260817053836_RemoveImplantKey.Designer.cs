@@ -394,7 +394,7 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("operator_credentials", (string)null);
                 });
 
-            modelBuilder.Entity("Rod.Persistence.Configurations.StoredStagerToken", b =>
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredDeployToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")

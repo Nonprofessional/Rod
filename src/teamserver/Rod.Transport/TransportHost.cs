@@ -19,7 +19,7 @@ using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
 using Rod.CoreState.ShellSessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -75,7 +75,7 @@ public static class TransportHost
         // durable swap shape as the credential store above.
         services.AddSingleton<IOperatorApiTokenStore, InMemoryOperatorApiTokenStore>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
-        services.AddSingleton<IStagerTokenService, InMemoryStagerTokenService>();
+        services.AddSingleton<IDeployTokenService, InMemoryDeployTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
         // Implant CA (architecture.md Sec 9): the self-signed DevCertificateAuthority
         // is the default; an externally provisioned engagement CA,
@@ -467,7 +467,7 @@ public static class TransportHost
     // as the server identity and nothing else is negotiated -- no client
     // certificate is requested at all (the default mode), so the TLS
     // handshake looks like any ordinary website's. Enrollment answers on the
-    // stager token and contacts authenticate under the baked per-artifact
+    // deploy token and contacts authenticate under the baked per-artifact
     // key, both at the application layer (architecture.md Sec 8/9).
     private static void ConfigureHttps(ListenOptions listen, KestrelServerOptions kestrel, string publicEndpoint)
     {
@@ -553,7 +553,7 @@ public static class TransportHost
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
         endpoints.MapListenerEndpoints();
-        // The standalone one-liner launchers: the paste-ready stage-2 fetch
+        // The standalone one-liner launchers: the paste-ready payload fetch
         // renders, shared with the shell console's upgrade flow.
         endpoints.MapLauncherEndpoints();
         // The engagement's caught reverse shells: the shellcatch surface's

@@ -6,7 +6,7 @@ import {
   listBuildJobs,
   listListeners,
   listPayloads,
-  revokeStagerToken,
+  revokeDeployToken,
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
@@ -291,7 +291,7 @@ export function PayloadBuildView({
       return
     setRevoking(tokenId)
     try {
-      await revokeStagerToken(engagementId, tokenId)
+      await revokeDeployToken(engagementId, tokenId)
       setError(null)
     } catch (e) {
       setError(String(e))

@@ -21,7 +21,7 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance: export a reproducible engagement timeline and report
 /// (architecture.md Sec 11). Drives the full operational lifecycle -- engagement
-/// created, stager token minted, implant enrolled, session opened, a task's
+/// created, deploy token minted, implant enrolled, session opened, a task's
 /// issued/dispatched/completed arc, an artifact attached -- and reads it back as
 /// both an enriched timeline and a full report bundle (JSON and Markdown). The
 /// exports are reproducible (a content hash stable across reads, moving when the
@@ -50,7 +50,7 @@ public class TimelineAndReportTests
 
         var kinds = timeline.Entries.Select(e => e.Kind).ToArray();
         Assert.Contains("EngagementCreated", kinds);
-        Assert.Contains("StagerTokenMinted", kinds);
+        Assert.Contains("DeployTokenMinted", kinds);
         Assert.Contains("ImplantEnrolled", kinds);
         Assert.Contains("SessionOpened", kinds);
         Assert.Contains("TaskIssued", kinds);
@@ -73,7 +73,7 @@ public class TimelineAndReportTests
         Assert.NotNull(issued.Task);
         Assert.Equal("shell.exec", issued.Task!.Verb);
         Assert.NotNull(issued.Implant);
-        Assert.Equal("Stage2", issued.Implant!.Class);
+        Assert.Equal("Implant", issued.Implant!.Class);
 
         // Each entry carries its hash-chain link hash -- the tamper-evident
         // anchor rides along on the projection.
@@ -118,7 +118,7 @@ public class TimelineAndReportTests
 
         // Implant inventory: the enrolled Stage-2 implant.
         var implantEntry = Assert.Single(report.Implants);
-        Assert.Equal("Stage2", implantEntry.Class);
+        Assert.Equal("Implant", implantEntry.Class);
         Assert.Null(implantEntry.ParentImplantId);
 
         // Task history: the completed shell.exec carries its outcome, output, and
@@ -230,7 +230,7 @@ public class TimelineAndReportTests
     }
 
     // Drives the operational lifecycle far enough to populate every evidence
-    // surface the report projects: engagement, stager token, enrollment, session,
+    // surface the report projects: engagement, deploy token, enrollment, session,
     // a shell.exec task to completion, and an artifact attached to that task.
     // Returns the engagement id, the owner operator, and the implant id string
     // (the latter for the retire step in the hash-mutation test).
@@ -247,9 +247,9 @@ public class TimelineAndReportTests
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         var engagementId = Guid.Parse(engagement!.EngagementId);
 
-        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         minted.EnsureSuccessStatusCode();
-        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
 
         var implantId = await EnrollImplantAsync(env.Http, token!.Secret);
 
@@ -293,7 +293,7 @@ public class TimelineAndReportTests
         var spki = leafKey.ExportSubjectPublicKeyInfo();
 
         var response = await http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
 

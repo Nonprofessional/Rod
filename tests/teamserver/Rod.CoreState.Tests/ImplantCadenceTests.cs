@@ -19,7 +19,7 @@ public class ImplantCadenceTests
     public void EnrollChild_RecordsTheReportedCadence()
     {
         var implant = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created,
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created,
             sleepSeconds: 30, jitterSeconds: 10);
 
         Assert.Equal(30, implant.SleepSeconds);
@@ -30,7 +30,7 @@ public class ImplantCadenceTests
     public void EnrollChild_LeavesCadenceNullWhenUnreported()
     {
         var implant = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created);
 
         Assert.Null(implant.SleepSeconds);
         Assert.Null(implant.JitterSeconds);
@@ -40,7 +40,7 @@ public class ImplantCadenceTests
     public void NoteCadence_ReplacesThePairAndReportsTheChange()
     {
         var implant = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created,
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created,
             sleepSeconds: 30, jitterSeconds: 10);
 
         // A beacon.sleep retune: the next handshake advertises the new pair.
@@ -58,7 +58,7 @@ public class ImplantCadenceTests
     public void NoteCadence_WithNothingAdvertised_KeepsTheRecord()
     {
         var implant = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created,
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created,
             sleepSeconds: 30, jitterSeconds: 10);
 
         // A handshake from a client that predates the advertisement carries
@@ -74,7 +74,7 @@ public class ImplantCadenceTests
         // Zero sleep is the near-interactive posture, not "not reported" --
         // the record must hold it as a value.
         var implant = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created);
 
         Assert.True(implant.NoteCadence(0, 0));
         Assert.Equal(0, implant.SleepSeconds);

@@ -8,7 +8,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Operators;
 using Rod.CoreState.ShellSessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Transport.Listeners.ShellCatch;
 
 namespace Rod.Transport.Endpoints;
@@ -238,7 +238,7 @@ public static class ShellSessionEndpoints
         IShellSessionRegistry sessions,
         IListenerStore listenerStore,
         IPayloadStore payloads,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IEngagementRepository engagements,
         IAuditStore audit,
         TimeProvider clock,

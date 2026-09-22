@@ -54,7 +54,7 @@ public static class PayloadEndpoints
         string engagementId,
         IEngagementRepository engagements,
         IPayloadStore payloads,
-        Rod.CoreState.Staging.IStagerTokenService tokens,
+        Rod.CoreState.Deployment.IDeployTokenService tokens,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -71,9 +71,9 @@ public static class PayloadEndpoints
         var summaries = new List<PayloadSummaryResponse>();
         foreach (var record in records)
         {
-            Rod.CoreState.Staging.StagerTokenState? tokenState = null;
+            Rod.CoreState.Deployment.DeployTokenState? tokenState = null;
             if (record.TokenId is { } tokenId)
-                tokenState = await tokens.FindAsync(new StagerTokenId(tokenId), cancellationToken);
+                tokenState = await tokens.FindAsync(new DeployTokenId(tokenId), cancellationToken);
             summaries.Add(PayloadSummaryResponse.Of(record, tokenState, WebShellCredentialOf(record)));
         }
         return Results.Ok(summaries);
@@ -154,7 +154,7 @@ public static class PayloadEndpoints
         IPayloadStore payloads,
         Rod.Transport.Listeners.IListenerRegistry listeners,
         Rod.CoreState.Pki.IImplantCertificateAuthority ca,
-        Rod.CoreState.Staging.IStagerTokenService tokens,
+        Rod.CoreState.Deployment.IDeployTokenService tokens,
         TimeProvider clock,
         IAuditStore audit,
         ILoggerFactory loggerFactory,
@@ -385,7 +385,7 @@ public static class PayloadEndpoints
     {
         public static PayloadSummaryResponse Of(
             Rod.Audit.PayloadRecord record,
-            Rod.CoreState.Staging.StagerTokenState? tokenState = null,
+            Rod.CoreState.Deployment.DeployTokenState? tokenState = null,
             string? credential = null) => new(
             record.PayloadId.ToString(),
             record.Class,

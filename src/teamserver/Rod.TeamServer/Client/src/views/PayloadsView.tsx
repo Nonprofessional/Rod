@@ -5,7 +5,7 @@ import {
   deletePayload,
   listListeners,
   listPayloads,
-  revokeStagerToken,
+  revokeDeployToken,
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
@@ -30,7 +30,7 @@ import { Icon } from '../components/Icons'
 // there is, so the library shows the operator-facing kind; the raw value
 // stays filterable.
 function kindLabel(klass: string): string {
-  if (klass === 'Stage2') return 'implant'
+  if (klass === 'Implant') return 'implant'
   if (klass === 'WebShell') return 'web shell'
   return klass
 }
@@ -79,7 +79,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
       return
     setRevoking(tokenId)
     try {
-      await revokeStagerToken(engagementId, tokenId)
+      await revokeDeployToken(engagementId, tokenId)
       setError(null)
       await refresh()
     } catch (e) {
@@ -183,8 +183,11 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                   const open = expanded === p.artifactId
                   return (
                     <Fragment key={p.artifactId}>
-                      <tr>
-                        <td>
+                      <tr
+                        className="console-row"
+                        onClick={() => setExpanded(open ? null : p.artifactId)}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
                           <button
                             className={`ghost sm row-expand${open ? ' open' : ''}`}
                             aria-label={open ? 'Collapse build parameters' : 'Expand build parameters'}
@@ -227,7 +230,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                             )}
                           </span>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           {p.tokenId ? (
                             used !== null && p.tokenMaxUses !== null && p.tokenRemainingUses !== null ? (
                               <span
@@ -289,7 +292,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                         <td>
                           <code title={p.fingerprint}>{p.fingerprint.slice(0, 16)}</code>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <a
                             className="download-link"
                             href={`engagements/${engagementId}/payloads/${p.artifactId}`}

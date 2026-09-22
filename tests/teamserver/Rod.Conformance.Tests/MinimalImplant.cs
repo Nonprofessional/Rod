@@ -88,7 +88,7 @@ public sealed class MinimalImplant : IImplantCandidate
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var response = await _http.PostAsJsonAsync(target.EnrollUrl, new
         {
-            stagerTokenSecret = target.StagerToken,
+            deployTokenSecret = target.DeployToken,
             publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()),
         }, cancellationToken);
         response.EnsureSuccessStatusCode();

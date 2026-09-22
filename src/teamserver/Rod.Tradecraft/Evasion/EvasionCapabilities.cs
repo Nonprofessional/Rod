@@ -43,7 +43,7 @@ public static class EvasionCapabilities
     /// (VirtualAllocEx/WriteProcessMemory/CreateRemoteThread, the documented
     /// classic pattern): `<pid> <base64>`. Unlike the contract-only verbs
     /// above it carries a concrete reference handler -- the Rust reference
-    /// implant implements it on Windows builds -- so it is gated to Stage-2
+    /// implant implements it on Windows builds -- so it is gated to the Implant class
     /// in the class table like every reference verb.
     /// </summary>
     public const string InjectShellcode = "inject.shellcode";

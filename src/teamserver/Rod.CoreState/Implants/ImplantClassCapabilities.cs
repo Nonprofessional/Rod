@@ -5,11 +5,11 @@ namespace Rod.CoreState.Implants;
 /// <summary>
 /// The reduced capability verb set each <see cref="ImplantClass"/> may run
 /// (architecture.md Sec 5.2). Implants differ by operational purpose, not by a
-/// "device flavor": a stager only fetches, a web-shell executes over HTTP but
-/// holds no tunnel, an ephemeral is one-shot, and a pivot forwards traffic for
-/// hosts that cannot run their own implant. A stage-2 implant carries the full
-/// core set plus the tunnel set, the recon set, the lateral set, the persist
-/// set, the collect set, and the exfil set; tunneling joins stage-2's core
+/// "device flavor": a web-shell executes over HTTP but holds no tunnel, an
+/// ephemeral is one-shot, and a pivot forwards traffic for hosts that cannot
+/// run their own implant. The Implant class carries the full core set plus
+/// the tunnel set, the recon set, the lateral set, the persist set, the
+/// collect set, and the exfil set; tunneling joins the Implant class's core
 /// operations, and recon, lateral movement, persistence, collection,
 /// and exfiltration are long-haul activities. These sets are
 /// the server's authority for what a class is allowed
@@ -27,7 +27,7 @@ namespace Rod.CoreState.Implants;
 public static class ImplantClassCapabilities
 {
     /// <summary>
-    /// The verbs a class of implant is permitted to run. Stage-2 carries the
+    /// The verbs a class of implant is permitted to run. The Implant class carries the
     /// full core set plus the recon set, the lateral set, the persist set, the
     /// collect set, and the exfil set; every other class carries the subset its
     /// operational purpose justifies (architecture.md Sec 5.2). Stored read-only
@@ -42,8 +42,8 @@ public static class ImplantClassCapabilities
             // collect set, and the exfil set (architecture.md Sec 10.1, Sec 14).
             // Tunneling is a core operation, and recon, lateral movement,
             // persistence, collection, and exfiltration are all long-haul
-            // activities that justify a stage-2 footprint and no other class.
-            [ImplantClass.Stage2] = new[]
+            // activities that justify a long-haul footprint and no other class.
+            [ImplantClass.Implant] = new[]
             {
                 "shell.exec", "shell.interact", "file.push", "file.pull", "fs.list", "proc.kill",
                 "beacon.sleep",
@@ -56,10 +56,6 @@ public static class ImplantClassCapabilities
                 "inject.shellcode",
                 "exfil.push", "exfil.stage",
             },
-
-            // A tiny stage-1 loader: it only pulls the stage-2 payload it then
-            // hands off to (architecture.md Sec 5.2).
-            [ImplantClass.Stager] = new[] { "file.pull" },
 
             // A script in a web root: code execution over HTTP, no file transfer
             // and no interactive PTY.

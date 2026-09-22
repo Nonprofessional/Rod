@@ -132,7 +132,7 @@ impl Profile {
                 std::env::var("ROD_CONTACT_ENVELOPE").unwrap_or_else(|_| "aesgcm".into())
             },
             envelope_key,
-            token: std::env::var("ROD_STAGER_TOKEN").unwrap_or_default(),
+            token: std::env::var("ROD_DEPLOY_TOKEN").unwrap_or_default(),
             verbs: std::env::var("ROD_VERBS")
                 .unwrap_or_default()
                 .split(',')

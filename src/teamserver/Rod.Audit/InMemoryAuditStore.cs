@@ -20,7 +20,7 @@ namespace Rod.Audit;
 /// cross-engagement events never share a hash head -- mirroring the per-engagement
 /// trail (architecture.md Sec 3, Sec 11). The append and the head advance are
 /// made atomic by a lock so concurrent appends serialize correctly within an
-/// engagement (the only adapter needing one, matching the stager-token redeem).
+/// engagement (the only adapter needing one, matching the deploy-token redeem).
 /// </summary>
 public sealed class InMemoryAuditStore : IAuditStore
 {

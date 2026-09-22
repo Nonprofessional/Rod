@@ -607,6 +607,54 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("webshell_profiles", (string)null);
                 });
 
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredDeployToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deploy_token_id");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<byte[]>("Hash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_hash");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issued_at");
+
+                    b.Property<Guid>("IssuedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("issued_by");
+
+                    b.Property<int>("MaxUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_uses");
+
+                    b.Property<int>("RemainingUses")
+                        .HasColumnType("integer")
+                        .HasColumnName("remaining_uses");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Hash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_deploy_tokens_secret_hash");
+
+                    b.ToTable("deploy_tokens", (string)null);
+                });
+
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredImplantTaskNonce", b =>
                 {
                     b.Property<Guid>("ImplantId")
@@ -721,50 +769,6 @@ namespace Rod.Persistence.Migrations
                     b.HasKey("OperatorId");
 
                     b.ToTable("operator_credentials", (string)null);
-                });
-
-            modelBuilder.Entity("Rod.Persistence.Configurations.StoredStagerToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("stager_token_id");
-
-                    b.Property<Guid>("EngagementId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("engagement_id");
-
-                    b.Property<DateTimeOffset>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("expires_at");
-
-                    b.Property<byte[]>("Hash")
-                        .IsRequired()
-                        .HasColumnType("bytea")
-                        .HasColumnName("secret_hash");
-
-                    b.Property<DateTimeOffset>("IssuedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("issued_at");
-
-                    b.Property<Guid>("IssuedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("issued_by");
-
-                    b.Property<int>("MaxUses")
-                        .HasColumnType("integer")
-                        .HasColumnName("max_uses");
-
-                    b.Property<int>("RemainingUses")
-                        .HasColumnType("integer")
-                        .HasColumnName("remaining_uses");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Hash")
-                        .IsUnique()
-                        .HasDatabaseName("ux_stager_tokens_secret_hash");
-
-                    b.ToTable("stager_tokens", (string)null);
                 });
 
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredImplantTaskNonce", b =>

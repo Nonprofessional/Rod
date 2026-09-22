@@ -43,16 +43,16 @@ public readonly record struct EngagementId(Guid Value)
     }
 }
 
-/// <summary>Identifies a stager token minted for an engagement.</summary>
-public readonly record struct StagerTokenId(Guid Value)
+/// <summary>Identifies a deploy token minted for an engagement.</summary>
+public readonly record struct DeployTokenId(Guid Value)
 {
-    public static StagerTokenId New() => new(Guid.NewGuid());
+    public static DeployTokenId New() => new(Guid.NewGuid());
     public override string ToString() => Value.ToString("N");
 }
 
 /// <summary>
 /// Identifies a rendered launcher -- one persisted cut of the paste-ready
-/// stage-2 fetch one-liners, with its minted download credential. Engagement-
+/// payload fetch one-liners, with its minted download credential. Engagement-
 /// scoped operator working state, deletable with the row and nothing else.
 /// </summary>
 public readonly record struct LauncherId(Guid Value)

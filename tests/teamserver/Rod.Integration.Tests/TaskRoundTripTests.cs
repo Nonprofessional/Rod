@@ -223,7 +223,7 @@ public class TaskRoundTripTests
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Stage2, now);
+            now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
         return implant;
     }

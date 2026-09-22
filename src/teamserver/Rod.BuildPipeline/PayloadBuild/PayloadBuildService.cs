@@ -74,7 +74,6 @@ public sealed class PayloadBuildService
             request.Transport,
             new BeaconProfile(
                 request.Sleep, request.Jitter, ResolveKillDate(now, request.KillDate), request.Mode),
-            request.Stage2,
             request.TokenSecret,
             request.MintedTokenId,
             request.TokenMaxUses,
@@ -115,8 +114,6 @@ public sealed class PayloadBuildService
 /// Request to build a payload. <see cref="EngagementId"/> scopes and
 /// <see cref="RequestedBy"/> attributes the build; <see cref="Language"/> routes
 /// to the build unit; <see cref="Class"/> is the implant class to generate.
-/// <see cref="Stage2"/> carries the stage-2 payload reference a stager-class
-/// build bakes in; it is required for the stager class and ignored elsewhere.
 /// <see cref="TokenSecret"/> is the enrollment credential the build bakes in
 /// (the transport layer mints it and attaches it here); null leaves the
 /// artifact credential-free. <see cref="TokenMaxUses"/> rides beside it as the
@@ -137,7 +134,6 @@ public sealed record BuildRequest(
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
     string Mode = "stream",
-    Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
     Guid? MintedTokenId = null,
     int? TokenMaxUses = null,

@@ -70,7 +70,7 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
         // frame reads simple.
         psi.Environment["ROD_ENROLL_URL"] = target.EnrollUrl;
         psi.Environment["ROD_BEACON_URL"] = $"http://{target.BeaconHostPort}/implants/beacon";
-        psi.Environment["ROD_STAGER_TOKEN"] = target.StagerToken;
+        psi.Environment["ROD_DEPLOY_TOKEN"] = target.DeployToken;
         psi.Environment["ROD_SLEEP"] = "1";
         psi.Environment["ROD_JITTER"] = "0";
         psi.Environment["ROD_MODE"] = "poll";

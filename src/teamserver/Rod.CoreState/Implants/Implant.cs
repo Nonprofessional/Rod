@@ -17,7 +17,7 @@ namespace Rod.CoreState.Implants;
 /// Parentage: a capable implant can deploy another class on the same host
 /// via a deployment verb, and the child enrols into the same engagement and
 /// records its parent (architecture.md Sec 5.2). A top-level implant (one
-/// enrolled from a stager token) has a null <see cref="ParentImplantId"/>; a
+/// enrolled from a deploy token) has a null <see cref="ParentImplantId"/>; a
 /// child carries its parent's id. The engagement binding of parent and child is
 /// enforced by the enrollment use case, not the entity, so this type stays free
 /// of the implant registry.
@@ -52,7 +52,7 @@ public sealed class Implant
 
     /// <summary>
     /// The implant this one was derived from, or null for a top-level implant
-    /// enrolled from a stager token (architecture.md Sec 5.2). A child enrols
+    /// enrolled from a deploy token (architecture.md Sec 5.2). A child enrols
     /// into the same engagement as its parent; that binding is checked by the
     /// enrollment use case, which is the only caller of <see cref="EnrollChild"/>.
     /// </summary>
@@ -173,7 +173,7 @@ public sealed class Implant
 
     /// <summary>
     /// Factory for a newly enrolled top-level implant (architecture.md Sec 5):
-    /// one enrolled from a stager token, with no parent. The implant carries no
+    /// one enrolled from a deploy token, with no parent. The implant carries no
     /// key material -- its cryptographic identity is the keypair it generated
     /// itself, bound to the engagement by the CA-signed leaf at enroll
     /// (architecture.md Sec 9), so there is nothing here to store or leak.
@@ -331,11 +331,11 @@ public sealed class Implant
 /// </summary>
 public enum ImplantClass
 {
-    /// <summary>The primary long-haul implant; full capability set.</summary>
-    Stage2,
-
-    /// <summary>A tiny stage-1 loader that fetches a stage-2 implant.</summary>
-    Stager,
+    /// <summary>
+    /// The primary long-haul implant; full capability set and module support
+    /// (the Rust reference implant, cross-platform).
+    /// </summary>
+    Implant,
 
     /// <summary>A script in a web root, bound to the web transport.</summary>
     WebShell,

@@ -9,7 +9,7 @@ using Rod.CoreState.Listeners;
 using Rod.CoreState.Launchers;
 using Rod.CoreState.Operators;
 using Rod.CoreState.ShellSessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Transport.Listeners.ShellCatch;
 
 namespace Rod.Transport.Endpoints;
@@ -70,7 +70,7 @@ public static class LauncherEndpoints
         IEngagementRepository engagements,
         IListenerStore listenerStore,
         IPayloadStore payloads,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         ILauncherStore launchers,
         IAuditStore audit,
         TimeProvider clock,
@@ -133,7 +133,7 @@ public static class LauncherEndpoints
     private static async Task<IResult> ListLaunchersAsync(
         string engagementId,
         ILauncherStore launchers,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         CancellationToken cancellationToken)
     {
         if (!EngagementId.TryParse(engagementId, out var engagement))
@@ -159,7 +159,7 @@ public static class LauncherEndpoints
         string launcherId,
         ClaimsPrincipal user,
         ILauncherStore launchers,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -207,8 +207,8 @@ public static class LauncherEndpoints
                 operatorId: operatorId.Value.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
-                verb: "revoke-stager-token",
-                kind: AuditEventKind.StagerTokenRevoked,
+                verb: "revoke-deploy-token",
+                kind: AuditEventKind.DeployTokenRevoked,
                 payload: $"origin=launcher requestedBy={operatorId.Value.Value}",
                 output: null,
                 outcome: row.TokenId.ToString(),
@@ -223,7 +223,7 @@ public static class LauncherEndpoints
         string launcherId,
         ClaimsPrincipal user,
         ILauncherStore launchers,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -250,7 +250,11 @@ public static class LauncherEndpoints
         if (row.RevokedAt is null)
         {
             var at = clock.GetUtcNow();
-            await tokens.RevokeAsync(row.TokenId, cancellationToken);
+            // The hard kill, not the revoke: deleting the row removes the
+            // credential's resolution outright, so post-delete attempts on
+            // the secret read Unknown and leave no record -- a revoked-row
+            // credential keeps refusing visibly; a deleted-row one is gone.
+            await tokens.DeleteAsync(row.TokenId, cancellationToken);
             row.Revoke(at);
             // The revocation is recorded like every engagement fact
             // (architecture.md Sec 11) -- deleting a live launcher is a
@@ -263,8 +267,8 @@ public static class LauncherEndpoints
                     operatorId: operatorId.Value.Value,
                     implantId: Guid.Empty,
                     taskId: Guid.Empty,
-                    verb: "revoke-stager-token",
-                    kind: AuditEventKind.StagerTokenRevoked,
+                    verb: "revoke-deploy-token",
+                    kind: AuditEventKind.DeployTokenRevoked,
                     payload: $"origin=launcher-delete requestedBy={operatorId.Value.Value}",
                     output: null,
                     outcome: row.TokenId.ToString(),
@@ -285,7 +289,7 @@ public static class LauncherEndpoints
     private static async Task<LauncherResponse> ResponseOfAsync(
         Launcher row,
         IReadOnlyList<ShellLauncherResponse> commands,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         CancellationToken cancellationToken)
     {
         var state = await tokens.FindAsync(row.TokenId, cancellationToken);
@@ -370,7 +374,7 @@ internal sealed record LauncherSelection(
 internal sealed record LauncherSet(
     PayloadRecord Payload,
     ListenerDefinition Front,
-    StagerToken Token,
+    DeployToken Token,
     string Url,
     IReadOnlyList<ShellLauncherResponse> Launchers);
 
@@ -394,7 +398,7 @@ internal static class LauncherRender
         IEngagementRepository engagements,
         IListenerStore listenerStore,
         IPayloadStore payloads,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -462,15 +466,15 @@ internal static class LauncherRender
                 operatorId: engagementRow.OwnerId.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
-                verb: "mint-stager-token",
-                kind: AuditEventKind.StagerTokenMinted,
+                verb: "mint-deploy-token",
+                kind: AuditEventKind.DeployTokenMinted,
                 payload: $"{selection.AuditOrigin} requestedBy={selection.RequestedBy.Value} uses={(selection.MaxUses == 0 ? "unlimited" : selection.MaxUses)} lifetime={selection.Lifetime.TotalMinutes:0}m",
                 output: null,
                 outcome: token.Id.ToString(),
                 at),
             cancellationToken);
 
-        var url = $"{webListener.PublicEndpoint.TrimEnd('/')}/implants/stage2/{payload.PayloadId:N}";
+        var url = $"{webListener.PublicEndpoint.TrimEnd('/')}/implants/payloads/{payload.PayloadId:N}";
         return (null, new LauncherSet(
             payload,
             webListener,

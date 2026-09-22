@@ -1,6 +1,6 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.CoreState.Launchers;
 
@@ -14,7 +14,7 @@ namespace Rod.CoreState.Launchers;
 ///
 /// The row is a snapshot, not a live view: the URL, the front's name and
 /// endpoint, and the policy are what the render chose. The credential itself
-/// lives in the stager token store (hashed, counted, expiring); this row
+/// lives in the deploy token store (hashed, counted, expiring); this row
 /// carries the plaintext secret so the command can be re-copied -- the one
 /// place a download credential is held in the clear, behind the operator
 /// surface and deletable with the row. Deleting the payload behind a row
@@ -39,7 +39,7 @@ public sealed class Launcher
     public string FrontEndpoint { get; }
 
     /// <summary>The download credential this render minted; its budget and window live in the token store.</summary>
-    public StagerTokenId TokenId { get; }
+    public DeployTokenId TokenId { get; }
 
     /// <summary>
     /// The credential's plaintext, held so the command can be re-copied at
@@ -72,7 +72,7 @@ public sealed class Launcher
         Guid listenerId,
         string frontName,
         string frontEndpoint,
-        StagerTokenId tokenId,
+        DeployTokenId tokenId,
         string tokenSecret,
         string url,
         int maxUses,

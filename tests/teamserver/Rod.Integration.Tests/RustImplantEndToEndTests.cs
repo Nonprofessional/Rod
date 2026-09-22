@@ -80,7 +80,7 @@ public class RustImplantEndToEndTests
         // The deployment credential: a manual mint (the rotation shape), spent
         // by the dev-shape enroll below.
         var mint = await env.Http.PostAsync(
-            $"/engagements/{env.EngagementId}/stager-tokens", content: null);
+            $"/engagements/{env.EngagementId}/deploy-tokens", content: null);
         mint.EnsureSuccessStatusCode();
         var token = await mint.Content.ReadFromJsonAsync<MintedToken>();
         Assert.False(string.IsNullOrEmpty(token?.Secret));
@@ -93,7 +93,7 @@ public class RustImplantEndToEndTests
             RedirectStandardError = true,
         };
         start.Environment["ROD_ENROLL_URL"] = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
-        start.Environment["ROD_STAGER_TOKEN"] = token!.Secret;
+        start.Environment["ROD_DEPLOY_TOKEN"] = token!.Secret;
         // The fielded artifact is terminal-silent by default; the suite runs
         // verbose so a failed leg's stderr says why.
         start.Environment["ROD_VERBOSE"] = "1";
@@ -174,7 +174,7 @@ public class RustImplantEndToEndTests
             $"/engagements/{env.EngagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
                 Language: "rust",
-                Class: "Stage2",
+                Class: "Implant",
                 TargetOs: "linux",
                 TargetArch: "amd64",
                 ListenerId: front,
@@ -573,7 +573,7 @@ public class RustImplantEndToEndTests
                 $"/engagements/{env.EngagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "rust",
-                    Class: "Stage2",
+                    Class: "Implant",
                     TargetOs: "linux",
                     TargetArch: "amd64",
                     ListenerId: front,
@@ -795,7 +795,7 @@ public class RustImplantEndToEndTests
             {
                 var implants = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
                     $"/engagements/{env.EngagementId}/implants");
-                var online = implants?.FirstOrDefault(i => i.Class == "Stage2" && i.IsOnline);
+                var online = implants?.FirstOrDefault(i => i.Class == "Implant" && i.IsOnline);
                 if (online is not null)
                     return online.ImplantId;
             }

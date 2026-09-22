@@ -33,7 +33,7 @@ internal static class PayloadBuildRequestParser
 
     /// <summary>
     /// Parses the body into a <see cref="BuildRequest"/>, or returns an error
-    /// string naming the first refusal. The stager stage-2 reference resolves
+    /// string naming the first refusal. Every cross-reference resolves
     /// against the payload store here so the build contract carries a verified
     /// reference, never a raw operator string; a named listener resolves to
     /// its public endpoint the same way. The teamserver's CA is baked into the
@@ -49,18 +49,19 @@ internal static class PayloadBuildRequestParser
     {
         // Language and class come in as strings and parse to the enums; anything
         // that does not parse is a 400. The defaults keep a minimal request
-        // valid (the in-tree .NET unit, a stage-2 implant, linux/amd64).
+        // valid (the in-tree Rust unit, an Implant-class build, linux/amd64).
         if (!TryParseLanguage(body.Language, out var language))
             return (null, "Language is not recognized.");
-        if (!TryParseClass(body.Class, out var @class))
-            return (null, "Implant class is not recognized.");
         // The stager class is retired with the .NET trees: delivery rides the
         // launcher one-liners (the disk families plus the in-memory memfd
-        // family), which fetch the stage-2 over the same token-gated route a
-        // loader ever used.
-        if (@class == ImplantClass.Stager)
+        // family), which fetch the payload over the same token-gated route a
+        // loader ever used. The refusal names the retired spelling before the
+        // enum parse, which no longer knows it.
+        if (string.Equals(body.Class?.Trim(), "stager", StringComparison.OrdinalIgnoreCase))
             return (null,
                 "The stager class is retired; deliver the payload through the launcher one-liners (launchers render them per payload).");
+        if (!TryParseClass(body.Class, out var @class))
+            return (null, "Implant class is not recognized.");
         // The dll bundle was the .NET in-memory shape; with the .NET implant
         // retired there is no producer -- the Rust implant is native in every
         // format, and its 'aot' spelling is the one the memfd one-liner
@@ -155,16 +156,14 @@ internal static class PayloadBuildRequestParser
         if (body.KillDate is { } pinned && pinned <= DateTimeOffset.UtcNow)
             return (null, "KillDate must be in the future; leave it empty for an open-ended artifact.");
 
-        // The stager class retired with the .NET trees, so no build carries a
-        // stage-2 reference anymore; a request naming one is a leftover from
+        // The loader class retired with the .NET trees, so no build carries a
+        // fetched-payload reference anymore; a request naming one is a leftover from
         // the retired flow and is refused with the current delivery answer.
         if (body.Stage2PayloadId is not null)
         {
             return (null,
                 "stage2PayloadId rides the retired stager class; deliver the payload through the launcher one-liners.");
         }
-        Stage2Payload? stage2 = null;
-
         return (new BuildRequest(
             engagementId,
             requestedBy,
@@ -179,7 +178,6 @@ internal static class PayloadBuildRequestParser
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
             mode,
-            stage2,
             Format: format), null);
     }
 
@@ -286,8 +284,7 @@ internal static class PayloadBuildRequestParser
     // contact derives from the enroll front: every web front (http, https,
     // or a typed http(s) URL) carries the envelope POST cycle on its own
     // port -- the mainstream single-port shape, no split required, and the
-    // baked mode picks the client. Stagers never contact, so beacon fields
-    // are refused on their builds.
+    // baked mode picks the client.
     private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
@@ -300,11 +297,6 @@ internal static class PayloadBuildRequestParser
     {
         if (body.BeaconListenerId is not null && body.BeaconEndpoint is not null)
             return (null, "Name either beaconListenerId or beaconEndpoint, not both.");
-        if (@class == ImplantClass.Stager)
-            return (body.BeaconListenerId is not null || body.BeaconEndpoint is not null
-                ? (null, "A stager fetches its stage-2 and never contacts; beacon fields are not valid on a stager build.")
-                : (null, (string?)null));
-
         if (body.BeaconListenerId is { } beaconListenerText)
         {
             if (!Guid.TryParse(beaconListenerText, out var beaconListenerValue))
@@ -479,7 +471,7 @@ internal static class PayloadBuildRequestParser
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            @class = ImplantClass.Stage2;
+            @class = ImplantClass.Implant;
             return true;
         }
         return Enum.TryParse(text, ignoreCase: true, out @class);

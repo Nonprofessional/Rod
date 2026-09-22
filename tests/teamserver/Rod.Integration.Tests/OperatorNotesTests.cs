@@ -40,7 +40,7 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var secret = await MintDeployTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             var first = await client.PostAsJsonAsync(
@@ -91,7 +91,7 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
             var otherEngagementId = await CreateEngagementAsync(client);
-            var secret = await MintStagerTokenAsync(client, engagementId);
+            var secret = await MintDeployTokenAsync(client, engagementId);
             var implantId = await EnrollAsync(client, secret);
 
             // Blank text is malformed.
@@ -145,7 +145,7 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
         await using (var envA = await TestEnv.StartAsync(_postgres.ConnectionString))
         {
             engagementId = await CreateEngagementAsync(envA.Http);
-            var secret = await MintStagerTokenAsync(envA.Http, engagementId);
+            var secret = await MintDeployTokenAsync(envA.Http, engagementId);
             implantId = await EnrollAsync(envA.Http, secret);
 
             var added = await envA.Http.PostAsJsonAsync(
@@ -182,18 +182,18 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
         return created!.EngagementId;
     }
 
-    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return token!.Secret;
     }
 
     private static async Task<string> EnrollAsync(HttpClient client, string secret)
     {
         var response = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: null));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
         return enrolled!.ImplantId!;

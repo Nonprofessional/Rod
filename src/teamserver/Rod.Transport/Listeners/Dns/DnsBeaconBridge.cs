@@ -6,7 +6,7 @@ using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Live;
 using Rod.CoreState.Sessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.CoreState.Transports;
 using Rod.Transport.Endpoints;
@@ -91,7 +91,7 @@ internal sealed class DnsBeaconBridge
     private readonly BeaconTasking _tasking;
     private readonly DnsContactNames.ResultReassembler _results = new();
     private readonly EnrollmentService _enrollment;
-    private readonly Rod.CoreState.Staging.IStagerTokenService _tokens;
+    private readonly Rod.CoreState.Deployment.IDeployTokenService _tokens;
     private readonly Rod.Audit.IPayloadStore _payloads;
     private readonly EnvelopeContactKeys _contactKeys;
     private readonly IImplantRepository _implants;
@@ -119,7 +119,7 @@ internal sealed class DnsBeaconBridge
         TimeProvider clock,
         BeaconTasking tasking,
         EnrollmentService enrollment,
-        Rod.CoreState.Staging.IStagerTokenService tokens,
+        Rod.CoreState.Deployment.IDeployTokenService tokens,
         Rod.Audit.IPayloadStore payloads,
         EnvelopeContactKeys contactKeys,
         IImplantRepository implants,
@@ -235,7 +235,7 @@ internal sealed class DnsBeaconBridge
 
         var outcome = await ScopedEnrollment.EnrollAsync(
             new EnrollWireFields(
-                request.StagerTokenSecret,
+                request.DeployTokenSecret,
                 NullWhenEmpty(request.Class),
                 request.PublicKey.IsEmpty ? null : request.PublicKey.ToByteArray(),
                 NullWhenEmpty(request.ParentImplantId),

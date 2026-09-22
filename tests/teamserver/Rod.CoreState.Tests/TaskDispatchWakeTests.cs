@@ -131,7 +131,7 @@ public class TaskDispatchWakeTests
 
         var implants = new InMemoryImplantRepository();
         var implant = Implant.Enroll(
-            ImplantId.New(), engagement.Id, Now.AddDays(30), ImplantClass.Stage2, Now);
+            ImplantId.New(), engagement.Id, Now.AddDays(30), ImplantClass.Implant, Now);
         await implants.SaveAsync(implant);
 
         var wake = new InMemoryTaskDispatchWake();

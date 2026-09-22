@@ -3,7 +3,7 @@ using Rod.BuildPipeline.PayloadBuild;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.Transport.Payloads;
 
@@ -31,10 +31,10 @@ internal static class PayloadBuildTokenMinter
     // own unlimited run.
     private static readonly TimeSpan DefaultLifetime = TimeSpan.FromDays(30);
 
-    public static async Task<(string Secret, StagerTokenId Id)> MintAsync(
+    public static async Task<(string Secret, DeployTokenId Id)> MintAsync(
         Engagement engagement,
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         TimeProvider clock,
         IAuditStore audit,
         CancellationToken cancellationToken)
@@ -62,8 +62,8 @@ internal static class PayloadBuildTokenMinter
                 operatorId: engagement.OwnerId.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
-                verb: "mint-stager-token",
-                kind: AuditEventKind.StagerTokenMinted,
+                verb: "mint-deploy-token",
+                kind: AuditEventKind.DeployTokenMinted,
                 payload: $"bakedIntoPayload maxUses={token.MaxUses} expiresAt={token.ExpiresAt:O}",
                 output: null,
                 outcome: token.Id.ToString(),

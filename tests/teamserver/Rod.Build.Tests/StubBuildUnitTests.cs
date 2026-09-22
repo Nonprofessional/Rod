@@ -18,7 +18,7 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class StubBuildUnitTests
 {
-    private static BuildParams Params(ImplantClass @class = ImplantClass.Stage2) => new(
+    private static BuildParams Params(ImplantClass @class = ImplantClass.Implant) => new(
         EngagementId.New(),
         OperatorId.New(),
         @class,
@@ -27,8 +27,7 @@ public class StubBuildUnitTests
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
     [Theory]
-    [InlineData(ImplantClass.Stage2, "shell.exec,shell.interact,file.push,file.pull,fs.list,proc.kill,beacon.sleep,tunnel.forward,tunnel.socks,recon.portscan,recon.hostenum,recon.service,recon.ps,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,collect.screenshot,collect.minidump,inject.shellcode,exfil.push,exfil.stage")]
-    [InlineData(ImplantClass.Stager, "file.pull")]
+    [InlineData(ImplantClass.Implant, "shell.exec,shell.interact,file.push,file.pull,fs.list,proc.kill,beacon.sleep,tunnel.forward,tunnel.socks,recon.portscan,recon.hostenum,recon.service,recon.ps,lateral.move,lateral.token,lateral.exec_remote,persist.install,persist.remove,persist.list,collect.cred,collect.keylog,collect.screenshot,collect.minidump,inject.shellcode,exfil.push,exfil.stage")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
     [InlineData(ImplantClass.Pivot, "tunnel.forward,tunnel.socks")]
@@ -58,7 +57,7 @@ public class StubBuildUnitTests
         var @params = new BuildParams(
             EngagementId.New(),
             OperatorId.New(),
-            ImplantClass.Stage2,
+            ImplantClass.Implant,
             new TargetProfile("linux", "amd64"),
             new TransportProfile("http://c2.example.test", "/beacon"),
             new BeaconProfile(sleep, jitter, killDate));
@@ -94,7 +93,7 @@ public class StubBuildUnitTests
         var @params = new BuildParams(
             EngagementId.New(),
             OperatorId.New(),
-            ImplantClass.Stage2,
+            ImplantClass.Implant,
             new TargetProfile("linux", "amd64"),
             transport,
             new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));

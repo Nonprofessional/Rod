@@ -3,47 +3,47 @@ using System.Text;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Pki;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.CoreState.Application;
 
 /// <summary>
-/// The enrollment use case: a stager token is redeemed to bind a
+/// The enrollment use case: a deploy token is redeemed to bind a
 /// new implant to an engagement, the implant is recorded with the kill date
 /// its baked profile reported (null when the artifact is open-ended), and the
 /// CA issues a certificate binding
 /// <c>(implant_id, engagement_id)</c> over the implant's own public key
 /// (architecture.md Sec 9). Orchestrates the
 /// core-state ports; holds no state of its own. Redeem failures propagate as
-/// <see cref="StagerTokenRedeemException"/> so the transport endpoint can map
+/// <see cref="DeployTokenRedeemException"/> so the transport endpoint can map
 /// them to wire status codes without the core depending on the wire protocol.
 /// </summary>
 public sealed class EnrollmentService
 {
     private readonly IEngagementRepository _engagements;
-    private readonly IStagerTokenService _stagerTokens;
+    private readonly IDeployTokenService _deployTokens;
     private readonly IImplantRepository _implants;
     private readonly IImplantCertificateAuthority _certificateAuthority;
     private readonly TimeProvider _clock;
 
     public EnrollmentService(
         IEngagementRepository engagements,
-        IStagerTokenService stagerTokens,
+        IDeployTokenService deployTokens,
         IImplantRepository implants,
         IImplantCertificateAuthority certificateAuthority,
         TimeProvider clock)
     {
         _engagements = engagements;
-        _stagerTokens = stagerTokens;
+        _deployTokens = deployTokens;
         _implants = implants;
         _certificateAuthority = certificateAuthority;
         _clock = clock;
     }
 
     /// <summary>
-    /// Redeems the presented stager token, enrolls a new implant into the token's
+    /// Redeems the presented deploy token, enrolls a new implant into the token's
     /// engagement, and issues its bound certificate. Throws
-    /// <see cref="StagerTokenRedeemException"/> when the token is unknown, expired,
+    /// <see cref="DeployTokenRedeemException"/> when the token is unknown, expired,
     /// or spent -- the caller maps that to a wire status.
     ///
     /// When <see cref="EnrollCommand.ClientPublicKey"/> is present the leaf is
@@ -68,8 +68,8 @@ public sealed class EnrollmentService
         var now = _clock.GetUtcNow();
 
         // 1. Redeem the token -- consumes one use and resolves the engagement.
-        //    Throws StagerTokenRedeemException on failure; let it propagate.
-        var redeemed = await _stagerTokens.RedeemAsync(command.StagerTokenSecret, now, cancellationToken);
+        //    Throws DeployTokenRedeemException on failure; let it propagate.
+        var redeemed = await _deployTokens.RedeemAsync(command.DeployTokenSecret, now, cancellationToken);
 
         // 2. Confirm the engagement still exists (it may have been torn down),
         //    and that it is open: a closed engagement (frozen for close-out or
@@ -182,7 +182,7 @@ public sealed class EnrollmentService
 }
 
 /// <summary>
-/// Request to enroll an implant. The stager token secret resolves the
+/// Request to enroll an implant. The deploy token secret resolves the
 /// engagement; <see cref="Class"/> defaults to a stage-2 implant. When
 /// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo of an
 /// ECDSA public key (P-256 in the reference implant) the CA signs a leaf over,
@@ -191,7 +191,7 @@ public sealed class EnrollmentService
 ///
 /// <see cref="ParentImplantId"/> derives a child implant: when set,
 /// the service resolves and scope-checks the parent before recording the child.
-/// Null (the default) enrolls a top-level implant from the stager token.
+/// Null (the default) enrolls a top-level implant from the deploy token.
 ///
 /// The host fields (<see cref="Hostname"/>, <see cref="Os"/>,
 /// <see cref="Arch"/>, <see cref="Username"/>) are the implant's report about
@@ -216,8 +216,8 @@ public sealed class EnrollmentService
 /// handshake advertisements refresh the pair.
 /// </summary>
 public sealed record EnrollCommand(
-    string StagerTokenSecret,
-    ImplantClass Class = ImplantClass.Stage2,
+    string DeployTokenSecret,
+    ImplantClass Class = ImplantClass.Implant,
     byte[]? ClientPublicKey = null,
     ImplantId? ParentImplantId = null,
     string? Hostname = null,

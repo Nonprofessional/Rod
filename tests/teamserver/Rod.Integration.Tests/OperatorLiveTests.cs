@@ -73,14 +73,14 @@ public class OperatorLiveTests
 
     private static async Task<Guid> EnrollImplantAsync(HttpClient client, string engagementId)
     {
-        // Mint a stager token, then enroll a fake implant to task against.
-        var mint = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        // Mint a deploy token, then enroll a fake implant to task against.
+        var mint = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         mint.EnsureSuccessStatusCode();
-        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         Assert.NotNull(token);
 
         var enroll = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: token!.Secret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: token!.Secret, Class: null));
         enroll.EnsureSuccessStatusCode();
         var enrolled = await enroll.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
         Assert.NotNull(enrolled);

@@ -1,12 +1,12 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Task = System.Threading.Tasks.Task;
 
 namespace Rod.CoreState.Tests;
 
 /// <summary>
-/// Multi-threaded hammer tests for <see cref="InMemoryStagerTokenService"/>
+/// Multi-threaded hammer tests for <see cref="InMemoryDeployTokenService"/>
 /// redeem atomicity. Redeem guards check-then-consume with a lock so a
 /// single-use token cannot be redeemed twice; these tests drive real threads
 /// into it.
@@ -15,16 +15,16 @@ public class StagerRedemptionConcurrencyTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
 
-    private static (InMemoryEngagementRepository Engagements, InMemoryStagerTokenService Tokens) NewService()
+    private static (InMemoryEngagementRepository Engagements, InMemoryDeployTokenService Tokens) NewService()
     {
         var engagements = new InMemoryEngagementRepository();
-        var tokens = new InMemoryStagerTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements);
         return (engagements, tokens);
     }
 
-    private static async Task<StagerToken> MintAsync(
+    private static async Task<DeployToken> MintAsync(
         InMemoryEngagementRepository engagements,
-        InMemoryStagerTokenService tokens,
+        InMemoryDeployTokenService tokens,
         string name)
     {
         var owner = OperatorId.New();
@@ -49,7 +49,7 @@ public class StagerRedemptionConcurrencyTests
                 var redeemed = await tokens.RedeemAsync(minted.Secret, Now.AddMinutes(1));
                 return new Outcome(redeemed, Failure: null);
             }
-            catch (StagerTokenRedeemException ex)
+            catch (DeployTokenRedeemException ex)
             {
                 return new Outcome(Redeemed: null, ex.Reason);
             }
@@ -66,7 +66,7 @@ public class StagerRedemptionConcurrencyTests
         Assert.Equal(minted.Id, winner.Redeemed!.Id);
         Assert.Equal(minted.EngagementId, winner.Redeemed.EngagementId);
         Assert.Equal(redeemers - 1, outcomes.Count(o =>
-            o.Failure is StagerTokenRedeemReason.Spent or StagerTokenRedeemReason.Unknown));
+            o.Failure is DeployTokenRedeemReason.Spent or DeployTokenRedeemReason.Unknown));
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class StagerRedemptionConcurrencyTests
         var (engagements, tokens) = NewService();
 
         const int tokenCount = 32;
-        var minted = new StagerToken[tokenCount];
+        var minted = new DeployToken[tokenCount];
         for (var i = 0; i < tokenCount; i++)
             minted[i] = await MintAsync(engagements, tokens, $"Op {i}");
 
@@ -95,11 +95,11 @@ public class StagerRedemptionConcurrencyTests
 
         foreach (var m in minted)
         {
-            var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+            var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
                 () => tokens.RedeemAsync(m.Secret, Now.AddMinutes(2)));
-            Assert.True(ex.Reason is StagerTokenRedeemReason.Spent or StagerTokenRedeemReason.Unknown);
+            Assert.True(ex.Reason is DeployTokenRedeemReason.Spent or DeployTokenRedeemReason.Unknown);
         }
     }
 
-    private sealed record Outcome(RedeemedStagerToken? Redeemed, StagerTokenRedeemReason? Failure);
+    private sealed record Outcome(RedeemedDeployToken? Redeemed, DeployTokenRedeemReason? Failure);
 }

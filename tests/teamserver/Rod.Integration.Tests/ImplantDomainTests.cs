@@ -1,16 +1,16 @@
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Direct checks of the <see cref="Implant"/> entity invariants and the
-/// stager-token redeem semantics (architecture.md Sec 5/9), complementing the
+/// deploy-token redeem semantics (architecture.md Sec 5/9), complementing the
 /// HTTP enrollment slice in <see cref="EnrollmentTests"/>. Redeem must consume
 /// one use on success, and refuse unknown, expired, or spent tokens -- each with
-/// a distinct <see cref="StagerTokenRedeemReason"/> the endpoint maps to a wire
+/// a distinct <see cref="DeployTokenRedeemReason"/> the endpoint maps to a wire
 /// status.
 /// </summary>
 public class ImplantDomainTests
@@ -25,12 +25,12 @@ public class ImplantDomainTests
         var id = ImplantId.New();
         var engagement = EngagementId.New();
 
-        var implant = Implant.Enroll(id, engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
+        var implant = Implant.Enroll(id, engagement, Now.AddDays(30), ImplantClass.Implant, Now);
 
         Assert.Equal(id, implant.Id);
         Assert.Equal(engagement, implant.EngagementId);
         Assert.Equal(Now.AddDays(30), implant.KillDate);
-        Assert.Equal(ImplantClass.Stage2, implant.Class);
+        Assert.Equal(ImplantClass.Implant, implant.Class);
         Assert.Equal(Now, implant.CreatedAt);
     }
 
@@ -39,12 +39,12 @@ public class ImplantDomainTests
     public void Enroll_RejectsKillDateAtOrBeforeCreation()
     {
         Assert.Throws<ArgumentException>(
-            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now, ImplantClass.Stage2, Now));
+            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now, ImplantClass.Implant, Now));
         Assert.Throws<ArgumentException>(
-            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now.AddSeconds(-1), ImplantClass.Stage2, Now));
+            () => Implant.Enroll(ImplantId.New(), EngagementId.New(), Now.AddSeconds(-1), ImplantClass.Implant, Now));
     }
 
-    // --- Stager token redeem ---
+    // --- Deploy token redeem ---
 
     [Fact]
     public async Task Redeem_ConsumesToken_AndSucceedsOnce()
@@ -54,16 +54,17 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryStagerTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements);
         var minted = await tokens.MintAsync(engagement.Id, owner, Now);
 
         var first = await tokens.RedeemAsync(minted.Secret, Now.AddSeconds(1));
         Assert.Equal(engagement.Id, first.EngagementId);
 
-        // Single-use default: a second redeem of the same secret is now unknown.
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        // Single-use default: a second redeem of the same secret refuses as
+        // spent -- the row stays resolvable, so the refusal says why.
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokens.RedeemAsync(minted.Secret, Now.AddSeconds(2)));
-        Assert.Equal(StagerTokenRedeemReason.Unknown, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Spent, ex.Reason);
     }
 
     [Fact]
@@ -74,12 +75,12 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryStagerTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements);
         var minted = await tokens.MintAsync(engagement.Id, owner, Now);
 
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokens.RedeemAsync(minted.Secret, minted.ExpiresAt.AddSeconds(1)));
-        Assert.Equal(StagerTokenRedeemReason.Expired, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Expired, ex.Reason);
     }
 
     [Fact]
@@ -90,11 +91,11 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryStagerTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements);
         await tokens.MintAsync(engagement.Id, owner, Now);
 
-        var ex = await Assert.ThrowsAsync<StagerTokenRedeemException>(
+        var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
             () => tokens.RedeemAsync("not-a-real-secret", Now.AddSeconds(1)));
-        Assert.Equal(StagerTokenRedeemReason.Unknown, ex.Reason);
+        Assert.Equal(DeployTokenRedeemReason.Unknown, ex.Reason);
     }
 }

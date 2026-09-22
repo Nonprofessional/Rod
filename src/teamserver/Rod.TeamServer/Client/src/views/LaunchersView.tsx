@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { catchLaunchers } from '../catchOneLiners'
 import { launcherHint } from '../launcherFamilies'
+import { CopyButton } from '../components/CopyButton'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
 import { useNow } from '../when'
@@ -49,7 +50,7 @@ function payloadLabel(p: PayloadSummary): string {
   return [
     // The wire class reads as noise for the only implant class there is;
     // the other kinds (a web-shell script) still stand out.
-    p.class === 'Stage2' ? null : p.class,
+    p.class === 'Implant' ? null : p.class,
     target,
     p.fingerprint ? p.fingerprint.slice(0, 12) : null,
     new Date(p.builtAt).toLocaleString(),
@@ -58,7 +59,13 @@ function payloadLabel(p: PayloadSummary): string {
     .join(' · ')
 }
 
-export function LaunchersView({ engagementId }: { engagementId: string }) {
+export function LaunchersView({
+  engagementId,
+  onlineTick,
+}: {
+  engagementId: string
+  onlineTick?: number
+}) {
   const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [rows, setRows] = useState<LauncherRow[]>([])
@@ -68,7 +75,6 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
   const [lifetimeMinutes, setLifetimeMinutes] = useState(30)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState<string | null>(null)
   const [commandsFor, setCommandsFor] = useState<string | null>(null)
 
   // The quiet clock keeps expiry counts moving between interactions.
@@ -104,9 +110,12 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
     }
   }, [engagementId])
 
+  // The live tick rides the SSE PayloadFetched frame: a target pulling a
+  // credential spends it on the server, and the row's remaining budget
+  // moves here without an operator pressing refresh.
   useEffect(() => {
     void refreshRows()
-  }, [refreshRows])
+  }, [refreshRows, onlineTick])
 
   // A selection must not survive the engagement switch.
   useEffect(() => {
@@ -149,17 +158,6 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
       setError(null)
     } catch (e) {
       setError(String(e))
-    }
-  }
-
-  const copy = async (id: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(id)
-      window.setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // Clipboard permission denied: the command stays selectable to copy
-      // by hand.
     }
   }
 
@@ -213,12 +211,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                       </span>
                       <code>{launcher.id}</code>
                       <code className="upgrade-command">{launcher.command}</code>
-                      <button
-                        className="ghost sm"
-                        onClick={() => void copy(`catch:${listener.id}:${launcher.id}`, launcher.command)}
-                      >
-                        {copied === `catch:${listener.id}:${launcher.id}` ? 'Copied' : 'Copy'}
-                      </button>
+                      <CopyButton text={launcher.command} />
                     </div>
                   ))}
                 </div>
@@ -321,6 +314,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
           <table>
             <thead>
               <tr>
+                <th></th>
                 <th>Cut</th>
                 <th>Payload</th>
                 <th>Front</th>
@@ -331,7 +325,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="empty">
                       <Icon name="copy" />
                       No launchers kept yet — every render above lands here, re-copyable until its
@@ -360,12 +354,46 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                       : row.maxUses === 0
                         ? `usable · unlimited downloads · until ${new Date(row.expiresAt).toLocaleTimeString()}`
                         : `usable · ${row.tokenRemainingUses} of ${row.maxUses} downloads left · until ${new Date(row.expiresAt).toLocaleTimeString()}`
-                // The commands expand under their own row -- the operator
-                // clicks Commands on the row they care about, so the
-                // one-liners belong beside it, not pooled below the table.
+                // The commands expand under their own row -- the shared
+                // chevron-and-row-click affordance every detail table uses,
+                // so the one-liners belong beside the row they were cut for,
+                // not pooled below the table. Only while the credential
+                // still serves fetches: a dead credential's command would
+                // download nothing.
+                const commandsOpen = commandsFor === row.launcherId
                 return (
                   <Fragment key={row.launcherId}>
-                    <tr className={live ? undefined : 'row-dim'}>
+                    <tr
+                      className={live ? 'console-row' : 'row-dim'}
+                      onClick={
+                        live
+                          ? () =>
+                              setCommandsFor((current) =>
+                                current === row.launcherId ? null : row.launcherId,
+                              )
+                          : undefined
+                      }
+                    >
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {live && (
+                          <button
+                            className={`ghost sm row-expand${commandsOpen ? ' open' : ''}`}
+                            aria-label={commandsOpen ? 'Hide the commands' : 'Show the commands'}
+                            title={
+                              commandsOpen
+                                ? 'Hide the one-liners'
+                                : 'The one-liners this row was cut with'
+                            }
+                            onClick={() =>
+                              setCommandsFor((current) =>
+                                current === row.launcherId ? null : row.launcherId,
+                              )
+                            }
+                          >
+                            <Icon name={commandsOpen ? 'chevronDown' : 'chevronRight'} />
+                          </button>
+                        )}
+                      </td>
                       <td title={`Cut by ${row.createdBy}`}>
                         {new Date(row.createdAt).toLocaleString()}
                       </td>
@@ -382,40 +410,22 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                       >
                         {status}
                       </td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div className="row-actions">
-                          {live && (
-                            <button
-                              className="sm"
-                              title="The one-liners this row was cut with -- only while the credential still serves fetches (a dead credential's command would download nothing)"
-                              onClick={() =>
-                                setCommandsFor((current) =>
-                                  current === row.launcherId ? null : row.launcherId,
-                                )
-                              }
-                            >
-                              {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
-                            </button>
-                          )}
                           <button className="ghost sm" onClick={() => void onDelete(row)}>
                             Delete
                           </button>
                         </div>
                       </td>
                     </tr>
-                    {commandsFor === row.launcherId && (
+                    {commandsOpen && (
                       <tr className="payload-detail-row">
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <div className="upgrade-panel">
                             <p>
                               Fetch URL <code>{row.url}</code> · credential{' '}
                               <code className="upgrade-command">{row.tokenSecret}</code>{' '}
-                              <button
-                                className="ghost sm"
-                                onClick={() => void copy(`token:${row.launcherId}`, row.tokenSecret)}
-                              >
-                                {copied === `token:${row.launcherId}` ? 'Copied' : 'Copy'}
-                              </button>
+                              <CopyButton text={row.tokenSecret} />
                             </p>
                             {row.launchers.map((launcher) => (
                               <div key={launcher.id} className="upgrade-launcher" title={launcherHint(launcher.id)}>
@@ -424,14 +434,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                                 </span>
                                 <code>{launcher.id}</code>
                                 <code className="upgrade-command">{launcher.command}</code>
-                                <button
-                                  className="ghost sm"
-                                  onClick={() =>
-                                    void copy(`${row.launcherId}:${launcher.id}`, launcher.command)
-                                  }
-                                >
-                                  {copied === `${row.launcherId}:${launcher.id}` ? 'Copied' : 'Copy'}
-                                </button>
+                                <CopyButton text={launcher.command} />
                               </div>
                             ))}
                           </div>

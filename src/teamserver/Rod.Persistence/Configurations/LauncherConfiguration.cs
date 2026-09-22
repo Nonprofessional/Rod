@@ -32,7 +32,7 @@ internal sealed class LauncherConfiguration : IEntityTypeConfiguration<Launcher>
         builder.Property(l => l.FrontName).HasColumnName("front_name");
         builder.Property(l => l.FrontEndpoint).HasColumnName("front_endpoint");
         builder.Property(l => l.TokenId)
-            .HasConversion(IdConverters.StagerTokenId)
+            .HasConversion(IdConverters.DeployTokenId)
             .HasColumnName("token_id");
         builder.Property(l => l.TokenSecret).HasColumnName("token_secret");
         builder.Property(l => l.Url).HasColumnName("url");

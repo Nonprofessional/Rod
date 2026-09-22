@@ -20,8 +20,8 @@ namespace Rod.Integration.Tests;
 /// verifies the issued binding by inspecting the certificate (no real mTLS
 /// handshake; the listener tests cover that). Failure paths assert each redeem outcome maps to
 /// the right wire <see cref="EnrollStatus"/>. The implant enrollment endpoint is
-/// anonymous (implants authenticate with the stager token, not a cookie); the
-/// operator routes that mint a stager token require the operator session.
+/// anonymous (implants authenticate with the deploy token, not a cookie); the
+/// operator routes that mint a deploy token require the operator session.
 /// </summary>
 public class EnrollmentTests
 {
@@ -48,9 +48,9 @@ public class EnrollmentTests
         var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         Assert.NotNull(created);
 
-        var mintResponse = await client.PostAsync($"/engagements/{created!.EngagementId}/stager-tokens", content: null);
+        var mintResponse = await client.PostAsync($"/engagements/{created!.EngagementId}/deploy-tokens", content: null);
         mintResponse.EnsureSuccessStatusCode();
-        var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         Assert.NotNull(token);
         return token!.Secret;
     }
@@ -70,7 +70,7 @@ public class EnrollmentTests
             // recorded beside a stored payload, as the build would record it.
             var (keyId, key) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
             await payloads.SaveAsync(new Rod.Audit.PayloadRecord(
-                Guid.NewGuid(), engagementId, "Stage2", "DotNet", "application/octet-stream",
+                Guid.NewGuid(), engagementId, "Implant", "DotNet", "application/octet-stream",
                 new string('a', 64), Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
                 EnvelopeKeyId: keyId, EnvelopeKey: key));
 
@@ -78,7 +78,7 @@ public class EnrollmentTests
             // is what answers (401), proving the envelope -- not the decode --
             // was the failure point.
             var json = JsonSerializer.Serialize(
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: "not-a-token", Class: null));
             var wrapped = Rod.Transport.Payloads.AesGcmEnvelope.Wrap(
                 System.Text.Encoding.UTF8.GetBytes(json), keyId, key, Rod.Transport.Payloads.AesGcmEnvelope.Aad);
             var encrypted = await client.PostAsync("/implants/enroll",
@@ -118,7 +118,7 @@ public class EnrollmentTests
             await AuthenticatedHost.LoginAsync(client);
             var secret = await MintTokenForNewEngagementAsync(client);
             var response = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(enrolled);
@@ -155,7 +155,7 @@ public class EnrollmentTests
             // Enrollment is implant-facing and anonymous; no operator session is
             // involved, and the bogus token never resolves to an engagement.
             var response = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "totally-bogus-secret", Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: "totally-bogus-secret", Class: null));
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             var body = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
@@ -177,13 +177,13 @@ public class EnrollmentTests
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await MintEngagementIdAsync(client);
 
-            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
             mintResponse.EnsureSuccessStatusCode();
-            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: token!.Secret,
+                    DeployTokenSecret: token!.Secret,
                     Class: null,
                     Hostname: "  web01.example.test  ",
                     Os: "Linux 6.12",
@@ -217,12 +217,12 @@ public class EnrollmentTests
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await MintEngagementIdAsync(client);
 
-            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+            var mintResponse = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
             mintResponse.EnsureSuccessStatusCode();
-            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: token!.Secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: token!.Secret, Class: null));
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
             var listResponse = await client.GetAsync($"/engagements/{engagementId}/implants");
@@ -251,17 +251,18 @@ public class EnrollmentTests
 
             // First enroll consumes the single-use token.
             var first = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
-            // Second enroll with the same secret: the token is spent (the store
-            // removed it), so the lookup finds nothing -> BadToken.
+            // Second enroll with the same secret: the spent credential stays
+            // resolvable, so the refusal carries its honest reason -- the
+            // status the test always named finally reaches the wire.
             var second = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
 
             Assert.Equal(HttpStatusCode.Unauthorized, second.StatusCode);
             var body = await second.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
-            Assert.Equal(EnrollStatus.BadToken, body!.Status);
+            Assert.Equal(EnrollStatus.Spent, body!.Status);
         }
     }
 
@@ -286,7 +287,7 @@ public class EnrollmentTests
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: secret,
+                    DeployTokenSecret: secret,
                     Class: null,
                     PublicKey: publicKeyB64));
 
@@ -313,7 +314,7 @@ public class EnrollmentTests
 
             var response = await client.PostAsJsonAsync("/implants/enroll",
                 new EnrollmentEndpoints.EnrollRequest(
-                    StagerTokenSecret: secret,
+                    DeployTokenSecret: secret,
                     Class: null,
                     PublicKey: Convert.ToBase64String("not-a-real-public-key"u8.ToArray())));
 
@@ -337,7 +338,7 @@ public class EnrollmentTests
             var secret = await MintTokenForNewEngagementAsync(client);
 
             var json = JsonSerializer.Serialize(
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             var wrapped = "\"" + Convert.ToBase64String(Encoding.UTF8.GetBytes(json)) + "\"";
             var response = await client.PostAsync("/implants/enroll",
                 new StringContent(wrapped, Encoding.UTF8, "application/json"));

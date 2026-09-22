@@ -90,7 +90,7 @@ public class AuditRetentionTests
 
         var byKind = trailResponse.Items.ToDictionary(e => e.Kind);
         Assert.Contains("EngagementCreated", byKind.Keys);
-        Assert.Contains("StagerTokenMinted", byKind.Keys);
+        Assert.Contains("DeployTokenMinted", byKind.Keys);
         Assert.Contains("ImplantEnrolled", byKind.Keys);
         Assert.Contains("SessionOpened", byKind.Keys);
         Assert.Contains("TaskIssued", byKind.Keys);
@@ -147,9 +147,9 @@ public class AuditRetentionTests
         var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
         var engagementId = Guid.Parse(engagement!.EngagementId);
 
-        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var minted = await env.Http.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         minted.EnsureSuccessStatusCode();
-        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
 
         var implantId = await EnrollImplantAsync(env.Http, token!.Secret);
 
@@ -219,7 +219,7 @@ public class AuditRetentionTests
         var spki = leafKey.ExportSubjectPublicKeyInfo();
 
         var response = await http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
         response.EnsureSuccessStatusCode();
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
 

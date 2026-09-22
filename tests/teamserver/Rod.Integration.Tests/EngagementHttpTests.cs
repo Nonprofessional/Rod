@@ -8,7 +8,7 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance: create an engagement over HTTP, then mint a stager
 /// token for it -- end to end through the in-memory TestServer. This exercises
-/// the core-state domain (ports, aggregates, stager-token service) driven by the
+/// the core-state domain (ports, aggregates, deploy-token service) driven by the
 /// transport-layer endpoints, proving the vertical slice works as a whole. Every
 /// engagement route now requires an authenticated operator session (operator
 /// authentication): the owner is the logged-in
@@ -57,7 +57,7 @@ public class EngagementHttpTests
     }
 
     [Fact]
-    public async Task PostStagerToken_MintsToken_ForCreatedEngagement()
+    public async Task PostDeployToken_MintsToken_ForCreatedEngagement()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -71,11 +71,11 @@ public class EngagementHttpTests
             var created = await createResponse.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             Assert.NotNull(created);
 
-            var mintResponse = await client.PostAsync($"/engagements/{created!.EngagementId}/stager-tokens", content: null);
+            var mintResponse = await client.PostAsync($"/engagements/{created!.EngagementId}/deploy-tokens", content: null);
 
             Assert.Equal(HttpStatusCode.OK, mintResponse.StatusCode);
 
-            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
             Assert.NotNull(token);
             Assert.Equal(created.EngagementId, token!.EngagementId);
             // The secret is the single-use value handed back exactly once: non-empty.
@@ -87,7 +87,7 @@ public class EngagementHttpTests
     }
 
     [Fact]
-    public async Task PostStagerToken_Returns404_ForUnknownEngagement()
+    public async Task PostDeployToken_Returns404_ForUnknownEngagement()
     {
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
@@ -95,7 +95,7 @@ public class EngagementHttpTests
         {
             await AuthenticatedHost.LoginAsync(client);
 
-            var response = await client.PostAsync($"/engagements/{Guid.NewGuid()}/stager-tokens", content: null);
+            var response = await client.PostAsync($"/engagements/{Guid.NewGuid()}/deploy-tokens", content: null);
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
     }

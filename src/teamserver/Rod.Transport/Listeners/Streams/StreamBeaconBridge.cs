@@ -5,7 +5,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Sessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.CoreState.Transports;
 using Rod.Transport.Channels;
@@ -70,7 +70,7 @@ internal sealed class StreamBeaconBridge
     private readonly TimeProvider _clock;
     private readonly DegradedChannelHub _degraded;
     private readonly EnrollmentService _enrollment;
-    private readonly IStagerTokenService _tokens;
+    private readonly IDeployTokenService _tokens;
     private readonly IPayloadStore _payloads;
     private readonly EnvelopeContactKeys _contactKeys;
     private readonly ILogger<StreamBeaconBridge> _logger;
@@ -94,7 +94,7 @@ internal sealed class StreamBeaconBridge
         TimeProvider clock,
         DegradedChannelHub degraded,
         EnrollmentService enrollment,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IPayloadStore payloads,
         EnvelopeContactKeys contactKeys,
         ITaskDispatchWake wake,
@@ -482,7 +482,7 @@ internal sealed class StreamBeaconBridge
 
         var outcome = await ScopedEnrollment.EnrollAsync(
             new EnrollWireFields(
-                request.StagerTokenSecret,
+                request.DeployTokenSecret,
                 NullWhenEmpty(request.Class),
                 request.PublicKey.IsEmpty ? null : request.PublicKey.ToByteArray(),
                 NullWhenEmpty(request.ParentImplantId),

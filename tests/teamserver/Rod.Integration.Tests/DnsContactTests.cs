@@ -686,7 +686,7 @@ public class DnsContactTests
             var engagement = Engagement.Create(EngagementId.New(), "dns-test", OperatorId.New(), DateTimeOffset.UtcNow);
             await engagements.SaveAsync(engagement);
             var implant = Implant.Enroll(
-                ImplantId.New(), engagement.Id, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Stage2, DateTimeOffset.UtcNow);
+                ImplantId.New(), engagement.Id, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Implant, DateTimeOffset.UtcNow);
             await implants.SaveAsync(implant);
             return implant;
         }

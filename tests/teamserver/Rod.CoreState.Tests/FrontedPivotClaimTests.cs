@@ -26,10 +26,10 @@ public class FrontedPivotClaimTests
     {
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
-        var parent = await EnrollAsync(implants, engagement, ImplantClass.Stage2, parent: null);
+        var parent = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: null);
         var pivotChild = await EnrollAsync(implants, engagement, ImplantClass.Pivot, parent: parent);
-        var stage2Child = await EnrollAsync(implants, engagement, ImplantClass.Stage2, parent: parent);
-        var otherParent = await EnrollAsync(implants, engagement, ImplantClass.Stage2, parent: null);
+        var stage2Child = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: parent);
+        var otherParent = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: null);
         var foreignPivot = await EnrollAsync(implants, engagement, ImplantClass.Pivot, parent: otherParent);
 
         var fronted = await implants.ListFrontedPivotsAsync(parent);
@@ -163,7 +163,7 @@ public class FrontedPivotClaimTests
         await engagements.SaveAsync(engagement);
 
         var implants = new InMemoryImplantRepository();
-        var parent = await EnrollAsync(implants, engagement.Id, ImplantClass.Stage2, parent: null);
+        var parent = await EnrollAsync(implants, engagement.Id, ImplantClass.Implant, parent: null);
 
         var wake = new InMemoryTaskDispatchWake();
         var service = new TaskService(

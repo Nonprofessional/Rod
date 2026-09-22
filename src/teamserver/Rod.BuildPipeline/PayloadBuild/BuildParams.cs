@@ -20,12 +20,6 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// the language-neutrality boundary, so a build unit consumes these params
 /// without any teamserver-language coupling.
 /// </summary>
-/// <param name="Stage2">
-/// The stage-2 payload a stager-class build fetches at run time
-/// (architecture.md Sec 6): its id names the fetch path and its sha256 is the
-/// integrity anchor the stager verifies the fetched bytes against. Null for
-/// every other class -- only the stager output consumes it.
-/// </param>
 /// <param name="TokenSecret">
 /// The enrollment credential baked into the artifact's profile: the artifact
 /// deploys with zero run-time arguments, the token spends itself at enroll,
@@ -62,26 +56,9 @@ public sealed record BuildParams(
     TargetProfile Target,
     TransportProfile Transport,
     BeaconProfile Beacon,
-    Stage2Payload? Stage2 = null,
     string? TokenSecret = null,
     Guid? TokenId = null,
     int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null,
-    ArtifactFormat Format = ArtifactFormat.SingleFileExe);
-
-/// <summary>
-/// The stage-2 payload a stage-1 stager build references: the built-payload id
-/// the stager fetches over the enroll listener, plus the payload's sha256
-/// fingerprint baked in as the fetch's integrity check. The bytes themselves
-/// stay server-side in the payload store -- only the reference crosses the
-/// build contract. <see cref="Format"/> names the referenced payload's form
-/// factor, because the loader's run path follows it: a dll bundle is hosted
-/// in the stager's process (in-memory, no bytes on disk), an executable form
-/// runs as the child. Defaults to the single-file executable every stage-2
-/// produced before the format axis existed.
-/// </summary>
-public sealed record Stage2Payload(
-    Guid PayloadId,
-    string Sha256,
     ArtifactFormat Format = ArtifactFormat.SingleFileExe);

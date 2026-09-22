@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -107,7 +107,7 @@ public class ListenerRuntimeTests
         // certificate -- the handshake is indistinguishable from an ordinary
         // website's (a TLS CertificateRequest is itself an IDS fingerprint),
         // and both halves authenticate at the application layer: enrollment
-        // on the stager token, contacts under the per-artifact key the
+        // on the deploy token, contacts under the per-artifact key the
         // build baked (architecture.md Sec 8/9). One socket, both halves.
         var port = TestSupport.GetFreeTcpPort();
         await using var env = await TestEnv.StartAsync(new ListenerConfig(
@@ -155,7 +155,7 @@ public class ListenerRuntimeTests
         // (the bad token's 401 proves the route answered, not the TLS layer --
         // and that the handshake above never asked for the offered one).
         var enroll = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: "not-a-token", Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: "not-a-token", Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, enroll.StatusCode);
 
         // The contact route answers the certificate-less connection too --
@@ -220,9 +220,9 @@ public class ListenerRuntimeTests
         // whole, its single use intact for the listener it was minted for.
         var foreignSecret = await MintTokenAsync(env.Http, foreign);
         var refused = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignSecret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: foreignSecret, Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
-        var tokens = env.Host.Services.GetRequiredService<IStagerTokenService>();
+        var tokens = env.Host.Services.GetRequiredService<IDeployTokenService>();
         Assert.True(EngagementId.TryParse(foreign, out var foreignId));
         var redeemed = await tokens.RedeemAsync(foreignSecret, DateTimeOffset.UtcNow.AddMinutes(1));
         Assert.Equal(foreignId, redeemed.EngagementId);
@@ -232,7 +232,7 @@ public class ListenerRuntimeTests
         // stamp the listener-delete guard counts.
         var owningSecret = await MintTokenAsync(env.Http, owning);
         var enrolled = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: owningSecret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: owningSecret, Class: null));
         enrolled.EnsureSuccessStatusCode();
         var body = await enrolled.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
         Assert.NotNull(body);
@@ -271,20 +271,20 @@ public class ListenerRuntimeTests
         var foreignSecret = await MintTokenAsync(env.Http, foreign);
         using var scoped = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{scopedPort}") };
         var refused = await scoped.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignSecret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: foreignSecret, Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
 
         // The operator front refuses implant ingress outright: it carries no
         // enrollment at all, whatever token is presented.
         var onFront = await env.Http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignSecret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: foreignSecret, Class: null));
         Assert.Equal(HttpStatusCode.Unauthorized, onFront.StatusCode);
 
         // The owning engagement's token enrolls through the scoped socket --
         // the one path into the engagement.
         var owningSecret = await MintTokenAsync(env.Http, owning);
         var scopedEnroll = await scoped.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: owningSecret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: owningSecret, Class: null));
         scopedEnroll.EnsureSuccessStatusCode();
     }
 
@@ -611,7 +611,7 @@ public class ListenerRuntimeTests
         var built = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
                 Language: "Rust",
-                Class: "Stage2",
+                Class: "Implant",
                 TargetOs: "linux",
                 TargetArch: "amd64",
                 Endpoint: null,
@@ -634,7 +634,7 @@ public class ListenerRuntimeTests
         var foreignListener = await foreign.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
         var wrongEngagement = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                Language: "Rust", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Language: "Rust", Class: "Implant", TargetOs: "linux", TargetArch: "amd64",
                 Endpoint: null, UriPath: "/beacon", SleepSeconds: 30, JitterSeconds: 10,
                 KillDate: null, ListenerId: foreignListener!.Id));
         Assert.Equal(HttpStatusCode.BadRequest, wrongEngagement.StatusCode);
@@ -645,7 +645,7 @@ public class ListenerRuntimeTests
         var front = Assert.Single(await registry.ListAsync(), l => l.EngagementId is null);
         var frontNamed = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                Language: "Rust", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Language: "Rust", Class: "Implant", TargetOs: "linux", TargetArch: "amd64",
                 Endpoint: null, UriPath: "/beacon", SleepSeconds: 30, JitterSeconds: 10,
                 KillDate: null, ListenerId: front.Id.ToString()));
         Assert.Equal(HttpStatusCode.BadRequest, frontNamed.StatusCode);
@@ -654,7 +654,7 @@ public class ListenerRuntimeTests
         // rather than silently preferring one.
         var both = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
-                Language: "Rust", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                Language: "Rust", Class: "Implant", TargetOs: "linux", TargetArch: "amd64",
                 Endpoint: "http://typed.example.test", UriPath: "/beacon", SleepSeconds: 30,
                 JitterSeconds: 10, KillDate: null, ListenerId: listener.Id));
         Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
@@ -696,9 +696,9 @@ public class ListenerRuntimeTests
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", null);
         response.EnsureSuccessStatusCode();
-        var minted = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var minted = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return minted!.Secret;
     }
 

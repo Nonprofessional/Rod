@@ -66,7 +66,7 @@ public class ListenerTests
         var secret = await MintTokenAsync(env.Http, engagementId);
         using var scoped = new HttpClient { BaseAddress = new Uri($"http://{listener.BindAddress}") };
         var response = await scoped.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
@@ -107,10 +107,10 @@ public class ListenerTests
         var fuse = DateTimeOffset.UtcNow.AddDays(45);
         using var scoped = new HttpClient { BaseAddress = new Uri($"http://{listener.BindAddress}") };
         var openEnroll = await scoped.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: openSecret));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: openSecret));
         openEnroll.EnsureSuccessStatusCode();
         var fusedEnroll = await scoped.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: await MintTokenAsync(env.Http, engagementId), KillDate: fuse.ToString("O")));
+            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: await MintTokenAsync(env.Http, engagementId), KillDate: fuse.ToString("O")));
         fusedEnroll.EnsureSuccessStatusCode();
 
         var implants = await env.Http.GetFromJsonAsync<ImplantEndpoints.ImplantResponse[]>(
@@ -210,9 +210,9 @@ public class ListenerTests
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
     {
-        var mintResponse = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var mintResponse = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         mintResponse.EnsureSuccessStatusCode();
-        var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await mintResponse.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return token!.Secret;
     }
 
@@ -230,7 +230,7 @@ public class ListenerTests
     }
 
     private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Stage2)
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(

@@ -119,7 +119,7 @@ public class StreamEnrollRoundTripTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var token = await MintStagerTokenAsync(client, engagementId);
+            var token = await MintDeployTokenAsync(client, engagementId);
 
             var port = GetFreeTcpPort();
             var created = await client.PostAsJsonAsync(
@@ -143,7 +143,7 @@ public class StreamEnrollRoundTripTests
             using var session = await StreamImplant.ConnectAsync(port);
             var enroll = await session.EnrollExchangeAsync(new Rod.V1.EnrollRequest
             {
-                StagerTokenSecret = token,
+                DeployTokenSecret = token,
                 PublicKey = ByteString.CopyFrom(implantKey.ExportSubjectPublicKeyInfo()),
                 Hostname = "tcp-host01",
                 KillDate = DateTimeOffset.UtcNow.AddDays(7).ToString("O"),
@@ -223,7 +223,7 @@ public class StreamEnrollRoundTripTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var token = await MintStagerTokenAsync(client, engagementId);
+            var token = await MintDeployTokenAsync(client, engagementId);
 
             var port = GetFreeTcpPort();
             var created = await client.PostAsJsonAsync(
@@ -240,7 +240,7 @@ public class StreamEnrollRoundTripTests
             using var enrollSession = await StreamImplant.ConnectAsync(port);
             var enroll = await enrollSession.EnrollExchangeAsync(new Rod.V1.EnrollRequest
             {
-                StagerTokenSecret = token,
+                DeployTokenSecret = token,
                 PublicKey = ByteString.CopyFrom(implantKey.ExportSubjectPublicKeyInfo()),
                 Hostname = "tcp-live-host01",
             });
@@ -301,7 +301,7 @@ public class StreamEnrollRoundTripTests
             foreignEngagement.EnsureSuccessStatusCode();
             var foreign = await foreignEngagement.Content
                 .ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-            var foreignToken = await MintStagerTokenAsync(client, foreign!.EngagementId);
+            var foreignToken = await MintDeployTokenAsync(client, foreign!.EngagementId);
 
             var port = GetFreeTcpPort();
             var created = await client.PostAsJsonAsync(
@@ -315,22 +315,22 @@ public class StreamEnrollRoundTripTests
 
             using var session = await StreamImplant.ConnectAsync(port);
             var enroll = await session.EnrollExchangeAsync(
-                new Rod.V1.EnrollRequest { StagerTokenSecret = foreignToken });
+                new Rod.V1.EnrollRequest { DeployTokenSecret = foreignToken });
             Assert.Equal(EnrollStatus.BadToken, enroll.Status);
 
             // Unspent: the same token enrolls its own engagement over the
             // web route afterwards.
             var webEnroll = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: foreignToken, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: foreignToken, Class: null));
             Assert.Equal(HttpStatusCode.OK, webEnroll.StatusCode);
         }
     }
 
-    private static async Task<string> MintStagerTokenAsync(HttpClient client, string engagementId)
+    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
     {
-        var mint = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var mint = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         mint.EnsureSuccessStatusCode();
-        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return token!.Secret;
     }
 

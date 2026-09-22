@@ -37,7 +37,7 @@ public class PayloadTransformTests
         EngagementId.New(),
         OperatorId.New(),
         Language.Go,
-        ImplantClass.Stage2,
+        ImplantClass.Implant,
         new TargetProfile("linux", "amd64"),
         new TransportProfile("http://c2.example.test/implants/enroll", "/beacon"),
         Sleep: TimeSpan.FromSeconds(30),

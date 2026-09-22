@@ -145,7 +145,7 @@ public class RelayBindRoundTripTests
         await using var env = await TestEnv.StartAsync();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
 
         await AuthenticatedHost.LoginAsync(env.Http);
 
@@ -243,7 +243,7 @@ public class RelayBindRoundTripTests
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
     private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Stage2)
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(

@@ -222,7 +222,7 @@ public class TunnelForwardRoundTripTests
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
     private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Stage2)
+        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
     {
         var now = clock.GetUtcNow();
         var implant = Implant.Enroll(

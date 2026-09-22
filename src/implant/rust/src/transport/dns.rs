@@ -118,7 +118,7 @@ pub fn enroll_over_dns(
     let sealed = sealed_key(profile);
 
     let request = crate::wire::EnrollRequest {
-        stager_token_secret: profile.token.clone(),
+        deploy_token_secret: profile.token.clone(),
         class: String::new(),
         public_key: keys.public_spki_der(),
         parent_implant_id: String::new(),

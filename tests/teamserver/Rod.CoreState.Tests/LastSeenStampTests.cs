@@ -16,7 +16,7 @@ public class LastSeenStampTests
     private static (Implant Implant, IImplantRepository Repo, LastSeenSessionRegistry Registry, TimeProvider Clock)
         FreshAsync(DateTimeOffset now)
     {
-        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Implant, now);
         var repo = new InMemoryImplantRepository();
         return (implant, repo, new LastSeenSessionRegistry(new InMemorySessionRegistry(), repo), new FixedTimeProvider(now));
     }
@@ -25,7 +25,7 @@ public class LastSeenStampTests
     public void NoteSeen_FirstStamp_Moves()
     {
         var now = DateTimeOffset.Parse("2026-09-08T10:00:00Z");
-        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Implant, now);
 
         Assert.Null(implant.LastSeenAt);
         Assert.True(implant.NoteSeen(now.AddMinutes(2)));
@@ -36,7 +36,7 @@ public class LastSeenStampTests
     public void NoteSeen_WithinTheMinuteWindow_DoesNotMove()
     {
         var now = DateTimeOffset.Parse("2026-09-08T10:00:00Z");
-        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Implant, now);
         implant.NoteSeen(now);
 
         // Fresh but inside the throttle window: no move, no save.
@@ -48,7 +48,7 @@ public class LastSeenStampTests
     public void NoteSeen_OlderThanTheStamp_NeverMovesBackwards()
     {
         var now = DateTimeOffset.Parse("2026-09-08T10:00:00Z");
-        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Stage2, now);
+        var implant = Implant.Enroll(ImplantId.New(), Engagement, now.AddDays(30), ImplantClass.Implant, now);
         implant.NoteSeen(now.AddMinutes(5));
 
         Assert.False(implant.NoteSeen(now));

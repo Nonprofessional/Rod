@@ -16,7 +16,7 @@ namespace Rod.Build.Tests;
 /// </summary>
 public class RustBuildUnitTests
 {
-    private static BuildParams Params(ImplantClass @class = ImplantClass.Stage2) => new(
+    private static BuildParams Params(ImplantClass @class = ImplantClass.Implant) => new(
         EngagementId.New(),
         OperatorId.New(),
         @class,
@@ -36,15 +36,4 @@ public class RustBuildUnitTests
         Assert.Contains("source tree not found", ex.Message);
     }
 
-    [Fact]
-    public async Task RetiredStagerClass_StillThrowsTheContractRefusal()
-    {
-        // The refusal precedes any filesystem touch, so the source dir never
-        // needs to exist for this one.
-        var unit = new RustBuildUnit(
-            rustSourceDir: Path.Combine(Path.GetTempPath(), "rod-absent-" + Guid.NewGuid().ToString("N")));
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => unit.BuildAsync(Params(ImplantClass.Stager)));
-    }
 }

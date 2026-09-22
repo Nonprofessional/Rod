@@ -11,7 +11,7 @@ namespace Rod.Integration.Tests;
 /// the response carries the scope back, a body-less post keeps the single-use
 /// default, and out-of-range values are refused loudly rather than clamped.
 /// </summary>
-public class StagerTokenMintScopeTests
+public class DeployTokenMintScopeTests
 {
     [Fact]
     public async Task Batch_Scope_Rides_The_Optional_Body()
@@ -24,16 +24,16 @@ public class StagerTokenMintScopeTests
             var engagementId = await CreateEngagementAsync(client);
 
             var minted = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/stager-tokens",
-                new EngagementEndpoints.MintStagerTokenRequest(MaxUses: 3, LifetimeSeconds: 8 * 3600));
+                $"/engagements/{engagementId}/deploy-tokens",
+                new EngagementEndpoints.MintDeployTokenRequest(MaxUses: 3, LifetimeSeconds: 8 * 3600));
             Assert.Equal(HttpStatusCode.OK, minted.StatusCode);
-            var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var token = await minted.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
             Assert.Equal(3, token!.MaxUses);
             Assert.Equal(token.IssuedAt.AddHours(8), token.ExpiresAt);
 
-            var plain = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", null);
+            var plain = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", null);
             Assert.Equal(HttpStatusCode.OK, plain.StatusCode);
-            var single = await plain.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+            var single = await plain.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
             Assert.Equal(1, single!.MaxUses);
         }
     }
@@ -49,13 +49,13 @@ public class StagerTokenMintScopeTests
             var engagementId = await CreateEngagementAsync(client);
 
             var noUses = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/stager-tokens",
-                new EngagementEndpoints.MintStagerTokenRequest(MaxUses: 0, LifetimeSeconds: null));
+                $"/engagements/{engagementId}/deploy-tokens",
+                new EngagementEndpoints.MintDeployTokenRequest(MaxUses: 0, LifetimeSeconds: null));
             Assert.Equal(HttpStatusCode.BadRequest, noUses.StatusCode);
 
             var noWindow = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/stager-tokens",
-                new EngagementEndpoints.MintStagerTokenRequest(MaxUses: null, LifetimeSeconds: 1));
+                $"/engagements/{engagementId}/deploy-tokens",
+                new EngagementEndpoints.MintDeployTokenRequest(MaxUses: null, LifetimeSeconds: 1));
             Assert.Equal(HttpStatusCode.BadRequest, noWindow.StatusCode);
         }
     }
@@ -85,7 +85,7 @@ public class StagerTokenMintScopeTests
             var built = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "Rust", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
+                    Language: "Rust", Class: "Implant", TargetOs: "linux", TargetArch: "amd64",
                     ListenerId: frontId, UriPath: "/beacon",
                     SleepSeconds: 30, JitterSeconds: 10, KillDate: null));
             built.EnsureSuccessStatusCode();
@@ -96,21 +96,21 @@ public class StagerTokenMintScopeTests
             var audit = host.Services.GetRequiredService<IAuditStore>();
             var trail = await audit.ListAsync(Guid.Parse(engagementId));
             Assert.Contains(trail, e =>
-                e.Kind == AuditEventKind.StagerTokenMinted && e.Payload.Contains("bakedIntoPayload"));
+                e.Kind == AuditEventKind.DeployTokenMinted && e.Payload.Contains("bakedIntoPayload"));
 
             // Revocation is the leak answer for a baked credential: the id
             // stops working, the second attempt honestly 404s, and the
             // revocation lands on the trail.
             var revoked = await client.PostAsync(
-                $"/engagements/{engagementId}/stager-tokens/{artifact.TokenId}:revoke", null);
+                $"/engagements/{engagementId}/deploy-tokens/{artifact.TokenId}:revoke", null);
             Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
             var revokedAgain = await client.PostAsync(
-                $"/engagements/{engagementId}/stager-tokens/{artifact.TokenId}:revoke", null);
+                $"/engagements/{engagementId}/deploy-tokens/{artifact.TokenId}:revoke", null);
             Assert.Equal(HttpStatusCode.NotFound, revokedAgain.StatusCode);
 
             trail = await audit.ListAsync(Guid.Parse(engagementId));
             Assert.Contains(trail, e =>
-                e.Kind == AuditEventKind.StagerTokenRevoked && e.Outcome == artifact.TokenId);
+                e.Kind == AuditEventKind.DeployTokenRevoked && e.Outcome == artifact.TokenId);
         }
     }
 

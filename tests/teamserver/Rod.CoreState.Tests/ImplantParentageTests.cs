@@ -5,7 +5,7 @@ namespace Rod.CoreState.Tests;
 
 /// <summary>
 /// Direct checks of the <see cref="Implant"/> parentage model (architecture.md
-/// Sec 5.2). A top-level implant enrolled from a stager token has
+/// Sec 5.2). A top-level implant enrolled from a deploy token has
 /// no parent; a child derived from a parent records the parent's id. The shared
 /// key/kill-date validation applies to both factories. The engagement-scope
 /// check (parent and child in the same engagement) lives in the enrollment use
@@ -19,9 +19,9 @@ public class ImplantParentageTests
     [Fact]
     public void Enroll_RecordsNoParent()
     {
-        // A top-level implant (enrolled from a stager token) has no parent.
+        // A top-level implant (enrolled from a deploy token) has no parent.
         var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created);
 
         Assert.Null(implant.ParentImplantId);
     }
@@ -32,7 +32,7 @@ public class ImplantParentageTests
         // A child derived from a parent records the parent's id verbatim.
         var parent = ImplantId.New();
         var child = Implant.EnrollChild(
-            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created, parentImplantId: parent);
+            ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created, parentImplantId: parent);
 
         Assert.Equal(parent, child.ParentImplantId);
     }
@@ -46,8 +46,8 @@ public class ImplantParentageTests
         var id = ImplantId.New();
         var engagement = EngagementId.New();
 
-        var topLevel = Implant.Enroll(id, engagement, KillDate, ImplantClass.Stage2, Created);
-        var asChild = Implant.EnrollChild(id, engagement, KillDate, ImplantClass.Stage2, Created, parentImplantId: null);
+        var topLevel = Implant.Enroll(id, engagement, KillDate, ImplantClass.Implant, Created);
+        var asChild = Implant.EnrollChild(id, engagement, KillDate, ImplantClass.Implant, Created, parentImplantId: null);
 
         Assert.Null(asChild.ParentImplantId);
         Assert.Equal(topLevel.ParentImplantId, asChild.ParentImplantId);
@@ -58,10 +58,10 @@ public class ImplantParentageTests
     {
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), Created, ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), Created, ImplantClass.Implant, Created, parentImplantId: ImplantId.New()));
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), Created.AddSeconds(-1), ImplantClass.Stage2, Created, parentImplantId: ImplantId.New()));
+                ImplantId.New(), EngagementId.New(), Created.AddSeconds(-1), ImplantClass.Implant, Created, parentImplantId: ImplantId.New()));
     }
 
     [Fact]
@@ -72,6 +72,6 @@ public class ImplantParentageTests
         // parent stays valid (the top-level shape).
         Assert.Throws<ArgumentException>(
             () => Implant.EnrollChild(
-                ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Stage2, Created, parentImplantId: default(ImplantId)));
+                ImplantId.New(), EngagementId.New(), KillDate, ImplantClass.Implant, Created, parentImplantId: default(ImplantId)));
     }
 }

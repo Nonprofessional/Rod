@@ -200,8 +200,8 @@ export async function createEngagement(input: CreateEngagementInput): Promise<En
 // The leak answer, above all for a credential baked into a deployed artifact:
 // the id stops working at the next redeem or verify. Idempotent-refusing -- a
 // second attempt 404s rather than reading as success.
-export async function revokeStagerToken(engagementId: string, tokenId: string): Promise<void> {
-  const response = await fetch(`engagements/${engagementId}/stager-tokens/${tokenId}:revoke`, {
+export async function revokeDeployToken(engagementId: string, tokenId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/deploy-tokens/${tokenId}:revoke`, {
     method: 'POST',
   })
   await jsonOrThrow<unknown>(response)
@@ -406,6 +406,7 @@ export interface EngagementStreamHandlers {
   onSessionClosed?: (implantId: string, payload: string) => void
   onShellSessionOpened?: (payload: string) => void
   onShellSessionEnded?: (payload: string) => void
+  onPayloadFetched?: (payload: string) => void
   onError?: (event: Event) => void
 }
 
@@ -470,6 +471,10 @@ export function subscribeToEngagement(
   source.addEventListener('ShellSessionEnded', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onShellSessionEnded?.(payload?.payload ?? '')
+  })
+  source.addEventListener('PayloadFetched', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onPayloadFetched?.(payload?.payload ?? '')
   })
   source.onerror = (e) => handlers.onError?.(e)
 
@@ -959,7 +964,7 @@ export interface ShellUpgrade {
 }
 
 // Renders the paste-ready launchers that grow the shell into a real implant
-// (a single-use stager token is minted server-side; the paste itself is the
+// (a single-use deploy token is minted server-side; the paste itself is the
 // operator's action through the input route).
 export async function upgradeShell(
   engagementId: string,
@@ -1336,7 +1341,7 @@ export async function listBuildJobs(engagementId: string): Promise<BuildJob[]> {
 // The payload store's own listing: the durable answer to the bounded,
 // process-local build-job list. A payload built weeks ago stays here --
 // downloadable, its baked credential revocable, and deletable (which also
-// stops any stager fetching it) -- whatever happened to the Recent builds
+// stops any fetch of it) -- whatever happened to the Recent builds
 // queue or the teamserver process in between.
 
 export interface PayloadSummary {
@@ -1395,7 +1400,7 @@ export async function listPayloads(engagementId: string): Promise<PayloadSummary
 }
 
 // Removes the stored payload: the bytes and the library row are gone, and a
-// stager fetching it 404s from now on. The deletion is audited server-side.
+// fetch of it 404s from now on. The deletion is audited server-side.
 export async function deletePayload(engagementId: string, artifactId: string): Promise<void> {
   await jsonOrThrow<unknown>(
     await fetch(`engagements/${engagementId}/payloads/${artifactId}`, { method: 'DELETE' }),

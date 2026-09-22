@@ -33,9 +33,9 @@ public class OperatorListingTests
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
     {
-        var response = await client.PostAsync($"/engagements/{engagementId}/stager-tokens", content: null);
+        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
         response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.StagerTokenResponse>();
+        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         Assert.NotNull(token);
         return token!.Secret;
     }
@@ -93,7 +93,7 @@ public class OperatorListingTests
             var secret = await MintTokenAsync(client, engagementId);
 
             var enrollResponse = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             enrollResponse.EnsureSuccessStatusCode();
             var enrolled = await enrollResponse.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(enrolled);
@@ -137,7 +137,7 @@ public class OperatorListingTests
             var secret = await MintTokenAsync(client, engagementId);
 
             var enrollResponse = await client.PostAsJsonAsync("/implants/enroll",
-                new EnrollmentEndpoints.EnrollRequest(StagerTokenSecret: secret, Class: null));
+                new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null));
             enrollResponse.EnsureSuccessStatusCode();
             var enrolled = await enrollResponse.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
             Assert.NotNull(enrolled);

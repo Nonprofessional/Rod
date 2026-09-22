@@ -41,7 +41,7 @@ public class SocksProxyRoundTripTests
         // per connection -- arbitrary, not baked at task time.
         await using var thirdOne = EchoHost.Start();
         await using var thirdTwo = EchoHost.Start();
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
@@ -132,7 +132,7 @@ public class SocksProxyRoundTripTests
         var deadPort = ((IPEndPoint)taken.LocalEndpoint).Port;
         taken.Stop();
 
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Stage2);
+        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);

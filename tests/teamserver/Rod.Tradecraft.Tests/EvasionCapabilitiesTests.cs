@@ -106,7 +106,7 @@ public class EvasionCapabilitiesTests
         // task resolver admits the verb because the out-of-tree module is what
         // is registered, not the placeholder.
         var resolver = new CapabilityRegistryTaskResolver(registry);
-        Assert.True(resolver.IsDispatchable(ImplantClass.Stage2, "evasion.avoid"));
+        Assert.True(resolver.IsDispatchable(ImplantClass.Implant, "evasion.avoid"));
     }
 
     // A module whose descriptor is fixed at construction, so a test can stand in

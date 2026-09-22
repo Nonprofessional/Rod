@@ -14,7 +14,7 @@ import type { MenuEntry, MenuItem } from '../components/ContextMenu'
 // only decides what the menu offers, exactly like the channel-verb mirror --
 // the server still refuses anything this table gets wrong.
 const CLASS_VERBS: Record<string, readonly string[]> = {
-  Stage2: [
+  Implant: [
     'shell.exec', 'shell.interact', 'file.push', 'file.pull', 'fs.list', 'proc.kill',
     'beacon.sleep',
     'recon.portscan', 'recon.hostenum', 'recon.service', 'recon.ps',
@@ -23,7 +23,6 @@ const CLASS_VERBS: Record<string, readonly string[]> = {
     'collect.cred', 'collect.screenshot', 'exfil.push', 'exfil.stage',
     'tunnel.forward', 'tunnel.socks',
   ],
-  Stager: ['file.pull'],
   WebShell: ['shell.exec'],
   Ephemeral: ['shell.exec'],
   Pivot: ['tunnel.forward', 'tunnel.socks'],

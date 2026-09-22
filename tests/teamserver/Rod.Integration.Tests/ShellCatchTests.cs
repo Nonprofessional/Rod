@@ -345,7 +345,7 @@ public class ShellCatchTests
         var payloads = env.Host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
         var payloadId = Guid.NewGuid();
         await payloads.SaveAsync(new Rod.Audit.PayloadRecord(
-            payloadId, engagement.Value, "Stage2", "dotnet", "application/octet-stream",
+            payloadId, engagement.Value, "Implant", "dotnet", "application/octet-stream",
             "sha256:test", [1, 2, 3], 3, DateTimeOffset.UtcNow, Target: "linux-x64"));
 
         using var peer = new TcpClient();
@@ -369,7 +369,7 @@ public class ShellCatchTests
         Assert.NotNull(rendered);
         Assert.Equal(payloadId.ToString("N"), rendered!.PayloadId);
         Assert.Equal(
-            $"http://stage.example.test/implants/stage2/{payloadId:N}",
+            $"http://stage.example.test/implants/payloads/{payloadId:N}",
             rendered.Url);
         Assert.False(string.IsNullOrEmpty(rendered.TokenSecret));
         Assert.Contains(rendered.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(rendered.Url));

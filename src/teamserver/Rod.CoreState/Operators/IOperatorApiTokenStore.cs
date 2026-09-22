@@ -15,7 +15,7 @@ public readonly record struct OperatorApiTokenId(Guid Value)
 /// <summary>
 /// A freshly minted API token: the id (for listing and revocation) and the
 /// plaintext secret, shown exactly once at mint. Only the secret's digest is
-/// stored afterwards -- the same hash-only rule the stager-token and password
+/// stored afterwards -- the same hash-only rule the deploy-token and password
 /// stores keep.
 /// </summary>
 public sealed record MintedOperatorApiToken(

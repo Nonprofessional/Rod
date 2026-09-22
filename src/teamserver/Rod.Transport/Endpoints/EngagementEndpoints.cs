@@ -7,13 +7,13 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Operators;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The operator-facing engagement endpoints: create an engagement and mint a
-/// stager token for it, and list engagements (, the
+/// deploy token for it, and list engagements (, the
 /// operator UI). DTOs live here, in transport, so the core stays serialization-
 /// and protocol-free (AGENTS.md Sec 5).
 /// </summary>
@@ -33,11 +33,11 @@ public static class EngagementEndpoints
         group.MapPut("/{engagementId}", EditEngagementAsync)
             .WithName(nameof(EditEngagementAsync));
 
-        group.MapPost("/{engagementId}/stager-tokens", MintStagerTokenAsync)
-            .WithName(nameof(MintStagerTokenAsync));
+        group.MapPost("/{engagementId}/deploy-tokens", MintDeployTokenAsync)
+            .WithName(nameof(MintDeployTokenAsync));
 
-        group.MapPost("/{engagementId}/stager-tokens/{tokenId}:revoke", RevokeStagerTokenAsync)
-            .WithName(nameof(RevokeStagerTokenAsync));
+        group.MapPost("/{engagementId}/deploy-tokens/{tokenId}:revoke", RevokeDeployTokenAsync)
+            .WithName(nameof(RevokeDeployTokenAsync));
 
         group.MapPut("/{engagementId}/roe", ApplyRoeAsync)
             .WithName(nameof(ApplyRoeAsync));
@@ -221,7 +221,7 @@ public static class EngagementEndpoints
             edited.Engagement.RetiredAt));
     }
 
-    private static async Task<IResult> MintStagerTokenAsync(
+    private static async Task<IResult> MintDeployTokenAsync(
         string engagementId,
         HttpContext context,
         EngagementService service,
@@ -235,12 +235,12 @@ public static class EngagementEndpoints
         // the single-use, one-hour default; a batch names how many implants the
         // token may enroll and how long the window stays open. The content-type
         // check (not ContentLength) gates the read, so a chunked body binds too.
-        MintStagerTokenRequest? request = null;
+        MintDeployTokenRequest? request = null;
         if (context.Request.HasJsonContentType())
         {
             try
             {
-                request = await context.Request.ReadFromJsonAsync<MintStagerTokenRequest>(cancellationToken);
+                request = await context.Request.ReadFromJsonAsync<MintDeployTokenRequest>(cancellationToken);
             }
             catch (System.Text.Json.JsonException)
             {
@@ -255,12 +255,12 @@ public static class EngagementEndpoints
 
         try
         {
-            var minted = await service.MintStagerTokenForOwnerAsync(
-                new MintStagerTokenCommand(new EngagementId(idValue), request?.MaxUses, lifetime),
+            var minted = await service.MintDeployTokenForOwnerAsync(
+                new MintDeployTokenCommand(new EngagementId(idValue), request?.MaxUses, lifetime),
                 cancellationToken);
 
-            var response = new StagerTokenResponse(
-                minted.StagerTokenId.ToString(),
+            var response = new DeployTokenResponse(
+                minted.DeployTokenId.ToString(),
                 minted.EngagementId.ToString(),
                 minted.Secret,
                 minted.IssuedBy.ToString(),
@@ -268,7 +268,7 @@ public static class EngagementEndpoints
                 minted.ExpiresAt,
                 minted.MaxUses);
 
-            // A stager-token mint is recorded (architecture.md Sec 11):
+            // A deploy-token mint is recorded (architecture.md Sec 11):
             // attributed to the minting operator, the payload the token's
             // bounded-use/expiry shape, the outcome the new token id. The secret
             // itself is never recorded -- only the fact that a token was minted.
@@ -279,11 +279,11 @@ public static class EngagementEndpoints
                     operatorId: minted.IssuedBy.Value,
                     implantId: Guid.Empty,
                     taskId: Guid.Empty,
-                    verb: "mint-stager-token",
-                    kind: AuditEventKind.StagerTokenMinted,
+                    verb: "mint-deploy-token",
+                    kind: AuditEventKind.DeployTokenMinted,
                     payload: $"maxUses={minted.MaxUses} expiresAt={minted.ExpiresAt:O}",
                     output: null,
-                    outcome: minted.StagerTokenId.ToString(),
+                    outcome: minted.DeployTokenId.ToString(),
                     at: minted.IssuedAt),
             cancellationToken);
 
@@ -302,11 +302,11 @@ public static class EngagementEndpoints
         }
     }
 
-    private static async Task<IResult> RevokeStagerTokenAsync(
+    private static async Task<IResult> RevokeDeployTokenAsync(
         string engagementId,
         string tokenId,
         ClaimsPrincipal user,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -317,13 +317,13 @@ public static class EngagementEndpoints
         if (!Guid.TryParse(engagementId, out var idValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(tokenId, out var tokenValue))
-            return Results.BadRequest(new Problem("Stager token id is not a valid identifier."));
+            return Results.BadRequest(new Problem("Deploy token id is not a valid identifier."));
 
         // The revocation is idempotent and honest about it: revoking an
         // unknown (already revoked, spent, or never minted) id answers 404 so
         // a fat-fingered id does not read as success.
-        if (!await tokens.RevokeAsync(new StagerTokenId(tokenValue), cancellationToken))
-            return Results.NotFound(new Problem("Stager token is not held (unknown, spent, or already revoked)."));
+        if (!await tokens.RevokeAsync(new DeployTokenId(tokenValue), cancellationToken))
+            return Results.NotFound(new Problem("Deploy token is not held (unknown, spent, or already revoked)."));
 
         // The revocation is recorded like every engagement fact (architecture.md
         // Sec 11): attributed to the acting operator, the outcome the revoked
@@ -336,15 +336,15 @@ public static class EngagementEndpoints
                 operatorId: operatorId.Value.Value,
                 implantId: Guid.Empty,
                 taskId: Guid.Empty,
-                verb: "revoke-stager-token",
-                kind: AuditEventKind.StagerTokenRevoked,
+                verb: "revoke-deploy-token",
+                kind: AuditEventKind.DeployTokenRevoked,
                 payload: "revokedAt=" + clock.GetUtcNow().ToString("O"),
                 output: null,
                 outcome: tokenValue.ToString(),
                 at: clock.GetUtcNow()),
             cancellationToken);
 
-        return Results.Ok(new RevokedStagerTokenResponse(tokenValue.ToString()));
+        return Results.Ok(new RevokedDeployTokenResponse(tokenValue.ToString()));
     }
 
     private static async Task<IResult> ApplyRoeAsync(
@@ -458,13 +458,13 @@ public static class EngagementEndpoints
     /// spend one use) and how long the mint stays redeemable. Absent values
     /// keep the single-use, one-hour default.
     /// </summary>
-    public sealed record MintStagerTokenRequest(int? MaxUses, long? LifetimeSeconds);
+    public sealed record MintDeployTokenRequest(int? MaxUses, long? LifetimeSeconds);
 
-    /// <summary>Result of revoking a stager token: the id that stopped working.</summary>
-    public sealed record RevokedStagerTokenResponse(string StagerTokenId);
+    /// <summary>Result of revoking a deploy token: the id that stopped working.</summary>
+    public sealed record RevokedDeployTokenResponse(string DeployTokenId);
 
-    public sealed record StagerTokenResponse(
-        string StagerTokenId,
+    public sealed record DeployTokenResponse(
+        string DeployTokenId,
         string EngagementId,
         string Secret,
         string IssuedBy,

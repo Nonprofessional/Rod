@@ -34,7 +34,7 @@ public class EnvelopeContactTests
     public async Task FromScratchImplant_EnrollsContactsAndCompletesTask()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
 
         // The from-scratch implant: ECDSA P-256 keypair, JSON enroll over plain
         // HTTP, envelope contacts sealed under the baked artifact key. No
@@ -97,7 +97,7 @@ public class EnvelopeContactTests
     public async Task Cadence_AdvertisedAtEnrollAndHandshake_LandsOnTheImplantRecord()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
 
         // Enrolls reporting the baked cadence: 30s base, 10s jitter
         // half-width.
@@ -132,7 +132,7 @@ public class EnvelopeContactTests
     public async Task Envelope_ExfilChunksInRequestBody_MaterializeArtifact()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
@@ -175,7 +175,7 @@ public class EnvelopeContactTests
     public async Task Envelope_StagedPull_IsAnsweredInSameResponse()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
@@ -229,7 +229,7 @@ public class EnvelopeContactTests
     public async Task Envelope_ChannelTask_StaysQueuedForStreamTransport()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
@@ -251,7 +251,7 @@ public class EnvelopeContactTests
     public async Task Envelope_ResponseBudget_SplitsTaskingAcrossContacts()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         await implant.ContactAsync();
 
@@ -301,7 +301,7 @@ public class EnvelopeContactTests
         var now = clock.GetUtcNow();
         var expired = Rod.CoreState.Implants.Implant.Enroll(
             ImplantId.New(), EngagementId.New(),
-            now.AddDays(-1), ImplantClass.Stage2, now.AddDays(-2));
+            now.AddDays(-1), ImplantClass.Implant, now.AddDays(-2));
         await implants.SaveAsync(expired);
 
         using var expiredClient = ScratchImplant.ConnectBeaconCertless(
@@ -312,7 +312,7 @@ public class EnvelopeContactTests
         Assert.Single(response);
 
         // Version mismatch maps the same way it does on the stream.
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var fresh = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         var mismatch = await fresh.ContactAsync(major: 2);
         var mismatchHandshake = HandshakeResponse.Parser.ParseFrom(mismatch[0].Payload);
@@ -352,7 +352,7 @@ public class EnvelopeContactTests
         // tradeoff the cleartext carriers document. The session opens and
         // the implant is online.
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
 
         // The same implant identity, dialing the cleartext port with a bare
@@ -471,7 +471,7 @@ public class EnvelopeContactTests
     public async Task Envelope_MalformedAndOversizedBodies_AreRefused()
     {
         await using var env = await TestEnv.StartAsync();
-        var secret = await env.MintStagerTokenAsync();
+        var secret = await env.MintDeployTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
 
         // A body whose first byte starts a varint that never terminates within
@@ -550,7 +550,7 @@ public class EnvelopeContactTests
 
         /// <summary>
         /// The Tier 0 obligation, first half: generate the keypair, POST the
-        /// public half with the stager token, and contact over the same
+        /// public half with the deploy token, and contact over the same
         /// listener's envelope route, identified by the handshake id (the
         /// cleartext lab posture).
         /// </summary>
@@ -562,7 +562,7 @@ public class EnvelopeContactTests
             using var plain = new HttpClient();
             var body = new
             {
-                stagerTokenSecret = stagerToken,
+                deployTokenSecret = stagerToken,
                 publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()),
                 sleepSeconds,
                 jitterSeconds,
@@ -913,10 +913,10 @@ public class EnvelopeContactTests
         }
 
         /// <summary>
-        /// Creates a fresh engagement and mints a stager token against it,
+        /// Creates a fresh engagement and mints a deploy token against it,
         /// caching the engagement id the token resolves to.
         /// </summary>
-        public async Task<string> MintStagerTokenAsync()
+        public async Task<string> MintDeployTokenAsync()
         {
             var engagement = await Http.PostAsJsonAsync("/engagements",
                 new { name = "envelope-" + Guid.NewGuid().ToString("N")[..8] });
@@ -925,9 +925,9 @@ public class EnvelopeContactTests
             Assert.NotNull(created);
             _engagementId = created!.EngagementId;
 
-            var minted = await Http.PostAsJsonAsync($"/engagements/{_engagementId}/stager-tokens", new { });
+            var minted = await Http.PostAsJsonAsync($"/engagements/{_engagementId}/deploy-tokens", new { });
             minted.EnsureSuccessStatusCode();
-            var token = await minted.Content.ReadFromJsonAsync<StagerTokenBody>();
+            var token = await minted.Content.ReadFromJsonAsync<DeployTokenBody>();
             Assert.NotNull(token);
             return token!.Secret;
         }
@@ -950,7 +950,7 @@ public class EnvelopeContactTests
 
         /// <summary>
         /// Creates a fresh engagement in the shape a pipeline build leaves
-        /// behind: a stager token minted for the artifact, a payload record
+        /// behind: a deploy token minted for the artifact, a payload record
         /// carrying the token id beside a freshly minted envelope key, and the
         /// baked key the artifact would carry. An enrollment that redeems the
         /// token binds to the key through the record, exactly the way the
@@ -970,13 +970,13 @@ public class EnvelopeContactTests
             var owner = (await engagements.FindAsync(new EngagementId(engagementId)))!.OwnerId;
 
             var (keyId, key) = Rod.Transport.Payloads.AesGcmEnvelope.Mint();
-            var tokens = Host.Services.GetRequiredService<Rod.CoreState.Staging.IStagerTokenService>();
+            var tokens = Host.Services.GetRequiredService<Rod.CoreState.Deployment.IDeployTokenService>();
             var token = await tokens.MintAsync(
                 new EngagementId(engagementId), owner, DateTimeOffset.UtcNow, 1, TimeSpan.FromHours(1));
 
             var payloads = Host.Services.GetRequiredService<IPayloadStore>();
             await payloads.SaveAsync(new PayloadRecord(
-                Guid.NewGuid(), engagementId, "Stage2", "DotNet", "application/octet-stream",
+                Guid.NewGuid(), engagementId, "Implant", "DotNet", "application/octet-stream",
                 new string('a', 64), Array.Empty<byte>(), 0, DateTimeOffset.UtcNow,
                 TokenId: token.Id.Value, EnvelopeKeyId: keyId, EnvelopeKey: key));
 
@@ -1000,7 +1000,7 @@ public class EnvelopeContactTests
         public string EngagementId { get; set; } = "";
     }
 
-    private sealed class StagerTokenBody
+    private sealed class DeployTokenBody
     {
         public string Secret { get; set; } = "";
     }

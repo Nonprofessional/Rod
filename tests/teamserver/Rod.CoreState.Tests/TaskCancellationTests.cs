@@ -137,7 +137,7 @@ public class TaskCancellationTests
         var service = new TaskService(
             tasks, implants, new InMemoryEngagementRepository(), TimeProvider.System, bus);
         var engagement = EngagementId.New();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Implant, Now);
         await implants.SaveAsync(implant);
 
         var issued = await service.IssueAsync(
@@ -165,7 +165,7 @@ public class TaskCancellationTests
         var service = new TaskService(
             tasks, implants, new InMemoryEngagementRepository(), TimeProvider.System);
         var engagement = EngagementId.New();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Implant, Now);
         await implants.SaveAsync(implant);
 
         var issued = await service.IssueAsync(
@@ -186,7 +186,7 @@ public class TaskCancellationTests
         var service = new TaskService(
             tasks, implants, new InMemoryEngagementRepository(), TimeProvider.System);
         var engagement = EngagementId.New();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Stage2, Now);
+        var implant = Implant.Enroll(ImplantId.New(), engagement, Now.AddDays(30), ImplantClass.Implant, Now);
         await implants.SaveAsync(implant);
 
         var issued = await service.IssueAsync(

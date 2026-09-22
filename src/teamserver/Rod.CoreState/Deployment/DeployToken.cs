@@ -1,4 +1,4 @@
-namespace Rod.CoreState.Staging;
+namespace Rod.CoreState.Deployment;
 
 /// <summary>
 /// An engagement-scoped, short-lived, bounded-use secret used only during
@@ -6,10 +6,10 @@ namespace Rod.CoreState.Staging;
 /// is returned to the caller exactly once, at mint time; the server keeps only a
 /// hash so a later verify/redeem step can check it without storing it.
 /// </summary>
-public sealed record StagerToken
+public sealed record DeployToken
 {
     /// <summary>Server-assigned token identifier.</summary>
-    public required StagerTokenId Id { get; init; }
+    public required DeployTokenId Id { get; init; }
 
     /// <summary>The engagement this token grants initial access to.</summary>
     public required EngagementId EngagementId { get; init; }
@@ -45,10 +45,10 @@ public sealed record StagerToken
 /// in-memory one drops it (so a missing read there means spent, revoked, or
 /// never minted).
 /// </summary>
-public sealed record StagerTokenState
+public sealed record DeployTokenState
 {
     /// <summary>The token this state describes.</summary>
-    public required StagerTokenId Id { get; init; }
+    public required DeployTokenId Id { get; init; }
 
     /// <summary>The engagement the token grants access to.</summary>
     public required EngagementId EngagementId { get; init; }
@@ -74,7 +74,7 @@ public sealed record StagerTokenState
 }
 
 /// <summary>
-/// The result of a successful <see cref="IStagerTokenService.RedeemAsync"/>: the
+/// The result of a successful <see cref="IDeployTokenService.RedeemAsync"/>: the
 /// engagement the redeemed token grants access to. Carries no secret -- the
 /// plaintext was matched and discarded; enrollment proceeds against this
 /// engagement. <see cref="IssuedBy"/> is the operator who minted the token --
@@ -82,10 +82,10 @@ public sealed record StagerTokenState
 /// attribute the resulting implant (and its later implant-initiated events) to
 /// an accountable operator (architecture.md Sec 11).
 /// </summary>
-public sealed record RedeemedStagerToken
+public sealed record RedeemedDeployToken
 {
     /// <summary>The token that was redeemed.</summary>
-    public required StagerTokenId Id { get; init; }
+    public required DeployTokenId Id { get; init; }
 
     /// <summary>The engagement this token grants initial access to.</summary>
     public required EngagementId EngagementId { get; init; }

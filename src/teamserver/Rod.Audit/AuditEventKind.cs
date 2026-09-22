@@ -4,7 +4,7 @@ namespace Rod.Audit;
 /// What kind of operational fact an <see cref="AuditEvent"/> records
 /// (architecture.md Sec 11). Every per-engagement action that changes state or
 /// binds an identity produces exactly one kind: the engagement's own creation, a
-/// stager token mint, an implant enrollment, a session opening, a task's
+/// deploy token mint, an implant enrollment, a session opening, a task's
 /// issuance/dispatch/completion, a payload build, an implant's retirement, an
 /// evidence artifact attached to a task, and an artifact the implant itself
 /// exfiltrated over the beacon stream. Together they form the engagement
@@ -22,15 +22,15 @@ public enum AuditEventKind
     EngagementCreated,
 
     /// <summary>
-    /// An operator minted a stager token for an engagement. The payload carries
+    /// An operator minted a deploy token for an engagement. The payload carries
     /// the token's bounded-use/expiry shape; the outcome is
     /// the new token id. The secret itself is never recorded -- only the fact
     /// that a token was minted, by whom, and against which engagement.
     /// </summary>
-    StagerTokenMinted,
+    DeployTokenMinted,
 
     /// <summary>
-    /// A stager token was redeemed and an implant enrolled into its engagement.
+    /// A deploy token was redeemed and an implant enrolled into its engagement.
     /// The payload carries the implant's class (and the parent when it is a
     /// child derivation, architecture.md Sec 5.2); the
     /// outcome is the new implant id. Enrollment is implant-initiated, so the
@@ -95,8 +95,8 @@ public enum AuditEventKind
 
     /// <summary>
     /// A stored payload was deleted from the library by an operator: the bytes
-    /// and the listing entry are gone, and a stager fetching it 404s from now
-    /// on -- the kill switch for a hosted stage-2. The event carries the
+    /// and the listing entry are gone, and a fetch of it 404s from now
+    /// on -- the kill switch for a hosted payload. The event carries the
     /// payload's class and target with the fingerprint it carried in life, so
     /// the trail still names what was removed even though the bytes are not
     /// retrievable anymore.
@@ -241,13 +241,13 @@ public enum AuditEventKind
     EngagementUnfrozen,
 
     /// <summary>
-    /// An operator revoked a stager token: the credential stops working at the
+    /// An operator revoked a deploy token: the credential stops working at the
     /// next redeem or verify, whatever uses and validity it had left. The
     /// emergency answer to a leaked credential -- above all one baked into a
     /// deployed artifact. The payload names why revocation exists (the baked
     /// shape or the manual mint); the outcome is the revoked token id.
     /// </summary>
-    StagerTokenRevoked,
+    DeployTokenRevoked,
 
     /// <summary>
     /// An operator edited the engagement's working record: its name and
@@ -325,4 +325,21 @@ public enum AuditEventKind
     /// target, so it is recorded like any other operator action.
     /// </summary>
     WebShellProbed,
+
+    /// <summary>
+    /// An artifact was fetched over the launcher delivery route
+    /// (<c>GET /implants/payloads/{id}</c>, architecture.md Sec 6): the
+    /// deployment's first observable footprint on the wire. The fetcher
+    /// speaks no Rod protocol and carries no identity yet, so the event is
+    /// scoped by the credential's engagement and attributed to the null
+    /// operator -- the enrollment that may follow is the identity-bearing
+    /// half of the exchange. Recorded for every fetch a resolvable
+    /// credential gate-keeps, served or refused: the payload carries what
+    /// the wire showed (remote address, user agent, listener socket,
+    /// payload id, credential id) and the outcome is
+    /// <c>served</c> or <c>refused:{reason}</c>. A credential whose row is
+    /// deleted no longer resolves, and its fetches leave no record -- an
+    /// unknown secret belongs to no engagement.
+    /// </summary>
+    PayloadFetched,
 }

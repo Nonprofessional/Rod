@@ -14,7 +14,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.CoreState.Tasks;
 using Rod.Audit;
 using Rod.Transport;
@@ -39,7 +39,7 @@ namespace Rod.Conformance.Tests;
 public sealed record ConformanceTarget(
     string EnrollUrl,
     string BeaconHostPort,
-    string StagerToken,
+    string DeployToken,
     string CaPemPath,
     DateTimeOffset? KillDate = null);
 
@@ -335,8 +335,8 @@ public sealed class ConformanceRig : IAsyncDisposable
     {
         var created = await _engagements.CreateEngagementAsync(
             new CreateEngagementCommand(_operator, "conformance-" + Guid.NewGuid().ToString("N")[..8]));
-        var minted = await _engagements.MintStagerTokenForOwnerAsync(
-            new MintStagerTokenCommand(created.EngagementId));
+        var minted = await _engagements.MintDeployTokenForOwnerAsync(
+            new MintDeployTokenCommand(created.EngagementId));
         return (created.EngagementId, minted.Secret);
     }
 

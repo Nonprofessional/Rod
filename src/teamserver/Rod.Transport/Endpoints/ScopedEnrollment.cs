@@ -5,7 +5,7 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
-using Rod.CoreState.Staging;
+using Rod.CoreState.Deployment;
 using Rod.Transport.Payloads;
 using Rod.V1;
 
@@ -28,7 +28,7 @@ namespace Rod.Transport.Endpoints;
 /// did not advertise one.
 /// </summary>
 internal sealed record EnrollWireFields(
-    string StagerTokenSecret,
+    string DeployTokenSecret,
     string? Class,
     byte[]? PublicKey,
     string? ParentImplantId,
@@ -122,18 +122,18 @@ internal static class ScopedEnrollment
         EnrollWireFields fields,
         Rod.Transport.Listeners.Listener? ingress,
         EnrollmentService service,
-        IStagerTokenService tokens,
+        IDeployTokenService tokens,
         IPayloadStore payloads,
         EnvelopeContactKeys contactKeys,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(fields.StagerTokenSecret))
+        if (string.IsNullOrWhiteSpace(fields.DeployTokenSecret))
             return ScopedEnrollmentOutcome.Refused(EnrollStatus.BadToken);
 
         if (!Enum.TryParse<ImplantClass>(fields.Class, ignoreCase: true, out var @class))
-            @class = ImplantClass.Stage2;
+            @class = ImplantClass.Implant;
 
         // The parent a child is derived from (architecture.md Sec 5.2).
         // Optional: a top-level enroll leaves it null. When present the
@@ -181,14 +181,14 @@ internal static class ScopedEnrollment
         // outright (architecture.md Sec 8). The verified token is kept: when
         // the redeem below succeeds, its id is what binds the enrollment to
         // the build that minted it.
-        RedeemedStagerToken? presentedToken = null;
+        RedeemedDeployToken? presentedToken = null;
         try
         {
-            presentedToken = await tokens.VerifyAsync(fields.StagerTokenSecret, clock.GetUtcNow(), cancellationToken);
+            presentedToken = await tokens.VerifyAsync(fields.DeployTokenSecret, clock.GetUtcNow(), cancellationToken);
             if (ingress is not null && ingress.EngagementId != presentedToken.EngagementId)
                 return ScopedEnrollmentOutcome.Refused(EnrollStatus.BadToken);
         }
-        catch (StagerTokenRedeemException)
+        catch (DeployTokenRedeemException)
         {
             // The pre-check refuses quietly; the redeem inside EnrollAsync
             // produces the precise refused-once-more status below.
@@ -208,7 +208,7 @@ internal static class ScopedEnrollment
         {
             var enrolled = await service.EnrollAsync(
                 new EnrollCommand(
-                    fields.StagerTokenSecret, @class, fields.PublicKey, parentImplantId,
+                    fields.DeployTokenSecret, @class, fields.PublicKey, parentImplantId,
                     CleanHostFact(fields.Hostname), CleanHostFact(fields.Os),
                     CleanHostFact(fields.Arch), CleanHostFact(fields.Username),
                     fields.SleepSeconds, fields.JitterSeconds,
@@ -247,13 +247,16 @@ internal static class ScopedEnrollment
 
             return ScopedEnrollmentOutcome.Accept(enrolled, build);
         }
-        catch (StagerTokenRedeemException ex)
+        catch (DeployTokenRedeemException ex)
         {
             // The redeem reason is the actionable cause; map it to a wire status.
             var status = ex.Reason switch
             {
-                StagerTokenRedeemReason.Expired => EnrollStatus.Expired,
-                StagerTokenRedeemReason.Spent => EnrollStatus.Spent,
+                DeployTokenRedeemReason.Expired => EnrollStatus.Expired,
+                DeployTokenRedeemReason.Spent => EnrollStatus.Spent,
+                // A revoked credential is flatly refused -- the same answer an
+                // unknown secret gets, by design (the revocation's emergency
+                // posture shares nothing about which row died).
                 _ => EnrollStatus.BadToken,
             };
             return ScopedEnrollmentOutcome.Refused(status);

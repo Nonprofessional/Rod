@@ -18,7 +18,7 @@ public class FilePayloadStoreTests
         => new(
             PayloadId: Guid.NewGuid(),
             EngagementId: engagement,
-            Class: "Stage2",
+            Class: "Implant",
             Language: "DotNet",
             ContentType: "application/octet-stream",
             Fingerprint: new string('a', 64),

@@ -55,9 +55,6 @@ public sealed class RustBuildUnit : IBuildUnit
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
-        if (@params.Class == ImplantClass.Stager)
-            throw new InvalidOperationException(
-                "The stager class is retired with the .NET trees; deliver the implant through the launcher one-liners.");
         if (@params.Format == ArtifactFormat.Dll)
             throw new InvalidOperationException(
                 "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");

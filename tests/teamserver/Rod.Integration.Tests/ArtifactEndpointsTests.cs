@@ -205,7 +205,7 @@ public class ArtifactEndpointsTests
             implantId,
             engagementId,
             killDate: now.AddDays(30),
-            @class: ImplantClass.Stage2,
+            @class: ImplantClass.Implant,
             now);
         await implants.SaveAsync(implant);
         return (engagementId.Value, implantId);

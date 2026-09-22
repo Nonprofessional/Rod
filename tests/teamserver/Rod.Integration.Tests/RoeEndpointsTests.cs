@@ -35,7 +35,7 @@ public class RoeEndpointsTests
         var engagementId = await CreateEngagementAsync(env.Http);
         var implant = Implant.Enroll(
             ImplantId.New(), new EngagementId(engagementId),
-            clock.GetUtcNow().AddDays(30), ImplantClass.Stage2, clock.GetUtcNow());
+            clock.GetUtcNow().AddDays(30), ImplantClass.Implant, clock.GetUtcNow());
         await implants.SaveAsync(implant);
 
         // Scope: recon only, this implant only.
