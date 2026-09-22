@@ -10,35 +10,35 @@ namespace Rod.BuildPipeline.PayloadBuild;
 public enum ArtifactFormat
 {
     /// <summary>
-    /// The self-contained single-file native executable: runtime bundled and
-    /// compressed, one file to drop and run, no target-side install. The
-    /// default and the broadest-compatibility shape.
+    /// The default executable spelling: the native binary cargo compiles for
+    /// the requested target (ELF or PE), one self-contained file to drop and
+    /// run. The name survives the retired .NET unit, whose single-file bundle
+    /// it once named; the Rust unit builds this same artifact for every
+    /// executable spelling.
     /// </summary>
     SingleFileExe = 0,
 
     /// <summary>
-    /// The single-file executable with IL trimming applied: the same
-    /// drop-and-run deployment shape, materially smaller, at the cost of a
-    /// trim-annotation-clean build (the reflection serializer was replaced with
-    /// source generation to earn this).
+    /// A compatibility spelling, not a distinct Rust build: the unit emits
+    /// the same native binary (the size posture lives in the crate's release
+    /// profile -- opt-level, LTO, strip), so 'exe-trimmed' differs from
+    /// 'exe' in name alone. Kept so requests written against the .NET-era
+    /// contract keep parsing.
     /// </summary>
     TrimmedExe = 1,
 
     /// <summary>
-    /// Native AOT compilation: a fully ahead-of-time-compiled native binary
-    /// with no runtime to bundle or bootstrap -- the smallest and
-    /// fastest-starting executable shape, with the same no-runtime deployment
-    /// property a C or Go artifact has. Incompatible with in-process assembly
-    /// loading by construction.
+    /// The spelling the in-memory delivery family keys on: the same native
+    /// binary as 'exe' (Rust is always ahead-of-time), distinguished only as
+    /// the marker the memfd launcher one-liners select so nothing lands on
+    /// disk. The name survives the retired .NET unit's NativeAOT publish.
     /// </summary>
     NativeAot = 2,
 
     /// <summary>
-    /// The framework-dependent managed DLL bundle: a zip of the publish output
-    /// (entry assembly, dependency assemblies, deps/runtimeconfig), sized for a
-    /// single fetch and load. A host with a compatible .NET runtime loads it
-    /// in-process via <c>Assembly.Load</c> with no bytes on disk -- the
-    /// stager's host shape and the pwsh cradle's payload.
+    /// Retired with the .NET implant it served: the managed zip bundle a
+    /// .NET host loaded in-process. No unit produces it; the parser and the
+    /// Rust unit both refuse it with the native spellings named.
     /// </summary>
     Dll = 3,
 }

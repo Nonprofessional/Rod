@@ -438,29 +438,24 @@ recorded.**
   base64url profile into the staging copy's `src/baked.rs`, and refuses the
   stager class (retired with the .NET tree) and the dll format (the
   in-memory bundle was the .NET shape) with the fix named at parse time.
-- **Artifacts ship in four form factors; the format is a build request
-  knob.** `ArtifactFormat` rides the build contract beside the class and
-  target, and the unit maps it onto one publish invocation:
-  **`exe`** (the default) -- a self-contained single-file native executable,
-  runtime bundled and compressed, the drop-and-run shape that needs nothing
-  installed; **`exe-trimmed`** -- the same shape with IL trimming applied
-  (the tree is source-generation clean, so the trim runs warning-free), a
-  materially smaller transfer; **`aot`** -- native AOT compilation, a
-  runtime-free native binary with the same deployment property a C or Go
-  artifact has, the smallest and fastest-starting executable (measured on
-  linux-x64: 39.8 MB single-file and 14.8 MB trimmed for the implant,
-  10.3 MB AOT; 37.4/14.0/6.2 MB for the stager); and **`dll`** -- a
-  framework-dependent net8.0 publish packed into one zip (the entry
-  assembly, its dependencies, deps/runtimeconfig), the in-memory-loadable
-  shape: a host with a .NET 8+ runtime loads it via `Assembly.Load` with no
-  bytes on disk, and net8.0 is the oldest TFM every supported host runtime
-  loads (pwsh 7.4 LTS through the teamserver's own .NET 10). The
-  compatibility tiers the formats cover: a target with nothing installed
-  runs the exe/trimmed/aot shapes and the script one-liners; a stock
-  Windows with only .NET Framework answers through the PowerShell families;
-  a target with a .NET 8+ host additionally takes the dll bundle in
-  memory. An unmappable target fails the build with the supported set
-  named rather than silently building for the build host.
+- **The format is a build request knob; over the Rust unit it names
+  delivery posture, not a compile mode.** `ArtifactFormat` rides the build
+  contract beside the class and target, and the unit maps it onto one
+  cargo invocation: **`exe`** (the default), **`exe-trimmed`**, and
+  **`aot`** all produce the same native executable for the requested
+  target (ELF or PE) -- Rust is always ahead-of-time, and the size
+  posture lives in the crate's release profile (opt-level, LTO, strip),
+  not a publish variant. The spellings differ only in posture: `exe` is
+  the drop-and-run default, `aot` the marker the in-memory launcher
+  family keys on for memfd delivery, `exe-trimmed` a compatibility name
+  that changes nothing. They survive the retired .NET unit's publish
+  shapes (single-file, trimmed, NativeAOT) so the wire contract stayed
+  stable across the toolchain switch; a community unit maps them onto its
+  own closest equivalents. **`dll`** -- the in-memory-loadable managed
+  bundle a .NET host loaded via `Assembly.Load` with no bytes on disk --
+  is retired with the .NET implant and refused at parse time with the
+  native spellings named. An unmappable target fails the build with the
+  supported set named rather than silently building for the build host.
 - **Build params** include the implant class, artifact format, target OS/arch,
   transport profile, and beacon parameters (mode, sleep, jitter, kill date).
   They are produced at request time so each artifact is unique -- this is

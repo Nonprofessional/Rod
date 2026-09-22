@@ -1257,10 +1257,11 @@ export interface BuildPayloadInput {
   // default server-side to single use inside the artifact's kill window.
   tokenMaxUses: number | null
   tokenLifetimeSeconds: number | null
-  // The artifact's form factor: 'exe' (the default), 'exe-trimmed', 'aot'
-  // (the runtime-free native binary), or 'dll' (the in-memory-loadable
-  // bundle -- an implant shape; the server refuses it on a stager build).
-  // Null leaves the single-file default.
+  // The artifact's form factor: 'exe' (the default), 'exe-trimmed', or
+  // 'aot'. Every Rust artifact is one native executable (ELF or PE by
+  // target) -- the spellings differ only in posture, 'aot' being the one
+  // the memfd in-memory launcher family keys on; 'dll' is retired with the
+  // .NET implant and refused server side. Null leaves the 'exe' default.
   format: string | null
 }
 

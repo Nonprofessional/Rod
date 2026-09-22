@@ -12,7 +12,8 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract), and compiles a release binary for the requested target
 /// triple. Rust is always native code: the executable formats are synonyms
 /// here (the size posture lives in the crate's release profile -- opt-level,
-/// LTO, strip), and the in-memory dll bundle stays the .NET shape.
+/// LTO, strip; 'aot' differs only as the spelling the memfd launcher family
+/// keys on), and the dll format is refused outright.
 /// </summary>
 /// <remarks>
 /// The transport and handler trims the .NET unit applies have Rust
@@ -57,10 +58,10 @@ public sealed class RustBuildUnit : IBuildUnit
     {
         if (@params.Class == ImplantClass.Stager)
             throw new InvalidOperationException(
-                "The Rust stager is not ported; build the .NET stager or deliver the Rust implant through a one-liner.");
+                "The stager class is retired with the .NET trees; deliver the implant through the launcher one-liners.");
         if (@params.Format == ArtifactFormat.Dll)
             throw new InvalidOperationException(
-                "The Rust implant builds native executables; the dll bundle is the .NET shape.");
+                "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
         if (!Directory.Exists(_rustSourceDir))
             throw new BuildUnitFailureException($"Rust implant source tree not found at '{_rustSourceDir}'.");
 
