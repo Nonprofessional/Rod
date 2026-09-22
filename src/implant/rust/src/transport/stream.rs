@@ -22,7 +22,7 @@ use crate::wire::{ChannelInput, Frame, FrameKind, StagedChunk, StagedPull, TaskR
 const CHANNEL_TICK: Duration = Duration::from_millis(200);
 
 /// The WebSocket stream (architecture.md Sec 8, the web posture's
-/// interactive tier): the same live session the mTLS gRPC stream runs, over
+/// interactive tier): the web family's live session, over
 /// a WebSocket on a web front -- server-push tasking the moment it queues.
 /// Every message is the sealed-or-plaintext framed-frames body the POST
 /// cycle carries, so the seal, counter, and frame grammar are the session's

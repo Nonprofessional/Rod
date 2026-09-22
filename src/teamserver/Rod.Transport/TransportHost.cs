@@ -238,8 +238,8 @@ public static class TransportHost
         // The beacon compositions every transport shares (architecture.md
         // Sec 8): the upstream frame ingest (results, exfil, staged pulls,
         // channel output) and the downstream tasking marshal (signed
-        // TaskRequests, dispatch audit, staged chunk runs). The gRPC stream,
-        // the DNS bridge, and the plain-HTTP envelope contact all route
+        // TaskRequests, dispatch audit, staged chunk runs). Every live
+        // beacon carriage and the plain-HTTP envelope contact route
         // through this pair, so a frame is captured and a task delivered
         // identically regardless of which transport carried it.
         services.AddSingleton<Endpoints.BeaconIngest>();
@@ -250,8 +250,8 @@ public static class TransportHost
         // contact route, and the floor spans every contact an implant makes.
         services.AddSingleton<Endpoints.EnvelopeContactKeys>();
         // The plain-HTTP envelope contact handler (architecture.md Sec 8):
-        // one POST is one poll contact, the same frames the gRPC stream
-        // carries as delimited sequences in ordinary request/response bodies.
+        // one POST is one poll contact, the same frames the live carriages
+        // carry as delimited sequences in ordinary request/response bodies.
         services.AddSingleton<Endpoints.EnvelopeBeaconContact>();
         // The store-and-forward half of the degraded channel discipline
         // (architecture.md Sec 10.3): the parking queue operator input waits
@@ -259,7 +259,7 @@ public static class TransportHost
         // contact responses. Singleton like the live sink hub it mirrors.
         services.AddSingleton<Channels.DegradedChannelHub>();
         // The WebSocket beacon stream (architecture.md Sec 8, the web
-        // posture's interactive tier): the same session the gRPC stream runs,
+        // posture's interactive tier): the web family's live session,
         // over a WebSocket on the plain-HTTP listener family, authenticated
         // and sealed the way the envelope contact is.
         services.AddSingleton<Endpoints.WebSocketBeaconStream>();
@@ -406,7 +406,7 @@ public static class TransportHost
                 var (host, port) = ParseBindAddress(config.BindAddress);
 
                 // A plain-HTTP bind is the loopback dev posture: no TLS and no
-                // client certificates, so the gRPC beacon on it identifies
+                // client certificates, so the implant routes on it identify
                 // implants by their handshake id alone and the operator API
                 // rides the same socket in the clear (architecture.md Sec 8).
                 // A non-loopback bind is a deliberate TLS-terminating-edge
@@ -473,8 +473,7 @@ public static class TransportHost
     {
         listen.UseHttps(https =>
         {
-            // A CA-issued server leaf, not the CA root itself -- the same
-            // SChannel-shaped presentation ConfigureMtlsHttps documents.
+            // A CA-issued server leaf, not the CA root itself.
             https.ServerCertificateSelector = (_, _) =>
                 kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
         });
@@ -586,13 +585,13 @@ public static class TransportHost
         endpoints.MapCloseoutEndpoints();
         // The plain-HTTP envelope contact (architecture.md Sec 8): the same
         // frames as delimited sequences in ordinary request/response bodies,
-        // for implants with an HTTP client and a protobuf codec but no
-        // gRPC/HTTP-2 stack. The route demands the mTLS client certificate,
-        // so only an mTLS-terminated listener ever serves it.
+        // for implants with an HTTP client and a protobuf codec -- no
+        // protocol stack beyond HTTP. Identity is the artifact key that
+        // sealed the body, so any web front serves it.
         endpoints.MapEnvelopeBeaconEndpoints();
         // The WebSocket beacon stream: the web posture's live channel, the
-        // same session the gRPC stream runs over the envelope's own auth and
-        // frame grammar.
+        // same session every live carriage runs over the envelope's own auth
+        // and frame grammar.
         endpoints.MapWebSocketBeaconEndpoints();
         // DNS-over-HTTPS: the DNS grammar's second carriage, served by the
         // doh listener that owns the arriving port.

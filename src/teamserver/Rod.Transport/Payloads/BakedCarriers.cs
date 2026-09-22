@@ -9,8 +9,8 @@ namespace Rod.Transport.Payloads;
 /// path already reads for the contact key). The rule is the URL-shape
 /// discipline the implant itself applies (architecture.md Sec 8): a schemed
 /// http(s) endpoint runs the envelope POST cycle, and the beacon authority --
-/// the one field the build parser guarantees is the bare mTLS socket -- dials
-/// the gRPC stream.
+/// the one field the build parser guarantees is a bare host:port -- dials
+/// the live beacon stream.
 /// </summary>
 /// <remarks>
 /// The derivation is deliberately conservative in one direction: an endpoint
@@ -37,7 +37,7 @@ public static class BakedCarriers
         var names = new List<string>();
 
         // The beacon field's shape picks its carrier: the parser-guaranteed
-        // mTLS authority dials the live stream, while the DNS family's
+        // bare authority dials the live stream, while the DNS family's
         // dns:// or doh:// dial names the TXT poll carrier -- the one
         // carrier with no channel support at all. Every other endpoint
         // must classify as a schemed web URL or the set is undeclared.

@@ -24,8 +24,8 @@ namespace Rod.CoreState.Transports;
 public enum ChannelSupport
 {
     /// <summary>
-    /// The carrier holds a live stream for the connection's life (the gRPC
-    /// beacon stream, the WebSocket beacon): channel tasks claim natively,
+    /// The carrier holds a live stream for the connection's life (the
+    /// WebSocket beacon, the held pipe session): channel tasks claim natively,
     /// their input and output riding the stream that carried the task.
     /// </summary>
     Native,
@@ -101,7 +101,8 @@ public static class TransportCapabilities
     /// <summary>The wire name of <see cref="MessagePipe"/>.</summary>
     public const string MessagePipeName = "message-pipe";
 
-    /// <summary>The gRPC beacon stream: the native channel carrier.</summary>
+    /// <summary>The live beacon stream (the WebSocket beacon, the held
+    /// socket session): the native channel carrier.</summary>
     public static readonly CarrierCapabilities BeaconStream = new(ChannelSupport.Native);
 
     /// <summary>The plain-HTTP envelope POST cycle: store-and-forward

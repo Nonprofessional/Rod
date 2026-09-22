@@ -22,7 +22,7 @@ namespace Rod.Transport.Listeners;
 /// by wire name). Two provider shapes cover the in-tree six:
 ///
 /// - <see cref="KestrelEndpointProvider"/>: the HTTP family
-///   (<c>Http</c>, <c>Https</c>, <c>Mtls</c>) rides Kestrel's
+///   (<c>Http</c>, <c>Https</c>, <c>Doh</c>) rides Kestrel's
 ///   endpoint-configuration reloader -- the provider publishes the bind
 ///   address as an endpoint URL into a push-only configuration source the
 ///   host registered with <c>KestrelServerOptions.Configure(..., reloadOnChange:
@@ -33,7 +33,7 @@ namespace Rod.Transport.Listeners;
 ///   the outcome instead of assuming it.
 ///
 /// - <see cref="HostedServiceTransportProvider"/>: the socket-owning
-///   transports (<c>Dns</c>, <c>Smb</c>, <c>Tcp</c>) run their sockets in
+///   transports (<c>Dns</c>, <c>Tcp</c>, <c>ShellCatch</c>) run their sockets in
 ///   per-listener hosted services; the provider starts and stops one service
 ///   per listener on demand, the same services the startup path registers.
 ///

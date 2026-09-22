@@ -60,7 +60,8 @@ public static class TaskEndpoints
 
     // Task arguments ride the wire as one string per task and sit in the queue
     // until dispatch; bound them so a single task cannot pin megabytes and every
-    // downstream TaskRequest frame stays inside the gRPC message cap.
+    // downstream TaskRequest frame stays inside the frame budget the carriages
+    // enforce.
     private const int MaxArgumentBytes = 512 * 1024;
 
     // The staged-content ceiling: the typed arm's payload rides the artifact

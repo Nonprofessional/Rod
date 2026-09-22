@@ -17,7 +17,7 @@ namespace Rod.Transport.Endpoints;
 
 // The shared upstream-frame ingest for every beacon transport
 // (architecture.md Sec 8): the same capture-and-audit composition whether a
-// frame crossed the gRPC stream or a plain-HTTP envelope contact. Task state
+// frame crossed a live beacon stream or a plain-HTTP envelope contact. Task state
 // lives in core, the audit event in the audit layer, and this is where both
 // meet on a completed task (architecture.md Sec 10.3/11) -- extracted from
 // BeaconEndpoint so every transport drives the identical paths.

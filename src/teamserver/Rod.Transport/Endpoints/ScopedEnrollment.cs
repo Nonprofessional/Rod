@@ -15,8 +15,8 @@ namespace Rod.Transport.Endpoints;
 // (architecture.md Sec 8): the refusal rules (the token must belong to the
 // engagement the socket answers for, refused whole and unspent otherwise),
 // the enrollment itself, the audit arc, and the contact key binding. The
-// web enroll route resolves its scope from the local port; the QUIC listener
-// knows its own engagement directly. Everything except the wire marshaling
+// web enroll route resolves its scope from the local port; the stream
+// carriage's listener knows its own engagement directly. Everything except the wire marshaling
 // lives here, so an enrollment over either carriage is refused, recorded,
 // and audited identically.
 
@@ -46,7 +46,7 @@ internal sealed record EnrollWireFields(
 /// <see cref="EnrollStatus"/> (the token states -- an implant gets the
 /// actionable reason) or a problem detail (a malformed request, a closed
 /// engagement -- causes the HTTP arm answers with a problem body and the
-/// QUIC arm collapses to the generic refusal status, the same "no signal
+/// stream arm collapses to the generic refusal status -- the same "no signal
 /// beyond no" discipline the web route keeps).
 /// </summary>
 internal sealed record ScopedEnrollmentOutcome(
@@ -112,7 +112,7 @@ internal static class ScopedEnrollment
     /// scope check runs before the redeem so a foreign engagement's token is
     /// refused unspent (architecture.md Sec 8): <paramref name="ingress"/> is
     /// the listener the ingress socket belongs to -- the one the HTTP route
-    /// resolved from the local port, the QUIC listener's own -- and any
+    /// resolved from the local port, the stream listener's own -- and any
     /// ingress at all must be the token's own engagement's (a shared-tier
     /// listener, whose engagement is null, refuses implant ingress outright).
     /// A null ingress is an unattributable socket (the in-memory test

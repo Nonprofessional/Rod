@@ -12,7 +12,7 @@ namespace Rod.Transport.Endpoints;
 // The shared downstream-tasking composition for every beacon transport
 // (architecture.md Sec 8): build the signed TaskRequest frame, record the
 // dispatch in the audit trail, and slice a staged payload into its chunk run.
-// Extracted from BeaconEndpoint so the gRPC stream and the plain-HTTP envelope
+// Extracted from BeaconEndpoint so the live beacon carriages and the envelope
 // deliver byte-identical tasking -- the signature, the staged marker, and the
 // TaskDispatched audit write have exactly one implementation.
 

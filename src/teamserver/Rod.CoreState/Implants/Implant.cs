@@ -91,7 +91,7 @@ public sealed class Implant
     /// The carrier names the artifact's baked endpoints dial, derived at enroll
     /// from the build's transport profile (the URL-shape rule: a schemed
     /// http(s) endpoint is the envelope POST cycle, a bare beacon authority is
-    /// the gRPC stream). The issuance gate reads it to refuse a channel task
+    /// the live beacon stream). The issuance gate reads it to refuse a channel task
     /// no baked carrier could ever claim (architecture.md Sec 10.3). Null is
     /// the permissive shape -- an implant enrolled before the stamp, or a
     /// build whose endpoint shapes the rule does not recognize -- where the

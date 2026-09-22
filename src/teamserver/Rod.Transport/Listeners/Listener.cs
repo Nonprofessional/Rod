@@ -31,8 +31,8 @@ public sealed class Listener
 
     /// <summary>
     /// The transport this listener terminates, by its wire name (the registry
-    /// key a provider registers under -- "http", "https", "mtls", "dns",
-    /// "smb", "tcp", "quic", "doh", or a later transport's own name). A
+    /// key a provider registers under -- "http", "https", "dns", "tcp",
+    /// "doh", "shellcatch", or a later transport's own name). A
     /// string, not a closed
     /// enumeration: the registry is the authority for what a listener may
     /// name, so a transport added later needs no edit here.

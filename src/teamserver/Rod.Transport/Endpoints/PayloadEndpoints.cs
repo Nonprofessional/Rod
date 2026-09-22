@@ -280,10 +280,10 @@ public static class PayloadEndpoints
     // Defaulted so a minimal positional construction (as in the integration
     // tests) stays valid. ListenerId names the engagement's own listener and
     // supplies the endpoint from its record, so the two are mutually
-    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the mTLS
-    // socket the gRPC stream dials when the contact should not ride the
+    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the
+    // listener the live beacon dials when the contact should not ride the
     // enroll front's own envelope cycle -- the split-socket shape (enroll on
-    // a web listener, the stream on an mTLS listener), optional everywhere:
+    // one web listener, the beacon on another), optional everywhere:
     // a web front carries its contacts itself, so no split is required.
     // ContactProtection is its own Advanced knob beside the enroll-body
     // Envelope pick: on unless explicitly false (the lab-debug plaintext

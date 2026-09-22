@@ -17,7 +17,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 // The plain-HTTP envelope contact (architecture.md Sec 8, the implant-reach
-// transport): the same rod.v1 Frames the gRPC stream carries, as
+// transport): the same rod.v1 Frames the live beacon stream carries, as
 // varint-length-delimited sequences in ordinary HTTP request/response bodies.
 // One POST is one poll contact -- the request body carries the handshake
 // first, then any results, exfil chunks, staged pulls, and channel output;
@@ -37,8 +37,8 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// Maps the envelope contact route. Mapped alongside the operator API on
-/// every listener like the gRPC beacon. The identity is the artifact key that
-/// sealed the body; a client certificate, where the mTLS front presented one,
+/// every implant-facing listener. The identity is the artifact key that
+/// sealed the body; a client certificate, where a front's posture presented one,
 /// still resolves first; and the handshake's implant id alone -- the
 /// anything-with-reach posture of the cleartext lab shape -- serves only an
 /// implant no key was ever bound to.
@@ -222,7 +222,7 @@ internal sealed class EnvelopeBeaconContact
         // transport presented one, else the handshake's implant id -- which
         // the sealed body authenticated above, and which stands by reach only
         // in the cleartext lab posture (the anything-with-reach tradeoff the
-        // cleartext gRPC stream and the DNS/SMB/TCP transports document). Over
+        // cleartext carriers document). Over
         // TLS with neither, there is no identity to offer and the handshake
         // refuses the unknown implant.
         var (response, handshake) = await TryHandshakeAsync(

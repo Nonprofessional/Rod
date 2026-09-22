@@ -14,8 +14,8 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 // The transport-agnostic tasking session (architecture.md Sec 10.3): the
-// reader/writer pair every live beacon stream runs, extracted from the gRPC
-// endpoint so a later framing (the WebSocket stream the web posture carries)
+// reader/writer pair every live beacon stream runs, extracted from the
+// retired gRPC endpoint so a later framing (the WebSocket stream the web posture carries)
 // adapts the same core instead of copying it. Everything between the
 // handshake and the connection's end lives here; the handshake and its
 // identity rules stay with each transport, because that is exactly where
@@ -25,8 +25,7 @@ namespace Rod.Transport.Endpoints;
 /// <summary>
 /// Reads the next upstream frame, or null on a clean client close. The
 /// adapter owns the transport's receive semantics; an aborted connection
-/// surfaces as the transport's own exception, the same way a gRPC reader
-/// throws on a reset stream.
+/// surfaces as the transport's own exception.
 /// </summary>
 internal delegate Task<Frame?> BeaconFrameReader(CancellationToken cancellationToken);
 
@@ -92,15 +91,16 @@ internal sealed class BeaconSessionRunner
     /// </summary>
     /// <param name="carrier">
     /// The carrier name the session's presence stamps ride (the roster's
-    /// degraded-mode badge reads it): "grpc" for the mTLS stream, "quic" for
-    /// the QUIC session, "pipe" for the socket family's held connection.
+    /// degraded-mode badge reads it): "web" for the web family (the envelope
+    /// POST cycle or the WebSocket beacon), "dns" for the TXT polls, "pipe"
+    /// for the socket family's held connection.
     /// </param>
     public async Task RunAsync(
         BeaconSessionContext session,
         BeaconFrameReader read,
         BeaconFrameWriter write,
         CancellationToken cancellationToken,
-        string carrier = "grpc")
+        string carrier)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         // This stream's connection share of the shared frame ingest: the exfil

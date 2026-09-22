@@ -27,7 +27,7 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // prepare-then-place flow as the classic managers, rendered by the
 // WebShellGenerateForm beside the implant form under one toggle.
 //
-// The form offers only what the pipeline actually delivers: the in-tree .NET
+// The form offers only what the pipeline actually delivers: the in-tree Rust
 // unit (no language picker for units that are not registered), the Stage2 and
 // Stager classes (the deployable shapes; the reduced classes compile the same
 // beacon with a gutted verb set and stay API-only), this engagement's
@@ -197,8 +197,8 @@ export function PayloadBuildView({
   // the named carrier while enrollment keeps riding the picked front -- the
   // priority inversion a fallback list cannot express (its entries serve
   // both exchanges together). Any listener a beacon may name serves: the
-  // web family (the WebSocket stream or the envelope cycle by mode), mTLS,
-  // QUIC, the socket family (either mode), and the DNS family (poll, the
+  // web family (the WebSocket stream or the envelope cycle by mode), the
+  // socket family (either mode), and the DNS family (poll, the
   // egress-restricted TXT carrier). The catcher serves no contact at all.
   const carriers = useMemo(
     () => listeners.filter((l) => l.transport !== 'shellcatch'),
@@ -254,7 +254,7 @@ export function PayloadBuildView({
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
-        // Language rides empty: the server defaults to the in-tree .NET unit,
+        // Language rides empty: the server defaults to the in-tree Rust unit,
         // and no other unit is registered to pick.
         language: null,
         class: klass,

@@ -22,7 +22,7 @@ using Task = System.Threading.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 // The WebSocket beacon stream (architecture.md Sec 8, the web posture's
-// interactive tier): the same tasking session the gRPC stream runs, over a
+// interactive tier): the same tasking session every live carriage runs, over a
 // WebSocket on the plain-HTTP listener family -- so an implant whose only
 // front is a web front can still hold the live channel (shell.interact,
 // tunnel.forward, tunnel.socks) without faking it with back-to-back polls.
@@ -59,7 +59,7 @@ public static class WebSocketBeaconEndpoints
 
 /// <summary>
 /// One WebSocket beacon stream. The session loop is the shared
-/// <see cref="BeaconSessionRunner"/> the gRPC endpoint runs; this class owns
+/// <see cref="BeaconSessionRunner"/> the live carriages share; this class owns
 /// only the transport plumbing -- the message receive loop (unwrap each
 /// sealed message, parse its frames) and the message send (one frame per
 /// message, sealed the same way the envelope seals its responses).
@@ -207,7 +207,7 @@ internal sealed class WebSocketBeaconStream
             return;
 
         // A genuinely new session is recorded; a reused one is not -- the same
-        // flood guard the envelope and the gRPC stream apply
+        // flood guard the envelope contact applies
         // (architecture.md Sec 10.3, Sec 11).
         await BeaconHandshake.AppendSessionOpenedAsync(_audit, handshake, handshakeRequest);
 
@@ -263,7 +263,8 @@ internal sealed class WebSocketBeaconStream
                 return pending.Dequeue();
             },
             (frame, token) => SendFramesAsync(ws, isSealed, new[] { frame }, sealedKey, token),
-            cancellationToken);
+            cancellationToken,
+            carrier: "web");
     }
 
     // One message in: fragments accumulate until EndOfMessage; null on a clean

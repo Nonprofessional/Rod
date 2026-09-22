@@ -25,7 +25,7 @@ namespace Rod.Transport.Listeners.Streams;
 // per-frame paths are the shared beacon compositions (BeaconIngest,
 // BeaconTasking), so a result captured over a stream listener is
 // indistinguishable in core state, the audit trail, and the live bus from one
-// captured over the gRPC stream -- the same property the envelope carries.
+// captured over the WebSocket beacon -- the same property the envelope carries.
 //
 // The opening message may also carry an EnrollRequest ahead of its handshake
 // (Sec 8, the same full-independence step QUIC took): the certificate-less
@@ -242,8 +242,8 @@ internal sealed class StreamBeaconBridge
             // message, and the shared session runner holds the connection,
             // pushing tasking the moment it is queued and draining result
             // frames as they cross (architecture.md Sec 8, the same runner
-            // the gRPC stream, the WebSocket beacon, and the QUIC session
-            // run). The runner runs under the listener's own lifetime: the
+            // the WebSocket beacon runs). The runner runs under the
+            // listener's own lifetime: the
             // contact timeout above bounds the opening exchange, not a held
             // session. Sealing rides the same per-message counter discipline
             // the poll exchange carries: every inbound message is a fresh
@@ -411,7 +411,7 @@ internal sealed class StreamBeaconBridge
 
     // One live-session frame out: its own message, sealed under the response
     // purpose tag when the connection opened sealed -- the runner's one
-    // frame per message, the QUIC session's own shape.
+    // frame per message, the held stream's own shape.
     private static async Task WriteLiveFrameAsync(
         Stream stream, Frame frame, (Guid KeyId, byte[] Key) sealedKey, bool isSealed,
         CancellationToken cancellationToken)

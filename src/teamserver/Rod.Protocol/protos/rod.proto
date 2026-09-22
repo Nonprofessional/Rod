@@ -4,7 +4,7 @@ package rod.v1;
 
 // Rod wire protocol, frame layer only.
 //
-// Transport-agnostic (architecture.md Sec.8): HTTP(S), mTLS, DNS, SMB, TCP all
+// Transport-agnostic (architecture.md Sec.8): HTTP(S), DNS, raw TCP, and DoH
 // carry these frames; the implant is always the connection initiator. Frames are
 // opaque envelopes -- a redirector forwards the inner payload without parsing it.
 //

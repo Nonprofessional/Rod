@@ -66,9 +66,9 @@ public sealed class InMemoryListenerRegistry : IListenerRegistry
         // The Kestrel-riding family carries host:port binds and serves the
         // HTTP routes -- enrollment included -- on whatever socket it opens,
         // so the provider registry's shape decides the match: http, https,
-        // mtls, and doh today, and any later Kestrel-riding registration
-        // without an edit here. The socket-owning family (dns, smb, tcp,
-        // quic) never serves HTTP enrollment, so its bind shapes are skipped.
+        // and doh today, and any later Kestrel-riding registration
+        // without an edit here. The socket-owning family (dns, tcp,
+        // shellcatch) never serves HTTP enrollment, so its bind shapes are skipped.
         Listener? found = null;
         foreach (var listener in _listeners.Values)
         {

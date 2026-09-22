@@ -4,7 +4,7 @@ using Rod.V1;
 namespace Rod.Transport.Endpoints;
 
 // The plain-HTTP envelope framing (architecture.md Sec 8, the implant-reach
-// escape hatch): the same rod.v1 Frames the gRPC stream carries, marshaled as
+// escape hatch): the same rod.v1 Frames the live carriages carry, marshaled as
 // varint-length-delimited sequences in ordinary HTTP request/response bodies.
 // The delimiter is the protobuf canonical delimited-stream prefix -- an
 // unsigned 32-bit varint length before each marshaled Frame -- so any language
@@ -21,8 +21,8 @@ namespace Rod.Transport.Endpoints;
 internal static class EnvelopeFraming
 {
     /// <summary>
-    /// The per-frame cap: the same budget the gRPC stream enforces as its
-    /// message cap, so a frame legal on one transport is legal on the other.
+    /// The per-frame cap: the budget every carrier enforces, so a frame
+    /// legal on one transport is legal on the other.
     /// </summary>
     public const int MaxFrameBytes = 2 * 1024 * 1024;
 

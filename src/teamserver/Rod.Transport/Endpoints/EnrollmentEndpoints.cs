@@ -159,7 +159,8 @@ public static class EnrollmentEndpoints
         // listener id stamped onto the implant record. The shared refusal
         // rules, the enrollment, the audit arc, and the contact key
         // binding live in the shared flow (ScopedEnrollment), the same one
-        // the QUIC opening exchange drives with its own listener's scope. A
+        // the stream carriage's opening exchange drives with its own
+        // listener's scope. A
         // socket the registry does not know (the in-memory test harness,
         // which binds no real ports) stays token-scoped only, the shape the
         // harness has always used.

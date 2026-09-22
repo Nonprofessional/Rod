@@ -49,7 +49,7 @@ public sealed record ConformanceTarget(
 /// implant); the rig starts it per phase against a fresh target and stops it
 /// between phases. <see cref="HasExited"/> reports whether the candidate has
 /// stopped itself -- the observable half of the kill-date refusal clause.
-/// The signature-verification phase probes over the gRPC stream, so a
+/// The signature-verification phase probes over a live session, so a
 /// candidate that speaks only the envelope is named there rather than probed.
 /// </summary>
 public interface IImplantCandidate : IDisposable
