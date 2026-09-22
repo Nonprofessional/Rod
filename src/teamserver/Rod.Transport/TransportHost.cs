@@ -656,18 +656,29 @@ public static class TransportHost
                 configureServices?.Invoke(services);
             })
             .Configure(app => app
-                // The WebSocket beacon's upgrade support: AcceptWebSocketAsync
-                // needs the middleware on a real Kestrel bind (the TestServer
-                // harness upgrades without it, which is why the gap only
-                // shows on a socket). No options: the beacon route owns its
-                // own keep-alive and buffer discipline.
-                .UseWebSockets()
                 .UseRouting()
-                .UseAuthentication()
-                .UseAuthorization()
+                .UseRodTransportCore()
                 .UseEndpoints(endpoints =>
                 {
                     MapRodEndpoints(endpoints);
                     mapEndpoints?.Invoke(endpoints);
                 })));
+
+    /// <summary>
+    /// The transport-critical middleware core every Rod host runs, in order:
+    /// WebSocket upgrade support, then authentication and authorization ahead
+    /// of the mapped endpoints. Shared between the composition root's
+    /// <c>WebApplication</c> and <see cref="CreateHostBuilder"/>'s test hosts
+    /// so the two pipelines cannot drift -- the WebSockets line is
+    /// load-bearing (the beacon route's <c>AcceptWebSocketAsync</c> only works
+    /// on a real Kestrel bind when the middleware runs, and a pipeline that
+    /// loses it answers the beacon's upgrade with a 400; the TestServer
+    /// harness upgrades without it, which is exactly why the gap once hid).
+    /// Call after routing and before endpoint mapping/execution.
+    /// </summary>
+    public static IApplicationBuilder UseRodTransportCore(this IApplicationBuilder app)
+        => app
+            .UseWebSockets()
+            .UseAuthentication()
+            .UseAuthorization();
 }

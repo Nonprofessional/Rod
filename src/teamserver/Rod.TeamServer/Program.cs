@@ -133,19 +133,12 @@ app.UseStaticFiles(new StaticFileOptions
         }
     },
 });
-// The WebSocket beacon's upgrade support: the beacon route's
-// AcceptWebSocketAsync only works on a real Kestrel bind when this
-// middleware runs, and without it the upgrade request reads as a plain GET
-// that the route refuses with a 400 -- an enrolled implant then never holds
-// its live session. TransportHost.CreateHostBuilder wires the same
-// middleware for the test hosts; this pipeline must keep it too.
-app.UseWebSockets();
-// Operator session middleware: authentication establishes the operator from the
-// cookie, authorization gates the endpoints that opt in via RequireAuthorization.
-// Ordered before endpoint mapping so the auth result is visible to every mapped
-// route; the static UI shell above it stays reachable anonymously.
-app.UseAuthentication();
-app.UseAuthorization();
+// The transport-critical middleware core (WebSocket upgrade support plus
+// the operator session pair), shared with the test hosts through
+// TransportHost so this pipeline cannot drift from the one the suites
+// exercise. After routing (implicit in WebApplication), before the mapped
+// endpoints below.
+app.UseRodTransportCore();
 app.MapRodEndpoints();
 // The operator layer's SSE event stream: mapped alongside the
 // transport endpoints from the composition root for the same layer-separation
