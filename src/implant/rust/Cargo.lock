@@ -1072,7 +1072,6 @@ dependencies = [
  "rand 0.8.8",
  "rsa",
  "rustls",
- "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2",
