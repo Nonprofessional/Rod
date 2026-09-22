@@ -497,7 +497,12 @@ recorded.**
   lands) -- deliver the artifact over the same
   engagement-scoped, token-gated fetch route (`GET /implants/stage2/{id}`,
   each served fetch spending one use), with the mints, budgets, and
-  revocations the launchers endpoint already keeps.
+  revocations the launchers endpoint already keeps. An https front
+  terminates TLS against the engagement CA (Sec 9), an anchor no stock
+  target toolchain trusts -- the implant pins it, curl and friends cannot
+  -- so the one-liners render with each family's transport-verification
+  bypass; the credential gates the fetch, and the fetched artifact's own
+  enrollment pins the CA.
 - **Every build mints the enrollment credential it bakes.** The token is
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --

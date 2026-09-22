@@ -282,8 +282,13 @@ count, up to a day), or both.
 
 The answer carries the fetch URL, the credential, and one command per
 downloader family: `curl` and `wget` for Unix targets, PowerShell's `iwr`
-for Windows. Copy the one the target's shell has; the beacon lands in the
-Implants table on its enrollment, already reporting its cadence.
+for Windows, and the python3 memfd family that runs the fetched bytes
+without landing a file. Copy the one the target's shell has; the beacon
+lands in the Implants table on its enrollment, already reporting its
+cadence. Over an https front every family's command disables transport
+verification -- the front's certificate comes from the engagement CA,
+which no stock target toolchain trusts (the implant itself pins that CA);
+the fetch credential is the gate.
 
 Why the fetch carries its own credential when the payload bakes one: the
 baked credential lives inside the artifact and enrolls the implant after it
