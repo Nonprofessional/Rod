@@ -53,16 +53,30 @@ public class PayloadTransformChainTests
         using var clientScope = client;
         await AuthenticatedHost.LoginAsync(client);
 
-        // An engagement to build against.
+        // An engagement to build against, with a front the build names. A tcp
+        // listener: the transform seam cares about the bytes, not the front,
+        // and the socket transports bind on any host shape (the web pair
+        // needs a host that activates the Kestrel half of runtime
+        // management).
         var create = await client.PostAsJsonAsync("/engagements", new { Name = "transform-seam" });
         create.EnsureSuccessStatusCode();
         var engagement = await create.Content.ReadFromJsonAsync<EngagementBody>();
+        var port = TestSupport.GetFreeTcpPort();
+        var fronted = await client.PostAsJsonAsync(
+            $"/engagements/{engagement!.EngagementId}/listeners",
+            new Rod.Transport.Endpoints.ListenerEndpoints.CreateListenerRequest(
+                Name: "transform-front",
+                Transport: "tcp",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"127.0.0.1:{port}"));
+        fronted.EnsureSuccessStatusCode();
+        var front = await fronted.Content.ReadFromJsonAsync<Rod.Transport.Endpoints.ListenerEndpoints.ListenerResponse>();
 
         // The build runs the real .NET unit, then the config-listed transform
         // over its output.
         var build = await client.PostAsJsonAsync(
-            $"/engagements/{engagement!.EngagementId}/payloads",
-            new { TargetOs = "linux", TargetArch = "amd64" });
+            $"/engagements/{engagement.EngagementId}/payloads",
+            new { TargetOs = "linux", TargetArch = "amd64", ListenerId = front!.Id });
         build.EnsureSuccessStatusCode();
         var built = await build.Content.ReadFromJsonAsync<BuildBody>();
         Assert.NotNull(built);

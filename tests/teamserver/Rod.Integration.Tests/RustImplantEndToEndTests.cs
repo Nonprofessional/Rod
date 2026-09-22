@@ -166,7 +166,7 @@ public class RustImplantEndToEndTests
         await using var env = await TestEnv.StartAsync();
         await env.CreateEngagementAsync();
 
-        var enrollUrl = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+        var front = await HttpFrontAsync(env);
         var built = await env.Http.PostAsJsonAsync(
             $"/engagements/{env.EngagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
@@ -174,7 +174,7 @@ public class RustImplantEndToEndTests
                 Class: "Stage2",
                 TargetOs: "linux",
                 TargetArch: "amd64",
-                Endpoint: enrollUrl,
+                ListenerId: front,
                 UriPath: null,
                 SleepSeconds: 1.0,
                 JitterSeconds: 0.0,
@@ -416,7 +416,9 @@ public class RustImplantEndToEndTests
     }
 
     /// Creates the engagement's runtime dns listener on a free loopback port
-    /// and returns the typed dial the build bakes.
+    /// and returns its id for the build to name -- the parser resolves the
+    /// typed dns dial (the bind as the resolver, the record's zone) from the
+    /// listener itself.
     private static async Task<string> DnsFrontAsync(TestEnv env, string zone)
     {
         var port = TestSupport.GetFreeUdpPort();
@@ -428,11 +430,11 @@ public class RustImplantEndToEndTests
                 BindAddress: $"127.0.0.1:{port}",
                 PublicEndpoint: zone));
         created.EnsureSuccessStatusCode();
-        return $"dns://127.0.0.1:{port}/{zone}";
+        return (await created.Content.ReadFromJsonAsync<Rod.Transport.Endpoints.ListenerEndpoints.ListenerResponse>())!.Id;
     }
 
     /// Creates the engagement's runtime tcp listener on a free loopback port
-    /// and returns the typed dial the build bakes -- the operator path an
+    /// and returns its id for the build to name -- the operator path an
     /// engagement's own socket takes (bind-then-register, the public
     /// endpoint the bare host:port implants dial).
     private static async Task<string> TcpFrontAsync(TestEnv env)
@@ -446,8 +448,42 @@ public class RustImplantEndToEndTests
                 BindAddress: $"127.0.0.1:{port}",
                 PublicEndpoint: $"127.0.0.1:{port}"));
         created.EnsureSuccessStatusCode();
-        return $"tcp://127.0.0.1:{port}";
+        return (await created.Content.ReadFromJsonAsync<Rod.Transport.Endpoints.ListenerEndpoints.ListenerResponse>())!.Id;
     }
+
+    /// Creates the engagement's runtime http listener on a free loopback
+    /// port and returns its id for the build to name: every web front is a
+    /// listener record, and the baked dial resolves from the record.
+    private static async Task<string> HttpFrontAsync(TestEnv env)
+        => await WebFrontAsync(env, "http");
+
+    /// The TLS twin: the front whose leaf must carry a SAN naming the dialed
+    /// host, or the implant's rustls client (full webpki validation, the
+    /// baked CA as the only root) aborts the handshake on name matching --
+    /// the field failure this leg exists to guard against.
+    private static async Task<string> HttpsFrontAsync(TestEnv env)
+        => await WebFrontAsync(env, "https");
+
+    private static async Task<string> WebFrontAsync(TestEnv env, string transport)
+    {
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/listeners",
+            new Rod.Transport.Endpoints.ListenerEndpoints.CreateListenerRequest(
+                Name: $"e2e-{transport}",
+                Transport: transport,
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"{transport}://127.0.0.1:{port}"));
+        Assert.True(created.IsSuccessStatusCode, await created.Content.ReadAsStringAsync());
+        return (await created.Content.ReadFromJsonAsync<Rod.Transport.Endpoints.ListenerEndpoints.ListenerResponse>())!.Id;
+    }
+
+    /// The TLS front end to end: enrollment and contacts over the https
+    /// listener whose leaf the engagement CA issues on demand.
+    [RustFact]
+    public async Task RustImplant_EnrollsOverTheHttpsFront()
+        => await BuildRunAndAwaitOnlineAsync(
+            "poll", bindFront: env => HttpsFrontAsync(env));
 
     /// The interactive shell through a baked artifact at the named contact
     /// mode: the task opens the channel with its initial command, the
@@ -515,8 +551,10 @@ public class RustImplantEndToEndTests
 
     /// Builds the artifact through the operator API at the given contact
     /// mode, runs it in its fielded shape, and waits for the roster to show
-    /// it online -- the channel legs' shared prefix. The endpoint names the
-    /// front (the socket family's typed tcp:// dial included).
+    /// it online -- the channel legs' shared prefix. The build names its
+    /// front as a listener record (the only web/socket shape the contract
+    /// accepts since the typed dial narrowed to the DNS family); the parser
+    /// resolves each family's dial from the record.
     private static async Task<RunningRust> BuildRunAndAwaitOnlineAsync(
         string mode, Func<TestEnv, Task<string>>? bindFront = null)
     {
@@ -524,9 +562,7 @@ public class RustImplantEndToEndTests
         try
         {
             await env.CreateEngagementAsync();
-            var enrollUrl = bindFront is null
-                ? $"http://127.0.0.1:{env.HttpPort}/implants/enroll"
-                : await bindFront(env);
+            var front = bindFront is null ? await HttpFrontAsync(env) : await bindFront(env);
             var built = await env.Http.PostAsJsonAsync(
                 $"/engagements/{env.EngagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
@@ -534,7 +570,7 @@ public class RustImplantEndToEndTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: enrollUrl,
+                    ListenerId: front,
                     UriPath: null,
                     SleepSeconds: 1.0,
                     JitterSeconds: 0.0,
@@ -807,6 +843,11 @@ public class RustImplantEndToEndTests
                     mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
                     configuration: config)
                 .ConfigureWebHost(webBuilder => webBuilder
+                    // No startup listeners of its own, but the empty call
+                    // still activates the Kestrel half of runtime listener
+                    // management -- the web fronts the legs name bind as
+                    // dynamic endpoints, which never open without it.
+                    .UseRodListeners(new List<Rod.Transport.Listeners.ListenerConfig>())
                     .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(env.HttpPort)))
                 .Build();
             await env.Host.StartAsync();
