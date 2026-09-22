@@ -108,10 +108,8 @@ export function PayloadBuildView({
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
   // Fallbacks come from the inventory, not free text: the ordered ids of the
-  // engagement's same-family listeners picked as walked fallbacks, plus a
-  // typed tail for fronts this teamserver does not serve.
+  // engagement's same-family listeners picked as walked fallbacks.
   const [fallbackIds, setFallbackIds] = useState<string[]>([])
-  const [manualFallbacks, setManualFallbacks] = useState('')
   const [enrollPath, setEnrollPath] = useState('')
   const [userAgent, setUserAgent] = useState('')
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
@@ -142,13 +140,6 @@ export function PayloadBuildView({
     if (trimmed === '') return null
     const parsed = Number(trimmed)
     return Number.isFinite(parsed) ? parsed : null
-  }
-
-  // The typed fallback tail: comma-separated, appended after the picked
-  // fronts in walk order.
-  const fallbacks = (value: string): string[] | null => {
-    const list = value.split(',').map((f) => f.trim()).filter((f) => f !== '')
-    return list.length > 0 ? list : null
   }
 
   // The scheme families the egress walk serves -- the server's own rule:
@@ -327,12 +318,8 @@ export function PayloadBuildView({
         beaconListenerId: carrierId || null,
         beaconEndpoint: null,
         // The walked fallback list: the picked fronts' dials in walk order,
-        // then any typed tail -- one list, family-checked server side.
-        fallbackEndpoints: (() => {
-          const manual = fallbacks(manualFallbacks) ?? []
-          const all = [...picked.map(dialOf), ...manual]
-          return all.length > 0 ? all : null
-        })(),
+        // family-checked server side.
+        fallbackEndpoints: picked.length > 0 ? picked.map(dialOf) : null,
         enrollPath: enrollPath || null,
         userAgent: userAgent || null,
         headers: null,
@@ -400,7 +387,7 @@ export function PayloadBuildView({
             <select
               value={listenerId}
               onChange={(e) => setListenerId(e.target.value)}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. Every family serves enrollment (web, raw socket, DNS/DoH); only the shell catcher serves none."
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. The fallbacks under Advanced extend both exchanges, in walk order. Every family serves enrollment (web, raw socket, DNS/DoH); only the shell catcher serves none."
             >
               <option value="" disabled>-- pick a listener --</option>
               {listeners.map((l) =>
@@ -535,9 +522,9 @@ export function PayloadBuildView({
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Wire shape and credential timing. The fallback fronts are picked from this
-              engagement's same-family listeners, in walk order; manual entries stay for fronts
-              this teamserver does not serve. The one path knob is registration's. The
-              artifact's kill-date fuse and the credential's enroll window ride here too.
+              engagement's same-family listeners, in walk order; the one path knob is
+              registration's. The artifact's kill-date fuse and the credential's enroll
+              window ride here too.
             </p>
             <div className="fallback-fronts">
               <span className="fallback-caption">Fallback fronts (walk order)</span>
@@ -601,15 +588,6 @@ export function PayloadBuildView({
                   </option>
                 ))}
               </select>
-              <label>
-                Manual fallback endpoints
-                <input
-                  value={manualFallbacks}
-                  onChange={(e) => setManualFallbacks(e.target.value)}
-                  placeholder="https://alt.example.test"
-                  title="Typed fallbacks for fronts without a listener record (a redirector in front of the same bind), appended after the picked fronts in walk order. Same scheme family as the front — the server refuses the mix."
-                />
-              </label>
             </div>
             <label>
               Enroll path

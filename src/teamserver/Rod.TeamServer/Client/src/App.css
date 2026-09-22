@@ -1220,9 +1220,8 @@ a:hover {
 }
 
 /* The fallback picker: one full-width row per the advanced grid -- the
-   caption, the walked fronts as chips (reorder and drop inline), the
-   add-from-inventory select, and the typed tail for fronts this teamserver
-   does not serve. */
+   caption, the walked fronts as chips (reorder and drop inline), and the
+   add-from-inventory select. */
 .fallback-fronts {
   grid-column: 1 / -1;
   display: flex;
@@ -1231,15 +1230,6 @@ a:hover {
 }
 
 .fallback-fronts .fallback-caption {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.fallback-fronts label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--muted);
