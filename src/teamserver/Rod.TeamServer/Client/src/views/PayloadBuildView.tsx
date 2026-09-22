@@ -90,7 +90,6 @@ export function PayloadBuildView({
   const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
-  const [format, setFormat] = useState('exe')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [mode, setMode] = useState('stream')
@@ -336,7 +335,10 @@ export function PayloadBuildView({
         killDate: killDate ? new Date(killDate).toISOString() : null,
         tokenMaxUses: num(tokenMaxUses),
         tokenLifetimeSeconds: num(tokenHours) !== null ? num(tokenHours)! * 3600 : null,
-        format: format !== 'exe' ? format : null,
+        // Format rides empty: every spelling is the same native binary over
+        // the Rust unit, and the disk-or-memory choice is the launcher
+        // step's (the Launchers tab offers both families for every payload).
+        format: null,
       })
       setError(null)
       await refreshJobs()
@@ -451,17 +453,6 @@ export function PayloadBuildView({
                   {a === 'amd64' ? 'amd64 / x64' : a}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Format
-            {/* The artifact's form factor: every Rust artifact is a native
-                executable, so the spellings differ only in posture -- 'exe'
-                the default, 'aot' the one the memfd one-liner family keys
-                on for in-memory delivery. */}
-            <select value={format} onChange={(e) => setFormat(e.target.value)}>
-              <option value="exe">exe — native executable</option>
-              <option value="aot">aot — native, in-memory deliverable</option>
             </select>
           </label>
         </fieldset>
@@ -699,7 +690,7 @@ export function PayloadBuildView({
                     <td title={job.jobId}>{new Date(job.requestedAt).toLocaleString()}</td>
                     <td>
                       <code>
-                        {job.language}:{job.class} {job.target}
+                        {job.language} {job.target}
                       </code>
                     </td>
                     <td>

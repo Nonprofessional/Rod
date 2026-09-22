@@ -107,7 +107,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
       <div className="inline-form">
         <input
           className="filter-text"
-          placeholder="Filter (linux, Stage2, listener, fingerprint…)"
+          placeholder="Filter (linux, aot, listener, fingerprint…)"
           value={filterDraft}
           onChange={(e) => setFilterDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -159,7 +159,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                   const q = filter.trim().toLowerCase()
                   if (!q) return true
                   const front = frontFor(p.endpoint, listeners)
-                  return [p.class, p.language, p.target, p.endpoint, front?.name, p.fingerprint].some(
+                  return [p.class, p.language, p.target, p.build?.format, p.endpoint, front?.name, p.fingerprint].some(
                     (v) => v?.toLowerCase().includes(q),
                   )
                 })
@@ -191,7 +191,12 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                             {p.language}:{p.class}
                           </code>
                         </td>
-                        <td>{p.target ?? '—'}</td>
+                        <td>
+                          {p.target ?? '—'}
+                          {p.build?.format && p.build.format !== 'exe' && (
+                            <span className="muted"> · {p.build.format}</span>
+                          )}
+                        </td>
                         <td>
                           <span
                             title={
@@ -347,6 +352,7 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
   if (b) {
     lines.push(
       line('Mode', b.mode ?? 'stream (default)'),
+      line('Format', b.format ?? 'exe (default)'),
       line(
         'Contact',
         b.sleepSeconds != null
