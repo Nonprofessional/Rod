@@ -96,9 +96,38 @@ public sealed class ListenerManager
     /// </summary>
     internal void ApplyDynamicHttpsDefaults(HttpsConnectionAdapterOptions https)
     {
-        https.ServerCertificateSelector = (_, _) =>
-            _services.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
+        // The leaf must name what the client dialed (the reference implant's
+        // rustls client verifies the server name against the SAN), and the
+        // selector's only per-connection clue is the local endpoint: the port
+        // names the bind, the bind names the runtime listener, and its live
+        // public endpoint names the host implants dial -- a repoint flows
+        // straight through without rebinding. An unmapped port (a front this
+        // manager does not own) falls back to the SNI name, then to the
+        // legacy nameless shape.
+        https.ServerCertificateSelector = (context, sni) =>
+            _services.GetRequiredService<IImplantCertificateAuthority>()
+                .GetServerCertificate(HostOfListenerOn((context?.LocalEndPoint as IPEndPoint)?.Port) ?? sni ?? "");
         https.CheckCertificateRevocation = false;
+    }
+
+    // The public-endpoint host of the runtime listener that owns a bound
+    // port, if any does.
+    private string? HostOfListenerOn(int? port)
+    {
+        if (port is not { } bound)
+            return null;
+        foreach (var entry in _runtime.Values)
+        {
+            var bind = entry.Listener.BindAddress;
+            var separator = bind.LastIndexOf(':');
+            if (separator >= 0
+                && int.TryParse(bind[(separator + 1)..], out var bindPort)
+                && bindPort == bound)
+            {
+                return ServerLeaf.HostOf(entry.Listener.PublicEndpoint);
+            }
+        }
+        return null;
     }
 
     /// <summary>

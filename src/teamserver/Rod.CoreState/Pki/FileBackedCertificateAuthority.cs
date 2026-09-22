@@ -27,8 +27,8 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     // file-by-file bisection; 30 days ran 24 consecutive passes, and no
     // mechanism was established). Lengthen only with those legs re-proven.
     private static readonly TimeSpan ServerLeafLifetime = TimeSpan.FromDays(30);
-    private readonly object _serverCertificateLock = new();
-    private X509Certificate2? _serverCertificate;
+    private readonly object _serverLeafLock = new();
+    private readonly Dictionary<string, X509Certificate2> _serverLeaves = new();
 
     /// <param name="options">
     /// The on-disk CA material. Both paths are required; the passphrase is
@@ -85,29 +85,31 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
     /// <summary>
-    /// The listener server leaf, minted on first use, reused for every
-    /// connection, and re-minted when it nears expiry
-    /// (<see cref="ServerLeafRotation"/>) -- see the interface contract for
-    /// why the CA's own root cannot ride this position on Windows. An
-    /// operator who wants a provisioned server identity instead fronts the
-    /// listener with their own certificate at the transport seam; this is
-    /// the self-sufficient default.
+    /// The listener server leaf for the named host, minted on first use,
+    /// reused for every connection to that host, and re-minted when it nears
+    /// expiry (<see cref="ServerLeafRotation"/>) -- see the interface
+    /// contract for why the CA's own root cannot ride this position on
+    /// Windows. An operator who wants a provisioned server identity instead
+    /// fronts the listener with their own certificate at the transport seam;
+    /// this is the self-sufficient default.
     /// </summary>
-    public X509Certificate2 GetServerCertificate()
+    public X509Certificate2 GetServerCertificate(string host)
     {
-        lock (_serverCertificateLock)
+        lock (_serverLeafLock)
         {
             // Kestrel's ServerCertificateSelector asks per handshake, so the
             // re-mint reaches every new connection. The replaced leaf is
             // dropped, not disposed: a handshake that already selected it may
-            // still be reading it.
-            if (_serverCertificate is null
-                || ServerLeafRotation.Due(_serverCertificate, DateTimeOffset.UtcNow))
+            // still be reading it. The cache is keyed by host and bounded by
+            // the front count -- one entry per distinct dialed name.
+            if (!_serverLeaves.TryGetValue(host, out var leaf)
+                || ServerLeafRotation.Due(leaf, DateTimeOffset.UtcNow))
             {
-                _serverCertificate = BuildServerCertificate();
+                leaf = ServerLeaf.Build(_caCertificate, host, ServerLeafLifetime);
+                _serverLeaves[host] = leaf;
             }
 
-            return _serverCertificate;
+            return leaf;
         }
     }
 
@@ -121,34 +123,6 @@ public sealed class FileBackedCertificateAuthority : IImplantCertificateAuthorit
         return key.SignData(
             TaskingCanonical.Bytes(implantId, taskId, verb, arguments, nonce),
             HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
-    }
-
-    // Builds and signs the TLS server leaf the listeners present: end-entity,
-    // digitalSignature/keyEncipherment, server-auth EKU -- the usage set
-    // SChannel demands before it will shake hands with us. Mirrors the dev
-    // authority's server leaf so both issuers present the same shape.
-    private X509Certificate2 BuildServerCertificate()
-    {
-        using var key = RSA.Create(2048);
-        var request = new CertificateRequest(
-            "CN=rod-listener,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
-        request.CertificateExtensions.Add(
-            new X509KeyUsageExtension(
-                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
-                critical: true));
-        request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(
-                new OidCollection { new("1.3.6.1.5.5.7.3.1", "Server Authentication") }, // TLS server auth.
-                critical: true));
-
-        var notBefore = DateTimeOffset.UtcNow;
-        var leaf = request.Create(_caCertificate, notBefore, notBefore + ServerLeafLifetime, Guid.NewGuid().ToByteArray());
-
-        // The listener signs handshakes with this key, and SChannel needs it in
-        // a presentable (persisted) shape -- see SChannelCertificate.
-        return SChannelCertificate.WithUsableKey(leaf, key);
     }
 
     // True when both RSAs present the same public parameters (modulus + exponent).

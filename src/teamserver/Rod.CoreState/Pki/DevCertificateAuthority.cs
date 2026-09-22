@@ -27,8 +27,8 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 
     private readonly X509Certificate2 _caCertificate;
     private readonly RSA _caKey;
-    private readonly object _serverCertificateLock = new();
-    private X509Certificate2? _serverCertificate;
+    private readonly object _serverLeafLock = new();
+    private readonly Dictionary<string, X509Certificate2> _serverLeaves = new();
 
     public DevCertificateAuthority()
     {
@@ -44,26 +44,29 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
     public X509Certificate2 GetCaCertificate() => _caCertificate;
 
     /// <summary>
-    /// The listener server leaf, minted on first use, reused for every
-    /// connection, and re-minted when it nears expiry
-    /// (<see cref="ServerLeafRotation"/>) -- see the interface contract for
-    /// why the CA's own root cannot ride this position on Windows.
+    /// The listener server leaf for the named host, minted on first use,
+    /// reused for every connection to that host, and re-minted when it nears
+    /// expiry (<see cref="ServerLeafRotation"/>) -- see the interface
+    /// contract for why the CA's own root cannot ride this position on
+    /// Windows.
     /// </summary>
-    public X509Certificate2 GetServerCertificate()
+    public X509Certificate2 GetServerCertificate(string host)
     {
-        lock (_serverCertificateLock)
+        lock (_serverLeafLock)
         {
             // Kestrel's ServerCertificateSelector asks per handshake, so the
             // re-mint reaches every new connection. The replaced leaf is
             // dropped, not disposed: a handshake that already selected it may
-            // still be reading it.
-            if (_serverCertificate is null
-                || ServerLeafRotation.Due(_serverCertificate, DateTimeOffset.UtcNow))
+            // still be reading it. The cache is keyed by host and bounded by
+            // the front count -- one entry per distinct dialed name.
+            if (!_serverLeaves.TryGetValue(host, out var leaf)
+                || ServerLeafRotation.Due(leaf, DateTimeOffset.UtcNow))
             {
-                _serverCertificate = BuildServerCertificate();
+                leaf = ServerLeaf.Build(_caCertificate, host, LeafLifetime);
+                _serverLeaves[host] = leaf;
             }
 
-            return _serverCertificate;
+            return leaf;
         }
     }
 
@@ -90,33 +93,5 @@ public sealed class DevCertificateAuthority : IImplantCertificateAuthority
 
         // CreateSelfSigned produces a self-issued root: subject == issuer.
         return request.CreateSelfSigned(notBefore, notAfter);
-    }
-
-    // Builds and signs the TLS server leaf the listeners present. It is the
-    // mirror of an implant leaf on the server side: end-entity,
-    // digitalSignature/keyEncipherment, server-auth EKU -- the usage set
-    // SChannel demands before it will shake hands with us.
-    private X509Certificate2 BuildServerCertificate()
-    {
-        using var key = RSA.Create(RsaKeySize);
-        var request = new CertificateRequest(
-            "CN=rod-listener,O=Rod,C=ZZ", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
-        request.CertificateExtensions.Add(
-            new X509KeyUsageExtension(
-                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
-                critical: true));
-        request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(
-                new OidCollection { new("1.3.6.1.5.5.7.3.1", "Server Authentication") }, // TLS server auth.
-                critical: true));
-
-        var notBefore = DateTimeOffset.UtcNow;
-        var leaf = request.Create(_caCertificate, notBefore, notBefore + LeafLifetime, Guid.NewGuid().ToByteArray());
-
-        // The listener signs handshakes with this key, and SChannel needs it in
-        // a presentable (persisted) shape -- see SChannelCertificate.
-        return SChannelCertificate.WithUsableKey(leaf, key);
     }
 }

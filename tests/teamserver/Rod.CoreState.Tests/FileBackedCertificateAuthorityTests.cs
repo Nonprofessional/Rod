@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Rod.CoreState.Pki;
@@ -75,7 +76,7 @@ public class FileBackedCertificateAuthorityTests
             new FileBackedCertificateAuthorityOptions(
                 WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
 
-        using var server = authority.GetServerCertificate();
+        using var server = authority.GetServerCertificate("stage.example.test");
         using var chain = new X509Chain();
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
@@ -85,19 +86,45 @@ public class FileBackedCertificateAuthorityTests
     }
 
     [Fact]
-    public void GetServerCertificate_ReusesTheMintedLeafAcrossCalls()
+    public void GetServerCertificate_NamesTheDialedHostInTheSan()
     {
-        // The selector asks per handshake; between renewals every connection
-        // must see the same leaf (mint once, reuse -- ServerLeafRotation).
-        // Not disposed: the authority owns the cached leaf.
+        // rustls (the reference implant's client) runs full webpki
+        // validation against the pinned CA -- server-name matching
+        // included -- so the leaf must carry the dialed name as a SAN: an
+        // IP literal as an IP SAN, a hostname as a DNS SAN. The CN alone
+        // matches nothing on a modern stack.
         using var dir = TempDir.Create();
         var (ca, caKey) = BuildCa();
         var authority = new FileBackedCertificateAuthority(
             new FileBackedCertificateAuthorityOptions(
                 WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
 
-        var first = authority.GetServerCertificate();
-        Assert.Same(first, authority.GetServerCertificate());
+        using var byAddress = authority.GetServerCertificate("127.0.0.1");
+        var addressSan = Assert.IsType<X509SubjectAlternativeNameExtension>(
+            Assert.Single(byAddress.Extensions.OfType<X509SubjectAlternativeNameExtension>()));
+        Assert.Equal(IPAddress.Parse("127.0.0.1"), Assert.Single(addressSan.EnumerateIPAddresses()));
+
+        using var byName = authority.GetServerCertificate("stage.example.test");
+        var nameSan = Assert.IsType<X509SubjectAlternativeNameExtension>(
+            Assert.Single(byName.Extensions.OfType<X509SubjectAlternativeNameExtension>()));
+        Assert.Equal("stage.example.test", Assert.Single(nameSan.EnumerateDnsNames()));
+    }
+
+    [Fact]
+    public void GetServerCertificate_ReusesTheMintedLeafAcrossCalls()
+    {
+        // The selector asks per handshake; between renewals every connection
+        // to the same host must see the same leaf (mint once, reuse --
+        // ServerLeafRotation), while a different host mints its own.
+        using var dir = TempDir.Create();
+        var (ca, caKey) = BuildCa();
+        var authority = new FileBackedCertificateAuthority(
+            new FileBackedCertificateAuthorityOptions(
+                WritePemCert(dir, "ca.crt", ca), WritePemKey(dir, "ca.key", caKey), CaPrivateKeyPassphrase: null));
+
+        var first = authority.GetServerCertificate("stage.example.test");
+        Assert.Same(first, authority.GetServerCertificate("stage.example.test"));
+        Assert.NotSame(first, authority.GetServerCertificate("alt.example.test"));
     }
 
     [Fact]

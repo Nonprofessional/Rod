@@ -996,22 +996,24 @@ fleet-wide code execution. Security is a first-class concern.
   engagement CA; it does not generate the production CA. When
   `Pki:CaCertificatePath` and `Pki:CaPrivateKeyPath` are configured,
   `FileBackedCertificateAuthority` loads the CA certificate and its RSA private
-  key (optionally passphrase-encrypted) from disk and signs the implant's
-  ECDSA leaf with the same leaf construction the dev authority uses -- only the
-  issuer changes (an RSA CA signing EC leaves is the standard cross-algorithm
-  PKI shape; the CA's signing key and the leaf's key are independent).
-  Absent the config the dev self-signed authority stays. The authority is built
+  key (optionally passphrase-encrypted) from disk and issues the listeners'
+  TLS server leaves with the same leaf construction the dev authority uses --
+  only the issuer changes. Absent the config the dev self-signed authority
+  stays. The authority is built
   eagerly at DI registration, so a missing file, an unparseable PEM, a non-RSA
   key, or a key/cert mismatch fails the host at startup, not the first
   enrollment; RSA is the only supported CA key type, the server-held signing
   key. Rotation is operational (replace the files and restart). Rejected:
   generating and persisting the CA from the teamserver (re-creates the dev
-  posture -- key in the C2 -- at production privilege); `IOptions<T>` binding
-  for the `Pki` section (diverges from the audit store, the other
-  config-selected adapter, which reads its key straight off `IConfiguration`);
-  and bundling a proper TLS server leaf + SAN (scope creep -- the
-  CA-as-trusted-root satisfies enrollment binding; a real server leaf with SAN
-  stays a separable hardening).
+  posture -- key in the C2 -- at production privilege); and `IOptions<T>`
+  binding for the `Pki` section (diverges from the audit store, the other
+  config-selected adapter, which reads its key straight off `IConfiguration`).
+  Each server leaf carries a SAN naming its front's public host (an IP literal
+  as an IP SAN, a hostname as a DNS SAN): the reference implant's rustls client
+  pins the CA but runs full webpki validation, server-name matching included,
+  so a nameless leaf strands every https front -- an earlier draft rejected
+  the SAN as separable hardening on the false premise that pinned clients do
+  no name matching.
 - **Command signing.** Dispatched tasks are signed so an implant only acts on
   teamserver-authorized tasking. The beacon endpoint signs each dispatched
   `TaskRequest` with the tasking CA's RSA key (RSASSA-PSS over SHA-256, on a

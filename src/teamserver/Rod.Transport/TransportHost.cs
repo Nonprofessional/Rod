@@ -443,7 +443,7 @@ public static class TransportHost
                     // the TLS shape must not fingerprint the resolver front.
                     if (string.Equals(provider.Transport, "https", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(provider.Transport, "doh", StringComparison.OrdinalIgnoreCase))
-                        ConfigureHttps(listen, kestrel);
+                        ConfigureHttps(listen, kestrel, config.PublicEndpoint);
                 });
 
                 registry.RegisterAsync(listener, CancellationToken.None).GetAwaiter().GetResult();
@@ -469,13 +469,16 @@ public static class TransportHost
     // handshake looks like any ordinary website's. Enrollment answers on the
     // stager token and contacts authenticate under the baked per-artifact
     // key, both at the application layer (architecture.md Sec 8/9).
-    private static void ConfigureHttps(ListenOptions listen, KestrelServerOptions kestrel)
+    private static void ConfigureHttps(ListenOptions listen, KestrelServerOptions kestrel, string publicEndpoint)
     {
         listen.UseHttps(https =>
         {
-            // A CA-issued server leaf, not the CA root itself.
+            // A CA-issued server leaf naming the front's public host, not
+            // the CA root itself: clients that pin the CA still verify the
+            // server name against the leaf's SAN.
             https.ServerCertificateSelector = (_, _) =>
-                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>().GetServerCertificate();
+                kestrel.ApplicationServices.GetRequiredService<IImplantCertificateAuthority>()
+                    .GetServerCertificate(ServerLeaf.HostOf(publicEndpoint));
         });
     }
 
