@@ -208,14 +208,24 @@ mod tests {
         // Signed by a key the implant does not hold.
         let foreign = signed_task(&other, "implant-1", Some(10));
         assert!(matches!(
-            verify("implant-1", &foreign, std::slice::from_ref(&ca), &mut nonces),
+            verify(
+                "implant-1",
+                &foreign,
+                std::slice::from_ref(&ca),
+                &mut nonces
+            ),
             Verdict::RejectedSignature
         ));
         // Signed by the held CA but over another implant's tuple: captured
         // tasking must not replay cross-implant.
         let retargeted = signed_task(&private, "implant-2", Some(10));
         assert!(matches!(
-            verify("implant-1", &retargeted, std::slice::from_ref(&ca), &mut nonces),
+            verify(
+                "implant-1",
+                &retargeted,
+                std::slice::from_ref(&ca),
+                &mut nonces
+            ),
             Verdict::RejectedSignature
         ));
         // An empty signature is unsigned tasking.
@@ -233,7 +243,12 @@ mod tests {
         let task = signed_task(&private, "implant-1", None);
         let mut unnegotiated = NonceTracker::default();
         assert!(matches!(
-            verify("implant-1", &task, std::slice::from_ref(&ca), &mut unnegotiated),
+            verify(
+                "implant-1",
+                &task,
+                std::slice::from_ref(&ca),
+                &mut unnegotiated
+            ),
             Verdict::Accepted
         ));
         let mut negotiated = NonceTracker {
