@@ -397,7 +397,7 @@ internal static class LauncherRender
         if (webListener is null)
             return (
                 Results.BadRequest(new Problem(
-                    "The engagement has no HTTP(S) listener to serve the stage-2 fetch; create one first.")),
+                    "The engagement has no HTTP(S) listener to serve the payload fetch; create one first.")),
                 null);
 
         // The payload to grow into: the operator names one, or the newest
@@ -406,7 +406,7 @@ internal static class LauncherRender
         if (payload is null)
             return (
                 Results.BadRequest(new Problem(
-                    "No stage-2 payload exists in this engagement; build one first, or name an existing payload id.")),
+                    "No payload exists in this engagement; build one first, or name an existing payload id.")),
                 null);
 
         // One download credential for the fetch: every served fetch spends

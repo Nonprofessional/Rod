@@ -118,20 +118,21 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    and the bytes moved (architecture.md Sec 10.1). Close it with an eof
    input post; the bind dies with the task.
 9. To represent a host that cannot run an implant at all, derive a Pivot
-   child from a stage-2 parent (`lateral.move` with arguments
+   child from a full-implant parent (`lateral.move` with arguments
    `<token> Pivot`) and task the child directly: its tasking executes on the
    parent's beacon stream, marked with the child's id and attributed to the
    child end to end (architecture.md Sec 5.2). The child never appears in
    presence -- it has no process -- so its liveness is the parent's.
 
-For staged deployment, build the stage-2 first, then build a second payload
-with class `stager` naming it (`stage2PayloadId`). The stager is a small
-loader: run it with the deployment credential
-(`./Rod.Stager -token <secret>`; `-beacon-url`/`-ca-cert` when the beacon sits
-behind a different frontend) and it fetches the stage-2 from the teamserver,
-verifies the fingerprint baked at build time, runs it, and hands the credential
-over -- the stage-2 enrols and appears on the roster. The fetch verifies the
-token without spending it; the stage-2's enroll spends it.
+Staged delivery rides the launcher one-liners, not a loader build (the
+stager class is retired): render them per payload in the operator UI's
+Launchers tab, or straight from a caught shell's Upgrade panel. The
+one-liner fetches the artifact over the engagement's web front
+(`GET /implants/stage2/{id}`), presenting the freshly minted fetch
+credential -- each served fetch spends one use of it -- and the fetched
+artifact then enrols with the credential baked into it at build time and
+appears on the roster. On Linux the memfd family stages the bytes in
+memory and runs them without landing a file.
 
 ## Configuration reference
 
@@ -249,7 +250,7 @@ The service user also needs a `dotnet` on PATH and a warm NuGet cache
 and restores into that cache. On a host without registry egress, copy
 the cache from the build host at install time.
 
-Acceptance from the executed walk: a stage-2 built through the
+Acceptance from the executed walk: an implant built through the
 supervised install returned its fingerprint, and the downloaded
 artifact's sha256 matched it exactly.
 

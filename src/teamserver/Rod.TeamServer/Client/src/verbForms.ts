@@ -154,7 +154,7 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     fields: [
       {
         key: 'token',
-        label: 'Child stager token',
+        label: 'Child enrollment token',
         type: 'wide',
         required: true,
         placeholder: 'the token the child redeems',
@@ -163,7 +163,7 @@ export const VERB_FORMS: Record<string, VerbForm> = {
         key: 'klass',
         label: 'Class (optional)',
         placeholder: 'Pivot',
-        help: 'Empty defaults to a stage-2 child.',
+        help: 'Empty defaults to a full-implant child.',
       },
     ],
     build: (values) => {

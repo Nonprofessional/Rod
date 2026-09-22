@@ -211,7 +211,7 @@ export function ShellConsole({
               <select
                 value={upgradeListenerId}
                 onChange={(e) => setUpgradeListenerId(e.target.value)}
-                title="Which web listener's front the stage-2 fetch rides. Auto prefers https over mTLS over cleartext; name one when the fetch must cross a specific redirector."
+                title="Which web listener's front the payload fetch rides -- every HTTP(S)/mTLS listener serves it on its public endpoint; there is no separate file host. Auto prefers https over mTLS over cleartext; name one when the fetch must cross a specific redirector."
               >
                 <option value="">auto — hardened front preferred</option>
                 {webListeners.map((l) => (

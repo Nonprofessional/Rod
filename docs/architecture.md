@@ -133,7 +133,7 @@ in-house. The dependency rule is enforced by architecture tests.
 - **Implants.** Target-resident, disposable, speaking the wire protocol and
   independent of the teamserver language. (Sec. 5.) The **reference Rust
   implant** lives in the `src/implant/rust` crate: a benign, readable
-  stage-2 implant that enrolls over any of the four families' fronts
+  long-haul implant that enrolls over any of the four families' fronts
   (submitting its own public key), contacts under the baked seal, and runs
   the standard-category verb set (Sec 10.1). It
   compiles its wire bindings
@@ -283,8 +283,13 @@ Implants differ by purpose, not by a "managed device flavor":
   module support. (the Rust reference implant, cross-platform.)
 - **Stager** -- retired as a build output: delivery rides the launcher
   one-liners (the disk families plus the Linux in-memory memfd family),
-  which fetch the stage-2 over the same token-gated route a loader ever
-  used. The class remains in the taxonomy for history's rows.
+  which fetch the implant over the same token-gated route a loader ever
+  used. The class remains in the taxonomy for history's rows. The
+  stage2/stager vocabulary survives as frozen wire identifiers -- the
+  `GET /implants/stage2/{id}` fetch route, the `X-Stager-Token` header,
+  the `Stage2` class value, the stager-token endpoints and audit kinds --
+  so stored records and baked commands keep parsing; prose and
+  operator-facing copy say payload and artifact.
 - **Web-shell class** -- a script placed in a web root, bound to the web
   transport; code execution over HTTP, no interactive PTY. The endpoint is
   operator-initiated in every phase: registration creates the class's
@@ -326,11 +331,11 @@ carries the full core set (one-shot and interactive shell execution,
 both-direction file transfer, directory listing, process termination, and
 the beacon's own sleep control) plus the
 tunnel set, the recon set, the lateral set, the persist set, the collect set,
-and the exfil set (tunneling and process control join stage-2's core
+and the exfil set (tunneling and process control join the implant's core
 operations, and recon,
 lateral movement, persistence, collection, and exfiltration are long-haul
-activities that justify a stage-2 footprint); a stager only `file.pull`s the
-stage-2 it loads; a web-shell and an ephemeral run `shell.exec` over their
+activities that justify a long-haul footprint); a stager only `file.pull`s the
+artifact it loads; a web-shell and an ephemeral run `shell.exec` over their
 short-lived channels; a pivot carries exactly the tunnel set --
 `tunnel.forward`, the port-forward verb, and `tunnel.socks`, the
 multiplexed proxy (Sec 10.3) -- enough to forward traffic for hosts that
@@ -346,14 +351,14 @@ does not refuse it) yet ship no built-in handler, running only when an
 operator supplies an out-of-tree module. The contract-only verbs
 (`collect.keylog`, and the `evasion` and `exploit` categories in their
 entirety) follow this shape (Sec 10.2); they are listed in the capability
-catalog but carry no in-repo handler -- `collect.keylog` inside the stage-2
+catalog but carry no in-repo handler -- `collect.keylog` inside the implant
 class set, the evasion and exploit verbs outside every class set as ungated
 contract verbs the bake carries alongside the class set (Sec 5.3), so an
 artifact compiled with an out-of-tree handler for one advertises it at
 handshake.
 
 A capable implant can deploy another class on the same host (e.g. a web-shell
-deriving a stage-2 implant) via a deployment verb; the child enrols into the same
+deriving a full implant) via a deployment verb; the child enrols into the same
 engagement and records its parent. This is the lateral-movement path:
 the `lateral.move` verb is the deployment verb that semantically means
 "derive a child," and the child's enrollment records its `ParentImplantId` on
@@ -378,7 +383,7 @@ handler plus a registration, not an edit to the runner. Registration is
 compile-time -- no runtime assembly loading for *handler plugins* (that would
 break Native AOT, enlarge
 the artifact, and introduce on-disk plugin files; the in-memory loading path
-that does exist in the tree is the loader's stage-2 host, a baked artifact
+that does exist in the tree is the loader's artifact host, a baked artifact
 carriage rather than a plugin mechanism), and the capability set is
 decided per class at build time, so runtime discovery buys nothing. Out-of-tree
 handlers compile in through the build unit's extension overlay (Sec 6) -- a
@@ -489,7 +494,7 @@ recorded.**
   retired with the .NET trees: the render families -- the disk fetch-and-run
   trio plus the Linux in-memory family, both for every payload (python3
   stages the bytes in a memfd and execs through /proc/self/fd, so nothing
-  lands) -- deliver the stage-2 over the same
+  lands) -- deliver the artifact over the same
   engagement-scoped, token-gated fetch route (`GET /implants/stage2/{id}`,
   each served fetch spending one use), with the mints, budgets, and
   revocations the launchers endpoint already keeps.
@@ -575,11 +580,11 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - **Listeners come in two tiers, and only one of them is implant ingress.**
   The startup configuration names the shared tier -- the operator front the
   UI and API ride -- which carries **no implant ingress at all**: enrollment
-  and the stage-2 fetch are refused on it outright. Implant-facing listeners
+  and the payload fetch are refused on it outright. Implant-facing listeners
   are **engagement-scoped**: created through the operator API against exactly
   one engagement, persisted (in-memory with the process, Postgres when
   configured; a restart rebinds them with the same ids), and enforced at
-  enrollment -- enroll and the stage-2 fetch resolve the listener a request
+  enrollment -- enroll and the payload fetch resolve the listener a request
   arrived on, and anything but that engagement's own token is refused whole
   and unspent on that socket. Ports are unique across both tiers: the
   create-time bind check refuses a collision with a clear error before any
@@ -1656,7 +1661,7 @@ any language registers a build unit and compiles against the same contract.
 
 The .NET implant and the .NET stager that preceded this shape are deleted:
 their history is the commit record, and their delivery answers -- the
-launcher one-liners, the token-gated stage-2 fetch -- carry forward
+launcher one-liners, the token-gated payload fetch -- carry forward
 unchanged.
 
 Rejected alternatives: **one language end to end** (neither .NET alone

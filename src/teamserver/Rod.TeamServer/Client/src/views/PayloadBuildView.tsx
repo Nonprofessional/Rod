@@ -769,7 +769,7 @@ export function PayloadBuildView({
                         ) : (
                           <span
                             className="muted"
-                            title="The artifact was deleted from the payload library -- the bytes are gone and a stager fetching it 404s. The credential can still be revoked above."
+                            title="The artifact was deleted from the payload library -- the bytes are gone and its fetch URL 404s. The credential can still be revoked above."
                           >
                             deleted
                           </span>

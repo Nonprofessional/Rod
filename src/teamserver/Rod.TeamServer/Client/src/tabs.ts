@@ -47,7 +47,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Infrastructure',
     items: [
       { id: 'listeners', label: 'Listeners', icon: 'radio' },
-      // The one-liner delivery surface: paste-ready stage-2 fetches beside
+      // The one-liner delivery surface: paste-ready payload fetches beside
       // the listeners they ride and the builds they deliver.
       { id: 'launchers', label: 'Launchers', icon: 'copy' },
       { id: 'build', label: 'Build', icon: 'package' },

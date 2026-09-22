@@ -15,7 +15,7 @@ import { Icon } from '../components/Icons'
 // payload built weeks ago is still here -- downloadable again, its baked
 // credential's use budget readable (how many enrolls it has left, read live
 // off the token store), its credential revocable, and deletable (which also
-// stops any stager fetching it) -- whatever happened to the build queue or
+// stops the fetch URL serving) -- whatever happened to the build queue or
 // the teamserver process. This is the record; the Build page's recent-builds
 // strip is only the queue's status.
 //
@@ -25,6 +25,15 @@ import { Icon } from '../components/Icons'
 // single-line; the detail carries what does not fit.
 // The long-form explanation lives in docs/operations/operator-ui.md; the
 // filter field and actions carry their own hover text.
+
+// The taxonomy's wire class names read as noise for the only implant class
+// there is, so the library shows the operator-facing kind; the raw value
+// stays filterable.
+function kindLabel(klass: string): string {
+  if (klass === 'Stage2') return 'implant'
+  if (klass === 'WebShell') return 'web shell'
+  return klass
+}
 
 function fmtBytes(size: number): string {
   if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
@@ -83,8 +92,8 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
   const onDelete = async (p: PayloadSummary) => {
     if (
       !window.confirm(
-        `Delete payload ${p.fingerprint.slice(0, 12)} (${p.class}${p.target ? ' ' + p.target : ''})? ` +
-          'The stored bytes are gone and any stager fetching it stops working. The deletion is audited.',
+        `Delete payload ${p.fingerprint.slice(0, 12)} (${kindLabel(p.class)}${p.target ? ' ' + p.target : ''})? ` +
+        'The stored bytes are gone and the fetch URL stops serving. The deletion is audited.',
       )
     )
       return
@@ -134,7 +143,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
             <tr>
               <th></th>
               <th>Built</th>
-              <th>Class</th>
+              <th>Kind</th>
               <th>Target</th>
               <th>Listener</th>
               <th>Credential</th>
@@ -188,7 +197,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                         <td>{new Date(p.builtAt).toLocaleString()}</td>
                         <td>
                           <code>
-                            {p.language}:{p.class}
+                            {p.language} · {kindLabel(p.class)}
                           </code>
                         </td>
                         <td>

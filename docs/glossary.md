@@ -27,8 +27,8 @@ sections.
 
 | Term | Meaning |
 |------|---------|
-| **Stage-2 implant** | The primary long-haul implant; full capability set and module support. |
-| **Stager** | A tiny stage-1 loader that fetches a stage-2 implant. Separate generation output. |
+| **Stage-2 implant** | The primary long-haul implant; full capability set and module support. (Prose says "implant" or "payload"; the Stage2 spelling survives as the wire class value.) |
+| **Stager** | Retired: a stage-1 loader that fetched the implant as a separate build output. Delivery rides the launcher one-liners now. |
 | **Web-shell class** | A script in a web root, bound to the web transport; code execution over HTTP, no interactive PTY. |
 | **Ephemeral** | A short-lived, TTL'd implant from a one-liner bootstrap; one-off execution and temporary access. |
 | **Pivot** | An implant representing hosts that cannot run their own implant, enrolling each as its own session and forwarding tasking. |

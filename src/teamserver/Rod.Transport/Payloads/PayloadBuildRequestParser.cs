@@ -60,7 +60,7 @@ internal static class PayloadBuildRequestParser
         // loader ever used.
         if (@class == ImplantClass.Stager)
             return (null,
-                "The stager class is retired; deliver the stage-2 through the launcher one-liners (launchers render them per payload).");
+                "The stager class is retired; deliver the payload through the launcher one-liners (launchers render them per payload).");
         // The dll bundle was the .NET in-memory shape; with the .NET implant
         // retired there is no producer -- the Rust implant is native in every
         // format, and its 'aot' spelling is the one the memfd one-liner
@@ -139,7 +139,7 @@ internal static class PayloadBuildRequestParser
         if (body.Stage2PayloadId is not null)
         {
             return (null,
-                "stage2PayloadId rides the retired stager class; deliver the stage-2 through the launcher one-liners.");
+                "stage2PayloadId rides the retired stager class; deliver the payload through the launcher one-liners.");
         }
         Stage2Payload? stage2 = null;
 
