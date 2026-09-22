@@ -116,6 +116,7 @@ export function PayloadBuildView({
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
   const [envelope, setEnvelope] = useState('AesGcm')
   const [contactProtection, setContactProtection] = useState(true)
+  const [tlsTrust, setTlsTrust] = useState('pinned')
   const [tokenHours, setTokenHours] = useState('')
 
 
@@ -339,6 +340,9 @@ export function PayloadBuildView({
         // the Rust unit, and the disk-or-memory choice is the launcher
         // step's (the Launchers tab offers both families for every payload).
         format: null,
+        // Trust rides empty on the pinned default; 'public' is the explicit
+        // real-domain posture.
+        trust: tlsTrust !== 'pinned' ? tlsTrust : null,
       })
       setError(null)
       await refreshJobs()
@@ -612,6 +616,17 @@ export function PayloadBuildView({
                 <option>None</option>
                 <option>Base64</option>
                 <option value="AesGcm">AES-GCM</option>
+              </select>
+            </label>
+            <label>
+              TLS trust
+              <select
+                value={tlsTrust}
+                onChange={(e) => setTlsTrust(e.target.value)}
+                title="Which roots the artifact's TLS dials trust. Pinned (the default): the engagement CA baked at build is the only root — no public-PKI or target-store dependence, and no public CA can mint an identity it accepts. Public: the front is a real domain whose certificate a public CA issued (terminated at an edge you run in front of the teamserver), and the artifact validates like an ordinary client — the posture that survives TLS inspection. Public needs an https dial."
+              >
+                <option value="pinned">pinned — engagement CA (default)</option>
+                <option value="public">public — real-domain front cert</option>
               </select>
             </label>
             <label

@@ -22,6 +22,8 @@ sections.
 | **Beacon profile** | The per-implant contact mode, sleep, jitter, and kill-date parameters, baked into the artifact at generation. |
 | **Kill date** | A hard self-termination timestamp baked in per implant; limits exposure if lost. |
 | **Malleable profile** | A configurable transport shape (URIs, headers, timing, payload) that mimics legitimate traffic, per implant. |
+| **Pinned trust** | The default TLS posture: the engagement CA baked at build is the only root the artifact's dials trust. No public-PKI or target-store dependence; no public CA can mint an accepted identity. |
+| **Public trust** | The real-domain TLS posture (`Trust: public`): the front's certificate a public CA issued, terminated at an operator-run edge; the artifact validates it like an ordinary client against the compiled-in Mozilla root set. |
 
 ## Implant classes
 

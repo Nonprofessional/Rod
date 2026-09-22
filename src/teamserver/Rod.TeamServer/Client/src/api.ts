@@ -1262,6 +1262,12 @@ export interface BuildPayloadInput {
   // emits the same artifact for each; 'dll' is retired with the .NET
   // implant and refused server side. Null leaves the 'exe' default.
   format: string | null
+  // The TLS trust posture: 'pinned' (the default -- the engagement CA baked
+  // as the only root the artifact's TLS dials trust) or 'public' (a
+  // real-domain front whose certificate a public CA issued, terminated at
+  // an operator-run edge; the artifact validates like an ordinary client).
+  // Public rides https dials alone.
+  trust: string | null
 }
 
 export interface BuildPayloadResult {
@@ -1377,6 +1383,10 @@ export interface PayloadBuildProfile {
   // unit: every spelling is the same native binary, and delivery posture is
   // the launcher step's choice.
   format: string | null
+  // The TLS trust posture, null meaning the pinned default: which roots the
+  // artifact's TLS dials trust -- the baked engagement CA, or the public
+  // set for a real-domain front.
+  trust: string | null
 }
 
 export async function listPayloads(engagementId: string): Promise<PayloadSummary[]> {

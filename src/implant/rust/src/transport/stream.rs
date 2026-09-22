@@ -49,17 +49,13 @@ impl Stream {
             None => beacon.clone(),
         };
         let tls = if secure {
-            let mut roots = rustls::RootCertStore::empty();
-            for der in crate::trust::parse_pem(&profile.ca_pem) {
-                let _ = roots.add(rustls::pki_types::CertificateDer::from(der));
-            }
             Some(Arc::new(
                 rustls::ClientConfig::builder_with_provider(Arc::new(
                     rustls::crypto::ring::default_provider(),
                 ))
                 .with_safe_default_protocol_versions()
                 .expect("rustls protocol versions")
-                .with_root_certificates(roots)
+                .with_root_certificates(super::tls_roots(profile))
                 .with_no_client_auth(),
             ))
         } else {

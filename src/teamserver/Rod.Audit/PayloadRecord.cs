@@ -116,4 +116,10 @@ public sealed record PayloadBuildProfile
     /// records built before the format axis existed -- the single-file
     /// executable every build produced then.</summary>
     public string? Format { get; init; }
+
+    /// <summary>The TLS trust posture the bake dials under: null is the
+    /// pinned default (the engagement CA the only root); 'public' is the
+    /// real-domain front whose publicly-trusted chain the implant validates
+    /// like an ordinary client.</summary>
+    public string? Trust { get; init; }
 }

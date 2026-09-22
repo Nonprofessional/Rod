@@ -121,7 +121,6 @@ mod tests {
         (
             private,
             Certificate {
-                raw: Vec::new(),
                 spki: spki.as_bytes().to_vec(),
             },
         )
@@ -264,10 +263,7 @@ mod tests {
     #[test]
     fn cas_without_rsa_keys_are_skipped_not_fatal() {
         let (private, ca) = tasking_ca();
-        let garbage = Certificate {
-            raw: Vec::new(),
-            spki: vec![0u8; 8],
-        };
+        let garbage = Certificate { spki: vec![0u8; 8] };
         let task = signed_task(&private, "implant-1", Some(1));
         let mut nonces = NonceTracker::default();
         assert!(matches!(

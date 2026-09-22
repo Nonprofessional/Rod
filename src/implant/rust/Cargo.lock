@@ -1077,6 +1077,7 @@ dependencies = [
  "sha2",
  "tungstenite",
  "ureq",
+ "webpki-roots 0.26.11",
  "windows-sys 0.59.0",
  "x509-parser",
 ]

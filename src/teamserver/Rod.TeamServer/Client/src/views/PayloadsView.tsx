@@ -362,6 +362,7 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
     lines.push(
       line('Mode', b.mode ?? 'stream (default)'),
       line('Format', b.format ?? 'exe (default)'),
+      line('TLS trust', b.trust === 'public' ? 'public — real-domain front' : 'pinned (default)'),
       line(
         'Contact',
         b.sleepSeconds != null

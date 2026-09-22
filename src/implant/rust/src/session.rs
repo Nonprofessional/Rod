@@ -450,7 +450,6 @@ mod tests {
             .to_public_key_der()
             .expect("spki der");
         let signer = Certificate {
-            raw: Vec::new(),
             spki: spki.as_bytes().to_vec(),
         };
         let mut session =

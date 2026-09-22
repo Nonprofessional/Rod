@@ -23,12 +23,8 @@ pub struct Poll {
 impl Poll {
     pub fn new(profile: &Profile) -> Poll {
         let url = super::dialed_beacon_url(profile);
-        let pinned = crate::trust::parse_pem(&profile.ca_pem)
-            .iter()
-            .filter_map(|der| crate::trust::parse_der(der))
-            .collect::<Vec<_>>();
         Poll {
-            agent: crate::transport::build_agent(&url, &pinned, profile.request_timeout_seconds),
+            agent: crate::transport::build_agent(&url, profile, profile.request_timeout_seconds),
             url,
         }
     }

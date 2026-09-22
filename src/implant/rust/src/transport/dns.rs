@@ -538,11 +538,8 @@ fn build_exchange(scheme: &str, resolver: &str, profile: &Profile) -> Result<Exc
     match scheme {
         "doh" => {
             let url = format!("https://{resolver}/dns-query");
-            let cas = crate::trust::parse_pem(&profile.ca_pem)
-                .iter()
-                .filter_map(|der| crate::trust::parse_der(der))
-                .collect::<Vec<_>>();
-            let agent = crate::transport::build_agent(&url, &cas, profile.request_timeout_seconds);
+            let agent =
+                crate::transport::build_agent(&url, profile, profile.request_timeout_seconds);
             Ok(Exchange::Doh { url, agent })
         }
         _ => {

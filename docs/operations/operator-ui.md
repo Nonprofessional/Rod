@@ -379,6 +379,13 @@ landing a file.
 
 **Advanced** (all defaulted server side; open only to change them):
 
+- **TLS trust** -- which roots the artifact's TLS dials trust. `pinned`
+  (the default): the engagement CA baked at build is the only root -- the
+  self-sufficient posture. `public`: the front is a real domain whose
+  certificate a public CA issued (terminated at an edge you run in front
+  of the teamserver; the listener's public endpoint names the domain), and
+  the artifact validates it like an ordinary client -- the posture that
+  survives TLS inspection. Needs an https dial.
 - **Public endpoint (enroll + contact, manual)** -- the dial address
   when you deliberately build without naming a listener.
 - **Public endpoint (interactive, manual)** -- the stream front the

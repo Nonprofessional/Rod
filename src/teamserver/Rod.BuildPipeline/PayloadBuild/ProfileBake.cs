@@ -40,8 +40,16 @@ public static class ProfileBake
                 ?? BeaconUrlFromEnroll(@params.Transport.Endpoint),
             // The pinned teamserver CA: the implant validates the server it
             // dials against this anchor. Empty keeps system/default
-            // validation.
+            // validation. The CA rides every trust posture -- it is the
+            // tasking signer; tlsTrust says whether it is also the TLS root.
             ["caCert"] = @params.Transport.CaPem ?? "",
+            // "pinned" -- the default, the CA above as the only TLS root --
+            // or "public": the front presents a publicly-trusted chain and
+            // the implant validates like an ordinary client against the
+            // compiled-in Mozilla root set (a real-domain front).
+            ["tlsTrust"] = @params.Transport.TlsTrust == TlsTrust.Public
+                ? "public"
+                : "pinned",
             ["fallbackEnrollURLs"] = @params.Transport.FallbackEndpoints.ToArray(),
             ["mode"] = @params.Beacon.Mode,
             // Empty string is the open-ended shape: the reader treats a

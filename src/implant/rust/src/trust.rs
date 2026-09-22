@@ -2,15 +2,14 @@ use rsa::signature::Verifier as _;
 use sha2::Sha256;
 use x509_parser::prelude::FromDer;
 
-// X.509 helpers for the two trust anchors the implant holds: the certificate
-// bytes (the https root-store pin) and the RSA public keys the tasking
-// verifier needs. Parsing is x509-parser's; the signature math lives in the
-// same rsa/p256 crates the tasking verifier uses.
+// X.509 helpers for the trust anchor the implant holds: the certificate's
+// SubjectPublicKeyInfo -- the RSA key material the tasking verifier needs.
+// (The TLS root-store pin goes PEM to DER directly in the transport layer;
+// parsing here is x509-parser's, the signature math the rsa/p256 crates the
+// tasking verifier uses.)
 
 #[derive(Clone)]
 pub struct Certificate {
-    /// The certificate's full DER bytes (the root-store pin).
-    pub raw: Vec<u8>,
     /// The SubjectPublicKeyInfo DER (the key material).
     pub spki: Vec<u8>,
 }
@@ -18,7 +17,6 @@ pub struct Certificate {
 pub fn parse_der(der: &[u8]) -> Option<Certificate> {
     let (_, cert) = x509_parser::certificate::X509Certificate::from_der(der).ok()?;
     Some(Certificate {
-        raw: der.to_vec(),
         spki: cert.public_key().raw.to_vec(),
     })
 }
@@ -113,14 +111,10 @@ mod tests {
             .to_public_key_der()
             .expect("spki der");
         let cert = Certificate {
-            raw: Vec::new(),
             spki: spki.as_bytes().to_vec(),
         };
         assert!(rsa_key_of(&cert).is_some());
-        let garbage = Certificate {
-            raw: Vec::new(),
-            spki: vec![0u8; 8],
-        };
+        let garbage = Certificate { spki: vec![0u8; 8] };
         assert!(rsa_key_of(&garbage).is_none());
     }
 }

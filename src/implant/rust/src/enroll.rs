@@ -108,11 +108,7 @@ pub fn enroll(url: &str, profile: &Profile, keys: &KeyPair) -> Result<Enrollment
         _ => json,
     };
 
-    let cas = trust::parse_pem(&profile.ca_pem)
-        .iter()
-        .filter_map(|der| trust::parse_der(der))
-        .collect::<Vec<_>>();
-    let agent = transport::build_agent(url, &cas, profile.request_timeout_seconds);
+    let agent = transport::build_agent(url, profile, profile.request_timeout_seconds);
     let response = agent
         .post(url)
         .set("Content-Type", "application/json")

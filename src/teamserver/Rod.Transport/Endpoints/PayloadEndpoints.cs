@@ -330,7 +330,12 @@ public static class PayloadEndpoints
         long? TokenLifetimeSeconds = null,
         string? BeaconListenerId = null,
         string? BeaconEndpoint = null,
-        string? Format = null);
+        string? Format = null,
+        // The TLS trust posture: 'pinned' (the default -- the engagement CA
+        // baked as the only root) or 'public' (a real-domain front whose
+        // certificate a public CA issued; the implant validates like an
+        // ordinary client). Public rides https dials alone.
+        string? Trust = null);
 
     // The response's TokenId names the enrollment credential baked into the
     // artifact (null on a credential-free build): enough to revoke it, never
@@ -416,7 +421,8 @@ public static class PayloadEndpoints
         string? Envelope = null,
         bool? ContactProtection = null,
         string[]? FallbackEndpoints = null,
-        string? Format = null)
+        string? Format = null,
+        string? Trust = null)
     {
         public static PayloadBuildProfileResponse? Of(Rod.Audit.PayloadBuildProfile? profile) =>
             profile is null
@@ -433,7 +439,8 @@ public static class PayloadEndpoints
                     profile.Envelope,
                     profile.ContactProtection,
                     profile.FallbackEndpoints?.ToArray(),
-                    profile.Format);
+                    profile.Format,
+                    profile.Trust);
     }
 
 }

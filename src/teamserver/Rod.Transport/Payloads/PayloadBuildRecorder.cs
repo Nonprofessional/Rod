@@ -77,6 +77,10 @@ internal static class PayloadBuildRecorder
                         ? null
                         : artifact.Params.Transport.FallbackEndpoints.ToArray(),
                     Format = ArtifactFormats.Name(artifact.Params.Format),
+                    // Null is the pinned default; 'public' is the real-domain
+                    // front posture (a snapshot convention: null means the
+                    // build's default, so only the departure is recorded).
+                    Trust = artifact.Params.Transport.TlsTrust == TlsTrust.Public ? "public" : null,
                 }),
             cancellationToken);
         await audit.AppendAsync(

