@@ -149,7 +149,9 @@ internal static class PayloadBuildRequestParser
             language,
             @class,
             new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
-            BuildTransport(body, endpoint.Value, beacon.Value, ExportCaPem(ca)),
+            // Non-null by construction: every resolution path either returns
+            // a dial or an error, and the error returned above.
+            BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca)),
             ParseDuration(body.SleepSeconds, DefaultSleep),
             ParseDuration(body.JitterSeconds, DefaultJitter),
             body.KillDate,
@@ -172,13 +174,13 @@ internal static class PayloadBuildRequestParser
     }
 
     // Resolves the endpoint the baked artifact dials: the listener's public
-    // endpoint when the request names one (refusing anything that is not this
-    // engagement's own HTTP-shaped listener), the typed endpoint
-    // otherwise. The refusal is returned as a string; the value is null only when the
+    // endpoint when the request names one (refusing anything that is not
+    // this engagement's own listener), the DNS family's typed dial
+    // otherwise -- the fronting seam a listener record cannot yet express.
+    // The refusal is returned as a string; the value is null only when the
     // error is set. Transport reports the named listener's transport (null
-    // for a typed endpoint) -- the fact the beacon resolution below needs, so
-    // a derived contact matches the front it rides: an mTLS front carries
-    // the gRPC stream, a web front the envelope POST cycle.
+    // for a typed dial) -- the fact the beacon resolution below needs, so
+    // a derived contact matches the front it rides.
     private static async Task<(string? Value, string? Transport, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
@@ -188,6 +190,21 @@ internal static class PayloadBuildRequestParser
         if (body.ListenerId is not { } listenerIdText)
         {
             var typed = body.Endpoint?.Trim();
+            // The typed endpoint is the DNS family's fronting seam alone: a
+            // DNS listener's baked dial names its own bind as the resolver,
+            // so a fronted resolver (a DoH redirector, a public address over
+            // a private bind) is expressible only by typing the dial. Every
+            // web or socket front is a listener record -- the public
+            // endpoint is free-form there and repoint rotates it -- and a
+            // typed address this teamserver cannot verify only bakes an
+            // artifact that can never enroll.
+            if (string.IsNullOrEmpty(typed))
+                return (null, null, "Name a listener for the front the implant dials.");
+            if (!typed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+                && !typed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
+                return (null, null,
+                    "A typed endpoint is the DNS family's dial alone (dns://resolver/zone, doh://resolver/zone) "
+                    + "-- name a listener for a web or socket front.");
             return (typed, null, null);
         }
 
@@ -318,10 +335,10 @@ internal static class PayloadBuildRequestParser
         {
             var trimmed = beaconEndpoint.Trim();
             // The DNS family's manual dials: a resolver and a zone
-            // (dns://resolver[:port]/zone, doh://resolver[:port]/zone), or
-            // a bare zone (dns://zone) for the system resolver -- the
-            // shapes the implant's DNS client parses. Anything else is the
-            // mTLS socket's https.
+            // (dns://resolver[:port]/zone, doh://resolver[:port]/zone) --
+            // the shape the implant's DNS client parses (the authority is
+            // the resolver it queries; there is no system-resolver form).
+            // Anything else is the web family's https.
             if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
                 || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
             {
@@ -332,7 +349,7 @@ internal static class PayloadBuildRequestParser
                 var rest = trimmed[(trimmed.IndexOf("://", StringComparison.Ordinal) + 3)..];
                 if (rest.Length == 0)
                     return (null,
-                        $"A dns/doh beacon endpoint names a resolver and a zone (dns://resolver:53/zone, doh://resolver:443/zone) or a bare zone (dns://zone), got '{beaconEndpoint}'.");
+                        $"A dns/doh beacon endpoint names a resolver and a zone (dns://resolver:53/zone, doh://resolver:443/zone), got '{beaconEndpoint}'.");
                 return (trimmed, null);
             }
             if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
@@ -369,12 +386,12 @@ internal static class PayloadBuildRequestParser
     // name/value map and are applied verbatim; an empty or null map adds none.
     private static TransportProfile BuildTransport(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
-        string? endpoint,
+        string endpoint,
         string? beaconEndpoint,
         string caPem)
     {
         var profile = new TransportProfile(
-            endpoint ?? "http://localhost:5080",
+            endpoint,
             body.UriPath ?? "/beacon")
         {
             // The split-socket shape: enroll dials one host, the beacon

@@ -587,7 +587,13 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and unspent on that socket. Ports are unique across both tiers: the
   create-time bind check refuses a collision with a clear error before any
   socket opens. A payload build names its engagement's listener and the
-  baked endpoint comes from the listener's record.
+  baked endpoint comes from the listener's record: the typed endpoint of
+  the build request is the DNS family's dial alone (`dns://`/`doh://` --
+  a resolver and a zone, the fronting shape a DNS listener record cannot
+  yet express, since its own baked dial names its bind as the resolver).
+  A typed web or socket address is refused -- this teamserver cannot
+  verify an address no listener names, and a front that does not reach it
+  only bakes an artifact that can never enroll.
 - Supported listener transports: **HTTP(S)** (the single-port shape: one
   TLS socket that requests no client certificate anywhere, so the handshake
   is indistinguishable from an ordinary website's -- enrollment rides the

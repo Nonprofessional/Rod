@@ -22,12 +22,26 @@ public class PayloadJobTests
         string language = "Rust",
         string @class = "Stage2",
         string? mode = null,
-        string? endpoint = null,
+        string? listenerId = null,
         string? beaconListenerId = null,
         string? beaconEndpoint = null)
-        => new(language, @class, TargetOs: null, TargetArch: null, Endpoint: endpoint,
+        => new(language, @class, TargetOs: null, TargetArch: null, ListenerId: listenerId,
             UriPath: null, SleepSeconds: null, JitterSeconds: null, KillDate: null, Mode: mode,
             BeaconListenerId: beaconListenerId, BeaconEndpoint: beaconEndpoint);
+
+    // Every build names its front: an engagement-scoped https listener is the
+    // light default these tests dial.
+    private static async Task<string> CreateFrontListenerAsync(HttpClient client, string engagementId)
+    {
+        var created = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "job-front", Transport: "tcp",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "10.0.0.5:5443"));
+        created.EnsureSuccessStatusCode();
+        return (await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
+    }
 
     [RustFact]
     public async Task BuildJob_CompletesAndTheArtifactDownloads()
@@ -38,9 +52,10 @@ public class PayloadJobTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var frontId = await CreateFrontListenerAsync(client, engagementId);
 
             var accepted = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/payload-jobs", Request());
+                $"/engagements/{engagementId}/payload-jobs", Request(listenerId: frontId));
             Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
             var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
             Assert.NotNull(job);
@@ -88,10 +103,11 @@ public class PayloadJobTests
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
+        var frontId = await CreateFrontListenerAsync(client, engagementId);
 
         var refused = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(mode: "sometimes"));
+            Request(listenerId: frontId, mode: "sometimes"));
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
 
         var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
@@ -101,21 +117,29 @@ public class PayloadJobTests
     }
 
     [Fact]
-    public async Task BuildJob_CleartextEnrollWithoutABeacon_IsAccepted()
+    public async Task BuildJob_ListenerFrontWithoutABeacon_IsAccepted()
     {
-        // The envelope POST cycle made the cleartext front self-sufficient:
-        // contacts ride an ordinary HTTP POST on the same socket enrollment
-        // does, so a build against a cleartext endpoint needs no beacon
-        // split. The accepted job carries no beacon endpoint -- the derived
-        // single-front shape. A Go language request keeps the worker from
-        // invoking the toolchain; the parser's acceptance is what this pins.
+        // The socket family is self-sufficient: a stream-mode build holds
+        // the live session on the same connection enrollment's opening
+        // exchange rode, so the front needs no beacon split. The accepted
+        // job carries no beacon endpoint -- the derived single-front shape.
+        // A Go language request keeps the worker from invoking the
+        // toolchain; the parser's acceptance is what this pins.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
+        var front = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "socket-front", Transport: "tcp",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "10.0.0.5:5090"));
+        front.EnsureSuccessStatusCode();
+        var frontId = (await front.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
 
         var accepted = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(language: "Go", endpoint: "http://10.0.0.5:5090"));
+            Request(language: "Go", listenerId: frontId));
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
         Assert.NotNull(job);
@@ -123,20 +147,28 @@ public class PayloadJobTests
     }
 
     [Fact]
-    public async Task BuildJob_CleartextEnrollWithABeaconEndpoint_IsAccepted()
+    public async Task BuildJob_ListenerFrontWithABeaconEndpoint_IsAccepted()
     {
-        // The split-socket shape (the hardened option): enroll dials the
-        // cleartext endpoint, the beacon the named web front. The accepted
-        // job carries the resolved beacon as the schemed front the WebSocket
-        // beacon hangs off. A Go language request keeps the worker from
-        // invoking the toolchain; the parser's acceptance is what this pins.
+        // The split shape (the hardened option): enroll names a listener,
+        // the beacon the typed web front. The accepted job carries the
+        // resolved beacon as the schemed front the WebSocket beacon hangs
+        // off. A Go language request keeps the worker from invoking the
+        // toolchain; the parser's acceptance is what this pins.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
+        var front = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "enroll-front", Transport: "tcp",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "10.0.0.5:5090"));
+        front.EnsureSuccessStatusCode();
+        var frontId = (await front.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
 
         var accepted = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(language: "Go", endpoint: "http://10.0.0.5:5090", beaconEndpoint: "https://10.0.0.5:5443"));
+            Request(language: "Go", listenerId: frontId, beaconEndpoint: "https://10.0.0.5:5443"));
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
         Assert.NotNull(job);
@@ -146,23 +178,32 @@ public class PayloadJobTests
     [Fact]
     public async Task BuildJob_MalformedBeaconFields_AreRefusedWithoutQueuing()
     {
-        // The beacon names the TLS socket (named one way -- a
-        // listener id or a typed endpoint, never both); and a stager never
-        // contacts, so beacon fields on its builds are a mistake the build
-        // refuses rather than silently drops.
+        // The beacon names the web front one way -- a listener id or a typed
+        // https endpoint, never both; and a stager never contacts, so beacon
+        // fields on its builds are a mistake the build refuses rather than
+        // silently drops. The enroll front is a named listener so the beacon
+        // arm is the refusal that fires.
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
+        var front = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "enroll-front", Transport: "tcp",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "10.0.0.5:5443"));
+        front.EnsureSuccessStatusCode();
+        var frontId = (await front.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
 
         var notHttps = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(endpoint: "http://10.0.0.5:5090", beaconEndpoint: "http://10.0.0.5:5443"));
+            Request(listenerId: frontId, beaconEndpoint: "http://10.0.0.5:5443"));
         Assert.Equal(HttpStatusCode.BadRequest, notHttps.StatusCode);
 
         var both = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
             Request(
-                endpoint: "https://10.0.0.5:5443",
+                listenerId: frontId,
                 beaconListenerId: Guid.NewGuid().ToString(),
                 beaconEndpoint: "https://alt.example.test"));
         Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
@@ -184,10 +225,11 @@ public class PayloadJobTests
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
         var engagementId = await CreateEngagementAsync(client);
+        var frontId = await CreateFrontListenerAsync(client, engagementId);
 
         var accepted = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
-            Request(language: "Go"));
+            Request(language: "Go", listenerId: frontId));
         Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
         var job = await accepted.Content.ReadFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse>();
         Assert.NotNull(job);

@@ -88,6 +88,14 @@ public class OperationalEventLogTests
         await WaitUntilAsync(async () => (await audit.ForTaskAsync(Guid.Parse(request.TaskId))).Count == 3);
 
         // 5. Payload built -> PayloadBuilt.
+        var front = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "build-front", Transport: "tcp",
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: "c2.example.test:443"));
+        front.EnsureSuccessStatusCode();
+        var frontId = (await front.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
         var build = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
@@ -95,7 +103,7 @@ public class OperationalEventLogTests
                 Class: null,
                 TargetOs: "linux",
                 TargetArch: "amd64",
-                Endpoint: "https://c2.example.test",
+                ListenerId: frontId,
                 UriPath: "/beacon",
                 SleepSeconds: 30,
                 JitterSeconds: 10,

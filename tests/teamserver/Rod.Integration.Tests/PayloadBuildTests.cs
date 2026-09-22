@@ -23,6 +23,27 @@ namespace Rod.Integration.Tests;
 /// </summary>
 public class PayloadBuildTests
 {
+    // The API names a listener for a web or socket front, and so do these
+    // tests. The socket family's tcp front: it binds its own socket (the web
+    // family rides the Kestrel endpoint reloader, which this TestServer host
+    // does not wire), and its baked dial is the public endpoint verbatim --
+    // exactly what the assertions read.
+    private static async Task<string> CreateFrontListenerAsync(
+        HttpClient client, string engagementId,
+        string transport = "tcp", string publicEndpoint = "c2.example.test:443")
+    {
+        var created = await client.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: $"build-front-{transport}",
+                Transport: transport,
+                BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                PublicEndpoint: publicEndpoint));
+        created.EnsureSuccessStatusCode();
+        var listener = await created.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
+        return listener!.Id;
+    }
+
     private static async Task<string> CreateEngagementAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/engagements",
@@ -41,6 +62,7 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
@@ -49,7 +71,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -80,11 +102,11 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
 
-            // The endpoint list is what the baked implant dials: a malformed
-            // entry must fail the request, not the build -- a payload that
-            // phones nowhere is the silent failure an operator discovers on
-            // target.
+            // A typed endpoint is the DNS family's dial alone, and garbage is
+            // refused before anything builds -- a payload that phones nowhere
+            // is the silent failure an operator discovers on target.
             var garbage = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
@@ -108,7 +130,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -127,26 +149,44 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var tcpListenerId = await CreateFrontListenerAsync(client, engagementId);
 
             // The artifact's contact carriage is fixed by the front's own
             // shape, so a cross-family fallback backs the enroll walk alone:
             // every contact cycle would step over it. The build refuses the
             // mix instead of baking a dead entry -- one refusal per family
-            // pairing.
-            var webFrontWithDnsFallback = await client.PostAsJsonAsync(
+            // pairing, both directions of the socket family included. The
+            // DNS front stays typed: the DNS family's dial is the one a
+            // typed endpoint still names.
+            var tcpFrontWithDnsFallback = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust",
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: tcpListenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
                     KillDate: null,
                     FallbackEndpoints: new List<string> { "dns://alt.example.test" }));
-            Assert.Equal(HttpStatusCode.BadRequest, webFrontWithDnsFallback.StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, tcpFrontWithDnsFallback.StatusCode);
+
+            var tcpFrontWithWebFallback = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "Rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    ListenerId: tcpListenerId,
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    FallbackEndpoints: new List<string> { "http://alt.example.test" }));
+            Assert.Equal(HttpStatusCode.BadRequest, tcpFrontWithWebFallback.StatusCode);
 
             var dnsFrontWithWebFallback = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
@@ -163,21 +203,6 @@ public class PayloadBuildTests
                     Mode: "poll",
                     FallbackEndpoints: new List<string> { "https://alt.example.test" }));
             Assert.Equal(HttpStatusCode.BadRequest, dnsFrontWithWebFallback.StatusCode);
-
-            var tcpFrontWithDohFallback = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/payloads",
-                new PayloadEndpoints.BuildPayloadRequest(
-                    Language: "Rust",
-                    Class: "Stage2",
-                    TargetOs: "linux",
-                    TargetArch: "amd64",
-                    Endpoint: "tcp://c2.example.test:443",
-                    UriPath: "/beacon",
-                    SleepSeconds: 30,
-                    JitterSeconds: 10,
-                    KillDate: null,
-                    FallbackEndpoints: new List<string> { "doh://alt.example.test" }));
-            Assert.Equal(HttpStatusCode.BadRequest, tcpFrontWithDohFallback.StatusCode);
         }
     }
 
@@ -194,6 +219,7 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
@@ -202,12 +228,12 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
                     KillDate: null,
-                    FallbackEndpoints: new List<string> { "http://alt.example.test" }));
+                    FallbackEndpoints: new List<string> { "tcp://alt.example.test:443" }));
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         }
     }
@@ -260,7 +286,7 @@ public class PayloadBuildTests
             var row = Assert.Single(listed!);
             Assert.Equal(built!.ArtifactId, row.ArtifactId);
             Assert.Equal("linux/amd64", row.Target);
-            Assert.Equal("https://c2.example.test", row.Endpoint);
+            Assert.Equal("tcp://c2.example.test:443", row.Endpoint);
             Assert.Equal(built.TokenId, row.TokenId);
             Assert.Equal(1, row.TokenMaxUses);
             Assert.Equal(1, row.TokenRemainingUses);
@@ -324,6 +350,7 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
@@ -332,7 +359,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -355,6 +382,7 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
@@ -363,7 +391,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,
@@ -428,6 +456,7 @@ public class PayloadBuildTests
     private static async Task<PayloadEndpoints.BuildPayloadResponse?> PostBuildAsync(
         HttpClient client, string engagementId)
     {
+        var listenerId = await CreateFrontListenerAsync(client, engagementId);
         var response = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new PayloadEndpoints.BuildPayloadRequest(
@@ -435,7 +464,7 @@ public class PayloadBuildTests
                 Class: "Stage2",
                 TargetOs: "linux",
                 TargetArch: "amd64",
-                Endpoint: "https://c2.example.test",
+                ListenerId: listenerId,
                 UriPath: "/beacon",
                 SleepSeconds: 30,
                 JitterSeconds: 10,
@@ -453,6 +482,7 @@ public class PayloadBuildTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
+            var listenerId = await CreateFrontListenerAsync(client, engagementId);
             var audit = host.Services.GetRequiredService<IAuditStore>();
 
             var response = await client.PostAsJsonAsync(
@@ -462,7 +492,7 @@ public class PayloadBuildTests
                     Class: "Stage2",
                     TargetOs: "linux",
                     TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test",
+                    ListenerId: listenerId,
                     UriPath: "/beacon",
                     SleepSeconds: 30,
                     JitterSeconds: 10,

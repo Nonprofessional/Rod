@@ -72,12 +72,21 @@ public class StagerTokenMintScopeTests
 
             // The build mints its own enrollment credential and bakes it in;
             // the response reports the token's id -- enough to revoke, never
-            // enough to reuse.
+            // enough to reuse. The front is a named listener: the API takes
+            // a typed endpoint for the DNS family's dial alone.
+            var front = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/listeners",
+                new ListenerEndpoints.CreateListenerRequest(
+                    Name: "build-front", Transport: "tcp",
+                    BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                    PublicEndpoint: "c2.example.test:443"));
+            front.EnsureSuccessStatusCode();
+            var frontId = (await front.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>())!.Id;
             var built = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
                     Language: "Rust", Class: "Stage2", TargetOs: "linux", TargetArch: "amd64",
-                    Endpoint: "https://c2.example.test", UriPath: "/beacon",
+                    ListenerId: frontId, UriPath: "/beacon",
                     SleepSeconds: 30, JitterSeconds: 10, KillDate: null));
             built.EnsureSuccessStatusCode();
             var artifact = await built.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
