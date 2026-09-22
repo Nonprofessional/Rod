@@ -118,6 +118,100 @@ public class PayloadBuildTests
         }
     }
 
+    [Fact]
+    public async Task BuildPayload_RefusesAFallbackOutsideTheFrontsSchemeFamily()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            // The artifact's contact carriage is fixed by the front's own
+            // shape, so a cross-family fallback backs the enroll walk alone:
+            // every contact cycle would step over it. The build refuses the
+            // mix instead of baking a dead entry -- one refusal per family
+            // pairing.
+            var webFrontWithDnsFallback = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "Rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "https://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    FallbackEndpoints: new List<string> { "dns://alt.example.test" }));
+            Assert.Equal(HttpStatusCode.BadRequest, webFrontWithDnsFallback.StatusCode);
+
+            var dnsFrontWithWebFallback = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "Rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "dns://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    Mode: "poll",
+                    FallbackEndpoints: new List<string> { "https://alt.example.test" }));
+            Assert.Equal(HttpStatusCode.BadRequest, dnsFrontWithWebFallback.StatusCode);
+
+            var tcpFrontWithDohFallback = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "Rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "tcp://c2.example.test:443",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    FallbackEndpoints: new List<string> { "doh://alt.example.test" }));
+            Assert.Equal(HttpStatusCode.BadRequest, tcpFrontWithDohFallback.StatusCode);
+        }
+    }
+
+    [RustFact]
+    public async Task BuildPayload_BakesSameFamilyFallbacks()
+    {
+        // The same-family walk is the fallback list's whole contract: the
+        // web pair (http/https), the DNS pair (dns/doh), the raw socket. A
+        // front with its own family's fallback builds -- the walk order
+        // survives to the baked profile.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: "Rust",
+                    Class: "Stage2",
+                    TargetOs: "linux",
+                    TargetArch: "amd64",
+                    Endpoint: "https://c2.example.test",
+                    UriPath: "/beacon",
+                    SleepSeconds: 30,
+                    JitterSeconds: 10,
+                    KillDate: null,
+                    FallbackEndpoints: new List<string> { "http://alt.example.test" }));
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
+    }
+
     [RustFact]
     public async Task BuiltPayload_IsRetrievableFromItsLocation()
     {

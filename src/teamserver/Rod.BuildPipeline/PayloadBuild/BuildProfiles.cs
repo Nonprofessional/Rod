@@ -92,8 +92,11 @@ public sealed record TransportProfile(
     /// <see cref="Endpoint"/> (architecture.md Sec 8): when the primary burns
     /// mid-engagement, the implant walks this list on failed contacts instead of
     /// going silent. The list is a property of the transport profile because each
-    /// entry is another front to the same teamserver. Empty -- the default --
-    /// bakes the single-endpoint shape.
+    /// entry is another front to the same teamserver. Every entry dials the
+    /// primary's own scheme family (http/https, dns/doh, or tcp) -- the
+    /// artifact's contact carriage is fixed by the front's shape, so the build
+    /// refuses a cross-family entry instead of baking one the walk would
+    /// step over. Empty -- the default -- bakes the single-endpoint shape.
     /// </summary>
     public IReadOnlyList<string> FallbackEndpoints { get; init; } = Defaults.FallbackEndpoints;
 

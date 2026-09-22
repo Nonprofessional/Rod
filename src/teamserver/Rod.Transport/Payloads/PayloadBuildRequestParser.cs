@@ -84,6 +84,7 @@ internal static class PayloadBuildRequestParser
                 $"Endpoint must be a schemed dial the implant can serve -- http(s)://, tcp://, dns://, or doh:// -- got '{dialable}'.");
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
+            var frontFamily = SchemeFamily(endpoint.Value);
             foreach (var fallback in fallbacks)
             {
                 if (string.IsNullOrWhiteSpace(fallback))
@@ -91,6 +92,9 @@ internal static class PayloadBuildRequestParser
                 if (!IsDialableEndpoint(fallback))
                     return (null,
                         $"Each fallback endpoint must be a schemed dial (http(s)://, tcp://, dns://, doh://), got '{fallback}'.");
+                if (frontFamily is { } family && SchemeFamily(fallback) != family)
+                    return (null,
+                        $"Each fallback endpoint must dial the front's own scheme family -- the '{endpoint.Value}' front walks {FamilyShapes(family)} fallbacks only, got '{fallback}'.");
             }
         }
 
@@ -454,6 +458,36 @@ internal static class PayloadBuildRequestParser
                 || uri.Scheme.Equals("tcp", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("dns", StringComparison.OrdinalIgnoreCase)
                 || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
+
+    // The egress-walk families (architecture.md Sec 8): the web pair, the
+    // DNS pair, and the raw socket. The artifact's contact carriage is fixed
+    // by the front's own shape, so a fallback outside the front's family
+    // backs the enroll walk alone -- every contact cycle steps over it --
+    // and the build refuses the mix instead of baking a dead entry.
+    private static string? SchemeFamily(string? endpoint)
+    {
+        var trimmed = endpoint?.Trim();
+        if (trimmed is null || trimmed.Length == 0)
+            return null;
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return "web";
+        if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
+            return "dns";
+        if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
+            return "tcp";
+        return null;
+    }
+
+    // The shapes one family's fallbacks dial, for a refusal that teaches.
+    private static string FamilyShapes(string family) => family switch
+    {
+        "web" => "http(s)://",
+        "dns" => "dns:// or doh://",
+        "tcp" => "tcp://",
+        _ => "the front's scheme",
+    };
 
     // The DNS carrier a typed endpoint's scheme names -- the typed-endpoint
     // twin of the named-listener mode gate, so a stream-mode build cannot

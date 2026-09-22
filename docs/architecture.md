@@ -250,7 +250,8 @@ that mints nothing bakes nothing, and the credential never passes through an
 operator's hands.
 
 The endpoint list is ordered: a primary callback endpoint plus optional
-fallbacks, walked client-side when an entry burns (Sec 8).
+fallbacks of the front's own scheme family (the web pair, the DNS pair, or
+the raw socket), walked client-side when an entry burns (Sec 8).
 
 The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
 land in the decoded artifact across the .NET and stub build units, so a
@@ -709,7 +710,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   may carry an ordered endpoint list -- the primary plus fallbacks (Sec 5.1) --
   and the implant walks it on failed contacts: enroll retries and beacon
   cycles that never reach a handshake advance to the next entry, wrapping to
-  the primary so a front that returns is picked up again. The walk is entirely
+  the primary so a front that returns is picked up again. Every fallback
+  dials the primary's own scheme family (http/https, dns/doh, or tcp): the
+  artifact's contact carriage is fixed by the front's shape, so a
+  cross-family entry would back the enroll walk alone while every contact
+  cycle stepped over it -- the build refuses the mix rather than baking a
+  list entry the walk cannot serve. The walk is entirely
   client-side -- the Tier 0 frame grammar is untouched -- and it never touches
   identity: the implant presents the same enrolled leaf whichever entry it
   lands on, so its listener-side identity is unchanged and a listener cannot
