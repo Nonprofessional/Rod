@@ -33,9 +33,9 @@ around "managed components". Each phase states what the platform must support.
 2. **Infrastructure stand-up.** Provision teamserver, listeners, redirectors,
    domains, certificates. Infrastructure is **disposable and reprovisionable**;
    burn rate is expected, so it is config-driven and tear-down friendly.
-3. **Payload generation and staging.** Build per-implant artifacts with baked-in
-   C2 endpoint, beacon parameters, and kill date. Emit a stage-1 stager where
-   useful.
+3. **Payload generation and delivery.** Build per-implant artifacts with
+   baked-in C2 endpoint, beacon parameters, and kill date; delivery rides the
+   launcher one-liners.
 4. **Delivery and initial access.** Delivery (phishing, host interaction, etc.)
    is out of scope for Rod, but the platform must **ingest the first callback**
    and correlate it to the engagement.
@@ -172,14 +172,14 @@ under, and a note on its current state are listed.
 
 | Project | Role | Layer rule (what it may depend on) | State |
 |---------|------|------------------------------------|-------|
-| `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, stager tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`, `ImplantService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented. In-memory adapters behind every port; the durable pair lives in `Rod.Persistence`. Task issuance gates each verb on the implant's class reduced set, enforces the kill date and retirement at handshake, and claims tasks atomically from the queue (Sec 5.2, Sec 10.3). |
+| `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, deploy tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`, `ImplantService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented. In-memory adapters behind every port; the durable pair lives in `Rod.Persistence`. Task issuance gates each verb on the implant's class reduced set, enforces the kill date and retirement at handshake, and claims tasks atomically from the queue (Sec 5.2, Sec 10.3). |
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The protobuf wire protocol: frames and the enrollment/handshake/tasking messages (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
-| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, stager tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
+| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class and the dll format refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
-| `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, stager tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
+| `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
 
 The dependency column is not aspirational: it is the rule the architecture tests
@@ -283,16 +283,14 @@ the record shows the honest absence rather than an invented pair.
 
 Implants differ by purpose, not by a "managed device flavor":
 
-- **Stage-2 implant** -- the primary long-haul implant; full capability set and
+- **Implant class** -- the primary long-haul implant; full capability set and
   module support. (the Rust reference implant, cross-platform.)
-- **Stager** -- retired as a build output: delivery rides the launcher
-  one-liners (the disk families plus the Linux in-memory memfd family),
-  which fetch the implant over the same token-gated route a loader ever
-  used. The class remains in the taxonomy for history's rows. The
-  stage2/stager vocabulary survives as frozen wire identifiers -- the
-  `GET /implants/stage2/{id}` fetch route, the `X-Stager-Token` header,
-  the `Stage2` class value, the stager-token endpoints and audit kinds --
-  so stored records and baked commands keep parsing; prose and
+- **Stager** -- retired as a build output, and with it the whole
+  stage1/stage2 vocabulary: delivery rides the launcher one-liners (the disk
+  families plus the Linux in-memory memfd family), which fetch the payload
+  over the same credential-gated route a loader ever used. Nothing emits the
+  class, no enum carries it, and the build contract refuses the spelling; a
+  request naming it gets the current delivery answer. Prose and
   operator-facing copy say payload and artifact.
 - **Web-shell class** -- a script placed in a web root, bound to the web
   transport; code execution over HTTP, no interactive PTY. The endpoint is
@@ -330,21 +328,21 @@ Implants differ by purpose, not by a "managed device flavor":
 
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
-inner ring both the build pipeline and the tradecraft layer read). Stage-2
-carries the full core set (one-shot and interactive shell execution,
+inner ring both the build pipeline and the tradecraft layer read). The
+Implant class carries the full core set (one-shot and interactive shell execution,
 both-direction file transfer, directory listing, process termination, and
 the beacon's own sleep control) plus the
 tunnel set, the recon set, the lateral set, the persist set, the collect set,
 and the exfil set (tunneling and process control join the implant's core
 operations, and recon,
 lateral movement, persistence, collection, and exfiltration are long-haul
-activities that justify a long-haul footprint); a stager only `file.pull`s the
+activities that justify a long-haul footprint); a loader only `file.pull`s the
 artifact it loads; a web-shell and an ephemeral run `shell.exec` over their
 short-lived channels; a pivot carries exactly the tunnel set --
 `tunnel.forward`, the port-forward verb, and `tunnel.socks`, the
 multiplexed proxy (Sec 10.3) -- enough to forward traffic for hosts that
 cannot run their own implant and nothing a long-haul footprint justifies.
-No class but Stage-2 carries a recon, lateral, persist, collect, or exfil
+No class but Implant carries a recon, lateral, persist, collect, or exfil
 verb. The set is the server's authority for what a class
 may do: task issuance gates on it in core state (a verb outside the set is
 refused before it is queued, Sec 10.3), and the build pipeline bakes it into
@@ -371,7 +369,7 @@ top-level implant takes, naming its parent; the enrollment service resolves and
 scope-checks the parent (it must exist, belong to the same engagement the
 redeemed token resolved, and not be retired) before binding the child. The
 parentage is surfaced on the operator implant listing so the UI can render
-lineage; a top-level (stager-derived) implant reports no parent.
+lineage; a top-level (launcher-derived) implant reports no parent.
 
 ### 5.3 Implant-side capability pluggability
 
@@ -433,12 +431,12 @@ cannot own a live channel or a carriage.
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 
 The flow: **operator build request -> teamserver emits build params -> the
-language's build unit compiles -> artifact + stager returned -> fingerprinted and
+language's build unit compiles -> artifact returned -> fingerprinted and
 recorded.**
 
 - **One in-tree build unit (Rust); polyglot by contract.** `RustBuildUnit`
   drives cargo for the reference implant (Sec 12.2); the .NET unit that
-  once built the managed implant and stager is deleted with them. The
+  once built the managed implant is deleted with them. The
   teamserver drives the unit through the **uniform build contract** and is
   coupled to it only by that contract, so a community build unit in Go,
   C/C++, or Nim can register and compile against the same contract with no
@@ -479,7 +477,7 @@ recorded.**
   build whose class permits the verb carries it -- no fork of the implant tree
   ([extending/tradecraft.md](extending/tradecraft.md)). A configured directory
   that is missing or yields no handler fails loudly, the same rule the
-  server-side module loader applies; the stager tree is never overlaid.
+  server-side module loader applies; the retired loader tree is never overlaid.
 - **The bake names the transport each build dials.** The egress walk the
   profile bakes names URL shapes, and the implant picks its contact client
   by the dial's scheme at run: an `http(s)://` front runs the envelope POST
@@ -492,14 +490,14 @@ recorded.**
   (Sec 5.2) is the server's authority for what an artifact may run, and the
   unit compiles exactly that set's handlers -- the whole-file trim Sec 5.3
   describes (the selection-seam rewrite, the reduced binary, the overlay's
-  verbs riding every build). The stager tree is never trimmed: a stage-1
+  verbs riding every build). The retired loader tree is never trimmed: a
   loader carries no handlers.
-- **Delivery rides the launcher one-liners.** The stage-1 loader class is
+- **Delivery rides the launcher one-liners.** The loader class is
   retired with the .NET trees: the render families -- the disk fetch-and-run
   trio plus the Linux in-memory family, both for every payload (python3
   stages the bytes in a memfd and execs through /proc/self/fd, so nothing
   lands) -- deliver the artifact over the same
-  engagement-scoped, token-gated fetch route (`GET /implants/stage2/{id}`,
+  engagement-scoped, token-gated fetch route (`GET /implants/payloads/{id}`,
   each served fetch spending one use), with the mints, budgets, and
   revocations the launchers endpoint already keeps. An https front
   terminates TLS against the engagement CA (Sec 9), an anchor no stock
@@ -511,8 +509,8 @@ recorded.**
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --
   the operator never handles the plaintext, and the leak answer is revocation
-  by id (`POST /engagements/{id}/stager-tokens/{tokenId}:revoke`, audited as
-  `StagerTokenRevoked`). The manual mint stays for the rotation and re-entry
+  by id (`POST /engagements/{id}/deploy-tokens/{tokenId}:revoke`, audited as
+  `DeployTokenRevoked`). The manual mint stays for the rotation and re-entry
   flows (Sec 9), scoped per request to uses and window.
 - **The transform seam is post-build.** Build-time artifact transformation
   -- where MSF put its encoders and payload encryption -- is a
@@ -608,7 +606,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - Supported listener transports: **HTTP(S)** (the single-port shape: one
   TLS socket that requests no client certificate anywhere, so the handshake
   is indistinguishable from an ordinary website's -- enrollment rides the
-  stager token and contacts ride the sealed envelope under the per-artifact
+  deploy token and contacts ride the sealed envelope under the per-artifact
   key, both authenticated at the application layer), **DNS**, **raw TCP**,
   and **DoH** (the DNS grammar over RFC 8484 HTTPS bodies -- the
   egress-restricted carrier behind a shape a restricted network already
@@ -915,7 +913,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   session registry, engagement-scoped the same way by construction. The
   shell leaves the hub the moment its socket dies, before the durable
   marking, so no route resolves a dead socket. An upgrade render is
-  advisory: it mints the engagement a single-use stager token and returns
+  advisory: it mints the engagement a single-use deploy token and returns
   paste-ready one-liners against the engagement's web listener, rendered
   for the payload's format -- the disk families (curl/wget/PowerShell
   fetch-and-run) for every shape, the Linux in-memory family (python
@@ -1210,7 +1208,7 @@ The recon verbs are registered through the tradecraft layer as first-class
 descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
 concrete behavior runs on the reference implants and is captured as task output
 over the beacon stream (Sec 10.3). Recon is a long-haul activity, so the four
-verbs are gated to Stage-2 at task issuance -- a non-Stage-2 class is refused
+verbs are gated to the Implant class at task issuance -- a non-Implant class is refused
 before the task is queued (Sec 5.2).
 
 The process verbs close the same operational gap from both ends
@@ -1220,19 +1218,19 @@ documented OS process APIs -- the `/proc` filesystem on Linux, the Win32
 toolhelp snapshot plus process-token owner query on Windows -- and terminates
 one by pid through the standard kill path, so an operator can see what runs on
 a target and end one of it, the pair every mainstream client carries. Both are
-Stage-2 gated like their recon kin.
+Implant-class gated like their recon kin.
 
 The lateral verbs are registered the same way
 (`Rod.Tradecraft.Lateral.LateralCapabilities`, category `Lateral`):
 `lateral.move` carries a `derives-child` attribute and is the deployment verb
 that means "derive a child implant"; `lateral.token` and `lateral.exec_remote`
 carry `touches-credential` and `touches-network` attributes respectively. Like
-recon they are gated to Stage-2 at task issuance (Sec 5.2). The core provides
+recon they are gated to the Implant class at task issuance (Sec 5.2). The core provides
 the parentage data model and the child-enrollment path -- the server records a
 child's `ParentImplantId` and validates it against the redeemed token's
 engagement, so a child derives only from a live parent in the same engagement.
 The reference implant carries the matching implant-side path: a
-`lateral.move` handler on the implant parses the child's stager token from the
+`lateral.move` handler on the implant parses the child's deploy token from the
 task arguments, generates a fresh child keypair, and enrolls a child naming
 itself as parent; the enroll clients thread parentage onto the request, and the
 binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
@@ -1249,7 +1247,7 @@ The persistence verbs are registered the same way
 `persist.install` and `persist.remove` carry `writes-to-disk` attributes
 (install additionally carries `persists`), and `persist.list` is a read that
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
-lateral they are gated to Stage-2 at task issuance (Sec 5.2). Persistence is a
+lateral they are gated to the Implant class at task issuance (Sec 5.2). Persistence is a
 long-haul activity, and the reference implants ship standard, documented
 mechanisms: the Windows
 `Run` registry key, scheduled tasks, and services, plus Linux cron and
@@ -1269,7 +1267,7 @@ display shows);
 channel), and `exfil.stage` is a read that carries no such flag, like
 `persist.list` and the host-local `recon.hostenum` (it stages already-collected
 data on the teamserver). Like recon, lateral, and persist they are gated to
-Stage-2 at task issuance (Sec 5.2). Collection and exfiltration are long-haul
+the Implant class at task issuance (Sec 5.2). Collection and exfiltration are long-haul
 activities. The reference implant
 ships in-repo handlers for the core file verbs (`file.pull` reads the target's
 filesystem -- small files return inline, large ones chunk into the exfil
@@ -1294,7 +1292,7 @@ The tunnel verbs are registered the same way
 (`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
 `tunnel.forward` and `tunnel.socks` each carry a `touches-network` attribute,
 since each opens network connections from the target. Unlike the categories
-above they are gated to two classes: Stage-2 (tunneling is a core operation,
+above they are gated to two classes: Implant (tunneling is a core operation,
 Sec 14) and Pivot (Sec 5.2 -- the tunneling class). Their tasks run as live
 channels (Sec 10.3) -- the channel carries the tunnel's bytes both ways -- so
 the poll transports never claim them, and the reference implant ships both
@@ -1642,7 +1640,7 @@ cannot live there; `Rod.Persistence` is the structural answer, the same reason
 composition root. The domain model stays persistence-ignorant -- no EF
 attributes, no concurrency fields on entities -- and ids map to Postgres `uuid`
 through per-id value converters; enums are stored as `int` to keep the audit
-chain's canonical `(int)Kind` hash stable. Concurrency (single-use stager-token
+chain's canonical `(int)Kind` hash stable. Concurrency (single-use deploy-token
 redeem, task FIFO) lives at the adapter, not on the domain. The durable
 adapters are selected at the composition root when `ConnectionStrings:Postgres`
 is present, replacing the in-memory defaults through the same opt-in swap the

@@ -31,7 +31,7 @@ configuration, architecture.md Sec 8 -- the settled four-family surface):
 | Enroll + beacon (datagram) | DNS TXT, id-identified | `dns://resolver/zone` (DoH: RFC 8484) |
 
 The enroll listener accepts plain JSON with no client certificate -- the
-implant authenticates with the one-use stager token, not a cert it does not
+implant authenticates with the one-use deploy token, not a cert it does not
 have yet. Every contact route is authenticated by the per-artifact key the
 build baked -- no TLS client certificate exists anywhere in the surface.
 The beacon shapes carry the same frames -- the held connections (the
@@ -62,16 +62,16 @@ interactive verbs store-and-forward.
 
 ```json
 {
-  "stagerTokenSecret": "<the one-use secret the operator minted>",
+  "deployTokenSecret": "<the one-use secret the operator minted>",
   "publicKey": "<base64 DER SubjectPublicKeyInfo of your ECDSA P-256 public key>",
-  "class": "Stage2",
+  "class": "Implant",
   "parentImplantId": null
 }
 ```
 
 `publicKey` is what makes the implant own its identity: submit the public
 half, keep the private half, and the returned leaf is signed over your key.
-`class` is optional (defaults `Stage2`); `parentImplantId` is set only by a
+`class` is optional (defaults to the Implant class); `parentImplantId` is set only by a
 child derivation (`lateral.move`). A malleable profile may wrap the whole JSON
 body as a single base64 JSON string (the profile's base64 envelope) -- the
 teamserver accepts both shapes.
@@ -592,7 +592,7 @@ advertises keeps receiving it -- the addition is negotiated, never imposed.
 The smallest implant that enrolls, contacts, and executes tasking:
 
 1. **Enroll.** Generate an ECDSA P-256 key pair. POST the public key with the
-   stager token. Receive the ids, the leaf, and the CA chain. Keep the private
+   deploy token. Receive the ids, the leaf, and the CA chain. Keep the private
    key; never transmit it.
 2. **Beacon.** POST the envelope route (`/implants/beacon`, above): the
    default build bakes a per-artifact key, and every contact body seals
@@ -610,7 +610,7 @@ In pseudocode, the whole obligation:
 ```
 key    = ecdsa_p256()
 enroll = post_json("https://teamserver/implants/enroll",
-                   {"stagerTokenSecret": token,
+                   {"deployTokenSecret": token,
                     "publicKey": b64(key.spki_der)})
 cas    = [cert(b) for b in enroll.caChain]
 

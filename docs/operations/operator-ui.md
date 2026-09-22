@@ -236,7 +236,7 @@ The panel's transport shapes, one per family:
 - **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
   no client certificate requested anywhere -- the handshake is
   indistinguishable from an ordinary website's. Enrollment rides the socket
-  on the stager token and contacts ride the sealed envelope under the
+  on the deploy token and contacts ride the sealed envelope under the
   per-artifact key, both authenticated at the application layer. One
   listener, one port: enroll + contact, and the WebSocket beacon hangs off
   the same front when the build runs stream mode.
@@ -423,9 +423,7 @@ landing a file.
   long-haul default. A pinned date also bounds the baked credential's window
   unless *Valid for* overrides it. The implant reports its baked date at
   enroll, so the fleet's Kill date column shows the artifact's own fuse
-  (a dash for open-ended builds). The one beacon-profile value a stager
-  bakes too -- it rides here, outside the timing fields a stager leaves to
-  its Stage-2.
+  (a dash for open-ended builds).
 - **Valid for (h)** -- how long the baked credential can enroll **new**
   implants. Pairs with *Max uses*: that caps how many enrolls, this caps for
   how long. Empty = until the kill date, or a 30-day drop window when there
@@ -468,7 +466,7 @@ endpoint on a split build -- so "what did I build" never depends on
 remembering the form.
 **Download** the bytes again, **Revoke** to kill the baked credential (a
 deployed artifact that has not yet enrolled will not be able to), or
-**Delete** the payload -- the bytes and the row are gone, a stager
+**Delete** the payload -- the bytes and the row are gone, a launcher
 fetching it 404s from then on, and the deletion is an audited fact.
 
 ## Settings

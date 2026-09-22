@@ -220,7 +220,7 @@ blocker clears, not skipped.
   an engagement-scoped campaign entity -- a sending profile (SMTP
   relay), a target list, a message template with per-recipient merge --
   where each recipient's link or attachment binds to a per-recipient
-  stager token the build pipeline already mints, so an implant -- or a
+  deploy token the build pipeline already mints, so an implant -- or a
   browser hook, the item above -- that follows the lure enrolls already
   attributed to the campaign and the recipient. Tracking (sent,
   opened, clicked, executed) rides the public ingress that serves
@@ -279,7 +279,7 @@ blocker clears, not skipped.
   the C ABI is the only boundary stable across compiler versions), a
   module.load verb family that carries the module bytes over the existing
   sealed task channel, and a loader that stages the bytes the way the
-  stager stages a stage-2 (memfd on Linux, a manual PE map on Windows) and
+  launcher's memfd one-liner does (memfd on Linux, a manual PE map on Windows) and
   resolves the entry through dlsym/GetProcAddress. Dispatch keeps the
   string-in/string-out task grammar, so a module verb reads exactly like a
   compiled one; the advertised set widens at load and reports on the next

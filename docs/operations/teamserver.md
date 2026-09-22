@@ -72,7 +72,7 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
    ingress -- the operator front refuses enrollments): `POST
    /engagements/{id}/listeners` with `{"name": "dev", "transport": "Http",
    "bindAddress": "127.0.0.1:8080"}` (the public endpoint derives from the
-   bind on the web-shaped transports); mint a stager token. The UI path is
+   bind on the web-shaped transports); mint a deploy token. The UI path is
    the engagement's Listeners panel.
 3. Build a payload for it (class, target OS/arch, beacon profile, malleable
    transport) and download the artifact from the payload store.
@@ -128,7 +128,7 @@ Staged delivery rides the launcher one-liners, not a loader build (the
 stager class is retired): render them per payload in the operator UI's
 Launchers tab, or straight from a caught shell's Upgrade panel. The
 one-liner fetches the artifact over the engagement's web front
-(`GET /implants/stage2/{id}`), presenting the freshly minted fetch
+(`GET /implants/payloads/{id}`), presenting the freshly minted fetch
 credential -- each served fetch spends one use of it -- and the fetched
 artifact then enrols with the credential baked into it at build time and
 appears on the roster. On Linux the memfd family stages the bytes in
@@ -236,7 +236,7 @@ install:
 
 **Payload builds compile from source at request time**, and the install
 tree has no repo above it, so the deployment names its build source trees
-with `Build:ImplantSourceDirectory` / `Build:StagerSourceDirectory`
+with `Build:ImplantSourceDirectory`
 (a configured-but-missing directory fails startup loudly). The minimal
 deployed tree both keys can point at:
 
@@ -290,7 +290,7 @@ curl -s -b jar.txt http://<operator listener>/build
 
 Accept an install only when the stamp matches the tag it was cut from. The
 deployed redirector reports the same pair via `rod-redirector -version`
-([redirectors.md](redirectors.md)). The implant and stager are deliberately
+([redirectors.md](redirectors.md)). The implant source tree is deliberately
 unstamped: a captured artifact must not carry the teamserver's source
 provenance.
 
