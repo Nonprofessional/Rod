@@ -20,10 +20,10 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // self-contained executable with its enrollment credential baked in, so
 // "drop it on the target and run" needs no arguments. Everything an
 // operator sets rarely -- the malleable wire knobs (fallbacks, paths,
-// headers-adjacent fields, envelope), the manual endpoint, and the
-// credential window -- folds into the Advanced disclosure, defaulted server
-// side, so the form never makes an operator read a knob they will not
-// touch. The tab's second artifact kind is the web-shell script: the same
+// headers-adjacent fields, envelope) and the credential window -- folds
+// into the Advanced disclosure, defaulted server side, so the form never
+// makes an operator read a knob they will not touch. The tab's second
+// artifact kind is the web-shell script: the same
 // prepare-then-place flow as the classic managers, rendered by the
 // WebShellGenerateForm beside the implant form under one toggle.
 //
@@ -104,13 +104,9 @@ export function PayloadBuildView({
   const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // The Advanced disclosure's open state is tracked so choosing the manual
-  // endpoint can open the section the endpoint field lives in.
-  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // The Advanced disclosure's fields; every one defaults server side, so they
   // ride empty unless the operator opens the section and fills them.
-  const [endpoint, setEndpoint] = useState('')
   // Fallbacks come from the inventory, not free text: the ordered ids of the
   // engagement's same-family listeners picked as walked fallbacks, plus a
   // typed tail for fronts this teamserver does not serve.
@@ -136,7 +132,6 @@ export function PayloadBuildView({
   // live session, poll cycles one connection per contact.
   const pollOnly =
     selectedListener?.transport === 'dns' || selectedListener?.transport === 'doh'
-    || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim())
 
   useEffect(() => {
     if (pollOnly && mode === 'stream') setMode('poll')
@@ -164,13 +159,8 @@ export function PayloadBuildView({
       : transport === 'dns' || transport === 'doh' ? 'dns'
         : transport === 'tcp' ? 'tcp' : ''
 
-  // The front's family: the picked listener's transport, or the typed
-  // endpoint's scheme when no listener is named.
-  const frontFamily = selectedListener
-    ? familyOf(selectedListener.transport)
-    : /^https?:\/\//i.test(endpoint.trim()) ? 'web'
-      : /^(dns|doh):\/\//i.test(endpoint.trim()) ? 'dns'
-        : /^tcp:\/\//i.test(endpoint.trim()) ? 'tcp' : ''
+  // The front's family: the picked listener's transport.
+  const frontFamily = selectedListener ? familyOf(selectedListener.transport) : ''
 
   // The dial a picked fallback bakes -- the same normalization the server
   // applies when the listener itself is named: an absolute public endpoint
@@ -250,7 +240,8 @@ export function PayloadBuildView({
       try {
         setListeners(await listListeners(engagementId))
       } catch {
-        // The form still offers the manual endpoint field on a failed load.
+        // Without the inventory the form has nothing to offer: the empty
+        // select says so, and the next mount retries.
       }
     })()
   }, [engagementId])
@@ -318,8 +309,8 @@ export function PayloadBuildView({
 
   const onBuild = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!listenerId && !endpoint.trim()) {
-      setError('Pick a listener (or fill the endpoint under Advanced).')
+    if (!listenerId) {
+      setError('Pick a listener (create one in the listeners panel first).')
       return
     }
     setSubmitting(true)
@@ -331,8 +322,8 @@ export function PayloadBuildView({
         class: klass,
         targetOs,
         targetArch,
-        listenerId: listenerId || null,
-        endpoint: !listenerId && endpoint ? endpoint : null,
+        listenerId,
+        endpoint: null,
         beaconListenerId: carrierId || null,
         beaconEndpoint: null,
         // The walked fallback list: the picked fronts' dials in walk order,
@@ -408,15 +399,10 @@ export function PayloadBuildView({
             Listener (enroll + contact)
             <select
               value={listenerId}
-              onChange={(e) => {
-                setListenerId(e.target.value)
-                // Choosing the manual option is choosing to type an endpoint:
-                // open the section it lives in.
-                if (e.target.value === '') setAdvancedOpen(true)
-              }}
-              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. HTTP-shaped and named-pipe/raw-socket listeners serve implants; DNS/DoH fronts are contact carriers only (pair one below)."
+              onChange={(e) => setListenerId(e.target.value)}
+              title="The listener whose public endpoint gets baked: the implant registers on it once (enroll) and contacts on it for the rest of its life -- interactive rides the same front, and the summary under the form spells out how. Every family serves enrollment (web, raw socket, DNS/DoH); only the shell catcher serves none."
             >
-              <option value="">-- none: public endpoint under Advanced --</option>
+              <option value="" disabled>-- pick a listener --</option>
               {listeners.map((l) =>
                 ENROLL_TRANSPORTS.has(l.transport) ? (
                   <option key={l.id} value={l.id}>
@@ -544,34 +530,15 @@ export function PayloadBuildView({
             specifics.
           </p>
         </fieldset>
-        <details
-          className="build-advanced"
-          open={advancedOpen || undefined}
-          onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
-        >
+        <details className="build-advanced">
           <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
               Wire shape and credential timing. The fallback fronts are picked from this
               engagement's same-family listeners, in walk order; manual entries stay for fronts
-              this teamserver does not serve. The manual endpoint names a front only for builds
-              without a picked listener, and the one path knob is registration's. The artifact's
-              kill-date fuse and the credential's enroll window ride here too.
+              this teamserver does not serve. The one path knob is registration's. The
+              artifact's kill-date fuse and the credential's enroll window ride here too.
             </p>
-            <label>
-              Public endpoint (enroll + contact, manual)
-              <input
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://redirect.example.test — or tcp://, dns://, doh://"
-                disabled={!!listenerId}
-                title={
-                  listenerId
-                    ? 'An enroll + contact listener is picked, so its public endpoint is used. Choose "-- none: public endpoint under Advanced --" above to type one manually.'
-                    : "The address the implant registers and contacts on — typed instead of picking a listener, for an address this teamserver does not serve (a redirector you control elsewhere). The scheme IS the protocol pick: https:// or http:// (web front), tcp://host:port, dns://resolver/zone or dns://zone, doh://resolver/zone. Fallbacks below accept the same shapes."
-                }
-              />
-            </label>
             <div className="fallback-fronts">
               <span className="fallback-caption">Fallback fronts (walk order)</span>
               {picked.length === 0 ? (
@@ -719,7 +686,6 @@ export function PayloadBuildView({
         </details>
         <BuildSummary
           listener={selectedListener}
-          endpoint={endpoint}
           carrier={carriers.find((l) => l.id === carrierId)}
           mode={mode}
           sleep={sleepSeconds}
@@ -882,27 +848,24 @@ export function PayloadBuildView({
 // the contact carrier, and the mode.
 function BuildSummary({
   listener,
-  endpoint,
   carrier,
   mode,
   sleep,
   jitter,
 }: {
   listener?: ListenerSummary
-  endpoint: string
   carrier?: ListenerSummary
   mode: string
   sleep: string
   jitter: string
 }) {
-  const front = listener?.publicEndpoint ?? (endpoint.trim() || 'the typed endpoint under Advanced')
-  const via = listener ? `${listener.name} (${listener.transport})` : 'manual endpoint'
+  const front = listener?.publicEndpoint ?? '— pick a listener —'
+  const via = listener ? `${listener.name} (${listener.transport})` : 'unpicked'
   const cadence = `every ${sleep.trim() || '30'}s ± ${jitter.trim() || '10'}s`
-  // The socket family's dial shape, from the listener or a typed endpoint.
-  const socket = listener?.transport === 'tcp' || /^tcp:\/\//i.test(endpoint.trim())
+  // The socket family's dial shape.
+  const socket = listener?.transport === 'tcp'
   // The DNS family as the enroll front itself (the DNS-only target's shape).
-  const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh'
-    || /^dns:\/\//i.test(endpoint.trim()) || /^doh:\/\//i.test(endpoint.trim()))
+  const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh')
 
   const contact = carrier
     ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
