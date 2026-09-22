@@ -29,7 +29,7 @@ namespace Rod.Integration.Tests;
 /// a real listener entry. The unit checks pin the wire shapes; the end-to-end
 /// check drives a real UDP socket against a real listener entry: a from-
 /// scratch implant (a hand-rolled DNS client speaking the documented
-/// contract) enrolls over HTTP, opens its session on the mTLS beacon, then
+/// contract) enrolls over HTTP, opens its session on the WebSocket beacon, then
 /// polls and reports over DNS -- presence advances, a queued task arrives as
 /// a signed TaskRequest in TXT, and its result lands in the audit trail.
 /// </summary>
@@ -267,7 +267,7 @@ public class DnsContactTests
         await using var env = await DnsTestEnv.StartAsync();
         var implant = await env.EnrollImplantAsync();
 
-        // The implant opens its session on the mTLS beacon first: DNS refreshes
+        // The implant opens its session on the WebSocket beacon first: DNS refreshes
         // a session, it does not handshake (the documented transport tradeoff).
         // The implant opens its session on the WebSocket beacon first: DNS
         // refreshes a session, it does not handshake (the documented
@@ -629,7 +629,7 @@ public class DnsContactTests
     }
 
     /// <summary>
-    /// A real teamserver with the HTTP operator API, the mTLS beacon, and one
+    /// A real teamserver with the HTTP operator API, the WebSocket beacon, and one
     /// DNS listener entry (a real UDP socket on a free loopback port, zone
     /// c2.example.test). The DNS client is the "from-scratch implant" half of
     /// the test: raw UDP with the codec's query builder and a TXT-answer

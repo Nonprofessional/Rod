@@ -195,7 +195,7 @@ public class TaskAckRedeliveryTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API -- the same harness shape the replay-nonce
     /// acceptance uses.
     /// </summary>
@@ -281,7 +281,7 @@ public class TaskAckRedeliveryTests
     }
 
     /// <summary>
-    /// The minimal in-process implant: mTLS gRPC contact with the handshake
+    /// The minimal in-process implant: WebSocket beacon contact with the handshake
     /// (optionally advertising the receive-ack arm), the ack frame, and result
     /// reporting. It never executes tasking -- the suite is about the server's
     /// requeue, negotiation, and first-wins discipline.

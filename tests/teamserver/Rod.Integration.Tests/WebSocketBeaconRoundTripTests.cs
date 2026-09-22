@@ -17,10 +17,10 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance for the WebSocket beacon stream (architecture.md Sec 8, the
-/// web posture's interactive tier): the same session the gRPC stream runs,
+/// web posture's interactive tier): the same session every live carriage runs,
 /// over a WebSocket on the plain-HTTP listener family, with the envelope's
 /// own handshake and frame grammar. A from-scratch WebSocket implant -- no
-/// gRPC library, just the socket and the protobuf messages -- enrolls,
+/// protocol library, just the socket and the protobuf messages -- enrolls,
 /// handshakes, receives a pushed task the moment it is queued, reports its
 /// result, and holds the live channel an operator types into
 /// (architecture.md Sec 10.3).

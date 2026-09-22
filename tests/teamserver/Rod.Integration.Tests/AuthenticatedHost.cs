@@ -30,7 +30,7 @@ namespace Rod.Integration.Tests;
 ///
 /// Two entry points cover the two host shapes the suite uses. <see cref="Create"/>
 /// builds the in-memory <c>TestServer</c> host and returns a cookie-persisting
-/// client; the real-Kestrel tests (which bind sockets for gRPC/mTLS) call
+/// client; the real-Kestrel tests (which bind real sockets) call
 /// <see cref="ComposeServices"/>/<see cref="ComposeEndpoints"/> inside their own
 /// <see cref="TransportHost.CreateHostBuilder"/> call and wrap their client with
 /// <see cref="CookieHandler"/> themselves.

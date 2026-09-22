@@ -19,11 +19,11 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance for the plain-HTTP envelope contact (architecture.md Sec 8,
-/// the implant-reach escape hatch): the same rod.v1 frames the gRPC stream
-/// carries, as varint-length-delimited sequences in ordinary HTTPS
-/// request/response bodies over the same client certificates. The acceptance
+/// the implant-reach escape hatch): the same rod.v1 frames the live carriages
+/// carry, as varint-length-delimited sequences in ordinary HTTP
+/// request/response bodies under the artifact key's seal. The acceptance
 /// bar is the todo's own criterion: a from-scratch implant written from the
-/// contract doc alone, using no gRPC library, enrolls, contacts, and
+/// contract doc alone, using no protocol library, enrolls, contacts, and
 /// completes a task. <see cref="ScratchImplant"/> is that implant -- an
 /// HttpClient, the protobuf messages, a hand-rolled varint codec, and the
 /// canonical tasking-signature verification, nothing else.
@@ -37,8 +37,8 @@ public class EnvelopeContactTests
         var secret = await env.MintStagerTokenAsync();
 
         // The from-scratch implant: ECDSA P-256 keypair, JSON enroll over plain
-        // HTTP, envelope contacts over mTLS with the issued leaf. No gRPC
-        // library anywhere on this path.
+        // HTTP, envelope contacts sealed under the baked artifact key. No
+        // protocol library anywhere on this path.
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
         Assert.False(string.IsNullOrEmpty(implant.ImplantId));
 
@@ -349,8 +349,8 @@ public class EnvelopeContactTests
         // The pure-HTTP posture: an implant with an HTTP client and no
         // certificate at all contacts over cleartext, identified by the
         // implant id in its handshake -- the same anything-with-reach
-        // tradeoff the cleartext gRPC stream and the DNS/SMB/TCP transports
-        // document. The session opens and the implant is online.
+        // tradeoff the cleartext carriers document. The session opens and
+        // the implant is online.
         await using var env = await TestEnv.StartAsync();
         var secret = await env.MintStagerTokenAsync();
         using var implant = await ScratchImplant.EnrollAsync(env.EnrollUrl, secret);
@@ -518,8 +518,8 @@ public class EnvelopeContactTests
 
     /// <summary>
     /// The from-scratch Tier 0 implant the acceptance bar names: written from
-    /// extending/implants.md alone, using no gRPC library. An HttpClient with
-    /// the enrolled leaf for mTLS, the protobuf messages, a hand-rolled
+    /// extending/implants.md alone, using no protocol library. An HttpClient,
+    /// the protobuf messages, a hand-rolled
     /// varint-length-delimited envelope codec, and the canonical
     /// tasking-signature verification -- the whole obligation, nothing more.
     /// </summary>
@@ -876,8 +876,8 @@ public class EnvelopeContactTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver: the mTLS implant endpoint (gRPC beacon and
-    /// the envelope route both live here) plus the plain-HTTP operator and
+    /// A real Kestrel teamserver: the implant endpoint (the WebSocket beacon
+    /// and the envelope route both live here) plus the plain-HTTP operator and
     /// enroll API, with a logged-in operator client.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable

@@ -10,7 +10,7 @@ namespace Rod.Integration.Tests;
 /// live-session carriage, architecture.md Sec 8): a plain ClientWebSocket
 /// speaking the envelope's framed-frames messages against the plain-HTTP
 /// listener, with the contract-faithful handshake. The round-trip harnesses
-/// the mTLS gRPC stream once carried migrate here -- the WebSocket beacon
+/// migrate here from the retired stream client -- the WebSocket beacon
 /// runs the same session runner, so every downstream assertion (transcripts,
 /// audit arcs, tasking shapes) transfers unchanged.
 /// </summary>
@@ -19,8 +19,7 @@ internal sealed class WsBeaconClient : IDisposable
     // The inbound pump: a background read loops frames into a buffered
     // channel, so a negative assertion can poll the queue with a short
     // window without damaging the socket the way an abandoned receive
-    // would -- the streaming semantics the gRPC call gave the old
-    // harnesses.
+    // would -- the streaming semantics a live session needs.
     private readonly System.Threading.Channels.Channel<Frame> _inbound =
         System.Threading.Channels.Channel.CreateUnbounded<Frame>();
     private readonly WebSocket _ws;
@@ -72,7 +71,7 @@ internal sealed class WsBeaconClient : IDisposable
 
     /// <summary>
     /// One downstream frame as-is: the scanning helpers' read -- they skip
-    /// kind-bearing frames themselves, the way the gRPC-era loops did.
+    /// kind-bearing frames themselves.
     /// </summary>
     public async Task<Frame> ReceiveFrameAsync()
     {
@@ -119,8 +118,8 @@ internal sealed class WsBeaconClient : IDisposable
 
     /// <summary>
     /// Reads frames until one parses as the awaited kind and passes the
-    /// predicate -- the scanning shape the gRPC-era helpers used, kept so a
-    /// migrated harness reads the same way (a channel input racing the
+    /// predicate -- the scanning shape the round-trip helpers share (a
+    /// channel input racing the
     /// dispatch, never before it).
     /// </summary>
     public async Task<T> ReceiveUntilAsync<T>(

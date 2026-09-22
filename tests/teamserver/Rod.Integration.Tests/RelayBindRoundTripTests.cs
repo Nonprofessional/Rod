@@ -375,7 +375,7 @@ public class RelayBindRoundTripTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API. Mirrors the tunnel round-trip harness.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable

@@ -17,7 +17,7 @@ namespace Rod.Integration.Tests;
 /// ExfilChunk frames on the beacon stream, and the teamserver reassembles the
 /// chunks into an artifact scoped to the engagement and bound to the task that
 /// triggered the push. Drives the full slice end to end through a real Kestrel
-/// mTLS endpoint -- the operator POSTs an <c>exfil.push</c> task over HTTP, the
+/// implant endpoint -- the operator POSTs an <c>exfil.push</c> task over HTTP, the
 /// beacon stream pushes it to the implant, the implant writes back a result
 /// followed by one ExfilChunk frame, and the operator reads the captured
 /// artifact back through the artifact store alongside the ExfilCaptured audit
@@ -243,7 +243,7 @@ public class ExfilRoundTripTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API. Mirrors the TaskRoundTripTests harness.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable

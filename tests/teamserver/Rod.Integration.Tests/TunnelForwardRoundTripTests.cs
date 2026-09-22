@@ -21,7 +21,7 @@ namespace Rod.Integration.Tests;
 /// Acceptance: a task on an implant reaches a third host through a
 /// tunnel.forward channel, and the traffic is attributed end to end
 /// (architecture.md Sec 5.2, Sec 14 -- the tunnel verbs). Drives the full
-/// slice through a real Kestrel mTLS endpoint with a contract-faithful fake
+/// slice through a real Kestrel endpoint with a contract-faithful fake
 /// implant: the operator issues <c>tunnel.forward</c> naming the third host,
 /// the TaskRequest opens the channel, the implant bridges the channel to a TCP
 /// connection it opens from its own vantage, the operator's bytes flow down as
@@ -347,7 +347,7 @@ public class TunnelForwardRoundTripTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API. Mirrors the interactive-shell round-trip
     /// harness.
     /// </summary>

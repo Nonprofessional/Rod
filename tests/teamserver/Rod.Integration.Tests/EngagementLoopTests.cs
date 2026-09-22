@@ -18,7 +18,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// The engagement-critical loop end to end in one test run (the todo's
-/// end-to-end item): a real mTLS teamserver, a beacon client standing in for
+/// end-to-end item): a real teamserver, a beacon client standing in for
 /// the implant, and an operator over HTTP walk handshake, signed task
 /// dispatch, staged artifact capture, paginated history walking, and the
 /// staleness sweep closing a silently dead stream so the recovered implant

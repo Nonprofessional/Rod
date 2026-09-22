@@ -32,7 +32,7 @@ public class PayloadBuildTests
         return created!.EngagementId;
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task BuildPayload_InvokesBuildUnit_ReturnsFingerprintedArtifact()
     {
         var (client, host, _) = AuthenticatedHost.Create();
@@ -118,7 +118,7 @@ public class PayloadBuildTests
         }
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task BuiltPayload_IsRetrievableFromItsLocation()
     {
         // The build response's Location resolves to a real download route: the
@@ -143,7 +143,7 @@ public class PayloadBuildTests
         }
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task PayloadLibrary_ListsAndDeletes_WithAnAuditFact()
     {
         var (client, host, _) = AuthenticatedHost.Create();
@@ -247,7 +247,7 @@ public class PayloadBuildTests
         }
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task BuildPayload_MintsAnUnlimitedCredential_WhenMaxUsesIsZero()
     {
         // Zero max uses is the unlimited budget: the mint records it, the
@@ -310,7 +310,7 @@ public class PayloadBuildTests
         }
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task TwoBuilds_WithIdenticalRequest_ProduceDifferentArtifacts()
     {
         // Per-implant material is generated at request time, so two builds of the
@@ -350,7 +350,7 @@ public class PayloadBuildTests
         return await response.Content.ReadFromJsonAsync<PayloadEndpoints.BuildPayloadResponse>();
     }
 
-    [DotNetFact]
+    [RustFact]
     public async Task BuildPayload_RecordsPayloadBuiltAuditEvent_OnTheChain()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();

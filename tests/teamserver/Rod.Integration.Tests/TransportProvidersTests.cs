@@ -52,8 +52,8 @@ public class TransportProvidersTests
     {
         // The build parser's beacon rule reads this: a transport whose
         // carriers include a native one may be named as a build's beacon --
-        // the mTLS socket's gRPC stream and the web family's WebSocket
-        // beacon hold live channels; the socket-owning polls do not.
+        // the web family's WebSocket beacon and the socket family's held
+        // stream hold live channels; the socket-owning polls do not.
         var provider = TransportProviders.Find(transport);
 
         Assert.NotNull(provider);

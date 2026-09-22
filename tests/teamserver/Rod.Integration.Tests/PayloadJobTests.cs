@@ -29,7 +29,7 @@ public class PayloadJobTests
             UriPath: null, SleepSeconds: null, JitterSeconds: null, KillDate: null, Mode: mode,
             BeaconListenerId: beaconListenerId, BeaconEndpoint: beaconEndpoint);
 
-    [DotNetFact]
+    [RustFact]
     public async Task BuildJob_CompletesAndTheArtifactDownloads()
     {
         var (client, host, _) = AuthenticatedHost.Create();
@@ -146,7 +146,7 @@ public class PayloadJobTests
     [Fact]
     public async Task BuildJob_MalformedBeaconFields_AreRefusedWithoutQueuing()
     {
-        // The beacon names the mTLS socket (TLS, and named one way -- a
+        // The beacon names the TLS socket (named one way -- a
         // listener id or a typed endpoint, never both); and a stager never
         // contacts, so beacon fields on its builds are a mistake the build
         // refuses rather than silently drops.

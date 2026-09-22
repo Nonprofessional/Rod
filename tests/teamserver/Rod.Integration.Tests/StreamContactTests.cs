@@ -25,7 +25,7 @@ namespace Rod.Integration.Tests;
 /// carries the same rod.v1 frames as the envelope in one self-delimited
 /// message per direction, through the shared frame paths: a result captured
 /// over a socket is indistinguishable in core state, the audit trail, and
-/// the live bus from one captured over the gRPC stream. The identity is the
+/// the live bus from one captured over the WebSocket beacon. The identity is the
 /// certificate-less posture -- the implant id in the handshake, the DNS
 /// tradeoff extended to a handshake-capable transport -- and dispatched
 /// tasking keeps the full Sec 9 signature, verified here the way an implant

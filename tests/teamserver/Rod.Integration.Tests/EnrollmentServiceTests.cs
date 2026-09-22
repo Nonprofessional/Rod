@@ -23,7 +23,7 @@ public class EnrollmentServiceTests
     // Builds the service against the in-memory ports, the way the composition
     // root does. The engagements repo is shared with the stager-token service so
     // a minted token resolves to a real engagement; the dev CA is the same
-    // self-signed root the transport layer trusts at mTLS termination -- here it
+    // self-signed root the transport layer trusts at TLS termination -- here it
     // only has to issue a real leaf so the enroll path is exercised end to end.
     private static (EnrollmentService Service, IStagerTokenService Tokens, IEngagementRepository Engagements) NewService(
         IImplantRepository? implants = null,

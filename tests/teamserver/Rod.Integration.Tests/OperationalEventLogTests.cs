@@ -255,7 +255,7 @@ public class OperationalEventLogTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API. Mirrors the TaskRoundTripTests harness. The
     /// operator + auth layers are composed so the API requires a cookie session.
     /// </summary>

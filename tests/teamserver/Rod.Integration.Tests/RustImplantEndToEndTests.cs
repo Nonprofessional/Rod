@@ -12,8 +12,8 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// A fact that runs only when a Rust toolchain (cargo) is on PATH -- the
-/// twin of DotNetFact for the Rust reference implant's legs.
+/// A fact that runs only when a Rust toolchain (cargo) is on PATH: the
+/// pipeline-build tests and the reference implant's legs need it.
 /// </summary>
 public sealed class RustFactAttribute : FactAttribute
 {
@@ -788,7 +788,7 @@ public class RustImplantEndToEndTests
 
     /// <summary>
     /// A real Kestrel teamserver with the plain-HTTP operator/enroll API and
-    /// the mTLS implant endpoint, logged in; the StagerEndToEnd harness shape.
+    /// the implant endpoint, logged in; the StagerEndToEnd harness shape.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {

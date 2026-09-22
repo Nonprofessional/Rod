@@ -44,7 +44,7 @@ public class PayloadTransformChainTests
     private const string TransformEntry =
         "Rod.Integration.Tests.PayloadTransformChainTests+ConfigListedWrapTransform, Rod.Integration.Tests";
 
-    [DotNetFact]
+    [RustFact]
     public async Task ConfigListedTransform_RunsInTheBuild_AndTheTrailProvesIt()
     {
         var (client, host, _) = AuthenticatedHost.Create(

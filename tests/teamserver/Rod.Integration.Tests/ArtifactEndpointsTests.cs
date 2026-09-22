@@ -243,7 +243,7 @@ public class ArtifactEndpointsTests
 
     /// <summary>
     /// A real Kestrel teamserver with the operator HTTP API bound. Artifacts are
-    /// operator-facing, so the mTLS implant endpoint is not exercised here; the
+    /// operator-facing, so the implant endpoint is not exercised here; the
     /// harness mirrors the other operator-API tests minus the beacon wiring. The
     /// operator + auth layers are composed so the API requires a cookie session.
     /// </summary>

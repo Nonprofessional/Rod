@@ -21,10 +21,10 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// Acceptance: a listener accepts an implant connection end-to-end.
 /// Drives the full slice through real Kestrel sockets configured via
-/// <see cref="TransportHost.UseRodListeners"/> -- the listener abstraction (HTTP(S)
-/// and mTLS) that fronts the same  endpoints, with the bind address decoupled
+/// <see cref="TransportHost.UseRodListeners"/> -- the listener abstraction
+/// that fronts the same endpoints, with the bind address decoupled
 /// from the public endpoint (architecture.md Sec 8). This is the listener-centric
-/// counterpart to the <c>UseRodMtls</c>-based handshake tests: the connection
+/// counterpart to the socket-level handshake tests: the connection
 /// terminates through a named, registered listener rather than a bespoke socket.
 /// </summary>
 public class ListenerTests
@@ -264,7 +264,7 @@ public class ListenerTests
         public IHost Host { get; private set; } = null!;
         public HttpClient Http { get; private set; } = null!;
         public string HttpBind { get; private set; } = "";
-        public string MtlsBind { get; private set; } = "";
+        public string HttpsBind { get; private set; } = "";
 
         public static async Task<TestEnv> StartAsync(params ListenerConfig[] listeners)
         {
@@ -273,17 +273,17 @@ public class ListenerTests
             // Pick free ports up front so the config's bind addresses match the
             // sockets Kestrel opens, and so tests can dial them.
             var httpListener = listeners.FirstOrDefault(l => l.Transport == "http");
-            var mtlsListener = listeners.FirstOrDefault(l => l.Transport == "https");
+            var httpsFront = listeners.FirstOrDefault(l => l.Transport == "https");
             var rewritten = new List<ListenerConfig>();
             if (httpListener is not null)
             {
                 env.HttpBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
                 rewritten.Add(httpListener with { BindAddress = env.HttpBind });
             }
-            if (mtlsListener is not null)
+            if (httpsFront is not null)
             {
-                env.MtlsBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
-                rewritten.Add(mtlsListener with { BindAddress = env.MtlsBind });
+                env.HttpsBind = $"127.0.0.1:{TestSupport.GetFreeTcpPort()}";
+                rewritten.Add(httpsFront with { BindAddress = env.HttpsBind });
             }
 
             // Any other transport rides along with its bind rewritten the same
@@ -308,11 +308,11 @@ public class ListenerTests
             await env.Host.StartAsync();
 
             // The operator API rides on the HTTP listener when one is configured;
-            // otherwise dial it on the mTLS listener (the TestServer-free path still
+            // otherwise dial it on the https listener (the TestServer-free path still
             // serves the operator endpoints over TLS, the test client trusts the CA).
             var baseAddress = env.HttpBind.Length > 0
                 ? $"http://{env.HttpBind}"
-                : $"https://{env.MtlsBind}";
+                : $"https://{env.HttpsBind}";
             env.Http = MakeHttpClient(baseAddress, env.Host.Services);
             return env;
         }

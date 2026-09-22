@@ -135,7 +135,7 @@ public class ReplayNonceTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver (mTLS beacon + plain-HTTP operator API) plus
+    /// A real Kestrel teamserver (WebSocket beacon + plain-HTTP operator API) plus
     /// the enroll fixture, the same shape the neighboring beacon suites use.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
@@ -217,7 +217,7 @@ public class ReplayNonceTests
     }
 
     /// <summary>
-    /// The minimal in-process implant: mTLS gRPC contact with the handshake
+    /// The minimal in-process implant: WebSocket beacon contact with the handshake
     /// (optionally advertising the replay-nonce arm), the reference verifier's
     /// nonce floor, and result reporting. It never executes tasking -- the
     /// suite is about negotiation, stamping, and the surfaced rejection.

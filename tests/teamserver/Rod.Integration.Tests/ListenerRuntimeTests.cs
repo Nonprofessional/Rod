@@ -339,7 +339,7 @@ public class ListenerRuntimeTests
         // A definition saved before the retirement runs the restore path (what
         // a restart runs per definition) and rebinds under its migrated shape:
         // the entry always shared mtls's bind and termination, so the same id
-        // comes back as an mtls listener on the same port.
+        // comes back as an https listener on the same port.
         Assert.True(EngagementId.TryParse(engagementId, out var owning));
         var definition = new ListenerDefinition(
             Guid.NewGuid(), owning, "envelope-front",
@@ -537,14 +537,14 @@ public class ListenerRuntimeTests
         Assert.Equal($"http://tmp:{aliasPort}", aliasListener!.PublicEndpoint);
 
         // The TLS-shaped transports complete with https.
-        var mtlsPort = TestSupport.GetFreeTcpPort();
+        var httpsPort = TestSupport.GetFreeTcpPort();
         var fronted = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
                 Name: "tls-front", Transport: "https",
-                BindAddress: $"127.0.0.1:{mtlsPort}", PublicEndpoint: "front.internal"));
+                BindAddress: $"127.0.0.1:{httpsPort}", PublicEndpoint: "front.internal"));
         fronted.EnsureSuccessStatusCode();
         var frontListener = await fronted.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
-        Assert.Equal($"https://front.internal:{mtlsPort}", frontListener!.PublicEndpoint);
+        Assert.Equal($"https://front.internal:{httpsPort}", frontListener!.PublicEndpoint);
 
         // A host:port pair is completed with the transport's scheme too: the
         // stored form is always a full URL, never a scheme-less authority,

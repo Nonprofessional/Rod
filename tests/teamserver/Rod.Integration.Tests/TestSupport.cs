@@ -8,10 +8,8 @@ using System.Security.Cryptography.X509Certificates;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Shared test support. The in-tree .NET build unit and the .NET reference
-/// implant end-to-end test drive the real dotnet toolchain and skip (not fail)
-/// when dotnet is not on PATH, so the suite stays green in environments without
-/// it while exercising the real slice where it is present.
+/// Shared test support: the CA-pinning TLS validation, free-port probes,
+/// wait deadlines, and the probe certificate the real-socket tests use.
 /// </summary>
 internal static class TestSupport
 {
@@ -32,32 +30,6 @@ internal static class TestSupport
             return chain.Build(leaf) && chain.ChainElements[^1].Certificate.Thumbprint == ca.Thumbprint;
         };
 
-    /// <summary>
-    /// True when the dotnet SDK is reachable on PATH. The in-tree .NET build/test
-    /// path requires it to publish and run the reference .NET implant; tests that
-    /// do skip via this check.
-    /// </summary>
-    public static bool DotNetAvailable()
-    {
-        try
-        {
-            var psi = new ProcessStartInfo("dotnet", "--version")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var process = Process.Start(psi);
-            if (process is null)
-                return false;
-            process.WaitForExit(15000);
-            return process.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     // Builds a "<start>-<end>" port range for a recon.portscan argument that
     // covers a tight window around the given open port, so the scan finishes
@@ -110,7 +82,7 @@ internal static class TestSupport
                 var port = _nextPort;
                 _nextPort = port >= PortCeiling ? PortFloor : port + 1;
 
-                // Probe the any-address shape the mTLS listener binds: a
+                // Probe the any-address shape the https listener binds: a
                 // dual-mode [::] bind claims the IPv4 port too, while the
                 // 127.0.0.1 probe this replaces stayed blind to IPv6 holders.
                 using var probe = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
@@ -164,8 +136,8 @@ internal static class TestSupport
     // moment a listener asks to see a client certificate it fails the
     // chain-to-CA validation and kills the handshake -- so an exchange that
     // completes with this cert in hand proves the handshake never carried a
-    // certificate request. The pair materializes through a PFX import for the
-    // same SChannel presentation constraint BeaconClientCertificate documents.
+    // certificate request. The pair materializes through a PFX import --
+    // the presentation SChannel accepts for a client certificate.
     internal static X509Certificate2 OfferedCertificate()
     {
         using var rsa = RSA.Create(2048);

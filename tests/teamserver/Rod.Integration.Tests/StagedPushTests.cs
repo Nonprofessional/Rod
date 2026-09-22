@@ -21,7 +21,7 @@ namespace Rod.Integration.Tests;
 /// task-bound artifact at issuance, its sha256 rides the signed arguments, and
 /// the implant demands and reassembles the chunk run over the tasking channel
 /// -- the mirror of exfil chunking in the other direction. Drives the full
-/// slice end to end through a real Kestrel mTLS endpoint with a 10 MiB
+/// slice end to end through a real Kestrel endpoint with a 10 MiB
 /// payload: the AC is that the file lands whole on the target through the
 /// tasking channel.
 /// </summary>
@@ -177,7 +177,7 @@ public class StagedPushTests
     }
 
     /// <summary>
-    /// A real Kestrel teamserver with the mTLS implant endpoint bound, plus a
+    /// A real Kestrel teamserver with the implant endpoint bound, plus a
     /// plain-HTTP operator API. Mirrors the task round-trip harness.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable

@@ -209,8 +209,8 @@ public class StreamEnrollRoundTripTests
 
     // The socket family's stream mode (architecture.md Sec 8): a handshake
     // advertising the live capability switches the connection from the poll
-    // exchange to the held live session -- the same runner the gRPC stream,
-    // the WebSocket beacon, and the QUIC session run. The proof is the push:
+    // exchange to the held live session -- the same runner the WebSocket
+    // beacon runs. The proof is the push:
     // a task queued after the handshake arrives as its own message with no
     // request preceding it, and the result frame sent back completes the
     // task on the held connection.
