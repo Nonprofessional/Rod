@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # The nightly full-lane pass: every job runs, extended included, so the
+    # The nightly full-lane pass: every lane runs, extended included, so the
     # non-blocking lane still gets a scheduled verdict.
     - cron: '0 3 * * *'
   workflow_dispatch:
@@ -15,16 +15,41 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build
-    runs-on: ubuntu-latest
+  build-and-test:
+    name: Build and test
+    # Pinned: the ubuntu-latest label migrates to Ubuntu 26 in October 2026,
+    # and an unpinned label lets a runner image change the toolchain under us.
+    runs-on: ubuntu-24.04
+    env:
+      # The blocking lane: every suite that stays inside .NET -- no cargo, no
+      # real implant processes. The classes excluded here are the ones that
+      # shell out to cargo (the pipeline-build acceptance and the Rust
+      # end-to-end family) plus the conformance harness; they are the
+      # implant-toolchain lane below, non-blocking by design.
+      CORE_FILTER: >-
+        FullyQualifiedName!~Rod.Conformance.Tests
+        &FullyQualifiedName!~RustImplantEndToEndTests
+        &FullyQualifiedName!~PayloadBuildTests
+        &FullyQualifiedName!~PayloadJobTests
+        &FullyQualifiedName!~PayloadTransformChainTests
+      # The implant-toolchain lane: the complement of the core lane. It
+      # compiles the real Rust implant via cargo and proves it against a live
+      # teamserver, which needs the toolchain warm and the runner to itself --
+      # under cargo's target-dir lock those tests time out when run beside a
+      # full parallel suite, so they get their own lane, serialized.
+      EXTENDED_FILTER: >-
+        FullyQualifiedName~Rod.Conformance.Tests
+        |FullyQualifiedName~RustImplantEndToEndTests
+        |FullyQualifiedName~PayloadBuildTests
+        |FullyQualifiedName~PayloadJobTests
+        |FullyQualifiedName~PayloadTransformChainTests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         # Version comes from global.json (pinned to 10.0.110).
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           # Pinned like global.json pins the SDK: Vite 8 needs >=20.19 or
           # >=22.12, and an unpinned lts/* lets a runner image change the
@@ -33,41 +58,8 @@ jobs:
           cache: npm
           cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
-        # Emits the React bundle into src/teamserver/Rod.TeamServer/wwwroot so the .NET
-        # build packages it. The output is gitignored.
-        working-directory: src/teamserver/Rod.TeamServer/Client
-        run: |
-          npm ci
-          npm run build
-      - name: Lint operator UI
-        working-directory: src/teamserver/Rod.TeamServer/Client
-        run: npm run lint
-      - name: Restore
-        run: dotnet restore Rod.slnx
-      - name: Build
-        run: dotnet build Rod.slnx --configuration Release --no-restore
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    needs: build
-    env:
-      # The core lane: the unit and integration suites minus the
-      # environment-sensitive conformance harness, which compiles and runs
-      # the real Rust implant and reads best on its own lane, not as a red
-      # run on every push. The retry steps below inherit this scope.
-      CORE_FILTER: "FullyQualifiedName!~Rod.Conformance.Tests"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
-      - name: Build operator UI
+        # Emits the React bundle into src/teamserver/Rod.TeamServer/wwwroot so
+        # the .NET build packages it. The output is gitignored.
         working-directory: src/teamserver/Rod.TeamServer/Client
         run: |
           npm ci
@@ -76,13 +68,13 @@ jobs:
         run: dotnet restore Rod.slnx
       - name: Build
         run: dotnet build Rod.slnx --configuration Release --no-restore
-      - name: Test
-        id: test_first
+      - name: Test (core lane)
+        id: test_core
         # Blame-hang turns a silent hang into a five-minute failure that dumps
         # the stuck test host and names the test it was running. The suite has
-        # hung without progress twice before (Aug 18 and 19, cancelled at the
-        # six-hour budget) and did it again on Sep 1 -- without this, a hung
-        # host just burns the runner until someone cancels by hand.
+        # hung without progress three times before (Aug 18, 19, and Sep 1,
+        # cancelled at the six-hour budget) -- without this, a hung host just
+        # burns the runner until someone cancels by hand.
         # ci.runsettings caps assembly parallelism (see the file for why).
         # Full dumps (not mini) so `dotnet-dump analyze -c dumpasync` can name
         # the suspended state machine on the CI side the way the local repro
@@ -95,189 +87,78 @@ jobs:
           --filter "$CORE_FILTER"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           --logger trx
-      - name: Upload test diagnostics
-        # The blame collector writes the hang dump and the test sequence (its
-        # last entry names the hung test) under TestResults; they only survive
-        # the runner if they are uploaded before the job tears down.
-        if: steps.test_first.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-diagnostics-first-attempt
-          path: '**/TestResults/**'
-          if-no-files-found: ignore
-      - name: Collect the first attempt's failures
+      - name: Collect the core lane's failures
         # The targeted retry's input: the failed tests' names out of the first
-        # attempt's trx logs, as a dotnet-test filter. Nothing parseable (a
-        # runner-level hang with no results) leaves the sentinel, and the
-        # retry below falls back to the whole suite -- the old shape, kept for
-        # the hang class it absorbed.
-        if: steps.test_first.outcome == 'failure'
+        # attempt's trx logs, as a dotnet-test filter.
+        if: steps.test_core.outcome == 'failure'
+        run: python3 scripts/ci/collect-trx-failures.py CORE_RETRY_FILTER
+      - name: Test (core lane, retry the failures)
+        # The retry is targeted, not whole-suite: one-off flakes under a
+        # constrained runner are absorbed, and the job stays red only when the
+        # SAME test fails twice in a row -- a real regression. The sentinel
+        # keeps the whole-suite fallback for the hang class with no parseable
+        # results.
+        if: steps.test_core.outcome == 'failure'
         run: |
-          python3 - <<'PY'
-          import glob
-          import os
-          import xml.etree.ElementTree as ET
-
-          names = set()
-          for trx in glob.glob('**/TestResults/*.trx', recursive=True):
-              root = ET.parse(trx).getroot()
-              # The trx schema carries an XML namespace; matching on the
-              # namespace-stripped local name keeps the lookup immune to its
-              # version suffix (ElementTree's iter has no wildcard form).
-              id_to_name = {}
-              results = []
-              for element in root.iter():
-                  local = element.tag.rsplit('}', 1)[-1]
-                  if local == 'UnitTest':
-                      id_to_name[element.get('id')] = element.get('name')
-                  elif local == 'UnitTestResult':
-                      results.append(element)
-              for result in results:
-                  if result.get('outcome') in ('Failed', 'Error', 'Timeout', 'Aborted'):
-                      name = result.get('testName') or id_to_name.get(result.get('testId')) or ''
-                      # Theory cases carry their arguments in the display name;
-                      # the bare method name still selects every case.
-                      names.add(name.split('(')[0])
-
-          retry = '|'.join(f'FullyQualifiedName~{n}' for n in sorted(names) if n)
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'RETRY_FILTER={retry or "__all__"}\n')
-          print('retry filter:', retry or '__all__ (whole suite)')
-          PY
-      - name: Test (retry the failures)
-        # The retry is targeted, not whole-suite: the suite's real-network
-        # end-to-end tests carry timing races that fail independently under a
-        # constrained runner -- a whole-suite retry let flake A fail the first
-        # attempt and flake B fail the second and the job went red on neither
-        # twice. Rerunning only the first attempt's failures means the job
-        # stays red only when the SAME test fails twice in a row -- a real
-        # regression -- while an independent one-off flake is absorbed. The
-        # sentinel keeps the whole-suite fallback for the hang class with no
-        # parseable results.
-        if: steps.test_first.outcome == 'failure'
-        run: |
-          if [ "$RETRY_FILTER" = "__all__" ]; then
+          if [ "$CORE_RETRY_FILTER" = "__all__" ]; then
             dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$CORE_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           else
-            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$CORE_RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
           fi
-      - name: Upload test diagnostics (retry)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-diagnostics-retry
-          path: '**/TestResults/**'
-          if-no-files-found: ignore
-
-  test-extended:
-    name: Test (extended)
-    runs-on: ubuntu-latest
-    needs: build
-    # Non-blocking by design: this lane carries the environment-sensitive
-    # family -- the conformance harness, which compiles the real Rust
-    # implant via cargo and proves it against a live teamserver -- whose
-    # failures are worth triage without being worth a red run on every
-    # push. The nightly schedule gives it a standing verdict; a failure
-    # here shows on the job, not on the run.
-    continue-on-error: true
-    env:
-      EXTENDED_FILTER: "FullyQualifiedName~Rod.Conformance.Tests"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
-      - name: Build operator UI
-        working-directory: src/teamserver/Rod.TeamServer/Client
-        run: |
-          npm ci
-          npm run build
-      - name: Restore
-        run: dotnet restore Rod.slnx
-      - name: Build
-        run: dotnet build Rod.slnx --configuration Release --no-restore
-      - name: Test (extended lane)
-        id: test_extended_first
-        # The same blame-hang posture the core lane runs with: a hang names
-        # its test and dumps the host instead of burning the runner.
+      - name: Test (implant-toolchain lane)
+        # Non-blocking by design: this lane carries the environment-sensitive
+        # family -- cargo compiles, real implant processes, and the conformance
+        # harness against a live teamserver -- whose failures are worth triage
+        # without being worth a red run on every push. The nightly schedule
+        # gives it a standing verdict.
+        id: test_extended
         continue-on-error: true
         run: >-
           dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings
           --filter "$EXTENDED_FILTER"
-          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+          --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type full
           --logger trx
-      - name: Collect the extended lane's failures
-        # The targeted retry's input, as its own step: a GITHUB_ENV write
-        # only reaches later steps, so collecting inside the retry step
-        # left the filter empty and the retry ran the whole suite.
-        if: steps.test_extended_first.outcome == 'failure'
-        run: |
-          python3 - <<'PY'
-          import glob
-          import os
-          import xml.etree.ElementTree as ET
-
-          names = set()
-          for trx in glob.glob('**/TestResults/*.trx', recursive=True):
-              root = ET.parse(trx).getroot()
-              id_to_name = {}
-              results = []
-              for element in root.iter():
-                  local = element.tag.rsplit('}', 1)[-1]
-                  if local == 'UnitTest':
-                      id_to_name[element.get('id')] = element.get('name')
-                  elif local == 'UnitTestResult':
-                      results.append(element)
-              for result in results:
-                  if result.get('outcome') in ('Failed', 'Error', 'Timeout', 'Aborted'):
-                      name = result.get('testName') or id_to_name.get(result.get('testId')) or ''
-                      names.add(name.split('(')[0])
-
-          retry = '|'.join(f'FullyQualifiedName~{n}' for n in sorted(names) if n)
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'EXTENDED_RETRY_FILTER={retry or "__all__"}\n')
-          print('retry filter:', retry or '__all__ (whole lane)')
-          PY
-      - name: Test (extended lane, retry the failures)
-        # The targeted retry the core lane uses: only the failed tests
-        # rerun, so a one-off environment flake is absorbed and only a
-        # repeated failure stays. The sentinel keeps the whole-lane
-        # fallback.
-        if: steps.test_extended_first.outcome == 'failure'
+      - name: Collect the implant-toolchain lane's failures
+        # A GITHUB_ENV write only reaches later steps, so collecting inside the
+        # retry step would leave the filter empty and run the whole lane.
+        if: steps.test_extended.outcome == 'failure'
+        run: python3 scripts/ci/collect-trx-failures.py EXTENDED_RETRY_FILTER
+      - name: Test (implant-toolchain lane, retry the failures)
+        # The same targeted retry the core lane uses, kept non-blocking.
+        if: steps.test_extended.outcome == 'failure'
+        continue-on-error: true
         run: |
           if [ "$EXTENDED_RETRY_FILTER" = "__all__" ]; then
-            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_FILTER" --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type full
           else
-            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_RETRY_FILTER" --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type full
+            dotnet test Rod.slnx --configuration Release --no-build --settings ci.runsettings --filter "$EXTENDED_RETRY_FILTER" --blame-hang --blame-hang-timeout 10m --blame-hang-dump-type full
           fi
-      - name: Upload test diagnostics (extended)
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload test diagnostics
+        # The blame collector writes the hang dump and the test sequence (its
+        # last entry names the hung test) under TestResults; they only survive
+        # the runner if they are uploaded before the job tears down.
+        if: steps.test_core.outcome == 'failure' || steps.test_extended.outcome == 'failure'
+        uses: actions/upload-artifact@v5
         with:
-          name: test-diagnostics-extended
+          name: test-diagnostics
           path: '**/TestResults/**'
           if-no-files-found: ignore
 
   format:
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
       - name: Verify formatting
         run: dotnet format Rod.slnx --verify-no-changes
 
   rust-implant:
     name: Rust implant
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install protoc and the cross linkers
         # prost-build compiles rod.proto through a system protoc (the .NET
         # side rides Grpc.Tools' bundled one, so this is the tree's first
@@ -298,8 +179,7 @@ jobs:
         # The crate's #[cfg(test)] suites: the seal, wire codec, profile
         # bake, tasking verifier, outbox, session, and handler surfaces.
         # The live-behavior half -- enrolls, contacts, and tasking against
-        # a real teamserver -- is the conformance harness's domain in the
-        # extended lane.
+        # a real teamserver -- is the implant-toolchain lane above.
         run: cargo test --manifest-path src/implant/rust/Cargo.toml
       - name: Build the reference crosses
         # The implant of record's shipped shapes (architecture.md Sec 12.2):
@@ -325,25 +205,25 @@ jobs:
 
   dotnet-redirector:
     name: .NET redirector (Native AOT)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Setup .NET
         # Native AOT publish uses the SDK pinned by global.json and the platform
-        # link-time toolchain the ubuntu-latest runner provides.
-        uses: actions/setup-dotnet@v4
+        # link-time toolchain the ubuntu-24.04 runner provides.
+        uses: actions/setup-dotnet@v5
       - name: Install Native AOT link prerequisites
         # .NET Native AOT link-time analysis needs zlib on the build host; the
-        # ubuntu-latest runner carries clang already. zlib1g-dev is a documented
-        # Native AOT dependency on Debian/Ubuntu.
+        # runner carries clang already. zlib1g-dev is a documented Native AOT
+        # dependency on Debian/Ubuntu.
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
       - name: Publish Native AOT forwarder
         # The redirector is a .NET Native AOT forwarder (ADR 0009/0011): a single
         # static binary with no runtime install. PublishAot is set in the csproj,
         # so this produces a native rod-redirector binary on the runner -- the
         # real proof the AOT property holds end to end. Normal build, test, and
-        # format of the project are already covered by the build/test/format jobs
-        # above (it ships in Rod.slnx).
+        # format of the project are already covered by the build-and-test and
+        # format jobs above (it ships in Rod.slnx).
         run: dotnet publish src/redirector/dotnet/Rod.Redirector.csproj -r linux-x64 -c Release
       - name: Verify single binary
         run: |
@@ -355,17 +235,17 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Scan full history with gitleaks
         # Run the MIT-licensed gitleaks CLI directly rather than the
         # gitleaks-action wrapper, which requires a paid license key since v2.
         # Same scan the action ran: every commit in history, fail on any finding.
-        # Pin the version explicitly so a upstream release cannot silently change
-        # results.
+        # Pin the version explicitly so an upstream release cannot silently
+        # change results.
         env:
           GITLEAKS_VERSION: "8.27.1"
         run: |
