@@ -28,12 +28,14 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // WebShellGenerateForm beside the implant form under one toggle.
 //
 // The form offers only what the pipeline actually delivers: the in-tree Rust
-// unit (no language picker for units that are not registered), the Stage2
-// class (the one deployable shape left -- the stager class retired with the
-// .NET trees, delivery rides the launcher one-liners), this engagement's
-// family listeners (http/https/tcp/dns/doh all serve enrollment; only the
-// shell catcher greys out), and the arch set the toolchain bundles a
-// runtime for (x86 only pairs with Windows).
+// unit (no language picker for units that are not registered), the full
+// implant alone (the stager class retired with the .NET trees, delivery
+// rides the launcher one-liners, so no class picker either), this
+// engagement's family listeners (http/https/tcp/dns/doh all serve
+// enrollment; only the shell catcher greys out), and the target set the
+// Rust unit compiles (linux amd64/arm64/arm/x86, windows amd64/x86; macOS
+// needs the Apple SDK and Windows ARM has no triple, so neither is
+// offered).
 // Interactive needs no second listener in the common case: every front
 // carries its own contacts -- the envelope POST cycle for poll, the
 // WebSocket beacon for stream, the socket family's held session. The
@@ -60,12 +62,13 @@ const RECENT_BUILDS_SHOWN = 5
 // runs); the listener select offers these and greys everything else out.
 const ENROLL_TRANSPORTS = new Set(['http', 'https', 'tcp', 'dns', 'doh'])
 
-// The arch set per OS that the .NET toolchain bundles a runtime for: x86
-// exists only as a Windows target.
+// The arch set per OS the Rust build unit maps onto a cargo triple (musl
+// for Linux, GNU for Windows). macOS needs the Apple SDK to link and
+// Windows ARM has no GNU target, so neither is offered -- the form lists
+// exactly what compiles, the same rule the class and listener picks follow.
 const ARCHS: Record<string, string[]> = {
-  linux: ['amd64', 'arm64'],
-  windows: ['amd64', 'x86', 'arm64'],
-  osx: ['amd64', 'arm64'],
+  linux: ['amd64', 'arm64', 'arm', 'x86'],
+  windows: ['amd64', 'x86'],
 }
 
 function elapsed(job: BuildJob): string {
@@ -85,7 +88,6 @@ export function PayloadBuildView({
   // render, no job). One toggle, one mental model -- this is where
   // artifacts are made.
   const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
-  const [klass, setKlass] = useState('Stage2')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [format, setFormat] = useState('exe')
@@ -310,7 +312,9 @@ export function PayloadBuildView({
         // Language rides empty: the server defaults to the in-tree Rust unit,
         // and no other unit is registered to pick.
         language: null,
-        class: klass,
+        // Class rides empty the same way: the server defaults to the full
+        // implant, and the stager class is retired.
+        class: null,
         targetOs,
         targetArch,
         listenerId,
@@ -421,15 +425,6 @@ export function PayloadBuildView({
             </label>
           )}
           <label>
-            Class
-            {/* The stager class retired with the .NET trees: delivery rides
-                the launcher one-liners, which the Launchers tab renders per
-                payload. */}
-            <select value={klass} onChange={(e) => setKlass(e.target.value)}>
-              <option value="Stage2">Stage2 — full implant</option>
-            </select>
-          </label>
-          <label>
             OS
             {/* The build unit maps these onto a runtime identifier and refuses
                 anything outside the supported set, so the form offers exactly
@@ -443,13 +438,13 @@ export function PayloadBuildView({
             >
               <option value="linux">Linux</option>
               <option value="windows">Windows</option>
-              <option value="osx">macOS</option>
             </select>
           </label>
           <label>
             Arch
-            {/* x86 exists only as a Windows target -- the toolchain bundles no
-                linux-x86/osx-x86 runtime -- so the arch list follows the OS. */}
+            {/* The arch list follows the OS: Windows pairs with the GNU x86
+                targets alone (no ARM Windows triple), Linux adds the musl
+                ARM and x86 triples. */}
             <select value={targetArch} onChange={(e) => setTargetArch(e.target.value)}>
               {ARCHS[targetOs].map((a) => (
                 <option key={a} value={a}>
