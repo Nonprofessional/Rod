@@ -10,6 +10,7 @@ import {
   renderLaunchers,
 } from '../api'
 import { catchLaunchers } from '../catchOneLiners'
+import { launcherHint } from '../launcherFamilies'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
 import { useNow } from '../when'
@@ -383,16 +384,19 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                       </td>
                       <td>
                         <div className="row-actions">
-                          <button
-                            className="sm"
-                            onClick={() =>
-                              setCommandsFor((current) =>
-                                current === row.launcherId ? null : row.launcherId,
-                              )
-                            }
-                          >
-                            {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
-                          </button>
+                          {live && (
+                            <button
+                              className="sm"
+                              title="The one-liners this row was cut with -- only while the credential still serves fetches (a dead credential's command would download nothing)"
+                              onClick={() =>
+                                setCommandsFor((current) =>
+                                  current === row.launcherId ? null : row.launcherId,
+                                )
+                              }
+                            >
+                              {commandsFor === row.launcherId ? 'Hide' : 'Commands'}
+                            </button>
+                          )}
                           <button className="ghost sm" onClick={() => void onDelete(row)}>
                             Delete
                           </button>
@@ -414,7 +418,7 @@ export function LaunchersView({ engagementId }: { engagementId: string }) {
                               </button>
                             </p>
                             {row.launchers.map((launcher) => (
-                              <div key={launcher.id} className="upgrade-launcher">
+                              <div key={launcher.id} className="upgrade-launcher" title={launcherHint(launcher.id)}>
                                 <span title={`For ${launcher.os} targets`}>
                                   <Icon name={osIconFor(launcher.os)} className="wire-icon" />
                                 </span>

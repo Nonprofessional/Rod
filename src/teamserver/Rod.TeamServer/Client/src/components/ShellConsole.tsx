@@ -9,6 +9,7 @@ import {
   sendShellInput,
   upgradeShell,
 } from '../api'
+import { launcherHint } from '../launcherFamilies'
 import { StatusBadge } from './StatusBadge'
 
 // The caught-shell console, styled as a terminal: the held connection's
@@ -223,7 +224,7 @@ export function ShellConsole({
             </div>
           )}
           {upgrade.launchers.map((launcher) => (
-            <div key={launcher.id} className="upgrade-launcher">
+            <div key={launcher.id} className="upgrade-launcher" title={launcherHint(launcher.id)}>
               <code>{launcher.id}</code>
               <code className="upgrade-command">{launcher.command}</code>
               <button className="ghost sm" onClick={() => void copy(launcher.id, launcher.command)}>

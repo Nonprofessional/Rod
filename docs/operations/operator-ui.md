@@ -305,7 +305,10 @@ downloads left`, `expired 19:00`, `revoked 18:35` when it is done (a
 bounded credential whose token has left the store is out of downloads
 whichever end it met). **Commands** expands the row's one-liners directly
 beneath it (re-rendered from the row's URL and credential, so an old row
-always copies in the current shape). **Delete** closes the row's whole
+always copies in the current shape). **Commands** appears only while the credential still
+serves fetches -- a dead credential's one-liner would download nothing
+(the route refuses the fetch; the artifact itself stays downloadable to
+the operator from the Payloads tab). **Delete** closes the row's whole
 lifecycle: the credential dies wherever a copy of the command carries it,
 the row goes, and the mint's history stays on the audit trail -- for a
 surgical revoke that keeps the row, the API's `:revoke` endpoint remains.
