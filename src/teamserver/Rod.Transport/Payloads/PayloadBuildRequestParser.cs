@@ -122,12 +122,14 @@ internal static class PayloadBuildRequestParser
                 "Trust 'public' rides TLS fronts -- the dial must name an https:// address (the real-domain front an operator-run edge terminates); leave Trust unset for the pinned CA.");
 
         // The contact mode rides the beacon profile into the artifact: stream
-        // (persistent, interactive) or poll (low-and-slow contacts). A typo
-        // must not silently build the interactive shape for an operator who
-        // asked for low-and-slow, so anything else is a 400.
+        // (persistent, interactive) or poll (low-and-slow contacts). Poll is
+        // the default -- every family carries it, and a held connection is a
+        // standing detection signal an operator should opt into, not out of.
+        // A typo must not silently build the interactive shape for an
+        // operator who asked for low-and-slow, so anything else is a 400.
         var mode = body.Mode?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(mode))
-            mode = "stream";
+            mode = "poll";
         if (mode is not ("stream" or "poll"))
             return (null, "Mode must be 'stream' or 'poll'.");
 

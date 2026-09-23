@@ -293,9 +293,11 @@ public class PayloadBuildTests
             Assert.NotNull(row.TokenExpiresAt);
 
             // The build-parameter snapshot: what the form carried when the
-            // artifact was generated, read back from the library row.
+            // artifact was generated, read back from the library row. The
+            // request named no mode, so the snapshot carries the default the
+            // parser applied -- poll, the posture every front serves.
             Assert.NotNull(row.Build);
-            Assert.Equal("stream", row.Build!.Mode);
+            Assert.Equal("poll", row.Build!.Mode);
             Assert.Equal(30, row.Build.SleepSeconds);
             Assert.Equal(10, row.Build.JitterSeconds);
             Assert.Equal(1, row.Build.TokenMaxUses);

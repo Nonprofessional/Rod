@@ -187,10 +187,12 @@ public sealed record TransportProfile(
 /// embedded into the artifact at build time so each implant is self-contained.
 /// </summary>
 /// <param name="Mode">
-/// How one contact cycle uses the beacon stream: <c>stream</c> holds the
-/// connection open (interactive, server-push tasking); <c>poll</c> drains
-/// queued tasking, closes, and sleeps the interval -- the low-and-slow OPSEC
-/// shape. Defaults to <c>stream</c>.
+/// How one contact cycle uses the beacon stream: <c>poll</c> drains
+/// queued tasking, closes, and sleeps the interval -- the low-and-slow
+/// OPSEC shape every front serves, and the default; <c>stream</c> holds
+/// the connection open (interactive, server-push tasking) -- the shape an
+/// operator opts into, since a held connection is a standing detection
+/// signal.
 /// </param>
 /// <param name="KillDate">
 /// The self-termination timestamp, or null for an open-ended artifact: the
@@ -201,7 +203,7 @@ public sealed record BeaconProfile(
     TimeSpan Sleep,
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
-    string Mode = "stream");
+    string Mode = "poll");
 
 /// <summary>
 /// The target the artifact is built for. Build params are produced at request

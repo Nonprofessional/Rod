@@ -133,7 +133,7 @@ public sealed record BuildRequest(
     TimeSpan Sleep,
     TimeSpan Jitter,
     DateTimeOffset? KillDate,
-    string Mode = "stream",
+    string Mode = "poll",
     string? TokenSecret = null,
     Guid? MintedTokenId = null,
     int? TokenMaxUses = null,

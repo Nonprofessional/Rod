@@ -543,8 +543,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   drains queued tasking, closes, and sleeps the interval with **jitter**
   (randomized delta) before the next contact -- the low-and-slow shape, since a
   persistent connection to a C2 endpoint is itself a loud signal. The mode is
-  baked per implant at generation (`mode: stream|poll` on the build request),
-  so one engagement can mix an interactive foothold with sleeping beacons.
+  baked per implant at generation (`mode: stream|poll` on the build request;
+  poll is the default -- every front serves it, and holding a connection is
+  the shape an operator opts into), so one engagement can mix an interactive
+  foothold with sleeping beacons.
 - **Kill date.** A hard self-termination timestamp baked in per implant to limit
   exposure if lost. Enforced on both sides: the teamserver refuses a handshake
   past it (`HANDSHAKE_STATUS_KILL_DATE_EXPIRED`, no session opens), and the
