@@ -5,11 +5,12 @@ import { Icon } from '../components/Icons'
 // The operational event log: the per-engagement, append-only,
 // hash-chained audit trail, oldest-first in causal order. Every action that
 // changes engagement state or binds an identity produces an immutable, attributed
-// event. Where the Timeline tab renders the story, this is the raw ledger --
-// the dense, paged, filterable table a forensic read wants: kind filter,
-// free-text search across verb/payload/outcome, and "load older" walking back
-// through history. The full set is the raw evidence feed the timeline/report
-// exports consume.
+// event. This is the trail's reading surface -- the dense, paged, filterable
+// table a forensic read wants: kind filter, free-text search across
+// verb/payload/outcome, and "load older" walking back through history. The
+// narrative rendering of the same facts is the Report tab's timeline section
+// (and the standalone /timeline endpoint stays a scripting deliverable); the
+// report exports consume this same trail.
 
 const ALL_KINDS = '(all)'
 

@@ -14,7 +14,6 @@ export type TabId =
   | 'webshells'
   | 'audit'
   | 'artifacts'
-  | 'timeline'
   | 'report'
   | 'listeners'
   | 'launchers'
@@ -32,7 +31,10 @@ export interface NavItemDef {
 // feed of everything issued) -- infrastructure next, evidence last in
 // reading order. The task log sits with Implants rather than under Evidence
 // because it is the working log, read while operating; the immutable record
-// (audit, timeline) stays under Evidence.
+// (audit, report) stays under Evidence. The timeline's own tab retired with
+// the narrative/report split it duplicated: the audit ledger is the raw
+// reading surface, and the report's timeline section is the narrative
+// deliverable, so a third projection of the same trail had no job left.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: 'Operate',
@@ -58,7 +60,6 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Evidence',
     items: [
       { id: 'audit', label: 'Audit', icon: 'list' },
-      { id: 'timeline', label: 'Timeline', icon: 'clock' },
       { id: 'artifacts', label: 'Artifacts', icon: 'archive' },
       { id: 'report', label: 'Report', icon: 'file' },
     ],

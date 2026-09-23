@@ -488,11 +488,14 @@ reason rather than clamping.
 
 - **Audit** -- the append-only, hash-chained ledger; tampering with a stored
   event breaks the chain at the next link. Paged and filterable; the raw feed
-  the timeline and report render from.
+  the report renders from. (The Timeline tab retired: it was a third
+  projection of the same trail -- the narrative rendering lives as the
+  Report's timeline section, and the standalone `/timeline` endpoint stays a
+  scripting deliverable.)
 - **Artifacts** -- evidence objects attached to tasks (file pulls, exfil
   chunks): pick a task to list, attach, and download its artifacts.
-- **Timeline** -- the same trail as a day-by-day narrative.
-- **Report** -- the whole engagement as a reproducible JSON/Markdown export.
+- **Report** -- the whole engagement as a reproducible JSON/Markdown export,
+  timeline included.
 
 ## Deferred work
 

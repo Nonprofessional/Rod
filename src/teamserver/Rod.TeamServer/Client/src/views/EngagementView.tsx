@@ -21,7 +21,6 @@ import { ReportView } from './ReportView'
 import { ShellsView } from './ShellsView'
 import { WebShellsView } from './WebShellsView'
 import { TaskLogView } from './TaskLogView'
-import { TimelineView } from './TimelineView'
 
 // The engagement detail body: the active view only -- navigation lives in the
 // shell's sidebar and the live summary (connection state, fleet counts,
@@ -162,7 +161,6 @@ export function EngagementView({
       {tab === 'artifacts' && (
         <ArtifactsView engagementId={engagementId} onlineTick={tick} />
       )}
-      {tab === 'timeline' && <TimelineView engagementId={engagementId} />}
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
       {tab === 'launchers' && <LaunchersView engagementId={engagementId} onlineTick={tick} />}

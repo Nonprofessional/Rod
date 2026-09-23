@@ -641,11 +641,14 @@ export async function fetchArtifactBlob(engagementId: string, artifactId: string
   return response.blob()
 }
 
-// --- Timeline and report export  ------------------------------
+// --- Report export  ------------------------------------------
 //
-// Built-in consumers of the event + task + artifact store. Both export as JSON
-// by default, or Markdown when format='markdown' (returned as text). Each
-// carries a content hash so two exports of identical state match.
+// Built-in consumer of the event + task + artifact store: the engagement's
+// full evidence bundle, JSON by default or Markdown when format='markdown'
+// (returned as text), carrying a content hash so two exports of identical
+// state match. The timeline's standalone endpoint stays a scripting
+// deliverable; the UI's narrative home is this report (its timeline section
+// carries the same enriched entries).
 
 export interface TimelineActor {
   operatorId: string
@@ -672,23 +675,6 @@ export interface TimelineEntry {
   output: string | null
   outcome: string
   hash: string
-}
-export interface TimelineReport {
-  engagementId: string
-  engagementName: string
-  generatedAt: string
-  contentHash: string
-  entries: TimelineEntry[]
-}
-
-export async function getTimeline(engagementId: string): Promise<TimelineReport> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/timeline`))
-}
-
-export async function getTimelineMarkdown(engagementId: string): Promise<string> {
-  const response = await fetch(`engagements/${engagementId}/timeline?format=markdown`)
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-  return response.text()
 }
 
 export interface ReportTask {
