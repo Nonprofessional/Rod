@@ -274,22 +274,17 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                                 )}
                               </span>
                             ) : (
+                              // A state this row cannot read means the store no
+                              // longer holds the token: revoked (which reads as
+                              // gone by contract), or hard-deleted with its
+                              // launcher. The revoke endpoint is
+                              // idempotent-refusing -- a click here could only
+                              // ever answer 404 -- so no button is offered.
                               <span
                                 className="muted"
-                                title={`Baked token ${p.tokenId} is no longer stored -- spent, revoked, or expired and swept. No more enrollments.`}
+                                title={`Baked token ${p.tokenId} is no longer held -- revoked, or deleted with its launcher. No more enrollments, and nothing left to revoke.`}
                               >
-                                no enrolls left{' '}
-                                {revoking === p.tokenId ? (
-                                  '(revoking…)'
-                                ) : (
-                                  <button
-                                    className="sm danger"
-                                    onClick={() => void onRevokeToken(p.tokenId!)}
-                                    title="The baked credential stops working at the next enrollment attempt"
-                                  >
-                                    Revoke
-                                  </button>
-                                )}
+                                no enrolls left
                               </span>
                             )
                           ) : (
@@ -357,7 +352,7 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
             ? ''
             : payload.tokenMaxUses != null && payload.tokenRemainingUses != null
               ? ` · ${payload.tokenRemainingUses} left`
-              : ' · no enrolls left (spent, revoked, or swept)'}
+              : ' · no enrolls left (revoked or deleted with its launcher)'}
         </>
       ) : payload.class === 'WebShell' && payload.credential ? (
         <>
