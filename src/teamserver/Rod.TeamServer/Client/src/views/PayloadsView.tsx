@@ -168,7 +168,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                   const q = filter.trim().toLowerCase()
                   if (!q) return true
                   const front = frontFor(p.endpoint, listeners)
-                  return [p.class, p.language, p.target, p.build?.format, p.endpoint, front?.name, p.fingerprint].some(
+                  return [p.class, p.language, p.kind, p.target, p.build?.format, p.endpoint, front?.name, p.fingerprint].some(
                     (v) => v?.toLowerCase().includes(q),
                   )
                 })
@@ -201,6 +201,14 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                         <td>
                           <code>
                             {p.language} · {kindLabel(p.class)}
+                            {p.kind === 'loader' && (
+                              <span
+                                className="muted"
+                                title={`Stage-0 loader: fetches ${p.stagePayloadId ?? 'its stage'} sealed and runs it from a memfd -- nothing lands on disk. Deleting the stage artifact ends the delivery.`}
+                              >
+                                {' '}· loader
+                              </span>
+                            )}
                           </code>
                         </td>
                         <td>
