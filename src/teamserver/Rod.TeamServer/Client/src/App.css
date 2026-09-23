@@ -2237,6 +2237,18 @@ button.file-entry {
   gap: 12px;
 }
 
+/* The dial row's own split: the typed address leads at twice the posture
+   picker's width -- the field the operator fills dominates, the
+   default-left picker annotates. Alone (a non-web transport renders no
+   picker) the address spans the row. */
+.listener-form .listener-dial {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.listener-form .listener-dial > :only-child {
+  grid-column: 1 / -1;
+}
+
 .listener-form label {
   display: flex;
   flex-direction: column;

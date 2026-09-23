@@ -442,7 +442,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             />
           </label>
         </div>
-        <div className="listener-row">
+        <div className="listener-row listener-dial">
           <label className="endpoint-label">
             Public endpoint
             <input
