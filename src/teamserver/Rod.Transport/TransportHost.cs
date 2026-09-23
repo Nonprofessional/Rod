@@ -572,6 +572,10 @@ public static class TransportHost
         endpoints.MapPayloadEndpoints();
         // Operator-facing runtime settings (the live session-presence knobs).
         endpoints.MapSettingsEndpoints();
+        // The system page's read: host facts and the build units'
+        // self-reported environment -- the preflight a deployment checks
+        // its toolchains against.
+        endpoints.MapSystemEndpoints();
         // Background payload builds: the job-queued face of the same pipeline.
         endpoints.MapPayloadJobEndpoints();
         // The per-engagement operational event log: the durable,

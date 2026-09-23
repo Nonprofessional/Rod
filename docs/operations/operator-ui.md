@@ -506,6 +506,22 @@ server) so a restart remembers them; the `Sessions:Staleness` config
 section remains the boot default. Bounds violations refuse with the
 reason rather than clamping.
 
+## System
+
+`#/system`, beside Settings in the sidebar -- the deployment's preflight.
+**Server** names the host facts (machine, OS, .NET runtime, uptime).
+**Build units** is each unit's self-reported environment: the findings
+list covers cargo and rustc (versioned when found, with the install fix
+when not), the Rust source tree and the teamserver proto tree the build
+copies, and the cargo target cache (a `ROD_RUST_TARGET_DIR` warning names
+the hermetic cold-build cost); the target table reads one row per
+buildable triple -- Rust std installed (`rustup target add <triple>` is
+the fix shown inline) and the cross linker its platform pieces need on
+PATH. A unit reports *ready*, *partial* (some targets unbuildable), or
+*unavailable* (a missing prerequisite: toolchain, source, or proto) --
+the same failures a build job would surface minutes later, read here in
+one glance before the first build is ever queued.
+
 ## Evidence panels
 
 - **Audit** -- the append-only, hash-chained ledger; tampering with a stored

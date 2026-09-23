@@ -17,4 +17,6 @@ public sealed class InMemoryBuildUnitRegistry : IBuildUnitRegistry
 
     public IBuildUnit? Find(Language language)
         => _units.TryGetValue(language, out var unit) ? unit : null;
+
+    public IReadOnlyList<IBuildUnit> All => _units.Values.ToArray();
 }

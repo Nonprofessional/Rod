@@ -29,8 +29,24 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// shared, persistent cargo target dir and reuse dependency compilation
 /// across builds.
 /// </remarks>
-public sealed class RustBuildUnit : IBuildUnit
+public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
 {
+    // Every target the contract can map (MapTriple), with the C linker its
+    // platform pieces need on the build host: the musl triples get the
+    // cross names the build itself sets as CC_*/AR_* (ring's primitives),
+    // the Windows GNU pair the mingw-w64 drivers cargo invokes by default.
+    // A target without its row here still builds; the table exists so the
+    // environment report can name what is missing per target.
+    private static readonly (string Triple, string Os, string Arch, string Linker)[] CrossTargets =
+    [
+        ("x86_64-unknown-linux-musl", "linux", "amd64", "musl-gcc"),
+        ("aarch64-unknown-linux-musl", "linux", "arm64", "aarch64-linux-musl-gcc"),
+        ("armv7-unknown-linux-musleabihf", "linux", "arm", "armv7-linux-musleabihf-gcc"),
+        ("i686-unknown-linux-musl", "linux", "x86", "musl-gcc"),
+        ("x86_64-pc-windows-gnu", "windows", "amd64", "x86_64-w64-mingw32-gcc"),
+        ("i686-pc-windows-gnu", "windows", "x86", "i686-w64-mingw32-gcc"),
+    ];
+
     private readonly string _rustSourceDir;
     private readonly string _cargoBinary;
     private readonly string? _sharedTargetDir;
@@ -52,6 +68,165 @@ public sealed class RustBuildUnit : IBuildUnit
 
     private static string? NonEmptyOrNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// Probes the host: cargo and rustc by running their version queries,
+    /// the source and proto trees by existence, the installed std set by
+    /// walking rustc's sysroot, and each cross linker by a PATH scan. The
+    /// findings name the fix for everything not "ok" -- a build that fails
+    /// inside a missing toolchain wastes minutes saying less.
+    /// </summary>
+    public BuildUnitEnvironmentReport ReportEnvironment()
+    {
+        var findings = new List<BuildEnvironmentFinding>
+        {
+            new("ok", "source tree", $"Rust implant crate at '{_rustSourceDir}'"),
+        };
+        var sourceMissing = !Directory.Exists(_rustSourceDir);
+        if (sourceMissing)
+            findings[0] = new("missing", "source tree",
+                $"Rust implant source tree not found at '{_rustSourceDir}' -- set Build:RustSourceDirectory to the crate's location");
+
+        var proto = LocateProtoDir();
+        findings.Add(proto is null
+            ? new("missing", "proto tree",
+                "The teamserver proto tree (src/teamserver/Rod.Protocol/protos) was not found beside the crate "
+                + "-- the wire contract's source is part of the build, not the binary")
+            : new("ok", "proto tree", $"rod.proto located at '{proto}'"));
+
+        var cargo = Probe.Run(_cargoBinary, "--version");
+        findings.Add(cargo.Found
+            ? new("ok", "cargo", cargo.FirstLine)
+            : new("missing", "cargo",
+                $"'{_cargoBinary}' was not found on PATH -- every build fails until the Rust toolchain is installed"));
+
+        // The installed std set reads off rustc's sysroot (one directory per
+        // target, host included), which works for rustup-managed and distro
+        // toolchains alike; rustup's own list is a rustup-only view.
+        var sysroot = Probe.Run("rustc", "--print", "sysroot");
+        var stdRoot = sysroot.Found
+            ? Path.Combine(sysroot.FirstLine.Trim(), "lib", "rustlib")
+            : null;
+        var installed = stdRoot is not null && Directory.Exists(stdRoot)
+            ? Directory.EnumerateDirectories(stdRoot)
+                .Select(Path.GetFileName)
+                .Where(name => name is not null && !name.Equals("rustlib-src", StringComparison.Ordinal))
+                .ToHashSet(StringComparer.Ordinal)!
+            : [];
+        findings.Add(sysroot.Found
+            ? new("ok", "rustc", $"std for {installed.Count} target(s) under '{stdRoot}'")
+            : new("warn", "rustc",
+                "rustc was not found on PATH -- target readiness below is unverified (cargo may still be a distro install that names it differently)"));
+
+        var targets = new List<BuildTargetReadiness>();
+        var anyTargetMissing = false;
+        foreach (var (triple, os, arch, linker) in CrossTargets)
+        {
+            var std = installed.Contains(triple);
+            var hasLinker = FindOnPath(linker);
+            if (!std || !hasLinker)
+                anyTargetMissing = true;
+            targets.Add(new BuildTargetReadiness(triple, $"{os}/{arch}", std, hasLinker, linker));
+        }
+
+        findings.Add(_sharedTargetDir is null
+            ? new("warn", "build cache",
+                "no ROD_RUST_TARGET_DIR set -- builds are hermetic, so every cold cross-compile pays the full dependency build; "
+                + "point the variable at a persistent directory to share a warm cache (concurrent builds queue on cargo's lock)")
+            : new("ok", "build cache", $"shared cargo target dir '{_sharedTargetDir}'"));
+
+        var unavailable = sourceMissing || proto is null || !cargo.Found;
+        var status = unavailable ? "unavailable" : anyTargetMissing ? "partial" : "ready";
+        return new BuildUnitEnvironmentReport(Language.ToString(), status, findings, targets);
+    }
+
+    // The proto tree's location, without the build's copying: the same
+    // walk-up ResolveEndpointAsync-style search CopyProtoTree performs,
+    // factored so both the build and the environment report agree on where
+    // it should be.
+    private static string? LocateProtoDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var protoDir = Path.Combine(dir.FullName, "src", "teamserver", "Rod.Protocol", "protos");
+            if (Directory.Exists(protoDir))
+                return protoDir;
+            dir = dir.Parent!;
+        }
+        return null;
+    }
+
+    // A PATH scan for an executable by name: presence-level only (an
+    // unset execute bit still reads present), the bar a diagnostics page
+    // needs -- the build itself remains the final judge.
+    private static bool FindOnPath(string name)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrEmpty(path))
+            return false;
+        foreach (var dir in path.Split(Path.PathSeparator))
+        {
+            if (dir.Length == 0)
+                continue;
+            try
+            {
+                if (File.Exists(Path.Combine(dir, name)))
+                    return true;
+            }
+            catch
+            {
+                // An unreadable PATH entry is not a verdict.
+            }
+        }
+        return false;
+    }
+
+    // A bounded one-shot process run for version/sysroot queries: found
+    // means it started and exited zero, and the first line carries the
+    // answer the report shows.
+    private static class Probe
+    {
+        public static (bool Found, string FirstLine) Run(string binary, params string[] arguments)
+        {
+            try
+            {
+                var start = new ProcessStartInfo
+                {
+                    FileName = binary,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                foreach (var argument in arguments)
+                    start.ArgumentList.Add(argument);
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                using var process = Process.Start(start);
+                if (process is null)
+                    return (false, "");
+                var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+                try
+                {
+                    process.WaitForExitAsync(timeout.Token).GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch { }
+                    return (false, "");
+                }
+                if (process.ExitCode != 0)
+                    return (false, "");
+                var first = (output.IsCompletedSuccessfully ? output.Result : "")
+                    .Split('\n', 2)[0].Trim();
+                return (true, first);
+            }
+            catch
+            {
+                // A probe never throws: not-found is an answer, not a fault.
+                return (false, "");
+            }
+        }
+    }
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
@@ -221,22 +396,14 @@ public sealed class RustBuildUnit : IBuildUnit
     // rod.proto has no imports, so the directory holds all it needs.
     private static void CopyProtoTree(string rustSourceDir, string workDir)
     {
-        var dir = new DirectoryInfo(rustSourceDir);
-        while (dir is not null)
-        {
-            var protoDir = Path.Combine(dir.FullName, "src", "teamserver", "Rod.Protocol", "protos");
-            if (Directory.Exists(protoDir))
-            {
-                var to = Path.Combine(workDir, "src", "teamserver", "Rod.Protocol", "protos");
-                Directory.CreateDirectory(to);
-                foreach (var file in Directory.EnumerateFiles(protoDir))
-                    File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
-                return;
-            }
-            dir = dir.Parent!;
-        }
-        throw new BuildUnitFailureException(
-            "The Rust build needs the teamserver proto tree (src/teamserver/Rod.Protocol/protos) beside the crate; the repo walk-up found none.");
+        var protoDir = LocateProtoDir();
+        if (protoDir is null)
+            throw new BuildUnitFailureException(
+                "The Rust build needs the teamserver proto tree (src/teamserver/Rod.Protocol/protos) beside the crate; the repo walk-up found none.");
+        var to = Path.Combine(workDir, "src", "teamserver", "Rod.Protocol", "protos");
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.EnumerateFiles(protoDir))
+            File.Copy(file, Path.Combine(to, Path.GetFileName(file)), overwrite: true);
     }
 
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(

@@ -1404,6 +1404,42 @@ export async function deletePayload(engagementId: string, artifactId: string): P
   )
 }
 
+// --- System info ------------------------------------------------
+//
+// The system page's read: the host's own facts (OS, runtime, uptime) and
+// every build unit's self-reported environment -- toolchains found or
+// missing, source trees located, per-target std and cross-linker
+// readiness. The preflight a deployment checks itself against.
+
+export interface SystemInfo {
+  server: {
+    host: string
+    operatingSystem: string
+    runtime: string
+    startedAt: string
+    now: string
+  }
+  buildUnits: BuildUnitEnvironment[]
+}
+
+export interface BuildUnitEnvironment {
+  language: string
+  // ready | partial | unavailable
+  status: string
+  findings: { level: string; area: string; detail: string }[]
+  targets: {
+    triple: string
+    target: string
+    stdInstalled: boolean
+    linkerFound: boolean
+    linker: string
+  }[]
+}
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  return jsonOrThrow(await fetch('system'))
+}
+
 // --- Runtime settings -----------------------------------------
 //
 // Operator-adjustable server settings. The session-presence pair (the

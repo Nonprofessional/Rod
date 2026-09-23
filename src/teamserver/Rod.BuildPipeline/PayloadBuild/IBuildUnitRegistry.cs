@@ -17,4 +17,11 @@ public interface IBuildUnitRegistry
     /// registered for it.
     /// </summary>
     IBuildUnit? Find(Language language);
+
+    /// <summary>
+    /// Every registered unit. The build path resolves by language; the
+    /// diagnostics path (the system page's environment report) walks them
+    /// all.
+    /// </summary>
+    IReadOnlyList<IBuildUnit> All { get; }
 }

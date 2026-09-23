@@ -1,0 +1,86 @@
+using System.Net.Http.Json;
+
+namespace Rod.Integration.Tests;
+
+/// <summary>
+/// The system page's read (architecture.md Sec 6): the host facts and the
+/// build units' self-reported environment. The assertions stay structural
+/// -- the probe's verdicts depend on the machine this runs on, so the test
+/// pins the shape (sections present, every offered target reported with
+/// its std and linker facts) rather than any particular finding.
+/// </summary>
+public class SystemInfoTests
+{
+    [Fact]
+    public async Task TheSystemRead_ReportsTheHostAndTheBuildEnvironment()
+    {
+        // The full endpoint set (MapRodEndpoints) already carries the
+        // system route; the host only needs the operator session.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var hostScope = host;
+        using var clientScope = client;
+        await AuthenticatedHost.LoginAsync(client);
+
+        var info = await client.GetFromJsonAsync<SystemInfoDto>("/system");
+        Assert.NotNull(info);
+        Assert.False(string.IsNullOrWhiteSpace(info!.Server.Host));
+        Assert.False(string.IsNullOrWhiteSpace(info.Server.OperatingSystem));
+        Assert.Contains(".NET", info.Server.Runtime);
+        Assert.True(info.Server.StartedAt <= DateTimeOffset.UtcNow);
+
+        // The in-tree Rust unit reports: a verdict from the fixed
+        // vocabulary, at least the source/cargo findings, and one row per
+        // buildable triple with both halves of its readiness named.
+        var rust = Assert.Single(info.BuildUnits, u => u.Language == "Rust");
+        Assert.Contains(rust.Status, new[] { "ready", "partial", "unavailable" });
+        Assert.Contains(rust.Findings, f => f.Area == "source tree");
+        Assert.Contains(rust.Findings, f => f.Area == "cargo");
+        Assert.Equal(6, rust.Targets.Count);
+        Assert.All(rust.Targets, t =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(t.Triple));
+            Assert.False(string.IsNullOrWhiteSpace(t.Linker));
+        });
+        Assert.Contains(rust.Targets, t => t.Triple == "x86_64-unknown-linux-musl");
+        Assert.Contains(rust.Targets, t => t.Triple == "x86_64-pc-windows-gnu");
+    }
+
+    private sealed class SystemInfoDto
+    {
+        public ServerSectionDto Server { get; set; } = null!;
+        public List<BuildUnitDto> BuildUnits { get; set; } = [];
+    }
+
+    private sealed class ServerSectionDto
+    {
+        public string Host { get; set; } = "";
+        public string OperatingSystem { get; set; } = "";
+        public string Runtime { get; set; } = "";
+        public DateTimeOffset StartedAt { get; set; }
+        public DateTimeOffset Now { get; set; }
+    }
+
+    private sealed class BuildUnitDto
+    {
+        public string Language { get; set; } = "";
+        public string Status { get; set; } = "";
+        public List<FindingDto> Findings { get; set; } = [];
+        public List<TargetDto> Targets { get; set; } = [];
+    }
+
+    private sealed class FindingDto
+    {
+        public string Level { get; set; } = "";
+        public string Area { get; set; } = "";
+        public string Detail { get; set; } = "";
+    }
+
+    private sealed class TargetDto
+    {
+        public string Triple { get; set; } = "";
+        public string Target { get; set; } = "";
+        public bool StdInstalled { get; set; }
+        public bool LinkerFound { get; set; }
+        public string Linker { get; set; } = "";
+    }
+}
