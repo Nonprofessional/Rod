@@ -494,7 +494,13 @@ fetching it 404s from then on, and the deletion is an audited fact.
 ## Settings
 
 `#/settings`, beside Engagements in the sidebar -- operator-level runtime
-settings, server-wide rather than per-engagement. **Session presence**
+settings, server-wide rather than per-engagement. **Build cache** is the
+shared cargo target dir payload builds compile against: a persistent
+directory turns a cold cross-compile into a one-time cost (dependency
+artifacts are reused; concurrent builds queue on cargo's own lock),
+empty keeps builds hermetic, and the boot default is the
+`ROD_RUST_TARGET_DIR` variable. Applies to the next build, remembered
+across restarts. **Session presence**
 explains the fleet's offline behavior and adjusts it live: *Offline
 after* is how long a silent session holds its Online dot before the
 staleness sweep closes it (1 minute..24 hours; keep it above your
@@ -509,7 +515,11 @@ reason rather than clamping.
 ## System
 
 `#/system`, beside Settings in the sidebar -- the deployment's preflight.
-**Server** names the host facts (machine, OS, .NET runtime, uptime).
+**Server** names the host facts (machine, OS, .NET runtime, uptime);
+**Persistence** names the adapter each store runs on and where the data
+lives -- the configured data directory, or the Postgres target with its
+credentials masked (a composition choice made at startup through
+`ConnectionStrings:Postgres`, not a runtime knob).
 **Build units** is each unit's self-reported environment: the findings
 list covers cargo and rustc (versioned when found, with the install fix
 when not), the Rust source tree and the teamserver proto tree the build

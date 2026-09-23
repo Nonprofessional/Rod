@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getSessionSettings, putSessionSettings } from '../api'
+import { getBuildSettings, getSessionSettings, putBuildSettings, putSessionSettings } from '../api'
 
 // The teamserver's runtime settings -- operator-level, not engagement-level:
 // server-wide knobs an operator adjusts while working. The session-presence
@@ -21,6 +21,13 @@ export function SettingsView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // The build cache: the shared cargo target dir behind warm builds. Its
+  // own draft and save, because it applies to the next build rather than
+  // the next sweep pass.
+  const [cacheDir, setCacheDir] = useState('')
+  const [cacheSaved, setCacheSaved] = useState<string | null>(null)
+  const [cacheBusy, setCacheBusy] = useState(false)
+
   useEffect(() => {
     void (async () => {
       try {
@@ -33,6 +40,37 @@ export function SettingsView() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const current = await getBuildSettings()
+        setCacheDir(current.rustTargetDir ?? '')
+      } catch (e) {
+        setError(String(e))
+      }
+    })()
+  }, [])
+
+  const onSaveCache = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setCacheBusy(true)
+    try {
+      const applied = await putBuildSettings({ rustTargetDir: cacheDir.trim() || null })
+      setCacheDir(applied.rustTargetDir ?? '')
+      setCacheSaved(
+        applied.rustTargetDir
+          ? `Applied -- the next build compiles against '${applied.rustTargetDir}'.`
+          : 'Applied -- builds are hermetic again (a fresh target dir per build).',
+      )
+      setError(null)
+    } catch (e) {
+      setCacheSaved(null)
+      setError(String(e))
+    } finally {
+      setCacheBusy(false)
+    }
+  }
 
   const onSave = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -98,6 +136,30 @@ export function SettingsView() {
       </form>
       {saved && <p className="muted">{saved}</p>}
       {error && <p className="error">{error}</p>}
+
+      <form className="build-form" onSubmit={onSaveCache}>
+        <fieldset>
+          <legend>Build cache</legend>
+          <label>
+            Shared cargo target dir
+            <input
+              value={cacheDir}
+              onChange={(e) => setCacheDir(e.target.value)}
+              placeholder="/var/lib/rod/cargo-target"
+              title="The persistent directory payload builds share as their cargo target dir -- the warm compile cache. Dependency artifacts are reused across builds (only the implant crate recompiles), turning a cold cross-compile into a one-time cost; concurrent builds queue on cargo's own lock. Empty = hermetic: a fresh disposable target dir per build, every cold compile pays in full. Must be an absolute path. The boot default is the ROD_RUST_TARGET_DIR environment variable; this setting outranks it and survives restarts."
+            />
+            <span className="field-help">empty = hermetic per-build dirs</span>
+          </label>
+          <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            Where payload builds compile. The System page's build findings read this value; the
+            first build after a change pays the cold compile into the new directory.
+          </p>
+        </fieldset>
+        <button className="primary" type="submit" disabled={cacheBusy}>
+          Save
+        </button>
+      </form>
+      {cacheSaved && <p className="muted">{cacheSaved}</p>}
     </div>
   )
 }

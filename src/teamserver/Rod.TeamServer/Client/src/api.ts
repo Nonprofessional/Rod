@@ -1419,6 +1419,14 @@ export interface SystemInfo {
     startedAt: string
     now: string
   }
+  // Which adapter each store runs on (the startup composition's choice),
+  // and where the data lives -- the data directory, or the Postgres target
+  // with its credentials masked.
+  persistence: {
+    dataDirectory: string
+    postgresTarget: string | null
+    stores: { concern: string; adapter: string }[]
+  }
   buildUnits: BuildUnitEnvironment[]
 }
 
@@ -1454,6 +1462,26 @@ export interface SessionSettings {
 
 export async function getSessionSettings(): Promise<SessionSettings> {
   return jsonOrThrow(await fetch('settings/sessions'))
+}
+
+// The build section: the shared cargo target dir -- the warm compile cache.
+// Null keeps builds hermetic (a fresh target dir per build).
+export interface BuildSettings {
+  rustTargetDir: string | null
+}
+
+export async function getBuildSettings(): Promise<BuildSettings> {
+  return jsonOrThrow(await fetch('settings/build'))
+}
+
+export async function putBuildSettings(input: BuildSettings): Promise<BuildSettings> {
+  return jsonOrThrow(
+    await fetch('settings/build', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rustTargetDir: input.rustTargetDir ?? '' }),
+    }),
+  )
 }
 
 export async function putSessionSettings(input: SessionSettings): Promise<SessionSettings> {

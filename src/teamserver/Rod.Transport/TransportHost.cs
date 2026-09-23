@@ -274,6 +274,15 @@ public static class TransportHost
         var staleness = configuration is not null
             ? SessionStalenessOptions.FromConfiguration(configuration)
             : SessionStalenessOptions.Default;
+        // The build pipeline's live knob (the shared cargo target dir): boot
+        // default from the environment variable, then the settings page
+        // changes it live, persisted like the session pair. The same
+        // instance rides into the build unit's composition below, so the
+        // unit and the endpoint always read one holder.
+        var buildSettings = new BuildRuntimeSettings(
+            persistencePath: configuration?["RuntimeSettings:BuildFilePath"],
+            bootDefault: Environment.GetEnvironmentVariable("ROD_RUST_TARGET_DIR"));
+        services.AddSingleton(buildSettings);
         services.AddSingleton(new SessionRuntimeSettings(
             staleness,
             persistencePath: configuration?["RuntimeSettings:FilePath"]));
@@ -307,7 +316,9 @@ public static class TransportHost
             && !Directory.Exists(rustSourceDirectory))
             throw new InvalidOperationException(
                 $"The configured rust source directory '{rustSourceDirectory}' does not exist.");
-        buildUnits.Register(new Rod.BuildPipeline.PayloadBuild.RustBuildUnit(rustSourceDirectory));
+        buildUnits.Register(new Rod.BuildPipeline.PayloadBuild.RustBuildUnit(
+            rustSourceDirectory,
+            settings: buildSettings));
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         // The post-build transform chain (architecture.md Sec 6, the transform
         // seam): config-listed out-of-tree transforms under Build:Transforms,

@@ -31,6 +31,10 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// </remarks>
 public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
 {
+    // The live knob holder (the settings page's build section); null keeps
+    // the environment-variable boot shape for direct constructions.
+    private readonly IBuildRuntimeSettings? _settings;
+
     // Every target the contract can map (MapTriple), with the C linker its
     // platform pieces need on the build host: the musl triples get the
     // cross names the build itself sets as CC_*/AR_* (ring's primitives),
@@ -53,18 +57,24 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
 
     public Language Language => Language.Rust;
 
-    public RustBuildUnit(string? rustSourceDir = null, string? cargoBinary = null)
+    public RustBuildUnit(
+        string? rustSourceDir = null,
+        string? cargoBinary = null,
+        IBuildRuntimeSettings? settings = null)
     {
         _rustSourceDir = string.IsNullOrWhiteSpace(rustSourceDir)
             ? ResolveDefaultRustSourceDir()
             : rustSourceDir;
         _cargoBinary = cargoBinary ?? "cargo";
-        // The shared-target opt-in rides the environment rather than the
-        // caller's configuration: the unit is composed once in the transport
-        // host, and a deployment (or a CI test lane) should not have to
-        // re-compose it to point builds at a warm compile cache.
+        _settings = settings;
+        // The environment variable is the boot default a service unit sets;
+        // a live setting (persisted operator change) outranks it per build.
         _sharedTargetDir = NonEmptyOrNull(Environment.GetEnvironmentVariable("ROD_RUST_TARGET_DIR"));
     }
+
+    // The cache the next build uses: the live setting when one is held,
+    // else the environment boot default; null stays hermetic.
+    private string? SharedTargetDir => _settings?.RustTargetDir ?? _sharedTargetDir;
 
     private static string? NonEmptyOrNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
@@ -129,11 +139,13 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             targets.Add(new BuildTargetReadiness(triple, $"{os}/{arch}", std, hasLinker, linker));
         }
 
-        findings.Add(_sharedTargetDir is null
+        findings.Add(SharedTargetDir is null
             ? new("warn", "build cache",
-                "no ROD_RUST_TARGET_DIR set -- builds are hermetic, so every cold cross-compile pays the full dependency build; "
-                + "point the variable at a persistent directory to share a warm cache (concurrent builds queue on cargo's lock)")
-            : new("ok", "build cache", $"shared cargo target dir '{_sharedTargetDir}'"));
+                "no shared cargo target dir -- builds are hermetic, so every cold cross-compile pays the full dependency build; "
+                + "set the build cache on the Settings page (or the ROD_RUST_TARGET_DIR variable at boot) to share a warm cache "
+                + "(concurrent builds queue on cargo's lock)")
+            : new("ok", "build cache",
+                $"shared cargo target dir '{SharedTargetDir}' (adjustable on the Settings page)"));
 
         var unavailable = sourceMissing || proto is null || !cargo.Found;
         var status = unavailable ? "unavailable" : anyTargetMissing ? "partial" : "ready";
@@ -258,7 +270,7 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         // cold full cross-compile into a one-time cost. Concurrent builds
         // through a shared dir queue on cargo's own target-dir lock -- they
         // wait, not fail.
-        var targetDir = _sharedTargetDir ?? Path.Combine(workDir, "target");
+        var targetDir = SharedTargetDir ?? Path.Combine(workDir, "target");
         try
         {
             CopyTree(_rustSourceDir, stagingDir);

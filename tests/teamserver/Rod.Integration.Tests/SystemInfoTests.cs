@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 
 namespace Rod.Integration.Tests;
@@ -31,6 +32,17 @@ public class SystemInfoTests
         // The in-tree Rust unit reports: a verdict from the fixed
         // vocabulary, at least the source/cargo findings, and one row per
         // buildable triple with both halves of its readiness named.
+        // The persistence section names an adapter for every store; this
+        // host composes no database, so the Postgres target reads null and
+        // the in-memory/file adapters stand in.
+        Assert.Equal(5, info.Persistence.Stores.Count);
+        Assert.All(info.Persistence.Stores, st =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(st.Concern));
+            Assert.False(string.IsNullOrWhiteSpace(st.Adapter));
+        });
+        Assert.Null(info.Persistence.PostgresTarget);
+
         var rust = Assert.Single(info.BuildUnits, u => u.Language == "Rust");
         Assert.Contains(rust.Status, new[] { "ready", "partial", "unavailable" });
         Assert.Contains(rust.Findings, f => f.Area == "source tree");
@@ -45,10 +57,66 @@ public class SystemInfoTests
         Assert.Contains(rust.Targets, t => t.Triple == "x86_64-pc-windows-gnu");
     }
 
+    [Fact]
+    public async Task TheBuildCacheSetting_AppliesLive_AndTheSystemPageReadsIt()
+    {
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var hostScope = host;
+        using var clientScope = client;
+        await AuthenticatedHost.LoginAsync(client);
+
+        // A relative path is refused with the fix: it would resolve inside
+        // each build's disposable staging dir.
+        var refused = await client.PutAsJsonAsync(
+            "/settings/build", new { RustTargetDir = "relative/cache" });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+
+        // An absolute directory applies live: the settings read reflects
+        // it, and so does the system page's build-cache finding -- the
+        // warn posture turns into the ok posture naming the directory.
+        var cacheDir = Path.Combine(Path.GetTempPath(), "rod-cache-" + Guid.NewGuid().ToString("N"));
+        var applied = await client.PutAsJsonAsync(
+            "/settings/build", new { RustTargetDir = cacheDir });
+        applied.EnsureSuccessStatusCode();
+        var settings = await client.GetFromJsonAsync<BuildSettingsDto>("/settings/build");
+        Assert.Equal(cacheDir, settings!.RustTargetDir);
+
+        var info = await client.GetFromJsonAsync<SystemInfoDto>("/system");
+        var finding = Assert.Single(info!.BuildUnits[0].Findings, f => f.Area == "build cache");
+        Assert.Equal("ok", finding.Level);
+        Assert.Contains(cacheDir, finding.Detail);
+
+        // The empty string returns to the hermetic shape.
+        var hermetic = await client.PutAsJsonAsync(
+            "/settings/build", new { RustTargetDir = "" });
+        hermetic.EnsureSuccessStatusCode();
+        settings = await client.GetFromJsonAsync<BuildSettingsDto>("/settings/build");
+        Assert.Null(settings!.RustTargetDir);
+    }
+
+    private sealed class BuildSettingsDto
+    {
+        public string? RustTargetDir { get; set; }
+    }
+
     private sealed class SystemInfoDto
     {
         public ServerSectionDto Server { get; set; } = null!;
+        public PersistenceSectionDto Persistence { get; set; } = null!;
         public List<BuildUnitDto> BuildUnits { get; set; } = [];
+    }
+
+    private sealed class PersistenceSectionDto
+    {
+        public string DataDirectory { get; set; } = "";
+        public string? PostgresTarget { get; set; }
+        public List<StoreAdapterDto> Stores { get; set; } = [];
+    }
+
+    private sealed class StoreAdapterDto
+    {
+        public string Concern { get; set; } = "";
+        public string Adapter { get; set; } = "";
     }
 
     private sealed class ServerSectionDto

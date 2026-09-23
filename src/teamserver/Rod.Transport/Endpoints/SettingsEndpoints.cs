@@ -19,6 +19,8 @@ public static class SettingsEndpoints
 
         group.MapGet("/sessions", GetSessionsAsync).WithName(nameof(GetSessionsAsync));
         group.MapPut("/sessions", PutSessionsAsync).WithName(nameof(PutSessionsAsync));
+        group.MapGet("/build", GetBuildAsync).WithName(nameof(GetBuildAsync));
+        group.MapPut("/build", PutBuildAsync).WithName(nameof(PutBuildAsync));
 
         return endpoints;
     }
@@ -51,12 +53,45 @@ public static class SettingsEndpoints
         return Results.Ok(SessionSettingsResponse.Of(values));
     }
 
+    private static IResult GetBuildAsync(BuildRuntimeSettings settings)
+        => Results.Ok(BuildSettingsResponse.Of(settings.RustTargetDir));
+
+    private static IResult PutBuildAsync(
+        BuildSettingsRequest body,
+        BuildRuntimeSettings settings)
+    {
+        if (body.RustTargetDir is null)
+            return Results.BadRequest(new Problem("RustTargetDir is required (empty string returns to hermetic builds)."));
+        try
+        {
+            var applied = settings.Change(body.RustTargetDir);
+            return Results.Ok(BuildSettingsResponse.Of(applied));
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new Problem(ex.Message));
+        }
+    }
+
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     // Minutes are the unit operators think in for both knobs; the bounds ride
     // the setters (threshold 1 minute..24 hours, interval 10 seconds..1 hour),
     // and the client mirrors them in the form's help text.
     public sealed record SessionSettingsRequest(double? ThresholdMinutes, double? SweepIntervalMinutes);
+
+    /// <summary>
+    /// The build-section write: the shared cargo target dir, or the empty
+    /// string to return to hermetic per-build target dirs. Null (absent) is
+    /// refused rather than read as "unchanged" -- a settings write states
+    /// the whole value.
+    /// </summary>
+    public sealed record BuildSettingsRequest(string? RustTargetDir);
+
+    public sealed record BuildSettingsResponse(string? RustTargetDir)
+    {
+        public static BuildSettingsResponse Of(string? value) => new(value);
+    }
 
     public sealed record SessionSettingsResponse(double ThresholdMinutes, double SweepIntervalMinutes)
     {

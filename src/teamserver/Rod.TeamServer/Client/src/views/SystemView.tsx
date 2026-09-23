@@ -88,6 +88,35 @@ export function SystemView() {
             </dd>
           </dl>
 
+          <h4>Persistence</h4>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Store</th>
+                  <th>Adapter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {info.persistence.stores.map((store) => (
+                  <tr key={store.concern}>
+                    <td>{store.concern}</td>
+                    <td>
+                      <code>{store.adapter}</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted">
+            {info.persistence.postgresTarget
+              ? `Core state persists to PostgreSQL at ${info.persistence.postgresTarget} (set by ConnectionStrings:Postgres at startup -- a composition choice, not a runtime knob).`
+              : 'No database configured: core state (engagements, implants, tasks, tokens, listeners, launchers) lives in memory and dies with the process; the audit trail, artifacts, and payloads persist to ' +
+                (info.persistence.dataDirectory || '(no data directory configured)') +
+                '. Set ConnectionStrings:Postgres before startup for durable core state.'}
+          </p>
+
           {info.buildUnits.map((unit) => (
             <div key={unit.language} className="system-unit">
               <h4>
