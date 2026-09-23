@@ -12,14 +12,14 @@ using Rod.Transport.Payloads;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// The loader tier's delivery half (architecture.md Sec 6, staging): the seal
-/// the fetch route serves and the gates that keep it honest. The stage seal
+/// The loader tier's delivery half (architecture.md Sec 6): the seal the
+/// fetch route serves and the gates that keep it honest. The delivery seal
 /// is the same R1 wire shape every envelope purpose uses, under its own
 /// purpose tag -- these checks pin that the served bytes open under the
 /// loader's recorded key and no other purpose's ciphertext does, that the
 /// route's governance matches the payload fetch (credential gate, engagement
-/// scope, nothing for a non-loader id), and that a loader whose stage or key
-/// is gone serves nothing rather than something unsealed.
+/// scope, nothing for a non-loader id), and that a loader whose delivered
+/// payload or key is gone serves nothing rather than something unsealed.
 /// </summary>
 public class LoaderDeliveryTests
 {
@@ -29,23 +29,23 @@ public class LoaderDeliveryTests
     // TryUnwrapBody with the same key, and a body sealed for another purpose
     // never opens as a stage -- the purpose tag is the replay boundary.
     [Fact]
-    public void TheStageSeal_RoundTrips_AndRefusesForeignPurposes()
+    public void TheDeliverySeal_RoundTrips_AndRefusesForeignPurposes()
     {
         var (keyId, key) = AesGcmEnvelope.Mint();
-        var stage = new byte[] { 0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4 };
+        var delivered = new byte[] { 0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4 };
 
-        var sealedStage = AesGcmEnvelope.WrapBody(stage, keyId, key, AesGcmEnvelope.StageAad);
+        var sealedPayload = AesGcmEnvelope.WrapBody(delivered, keyId, key, AesGcmEnvelope.LoaderPayloadAad);
 
-        Assert.Equal(stage, AesGcmEnvelope.TryUnwrapBody(sealedStage, keyId, key, AesGcmEnvelope.StageAad));
+        Assert.Equal(delivered, AesGcmEnvelope.TryUnwrapBody(sealedPayload, keyId, key, AesGcmEnvelope.LoaderPayloadAad));
 
-        var contactBody = AesGcmEnvelope.WrapBody(stage, keyId, key, AesGcmEnvelope.ContactResponseAad);
-        Assert.Null(AesGcmEnvelope.TryUnwrapBody(contactBody, keyId, key, AesGcmEnvelope.StageAad));
+        var contactBody = AesGcmEnvelope.WrapBody(delivered, keyId, key, AesGcmEnvelope.ContactResponseAad);
+        Assert.Null(AesGcmEnvelope.TryUnwrapBody(contactBody, keyId, key, AesGcmEnvelope.LoaderPayloadAad));
 
         var (otherId, otherKey) = AesGcmEnvelope.Mint();
-        Assert.Null(AesGcmEnvelope.TryUnwrapBody(sealedStage, otherId, otherKey, AesGcmEnvelope.StageAad));
+        Assert.Null(AesGcmEnvelope.TryUnwrapBody(sealedPayload, otherId, otherKey, AesGcmEnvelope.LoaderPayloadAad));
     }
 
-    private sealed record StageHarness(
+    private sealed record LoaderHarness(
         HttpClient Client,
         IHost Host,
         EngagementId Engagement,
@@ -64,7 +64,7 @@ public class LoaderDeliveryTests
         }
     }
 
-    private static async Task<StageHarness> SetupAsync(Guid? stageIdOverride = null, bool withSeal = true)
+    private static async Task<LoaderHarness> SetupAsync(Guid? deliversOverride = null, bool withSeal = true)
     {
         var (client, host, _) = AuthenticatedHost.Create();
         var engagements = host.Services.GetRequiredService<IEngagementRepository>();
@@ -87,19 +87,19 @@ public class LoaderDeliveryTests
         await payloads.SaveAsync(new PayloadRecord(
             loaderId, engagementId.Value, "Implant", "Rust",
             "application/octet-stream", "loader-fingerprint", new byte[] { 1 }, 1, Now,
-            StagePayloadId: withSeal ? stageIdOverride ?? stageId : null,
+            DeliversPayloadId: withSeal ? deliversOverride ?? stageId : null,
             EnvelopeKeyId: withSeal ? keyId : null,
             EnvelopeKey: withSeal ? key : null));
 
-        return new StageHarness(client, host, engagementId, token, loaderId, stageId, keyId, key, stage);
+        return new LoaderHarness(client, host, engagementId, token, loaderId, stageId, keyId, key, stage);
     }
 
     [Fact]
-    public async Task ValidToken_ServesTheStageSealedUnderTheLoadersKey()
+    public async Task ValidToken_ServesThePayloadSealedUnderTheLoadersKey()
     {
         await using var h = await SetupAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/stages/{h.LoaderId}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/loaders/{h.LoaderId}/payload");
         request.Headers.Add("X-Deploy-Token", h.Token.Secret);
         using var response = await h.Client.SendAsync(request);
 
@@ -108,7 +108,7 @@ public class LoaderDeliveryTests
         Assert.NotEqual(h.Stage, served);
         Assert.Equal(
             h.Stage,
-            AesGcmEnvelope.TryUnwrapBody(served, h.KeyId, h.Key, AesGcmEnvelope.StageAad));
+            AesGcmEnvelope.TryUnwrapBody(served, h.KeyId, h.Key, AesGcmEnvelope.LoaderPayloadAad));
     }
 
     [Fact]
@@ -116,24 +116,24 @@ public class LoaderDeliveryTests
     {
         await using var h = await SetupAsync();
 
-        using var noHeader = await h.Client.GetAsync($"/implants/stages/{h.LoaderId}");
+        using var noHeader = await h.Client.GetAsync($"/implants/loaders/{h.LoaderId}/payload");
         Assert.Equal(HttpStatusCode.Unauthorized, noHeader.StatusCode);
 
-        using var wrong = new HttpRequestMessage(HttpMethod.Get, $"/implants/stages/{h.LoaderId}");
+        using var wrong = new HttpRequestMessage(HttpMethod.Get, $"/implants/loaders/{h.LoaderId}/payload");
         wrong.Headers.Add("X-Deploy-Token", "not-a-token");
         using var refused = await h.Client.SendAsync(wrong);
         Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
     }
 
-    // A plain payload id on the stage route does not exist as far as the
-    // route is concerned -- the stage reference is what makes a record a
-    // loader, and a payload fetch belongs on its own path.
+    // A plain payload id on the loader payload route does not exist as far
+    // as the route is concerned -- the delivery reference is what makes a
+    // record a loader, and a plain fetch belongs on its own path.
     [Fact]
-    public async Task APlainPayloadId_OnTheStageRoute_DoesNotExist()
+    public async Task APlainPayloadId_OnTheLoaderPayloadRoute_DoesNotExist()
     {
         await using var h = await SetupAsync();
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/stages/{h.StageId}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/loaders/{h.StageId}/payload");
         request.Headers.Add("X-Deploy-Token", h.Token.Secret);
         using var response = await h.Client.SendAsync(request);
 
@@ -144,11 +144,11 @@ public class LoaderDeliveryTests
     // the same store deletion) is a dead delivery: the route serves
     // nothing rather than bytes no loader can open.
     [Fact]
-    public async Task ALoaderWhoseStageIsDeleted_ServesNothing()
+    public async Task ALoaderWhoseDeliveredPayloadIsDeleted_ServesNothing()
     {
-        await using var h = await SetupAsync(stageIdOverride: Guid.NewGuid());
+        await using var h = await SetupAsync(deliversOverride: Guid.NewGuid());
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/stages/{h.LoaderId}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/implants/loaders/{h.LoaderId}/payload");
         request.Headers.Add("X-Deploy-Token", h.Token.Secret);
         using var response = await h.Client.SendAsync(request);
 

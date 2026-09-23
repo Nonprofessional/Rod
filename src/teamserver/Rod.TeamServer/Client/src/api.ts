@@ -1263,12 +1263,12 @@ export interface BuildPayloadInput {
   tokenMaxUses: number | null
   tokenLifetimeSeconds: number | null
   // The delivery tier: 'implant' (the default, the full product) or
-  // 'loader' -- the stage-0 dialer that fetches and runs a stage from
-  // memory. A loader build must name the stored payload it delivers.
+  // 'loader' -- the small dialer that fetches and runs a stored payload
+  // from memory. A loader build must name the payload it delivers.
   kind: string | null
-  // The stage a loader delivers: this engagement's stored implant. Null on
-  // implant builds; required on loader builds.
-  stagePayloadId: string | null
+  // The payload a loader delivers: this engagement's stored implant. Null
+  // on implant builds; required on loader builds.
+  deliversPayloadId: string | null
   // The artifact's form factor: 'exe' (the default), 'exe-trimmed', or
   // 'aot'. Compatibility spellings over one native binary -- the Rust unit
   // emits the same artifact for each; 'dll' is retired with the .NET
@@ -1374,11 +1374,11 @@ export interface PayloadSummary {
   // The bake-time build parameters; null on payloads built before the
   // snapshot existed, null fields inside mean "the build's default".
   build: PayloadBuildProfile | null
-  // The delivery tier: 'implant', or 'loader' with the stage reference
+  // The delivery tier: 'implant', or 'loader' with the delivery reference
   // naming the artifact it delivers. Null on records that predate the kind
   // axis.
   kind: string | null
-  stagePayloadId: string | null
+  deliversPayloadId: string | null
 }
 
 export interface PayloadBuildProfile {

@@ -81,7 +81,7 @@ public sealed class PayloadBuildService
             request.EnvelopeKey,
             request.Format,
             request.Kind,
-            request.StagePayloadId);
+            request.DeliversPayloadId);
 
         var built = await unit.BuildAsync(@params, cancellationToken);
 
@@ -125,7 +125,7 @@ public sealed class PayloadBuildService
 /// other envelope. On a loader build the pair is the stage seal and mints
 /// unconditionally. <see cref="Format"/> names the artifact form factor the
 /// unit emits; it defaults to the single-file executable.
-/// <see cref="Kind"/> names the delivery tier; <see cref="StagePayloadId"/>
+/// <see cref="Kind"/> names the delivery tier; <see cref="DeliversPayloadId"/>
 /// names the stored payload a loader build delivers.
 /// </summary>
 public sealed record BuildRequest(
@@ -146,4 +146,4 @@ public sealed record BuildRequest(
     byte[]? EnvelopeKey = null,
     ArtifactFormat Format = ArtifactFormat.SingleFileExe,
     PayloadKind Kind = PayloadKind.Implant,
-    Guid? StagePayloadId = null);
+    Guid? DeliversPayloadId = null);

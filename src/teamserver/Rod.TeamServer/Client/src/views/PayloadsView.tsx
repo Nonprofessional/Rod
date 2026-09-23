@@ -204,7 +204,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                             {p.kind === 'loader' && (
                               <span
                                 className="muted"
-                                title={`Stage-0 loader: fetches ${p.stagePayloadId ?? 'its stage'} sealed and runs it from a memfd -- nothing lands on disk. Deleting the stage artifact ends the delivery.`}
+                                title={`Loader: fetches ${p.deliversPayloadId ?? 'its payload'} sealed and runs it from a memfd -- nothing lands on disk. Deleting the delivered artifact ends the delivery.`}
                               >
                                 {' '}· loader
                               </span>

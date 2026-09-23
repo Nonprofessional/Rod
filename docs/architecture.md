@@ -176,7 +176,7 @@ under, and a note on its current state are listed.
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The protobuf wire protocol: frames and the enrollment/handshake/tasking messages (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
-| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std stage-0 crate beside it instead, baked with fetch constants and the stage seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
+| `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
@@ -508,27 +508,28 @@ recorded.**
   -- so the one-liners render with each family's transport-verification
   bypass; the credential gates the fetch, and the fetched artifact's own
   enrollment pins the CA.
-- **The loader tier is the staging half, delivered sealed.** The build
+- **The loader tier delivers sealed, from memory.** The build
   request's kind axis names the tier: the implant (the default, the full
-  product) or the **stage-0 loader** -- a ~25 KB `no_std`, no-libc ELF the
+  product) or the **loader** -- a ~25 KB `no_std`, no-libc ELF the
   Rust unit compiles from the crate beside the implant, baked with fetch
   constants (a literal-IPv4 cleartext-http dial, the deploy token, the
   per-build AES-GCM key) instead of a contact profile. A loader build
   names the stored implant it delivers; the fetch route
-  (`GET /implants/stages/{loaderId}`, the same credential gate, engagement
-  scope, redemption, and audit as the payload fetch) serves that stage as
-  an R1 body sealed under the loader's own key and the stage AAD, a fresh
+  (`GET /implants/loaders/{loaderId}/payload`, the same credential gate,
+  engagement scope, redemption, and audit as the payload fetch) serves that
+  payload as an R1 body sealed under the loader's own key and the loader
+  payload AAD, a fresh
   nonce per serve. The loader authenticates before it executes -- nothing
   runs that does not open under the baked key; a tampered or swapped
   response is a failed GCM authentication and an exit, never an exec --
   then writes the opened bytes to a memfd and execs them through the
-  anonymous fd: the stage never lands on disk, and no interpreter
+  anonymous fd: the payload never lands on disk, and no interpreter
   dependency stands between the one-liner and the implant the way the
   python3 family needs one. The tier's trust posture is deliberately
   plain: cleartext HTTP on the dial (the parser refuses any other front
   for a loader build), the seal -- not the transport -- the boundary,
   the same stance as the cleartext contact posture. The loader's baked
-  credential spends one use per execution (each run fetches the stage
+  credential spends one use per execution (each run fetches the payload
   once), so a reboot-surviving loader needs a budgeted or unlimited
   token inside its kill window; deleting either artifact ends the
   delivery. Windows targets deliver through the one-liners today; the
@@ -1728,8 +1729,9 @@ unchanged. The staged-delivery idea returns as the loader tier done
 natively (Sec 6): `src/implant/rust/loader/`, a ~25 KB `no_std` crate in
 the same tree and the same build unit -- no second in-tree language, no C,
 the dialer's whole footprint being ELF headers around a few hundred bytes
-of code -- proving out the size class the toolchain discussion keeps
-revisiting.
+of code -- and the surface keeps speaking payload and deploy token: the
+loader names what it `delivers`, the route serves the loader's payload,
+and the retired stage1/stage2 spellings stay refused.
 
 Rejected alternatives: **one language end to end** (neither .NET alone
 reaches 32-bit ARM/MIPS IoT or a ~2 MB static footprint, nor Rust alone

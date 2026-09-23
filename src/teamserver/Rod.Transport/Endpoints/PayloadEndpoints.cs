@@ -311,8 +311,8 @@ public static class PayloadEndpoints
     // factor ('exe' default, 'exe-trimmed', 'aot'; 'dll', 'so', and
     // 'shellcode' are contract slots the in-tree Rust unit does not produce
     // yet). Kind picks the delivery tier: 'implant' (the default, the full
-    // product) or 'loader' (the stage-0 dialer, which then requires
-    // stagePayloadId naming this engagement's stored implant the loader
+    // product) or 'loader' (the small dialer, which then requires
+    // deliversPayloadId naming this engagement's stored payload the loader
     // fetches and runs from memory).
     public sealed record BuildPayloadRequest(
         string? Language,
@@ -340,7 +340,7 @@ public static class PayloadEndpoints
         string? BeaconEndpoint = null,
         string? Format = null,
         string? Kind = null,
-        string? StagePayloadId = null,
+        string? DeliversPayloadId = null,
         // Retired as a pick: the named front's listener owns the certificate
         // posture and the build inherits it (architecture.md Sec 9). A
         // non-null value may only agree with the front -- the parser refuses
@@ -351,8 +351,9 @@ public static class PayloadEndpoints
     // artifact (null on a credential-free build): enough to revoke it, never
     // enough to reuse it -- the secret itself exists only inside the artifact.
     // Format is the artifact's form factor as the request named it. Kind is
-    // the delivery tier ('implant' or 'loader'); StagePayloadId names the
-    // stored payload a loader fetches and runs (null on implant builds).
+    // the delivery tier ('implant' or 'loader'); DeliversPayloadId names
+    // the stored payload a loader fetches and runs (null on implant
+    // builds).
     public sealed record BuildPayloadResponse(
         string ArtifactId,
         string EngagementId,
@@ -366,7 +367,7 @@ public static class PayloadEndpoints
         string? TokenId = null,
         string? Format = null,
         string? Kind = null,
-        string? StagePayloadId = null);
+        string? DeliversPayloadId = null);
 
     /// <summary>
     /// One row of the payload library: a stored payload's metadata without the
@@ -379,7 +380,7 @@ public static class PayloadEndpoints
     /// stored -- spent-and-removed (in-memory store), revoked, or expired and
     /// swept -- which on the wire reads "no enrollments left."
     /// <see cref="Kind"/> names the delivery tier ('implant', or 'loader'
-    /// with <see cref="StagePayloadId"/> naming the artifact it delivers;
+    /// with <see cref="DeliversPayloadId"/> naming the artifact it delivers;
     /// both null on records that predate the kind axis).
     /// </summary>
     public sealed record PayloadSummaryResponse(
@@ -400,7 +401,7 @@ public static class PayloadEndpoints
         PayloadBuildProfileResponse? Build = null,
         string? Credential = null,
         string? Kind = null,
-        string? StagePayloadId = null)
+        string? DeliversPayloadId = null)
     {
         public static PayloadSummaryResponse Of(
             Rod.Audit.PayloadRecord record,
@@ -422,8 +423,8 @@ public static class PayloadEndpoints
             TokenExpiresAt: tokenState?.ExpiresAt,
             Build: PayloadBuildProfileResponse.Of(record.Build),
             Credential: credential,
-            Kind: record.StagePayloadId is null ? "implant" : "loader",
-            StagePayloadId: record.StagePayloadId?.ToString());
+            Kind: record.DeliversPayloadId is null ? "implant" : "loader",
+            DeliversPayloadId: record.DeliversPayloadId?.ToString());
     }
 
     // The bake-time build parameters, as the library's detail view reads them.

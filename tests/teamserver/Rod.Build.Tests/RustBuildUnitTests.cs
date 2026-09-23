@@ -48,7 +48,7 @@ public class RustBuildUnitTests
         var @params = Params() with
         {
             Kind = PayloadKind.Loader,
-            StagePayloadId = Guid.NewGuid(),
+            DeliversPayloadId = Guid.NewGuid(),
             TokenSecret = "loader-probe",
             EnvelopeKeyId = Guid.NewGuid(),
             EnvelopeKey = new byte[32],
@@ -70,13 +70,13 @@ public class RustBuildUnitTests
         var @params = Params() with
         {
             Kind = PayloadKind.Loader,
-            StagePayloadId = Guid.NewGuid(),
+            DeliversPayloadId = Guid.NewGuid(),
             TokenSecret = "loader-probe",
             Transport = new TransportProfile("http://10.0.0.9:8080", "/beacon"),
         };
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
-        Assert.Contains("stage seal key", ex.Message);
+        Assert.Contains("delivery seal key", ex.Message);
     }
 
     // The real compile: builds the loader crate for the host's musl target
@@ -96,7 +96,7 @@ public class RustBuildUnitTests
         var @params = Params() with
         {
             Kind = PayloadKind.Loader,
-            StagePayloadId = Guid.NewGuid(),
+            DeliversPayloadId = Guid.NewGuid(),
             TokenSecret = secret,
             EnvelopeKeyId = Guid.NewGuid(),
             EnvelopeKey = new byte[32],

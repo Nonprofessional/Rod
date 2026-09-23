@@ -64,7 +64,7 @@ internal static class PayloadBuildRequestParser
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
         // The kind names the delivery tier: the implant (the default, the
-        // full product) or the stage-0 loader that fetches and runs a stage
+        // full product) or the loader that fetches and runs a payload
         // from memory. The loader gates live below, after the endpoint
         // resolves -- they read the front the bake dials.
         if (!PayloadKinds.TryParse(body.Kind, out var kind))
@@ -201,7 +201,7 @@ internal static class PayloadBuildRequestParser
         if (body.KillDate is { } pinned && pinned <= DateTimeOffset.UtcNow)
             return (null, "KillDate must be in the future; leave it empty for an open-ended artifact.");
 
-        // The loader tier's own gates. The stage-0 loader is a no_std dialer
+        // The loader tier's own gates. The loader is a no_std dialer
         // by design (architecture.md Sec 6, staging): it speaks plain HTTP
         // to a literal IPv4, carries no TLS and no resolver, and runs on the
         // two Linux arches its crate compiles. Every refusal names the shape
@@ -216,9 +216,9 @@ internal static class PayloadBuildRequestParser
             var arch = (body.TargetArch ?? "amd64").Trim().ToLowerInvariant();
             if (os != "linux")
                 return (null,
-                    "The stage-0 loader is a Linux memfd shape; a Windows target delivers through the launcher one-liners.");
+                    "The loader is a Linux memfd shape; a Windows target delivers through the launcher one-liners.");
             if (arch is not ("amd64" or "x64" or "x86_64" or "arm64" or "aarch64"))
-                return (null, "The stage-0 loader compiles for linux amd64 and arm64 only.");
+                return (null, "The loader compiles for linux amd64 and arm64 only.");
             // The dial: cleartext HTTP on a literal IPv4. A hostname needs a
             // resolver and an https front needs TLS -- both implant-tier
             // machinery this tier refuses to carry. The stage rides sealed
@@ -227,20 +227,20 @@ internal static class PayloadBuildRequestParser
             // front's spelling narrow on purpose.
             if (!TryLiteralIpv4Http(endpoint.Value, out var loaderHost, out var loaderPort))
                 return (null,
-                    "The stage-0 loader dials a literal IPv4 over cleartext http (it carries no TLS and no resolver) -- "
+                    "The loader dials a literal IPv4 over cleartext http (it carries no TLS and no resolver) -- "
                     + "point the build at an http listener whose public endpoint is an IPv4 address.");
             // The stage reference: this engagement's own stored payload, and
             // not another loader -- the loader delivers the implant tier,
             // and a chain of dialers is a footprint, not a capability.
-            if (body.StagePayloadId is not { } stageText)
-                return (null, "A loader build names the stored payload it delivers (stagePayloadId).");
-            if (!Guid.TryParse(stageText, out var stageValue))
-                return (null, "StagePayloadId is not a valid identifier.");
-            var stage = await payloads.FindAsync(stageValue, engagementId.Value, cancellationToken);
-            if (stage is null)
-                return (null, "StagePayloadId does not name a payload in this engagement.");
-            if (stage.StagePayloadId is not null)
-                return (null, "StagePayloadId names a loader; the loader delivers the implant tier, not another loader.");
+            if (body.DeliversPayloadId is not { } deliversText)
+                return (null, "A loader build names the stored payload it delivers (deliversPayloadId).");
+            if (!Guid.TryParse(deliversText, out var deliversValue))
+                return (null, "DeliversPayloadId is not a valid identifier.");
+            var delivered = await payloads.FindAsync(deliversValue, engagementId.Value, cancellationToken);
+            if (delivered is null)
+                return (null, "DeliversPayloadId does not name a payload in this engagement.");
+            if (delivered.DeliversPayloadId is not null)
+                return (null, "DeliversPayloadId names a loader; the loader delivers the implant tier, not another loader.");
             return (new BuildRequest(
                 engagementId,
                 requestedBy,
@@ -255,7 +255,7 @@ internal static class PayloadBuildRequestParser
                 mode,
                 Format: format,
                 Kind: kind,
-                StagePayloadId: stageValue), null);
+                DeliversPayloadId: deliversValue), null);
         }
 
         // The loader class retired with the .NET trees, so no build carries a
@@ -264,7 +264,8 @@ internal static class PayloadBuildRequestParser
         if (body.Stage2PayloadId is not null)
         {
             return (null,
-                "stage2PayloadId rides the retired stager class; deliver the payload through the launcher one-liners.");
+                "stage2PayloadId rides the retired stager vocabulary; the staged answer is the loader tier "
+                + "(kind 'loader' with deliversPayloadId), or the launcher one-liners for a plain fetch.");
         }
         return (new BuildRequest(
             engagementId,
@@ -603,7 +604,7 @@ internal static class PayloadBuildRequestParser
 
 
     // The loader's dial shape: a cleartext http URL whose authority is a
-    // literal IPv4 with an optional port (80 implied). The stage-0 loader
+    // literal IPv4 with an optional port (80 implied). The loader
     // bakes the four address bytes and the port as constants -- no resolver,
     // no TLS -- so anything else (a hostname, https, another family) is a
     // front this tier cannot dial, refused here with the shape named.

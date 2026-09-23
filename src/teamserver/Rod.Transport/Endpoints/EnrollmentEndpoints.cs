@@ -42,24 +42,25 @@ public static class EnrollmentEndpoints
             .WithName(nameof(EnrollAsync));
         group.MapGet("/payloads/{payloadId}", FetchPayloadAsync)
             .WithName(nameof(FetchPayloadAsync));
-        group.MapGet("/stages/{payloadId}", FetchStageAsync)
-            .WithName(nameof(FetchStageAsync));
+        group.MapGet("/loaders/{payloadId}/payload", FetchLoaderPayloadAsync)
+            .WithName(nameof(FetchLoaderPayloadAsync));
 
         return endpoints;
     }
 
-    // Serves a loader's sealed stage: the stage-0 half of the staging
-    // exchange (architecture.md Sec 6). The route's id names the loader
+    // Serves a loader's sealed payload: the loader half of the two-tier
+    // delivery (architecture.md Sec 6). The route's id names the loader
     // artifact itself -- the fetch path a loader bakes -- and the loader's
-    // record carries the stage it delivers plus the seal key the loader
+    // record carries the payload it delivers plus the seal key the loader
     // bakes. The serve is the payload fetch's exact governance (token gate,
     // engagement scope, redeem only on a serve, the audit fact with the
     // fetcher's wire shape) with one addition: the bytes leave sealed, an
-    // R1 body under the stage AAD and a fresh nonce, so nothing on the wire
-    // between front and target is readable or forgeable without the loader's
-    // own baked key. A loader whose record lost its key or its stage serves
-    // nothing -- a deleted half is a dead delivery, recorded as such.
-    private static async Task<IResult> FetchStageAsync(
+    // R1 body under the loader payload AAD and a fresh nonce, so nothing on
+    // the wire between front and target is readable or forgeable without
+    // the loader's own baked key. A loader whose record lost its key or its
+    // delivered payload serves nothing -- a deleted half is a dead
+    // delivery, recorded as such.
+    private static async Task<IResult> FetchLoaderPayloadAsync(
         string payloadId,
         HttpRequest http,
         IDeployTokenService tokens,
@@ -103,17 +104,17 @@ public static class EnrollmentEndpoints
             // indistinguishable from nonexistent, same as the payload
             // fetch's engagement rule.
             var loader = await payloads.FindAsync(payloadValue, token.EngagementId.Value, cancellationToken);
-            if (loader?.StagePayloadId is not { } stageId)
+            if (loader?.DeliversPayloadId is not { } deliversId)
             {
                 await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
-                    fetcher, "refused:stage", cancellationToken: cancellationToken);
+                    fetcher, "refused:not-loader", cancellationToken: cancellationToken);
                 return Results.NotFound(new Problem("Payload does not exist in this engagement."));
             }
-            var stage = await payloads.FindAsync(stageId, token.EngagementId.Value, cancellationToken);
-            if (stage is null || loader.EnvelopeKeyId is not { } keyId || loader.EnvelopeKey is not { } key)
+            var delivered = await payloads.FindAsync(deliversId, token.EngagementId.Value, cancellationToken);
+            if (delivered is null || loader.EnvelopeKeyId is not { } keyId || loader.EnvelopeKey is not { } key)
             {
                 await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
-                    fetcher, "refused:seal", stage?.Fingerprint, cancellationToken);
+                    fetcher, "refused:seal", delivered?.Fingerprint, cancellationToken);
                 return Results.NotFound(new Problem("Payload does not exist in this engagement."));
             }
 
@@ -122,16 +123,16 @@ public static class EnrollmentEndpoints
             // Sealed under the loader's own key, a fresh nonce per serve:
             // the loader is the only party that can open what this route
             // hands out, and no two serves share ciphertext.
-            var sealedStage = AesGcmEnvelope.WrapBody(stage.Content, keyId, key, AesGcmEnvelope.StageAad);
+            var sealedPayload = AesGcmEnvelope.WrapBody(delivered.Content, keyId, key, AesGcmEnvelope.LoaderPayloadAad);
             await RecordFetchAsync(audit, clock, redeemed.EngagementId, redeemed.Id, payloadValue,
-                fetcher, "stage-served", stage.Fingerprint, cancellationToken);
+                fetcher, "delivered", delivered.Fingerprint, cancellationToken);
             await live.PublishAsync(
                 LiveEvent.PayloadFetched(
                     redeemed.EngagementId,
-                    $"{fetcher} stage={stage.Fingerprint} served sealed",
+                    $"{fetcher} delivered={delivered.Fingerprint} sealed",
                     clock.GetUtcNow()),
                 cancellationToken);
-            return Results.File(sealedStage, "application/octet-stream", $"rod-stage-{stageId:N}.bin");
+            return Results.File(sealedPayload, "application/octet-stream", $"rod-delivered-{deliversId:N}.bin");
         }
         catch (DeployTokenRedeemException ex)
         {

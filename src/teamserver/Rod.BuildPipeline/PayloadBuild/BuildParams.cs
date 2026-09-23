@@ -55,7 +55,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// default, the full product) or the stage-0 loader that fetches and runs a
 /// stage from memory. Defaults to the implant.
 /// </param>
-/// <param name="StagePayloadId">
+/// <param name="DeliversPayloadId">
 /// The stored payload this loader build delivers: the loader bakes the
 /// fetch reference, and the fetch route serves this artifact's bytes sealed
 /// under the build's <c>EnvelopeKey</c> pair (the stage seal -- on a loader
@@ -76,4 +76,4 @@ public sealed record BuildParams(
     byte[]? EnvelopeKey = null,
     ArtifactFormat Format = ArtifactFormat.SingleFileExe,
     PayloadKind Kind = PayloadKind.Implant,
-    Guid? StagePayloadId = null);
+    Guid? DeliversPayloadId = null);

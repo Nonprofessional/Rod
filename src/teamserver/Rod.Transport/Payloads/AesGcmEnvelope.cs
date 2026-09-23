@@ -98,12 +98,13 @@ public static class AesGcmEnvelope
     public static ReadOnlySpan<byte> DnsChannelAad => "rod-dns-channel-v1"u8;
 
     /// <summary>
-    /// The AAD binding the loader tier's sealed stage fetch to its purpose:
-    /// the fetch route serves the stage as a raw R1 body under this tag, so
-    /// no other purpose's ciphertext (a contact body, an enroll answer) can
-    /// be reflected down the stage route and opened by a loader.
+    /// The AAD binding the loader tier's sealed payload fetch to its purpose:
+    /// the fetch route serves the delivered payload as a raw R1 body under
+    /// this tag, so no other purpose's ciphertext (a contact body, an enroll
+    /// answer) can be reflected down the loader payload route and opened by
+    /// a loader.
     /// </summary>
-    public static ReadOnlySpan<byte> StageAad => "rod-stage-v1"u8;
+    public static ReadOnlySpan<byte> LoaderPayloadAad => "rod-loader-payload-v1"u8;
 
     /// <summary>The key size in bytes: AES-256.</summary>
     public const int KeyBytes = 32;

@@ -5,9 +5,9 @@ edition = "2021"
 
 # The stage-0 loader (architecture.md Sec 6, the staging half): the smallest
 # delivery artifact the Rust build unit emits. It dials the front's literal
-# IPv4 with a token-gated HTTP GET, authenticates the sealed stage under the
-# AES-GCM key baked at build time (the R1 wire shape every other envelope
-# purpose uses, under the stage AAD), writes the opened bytes to a memfd, and
+# IPv4 with a token-gated HTTP GET, authenticates the sealed payload under
+# the AES-GCM key baked at build time (the R1 wire shape every other
+# envelope purpose uses, under the loader payload AAD), writes the opened bytes to a memfd, and
 # execs them through the anonymous fd -- the stage never touches the
 # filesystem. No libc, no std, no TLS by design: the fetch rides a cleartext
 # front (the parser refuses anything else for a loader build), and the seal,

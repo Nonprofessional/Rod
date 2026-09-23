@@ -105,7 +105,7 @@ export function PayloadBuildView({
   // stage rides the loader's per-build key; the Launchers tab delivers the
   // loader with the same one-liner families).
   const [tier, setTier] = useState<'implant' | 'loader'>('implant')
-  const [stagePayloadId, setStagePayloadId] = useState('')
+  const [deliversPayloadId, setDeliversPayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
@@ -176,9 +176,9 @@ export function PayloadBuildView({
   const loaderFrontOk = !loaderTier
     || (selectedListener?.transport === 'http'
       && /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(selectedListener?.publicEndpoint.trim() ?? ''))
-  // The stage picker's offer: this engagement's stored implants (a loader
-  // delivers the implant tier, never another loader).
-  const stageable = library.filter((p) => !p.stagePayloadId && p.kind !== 'loader')
+  // The delivery picker's offer: this engagement's stored implants (a
+  // loader delivers the implant tier, never another loader).
+  const deliverable = library.filter((p) => !p.deliversPayloadId && p.kind !== 'loader')
 
   const num = (value: string): number | null => {
     const trimmed = value.trim()
@@ -369,8 +369,8 @@ export function PayloadBuildView({
       setError('The stage-0 loader dials a cleartext http front by literal IPv4 -- pick an http listener whose public endpoint is an IPv4 address.')
       return
     }
-    if (loaderTier && !stagePayloadId) {
-      setError('Pick the stored implant the loader delivers (stage).')
+    if (loaderTier && !deliversPayloadId) {
+      setError('Pick the stored implant the loader delivers.')
       return
     }
     setSubmitting(true)
@@ -408,7 +408,7 @@ export function PayloadBuildView({
         // The tier pick: the loader names its stage; the implant rides the
         // default.
         kind: loaderTier ? 'loader' : null,
-        stagePayloadId: loaderTier ? stagePayloadId : null,
+        deliversPayloadId: loaderTier ? deliversPayloadId : null,
         // Format rides empty: every spelling is the same native binary over
         // the Rust unit, and the disk-or-memory choice is the launcher
         // step's (the Launchers tab offers both families for every payload).
@@ -470,22 +470,22 @@ export function PayloadBuildView({
             <select
               value={tier}
               onChange={(e) => setTier(e.target.value as 'implant' | 'loader')}
-              title="Which tier of the delivery stack this build produces. Implant: the full product -- every baked contact, the verb set, the sealed envelope. Stage-0 loader: a ~25 KB no-libc dialer that fetches the stage you pick over cleartext http, authenticates it under the build's per-artifact AES-GCM key (nothing executes that does not open under that key), and runs it from a memfd -- the stage never lands on disk. The loader's baked credential spends one use per execution (each run fetches the stage once), so budget the token accordingly."
+              title="Which tier of the delivery stack this build produces. Implant: the full product -- every baked contact, the verb set, the sealed envelope. Loader: a ~25 KB no-libc dialer that fetches the payload you pick over cleartext http, authenticates it under the build's per-artifact AES-GCM key (nothing executes that does not open under that key), and runs it from a memfd -- it never lands on disk. The loader's baked credential spends one use per execution (each run fetches the payload once), so budget the token accordingly."
             >
               <option value="implant">Implant (full product)</option>
-              <option value="loader">Stage-0 loader (sealed stage, memfd)</option>
+              <option value="loader">Loader (sealed payload, memfd)</option>
             </select>
           </label>
           {loaderTier && (
             <label>
-              Stage (the implant it delivers)
+              Delivered implant
               <select
-                value={stagePayloadId}
-                onChange={(e) => setStagePayloadId(e.target.value)}
-                title="The stored implant this loader fetches and runs. The fetch serves the stage sealed under the loader's own baked key; deleting either artifact ends the delivery."
+                value={deliversPayloadId}
+                onChange={(e) => setDeliversPayloadId(e.target.value)}
+                title="The stored implant this loader fetches and runs. The fetch serves the payload sealed under the loader's own baked key; deleting either artifact ends the delivery."
               >
-                <option value="" disabled>-- pick the stage --</option>
-                {stageable.map((p) => (
+                <option value="" disabled>-- pick the delivered implant --</option>
+                {deliverable.map((p) => (
                   <option key={p.artifactId} value={p.artifactId}>
                     {p.fingerprint.slice(0, 12)} · {p.target ?? 'unknown-target'} ·{' '}
                     {p.builtAt.slice(0, 10)}
@@ -517,9 +517,8 @@ export function PayloadBuildView({
           </label>
           {loaderTier && !loaderFrontOk && (
             <p className="muted" style={{ color: '#e6a23c' }}>
-              The stage-0 loader dials a cleartext http front by literal IPv4 (it carries no TLS
-              and no resolver) -- pick an http listener whose public endpoint is an IPv4
-              address.
+              The loader dials a cleartext http front by literal IPv4 (it carries no TLS and no
+              resolver) -- pick an http listener whose public endpoint is an IPv4 address.
             </p>
           )}
           {carriers.length > 0 && (
