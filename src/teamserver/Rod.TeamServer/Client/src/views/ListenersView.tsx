@@ -316,7 +316,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           its name above it, placeholders stay as hints only. */}
       {/* Three row groups, one concern each: identity (name, wire, the
           egress fold it opens), the socket (interface, host, port), and the
-          dial (whose certificate, what address) -- each row wraps on a
+          dial (what address, whose certificate) -- each row wraps on a
           narrow card instead of the fields interleaving across grid
           columns. */}
       <form className="listener-form" onSubmit={onCreate}>
@@ -443,6 +443,16 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           </label>
         </div>
         <div className="listener-row">
+          <label className="endpoint-label">
+            Public endpoint
+            <input
+              className="endpoint-input"
+              placeholder={endpointPlaceholder}
+              title={endpointTitle}
+              value={publicEndpoint}
+              onChange={(e) => setPublicEndpoint(e.target.value)}
+            />
+          </label>
           {isWebTransport && (
             <label>
               Certificate
@@ -456,16 +466,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               </select>
             </label>
           )}
-          <label className="endpoint-label">
-            Public endpoint
-            <input
-              className="endpoint-input"
-              placeholder={endpointPlaceholder}
-              title={endpointTitle}
-              value={publicEndpoint}
-              onChange={(e) => setPublicEndpoint(e.target.value)}
-            />
-          </label>
         </div>
         <div className="listener-form-actions">
           <button
