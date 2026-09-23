@@ -28,7 +28,7 @@ public class ArtifactFormatTests
     [InlineData("native")]
     [InlineData("single-file-exe")]
     [InlineData("exe_trimmed")]
-    [InlineData("shellcode")]
+    [InlineData("position-independent")]
     public void TryParse_RefusesUnknownSpellings(string wire)
     {
         Assert.False(ArtifactFormats.TryParse(wire, out _));

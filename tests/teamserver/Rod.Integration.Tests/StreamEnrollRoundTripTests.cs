@@ -59,7 +59,7 @@ public class StreamEnrollRoundTripTests
             var ca = host.Services.GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>();
 
             var tcpPoll = await PayloadBuildRequestParser.ParseAsync(
-                EnrollRequest(tcp.Id.ToString(), mode: "poll"), engagement, operatorId, registry, ca,
+                EnrollRequest(tcp.Id.ToString(), mode: "poll"), engagement, operatorId, registry, ca, payloads,
                 CancellationToken.None);
             Assert.Null(tcpPoll.Error);
             Assert.Equal("tcp://10.0.0.5:9444", tcpPoll.Request!.Transport.Endpoint);
@@ -69,7 +69,7 @@ public class StreamEnrollRoundTripTests
             // baked endpoint is the listener's own bind as the resolver plus
             // its zone -- the lightweight implant a DNS-only target runs.
             var dnsPoll = await PayloadBuildRequestParser.ParseAsync(
-                EnrollRequest(dns.Id.ToString(), mode: "poll"), engagement, operatorId, registry, ca,
+                EnrollRequest(dns.Id.ToString(), mode: "poll"), engagement, operatorId, registry, ca, payloads,
                 CancellationToken.None);
             Assert.Null(dnsPoll.Error);
             Assert.Equal("dns://10.0.0.6:53/c2.example.test", dnsPoll.Request!.Transport.Endpoint);
@@ -78,7 +78,7 @@ public class StreamEnrollRoundTripTests
             // under either mode -- the client the mode picks holds the live
             // session or cycles the connection.
             var streamMode = await PayloadBuildRequestParser.ParseAsync(
-                EnrollRequest(tcp.Id.ToString(), mode: "stream"), engagement, operatorId, registry, ca,
+                EnrollRequest(tcp.Id.ToString(), mode: "stream"), engagement, operatorId, registry, ca, payloads,
                 CancellationToken.None);
             Assert.Null(streamMode.Error);
             Assert.Equal("tcp://10.0.0.5:9444", streamMode.Request!.Transport.Endpoint);
@@ -88,7 +88,7 @@ public class StreamEnrollRoundTripTests
             // one-answer-one-poll, so a stream-mode bake is refused with the
             // fix -- the datagram poll has no stream to hold.
             var dnsStream = await PayloadBuildRequestParser.ParseAsync(
-                EnrollRequest(dns.Id.ToString(), mode: "stream"), engagement, operatorId, registry, ca,
+                EnrollRequest(dns.Id.ToString(), mode: "stream"), engagement, operatorId, registry, ca, payloads,
                 CancellationToken.None);
             Assert.NotNull(dnsStream.Error);
             Assert.Contains("one-answer-one-poll", dnsStream.Error!, StringComparison.OrdinalIgnoreCase);
