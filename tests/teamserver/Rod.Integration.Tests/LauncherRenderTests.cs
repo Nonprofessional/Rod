@@ -255,10 +255,11 @@ public class LauncherRenderTests
     }
 
     private static PayloadRecord Payload(
-        Guid id, EngagementId engagement, DateTimeOffset builtAt, string? target = "linux-x64")
+        Guid id, EngagementId engagement, DateTimeOffset builtAt, string? target = "linux-x64",
+        Guid? tokenId = null)
         => new(
             id, engagement.Value, "Implant", "dotnet", "application/octet-stream",
-            "sha256:test", [1, 2, 3], 3, builtAt, Target: target);
+            "sha256:test", [1, 2, 3], 3, builtAt, Target: target, TokenId: tokenId);
 
     [Fact]
     public async Task Render_FiltersTheFamiliesToThePayloadsOwnOS()
@@ -314,6 +315,52 @@ public class LauncherRenderTests
         Assert.NotNull(untargetedBody);
         Assert.Contains(untargetedBody!.Launchers, l => l.Id == "unix-curl");
         Assert.Contains(untargetedBody.Launchers, l => l.Id == "windows-powershell");
+    }
+
+    [Fact]
+    public async Task APayloadWhoseBakedCredentialIsDead_IsRefusedForRender()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var engagement = new EngagementId(Guid.Parse(engagementId));
+
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-http",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: "http://stage.example.test"));
+        created.EnsureSuccessStatusCode();
+
+        // A payload whose baked enrollment credential was revoked: the fetch
+        // would spend its freshly minted download credential on an artifact
+        // that can never enroll, so the render refuses it -- named and as
+        // the unnamed newest-build stand-in alike.
+        var tokens = env.Host.Services.GetRequiredService<IDeployTokenService>();
+        var engagements = env.Host.Services.GetRequiredService<IEngagementRepository>();
+        var owner = (await engagements.FindAsync(engagement))!.OwnerId;
+        var minted = await tokens.MintAsync(
+            engagement, owner, DateTimeOffset.UtcNow,
+            maxUses: 1, lifetime: TimeSpan.FromHours(1));
+        Assert.True(await tokens.RevokeAsync(minted.Id));
+
+        var payloads = env.Host.Services.GetRequiredService<IPayloadStore>();
+        var dead = Guid.NewGuid();
+        await payloads.SaveAsync(Payload(dead, engagement, DateTimeOffset.UtcNow, tokenId: minted.Id.Value));
+
+        var refused = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers",
+            new { PayloadId = dead.ToString() });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var text = await refused.Content.ReadAsStringAsync();
+        Assert.Contains("can never enroll", text);
+
+        var refusedAsNewest = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { });
+        Assert.Equal(HttpStatusCode.BadRequest, refusedAsNewest.StatusCode);
+        text = await refusedAsNewest.Content.ReadAsStringAsync();
+        Assert.Contains("can never enroll", text);
     }
 
     [Fact]

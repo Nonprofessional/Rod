@@ -28,6 +28,24 @@ import { useNow } from '../when'
 // time, watch the credential's budget, revoke it the moment it leaks, and
 // delete the row when it is spent.
 
+// Whether a payload's baked enrollment credential still lives: the render
+// refuses a dead one (revoked, spent, or expired -- the fetched artifact
+// could never enroll), so the picker says so instead of letting the submit
+// discover it. A credential-free build rides: it is the manual-mint shape
+// with its own delivery story.
+function deliverable(p: PayloadSummary): boolean {
+  if (!p.tokenId) return true
+  if (p.tokenMaxUses === 0) {
+    return p.tokenExpiresAt == null
+      || new Date(p.tokenExpiresAt).getTime() > Date.now()
+  }
+  return (
+    p.tokenRemainingUses != null
+    && p.tokenRemainingUses > 0
+    && (p.tokenExpiresAt == null || new Date(p.tokenExpiresAt).getTime() > Date.now())
+  )
+}
+
 // The redeem budgets an operator realistically picks. Single-use is the
 // default posture (one paste, one download); the wider budgets serve a
 // many-host deployment from one render.
@@ -252,11 +270,15 @@ export function LaunchersView({
                 title="The payload the fetch delivers; the newest build stands in when unnamed"
               >
                 <option value="">Newest build</option>
-                {payloads.map((p) => (
-                  <option key={p.artifactId} value={p.artifactId}>
-                    {payloadLabel(p)}
-                  </option>
-                ))}
+                {payloads.map((p) => {
+                  const dead = !deliverable(p)
+                  return (
+                    <option key={p.artifactId} value={p.artifactId} disabled={dead}>
+                      {payloadLabel(p)}
+                      {dead ? ' — credential dead' : ''}
+                    </option>
+                  )
+                })}
               </select>
               <button className="primary" onClick={() => void onRender()} disabled={busy}>
                 {busy ? 'Rendering…' : 'Render'}

@@ -466,6 +466,26 @@ internal static class LauncherRender
                     "No payload exists in this engagement; build one first, or name an existing payload id.")),
                 null);
 
+        // A payload whose baked enrollment credential is dead delivers an
+        // artifact that can never enroll -- the fetch would spend its freshly
+        // minted download credential on a beacon that stops at the refusal.
+        // Dead means the token left the store (revoked or swept), counted to
+        // zero, or past its window; a credential-free build (the manual-mint
+        // shape) is the operator's own delivery story and rides.
+        if (payload.TokenId is { } baked)
+        {
+            var credential = await tokens.FindAsync(new DeployTokenId(baked), cancellationToken);
+            if (credential is null
+                || (credential.MaxUses != 0 && credential.RemainingUses <= 0)
+                || credential.ExpiresAt <= clock.GetUtcNow())
+                return (
+                    Results.BadRequest(new Problem(
+                        "This payload's baked enrollment credential is dead (revoked, spent, or expired) -- "
+                        + "a fetch would deliver an artifact that can never enroll. "
+                        + "Build a fresh payload, or pick one whose credential still lives.")),
+                    null);
+        }
+
         // One download credential for the fetch: every served fetch spends
         // one use, the window is the operator's, and the enrollment that
         // follows rides the credential baked into the fetched artifact. The
