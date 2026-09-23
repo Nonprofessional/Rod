@@ -104,7 +104,7 @@ public static class EnrollmentEndpoints
             if (!await TokenMatchesListenerScopeAsync(http, listeners, token, cancellationToken))
             {
                 await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
-                    fetcher, "refused:scope", cancellationToken);
+                    fetcher, "refused:scope", cancellationToken: cancellationToken);
                 return Results.Json(
                     new Problem("Deploy token was not accepted."),
                     statusCode: StatusCodes.Status401Unauthorized);
@@ -116,7 +116,7 @@ public static class EnrollmentEndpoints
             if (payload is null)
             {
                 await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
-                    fetcher, "refused:payload", cancellationToken);
+                    fetcher, "refused:payload", cancellationToken: cancellationToken);
                 return Results.NotFound(new Problem("Payload does not exist in this engagement."));
             }
 
@@ -131,11 +131,11 @@ public static class EnrollmentEndpoints
             // exchange; a burned one-liner pulled by a scanner enrolls never,
             // and this is the only record it leaves.
             await RecordFetchAsync(audit, clock, redeemed.EngagementId, redeemed.Id, payloadValue,
-                fetcher, "served", cancellationToken);
+                fetcher, "served", payload.Fingerprint, cancellationToken);
             await live.PublishAsync(
                 LiveEvent.PayloadFetched(
                     redeemed.EngagementId,
-                    $"{fetcher} payload={payloadValue:N} served",
+                    $"{fetcher} payload={payload.Fingerprint} served",
                     clock.GetUtcNow()),
                 cancellationToken);
 
@@ -151,7 +151,8 @@ public static class EnrollmentEndpoints
             // expired, spent, and revoked for the fetcher to read.
             if (ex.EngagementId is { } engagement && ex.TokenId is { } tokenId)
                 await RecordFetchAsync(audit, clock, engagement, tokenId, payloadValue,
-                    fetcher, $"refused:{ex.Reason.ToString().ToLowerInvariant()}", cancellationToken);
+                    fetcher, $"refused:{ex.Reason.ToString().ToLowerInvariant()}",
+                    cancellationToken: cancellationToken);
             return Results.Json(
                 new Problem("Deploy token was not accepted."),
                 statusCode: StatusCodes.Status401Unauthorized);
@@ -159,8 +160,12 @@ public static class EnrollmentEndpoints
     }
 
     // The one fetch fact: what the wire showed, which credential gated it,
-    // and how it ended. Audit-only -- the live push rides the served frame
-    // alone, because a refusal moves no state an operator's row displays.
+    // and how it ended. The payload names itself in the library's
+    // vocabulary -- the fingerprint the Payloads tab matches on -- with the
+    // bare artifact id beside it for correlating a pasted command's URL;
+    // a fetch that never resolved a payload can name only the id it asked
+    // for. Audit-only -- the live push rides the served frame alone,
+    // because a refusal moves no state an operator's row displays.
     private static async Task RecordFetchAsync(
         IAuditStore audit,
         TimeProvider clock,
@@ -169,8 +174,12 @@ public static class EnrollmentEndpoints
         Guid payloadId,
         string fetcher,
         string outcome,
-        CancellationToken cancellationToken)
+        string? fingerprint = null,
+        CancellationToken cancellationToken = default)
     {
+        var payloadText = fingerprint is null
+            ? $"payload={payloadId:N}"
+            : $"payload={fingerprint} id={payloadId:N}";
         await audit.AppendAsync(
             AuditEvent.Fact(
                 eventId: Guid.NewGuid(),
@@ -180,7 +189,7 @@ public static class EnrollmentEndpoints
                 taskId: Guid.Empty,
                 verb: "payload.fetched",
                 kind: AuditEventKind.PayloadFetched,
-                payload: $"{fetcher} payload={payloadId:N} token={tokenId}",
+                payload: $"{fetcher} {payloadText} token={tokenId}",
                 output: null,
                 outcome,
                 at: clock.GetUtcNow()),

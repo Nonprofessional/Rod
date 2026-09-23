@@ -182,7 +182,11 @@ public class PayloadFetchTests
         Assert.Equal(OperatorId.Empty.Value, fact.OperatorId);
         Assert.Contains("remote=", fact.Payload);
         Assert.Contains("ua=Wget/1.21.2 (linux-gnu)", fact.Payload);
-        Assert.Contains($"payload={h.PayloadId:N}", fact.Payload);
+        // The payload names itself in the library's vocabulary -- the
+        // fingerprint the Payloads tab matches on -- with the artifact id
+        // beside it for correlating a pasted command's fetch URL.
+        Assert.Contains("payload=fingerprint", fact.Payload);
+        Assert.Contains($"id={h.PayloadId:N}", fact.Payload);
         Assert.Contains($"token={h.Token.Id}", fact.Payload);
         Assert.Equal("served", fact.Outcome);
 
