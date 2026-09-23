@@ -191,7 +191,8 @@ public sealed class ListenerManager
         try
         {
             var config = new ListenerConfig(
-                definition.Name, transport, definition.BindAddress, definition.PublicEndpoint, definition.EngagementId);
+                definition.Name, transport, definition.BindAddress, definition.PublicEndpoint, definition.EngagementId,
+                definition.TrustPosture);
             return await BindAsync(config, new ListenerId(definition.Id), cancellationToken);
         }
         catch (Exception ex)
@@ -310,5 +311,6 @@ public sealed class ListenerManager
             listener.BindAddress,
             listener.PublicEndpoint,
             listener.CreatedAt,
-            listener.RepointedAt);
+            listener.RepointedAt,
+            listener.TrustPosture);
 }

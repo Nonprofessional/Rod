@@ -71,18 +71,6 @@ internal static class PayloadBuildRequestParser
         if (format == ArtifactFormat.Dll)
             return (null,
                 "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
-        // The TLS trust posture: 'pinned' (the default -- the engagement CA
-        // baked as the only root) or 'public' (a real-domain front whose
-        // certificate a public CA issued; the implant validates like an
-        // ordinary client). Public rides TLS fronts alone -- the dial must
-        // name an https address, because the posture only has meaning where
-        // a handshake happens.
-        var trust = body.Trust?.Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(trust))
-            trust = "pinned";
-        if (trust is not ("pinned" or "public"))
-            return (null, "Trust must be 'pinned' (the default) or 'public'.");
-
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
         // produce a payload that phones nowhere, the silent kind of failure
@@ -94,9 +82,33 @@ internal static class PayloadBuildRequestParser
         if (endpoint.Value is { } dialable && !IsDialableEndpoint(dialable))
             return (null,
                 $"Endpoint must be a schemed dial the implant can serve -- http(s)://, tcp://, dns://, or doh:// -- got '{dialable}'.");
+        // The TLS trust posture is the front's fact, not the request's: the
+        // named listener records whose certificate it presents (the
+        // engagement CA, or a real-domain chain an operator-run edge
+        // terminates), and the build inherits it as the roots it bakes
+        // (architecture.md Sec 9). A typed DNS dial names no listener and
+        // carries no TLS posture -- pinned stands. A request that still
+        // spells a posture may only agree with the front; the knob moved to
+        // the listener, and a contradiction here would bake roots the front
+        // cannot verify against.
+        var trust = endpoint.Trust ?? "pinned";
+        if (body.Trust is { } asked && !string.IsNullOrWhiteSpace(asked))
+        {
+            var normalized = asked.Trim().ToLowerInvariant();
+            if (normalized is not ("pinned" or "public"))
+                return (null, "Trust must be 'pinned' or 'public'.");
+            if (!string.Equals(normalized, trust, StringComparison.OrdinalIgnoreCase))
+                return (null,
+                    $"The front presents a '{trust}' certificate; set the posture on the listener, not the build "
+                    + "-- a build's roots follow the certificate the front actually serves.");
+        }
+
         if (body.FallbackEndpoints is { Count: > 0 } fallbacks)
         {
             var frontFamily = SchemeFamily(endpoint.Value);
+            // Loaded only when an https fallback needs its front resolved;
+            // the engagement's listener count is small either way.
+            IReadOnlyList<Rod.Transport.Listeners.Listener>? fronts = null;
             foreach (var fallback in fallbacks)
             {
                 if (string.IsNullOrWhiteSpace(fallback))
@@ -107,19 +119,39 @@ internal static class PayloadBuildRequestParser
                 if (frontFamily is { } family && SchemeFamily(fallback) != family)
                     return (null,
                         $"Each fallback endpoint must dial the front's own scheme family -- the '{endpoint.Value}' front walks {FamilyShapes(family)} fallbacks only, got '{fallback}'.");
+                // An https fallback walks under the same roots as the front:
+                // the artifact bakes one root set, so a fallback presenting
+                // the other certificate posture is a dead entry the family
+                // check alone would pass. Only a dial that names one of this
+                // engagement's listeners can be checked -- a typed address
+                // (a redirector this teamserver cannot see) stays the
+                // operator's call.
+                if (frontFamily == "web"
+                    && fallback.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    fronts ??= await listeners.ListAsync(cancellationToken);
+                    var named = fronts.FirstOrDefault(l => NamesFront(fallback, l));
+                    if (named is not null
+                        && !string.Equals(named.TrustPosture, trust, StringComparison.OrdinalIgnoreCase))
+                        return (null,
+                            $"The fallback '{fallback}' names {named.Name}, a '{named.TrustPosture}' front, while this build rides '{trust}' roots -- pick fallbacks that share the front's certificate posture.");
+                }
             }
         }
 
-        // A public-trust posture needs a TLS dial to ride: the primary or any
+        // A public posture needs a TLS dial to ride: the primary or any
         // fallback must be https, where the front's publicly-trusted chain is
         // presented (an operator-run edge in front of the teamserver holds
-        // the certificate for the real domain).
+        // the certificate for the real domain). The listener gate refuses
+        // this pairing at creation, so reaching here means the endpoint
+        // moved after the fact -- a repoint away from the https address.
         if (trust == "public"
             && endpoint.Value?.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase) != true
             && body.FallbackEndpoints?.Any(f =>
                 f.Trim().StartsWith("https://", StringComparison.OrdinalIgnoreCase)) != true)
             return (null,
-                "Trust 'public' rides TLS fronts -- the dial must name an https:// address (the real-domain front an operator-run edge terminates); leave Trust unset for the pinned CA.");
+                "This front's posture is 'public' but its dial is no longer https (a repoint moved it?) -- "
+                + "point the listener back at the edge's https address, or set its posture to pinned.");
 
         // The contact mode rides the beacon profile into the artifact: stream
         // (persistent, interactive) or poll (low-and-slow contacts). Poll is
@@ -138,7 +170,7 @@ internal static class PayloadBuildRequestParser
         // http(s) front carries the envelope POST cycle on its own port (the
         // mainstream single-port shape), an mTLS front the stream on the same
         // socket.
-        var beacon = await ResolveBeaconAsync(body, @class, mode, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
+        var beacon = await ResolveBeaconAsync(body, @class, mode, trust, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
         if (beacon.Error is { } beaconRefusal)
             return (null, beaconRefusal);
 
@@ -204,7 +236,7 @@ internal static class PayloadBuildRequestParser
     // error is set. Transport reports the named listener's transport (null
     // for a typed dial) -- the fact the beacon resolution below needs, so
     // a derived contact matches the front it rides.
-    private static async Task<(string? Value, string? Transport, string? Error)> ResolveEndpointAsync(
+    private static async Task<(string? Value, string? Transport, string? Trust, string? Error)> ResolveEndpointAsync(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         EngagementId engagementId,
         IListenerRegistry listeners,
@@ -222,35 +254,35 @@ internal static class PayloadBuildRequestParser
             // typed address this teamserver cannot verify only bakes an
             // artifact that can never enroll.
             if (string.IsNullOrEmpty(typed))
-                return (null, null, "Name a listener for the front the implant dials.");
+                return (null, null, null, "Name a listener for the front the implant dials.");
             if (!typed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
                 && !typed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
-                return (null, null,
+                return (null, null, null,
                     "A typed endpoint is the DNS family's dial alone (dns://resolver/zone, doh://resolver/zone) "
                     + "-- name a listener for a web or socket front.");
-            return (typed, null, null);
+            return (typed, null, null, null);
         }
 
         if (body.Endpoint is not null)
-            return (null, null, "Name either listenerId or endpoint, not both.");
+            return (null, null, null, "Name either listenerId or endpoint, not both.");
         if (!Guid.TryParse(listenerIdText, out var listenerValue))
-            return (null, null, "ListenerId is not a valid identifier.");
+            return (null, null, null, "ListenerId is not a valid identifier.");
 
         var listener = await listeners.FindAsync(new ListenerId(listenerValue), cancellationToken);
         if (listener is null)
-            return (null, null, "ListenerId does not name a listener.");
+            return (null, null, null, "ListenerId does not name a listener.");
         if (listener.EngagementId is null)
-            return (null, null,
+            return (null, null, null,
                 "ListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
         if (listener.EngagementId != engagementId)
-            return (null, null, "ListenerId names another engagement's listener.");
+            return (null, null, null, "ListenerId names another engagement's listener.");
 
         // The socket family's enroll arm (Sec 8, enrollment over the stream
         // contact): a tcp listener is enroll-nameable -- the opening exchange
         // on the socket carries the EnrollRequest frames -- and the baked
         // endpoint is the transport's own dial: the host:port under tcp://.
         if (listener.Transport == "tcp")
-            return SocketDial(listener.PublicEndpoint);
+            return WithTrust(SocketDial(listener.PublicEndpoint), listener.TrustPosture);
 
         // The DNS family's enroll arm (Sec 8, enrollment over DNS -- the
         // full-independence step for a DNS-only target): the enroll body
@@ -262,12 +294,12 @@ internal static class PayloadBuildRequestParser
         {
             var dial = DnsDial(listener);
             if (dial.Error is { } dnsError)
-                return (null, null, dnsError);
-            return (dial.Dial, listener.Transport, null);
+                return (null, null, null, dnsError);
+            return (dial.Dial, listener.Transport, listener.TrustPosture, null);
         }
 
         if (TransportProviders.Find(listener.Transport) is not KestrelEndpointProvider)
-            return (null, null,
+            return (null, null, null,
                 $"The {listener.Transport} transport does not serve enrollment; build against an HTTP-shaped listener.");
 
         // The public endpoint may be the bare host:port redirector shape; the
@@ -275,10 +307,17 @@ internal static class PayloadBuildRequestParser
         var publicEndpoint = listener.PublicEndpoint.Trim();
         if (Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var absolute)
             && (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
-            return (publicEndpoint, listener.Transport, null);
+            return (publicEndpoint, listener.Transport, listener.TrustPosture, null);
         var scheme = TransportProviders.Find(listener.Transport)?.PublicEndpointScheme ?? "https";
-        return ($"{scheme}://{publicEndpoint}", listener.Transport, null);
+        return ($"{scheme}://{publicEndpoint}", listener.Transport, listener.TrustPosture, null);
     }
+
+    // Threads the socket family's dial through the four-part resolution (a
+    // raw-TCP front carries no TLS posture -- its dial is cleartext -- but
+    // the listener's record still names one, and the build reads it).
+    private static (string? Value, string? Transport, string? Trust, string? Error) WithTrust(
+        (string? Value, string? Transport, string? Error) socket, string? trust)
+        => (socket.Value, socket.Transport, trust, socket.Error);
 
     // Resolves the contact the baked artifact runs. A named beacon listener
     // or a typed beacon endpoint names the web front the WebSocket beacon
@@ -291,6 +330,7 @@ internal static class PayloadBuildRequestParser
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         ImplantClass @class,
         string mode,
+        string trust,
         string? enrollTransport,
         string? enrollEndpoint,
         EngagementId engagementId,
@@ -342,6 +382,15 @@ internal static class PayloadBuildRequestParser
             if (beaconProvider?.ServesNativeChannel != true)
                 return (null,
                     $"The beacon is a live stream and the {listener.Transport} listener carries none; name a web listener.");
+            // The carrier shares the front's certificate posture whenever its
+            // dial is TLS: the artifact bakes one root set, so a carrier
+            // presenting the other posture is a beacon the artifact cannot
+            // handshake. A cleartext carrier needs no roots and rides either
+            // posture.
+            if (DialIsHttps(listener)
+                && !string.Equals(listener.TrustPosture, trust, StringComparison.OrdinalIgnoreCase))
+                return (null,
+                    $"The carrier {listener.Name} presents a '{listener.TrustPosture}' certificate while this build rides '{trust}' roots; name a carrier that shares the front's posture.");
             // The baked beacon URL's shape is the client the artifact dials:
             // the web family's WebSocket beacon hangs off the schemed front
             // itself.
@@ -516,6 +565,28 @@ internal static class PayloadBuildRequestParser
         if (trimmed.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase))
             return "tcp";
         return null;
+    }
+
+    // Whether a web-family dial names this listener: verbatim, or completed
+    // under the transport's scheme -- the two shapes the picker bakes.
+    private static bool NamesFront(string fallback, Rod.Transport.Listeners.Listener listener)
+    {
+        var trimmed = fallback.Trim();
+        if (string.Equals(trimmed, listener.PublicEndpoint.Trim(), StringComparison.OrdinalIgnoreCase))
+            return true;
+        var scheme = listener.Transport is "https" or "mtls" ? "https" : "http";
+        return string.Equals(trimmed, $"{scheme}://{listener.PublicEndpoint.Trim()}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Whether the listener's dial is TLS: an absolute https public endpoint,
+    // or a bare one completed under an https-family transport.
+    private static bool DialIsHttps(Rod.Transport.Listeners.Listener listener)
+    {
+        var pub = listener.PublicEndpoint.Trim();
+        if (Uri.TryCreate(pub, UriKind.Absolute, out var abs)
+            && (abs.Scheme == Uri.UriSchemeHttp || abs.Scheme == Uri.UriSchemeHttps))
+            return abs.Scheme == Uri.UriSchemeHttps;
+        return listener.Transport is "https" or "mtls";
     }
 
     // The shapes one family's fallbacks dial, for a refusal that teaches.

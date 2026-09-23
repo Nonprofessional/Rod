@@ -35,6 +35,7 @@ internal sealed class PostgresListenerStore : IListenerStore
             stored.BindAddress = definition.BindAddress;
             stored.PublicEndpoint = definition.PublicEndpoint;
             stored.RepointedAt = definition.RepointedAt;
+            stored.TrustPosture = definition.TrustPosture;
         }
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -90,6 +91,7 @@ internal sealed class PostgresListenerStore : IListenerStore
             PublicEndpoint = definition.PublicEndpoint,
             CreatedAt = definition.CreatedAt,
             RepointedAt = definition.RepointedAt,
+            TrustPosture = definition.TrustPosture,
         };
 
     private static ListenerDefinition ToDefinition(StoredListenerDefinition stored)
@@ -101,5 +103,7 @@ internal sealed class PostgresListenerStore : IListenerStore
             stored.BindAddress,
             stored.PublicEndpoint,
             stored.CreatedAt,
-            stored.RepointedAt);
+            stored.RepointedAt,
+            // Rows predating the column read as the pinned default.
+            stored.TrustPosture ?? "pinned");
 }

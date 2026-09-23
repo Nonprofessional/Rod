@@ -22,9 +22,17 @@ namespace Rod.Transport.Listeners;
 /// the operator front (and any deliberately shared ingress a deployment
 /// fronts), which serves any engagement the token itself names.
 /// </param>
+/// <param name="TrustPosture">
+/// Whose certificate the front presents ("pinned" the engagement CA -- the
+/// default; "public" a real-domain chain an operator-run edge terminates).
+/// A fact of the front that builds inherit as their TLS roots, so it rides
+/// the listener rather than the build request (architecture.md Sec 9).
+/// Only the https transport may name public.
+/// </param>
 public sealed record ListenerConfig(
     string Name,
     string Transport,
     string BindAddress,
     string PublicEndpoint,
-    EngagementId? EngagementId = null);
+    EngagementId? EngagementId = null,
+    string TrustPosture = "pinned");

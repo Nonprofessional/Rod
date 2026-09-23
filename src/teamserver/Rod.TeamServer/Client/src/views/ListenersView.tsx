@@ -117,6 +117,12 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [customHost, setCustomHost] = useState('')
   const [bindPort, setBindPort] = useState('443')
   const [publicEndpoint, setPublicEndpoint] = useState('')
+  // Whose certificate the front presents -- the fact builds inherit as
+  // their TLS roots. Offered on the web pair alone: the DNS and socket
+  // families carry no TLS posture, and mTLS's client-certificate handshake
+  // must terminate at the teamserver.
+  const [trust, setTrust] = useState('pinned')
+  const isWebTransport = transport === 'http' || transport === 'https'
 
   // The endpoint field speaks each transport's own dial shape: the web
   // family completes scheme-less hosts and can derive from the bind, the
@@ -235,6 +241,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         // blanks and bare hostnames, so the form never blocks on typing a
         // fully-qualified URL.
         publicEndpoint: publicEndpoint.trim(),
+        // The posture pick rides the web pair alone; everything else keeps
+        // the pinned default the server applies on its own.
+        trust: isWebTransport && trust !== 'pinned' ? trust : undefined,
       })
       setName('')
       setPublicEndpoint('')
@@ -353,6 +362,19 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </optgroup>
           </select>
         </label>
+        {isWebTransport && (
+          <label>
+            Certificate
+            <select
+              value={trust}
+              onChange={(e) => setTrust(e.target.value)}
+              title="Whose certificate this front presents -- the fact every build against it inherits as its TLS roots. Pinned (the default): the engagement CA terminates the front, and artifacts pin that CA -- works for any domain you point at the listener, no public CA involved. Public: a real domain whose publicly-trusted certificate an operator-run edge terminates in front of this listener -- the shape that survives TLS inspection; the public endpoint must be the https address of that edge."
+            >
+              <option value="pinned">engagement CA (default)</option>
+              <option value="public">public — real-domain edge</option>
+            </select>
+          </label>
+        )}
         <label
           className="checkbox-label"
           title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
@@ -488,7 +510,17 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             {listeners.map((l) => (
                 <tr key={l.id}>
                   <td>{l.name}</td>
-                  <td>{l.transport}</td>
+                  <td>
+                    {l.transport}
+                    {l.trustPosture === 'public' && (
+                      <span
+                        className="muted"
+                        title="This front presents a real-domain certificate an operator-run edge terminates; builds against it validate against public roots."
+                      >
+                        {' '}· public cert
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <code>{l.bindAddress}</code>
                   </td>

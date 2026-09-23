@@ -22,6 +22,11 @@ internal sealed class StoredListenerDefinition
     public string Transport { get; set; } = string.Empty;
     public string BindAddress { get; set; } = string.Empty;
     public string PublicEndpoint { get; set; } = string.Empty;
+
+    /// <summary>Whose certificate the front presents ("pinned"/"public") --
+    /// the fact builds inherit as their TLS roots (architecture.md Sec 9).
+    /// Nullable only for rows predating the column; reads as pinned.</summary>
+    public string? TrustPosture { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RepointedAt { get; set; }
 }
@@ -42,6 +47,7 @@ internal sealed class StoredListenerDefinitionConfiguration : IEntityTypeConfigu
         builder.Property(l => l.Transport).HasColumnName("transport").HasMaxLength(32);
         builder.Property(l => l.BindAddress).HasColumnName("bind_address").HasMaxLength(200);
         builder.Property(l => l.PublicEndpoint).HasColumnName("public_endpoint").HasMaxLength(500);
+        builder.Property(l => l.TrustPosture).HasColumnName("trust_posture").HasMaxLength(16);
         builder.Property(l => l.CreatedAt).HasColumnName("created_at");
         builder.Property(l => l.RepointedAt).HasColumnName("repointed_at");
 

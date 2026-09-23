@@ -310,7 +310,8 @@ the one-listener model makes the constraint worth spelling out:
   second C2 entry forwarding to the forwarder (pinned trust: the edge must
   *not* terminate, so the two names need two teamserver listeners, each
   naming its own host) -- or the edge terminates per domain and forwards to
-  the one teamserver listener, with builds switched to `trust: public`
+  the one teamserver listener, whose **Certificate** posture is set to
+  `public` so builds against it validate the real chain
   (architecture.md Sec 9). The rotation story is unchanged: a burned name is
   severed by repointing its listener, a burned front by swapping the map
   entry.

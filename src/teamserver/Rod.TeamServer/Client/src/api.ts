@@ -798,6 +798,10 @@ export interface ListenerSummary {
   transport: string
   bindAddress: string
   publicEndpoint: string
+  // Whose certificate the front presents -- 'pinned' (the engagement CA)
+  // or 'public' (a real-domain chain an operator-run edge terminates). The
+  // listener owns the fact; builds inherit it as their TLS roots.
+  trustPosture: string
   state: string
   createdAt: string
   repointedAt: string | null
@@ -824,6 +828,11 @@ export interface CreateListenerInput {
   transport: string
   bindAddress: string
   publicEndpoint: string
+  // Whose certificate the front presents: 'pinned' (the default -- the
+  // engagement CA) or 'public' (a real-domain front an operator-run edge
+  // terminates; needs an https dial). The listener owns the fact; builds
+  // inherit it as their TLS roots.
+  trust?: string
 }
 
 export async function createListener(
@@ -1258,11 +1267,9 @@ export interface BuildPayloadInput {
   // emits the same artifact for each; 'dll' is retired with the .NET
   // implant and refused server side. Null leaves the 'exe' default.
   format: string | null
-  // The TLS trust posture: 'pinned' (the default -- the engagement CA baked
-  // as the only root the artifact's TLS dials trust) or 'public' (a
-  // real-domain front whose certificate a public CA issued, terminated at
-  // an operator-run edge; the artifact validates like an ordinary client).
-  // Public rides https dials alone.
+  // Retired as a pick: the front's listener owns the certificate posture
+  // and the build inherits it. Null always; a non-null value may only
+  // agree with the named front (the server refuses a contradiction).
   trust: string | null
 }
 

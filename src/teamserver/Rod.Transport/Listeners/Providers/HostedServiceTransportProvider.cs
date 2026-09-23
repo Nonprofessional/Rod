@@ -171,7 +171,7 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
         var config = context.Config;
         var listener = Listener.Define(
             context.Id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
-            context.Clock.GetUtcNow(), config.EngagementId);
+            context.Clock.GetUtcNow(), config.EngagementId, config.TrustPosture);
 
         var service = _factory(context.Services, context.Registry, listener);
         try

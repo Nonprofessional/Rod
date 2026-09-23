@@ -128,12 +128,33 @@ public static class ListenerEndpoints
             publicEndpoint = body.PublicEndpoint.Trim();
         }
 
+        // Whose certificate the front presents -- the fact builds inherit as
+        // their TLS roots (architecture.md Sec 9). The listener owns it
+        // because the certificate is deployed where the listener is: the
+        // engagement CA terminates a pinned front, an operator-run edge with
+        // a real-domain certificate terminates a public one. Public rides an
+        // https dial alone -- the posture only has meaning where the implant
+        // performs a handshake it must verify.
+        var trust = body.Trust?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(trust))
+            trust = "pinned";
+        if (trust is not ("pinned" or "public"))
+            return Results.BadRequest(new Problem(
+                "Trust must be 'pinned' (the default -- the engagement CA terminates the front) "
+                + "or 'public' (a real-domain front whose certificate an operator-run edge terminates)."));
+        if (trust == "public"
+            && (!Uri.TryCreate(publicEndpoint, UriKind.Absolute, out var dial)
+                || dial.Scheme != Uri.UriSchemeHttps))
+            return Results.BadRequest(new Problem(
+                "Trust 'public' rides an https dial -- the public endpoint must name the real domain "
+                + "an operator-run edge terminates (https://...); leave Trust unset for the engagement CA."));
+
         try
         {
             var listener = await manager.CreateAsync(
                 new ListenerConfig(
                     body.Name.Trim(), provider.Transport, body.BindAddress.Trim(), publicEndpoint,
-                    new EngagementId(engagementValue)),
+                    new EngagementId(engagementValue), trust),
                 cancellationToken);
 
             return Results.Created($"/engagements/{engagementId}/listeners/{listener.Id}", Response.Of(listener));
@@ -407,7 +428,8 @@ public static class ListenerEndpoints
         string Name,
         string Transport,
         string BindAddress,
-        string PublicEndpoint);
+        string PublicEndpoint,
+        string? Trust = null);
 
     /// <summary>
     /// Request to repoint a listener's public endpoint. The new endpoint is the
@@ -421,6 +443,7 @@ public static class ListenerEndpoints
         string Transport,
         string BindAddress,
         string PublicEndpoint,
+        string TrustPosture,
         string State,
         DateTimeOffset CreatedAt,
         DateTimeOffset? RepointedAt);
@@ -437,6 +460,7 @@ public static class ListenerEndpoints
                 l.Transport,
                 l.BindAddress,
                 l.PublicEndpoint,
+                l.TrustPosture,
                 l.State.ToString().ToLowerInvariant(),
                 l.CreatedAt,
                 l.RepointedAt);

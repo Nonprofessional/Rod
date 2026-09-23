@@ -386,7 +386,8 @@ public static class TransportHost
                         Listener.Define(
                             ListenerId.New(), config.Name, provider.Transport,
                             config.BindAddress, config.PublicEndpoint,
-                            sp.GetRequiredService<TimeProvider>().GetUtcNow())));
+                            sp.GetRequiredService<TimeProvider>().GetUtcNow(),
+                            trustPosture: config.TrustPosture)));
                 }
             });
         }
@@ -425,7 +426,8 @@ public static class TransportHost
                 }
 
                 var listener = Listener.Define(
-                    ListenerId.New(), config.Name, provider.Transport, config.BindAddress, config.PublicEndpoint, now);
+                    ListenerId.New(), config.Name, provider.Transport, config.BindAddress, config.PublicEndpoint, now,
+                    trustPosture: config.TrustPosture);
 
                 // Bind first; register only once the socket is configured. The
                 // listener's State moves to Running inside RegisterAsync.

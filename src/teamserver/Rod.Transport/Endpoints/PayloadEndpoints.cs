@@ -331,10 +331,10 @@ public static class PayloadEndpoints
         string? BeaconListenerId = null,
         string? BeaconEndpoint = null,
         string? Format = null,
-        // The TLS trust posture: 'pinned' (the default -- the engagement CA
-        // baked as the only root) or 'public' (a real-domain front whose
-        // certificate a public CA issued; the implant validates like an
-        // ordinary client). Public rides https dials alone.
+        // Retired as a pick: the named front's listener owns the certificate
+        // posture and the build inherits it (architecture.md Sec 9). A
+        // non-null value may only agree with the front -- the parser refuses
+        // a contradiction with a pointer at the listener.
         string? Trust = null);
 
     // The response's TokenId names the enrollment credential baked into the

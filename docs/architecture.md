@@ -1018,11 +1018,17 @@ fleet-wide code execution. Security is a first-class concern.
   so a nameless leaf strands every https front -- an earlier draft rejected
   the SAN as separable hardening on the false premise that pinned clients do
   no name matching.
-- **TLS trust is a build posture: pinned (the default) or public.** Pinned
+- **TLS trust is the front's posture, inherited by builds: pinned (the
+  default) or public.** The listener records whose certificate its front
+  presents -- the fact lives where the certificate is deployed -- and every
+  build against that listener bakes the matching roots; the build request's
+  old `Trust` knob may only agree with the front. Pinned
   is the self-sufficient shape: the baked CA is the only root the
   artifact's TLS dials trust -- no public-PKI or target-store dependence,
-  and no public CA can mint an identity the artifact would accept. The
-  `Trust: public` request field is the real-domain posture for blends that
+  and no public CA can mint an identity the artifact would accept; it works
+  for any domain the operator points at the listener, because the CA mints
+  the front's leaf with a SAN naming the listener's public host. Public is
+  the real-domain posture for blends that
   must survive TLS inspection: the front is a genuine domain whose
   certificate a public CA issued (terminated at an operator-run edge
   holding the domain's certificate, in front of the teamserver's web front
@@ -1030,8 +1036,11 @@ fleet-wide code execution. Security is a first-class concern.
   it like an ordinary client against the compiled-in Mozilla root set
   (`webpki-roots`; still no target-system-store dependence). The CA rides
   the bake under either posture -- it is the tasking signer; the posture
-  says only which roots the TLS dials accept, and public builds are gated
-  to https dials at parse time with the fix named.
+  says only which roots the TLS dials accept. Public is gated to https
+  dials at listener creation, and the walk's other TLS fronts (carriers,
+  fallbacks) must share the posture -- the artifact bakes one root set, so
+  a front presenting the other certificate is a dial the walk cannot
+  verify, refused at parse time with the fix named.
 - **Command signing.** Dispatched tasks are signed so an implant only acts on
   teamserver-authorized tasking. The beacon endpoint signs each dispatched
   `TaskRequest` with the tasking CA's RSA key (RSASSA-PSS over SHA-256, on a

@@ -71,6 +71,17 @@ const ARCHS: Record<string, string[]> = {
   windows: ['amd64', 'x86'],
 }
 
+// Whether a listener's dial is TLS (an https-family transport, or an
+// absolute https public endpoint on an edge-fronted cleartext listener) --
+// the dial that must present the front's own certificate posture.
+function dialHttps(l: ListenerSummary): boolean {
+  return (
+    l.transport === 'https'
+    || l.transport === 'mtls'
+    || /^https:\/\//i.test(l.publicEndpoint.trim())
+  )
+}
+
 function elapsed(job: BuildJob): string {
   const start = new Date(job.startedAt ?? job.requestedAt).getTime()
   const end = job.completedAt ? new Date(job.completedAt).getTime() : Date.now()
@@ -119,7 +130,6 @@ export function PayloadBuildView({
   const [requestTimeoutSeconds, setRequestTimeoutSeconds] = useState('')
   const [envelope, setEnvelope] = useState('AesGcm')
   const [contactProtection, setContactProtection] = useState(true)
-  const [tlsTrust, setTlsTrust] = useState('pinned')
   const [tokenHours, setTokenHours] = useState('')
 
 
@@ -158,6 +168,13 @@ export function PayloadBuildView({
   // The front's family: the picked listener's transport.
   const frontFamily = selectedListener ? familyOf(selectedListener.transport) : ''
 
+  // The certificate posture a build against the picked front bakes (the
+  // listener owns the fact; the build inherits it) and the TLS-dial test
+  // that decides whether a candidate front's posture must agree: cleartext
+  // dials need no roots, TLS dials must present the front's own posture or
+  // the walk cannot verify them.
+  const frontPosture = selectedListener?.trustPosture || 'pinned'
+
   // The dial a picked fallback bakes -- the same normalization the server
   // applies when the listener itself is named: an absolute public endpoint
   // stands as typed, a bare one completes under the transport's scheme, and
@@ -185,8 +202,11 @@ export function PayloadBuildView({
   // longer serves resolves to no chip and bakes nothing).
   const eligible = useMemo(
     () => listeners.filter((l) =>
-      l.id !== listenerId && familyOf(l.transport) === frontFamily && !wildcardBound(l)),
-    [listeners, listenerId, frontFamily],
+      l.id !== listenerId
+      && familyOf(l.transport) === frontFamily
+      && !wildcardBound(l)
+      && (!dialHttps(l) || (l.trustPosture || 'pinned') === frontPosture)),
+    [listeners, listenerId, frontFamily, frontPosture],
   )
   const picked = useMemo(
     () => fallbackIds
@@ -259,8 +279,11 @@ export function PayloadBuildView({
   // socket family (either mode), and the DNS family (poll, the
   // egress-restricted TXT carrier). The catcher serves no contact at all.
   const carriers = useMemo(
-    () => listeners.filter((l) => l.transport !== 'shellcatch'),
-    [listeners],
+    () => listeners.filter(
+      (l) => l.transport !== 'shellcatch'
+        && (!dialHttps(l) || (l.trustPosture || 'pinned') === frontPosture),
+    ),
+    [listeners, frontPosture],
   )
   const [carrierId, setCarrierId] = useState('')
   useEffect(() => {
@@ -345,9 +368,9 @@ export function PayloadBuildView({
         // the Rust unit, and the disk-or-memory choice is the launcher
         // step's (the Launchers tab offers both families for every payload).
         format: null,
-        // Trust rides empty on the pinned default; 'public' is the explicit
-        // real-domain posture.
-        trust: tlsTrust !== 'pinned' ? tlsTrust : null,
+        // Trust rides empty by design: the picked front's listener owns the
+        // certificate posture, and the build inherits it server side.
+        trust: null,
       })
       setError(null)
       await refreshJobs()
@@ -623,28 +646,6 @@ export function PayloadBuildView({
                 <option value="AesGcm">AES-GCM</option>
               </select>
             </label>
-            <label>
-              TLS trust
-              <select
-                value={tlsTrust}
-                onChange={(e) => setTlsTrust(e.target.value)}
-                title="Which roots the artifact's TLS dials trust. Pinned (the default): the engagement CA baked at build is the only root — no public-PKI or target-store dependence, and no public CA can mint an identity it accepts. Public: the front is a real domain whose certificate a public CA issued (terminated at an edge you run in front of the teamserver), and the artifact validates like an ordinary client — the posture that survives TLS inspection. Public needs an https dial."
-              >
-                <option value="pinned">pinned — engagement CA (default)</option>
-                <option value="public">public — real-domain front cert</option>
-              </select>
-              {/* The fact this knob turns on lives on the listener (whose
-                  certificate the front presents), while the choice lives
-                  here — the one pairing easy to forget, so the https front
-                  says so beside the knob. */}
-              {(selectedListener?.transport === 'https'
-                || selectedListener?.transport === 'mtls') && (
-                <span className="field-help">
-                  Picked an https front: if it is a real domain with a public certificate, pick
-                  public — pinned refuses a public CA's chain.
-                </span>
-              )}
-            </label>
             <label
               className="checkbox-label"
               title="Seals every contact POST and its response as AES-256-GCM under a per-artifact key minted at build, covering a fresh counter — the authentication the web contacts use instead of a TLS client certificate, and the confidentiality that makes cleartext http carry encrypted content. Off is the lab-debug plaintext frame."
@@ -689,7 +690,6 @@ export function PayloadBuildView({
           mode={mode}
           sleep={sleepSeconds}
           jitter={jitterSeconds}
-          trust={tlsTrust}
         />
         <button className="primary" type="submit" disabled={submitting}>
           Build payload
@@ -852,14 +852,12 @@ function BuildSummary({
   mode,
   sleep,
   jitter,
-  trust,
 }: {
   listener?: ListenerSummary
   carrier?: ListenerSummary
   mode: string
   sleep: string
   jitter: string
-  trust: string
 }) {
   const front = listener?.publicEndpoint ?? '— pick a listener —'
   const via = listener ? `${listener.name} (${listener.transport})` : 'unpicked'
@@ -905,12 +903,12 @@ function BuildSummary({
       </div>
       {tlsFront && (
         <div
-          title="The trust choice under Advanced: whose certificate the front presents decides which posture the dial can verify"
+          title="The front's certificate posture -- set on the listener, inherited here as the roots the dials trust"
         >
           <span className="summary-key">tls</span>{' '}
-          {trust === 'public'
-            ? 'public roots — the front is a real domain whose certificate a public CA issued'
-            : 'engagement CA pinned — no public chain will verify (pick public under Advanced if this front presents one)'}
+          {(listener.trustPosture || 'pinned') === 'public'
+            ? 'public roots — a real-domain certificate an operator-run edge terminates'
+            : 'engagement CA pinned — the front presents the CA’s own leaf'}
         </div>
       )}
     </div>

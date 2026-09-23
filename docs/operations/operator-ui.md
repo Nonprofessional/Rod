@@ -201,6 +201,15 @@ An engagement's C2 ingress. Each listener owns two addresses:
   derives it from the bind. In production this is typically your
   redirector ([redirectors.md](redirectors.md)); in dev it is usually the
   bind itself.
+- **Certificate** (http/https transports) -- whose certificate the front
+  presents, the fact every build against it inherits as its TLS roots.
+  `engagement CA` (the default) works for any domain you point at the
+  listener: the CA mints the front's leaf with a SAN naming the public
+  host, and artifacts pin the CA. `public` marks a real-domain front
+  whose publicly-trusted certificate an operator-run edge terminates in
+  front of this listener (the public endpoint must be that edge's https
+  address) -- the shape that survives TLS inspection. The roster marks a
+  public front beside its transport.
 
 Endpoint completion (HTTP-shaped transports only): an empty endpoint derives
 from the bind (`bind 10.1.2.3:8443` on https becomes
@@ -391,15 +400,19 @@ landing a file.
   per host, so one executable can seed several machines until the budget runs
   out. `0` = unlimited. Default 1.
 
+**TLS trust is not a build knob**: which roots the artifact's TLS dials
+trust is the picked front's fact, set as the listener's **Certificate**
+(the engagement CA terminates a `pinned` front -- the default, and it
+works for any domain you point at the listener, since the CA mints the
+front's leaf for that host; `public` marks a real-domain front whose
+certificate an operator-run edge terminates -- the shape that survives
+TLS inspection). The build inherits the posture, the pre-build summary's
+`tls` line names it, and the fallback and carrier offers stay inside it:
+the artifact bakes one root set, so a TLS front presenting the other
+certificate is a dial the walk cannot verify.
+
 **Advanced** (all defaulted server side; open only to change them):
 
-- **TLS trust** -- which roots the artifact's TLS dials trust. `pinned`
-  (the default): the engagement CA baked at build is the only root -- the
-  self-sufficient posture. `public`: the front is a real domain whose
-  certificate a public CA issued (terminated at an edge you run in front
-  of the teamserver; the listener's public endpoint names the domain), and
-  the artifact validates it like an ordinary client -- the posture that
-  survives TLS inspection. Needs an https dial.
 - **Public endpoint (enroll + contact, manual)** -- the dial address
   when you deliberately build without naming a listener.
 - **Public endpoint (interactive, manual)** -- the stream front the

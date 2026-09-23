@@ -109,7 +109,7 @@ public sealed class KestrelEndpointProvider : ITransportProvider
 
         var listener = Listener.Define(
             context.Id ?? ListenerId.New(), config.Name, config.Transport, config.BindAddress, config.PublicEndpoint,
-            context.Clock.GetUtcNow(), config.EngagementId);
+            context.Clock.GetUtcNow(), config.EngagementId, config.TrustPosture);
 
         context.Endpoints.PublishEndpoint(
             EndpointKey(listener.Id), $"{Posture.Scheme}://{config.BindAddress}", Posture.ClientCertificateMode);

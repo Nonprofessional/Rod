@@ -41,6 +41,19 @@ public sealed class Listener
     public string BindAddress { get; }
     public string PublicEndpoint { get; private set; }
 
+    /// <summary>
+    /// Whose certificate the front presents, the fact a build's TLS roots
+    /// must match (architecture.md Sec 9): "pinned" -- the default -- the
+    /// engagement CA terminates the front and the artifacts it serves pin
+    /// that CA; "public" a real-domain front whose publicly-trusted chain an
+    /// operator-run edge terminates, served to artifacts that validate like
+    /// ordinary clients. A property of the front, not the artifact: the
+    /// listener owns the fact and the build inherits it, because the
+    /// certificate is deployed where the listener is, not where the build
+    /// form is. Only the https transport may name public.
+    /// </summary>
+    public string TrustPosture { get; }
+
     /// <summary>The engagement this listener answers for; null on the shared tier.</summary>
     public EngagementId? EngagementId { get; }
 
@@ -55,6 +68,7 @@ public sealed class Listener
         string bindAddress,
         string publicEndpoint,
         EngagementId? engagementId,
+        string trustPosture,
         DateTimeOffset createdAt,
         ListenerState state)
     {
@@ -64,6 +78,7 @@ public sealed class Listener
         BindAddress = bindAddress;
         PublicEndpoint = publicEndpoint;
         EngagementId = engagementId;
+        TrustPosture = trustPosture;
         CreatedAt = createdAt;
         State = state;
     }
@@ -80,8 +95,9 @@ public sealed class Listener
         string bindAddress,
         string publicEndpoint,
         DateTimeOffset at,
-        EngagementId? engagementId = null)
-        => new(id, name, transport, bindAddress, publicEndpoint, engagementId, at, ListenerState.Stopped);
+        EngagementId? engagementId = null,
+        string trustPosture = "pinned")
+        => new(id, name, transport, bindAddress, publicEndpoint, engagementId, trustPosture, at, ListenerState.Stopped);
 
     /// <summary>
     /// Marks the listener as bound and accepting connections. Only legal from
