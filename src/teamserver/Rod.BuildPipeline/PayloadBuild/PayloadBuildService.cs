@@ -79,7 +79,9 @@ public sealed class PayloadBuildService
             request.TokenMaxUses,
             request.EnvelopeKeyId,
             request.EnvelopeKey,
-            request.Format);
+            request.Format,
+            request.Kind,
+            request.StagePayloadId);
 
         var built = await unit.BuildAsync(@params, cancellationToken);
 
@@ -120,8 +122,11 @@ public sealed class PayloadBuildService
 /// minted budget the library's build snapshot records. <see cref="EnvelopeKeyId"/>
 /// and <see cref="EnvelopeKey"/> are the per-artifact AES-GCM envelope pair the
 /// transport layer mints when the profile's envelope is AesGcm; null on every
-/// other envelope. <see cref="Format"/> names the artifact form factor the
+/// other envelope. On a loader build the pair is the stage seal and mints
+/// unconditionally. <see cref="Format"/> names the artifact form factor the
 /// unit emits; it defaults to the single-file executable.
+/// <see cref="Kind"/> names the delivery tier; <see cref="StagePayloadId"/>
+/// names the stored payload a loader build delivers.
 /// </summary>
 public sealed record BuildRequest(
     EngagementId EngagementId,
@@ -139,4 +144,6 @@ public sealed record BuildRequest(
     int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null,
-    ArtifactFormat Format = ArtifactFormat.SingleFileExe);
+    ArtifactFormat Format = ArtifactFormat.SingleFileExe,
+    PayloadKind Kind = PayloadKind.Implant,
+    Guid? StagePayloadId = null);

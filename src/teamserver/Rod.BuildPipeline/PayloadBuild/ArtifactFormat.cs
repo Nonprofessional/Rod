@@ -36,11 +36,34 @@ public enum ArtifactFormat
     NativeAot = 2,
 
     /// <summary>
-    /// Retired with the .NET implant it served: the managed zip bundle a
-    /// .NET host loaded in-process. No unit produces it; the parser and the
-    /// Rust unit both refuse it with the native spellings named.
+    /// A shared library a host process or loader maps in-process: the PE
+    /// spelling on Windows. The name once flagged the retired .NET unit's
+    /// managed zip bundle -- nothing produces or consumes that shape
+    /// anymore, and the parser refused it -- so the wire name returns as
+    /// the native deployment shape it now names. Not yet a build output of
+    /// the in-tree Rust unit: the contract carries it for the loader and
+    /// injection deliveries that load a stage without exec, and the unit
+    /// refuses it naming that state until the toolchain work lands.
     /// </summary>
     Dll = 3,
+
+    /// <summary>
+    /// A position-independent code blob an injector writes into a process
+    /// and jumps to: no container, no headers, the bytes alone. The shape
+    /// <c>inject.shellcode</c> spends on the target. Not yet a build output
+    /// of the in-tree Rust unit; the contract carries it so a build request
+    /// and a library row can name the delivery before the transform that
+    /// produces it arrives.
+    /// </summary>
+    Shellcode = 4,
+
+    /// <summary>
+    /// An ELF shared object a host process or loader maps in-process: the
+    /// Unix spelling of <see cref="Dll"/>. Not yet a build output of the
+    /// in-tree Rust unit; the contract carries it for the loader and
+    /// injection deliveries on Unix targets.
+    /// </summary>
+    SharedObject = 5,
 }
 
 /// <summary>
@@ -73,6 +96,12 @@ public static class ArtifactFormats
             case "dll":
                 format = ArtifactFormat.Dll;
                 return true;
+            case "shellcode":
+                format = ArtifactFormat.Shellcode;
+                return true;
+            case "so":
+                format = ArtifactFormat.SharedObject;
+                return true;
             default:
                 format = ArtifactFormat.SingleFileExe;
                 return false;
@@ -80,13 +109,15 @@ public static class ArtifactFormats
     }
 
     /// <summary>The wire name for a format, as the request accepts it and the
-    /// library shows it.</summary>
+    /// library shows.</summary>
     public static string Name(ArtifactFormat format) => format switch
     {
         ArtifactFormat.SingleFileExe => "exe",
         ArtifactFormat.TrimmedExe => "exe-trimmed",
         ArtifactFormat.NativeAot => "aot",
         ArtifactFormat.Dll => "dll",
+        ArtifactFormat.Shellcode => "shellcode",
+        ArtifactFormat.SharedObject => "so",
         _ => format.ToString(),
     };
 }

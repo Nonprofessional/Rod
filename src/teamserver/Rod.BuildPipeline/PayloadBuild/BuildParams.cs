@@ -45,9 +45,22 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// <param name="Format">
 /// The artifact form factor the unit emits for this build (architecture.md
 /// Sec 6): the single-file executable default, the trimmed executable, the
-/// native AOT binary, or the framework-dependent DLL bundle a host loads
-/// in-process. Defaults to the single-file executable -- the shape every build
-/// produced before the format axis existed.
+/// native AOT binary, or the shared/shellcode shapes the contract carries
+/// for loader and injection deliveries. Defaults to the single-file
+/// executable -- the shape every build produced before the format axis
+/// existed.
+/// </param>
+/// <param name="Kind">
+/// Which tier of the delivery stack this build produces: the implant (the
+/// default, the full product) or the stage-0 loader that fetches and runs a
+/// stage from memory. Defaults to the implant.
+/// </param>
+/// <param name="StagePayloadId">
+/// The stored payload this loader build delivers: the loader bakes the
+/// fetch reference, and the fetch route serves this artifact's bytes sealed
+/// under the build's <c>EnvelopeKey</c> pair (the stage seal -- on a loader
+/// build that pair is the seal, minted unconditionally). Null on every
+/// implant build; required on every loader build.
 /// </param>
 public sealed record BuildParams(
     EngagementId EngagementId,
@@ -61,4 +74,6 @@ public sealed record BuildParams(
     int? TokenMaxUses = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null,
-    ArtifactFormat Format = ArtifactFormat.SingleFileExe);
+    ArtifactFormat Format = ArtifactFormat.SingleFileExe,
+    PayloadKind Kind = PayloadKind.Implant,
+    Guid? StagePayloadId = null);
