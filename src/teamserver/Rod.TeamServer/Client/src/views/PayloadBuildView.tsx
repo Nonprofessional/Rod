@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   type BuildJob,
   type ListenerSummary,
+  type PayloadSummary,
   enqueueBuildJob,
   listBuildJobs,
   listListeners,
@@ -113,10 +114,11 @@ export function PayloadBuildView({
   const [tokenMaxUses, setTokenMaxUses] = useState('1')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [jobs, setJobs] = useState<BuildJob[]>([])
-  // The library's artifact ids, fetched beside the jobs so the strip knows
-  // which finished artifacts still exist -- a deleted payload reads "deleted"
-  // instead of offering a download that would 404.
-  const [libraryIds, setLibraryIds] = useState<Set<string>>(new Set())
+  // The payload library, fetched beside the jobs so the strip knows which
+  // finished artifacts still exist (a deleted payload reads "deleted"
+  // instead of offering a download that would 404) and reads each baked
+  // token's live state -- the budget a revoke or an enrollment moves.
+  const [library, setLibrary] = useState<PayloadSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -237,7 +239,7 @@ export function PayloadBuildView({
         listPayloads(engagementId).catch(() => []),
       ])
       setJobs(list)
-      setLibraryIds(new Set(library.map((p) => p.artifactId)))
+      setLibrary(library)
     } catch {
       // Keep the last known list; the next poll retries.
     }
@@ -246,6 +248,8 @@ export function PayloadBuildView({
   useEffect(() => {
     void refreshJobs()
   }, [refreshJobs])
+
+  const libraryIds = useMemo(() => new Set(library.map((p) => p.artifactId)), [library])
 
   const active = jobs.some((j) => j.state === 'queued' || j.state === 'running')
 
@@ -319,6 +323,7 @@ export function PayloadBuildView({
     try {
       await revokeDeployToken(engagementId, tokenId)
       setError(null)
+      await refreshJobs()
     } catch (e) {
       setError(String(e))
     } finally {
@@ -775,22 +780,45 @@ export function PayloadBuildView({
                       ) : (
                         <span className="muted">—</span>
                       )}
-                      {job.artifact?.tokenId && (
-                        <div className="muted" title={job.artifact.tokenId}>
-                          baked token {job.artifact.tokenId.slice(0, 8)}{' '}
-                          {revoking === job.artifact.tokenId ? (
-                            '(revoking…)'
-                          ) : (
-                            <button
-                              className="sm danger"
-                              onClick={() => void onRevokeToken(job.artifact!.tokenId!)}
-                              title="The leak answer: the baked credential stops working at the next enrollment attempt"
-                            >
-                              Revoke token
-                            </button>
-                          )}
-                        </div>
-                      )}
+                      {job.artifact?.tokenId && (() => {
+                        // The library row for this artifact carries the
+                        // credential's live state; a payload deleted from
+                        // the library leaves the line as plain provenance.
+                        const state = library.find(
+                          (p) => p.tokenId === job.artifact!.tokenId,
+                        )
+                        const dead =
+                          state != null
+                          && state.tokenMaxUses !== 0
+                          && (state.tokenRemainingUses == null
+                            || state.tokenRemainingUses <= 0)
+                        return (
+                          <div className="muted" title={job.artifact.tokenId}>
+                            baked token {job.artifact.tokenId.slice(0, 8)}
+                            {dead
+                              ? ' — no enrolls left'
+                              : state && state.tokenMaxUses === 0
+                                ? ' · unlimited enrolls'
+                                : state
+                                  ? ` · ${state.tokenRemainingUses} of ${state.tokenMaxUses} enrolls left`
+                                  : ''}
+                            {revoking === job.artifact.tokenId ? (
+                              ' (revoking…)'
+                            ) : (
+                              <>
+                                {' '}
+                                <button
+                                  className="sm danger"
+                                  onClick={() => void onRevokeToken(job.artifact!.tokenId!)}
+                                  title="The leak answer: the baked credential stops working at the next enrollment attempt"
+                                >
+                                  Revoke token
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td>
                       {job.artifact &&
