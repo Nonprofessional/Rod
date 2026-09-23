@@ -339,7 +339,11 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
                     $"cargo build failed (exit {result.ExitCode}):\n{diag}");
             }
 
-            var binaryName = triple.StartsWith("windows", StringComparison.Ordinal)
+            // The Windows triples (x86_64-pc-windows-gnu, i686-pc-windows-gnu)
+            // begin with the arch, not the OS -- a StartsWith("windows") check
+            // names the wrong file and a successful build reads as a missing
+            // artifact.
+            var binaryName = triple.Contains("-windows-", StringComparison.Ordinal)
                 ? "rod-implant.exe"
                 : "rod-implant";
             var binaryPath = Path.Combine(targetDir, triple, "release", binaryName);

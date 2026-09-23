@@ -24,6 +24,27 @@ public class RustBuildUnitTests
         new TransportProfile("http://c2.example.test", "/beacon"),
         new BeaconProfile(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10), DateTimeOffset.UtcNow.AddDays(30)));
 
+    // The Windows cargo triples begin with the arch (x86_64-pc-windows-gnu),
+    // so the exe-suffix pick must key on the OS segment, not a StartsWith
+    // -- the bug this pins had every Windows build report success and then
+    // fail its own artifact check.
+    [Fact]
+    public async Task AWindowsTarget_ProducesTheExeArtifactName()
+    {
+        var unit = new RustBuildUnit();
+        if (unit.ReportEnvironment().Status is "unavailable" or null)
+            return; // no toolchain on this runner; the environment report names the fix
+
+        var @params = Params() with { Target = new TargetProfile("windows", "amd64") };
+
+        var artifact = await unit.BuildAsync(@params);
+
+        // The artifact came back: the unit found the .exe cargo produced
+        // (a wrong name read as "produced no rod-implant"). The i686 twin
+        // builds the same way once its host carries the mingw cross.
+        Assert.True(artifact.Size > 0);
+    }
+
     [Fact]
     public async Task MissingSourceTree_ThrowsBuildUnitFailure_NotAContractRefusal()
     {

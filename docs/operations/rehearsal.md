@@ -447,3 +447,55 @@ Plan the cut accordingly: rotation is scheduled downtime for implant
 presence. Budget one fresh build-and-render per implant that must come
 back, and treat every pre-rotation leaf as dead the moment the service
 restarts.
+
+## Windows verification of the Rust implant — 2026-09-23
+
+The dated addendum the queued refresh will fold into the rewritten walk:
+the Rust reference implant verified on a real Windows host (Windows 11
+24H2, x64, on the lab's VMware guest) against a teamserver on the Linux
+build host, both artifacts pipeline-built through the operator API — the
+item that was blocked on this host. Two builds: an http-front poll
+implant and a tcp-front stream implant, minted credentials baked, zero
+run-time arguments. What ran, and what it produced:
+
+- **Enrollment both ways.** The poll implant enrolled over the envelope
+  POST cycle (http front) and the stream implant over the raw-TCP
+  carriage's opening exchange — the socket family's enroll arm on real
+  Windows, not the Linux e2e's subprocess shape.
+- **The core surface.** `shell.exec` (whoami), `fs.list` (full NTFS home
+  listing), `file.push` + `file.pull` (a 25-byte file round-tripped
+  byte-exact), `proc.kill` (a spawned notepad terminated by pid).
+- **The sensitive four.** `inject.shellcode` injected a 3-byte `ret`
+  stub into a live notepad and reported the remote thread completing —
+  the VirtualAllocEx/WriteProcessMemory/CreateRemoteThread path end to
+  end. `collect.keylog` started, drained, and stopped (an SSH session-0
+  implant captures nothing, correctly: no interactive desktop feeds it).
+  `proc.kill` above. `collect.minidump` ran its full argument and
+  process-resolution path and was refused at the privilege boundary —
+  an unelevated implant cannot OpenProcess lsass — which is the
+  designed refusal, not a defect; the dump itself wants an elevated
+  implant the lab guest does not auto-provide.
+- **The channel verbs over the raw-TCP carriage.** `shell.interact`
+  opened the pipes-backed cmd, answered `whoami` through the
+  ChannelInput/ChannelOutput frames on the live stream. `tunnel.forward`
+  relayed through the implant back to the build host: a relay-bound
+  local port fetched a probe file through the Windows socket pump, both
+  hops verified.
+
+Two adversarial observations from the run, both recorded here so the
+refresh addresses them:
+
+- **A build defect the Linux legs cannot see:** every pipeline win-x64
+  build failed its own artifact check — the unit picked the `.exe`
+  suffix with `triple.StartsWith("windows")`, and the Windows cargo
+  triples begin with the arch (`x86_64-pc-windows-gnu`), so a successful
+  compile read as a missing artifact. Fixed with the OS-segment test the
+  commit records; the regression test drives a real win-x64 build.
+- **A `start /b` shell.exec blocks the poll queue head** (the child
+  inherits the pipe, the task never completes, later tasks queue behind
+  it) — the Windows twin of the pipe semantics the Linux legs already
+  know. Spawn through `powershell Start-Process` instead; the refresh's
+  operator guidance should say so.
+
+Cleanup verified: implant processes killed, artifacts and the pushed
+file removed from the guest.

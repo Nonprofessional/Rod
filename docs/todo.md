@@ -246,28 +246,12 @@ blocker clears, not skipped.
   pipeline-built Rust payloads), then rewrite the record as the
   procedure it now is, dated-header patch notes folded in or dropped;
   the CA rotation drill carries over where it still holds. The
-  multi-host Windows leg waits for the host the item below names;
+  multi-host Windows leg is done -- the 2026-09-23 addendum in the walk
+  records it -- and folds into the rewrite like every other leg;
   everything else runs from Linux now.
   _AC:_ the single-host walk and the redirector composition re-executed
   end to end on the settled surface, the refreshed record quoting
   acceptance evidence from the new run rather than the retired one.
-
-- **Windows host verification of the Rust implant** (serves
-  architecture.md Sec 12.2's reach story and the rehearsal walk above;
-  blocked on a Windows host the developer provides). What an engagement
-  cannot do without it: confidence on the OS engagements actually land
-  on -- the e2e legs prove the wire on Linux, while the Windows-only
-  code paths never execute there: the sensitive verbs (proc.kill,
-  inject.shellcode, collect.minidump, collect.keylog) and the
-  pipes-backed interactive shell. Shape: run a pipeline-built win-x64
-  Rust artifact on the provided host against a teamserver and exercise
-  shell.exec, file.push and file.pull, the channel verbs over the
-  raw-TCP carriage, and the sensitive four, with the same adversarial
-  eye the retired win-x64 surface pass applied; the outcome lands as
-  the refreshed walk's multi-host Windows legs.
-  _AC:_ the sensitive verbs and the channel verbs answer tasking from a
-  Windows host through the same e2e shape the Linux legs run, recorded
-  in the rehearsal walk.
 
 - **Implant-side plugin seam: C-ABI capability modules** (serves
   architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
