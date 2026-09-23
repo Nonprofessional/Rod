@@ -65,7 +65,12 @@ public sealed record PayloadRecord(
     Guid? TokenId = null,
     Guid? EnvelopeKeyId = null,
     byte[]? EnvelopeKey = null,
-    PayloadBuildProfile? Build = null);
+    PayloadBuildProfile? Build = null,
+    // The loader tier's stage reference: the stored payload this artifact
+    // (a stage-0 loader) fetches and runs from memory. Null on every
+    // implant build -- non-null is the loader discriminator the stage
+    // fetch route and the library view read.
+    Guid? StagePayloadId = null);
 
 /// <summary>
 /// The bake-time snapshot of a payload's build parameters (the values the

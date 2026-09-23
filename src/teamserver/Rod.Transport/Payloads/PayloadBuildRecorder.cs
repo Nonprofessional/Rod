@@ -44,6 +44,12 @@ internal static class PayloadBuildRecorder
         var beaconTrail = artifact.Params.Transport.BeaconEndpoint is { } beaconEndpoint
             ? $" beacon={beaconEndpoint}"
             : "";
+        // The loader tier names its stage on the trail: the artifact id the
+        // sealed fetch serves, so a delivery lines up with the implant it
+        // carried without opening the store.
+        var stageTrail = artifact.Params.StagePayloadId is { } stageId
+            ? $" stage={stageId.ToString()[..8]}"
+            : "";
         await payloads.SaveAsync(
             new PayloadRecord(
                 artifact.ArtifactId,
@@ -61,6 +67,7 @@ internal static class PayloadBuildRecorder
                 TokenId: artifact.Params.TokenId,
                 EnvelopeKeyId: artifact.Params.EnvelopeKeyId,
                 EnvelopeKey: artifact.Params.EnvelopeKey,
+                StagePayloadId: artifact.Params.StagePayloadId,
                 Build: new PayloadBuildProfile
                 {
                     Mode = artifact.Params.Beacon.Mode,
@@ -92,7 +99,7 @@ internal static class PayloadBuildRecorder
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {ArtifactFormats.Name(artifact.Params.Format)} {artifact.Params.Transport.Endpoint}{beaconTrail}{transformTrail}{tokenTrail}",
+                payload: $"{artifact.Language}:{PayloadKinds.Name(artifact.Params.Kind)}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {ArtifactFormats.Name(artifact.Params.Format)} {artifact.Params.Transport.Endpoint}{beaconTrail}{stageTrail}{transformTrail}{tokenTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),
@@ -109,6 +116,8 @@ internal static class PayloadBuildRecorder
             artifact.BuiltAt,
             artifact.Transforms.Select(t => t.Name).ToArray(),
             TokenId: artifact.Params.TokenId?.ToString(),
-            Format: ArtifactFormats.Name(artifact.Params.Format));
+            Format: ArtifactFormats.Name(artifact.Params.Format),
+            Kind: PayloadKinds.Name(artifact.Params.Kind),
+            StagePayloadId: artifact.Params.StagePayloadId?.ToString());
     }
 }

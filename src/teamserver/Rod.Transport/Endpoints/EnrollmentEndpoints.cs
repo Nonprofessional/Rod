@@ -42,8 +42,107 @@ public static class EnrollmentEndpoints
             .WithName(nameof(EnrollAsync));
         group.MapGet("/payloads/{payloadId}", FetchPayloadAsync)
             .WithName(nameof(FetchPayloadAsync));
+        group.MapGet("/stages/{payloadId}", FetchStageAsync)
+            .WithName(nameof(FetchStageAsync));
 
         return endpoints;
+    }
+
+    // Serves a loader's sealed stage: the stage-0 half of the staging
+    // exchange (architecture.md Sec 6). The route's id names the loader
+    // artifact itself -- the fetch path a loader bakes -- and the loader's
+    // record carries the stage it delivers plus the seal key the loader
+    // bakes. The serve is the payload fetch's exact governance (token gate,
+    // engagement scope, redeem only on a serve, the audit fact with the
+    // fetcher's wire shape) with one addition: the bytes leave sealed, an
+    // R1 body under the stage AAD and a fresh nonce, so nothing on the wire
+    // between front and target is readable or forgeable without the loader's
+    // own baked key. A loader whose record lost its key or its stage serves
+    // nothing -- a deleted half is a dead delivery, recorded as such.
+    private static async Task<IResult> FetchStageAsync(
+        string payloadId,
+        HttpRequest http,
+        IDeployTokenService tokens,
+        Rod.Transport.Listeners.IListenerRegistry listeners,
+        TimeProvider clock,
+        IPayloadStore payloads,
+        IAuditStore audit,
+        ILiveEventBus live,
+        CancellationToken cancellationToken)
+    {
+        var secret = http.Headers["X-Deploy-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(secret))
+            return Results.Json(
+                new Problem("X-Deploy-Token header is required."),
+                statusCode: StatusCodes.Status401Unauthorized);
+        if (!Guid.TryParse(payloadId, out var payloadValue))
+            return Results.BadRequest(new Problem("Payload id is not a valid identifier."));
+
+        var remote = http.HttpContext.Connection.RemoteIpAddress is { } remoteIp
+            ? $"{remoteIp}:{http.HttpContext.Connection.RemotePort}"
+            : "unknown";
+        var userAgent = http.Headers.UserAgent.ToString();
+        var fetcher = $"remote={remote} listenerPort={http.HttpContext.Connection.LocalPort} "
+            + $"ua={(string.IsNullOrWhiteSpace(userAgent) ? "none" : userAgent)}";
+
+        try
+        {
+            var token = await tokens.VerifyAsync(secret, clock.GetUtcNow(), cancellationToken);
+            if (!await TokenMatchesListenerScopeAsync(http, listeners, token, cancellationToken))
+            {
+                await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
+                    fetcher, "refused:scope", cancellationToken: cancellationToken);
+                return Results.Json(
+                    new Problem("Deploy token was not accepted."),
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            // The loader record: the id a loader bakes is its own, and the
+            // record's stage reference is what makes it a loader. Anything
+            // else on this route is a plain payload id on the wrong path --
+            // indistinguishable from nonexistent, same as the payload
+            // fetch's engagement rule.
+            var loader = await payloads.FindAsync(payloadValue, token.EngagementId.Value, cancellationToken);
+            if (loader?.StagePayloadId is not { } stageId)
+            {
+                await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
+                    fetcher, "refused:stage", cancellationToken: cancellationToken);
+                return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+            }
+            var stage = await payloads.FindAsync(stageId, token.EngagementId.Value, cancellationToken);
+            if (stage is null || loader.EnvelopeKeyId is not { } keyId || loader.EnvelopeKey is not { } key)
+            {
+                await RecordFetchAsync(audit, clock, token.EngagementId, token.Id, payloadValue,
+                    fetcher, "refused:seal", stage?.Fingerprint, cancellationToken);
+                return Results.NotFound(new Problem("Payload does not exist in this engagement."));
+            }
+
+            var redeemed = await tokens.RedeemAsync(secret, clock.GetUtcNow(), cancellationToken);
+
+            // Sealed under the loader's own key, a fresh nonce per serve:
+            // the loader is the only party that can open what this route
+            // hands out, and no two serves share ciphertext.
+            var sealedStage = AesGcmEnvelope.WrapBody(stage.Content, keyId, key, AesGcmEnvelope.StageAad);
+            await RecordFetchAsync(audit, clock, redeemed.EngagementId, redeemed.Id, payloadValue,
+                fetcher, "stage-served", stage.Fingerprint, cancellationToken);
+            await live.PublishAsync(
+                LiveEvent.PayloadFetched(
+                    redeemed.EngagementId,
+                    $"{fetcher} stage={stage.Fingerprint} served sealed",
+                    clock.GetUtcNow()),
+                cancellationToken);
+            return Results.File(sealedStage, "application/octet-stream", $"rod-stage-{stageId:N}.bin");
+        }
+        catch (DeployTokenRedeemException ex)
+        {
+            if (ex.EngagementId is { } engagement && ex.TokenId is { } tokenId)
+                await RecordFetchAsync(audit, clock, engagement, tokenId, payloadValue,
+                    fetcher, $"refused:{ex.Reason.ToString().ToLowerInvariant()}",
+                    cancellationToken: cancellationToken);
+            return Results.Json(
+                new Problem("Deploy token was not accepted."),
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
     }
 
     // Serves a built payload to a presenting downloader one-liner. The deploy

@@ -63,7 +63,7 @@ public static class PayloadJobEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var (parsed, error) = await PayloadBuildRequestParser.ParseAsync(
-            body, new EngagementId(engagementValue), requestedBy.Value, listeners, ca, cancellationToken);
+            body, new EngagementId(engagementValue), requestedBy.Value, listeners, ca, payloads, cancellationToken);
         if (error is not null)
             return Results.BadRequest(new Problem(error));
 
@@ -79,7 +79,11 @@ public static class PayloadJobEndpoints
             MintedTokenId = tokenId.Value,
             TokenMaxUses = body.TokenMaxUses ?? 1,
         };
-        if (request.Transport.Envelope == TransportEnvelope.AesGcm || request.Transport.ContactProtection)
+        if (request.Transport.Envelope == TransportEnvelope.AesGcm
+            || request.Transport.ContactProtection
+            // The loader's key pair is the stage seal, minted whatever the
+            // envelope knobs say.
+            || request.Kind == PayloadKind.Loader)
         {
             var (envelopeKeyId, envelopeKey) = AesGcmEnvelope.Mint();
             request = request with { EnvelopeKeyId = envelopeKeyId, EnvelopeKey = envelopeKey };

