@@ -28,20 +28,22 @@ public class RustBuildUnitTests
     // so the exe-suffix pick must key on the OS segment, not a StartsWith
     // -- the bug this pins had every Windows build report success and then
     // fail its own artifact check.
-    [Fact]
-    public async Task AWindowsTarget_ProducesTheExeArtifactName()
+    [Theory]
+    [InlineData("amd64")]
+    [InlineData("x86")]
+    public async Task AWindowsTarget_ProducesTheExeArtifactName(string arch)
     {
         var unit = new RustBuildUnit();
         if (unit.ReportEnvironment().Status is "unavailable" or null)
             return; // no toolchain on this runner; the environment report names the fix
 
-        var @params = Params() with { Target = new TargetProfile("windows", "amd64") };
+        var @params = Params() with { Target = new TargetProfile("windows", arch) };
 
         var artifact = await unit.BuildAsync(@params);
 
         // The artifact came back: the unit found the .exe cargo produced
-        // (a wrong name read as "produced no rod-implant"). The i686 twin
-        // builds the same way once its host carries the mingw cross.
+        // (a wrong name read as "produced no rod-implant") on both the
+        // x86_64 and i686 crosses.
         Assert.True(artifact.Size > 0);
     }
 
