@@ -290,6 +290,31 @@ a hop the engagement does not control; keep termination at the teamserver
 unless the deployment knowingly chooses an edge (Sec 7, architecture.md
 Sec 9).
 
+### Two C2 domains on one listener
+
+A second engagement domain that should ride the *same* teamserver bind port is
+the same fronting picture with a second C2 name instead of a cover name -- and
+the one-listener model makes the constraint worth spelling out:
+
+- **A listener is one bind with one public endpoint.** Creating a second
+  listener on a port already bound is refused (bind conflict), and pointing a
+  second domain's DNS at the same bind does not work for the pinned-trust
+  shape: the teamserver's leaf names the listener's *stored* public host in
+  its SAN, so an implant dialing the other domain fails name verification.
+- **Same DNS story, cleartext http:** there is no certificate constraint, so
+  both domains may point at the one listener; repoint it to choose which name
+  new builds bake (implants already deployed keep dialing the name they
+  baked).
+- **The multi-domain answer is the fronting tier.** Both domains terminate at
+  an edge that holds their certificates -- the same `ssl_preread` map with a
+  second C2 entry forwarding to the forwarder (pinned trust: the edge must
+  *not* terminate, so the two names need two teamserver listeners, each
+  naming its own host) -- or the edge terminates per domain and forwards to
+  the one teamserver listener, with builds switched to `trust: public`
+  (architecture.md Sec 9). The rotation story is unchanged: a burned name is
+  severed by repointing its listener, a burned front by swapping the map
+  entry.
+
 ## 7. Security notes
 
 - **The redirector is an untrusted edge.** It has no teamserver credentials, no
