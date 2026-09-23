@@ -52,7 +52,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// </param>
 /// <param name="Kind">
 /// Which tier of the delivery stack this build produces: the implant (the
-/// default, the full product) or the stage-0 loader that fetches and runs a
+/// default, the full product) or the loader that fetches and runs a
 /// stage from memory. Defaults to the implant.
 /// </param>
 /// <param name="DeliversPayloadId">

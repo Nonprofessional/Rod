@@ -12,10 +12,10 @@ using Rod.V1;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The implant-side enrollment endpoint: a stager redeems its
+/// The implant-side enrollment endpoint: a presenting payload redeems its
 /// token and receives a certificate bound to <c>(implant_id, engagement_id)</c>
 /// plus the CA chain. The engagement is resolved from the redeemed token -- a
-/// real stager carries the secret and the endpoint, not the engagement id.
+/// real artifact carries the secret and the endpoint, not the engagement id.
 ///
 /// Outcomes are mapped to the wire <see cref="EnrollStatus"/>: the language-
 /// neutral contract lives in Rod.Protocol (architecture.md Sec 8/9), so this is
@@ -26,10 +26,10 @@ namespace Rod.Transport.Endpoints;
 /// the service resolves and validates it against the redeemed token's
 /// engagement, and the recorded linkage is echoed on the response.
 ///
-/// The stage-2 fetch route below is the stage-1 half of staging
-/// (architecture.md Sec 6): a stager presents the deployment credential its
+/// The payload fetch route below is the pre-enroll half of deployment
+/// (architecture.md Sec 6): an artifact presents the deployment credential its
 /// own build baked, each served fetch spending one use of it, and receives
-/// the stage-2 bytes it then runs -- bytes whose own baked credential is
+/// the payload bytes it then runs -- bytes whose own baked credential is
 /// what the enrollment that follows spends.
 /// </summary>
 public static class EnrollmentEndpoints
@@ -402,7 +402,7 @@ public static class EnrollmentEndpoints
                 new EnrollmentResponse(outcome.Status, null, null, null, null, null),
                 statusCode: StatusCodes.Status401Unauthorized);
 
-    // The engagement-scope check shared by enroll and the stage-2 fetch: the
+    // The engagement-scope check shared by enroll and the payload fetch: the
     // socket this request arrived on must be the token's own engagement's
     // listener. A shared-tier (startup-configuration) socket refuses implant
     // ingress outright -- the operator front carries no enrollment, and each

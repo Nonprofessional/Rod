@@ -229,7 +229,7 @@ public static class ShellSessionEndpoints
     // operator to paste into the shell, rather than the server writing into
     // the session's input: the paste is an operator action through the
     // audited input route, and every launcher is the standard
-    // fetch-verify-run stager shape the stage-2 fetch already defines.
+    // fetch-verify-run shape the payload fetch already defines.
     private static async Task<IResult> UpgradeAsync(
         string engagementId,
         string id,
@@ -341,7 +341,7 @@ public static class ShellSessionEndpoints
 }
 
 /// <summary>
-/// Names the stage-2 payload a shell should grow into (omitted, the
+/// Names the payload a shell should grow into (omitted, the
 /// engagement's newest build stands in) and optionally the web listener
 /// whose front the fetch should ride (omitted, the hardened members are
 /// preferred).
@@ -349,7 +349,7 @@ public static class ShellSessionEndpoints
 public sealed record ShellUpgradeRequest(string? PayloadId, string? ListenerId = null);
 
 /// <summary>
-/// The rendered upgrade for one caught shell: the stage-2 fetch URL, the
+/// The rendered upgrade for one caught shell: the payload fetch URL, the
 /// single-use deployment credential it carries, and the paste-ready
 /// one-liners per downloader family. The secret rides here exactly once --
 /// on the operator answer -- and never on the audit trail.

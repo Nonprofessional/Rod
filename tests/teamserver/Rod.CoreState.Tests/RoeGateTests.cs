@@ -60,7 +60,7 @@ public class RoeGateTests
     {
         var h = await EngageAsync(new RoeProfile(["shell.exec", "recon.*"], null));
 
-        // file.pull is class-admissible for Stage-2, so the refusal is the ROE
+        // file.pull is class-admissible for a full implant, so the refusal is the ROE
         // gate's, not the class gate's.
         var ex = await Assert.ThrowsAsync<TaskRejectedException>(
             () => h.Service.IssueAsync(TaskFor(h, "file.pull")));

@@ -833,7 +833,7 @@ public class RustImplantEndToEndTests
 
     /// <summary>
     /// A real Kestrel teamserver with the plain-HTTP operator/enroll API and
-    /// the implant endpoint, logged in; the StagerEndToEnd harness shape.
+    /// the implant endpoint, logged in; the end-to-end harness shape.
     /// </summary>
     private sealed class TestEnv : IAsyncDisposable
     {

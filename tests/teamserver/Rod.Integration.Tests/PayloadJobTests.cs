@@ -179,7 +179,7 @@ public class PayloadJobTests
     public async Task BuildJob_MalformedBeaconFields_AreRefusedWithoutQueuing()
     {
         // The beacon names the web front one way -- a listener id or a typed
-        // https endpoint, never both; and a stager never contacts, so beacon
+        // https endpoint, never both; and a payload never contacts, so beacon
         // fields on its builds are a mistake the build refuses rather than
         // silently drops. The enroll front is a named listener so the beacon
         // arm is the refusal that fires.
@@ -208,10 +208,10 @@ public class PayloadJobTests
                 beaconEndpoint: "https://alt.example.test"));
         Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
 
-        var stager = await client.PostAsJsonAsync(
+        var refusedClass = await client.PostAsJsonAsync(
             $"/engagements/{engagementId}/payload-jobs",
             Request(@class: "Stager", beaconEndpoint: "https://10.0.0.5:5443"));
-        Assert.Equal(HttpStatusCode.BadRequest, stager.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, refusedClass.StatusCode);
 
         var jobs = await client.GetFromJsonAsync<PayloadJobEndpoints.PayloadJobResponse[]>(
             $"/engagements/{engagementId}/payload-jobs");

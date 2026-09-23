@@ -322,7 +322,7 @@ public class ShellCatchTests
         var engagementId = await CreateEngagementAsync(env.Http);
         var engagement = new EngagementId(Guid.Parse(engagementId));
 
-        // The web front the stage-2 fetch rides, plus the catcher.
+        // The web front the payload fetch rides, plus the catcher.
         var httpPort = TestSupport.GetFreeTcpPort();
         var webListener = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
@@ -340,7 +340,7 @@ public class ShellCatchTests
                 PublicEndpoint: $"10.0.0.5:{catchPort}"));
         created.EnsureSuccessStatusCode();
 
-        // A built stage-2 payload in the store, so the render has something
+        // A built payload in the store, so the render has something
         // to grow into without paying for a real build here.
         var payloads = env.Host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
         var payloadId = Guid.NewGuid();

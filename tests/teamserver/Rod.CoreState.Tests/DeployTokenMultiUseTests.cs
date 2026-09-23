@@ -55,8 +55,8 @@ public class DeployTokenMultiUseTests
         var h = await HarnessAsync();
         var token = await h.Service.MintAsync(h.EngagementId, h.Owner, Now, maxUses: 1, lifetime: TimeSpan.FromHours(1));
 
-        // The pre-enrollment read a stage-1 stager performs leaves the batch
-        // credential whole for the stage-2's enroll, exactly as for a
+        // The pre-enrollment read a fetch performs leaves the batch
+        // credential whole for the implant's enroll, exactly as for a
         // single-use token.
         _ = await h.Service.VerifyAsync(token.Secret, Now.AddSeconds(30));
         _ = await h.Service.VerifyAsync(token.Secret, Now.AddSeconds(60));

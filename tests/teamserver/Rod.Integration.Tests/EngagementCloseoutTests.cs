@@ -30,7 +30,7 @@ public class EngagementCloseoutTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, engagementId);
+            var implant = await EnrollImplantAsync(host, engagementId);
 
             // Some operational history, so the exported trail is a real one.
             var issued = await client.PostAsJsonAsync(
@@ -128,7 +128,7 @@ public class EngagementCloseoutTests
         {
             await AuthenticatedHost.LoginAsync(client);
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, engagementId);
+            var implant = await EnrollImplantAsync(host, engagementId);
 
             var frozen = await client.PostAsync($"/engagements/{engagementId}:freeze", null);
             Assert.Equal(HttpStatusCode.OK, frozen.StatusCode);
@@ -198,10 +198,10 @@ public class EngagementCloseoutTests
         return created!.EngagementId;
     }
 
-    // Enrolls a stage-2 implant directly through the registry so the task gate
+    // Enrolls an implant directly through the registry so the task gate
     // has a class to read; the endpoint path does not require the implant to be
     // connected -- issuance is gated, not dispatch.
-    private static async Task<Implant> EnrollStage2Async(IHost host, string engagementId)
+    private static async Task<Implant> EnrollImplantAsync(IHost host, string engagementId)
     {
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();

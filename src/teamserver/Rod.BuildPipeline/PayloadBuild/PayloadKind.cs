@@ -5,7 +5,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// The kind is the product axis -- which tier of the delivery stack the
 /// artifact is -- while <see cref="ArtifactFormat"/> is the form factor of
 /// the artifact itself. The implant is the full product; the loader is the
-/// stage-0 tier, the small dialer whose own fetch delivers and runs the
+/// loader tier, the small dialer whose own fetch delivers and runs the
 /// implant tier from memory.
 /// </summary>
 public enum PayloadKind
@@ -17,7 +17,7 @@ public enum PayloadKind
     Implant = 0,
 
     /// <summary>
-    /// The stage-0 loader (the Rust reference unit's second artifact): a
+    /// The loader (the Rust reference unit's second artifact): a
     /// no_std dialer that fetches the stage this build names, authenticates
     /// it under the build's per-artifact AES-GCM key (the stage seal), and
     /// execs it from a memfd. The build contract carries the stage

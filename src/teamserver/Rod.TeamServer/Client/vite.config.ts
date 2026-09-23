@@ -22,7 +22,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Engagement-scoped routes cover tasking, audit, artifacts, timeline,
-      // report, payloads, stager tokens, and implants. Listeners and the
+      // report, payloads, deploy tokens, and implants. Listeners and the
       // capability catalog are global routes. Operator
       // session routes (login/logout/me) are added with operator auth.
       '/engagements': apiTarget,

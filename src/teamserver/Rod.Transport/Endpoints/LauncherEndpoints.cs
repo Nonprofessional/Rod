@@ -17,7 +17,7 @@ namespace Rod.Transport.Endpoints;
 // The standalone launcher surface: the operator's "give me the one-liner that
 // beacons" (architecture.md Sec 8), without a caught shell to grow from. The
 // shell console's Upgrade render and this endpoint share one definition of the
-// flow -- resolve the web front and the stage-2 payload, mint the download
+// flow -- resolve the web front and the payload, mint the download
 // credential, render the paste-ready downloader families -- so both surfaces
 // answer identically whichever one an operator drives.
 //
@@ -331,7 +331,7 @@ public static class LauncherEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     /// <summary>
-    /// Names the stage-2 payload and the web listener the fetch should ride
+    /// Names the payload and the web listener the fetch should ride
     /// (either may be omitted for the engagement's own preference: the newest
     /// build, the hardened front), and the deployment credential's policy:
     /// how many redeems it allows (0 = unlimited) and how long it lives.
@@ -424,7 +424,7 @@ internal static class LauncherRender
         if (await engagements.FindAsync(engagement, cancellationToken) is not { } engagementRow)
             return (Results.NotFound(new Problem("Engagement does not exist.")), null);
 
-        // The stage-2 fetch rides the engagement's web listeners, so the URL
+        // The payload fetch rides the engagement's web listeners, so the URL
         // needs one to exist. The operator may name the front the fetch
         // should use (several listeners, one specific redirector); unnamed,
         // the hardened members are preferred over cleartext.

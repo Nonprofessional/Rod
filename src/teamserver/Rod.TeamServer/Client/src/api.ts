@@ -981,7 +981,7 @@ export async function upgradeShell(
 
 // --- Standalone launchers --------------------------------------
 //
-// The one-liner delivery surface: the same paste-ready stage-2 fetch renders
+// The one-liner delivery surface: the same paste-ready payload fetch renders
 // the shell console's upgrade produces, without a caught shell to grow from.
 // The operator names the payload and the web front (or takes the engagement's
 // own preference), sets the download credential's policy (uses and lifetime),

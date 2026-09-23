@@ -555,14 +555,14 @@ public class EnvelopeContactTests
         /// cleartext lab posture).
         /// </summary>
         public static async Task<ScratchImplant> EnrollAsync(
-            string enrollUrl, string stagerToken,
+            string enrollUrl, string deployToken,
             double? sleepSeconds = null, double? jitterSeconds = null)
         {
             using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             using var plain = new HttpClient();
             var body = new
             {
-                deployTokenSecret = stagerToken,
+                deployTokenSecret = deployToken,
                 publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()),
                 sleepSeconds,
                 jitterSeconds,

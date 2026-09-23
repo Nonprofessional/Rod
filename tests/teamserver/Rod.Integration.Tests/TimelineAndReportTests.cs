@@ -116,7 +116,7 @@ public class TimelineAndReportTests
         var ownerEntry = Assert.Single(report.Operators, o => o.OperatorId == owner.Value);
         Assert.Equal(AuthenticatedHost.Handle, ownerEntry.Handle);
 
-        // Implant inventory: the enrolled Stage-2 implant.
+        // Implant inventory: the enrolled implant.
         var implantEntry = Assert.Single(report.Implants);
         Assert.Equal("Implant", implantEntry.Class);
         Assert.Null(implantEntry.ParentImplantId);

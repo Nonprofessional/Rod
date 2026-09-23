@@ -11,7 +11,7 @@ namespace Rod.CoreState.Tests;
 /// single-use token cannot be redeemed twice; these tests drive real threads
 /// into it.
 /// </summary>
-public class StagerRedemptionConcurrencyTests
+public class DeployRedemptionConcurrencyTests
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UnixEpoch;
 

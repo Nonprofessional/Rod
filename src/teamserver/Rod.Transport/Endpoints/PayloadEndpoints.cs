@@ -49,7 +49,7 @@ public static class PayloadEndpoints
     // survives restarts and outlives the bounded, process-local build-job
     // list. An operator who needs the artifact built three weeks ago -- to
     // download it again, revoke its baked credential, or delete it so a
-    // deployed stager's fetch stops answering -- finds it here.
+    // deployed one-liner's fetch stops answering -- finds it here.
     private static async Task<IResult> ListPayloadsAsync(
         string engagementId,
         IEngagementRepository engagements,
@@ -94,7 +94,7 @@ public static class PayloadEndpoints
     }
 
     // Deletes a stored payload: the bytes and the library entry are gone and a
-    // stager fetching it 404s from now on. The deletion is audited -- the trail
+    // launcher fetching it 404s from now on. The deletion is audited -- the trail
     // names what was removed -- and revoking the baked credential stays its own
     // action on the library row.
     private static async Task<IResult> DeleteAsync(
@@ -177,7 +177,7 @@ public static class PayloadEndpoints
 
         // The request body parses and validates exactly as the background job
         // path does (the shared parser): same refusals, same defaults, same
-        // stager stage-2 resolution, same listener-name endpoint resolution.
+        // the same refusals, same listener-name endpoint resolution.
         var (parsed, parseError) = await PayloadBuildRequestParser.ParseAsync(
             body, new EngagementId(engagementValue), requestedBy.Value, listeners,
             ca, payloads, cancellationToken);

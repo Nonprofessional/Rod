@@ -16,7 +16,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance for the standalone launcher render (architecture.md Sec 8):
-/// the same paste-ready stage-2 fetch one-liners the shell console's upgrade
+/// the same paste-ready payload fetch one-liners the shell console's upgrade
 /// produces, without a caught shell to grow from. The render resolves the
 /// engagement's web front and newest payload (or the ones the operator
 /// named), mints the deployment credential under the requested policy, and

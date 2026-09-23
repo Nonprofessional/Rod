@@ -28,17 +28,17 @@ public class FrontedPivotClaimTests
         var engagement = EngagementId.New();
         var parent = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: null);
         var pivotChild = await EnrollAsync(implants, engagement, ImplantClass.Pivot, parent: parent);
-        var stage2Child = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: parent);
+        var fullChild = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: parent);
         var otherParent = await EnrollAsync(implants, engagement, ImplantClass.Implant, parent: null);
         var foreignPivot = await EnrollAsync(implants, engagement, ImplantClass.Pivot, parent: otherParent);
 
         var fronted = await implants.ListFrontedPivotsAsync(parent);
 
-        // The parent fronts its Pivot child exactly: a Stage-2 child runs its
+        // The parent fronts its Pivot child exactly: a full-class child runs its
         // own process, and another parent's pivot is not this one's to front.
         var frontedIds = fronted.Select(i => i.Id).ToArray();
         Assert.Equal([pivotChild], frontedIds);
-        Assert.DoesNotContain(stage2Child, frontedIds);
+        Assert.DoesNotContain(fullChild, frontedIds);
         Assert.DoesNotContain(foreignPivot, frontedIds);
     }
 

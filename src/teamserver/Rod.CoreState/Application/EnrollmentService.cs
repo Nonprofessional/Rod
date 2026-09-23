@@ -183,7 +183,7 @@ public sealed class EnrollmentService
 
 /// <summary>
 /// Request to enroll an implant. The deploy token secret resolves the
-/// engagement; <see cref="Class"/> defaults to a stage-2 implant. When
+/// engagement; <see cref="Class"/> defaults to a full implant. When
 /// <see cref="ClientPublicKey"/> is set it is a DER SubjectPublicKeyInfo of an
 /// ECDSA public key (P-256 in the reference implant) the CA signs a leaf over,
 /// so the implant keeps its private key for mTLS (architecture.md Sec 9); null

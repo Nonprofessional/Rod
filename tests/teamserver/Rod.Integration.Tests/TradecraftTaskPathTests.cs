@@ -57,11 +57,11 @@ public class TradecraftTaskPathTests
         return created!.EngagementId;
     }
 
-    // Enrolls a Stage-2 implant directly through the registry so the task gate
-    // has an implant to read. Stage-2 is irrelevant to the evasion/exploit gate
+    // Enrolls a full implant directly through the registry so the task gate
+    // has an implant to read. The class is irrelevant to the evasion/exploit gate
     // (those verbs are not class-gated), but it is the class a long-haul implant
     // runs as.
-    private static async Task<Implant> EnrollStage2Async(IHost host, EngagementId engagement)
+    private static async Task<Implant> EnrollImplantAsync(IHost host, EngagementId engagement)
     {
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
@@ -87,7 +87,7 @@ public class TradecraftTaskPathTests
         using (host)
         {
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -143,7 +143,7 @@ public class TradecraftTaskPathTests
         using (host)
         {
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -174,7 +174,7 @@ public class TradecraftTaskPathTests
             await registry.RegisterAsync(overrideModule);
 
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             var issued = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",

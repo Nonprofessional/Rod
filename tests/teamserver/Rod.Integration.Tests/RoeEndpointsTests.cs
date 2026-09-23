@@ -29,7 +29,7 @@ public class RoeEndpointsTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // A real engagement record and a Stage-2 implant bound to it, so the
+        // A real engagement record and a full implant bound to it, so the
         // gate reads the engagement's scope and the class gate admits both
         // verbs -- the refusal under test can only be the ROE gate's.
         var engagementId = await CreateEngagementAsync(env.Http);

@@ -39,7 +39,7 @@ public sealed class Implant
     public DateTimeOffset? RetiredAt { get; private set; }
 
     /// <summary>
-    /// The operator who deployed this implant -- the one who minted the stager
+    /// The operator who deployed this implant -- the one who minted the deploy
     /// token a top-level implant redeemed, or the parent's deployer for a child.
     /// Enrollment is implant-initiated, so later implant-initiated events (a
     /// session opening, a task completing) attribute themselves through this

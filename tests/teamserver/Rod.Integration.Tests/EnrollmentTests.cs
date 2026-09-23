@@ -16,7 +16,7 @@ namespace Rod.Integration.Tests;
 /// Acceptance: enroll a fake implant and receive a certificate
 /// bound to <c>(implant_id, engagement_id)</c> plus the CA chain -- end to end
 /// through the in-memory TestServer. This drives the full enrollment slice
-/// (stager redeem, implant creation, CA issue) via the implant-side endpoint and
+/// (token redeem, implant creation, CA issue) via the implant-side endpoint and
 /// verifies the issued binding by inspecting the certificate (no real mTLS
 /// handshake; the listener tests cover that). Failure paths assert each redeem outcome maps to
 /// the right wire <see cref="EnrollStatus"/>. The implant enrollment endpoint is

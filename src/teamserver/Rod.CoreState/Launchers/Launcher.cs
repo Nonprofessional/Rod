@@ -6,7 +6,7 @@ namespace Rod.CoreState.Launchers;
 
 /// <summary>
 /// One rendered launcher the engagement keeps: a persisted cut of the
-/// paste-ready stage-2 fetch one-liners, together with the download
+/// paste-ready payload fetch one-liners, together with the download
 /// credential that was minted for it. The row exists so an operator can come
 /// back to a render -- re-copy the command, watch the credential's budget,
 /// revoke it the moment it leaks, and tidy the list when it is spent --
@@ -27,7 +27,7 @@ public sealed class Launcher
     public LauncherId Id { get; }
     public EngagementId EngagementId { get; }
 
-    /// <summary>The stage-2 payload the fetch delivers.</summary>
+    /// <summary>The payload the fetch delivers.</summary>
     public Guid PayloadId { get; }
 
     /// <summary>

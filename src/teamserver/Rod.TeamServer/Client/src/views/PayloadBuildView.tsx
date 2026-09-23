@@ -100,10 +100,10 @@ export function PayloadBuildView({
   // render, no job). One toggle, one mental model -- this is where
   // artifacts are made.
   const [artifact, setArtifact] = useState<'implant' | 'webshell'>('implant')
-  // The implant pipeline's own tier pick: the full implant, or the stage-0
-  // loader that fetches and runs a stored implant from memory (the sealed
-  // stage rides the loader's per-build key; the Launchers tab delivers the
-  // loader with the same one-liner families).
+  // The implant pipeline's own tier pick: the full implant, or the loader
+  // that fetches and runs a stored implant from memory (the sealed
+  // payload rides the loader's per-build key; the Launchers tab delivers
+  // the loader with the same one-liner families).
   const [tier, setTier] = useState<'implant' | 'loader'>('implant')
   const [deliversPayloadId, setDeliversPayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
@@ -366,7 +366,7 @@ export function PayloadBuildView({
       return
     }
     if (loaderTier && !loaderFrontOk) {
-      setError('The stage-0 loader dials a cleartext http front by literal IPv4 -- pick an http listener whose public endpoint is an IPv4 address.')
+      setError('The loader dials a cleartext http front by literal IPv4 -- pick an http listener whose public endpoint is an IPv4 address.')
       return
     }
     if (loaderTier && !deliversPayloadId) {

@@ -19,7 +19,7 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance: an unmodified operator-side tool reaches a third host through
-/// a stage-2 implant's tunnel without a per-byte API call, and the flow is
+/// an implant's tunnel without a per-byte API call, and the flow is
 /// attributed end to end (architecture.md Sec 5.2, Sec 10.1 tunnel, Sec 14).
 /// The operator binds a teamserver-side relay port onto a dispatched
 /// <c>tunnel.forward</c> channel; a plain TCP client -- no Rod API, no

@@ -5,7 +5,7 @@ namespace Rod.CoreState.Tests;
 /// <summary>
 /// Checks of <see cref="ImplantClassCapabilities"/> -- the per-class reduced
 /// verb set the teamserver gates tasking on (architecture.md Sec 5.2). Each
-/// class advertises the verbs its operational purpose justifies; a stage-2
+/// class advertises the verbs its operational purpose justifies; a full
 /// implant carries the full core set plus the tunnel set, the recon set, the
 /// lateral set, the persist set, the collect set, and the exfil set, every
 /// other class a subset (and no recon, lateral, persist, collect, or exfil
@@ -50,14 +50,14 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.WebShell, "persist.list", "persistence is a long-haul class activity")]
     [InlineData(ImplantClass.WebShell, "exfil.push", "collection and exfiltration are long-haul class activities")]
     [InlineData(ImplantClass.WebShell, "recon.ps", "process listing is a long-haul class activity")]
-    [InlineData(ImplantClass.WebShell, "tunnel.forward", "tunneling joins stage-2's core operations and the pivot set")]
+    [InlineData(ImplantClass.WebShell, "tunnel.forward", "tunneling joins the full class's core operations and the pivot set")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
     [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a long-haul class activity")]
     [InlineData(ImplantClass.Ephemeral, "lateral.exec_remote", "lateral movement is a long-haul class activity")]
     [InlineData(ImplantClass.Ephemeral, "persist.remove", "persistence is a long-haul class activity")]
     [InlineData(ImplantClass.Ephemeral, "collect.cred", "collection and exfiltration are long-haul class activities")]
     [InlineData(ImplantClass.Ephemeral, "collect.screenshot", "collection and exfiltration are long-haul class activities")]
-    [InlineData(ImplantClass.Ephemeral, "tunnel.forward", "tunneling joins stage-2's core operations and the pivot set")]
+    [InlineData(ImplantClass.Ephemeral, "tunnel.forward", "tunneling joins the full class's core operations and the pivot set")]
     [InlineData(ImplantClass.Pivot, "shell.exec", "a pivot forwards, it does not shell")]
     [InlineData(ImplantClass.Pivot, "recon.portscan", "recon is a long-haul class activity")]
     [InlineData(ImplantClass.Pivot, "lateral.move", "lateral movement is a long-haul class activity")]
@@ -81,9 +81,9 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Implant, verb));
 
     [Fact]
-    public void For_Stage2_ReturnsTheFullCoreTunnelReconLateralPersistCollectAndExfilSet()
+    public void For_TheImplantClass_ReturnsTheFullCoreTunnelReconLateralPersistCollectAndExfilSet()
     {
-        // Stage-2 is the primary long-haul implant: it carries the full core set
+        // The Implant class is the primary long-haul one: it carries the full core set
         // plus the tunnel set, the recon set, the lateral set, the persist set,
         // the collect set, and the exfil set, since tunneling is a core
         // operation (architecture.md Sec 14) and recon, lateral movement,
@@ -149,7 +149,7 @@ public class ImplantClassCapabilitiesTests
         // Every class carries at least one verb. Pivot is the tunneling class
         // (architecture.md Sec 5.2): exactly the tunnel set -- enough to forward
         // traffic for hosts that cannot run their own implant, and nothing a
-        // long-haul stage-2 footprint justifies.
+        // long-haul full-class footprint justifies.
         foreach (ImplantClass @class in Enum.GetValues(typeof(ImplantClass)))
             Assert.NotEmpty(ImplantClassCapabilities.For(@class));
         Assert.Equal(

@@ -46,7 +46,7 @@ public class PivotFrontingRoundTripTests
         // The third host: reachable only from the implant's vantage.
         await using var thirdHost = EchoHost.Start();
 
-        // The parent is a stage-2 implant with a live stream; the child is a
+        // The parent is a full implant with a live stream; the child is a
         // Pivot-class identity the parent enrolled (lateral.move, Sec 5.2) --
         // recorded server-side with its ParentImplantId. The child never
         // connects: no handshake, no session, no stream of its own.

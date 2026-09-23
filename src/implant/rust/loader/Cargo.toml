@@ -3,7 +3,7 @@ name = "rod-loader"
 version = "1.0.0-dev"
 edition = "2021"
 
-# The stage-0 loader (architecture.md Sec 6, the staging half): the smallest
+# The loader (architecture.md Sec 6, the loader tier): the smallest
 # delivery artifact the Rust build unit emits. It dials the front's literal
 # IPv4 with a token-gated HTTP GET, authenticates the sealed payload under
 # the AES-GCM key baked at build time (the R1 wire shape every other

@@ -1,7 +1,7 @@
 namespace Rod.CoreState;
 
 /// <summary>
-/// RFC 4648 base64url without padding: URL-safe, so opaque cursors, stager
+/// RFC 4648 base64url without padding: URL-safe, so opaque cursors, deploy-token
 /// tokens, and implant key ids travel in paths and headers unchanged. One
 /// definition for every core-state, persistence, and build-pipeline encoding
 /// -- the same shape the reference implant's decoder reads -- so the sides can

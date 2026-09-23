@@ -40,8 +40,8 @@ public class ExfilRoundTripTests
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
-        // Operator tasks the implant over HTTP. exfil.push is Stage-2 gated, and
-        // the enrolled implant is Stage-2, so issuance succeeds.
+        // Operator tasks the implant over HTTP. exfil.push is class-gated, and
+        // the enrolled implant is full-class, so issuance succeeds.
         var issued = await env.Http.PostAsJsonAsync(
             $"/engagements/{implant.EngagementId}/tasks",
             new { ImplantId = implant.Id.ToString(), Verb = "exfil.push", Arguments = "loot.txt /opt/secret/loot.txt" });

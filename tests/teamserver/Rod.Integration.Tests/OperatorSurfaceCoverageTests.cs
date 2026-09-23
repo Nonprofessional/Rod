@@ -66,11 +66,11 @@ public class OperatorSurfaceCoverageTests
         return created!.EngagementId;
     }
 
-    // Enrolls a Stage-2 implant directly through the registry so the task gate
-    // has a target across every capability category. Stage-2 carries the full
+    // Enrolls a full implant directly through the registry so the task gate
+    // has a target across every capability category. The full class carries the
     // class-gated verb set; evasion and exploit are not class-gated and the
     // registry-backed resolver admits them on any class.
-    private static async Task<Implant> EnrollStage2Async(IHost host, EngagementId engagement)
+    private static async Task<Implant> EnrollImplantAsync(IHost host, EngagementId engagement)
     {
         var implants = host.Services.GetRequiredService<IImplantRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
@@ -142,7 +142,7 @@ public class OperatorSurfaceCoverageTests
         using (host)
         {
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             var response = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -166,7 +166,7 @@ public class OperatorSurfaceCoverageTests
         using (host)
         {
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             var issued = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/tasks",
@@ -217,7 +217,7 @@ public class OperatorSurfaceCoverageTests
         using (host)
         {
             var engagementId = await CreateEngagementAsync(client);
-            var implant = await EnrollStage2Async(host, new EngagementId(Guid.Parse(engagementId)));
+            var implant = await EnrollImplantAsync(host, new EngagementId(Guid.Parse(engagementId)));
 
             // Retire the implant: it is taken out of operation and its retirement
             // is reflected in the listing.
