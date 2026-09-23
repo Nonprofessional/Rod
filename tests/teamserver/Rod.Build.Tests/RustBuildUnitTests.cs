@@ -34,8 +34,9 @@ public class RustBuildUnitTests
     public async Task AWindowsTarget_ProducesTheExeArtifactName(string arch)
     {
         var unit = new RustBuildUnit();
-        if (unit.ReportEnvironment().Status is "unavailable" or null)
-            return; // no toolchain on this runner; the environment report names the fix
+        var triple = RustBuildUnit.MapTriple(new TargetProfile("windows", arch));
+        if (unit.ReportEnvironment().Status is "unavailable" or null || !unit.CrossTargetReady(triple))
+            return; // the cross is not installed here; the environment report names the fix
 
         var @params = Params() with { Target = new TargetProfile("windows", arch) };
 
@@ -56,8 +57,9 @@ public class RustBuildUnitTests
     public async Task AnArm64LoaderBuild_LinksThroughRustLld()
     {
         var unit = new RustBuildUnit();
-        if (unit.ReportEnvironment().Status is "unavailable" or null)
-            return; // no toolchain on this runner; the environment report names the fix
+        if (unit.ReportEnvironment().Status is "unavailable" or null
+            || !unit.CrossTargetReady(RustBuildUnit.MapTriple(new TargetProfile("linux", "arm64"))))
+            return; // the cross is not installed here; the environment report names the fix
 
         var @params = Params() with
         {

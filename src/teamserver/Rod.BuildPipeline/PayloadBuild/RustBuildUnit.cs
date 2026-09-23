@@ -481,6 +481,25 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             builtAt: DateTimeOffset.UtcNow);
     }
 
+    // Whether a cross target is actually buildable on this host: the
+    // target's std under rustc's sysroot and its C linker on PATH. Tests
+    // that drive real cross builds gate on this rather than the whole-
+    // report status -- a host can carry cargo and the source tree (the
+    // report's "unavailable" line) and still lack one target's std, which
+    // is a skip, not a failure (the environment report names the gap).
+    public bool CrossTargetReady(string triple)
+    {
+        var sysroot = Probe.Run("rustc", "--print", "sysroot");
+        if (!sysroot.Found)
+            return false;
+        var stdRoot = Path.Combine(sysroot.FirstLine.Trim(), "lib", "rustlib");
+        if (!Directory.Exists(stdRoot)
+            || !Directory.Exists(Path.Combine(stdRoot, triple)))
+            return false;
+        var linker = CrossTargets.FirstOrDefault(t => t.Triple == triple).Linker;
+        return linker is not null && FindOnPath(linker);
+    }
+
     // rust-lld beside the host toolchain, the aarch64 loader's linker. The
     // file ships with every rustup-managed toolchain; a distro toolchain
     // may carry it elsewhere or not at all, in which case the caller

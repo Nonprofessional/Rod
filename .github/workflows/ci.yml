@@ -78,16 +78,24 @@ jobs:
         # every build in seconds -- three suite-level build tests went red
         # this way for two days while the runner image's Rust rolled forward
         # under an unchanged tree. prost-build also needs a system protoc.
+        # The windows-gnu pair and the aarch64 musl std serve the cross-build
+        # regression tests (the exe-name fix and the rust-lld loader link);
+        # mingw-w64 carries both windows linkers.
         run: |
-          sudo apt-get update && sudo apt-get install -y protobuf-compiler musl-tools
-          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler musl-tools mingw-w64
+          rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu i686-pc-windows-gnu aarch64-unknown-linux-musl
           echo "ROD_RUST_TARGET_DIR=${RUNNER_TEMP}/rod-rust-target" >> "$GITHUB_ENV"
       - name: Warm the shared Rust target dir
-        # One full musl compile up front, outside any test, so no single test
-        # pays the cold-build minutes and the per-build staging copies only
-        # recompile the implant crate itself. Builds run serially here, so
-        # the shared dir never contends on cargo's lock.
-        run: cargo build --release --target x86_64-unknown-linux-musl --manifest-path src/implant/rust/Cargo.toml
+        # One full compile per exercised target up front, outside any test,
+        # so no single test pays the cold-build minutes (a cold mingw build
+        # inside one test brushes the five-minute blame-hang budget) and the
+        # per-build staging copies only recompile the implant crate itself.
+        # The aarch64 loader is small enough to build cold in its test. Runs
+        # serially here, so the shared dir never contends on cargo's lock.
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl --manifest-path src/implant/rust/Cargo.toml
+          cargo build --release --target x86_64-pc-windows-gnu --manifest-path src/implant/rust/Cargo.toml
+          cargo build --release --target i686-pc-windows-gnu --manifest-path src/implant/rust/Cargo.toml
       - name: Test (core lane)
         id: test_core
         # Blame-hang turns a silent hang into a five-minute failure that dumps
