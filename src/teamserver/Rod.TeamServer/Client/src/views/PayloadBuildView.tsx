@@ -92,7 +92,10 @@ export function PayloadBuildView({
   const [targetArch, setTargetArch] = useState('amd64')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
-  const [mode, setMode] = useState('stream')
+  // Poll is the default posture: every front family carries it, and a held
+  // connection is a standing detection signal an operator opts into, not
+  // out of.
+  const [mode, setMode] = useState('poll')
   const [sleepSeconds, setSleepSeconds] = useState('30')
   const [jitterSeconds, setJitterSeconds] = useState('10')
   const [killDate, setKillDate] = useState('')
@@ -330,7 +333,9 @@ export function PayloadBuildView({
         requestTimeoutSeconds: num(requestTimeoutSeconds),
         envelope: envelope !== 'None' ? envelope : null,
         contactProtection: contactProtection ? null : false,
-        mode: mode !== 'stream' ? mode : null,
+        // Poll is the server's default mode; an explicit stream pick rides,
+        // the deliberate interactive shape.
+        mode: mode !== 'poll' ? mode : null,
         sleepSeconds: num(sleepSeconds),
         jitterSeconds: num(jitterSeconds),
         killDate: killDate ? new Date(killDate).toISOString() : null,
@@ -472,8 +477,8 @@ export function PayloadBuildView({
                 ? 'This front holds no live stream (one connection or one answer per contact), so poll is the only coherent mode -- the server refuses the stream pairing with the same fix.'
                 : 'How the artifact contacts: stream holds one connection open with live server push; poll exchanges one contact per interval. Either way every verb rides -- the summary below spells out how.'}
             >
+              <option value="poll">poll — contact and sleep (default)</option>
               <option value="stream" disabled={pollOnly}>stream — persistent connection</option>
-              <option value="poll">poll — contact and sleep</option>
             </select>
           </label>
           <label>
@@ -628,6 +633,17 @@ export function PayloadBuildView({
                 <option value="pinned">pinned — engagement CA (default)</option>
                 <option value="public">public — real-domain front cert</option>
               </select>
+              {/* The fact this knob turns on lives on the listener (whose
+                  certificate the front presents), while the choice lives
+                  here — the one pairing easy to forget, so the https front
+                  says so beside the knob. */}
+              {(selectedListener?.transport === 'https'
+                || selectedListener?.transport === 'mtls') && (
+                <span className="field-help">
+                  Picked an https front: if it is a real domain with a public certificate, pick
+                  public — pinned refuses a public CA's chain.
+                </span>
+              )}
             </label>
             <label
               className="checkbox-label"
@@ -640,6 +656,10 @@ export function PayloadBuildView({
                   checked={contactProtection}
                   onChange={(e) => setContactProtection(e.target.checked)}
                 />
+                {/* The algorithm rides beside the box, not in the caption:
+                    the caption stays the field's name like its siblings,
+                    and the seal's identity reads as the box's annotation. */}
+                <span className="field-help">AES-256-GCM</span>
               </span>
             </label>
             <label>
@@ -669,6 +689,7 @@ export function PayloadBuildView({
           mode={mode}
           sleep={sleepSeconds}
           jitter={jitterSeconds}
+          trust={tlsTrust}
         />
         <button className="primary" type="submit" disabled={submitting}>
           Build payload
@@ -831,12 +852,14 @@ function BuildSummary({
   mode,
   sleep,
   jitter,
+  trust,
 }: {
   listener?: ListenerSummary
   carrier?: ListenerSummary
   mode: string
   sleep: string
   jitter: string
+  trust: string
 }) {
   const front = listener?.publicEndpoint ?? '— pick a listener —'
   const via = listener ? `${listener.name} (${listener.transport})` : 'unpicked'
@@ -845,6 +868,11 @@ function BuildSummary({
   const socket = listener?.transport === 'tcp'
   // The DNS family as the enroll front itself (the DNS-only target's shape).
   const dnsFront = !socket && (listener?.transport === 'dns' || listener?.transport === 'doh')
+  // The trust posture rides the summary on the TLS-shaped fronts -- the one
+  // knob whose fact (whose certificate the front presents) lives on the
+  // listener while the choice lives here, so it reads at commit time
+  // instead of living forgotten under Advanced.
+  const tlsFront = listener?.transport === 'https' || listener?.transport === 'mtls'
 
   const contact = carrier
     ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
@@ -875,6 +903,16 @@ function BuildSummary({
       <div>
         <span className="summary-key">interactive</span> {interactive}
       </div>
+      {tlsFront && (
+        <div
+          title="The trust choice under Advanced: whose certificate the front presents decides which posture the dial can verify"
+        >
+          <span className="summary-key">tls</span>{' '}
+          {trust === 'public'
+            ? 'public roots — the front is a real domain whose certificate a public CA issued'
+            : 'engagement CA pinned — no public chain will verify (pick public under Advanced if this front presents one)'}
+        </div>
+      )}
     </div>
   )
 }
