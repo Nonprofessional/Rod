@@ -15,8 +15,8 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The engagement's caught-shell endpoints (architecture.md Sec 8): the
-/// operator surface for the shells a shellcatch listener holds. Listing and
-/// detail read the durable session registry (engagement-scoped like every
+/// operator surface for the shells a shellcatch listener holds. The listing
+/// reads the durable session registry (engagement-scoped like every
 /// other surface, so cross-engagement access is refused as a plain 404);
 /// the live routes -- input, output, close -- resolve the held socket
 /// through the hub, and a shell that ended answers from the registry only.
@@ -41,7 +41,6 @@ public static class ShellSessionEndpoints
         var group = endpoints.MapGroup("/engagements/{engagementId}/shells").RequireAuthorization();
 
         group.MapGet("/", ListShellsAsync).WithName(nameof(ListShellsAsync));
-        group.MapGet("/{id}", GetShellAsync).WithName(nameof(GetShellAsync));
         group.MapGet("/{id}/output", ReadOutputAsync).WithName(nameof(ReadOutputAsync));
         group.MapPost("/{id}:input", SendInputAsync).WithName(nameof(SendInputAsync));
         group.MapPost("/{id}:close", CloseShellAsync).WithName(nameof(CloseShellAsync));
@@ -60,20 +59,6 @@ public static class ShellSessionEndpoints
 
         var listed = await sessions.ListByEngagementAsync(engagement, cancellationToken);
         return Results.Ok(listed.Select(ShellSessionResponse.From).ToArray());
-    }
-
-    private static async Task<IResult> GetShellAsync(
-        string engagementId,
-        string id,
-        IShellSessionRegistry sessions,
-        CancellationToken cancellationToken)
-    {
-        var (failure, scope) = await ResolveScopedShellAsync(
-            engagementId, id, sessions, cancellationToken);
-        if (scope is null)
-            return failure!;
-
-        return Results.Ok(ShellSessionResponse.From(scope.Session));
     }
 
     private static async Task<IResult> ReadOutputAsync(

@@ -300,9 +300,9 @@ public class ShellCatchTests
         var foreignList = await env.Http.GetFromJsonAsync<ShellDto[]>(
             $"/engagements/{otherEngagementId}/shells");
         Assert.Empty(foreignList!);
-        var foreignGet = await env.Http.GetAsync(
-            $"/engagements/{otherEngagementId}/shells/{sessionId}");
-        Assert.Equal(HttpStatusCode.NotFound, foreignGet.StatusCode);
+        var foreignOutput = await env.Http.GetAsync(
+            $"/engagements/{otherEngagementId}/shells/{sessionId}/output");
+        Assert.Equal(HttpStatusCode.NotFound, foreignOutput.StatusCode);
     }
 
     private sealed record ShellDto(

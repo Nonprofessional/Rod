@@ -31,7 +31,6 @@ public static class ListenerEndpoints
         var group = endpoints.MapGroup("/engagements/{engagementId}/listeners").RequireAuthorization();
 
         group.MapGet("/", ListListenersAsync).WithName(nameof(ListListenersAsync));
-        group.MapGet("/{id}", GetListenerAsync).WithName(nameof(GetListenerAsync));
         group.MapPost("/", CreateListenerAsync).WithName(nameof(CreateListenerAsync));
         group.MapPost("/{id}:repoint", RepointAsync).WithName(nameof(RepointAsync));
         group.MapDelete("/{id}", DeleteListenerAsync).WithName(nameof(DeleteListenerAsync));
@@ -229,23 +228,6 @@ public static class ListenerEndpoints
             .Select(Response.Of)
             .ToArray();
         return Results.Ok(owned);
-    }
-
-    private static async Task<IResult> GetListenerAsync(
-        string engagementId,
-        string id,
-        IListenerRegistry listeners,
-        CancellationToken cancellationToken)
-    {
-        var (error, engagementIdValue, listenerId) = Resolve(engagementId, id);
-        if (error is not null)
-            return error;
-
-        var listener = await listeners.FindAsync(listenerId, cancellationToken);
-        if (listener is null || listener.EngagementId != new EngagementId(engagementIdValue))
-            return Results.NotFound(new Problem("Listener does not exist in this engagement."));
-
-        return Results.Ok(Response.Of(listener));
     }
 
     private static async Task<IResult> RepointAsync(

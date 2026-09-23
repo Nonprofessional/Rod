@@ -6,14 +6,15 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Acceptance: the engagement's working record is editable -- the name and
-/// free-text description -- through GET one / PUT, with the close-out rules
-/// the aggregate enforces: a retired engagement's record is sealed (409), and
+/// free-text description -- through PUT, read back on the edit's own
+/// response and the roster list, with the close-out rules the aggregate
+/// enforces: a retired engagement's record is sealed (409), and
 /// the edit lands in the audit trail as an <c>EngagementUpdated</c> fact.
 /// </summary>
 public class EngagementEditTests
 {
     [Fact]
-    public async Task Edit_NameAndDescription_RoundTripThroughGetAndList()
+    public async Task Edit_NameAndDescription_RoundTripThroughPutAndList()
     {
         var (client, _, _) = AuthenticatedHost.Create();
         await AuthenticatedHost.LoginAsync(client);
@@ -34,17 +35,13 @@ public class EngagementEditTests
         Assert.Equal("Operation Final", edited!.Name);
         Assert.Equal("scope: the lab segment; owner: red team", edited.Description);
 
-        // The single read and the list both carry the edited record; the
-        // close-out fields ride along unchanged.
-        var one = await client.GetFromJsonAsync<EngagementEndpoints.EngagementResponse>(
-            $"/engagements/{created.EngagementId}");
-        Assert.NotNull(one);
-        Assert.Equal("Operation Final", one!.Name);
-        Assert.Null(one.FrozenAt);
-
+        // The roster carries the edited record with the close-out fields
+        // riding along unchanged.
         var list = await client.GetFromJsonAsync<EngagementEndpoints.EngagementResponse[]>("/engagements");
         Assert.NotNull(list);
-        Assert.Contains(list, e => e.EngagementId == created.EngagementId && e.Name == "Operation Final");
+        var persisted = Assert.Single(list!, e => e.EngagementId == created.EngagementId);
+        Assert.Equal("Operation Final", persisted.Name);
+        Assert.Null(persisted.FrozenAt);
     }
 
     [Fact]

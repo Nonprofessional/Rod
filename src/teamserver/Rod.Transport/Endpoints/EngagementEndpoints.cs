@@ -13,8 +13,8 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The operator-facing engagement endpoints: create an engagement and mint a
-/// deploy token for it, and list engagements (, the
-/// operator UI). DTOs live here, in transport, so the core stays serialization-
+/// deploy token for it, edit and list engagements (the list is the operator
+/// UI's data source). DTOs live here, in transport, so the core stays serialization-
 /// and protocol-free (AGENTS.md Sec 5).
 /// </summary>
 public static class EngagementEndpoints
@@ -27,7 +27,6 @@ public static class EngagementEndpoints
         var group = endpoints.MapGroup("/engagements").RequireAuthorization();
 
         group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
-        group.MapGet("/{engagementId}", GetEngagementAsync).WithName(nameof(GetEngagementAsync));
         group.MapPost("/", CreateEngagementAsync)
             .WithName(nameof(CreateEngagementAsync));
         group.MapPut("/{engagementId}", EditEngagementAsync)
@@ -72,32 +71,6 @@ public static class EngagementEndpoints
         }
 
         return Results.Ok(body);
-    }
-
-    private static async Task<IResult> GetEngagementAsync(
-        string engagementId,
-        IEngagementRepository engagements,
-        IOperatorRepository operators,
-        CancellationToken cancellationToken)
-    {
-        if (!Guid.TryParse(engagementId, out var idValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
-
-        var engagement = await engagements.FindAsync(new EngagementId(idValue), cancellationToken);
-        if (engagement is null)
-            return Results.NotFound(new Problem($"Engagement {engagementId} does not exist."));
-
-        var owner = await operators.FindAsync(engagement.OwnerId, cancellationToken);
-        return Results.Ok(new EngagementResponse(
-            engagement.Id.ToString(),
-            engagement.Name,
-            engagement.Description,
-            engagement.OwnerId.ToString(),
-            owner?.Handle ?? string.Empty,
-            engagement.CreatedAt,
-            RoeProfileResponse.From(engagement.Roe),
-            engagement.FrozenAt,
-            engagement.RetiredAt));
     }
 
     private static async Task<IResult> CreateEngagementAsync(

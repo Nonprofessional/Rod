@@ -8,7 +8,7 @@ namespace Rod.Transport.Endpoints;
 
 /// <summary>
 /// The operator-facing presence query: which implants are online
-/// in an engagement, and is a given implant online. Lets an operator observe
+/// in an engagement. Lets an operator observe
 /// that a connecting implant appeared in its engagement -- the acceptance
 /// point -- and is scoped by engagement so presence never leaks across
 /// engagements (architecture.md Sec 3).
@@ -28,7 +28,6 @@ public static class PresenceEndpoints
             .RequireAuthorization();
 
         group.MapGet("/", ListOnlineAsync).WithName(nameof(ListOnlineAsync));
-        group.MapGet("/{implantId}", GetAsync).WithName(nameof(GetAsync));
 
         return endpoints;
     }
@@ -45,24 +44,6 @@ public static class PresenceEndpoints
         var body = online.Select(SessionResponse.Of).ToArray();
 
         return Results.Ok(body);
-    }
-
-    private static async Task<IResult> GetAsync(
-        string engagementId,
-        string implantId,
-        ISessionRegistry sessions,
-        CancellationToken cancellationToken)
-    {
-        if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
-        if (!Guid.TryParse(implantId, out var implantValue))
-            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
-
-        var session = await sessions.GetActiveAsync(new ImplantId(implantValue), cancellationToken);
-        if (session is null || session.EngagementId != new EngagementId(engagementValue))
-            return Results.NotFound(new Problem("Implant is not online in this engagement."));
-
-        return Results.Ok(SessionResponse.Of(session));
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---

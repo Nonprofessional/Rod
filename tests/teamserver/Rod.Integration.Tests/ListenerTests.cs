@@ -184,18 +184,6 @@ public class ListenerTests
         Assert.StartsWith("127.0.0.1:", listener.BindAddress);
     }
 
-    [Fact]
-    public async Task GetListener_Returns404_ForUnknownId()
-    {
-        await using var env = await TestEnv.StartAsync(DefaultHttpListener());
-
-        await AuthenticatedHost.LoginAsync(env.Http);
-        var engagementId = await CreateEngagementAsync(env.Http);
-        var response = await env.Http.GetAsync($"/engagements/{engagementId}/listeners/{ListenerId.New()}");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
     private static ListenerConfig DefaultHttpListener()
         => new("http-default", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
 
