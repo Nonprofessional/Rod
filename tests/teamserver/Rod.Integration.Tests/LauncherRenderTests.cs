@@ -60,7 +60,9 @@ public class LauncherRenderTests
         Assert.False(string.IsNullOrEmpty(body.TokenSecret));
         Assert.Contains(body.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(body.Url));
         Assert.Contains(body.Launchers, l => l.Id == "unix-wget");
-        Assert.Contains(body.Launchers, l => l.Id == "windows-powershell");
+        // The newest payload's own families: its target is linux, so the
+        // PowerShell spelling stays out of the answer.
+        Assert.DoesNotContain(body.Launchers, l => l.Id == "windows-powershell");
         Assert.All(body.Launchers, l => Assert.Contains(body.TokenSecret, l.Command));
     }
 
@@ -167,12 +169,23 @@ public class LauncherRenderTests
         Assert.Contains(row.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(row.Url));
 
         // The listing holds what was cut -- the same row, the commands
-        // re-rendered from the stored url and secret.
+        // re-rendered from the stored url and secret. The payload reads in
+        // the library's own vocabulary: the fingerprint the Payloads tab
+        // shows, not the bare artifact id.
         var listed = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
             $"/engagements/{engagementId}/launchers");
         var kept = Assert.Single(listed!);
         Assert.Equal(row.LauncherId, kept.LauncherId);
+        Assert.Equal("sha256:test", kept.PayloadFingerprint);
         Assert.Contains(kept.Launchers, l => l.Command.Contains(kept.TokenSecret));
+
+        // A deleted payload drops the join: the row still names the id it
+        // delivered, and the fingerprint reads null.
+        Assert.True(await payloads.RemoveAsync(payloadId, engagement.Value));
+        var listedAfterPayloadDelete = await env.Http.GetFromJsonAsync<LauncherRowDto[]>(
+            $"/engagements/{engagementId}/launchers");
+        Assert.Null(Assert.Single(listedAfterPayloadDelete!).PayloadFingerprint);
+        await payloads.SaveAsync(Payload(payloadId, engagement, DateTimeOffset.UtcNow));
 
         // Delete closes the whole lifecycle, not just the row: the credential
         // dies wherever a copy of the command carries it, then the row goes.
@@ -241,19 +254,76 @@ public class LauncherRenderTests
         Assert.Empty(listedAfterDelete!);
     }
 
-    private static PayloadRecord Payload(Guid id, EngagementId engagement, DateTimeOffset builtAt)
+    private static PayloadRecord Payload(
+        Guid id, EngagementId engagement, DateTimeOffset builtAt, string? target = "linux-x64")
         => new(
             id, engagement.Value, "Implant", "dotnet", "application/octet-stream",
-            "sha256:test", [1, 2, 3], 3, builtAt, Target: "linux-x64");
+            "sha256:test", [1, 2, 3], 3, builtAt, Target: target);
+
+    [Fact]
+    public async Task Render_FiltersTheFamiliesToThePayloadsOwnOS()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var engagement = new EngagementId(Guid.Parse(engagementId));
+
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-http",
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: "http://stage.example.test"));
+        created.EnsureSuccessStatusCode();
+
+        var payloads = env.Host.Services.GetRequiredService<IPayloadStore>();
+        var linux = Guid.NewGuid();
+        var windows = Guid.NewGuid();
+        var untargeted = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await payloads.SaveAsync(Payload(linux, engagement, now, "linux/amd64"));
+        await payloads.SaveAsync(Payload(windows, engagement, now, "windows/amd64"));
+        await payloads.SaveAsync(Payload(untargeted, engagement, now, target: null));
+
+        // A Linux payload offers the Unix families alone: a PowerShell fetch
+        // would spend the credential on bytes it cannot run, and vice versa
+        // -- a Windows payload answers the PowerShell family alone.
+        var linuxRender = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { PayloadId = linux.ToString() });
+        linuxRender.EnsureSuccessStatusCode();
+        var linuxBody = await linuxRender.Content.ReadFromJsonAsync<LauncherRenderDto>();
+        Assert.NotNull(linuxBody);
+        Assert.Contains(linuxBody!.Launchers, l => l.Id == "unix-curl");
+        Assert.DoesNotContain(linuxBody.Launchers, l => l.Id == "windows-powershell");
+
+        var windowsRender = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { PayloadId = windows.ToString() });
+        windowsRender.EnsureSuccessStatusCode();
+        var windowsBody = await windowsRender.Content.ReadFromJsonAsync<LauncherRenderDto>();
+        Assert.NotNull(windowsBody);
+        var sole = Assert.Single(windowsBody!.Launchers);
+        Assert.Equal("windows-powershell", sole.Id);
+
+        // A payload whose record carries no target (the pre-target-field
+        // shape) keeps every family: the shell the operator pastes into is
+        // the only clue, so the guess stays the operator's.
+        var untargetedRender = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/launchers", new { PayloadId = untargeted.ToString() });
+        untargetedRender.EnsureSuccessStatusCode();
+        var untargetedBody = await untargetedRender.Content.ReadFromJsonAsync<LauncherRenderDto>();
+        Assert.NotNull(untargetedBody);
+        Assert.Contains(untargetedBody!.Launchers, l => l.Id == "unix-curl");
+        Assert.Contains(untargetedBody.Launchers, l => l.Id == "windows-powershell");
+    }
 
     [Fact]
     public void Render_AnswersTheDiskFamiliesAndTheInMemoryFamily()
     {
-        // Every family renders for every payload: the disk trio is the
-        // universal fallback, and every artifact the Rust unit builds is a
-        // plain ELF that runs from an anonymous fd -- the disk-or-memory
-        // choice is the operator's at paste time, not a build-time axis.
-        // The credential rides each command exactly once.
+        // The unfiltered renderer (a payload with no recorded target): the
+        // disk trio is the universal fallback, and every artifact the Rust
+        // unit builds is a plain ELF that runs from an anonymous fd -- the
+        // disk-or-memory choice is the operator's at paste time, not a
+        // build-time axis. The credential rides each command exactly once.
         var rendered = ShellUpgradeLaunchers.Render(
             "http://stage.example.test/implants/payloads/abc", "secret");
 
@@ -310,9 +380,12 @@ public class LauncherRenderTests
         IReadOnlyList<LauncherDto> Launchers);
 
     // The kept-row shape: the render answer and the listing rows share it.
+    // The fingerprint is the library's identifier for the delivered payload,
+    // joined at read time; null once that payload is deleted.
     private sealed record LauncherRowDto(
         string LauncherId,
         string PayloadId,
+        string? PayloadFingerprint,
         string Url,
         string FrontName,
         string FrontEndpoint,

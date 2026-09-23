@@ -372,9 +372,12 @@ public class ShellCatchTests
             $"http://stage.example.test/implants/payloads/{payloadId:N}",
             rendered.Url);
         Assert.False(string.IsNullOrEmpty(rendered.TokenSecret));
+        // The payload's own families: a linux target offers the Unix fetches
+        // alone -- the PowerShell spelling would spend the single-use
+        // credential on bytes it cannot run.
         Assert.Contains(rendered.Launchers, l => l.Id == "unix-curl" && l.Command.Contains(rendered.Url));
         Assert.Contains(rendered.Launchers, l => l.Id == "unix-wget");
-        Assert.Contains(rendered.Launchers, l => l.Id == "windows-powershell");
+        Assert.DoesNotContain(rendered.Launchers, l => l.Id == "windows-powershell");
         Assert.All(rendered.Launchers, l => Assert.Contains(rendered.TokenSecret, l.Command));
     }
 

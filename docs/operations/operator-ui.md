@@ -271,7 +271,10 @@ the Shells roster.
 **Deliver a beacon** cuts the payload fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's
 Upgrade render produces the same commands for a shell it already caught;
-this panel is where an operator cuts them ahead of any catch. The one pick
+this panel is where an operator cuts them ahead of any catch. The form and
+the **Kept launchers** list below it share one card -- cutting a launcher
+and coming back to it is one surface, the same layout the Build tab gives
+its form and job strip. The one pick
 that matters is the **payload** -- the build the fetch delivers
 (the engagement's newest stands in). The rest live behind the "fetch front
 & credential" fold because the defaults are almost always right: the
@@ -281,13 +284,16 @@ widen the credential for a many-host deployment (unlimited or a fixed
 count, up to a day), or both.
 
 The answer carries the fetch URL, the credential, and one command per
-downloader family: `curl` and `wget` for Unix targets, PowerShell's `iwr`
-for Windows, and the python3 memfd family that runs the fetched bytes
-without landing a file. Copy the one the target's shell has; the beacon
-lands in the Implants table on its enrollment, already reporting its
-cadence. Over an https front every family's command disables transport
-verification -- the front's certificate comes from the engagement CA,
-which no stock target toolchain trusts (the implant itself pins that CA);
+downloader family *for the payload's own target OS*: `curl`, `wget`, and the
+python3 memfd family that runs the fetched bytes without landing a file for
+Linux builds; PowerShell's `iwr` for Windows builds. A command for another OS
+would spend the fetch credential on bytes that cannot run, so it never
+renders (a payload with no recorded target keeps every family -- the shell
+being pasted into is then the only clue). Copy the one the target's shell
+has; the beacon lands in the Implants table on its enrollment, already
+reporting its cadence. Over an https front every family's command disables
+transport verification -- the front's certificate comes from the engagement
+CA, which no stock target toolchain trusts (the implant itself pins that CA);
 the fetch credential is the gate.
 
 Why the fetch carries its own credential when the payload bakes one: the
@@ -299,7 +305,10 @@ token; a refused fetch (wrong front, unknown payload) spends nothing, and
 the credential dies by budget, expiry, or revocation.
 
 **Kept launchers** is the list every render lands in: when it was cut, for
-which payload, over which front, and the credential's standing as one
+which payload (named by the payload library's fingerprint -- the same
+identifier the Payloads tab's Fingerprint column shows, so a row matches
+its artifact without an id detour; a deleted payload falls back to the
+bare artifact id), over which front, and the credential's standing as one
 plain line -- `usable · 1 of 1 downloads left · until 19:00`, or `no
 downloads left`, `expired 19:00`, `revoked 18:35` when it is done (a
 bounded credential whose token has left the store is out of downloads

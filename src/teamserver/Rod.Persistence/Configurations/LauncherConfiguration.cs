@@ -28,6 +28,11 @@ internal sealed class LauncherConfiguration : IEntityTypeConfiguration<Launcher>
             .HasConversion(IdConverters.EngagementId)
             .HasColumnName("engagement_id");
         builder.Property(l => l.PayloadId).HasColumnName("payload_id");
+        // The payload's target OS at render time -- the snapshot that keeps
+        // a row's re-rendered one-liners filtered to its payload's families
+        // after the payload leaves the library. Nullable: rows and payloads
+        // that predate the target field carry no OS.
+        builder.Property(l => l.PayloadOs).HasColumnName("payload_os");
         builder.Property(l => l.ListenerId).HasColumnName("listener_id");
         builder.Property(l => l.FrontName).HasColumnName("front_name");
         builder.Property(l => l.FrontEndpoint).HasColumnName("front_endpoint");

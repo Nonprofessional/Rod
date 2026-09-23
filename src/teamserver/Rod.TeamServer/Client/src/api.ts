@@ -984,6 +984,10 @@ export async function upgradeShell(
 export interface LauncherRow {
   launcherId: string
   payloadId: string
+  // The delivered payload's library identifier -- the same fingerprint the
+  // Payloads tab shows -- joined at read time; null once the payload is
+  // deleted from the library.
+  payloadFingerprint: string | null
   url: string
   frontName: string
   frontEndpoint: string

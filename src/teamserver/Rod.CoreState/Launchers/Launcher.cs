@@ -13,7 +13,8 @@ namespace Rod.CoreState.Launchers;
 /// without re-cutting anything (architecture.md Sec 6/8).
 ///
 /// The row is a snapshot, not a live view: the URL, the front's name and
-/// endpoint, and the policy are what the render chose. The credential itself
+/// endpoint, the delivered payload's target OS, and the policy are what the
+/// render chose. The credential itself
 /// lives in the deploy token store (hashed, counted, expiring); this row
 /// carries the plaintext secret so the command can be re-copied -- the one
 /// place a download credential is held in the clear, behind the operator
@@ -28,6 +29,15 @@ public sealed class Launcher
 
     /// <summary>The stage-2 payload the fetch delivers.</summary>
     public Guid PayloadId { get; }
+
+    /// <summary>
+    /// The delivered payload's target OS ("linux"/"windows") at render time
+    /// -- a snapshot beside <see cref="PayloadId"/>, so the one-liners a
+    /// row re-renders stay filtered to the payload's own families even after
+    /// the payload leaves the library. Null when the payload record carried
+    /// no target (the pre-target-field shape), where every family renders.
+    /// </summary>
+    public string? PayloadOs { get; }
 
     /// <summary>The web listener whose front the fetch URL rides.</summary>
     public Guid ListenerId { get; }
@@ -69,6 +79,7 @@ public sealed class Launcher
         LauncherId id,
         EngagementId engagementId,
         Guid payloadId,
+        string? payloadOs,
         Guid listenerId,
         string frontName,
         string frontEndpoint,
@@ -83,6 +94,7 @@ public sealed class Launcher
         Id = id;
         EngagementId = engagementId;
         PayloadId = payloadId;
+        PayloadOs = payloadOs;
         ListenerId = listenerId;
         FrontName = frontName;
         FrontEndpoint = frontEndpoint;

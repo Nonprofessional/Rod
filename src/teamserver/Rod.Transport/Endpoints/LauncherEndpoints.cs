@@ -110,11 +110,15 @@ public static class LauncherEndpoints
         if (set is null)
             return failure!;
 
-        // Keep the row: the snapshot the operator returns to.
+        // Keep the row: the snapshot the operator returns to. The payload's
+        // target OS rides beside its id so the row's re-rendered one-liners
+        // stay filtered to the payload's own families even after the payload
+        // leaves the library.
         var row = new Launcher(
             LauncherId.New(),
             engagement,
             set.Payload.PayloadId,
+            LauncherRender.OsOf(set.Payload.Target),
             set.Front.Id,
             set.Front.Name,
             set.Front.PublicEndpoint,
@@ -127,12 +131,13 @@ public static class LauncherEndpoints
             operatorId.Value);
         await launchers.SaveAsync(row, cancellationToken);
 
-        return Results.Ok(await ResponseOfAsync(row, set.Launchers, tokens, cancellationToken));
+        return Results.Ok(await ResponseOfAsync(row, set.Launchers, set.Payload.Fingerprint, tokens, cancellationToken));
     }
 
     private static async Task<IResult> ListLaunchersAsync(
         string engagementId,
         ILauncherStore launchers,
+        IPayloadStore payloads,
         IDeployTokenService tokens,
         CancellationToken cancellationToken)
     {
@@ -144,12 +149,18 @@ public static class LauncherEndpoints
         foreach (var row in rows)
         {
             // The commands are re-rendered on read, so the row always copies
-            // in the current shape -- every family renders for every payload,
-            // so nothing about the payload needs resolving first.
-            var rendered = ShellUpgradeLaunchers.Render(row.Url, row.TokenSecret)
+            // in the current shape -- filtered to the payload's own families
+            // through the row's OS snapshot, so a Windows row never re-offers
+            // a Unix one-liner (and a payload whose target was never recorded
+            // keeps every family). The fingerprint join is display-only: it
+            // puts the row in the payload library's own vocabulary, and reads
+            // null once the payload is deleted (the row still names the id it
+            // delivered).
+            var rendered = ShellUpgradeLaunchers.Render(row.Url, row.TokenSecret, row.PayloadOs)
                 .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
                 .ToArray();
-            body.Add(await ResponseOfAsync(row, rendered, tokens, cancellationToken));
+            var delivered = await payloads.FindAsync(row.PayloadId, engagement.Value, cancellationToken);
+            body.Add(await ResponseOfAsync(row, rendered, delivered?.Fingerprint, tokens, cancellationToken));
         }
         return Results.Ok(body);
     }
@@ -285,10 +296,13 @@ public static class LauncherEndpoints
     // The row's response shape: the snapshot plus the live credential state,
     // joined from the token store. A null remaining count means the token is
     // no longer stored -- revoked, or spent to zero -- and reads as "no
-    // downloads left".
+    // downloads left". The payload fingerprint is joined from the library so
+    // the row reads in the same identifier the Payloads tab shows; null when
+    // the payload no longer exists there.
     private static async Task<LauncherResponse> ResponseOfAsync(
         Launcher row,
         IReadOnlyList<ShellLauncherResponse> commands,
+        string? payloadFingerprint,
         IDeployTokenService tokens,
         CancellationToken cancellationToken)
     {
@@ -296,6 +310,7 @@ public static class LauncherEndpoints
         return new LauncherResponse(
             row.Id.ToString(),
             row.PayloadId.ToString("N"),
+            payloadFingerprint,
             row.Url,
             row.FrontName,
             row.FrontEndpoint,
@@ -331,11 +346,14 @@ public static class LauncherEndpoints
     /// One kept launcher row: what it delivers and where it fetches from, the
     /// re-copyable credential with its policy and provenance, the revocation
     /// state, and the paste-ready one-liners re-rendered from the row's url
-    /// and secret.
+    /// and secret. The payload fingerprint is the library's identifier for
+    /// what the fetch delivers -- the same value the Payloads tab shows --
+    /// and is null when that payload has since been deleted.
     /// </summary>
     public sealed record LauncherResponse(
         string LauncherId,
         string PayloadId,
+        string? PayloadFingerprint,
         string Url,
         string FrontName,
         string FrontEndpoint,
@@ -480,9 +498,25 @@ internal static class LauncherRender
             webListener,
             token,
             url,
-            ShellUpgradeLaunchers.Render(url, token.Secret)
+            // The payload's own families alone: a one-liner for another OS
+            // spends the fetch credential on bytes that cannot run there.
+            ShellUpgradeLaunchers.Render(url, token.Secret, OsOf(payload.Target))
                 .Select(l => new ShellLauncherResponse(l.Id, l.Os, l.Command))
                 .ToArray()));
+    }
+
+    // The OS half of a stored payload target ("linux/amd64" -> "linux"):
+    // the families key on the OS alone. The separator tolerance covers the
+    // slash the build pipeline stamps and any dash-joined spelling a stored
+    // record carries; an unrecognized or missing target reads null, which
+    // renders every family.
+    internal static string? OsOf(string? target)
+    {
+        var trimmed = target?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(trimmed))
+            return null;
+        var stem = trimmed.Split('/', '-')[0];
+        return stem is "linux" or "windows" ? stem : null;
     }
 
     private static bool IsWebTransport(string transport)
