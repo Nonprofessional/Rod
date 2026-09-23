@@ -2275,6 +2275,13 @@ button.file-entry {
   align-items: flex-end;
 }
 
+/* The settings card's second form: enough headroom that the first form's
+   save button and its saved-note read as a closed section above it, the
+   same section rhythm the jobs strip gets inside its card. */
+.build-form.form-section {
+  margin-top: 28px;
+}
+
 /* --- System page --------------------------------------------------------------------------- */
 
 /* One build unit's report block: findings list over the target table,

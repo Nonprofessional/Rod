@@ -137,7 +137,7 @@ export function SettingsView() {
       {saved && <p className="muted">{saved}</p>}
       {error && <p className="error">{error}</p>}
 
-      <form className="build-form" onSubmit={onSaveCache}>
+      <form className="build-form form-section" onSubmit={onSaveCache}>
         <fieldset>
           <legend>Build cache</legend>
           <label>
