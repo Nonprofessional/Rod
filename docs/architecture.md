@@ -533,7 +533,12 @@ recorded.**
   once), so a reboot-surviving loader needs a budgeted or unlimited
   token inside its kill window; deleting either artifact ends the
   delivery. Windows targets deliver through the one-liners today; the
-  tier compiles for Linux amd64 and arm64.
+  tier compiles for Linux amd64 and arm64 -- the aarch64 cross links
+  through rust-lld from the toolchain itself (the host driver rejects
+  that target's cortex fixup flag, and the loader has no C bits), and
+  both arches are verified end to end: the sealed fetch, the memfd exec,
+  and the fail-closed leg on tampered bytes, the aarch64 one under the
+  kernel's binfmt with qemu-user on the build host.
 - **Every build mints the enrollment credential it bakes.** The token is
   minted at build time (single use by default, inside the artifact's kill
   window), baked into the profile's `token` key, and reported by id only --

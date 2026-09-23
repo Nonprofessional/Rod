@@ -434,6 +434,22 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             cargo.ArgumentList.Add(argument);
         cargo.Environment["CARGO_TARGET_DIR"] = targetDir;
         cargo.Environment["CARGO_NET_GIT_FETCH_WITH_CLI"] = "true";
+        // The aarch64 musl link: rustc passes --fix-cortex-a53-843419 to the
+        // driver, which the build host's default bfd linker rejects -- the
+        // loader is pure Rust with no C bits, so rust-lld from the toolchain
+        // itself links it without any cross gcc. The x86_64 musl link needs
+        // nothing: the host driver carries every flag that target asks for.
+        if (triple == "aarch64-unknown-linux-musl")
+        {
+            var lld = FindRustLld();
+            if (lld is not null)
+                cargo.Environment["RUSTFLAGS"] =
+                    $"-C linker={lld} -C linker-flavor=ld.lld -C link-self-contained=no -C relocation-model=static";
+            else
+                throw new BuildUnitFailureException(
+                    "The aarch64 loader link needs rust-lld (under the toolchain's lib/rustlib bin); "
+                    + "none was found beside rustc.");
+        }
         var result = await RunAsync(cargo, cancellationToken);
         if (result.ExitCode != 0)
         {
@@ -457,6 +473,20 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             content,
             contentType: "application/octet-stream",
             builtAt: DateTimeOffset.UtcNow);
+    }
+
+    // rust-lld beside the host toolchain, the aarch64 loader's linker. The
+    // file ships with every rustup-managed toolchain; a distro toolchain
+    // may carry it elsewhere or not at all, in which case the caller
+    // refuses with the fix named.
+    private static string? FindRustLld()
+    {
+        var sysroot = Probe.Run("rustc", "--print", "sysroot");
+        if (!sysroot.Found)
+            return null;
+        var candidate = Path.Combine(
+            sysroot.FirstLine.Trim(), "lib", "rustlib", "x86_64-unknown-linux-gnu", "bin", "rust-lld");
+        return File.Exists(candidate) ? candidate : null;
     }
 
     // The loader's baked dial: the four address bytes and the port of a

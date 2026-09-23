@@ -47,6 +47,34 @@ public class RustBuildUnitTests
         Assert.True(artifact.Size > 0);
     }
 
+    // The aarch64 loader link: the host driver rejects the cortex fixup
+    // flag rustc passes for that target, so the unit routes the pure-Rust
+    // link through rust-lld from the toolchain itself. This drives the
+    // real cross build and proves the artifact comes back; running the
+    // aarch64 binary is qemu territory, not the unit's.
+    [Fact]
+    public async Task AnArm64LoaderBuild_LinksThroughRustLld()
+    {
+        var unit = new RustBuildUnit();
+        if (unit.ReportEnvironment().Status is "unavailable" or null)
+            return; // no toolchain on this runner; the environment report names the fix
+
+        var @params = Params() with
+        {
+            Kind = PayloadKind.Loader,
+            DeliversPayloadId = Guid.NewGuid(),
+            TokenSecret = "loader-probe",
+            EnvelopeKeyId = Guid.NewGuid(),
+            EnvelopeKey = new byte[32],
+            Target = new TargetProfile("linux", "arm64"),
+            Transport = new TransportProfile("http://127.0.0.1:8080", "/beacon"),
+        };
+
+        var artifact = await unit.BuildAsync(@params);
+
+        Assert.True(artifact.Size > 0);
+    }
+
     [Fact]
     public async Task MissingSourceTree_ThrowsBuildUnitFailure_NotAContractRefusal()
     {
