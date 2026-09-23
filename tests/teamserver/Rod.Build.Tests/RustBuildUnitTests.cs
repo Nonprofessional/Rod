@@ -87,13 +87,13 @@ public class RustBuildUnitTests
         Assert.Contains("source tree not found", ex.Message);
     }
 
-    // The loader tier's contract refusals: the dial must be a literal IPv4
-    // over cleartext http (the no_std dialer parses nothing else), and the
+    // The loader tier's contract refusals: the dial must be cleartext http
+    // (the tier carries no TLS; any host shape bakes), and the
     // seal pair and stage reference must ride the params -- the endpoint
     // mints them, and a request that reaches the unit without them is a
     // contract violation, not a toolchain fault.
     [Fact]
-    public async Task ALoaderDialThatIsNotALiteralIpv4Http_IsAContractRefusal()
+    public async Task ALoaderDialThatIsNotHttp_IsAContractRefusal_AndANameBakes()
     {
         var unit = new RustBuildUnit();
         var @params = Params() with
@@ -109,9 +109,13 @@ public class RustBuildUnitTests
         var https = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
         Assert.Contains("cleartext http front", https.Message);
 
+        // A named front bakes the resolver shape, not a refusal; the literal
+        // v4/v6 authorities dial directly.
+        if (unit.ReportEnvironment().Status is "unavailable" or null)
+            return; // no toolchain on this runner; the environment report names the fix
         @params = @params with { Transport = new TransportProfile("http://front.example.test", "/beacon") };
-        var hostname = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
-        Assert.Contains("literal IPv4", hostname.Message);
+        var artifact = await unit.BuildAsync(@params);
+        Assert.True(artifact.Size > 0);
     }
 
     [Fact]

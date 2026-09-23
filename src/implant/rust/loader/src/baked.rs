@@ -9,8 +9,23 @@
 // blank token every fetch route refuses, and a zero key no R1 body opens.
 // Running an unbaked loader fails closed at the first exchange.
 
-/// The front's literal IPv4 address the loader dials (cleartext HTTP).
-pub const HOST: [u8; 4] = [127, 0, 0, 1];
+/// The dial's address shape: 0 IPv4, 1 IPv6, 2 a name to resolve.
+pub const HOST_KIND: u8 = 0;
+
+/// The front's literal IPv4 address (HOST_KIND 0).
+pub const HOST_V4: [u8; 4] = [127, 0, 0, 1];
+
+/// The front's literal IPv6 address (HOST_KIND 1).
+pub const HOST_V6: [u8; 16] = [0; 16];
+
+/// The front's name to resolve (HOST_KIND 2) -- a minimal DNS A/AAAA
+/// query, answered by RESOLVER when baked, else the system's
+/// resolv.conf nameservers.
+pub const HOST_NAME: &str = "";
+
+/// The resolver a HOST_NAME dial queries, as a literal IPv4. Empty: the
+/// system's /etc/resolv.conf nameservers, in order.
+pub const RESOLVER: &str = "";
 
 /// The front's TCP port.
 pub const PORT: u16 = 1;

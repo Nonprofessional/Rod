@@ -160,8 +160,8 @@ export function PayloadBuildView({
 
   // The loader tier's client-side shape of the server's gates: a Linux
   // memfd artifact on the two arches its crate compiles, dialing a
-  // cleartext http front by literal IPv4 (no TLS, no resolver in the
-  // tier). The server refuses anything else with the same rules; these
+  // cleartext http front (no TLS in the tier; any host shape dials).
+  // The server refuses anything else with the same rules; these
   // keep the form from offering a build it would reject.
   const loaderTier = tier === 'loader'
   useEffect(() => {
@@ -170,12 +170,9 @@ export function PayloadBuildView({
   useEffect(() => {
     if (loaderTier && !['amd64', 'arm64'].includes(targetArch)) setTargetArch('amd64')
   }, [loaderTier, targetArch])
-  // The loader's dial test: the picked front must be an http listener whose
-  // public endpoint is a bare literal IPv4 (a port allowed), because the
-  // loader bakes the four address bytes as constants.
-  const loaderFrontOk = !loaderTier
-    || (selectedListener?.transport === 'http'
-      && /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(selectedListener?.publicEndpoint.trim() ?? ''))
+  // The loader's dial test: the picked front must be an http listener --
+  // any host shape dials (literal v4/v6 or a name the loader resolves).
+  const loaderFrontOk = !loaderTier || selectedListener?.transport === 'http'
   // The delivery picker's offer: this engagement's stored implants (a
   // loader delivers the implant tier, never another loader).
   const deliverable = library.filter((p) => !p.deliversPayloadId && p.kind !== 'loader')
@@ -366,7 +363,7 @@ export function PayloadBuildView({
       return
     }
     if (loaderTier && !loaderFrontOk) {
-      setError('The loader dials a cleartext http front by literal IPv4 -- pick an http listener whose public endpoint is an IPv4 address.')
+      setError('The loader dials a cleartext http front -- pick an http listener.')
       return
     }
     if (loaderTier && !deliversPayloadId) {
@@ -504,8 +501,13 @@ export function PayloadBuildView({
               <option value="" disabled>-- pick a listener --</option>
               {listeners.map((l) =>
                 ENROLL_TRANSPORTS.has(l.transport) ? (
-                  <option key={l.id} value={l.id}>
+                  <option
+                    key={l.id}
+                    value={l.id}
+                    disabled={loaderTier && l.transport !== 'http'}
+                  >
                     {l.name} ({l.transport} → {l.publicEndpoint})
+                    {loaderTier && l.transport !== 'http' ? ' — http only for the loader' : ''}
                   </option>
                 ) : (
                   <option key={l.id} disabled>
@@ -515,12 +517,6 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {loaderTier && !loaderFrontOk && (
-            <p className="muted" style={{ color: '#e6a23c' }}>
-              The loader dials a cleartext http front by literal IPv4 (it carries no TLS and no
-              resolver) -- pick an http listener whose public endpoint is an IPv4 address.
-            </p>
-          )}
           {carriers.length > 0 && (
             <label>
               Contact carrier

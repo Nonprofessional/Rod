@@ -225,10 +225,9 @@ internal static class PayloadBuildRequestParser
             // under the per-build key, the same posture as the cleartext
             // contact, so the plain transport costs nothing but leaves the
             // front's spelling narrow on purpose.
-            if (!TryLiteralIpv4Http(endpoint.Value, out var loaderHost, out var loaderPort))
+            if (!endpoint.Value!.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase))
                 return (null,
-                    "The loader dials a literal IPv4 over cleartext http (it carries no TLS and no resolver) -- "
-                    + "point the build at an http listener whose public endpoint is an IPv4 address.");
+                    "The loader dials a cleartext http front (no TLS in the tier); pick an http listener.");
             // The stage reference: this engagement's own stored payload, and
             // not another loader -- the loader delivers the implant tier,
             // and a chain of dialers is a footprint, not a capability.
@@ -602,29 +601,6 @@ internal static class PayloadBuildRequestParser
             ? TimeSpan.FromSeconds(Math.Min(value, MaxDurationSeconds))
             : fallback;
 
-
-    // The loader's dial shape: a cleartext http URL whose authority is a
-    // literal IPv4 with an optional port (80 implied). The loader
-    // bakes the four address bytes and the port as constants -- no resolver,
-    // no TLS -- so anything else (a hostname, https, another family) is a
-    // front this tier cannot dial, refused here with the shape named.
-    private static bool TryLiteralIpv4Http(string? endpoint, out byte[]? address, out int port)
-    {
-        address = null;
-        port = 80;
-        var trimmed = endpoint?.Trim();
-        if (trimmed is null || !trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-            return false;
-        var authority = trimmed[7..].Split('/')[0];
-        var colon = authority.LastIndexOf(':');
-        var host = colon >= 0 ? authority[..colon] : authority;
-        if (colon >= 0 && (!int.TryParse(authority[(colon + 1)..], out port) || port is < 1 or > 65535))
-            return false;
-        if (!System.Net.IPAddress.TryParse(host, out var parsed) || parsed.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
-            return false;
-        address = parsed.GetAddressBytes();
-        return true;
-    }
 
     // An endpoint the implant can dial: an absolute http(s) URL, or the
     // socket or DNS family's dial (architecture.md Sec 8 -- a tcp-, dns-,

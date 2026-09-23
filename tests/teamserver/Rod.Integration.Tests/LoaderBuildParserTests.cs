@@ -13,7 +13,7 @@ namespace Rod.Integration.Tests;
 /// <summary>
 /// The loader tier's request gates (architecture.md Sec 6): the parser holds
 /// the tier to the shape its crate can honor -- a stored implant of this
-/// engagement as the delivery, a cleartext http front by literal IPv4 (the
+/// engagement as the delivery, a cleartext http front (any host shape --
 /// dialer carries no TLS and no resolver), a Linux amd64/arm64 target, the
 /// in-tree Rust unit. Registry- and store-seeded (no toolchain runs here);
 /// each refusal names the fix the same way the route will at runtime.
@@ -130,19 +130,19 @@ public class LoaderBuildParserTests
         var (request, error) = await ParseAsync(h, "loader-https", stageId.ToString());
 
         Assert.Null(request);
-        Assert.Contains("literal IPv4", error);
+        Assert.Contains("cleartext http front", error);
     }
 
     [Fact]
-    public async Task AHostnameFront_IsRefusedWithTheDialShapeNamed()
+    public async Task AHostnameFront_BakesWithItsDelivery()
     {
         await using var h = await SetupAsync();
         var stageId = await StoredImplantIdAsync(h);
 
         var (request, error) = await ParseAsync(h, "loader-named", stageId.ToString());
 
-        Assert.Null(request);
-        Assert.Contains("literal IPv4", error);
+        Assert.Null(error);
+        Assert.Equal(PayloadKind.Loader, request!.Kind);
     }
 
     [Fact]
