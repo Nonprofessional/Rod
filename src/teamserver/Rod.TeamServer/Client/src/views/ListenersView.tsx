@@ -314,148 +314,159 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
 
       {/* The same labeled-grid shape as the Build form: every field carries
           its name above it, placeholders stay as hints only. */}
+      {/* Three row groups, one concern each: identity (name, wire, the
+          egress fold it opens), the socket (interface, host, port), and the
+          dial (whose certificate, what address) -- each row wraps on a
+          narrow card instead of the fields interleaving across grid
+          columns. */}
       <form className="listener-form" onSubmit={onCreate}>
-        <label>
-          Name
-          <input
-            placeholder="front"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          Transport
-          <select
-            value={transport}
-            onChange={(e) => {
-              setTransport(e.target.value)
-              const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
-              if (port !== '') setBindPort(port)
-            }}
-            title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per contact). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
-          >
-            {TRANSPORT_GROUPS.map((group) => (
-              <optgroup key={group.label} label={group.label}>
-                {group.transports.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-            {showEgress && (
-              <optgroup label={EGRESS_GROUP.label}>
-                {EGRESS_GROUP.transports.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            <optgroup label={CATCHERS_GROUP.label}>
-              {CATCHERS_GROUP.transports.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </label>
-        {isWebTransport && (
+        <div className="listener-row">
           <label>
-            Certificate
+            Name
+            <input
+              placeholder="front"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Transport
             <select
-              value={trust}
-              onChange={(e) => setTrust(e.target.value)}
-              title="Whose certificate this front presents -- the fact every build against it inherits as its TLS roots. Pinned (the default): the engagement CA terminates the front, and artifacts pin that CA -- works for any domain you point at the listener, no public CA involved. Public: a real domain whose publicly-trusted certificate an operator-run edge terminates in front of this listener -- the shape that survives TLS inspection; the public endpoint must be the https address of that edge."
+              value={transport}
+              onChange={(e) => {
+                setTransport(e.target.value)
+                const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
+                if (port !== '') setBindPort(port)
+              }}
+              title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per contact). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
             >
-              <option value="pinned">engagement CA (default)</option>
-              <option value="public">public — real-domain edge</option>
+              {TRANSPORT_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.transports.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              {showEgress && (
+                <optgroup label={EGRESS_GROUP.label}>
+                  {EGRESS_GROUP.transports.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label={CATCHERS_GROUP.label}>
+                {CATCHERS_GROUP.transports.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
-        )}
-        <label
-          className="checkbox-label"
-          title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
-        >
-          Egress &amp; pivots
-          <span className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={showEgress}
-              onChange={(e) => {
-                setShowEgress(e.target.checked)
-                // Hiding the family cannot leave one of its transports
-                // selected: fall back to the default posture.
-                if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
-                  setTransport('https')
-                  setBindPort('443')
-                }
-              }}
-            />
-          </span>
-        </label>
-        <label>
-          Bind interface
-          <select
-            value={bindInterface}
-            onChange={(e) => setBindInterface(e.target.value)}
-            title="The interface this listener opens its socket on"
+          <label
+            className="checkbox-label"
+            title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
           >
-            <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
-            {interfaces.map((i) => (
-              <option key={`${i.name}-${i.address}`} value={i.address}>
-                {i.name} ({i.address})
-              </option>
-            ))}
-            {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
-                <option value={CUSTOM}>Custom address…</option>
+            Egress &amp; pivots
+            <span className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={showEgress}
+                onChange={(e) => {
+                  setShowEgress(e.target.checked)
+                  // Hiding the family cannot leave one of its transports
+                  // selected: fall back to the default posture.
+                  if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
+                    setTransport('https')
+                    setBindPort('443')
+                  }
+                }}
+              />
+            </span>
+          </label>
+        </div>
+        <div className="listener-row">
+          <label>
+            Bind interface
+            <select
+              value={bindInterface}
+              onChange={(e) => setBindInterface(e.target.value)}
+              title="The interface this listener opens its socket on"
+            >
+              <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
+              {interfaces.map((i) => (
+                <option key={`${i.name}-${i.address}`} value={i.address}>
+                  {i.name} ({i.address})
+                </option>
+              ))}
+              {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
+              <option value={CUSTOM}>Custom address…</option>
+            </select>
+          </label>
+          <label>
+            Custom host
+            {/* Always rendered, disabled unless Custom is picked, so the
+                row never reshuffles when the custom entry comes and goes;
+                the disabled value mirrors the selected interface, so the
+                host about to be bound stays readable. */}
+            <input
+              className="bind-host"
+              placeholder="192.168.1.5"
+              value={
+                bindInterface === CUSTOM
+                  ? customHost
+                  : bindInterface === ''
+                    ? ALL_INTERFACES
+                    : bindInterface
+              }
+              onChange={(e) => setCustomHost(e.target.value)}
+              disabled={bindInterface !== CUSTOM}
+              title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
+              required={bindInterface === CUSTOM}
+            />
+          </label>
+          <label>
+            Bind port
+            <input
+              className="bind-port"
+              placeholder="443"
+              value={bindPort}
+              onChange={(e) => setBindPort(e.target.value)}
+              title="The port this listener opens"
+              required
+            />
+          </label>
+        </div>
+        <div className="listener-row">
+          {isWebTransport && (
+            <label>
+              Certificate
+              <select
+                value={trust}
+                onChange={(e) => setTrust(e.target.value)}
+                title="Whose certificate this front presents -- the fact every build against it inherits as its TLS roots. Pinned (the default): the engagement CA terminates the front, and artifacts pin that CA -- works for any domain you point at the listener, no public CA involved. Public: a real domain whose publicly-trusted certificate an operator-run edge terminates in front of this listener -- the shape that survives TLS inspection; the public endpoint must be the https address of that edge."
+              >
+                <option value="pinned">engagement CA (default)</option>
+                <option value="public">public — real-domain edge</option>
               </select>
             </label>
-            <label>
-              Custom host
-              {/* Always rendered, disabled unless Custom is picked, so the
-                  grid never reshuffles when the custom entry comes and goes;
-                  the disabled value mirrors the selected interface, so the
-                  host about to be bound stays readable. */}
-              <input
-                className="bind-host"
-                placeholder="192.168.1.5"
-                value={
-                  bindInterface === CUSTOM
-                    ? customHost
-                    : bindInterface === ''
-                      ? ALL_INTERFACES
-                      : bindInterface
-                }
-                onChange={(e) => setCustomHost(e.target.value)}
-                disabled={bindInterface !== CUSTOM}
-                title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
-                required={bindInterface === CUSTOM}
-              />
-            </label>
-            <label>
-              Bind port
-              <input
-                className="bind-port"
-                placeholder="443"
-                value={bindPort}
-                onChange={(e) => setBindPort(e.target.value)}
-                title="The port this listener opens"
-                required
-              />
-            </label>
-        <label className="endpoint-label">
-          Public endpoint
-          <input
-            className="endpoint-input"
-            placeholder={endpointPlaceholder}
-            title={endpointTitle}
-            value={publicEndpoint}
-            onChange={(e) => setPublicEndpoint(e.target.value)}
-          />
-        </label>
+          )}
+          <label className="endpoint-label">
+            Public endpoint
+            <input
+              className="endpoint-input"
+              placeholder={endpointPlaceholder}
+              title={endpointTitle}
+              value={publicEndpoint}
+              onChange={(e) => setPublicEndpoint(e.target.value)}
+            />
+          </label>
+        </div>
         <div className="listener-form-actions">
           <button
             className="ghost"

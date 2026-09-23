@@ -2197,13 +2197,6 @@ button.file-entry {
 
 /* --- List filter field ---------------------------------------------------------------- */
 
-/* The listener form's endpoint field takes a full row (the completion hint
-   in its placeholder is long): the grid places labels, so the span rides
-   the label and the box stretches with it. */
-.listener-form .endpoint-label {
-  grid-column: 1 / -1;
-}
-
 /* --- Payload build jobs ---------------------------------------------------------------- */
 
 .jobs-head {
@@ -2224,12 +2217,21 @@ button.file-entry {
 
 /* The Build form's labeled-grid rhythm: each field's name rides above it,
    placeholders hint rather than name. */
+/* The form stacks row groups (identity / socket / dial), and each group
+   wraps internally on a narrow card -- the fields of one concern never
+   interleave with another's across grid columns. */
 .listener-form {
   margin: 12px 0;
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.listener-form .listener-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
