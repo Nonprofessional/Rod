@@ -1596,6 +1596,101 @@ exactly as it serves an operator's keystrokes -- the input route and the
 relay are two producers of the same channel-input queue, and the transcript
 plus the relay's own audit pair are the attributed record either way.
 
+### 10.4 Server-side automation: triggers and scheduled tasking
+
+An engagement keeps a watch when no operator does: the overnight screenshot
+every 30 minutes, the triage batch on first contact, the chain that reads a
+completed result and tasks the follow-up. Automation is an engine **beside
+the operator layer, not a new one**: it lives in `Rod.Operators` beside the
+live bus it subscribes to, issues everything through the same
+`TaskService.IssueAsync` path an operator's console click rides, and holds
+no behavior of its own beyond the rules and their guards.
+
+**Rules.** An automation rule is engagement-scoped declarative state --
+trigger, condition, action -- persisted with the engagement
+(`AutomationRule` in `Rod.CoreState` behind the `IAutomationRuleStore`
+port, the same in-memory/Postgres adapter pair every engagement-scoped row
+uses). A **time trigger** is a fixed interval ("every 30 minutes"). An
+**event trigger** names a live event kind (Sec 4.1, layer 4) from a
+deliberately short list -- session opened or closed, task issued, completed,
+or cancelled, implant retired -- with an optional condition narrowing it:
+fire only for one implant's events, or (for completion triggers) only when
+a named verb completed. Operator presence and channel-output events are
+not triggerable -- the first is operator-console chatter, the second is a
+per-chunk firehose. The action is one task issuance: a target implant, a
+verb, arguments. Guards ride the rule itself: a minimum cooldown between
+firings and a firing cap after which the rule disables itself and says so
+in the trail.
+
+**The firing path.** Every firing -- scheduled or event-driven -- goes
+through `TaskService.IssueAsync` unchanged, so the class gate, the channel
+carrier gate, ROE, and the closed-engagement gate hold exactly as they do
+for an operator's issuance; the engine cannot bypass a gate, and a rule
+whose firing the gates refuse is heard, not looped -- each refusal lands in
+the audit trail, and a rule refused three consecutive times disables
+itself rather than spinning overnight against a closed door. Firing
+attributes to a **synthetic automation operator**: a well-known id seeded
+idempotently at startup (handle `automation`, no credential -- it cannot
+log in), so a firing's `TaskIssued` fact and everything downstream of it
+read in the engagement trail as automation's work, distinguishable from
+every human operator's. The engine writes the task's audit arc through the
+same `onIssued` hook the transport endpoints use, so a fired task's trail
+is shaped exactly like an operator-issued one, and each firing adds an
+`AutomationRuleFired` fact naming the rule, the trigger, and the task that
+resulted -- or the refusal reason.
+
+**Guards.** The action's verb is bounded where automation has no business:
+the channel verbs (an unattended firing cannot own an interactive input
+half), the Windows-sensitive three (Sec 12.2: `inject.shellcode`,
+`collect.minidump`, `collect.keylog`), and the evasion/exploit namespaces
+(contract-only categories whose tradecraft is out-of-tree and never fires
+unattended). Blocked verbs are refused at rule creation, not discovered at
+fire time. Chain depth is capped at one: a completed task the engine
+itself issued never matches an event trigger, so automation chains
+terminate by construction -- the chain an engagement actually wants, an
+operator's task completing and automation following up, is depth zero and
+fires normally. Firings serialize inside the engine, and cooldown and cap
+are evaluated under that serialization, so a burst of matching events
+yields one firing, not a storm.
+
+**Durability posture.** Time triggers are durable: the next-fire stamp is
+persisted with the rule and survives a teamserver restart, which picks the
+schedule back up where it left off; fires missed while the server was down
+are skipped, not made up -- a restarted server does not storm a quiet
+implant with a backlog. Event triggers inherit the bus's best-effort
+posture (Sec 4.1): process-local, drop-oldest under a slow consumer, no
+replay; an event that fires while the server is down never happened, and
+the audit trail stays the record. The causality map behind the chain guard
+is process-local with them -- restart resets it, which can only make a
+chain one link longer, never a loop.
+
+**The operator surface.** Rules are managed from the operator API at
+`/engagements/{engagementId}/automation-rules` (create, list, read,
+`:enable`, `:disable`, delete); disabling is the cancel. The routes live in
+the operator layer with the events endpoint -- transport may not reference
+the engine's layer, and rules are the engine's domain the way the SSE
+stream is the sessions'. Creation validates eagerly what it can -- the
+engagement open, the target implant present and in the engagement, the
+verb unblocked and inside the class set -- so an operator's mistake is a
+422 at creation instead of a refusal audit three hours later; the issuance
+gates at fire time remain the authority either way. Every rule mutation
+lands in the trail (`AutomationRuleCreated`/`Updated`/`Deleted`) attributed
+to the mutating operator; the engine's own auto-disables (cap reached,
+repeated refusals) land as `AutomationRuleUpdated` facts attributed to the
+automation operator with the cause in the payload, so a rule that went
+quiet explains itself.
+
+**Shape of the engine.** One hosted background service with a fixed-delay
+tick (default 5 s, `Automation:EngineTickSeconds`): each tick scans the due
+interval rules and reconciles the per-engagement event subscriptions (one
+subscription per engagement holding enabled event rules, drained
+sequentially), and rules reload from the store every tick so an operator's
+mutation is seen on the next one -- at most one tick of latency, the same
+eventual-read posture the staleness sweeper holds. A sandboxed script
+front-end (JS/Lua) would be a possible follow-on evaluator over the same
+firing path; declarative rules are the first and only evaluator here --
+they are auditable, testable, and cover the needs engagements have shown.
+
 ## 11. Evidence and reporting -- a first-class output
 
 A red-team operation ends in a deliverable: timeline, findings, and evidence. Rod
