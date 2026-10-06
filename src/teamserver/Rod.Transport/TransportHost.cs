@@ -234,6 +234,12 @@ public static class TransportHost
         // in hosts that never opt into the tradecraft layer.
         services.AddSingleton<ITaskCapabilityResolver, ClassTableCapabilityResolver>();
 
+        // Sensitivity gate -> the static-floor default (the sensitive three
+        // and the evasion/exploit namespaces). AddRodTradecraft replaces this
+        // with the registry-backed policy so the judgment rides each verb's
+        // OPSEC metadata; hosts without the layer keep the floor.
+        services.AddSingleton<ISensitiveVerbPolicy, DefaultSensitiveVerbPolicy>();
+
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
         services.AddSingleton<EnrollmentService>();

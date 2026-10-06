@@ -25,6 +25,7 @@ public sealed class AutomationService
     private readonly IEngagementRepository _engagements;
     private readonly IImplantRepository _implants;
     private readonly ITaskCapabilityResolver _capabilities;
+    private readonly ISensitiveVerbPolicy _sensitive;
     private readonly IAuditStore _audit;
     private readonly TimeProvider _clock;
 
@@ -33,6 +34,7 @@ public sealed class AutomationService
         IEngagementRepository engagements,
         IImplantRepository implants,
         ITaskCapabilityResolver capabilities,
+        ISensitiveVerbPolicy sensitive,
         IAuditStore audit,
         TimeProvider clock)
     {
@@ -40,6 +42,7 @@ public sealed class AutomationService
         _engagements = engagements;
         _implants = implants;
         _capabilities = capabilities;
+        _sensitive = sensitive;
         _audit = audit;
         _clock = clock;
     }
@@ -225,9 +228,12 @@ public sealed class AutomationService
     {
         if (string.IsNullOrWhiteSpace(verb))
             throw new AutomationRuleRejectedException("A rule needs a verb.");
-        if (AutomationLimits.IsBlockedVerb(verb))
+        if (Rod.CoreState.Tasks.ChannelVerbs.IsChannelVerb(verb))
             throw new AutomationRuleRejectedException(
-                $"The verb '{verb}' is blocked for automation: channel verbs, the sensitive three, and the evasion/exploit namespaces never fire unattended.");
+                $"The verb '{verb}' runs as a live channel, and an unattended firing cannot own an interactive input half.");
+        if (_sensitive.IsSensitive(verb))
+            throw new AutomationRuleRejectedException(
+                $"The verb '{verb}' is sensitive and never fires unattended; the sensitivity policy names it.");
         if (!_capabilities.IsDispatchable(target.Class, verb))
             throw new AutomationRuleRejectedException(
                 $"The verb '{verb}' is outside the {target.Class} class's reduced verb set.");

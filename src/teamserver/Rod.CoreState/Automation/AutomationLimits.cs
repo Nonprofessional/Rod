@@ -55,7 +55,13 @@ public static class AutomationLimits
 
     /// <summary>
     /// The Windows-sensitive three (architecture.md Sec 12.2): injection,
-    /// memory dumping, and input capture never fire unattended.
+    /// memory dumping, and input capture never fire unattended. This is the
+    /// static floor of the sensitivity judgment -- what
+    /// <c>DefaultSensitiveVerbPolicy</c> serves and what the registry-backed
+    /// policy keeps loaded underneath its metadata-driven answer. The
+    /// authoritative judgment for any registered verb is its descriptor's
+    /// OPSEC metadata (the tradecraft registry); a verb nobody registered and
+    /// nobody listed here is not sensitive -- the dispatch gate stops it.
     /// </summary>
     private static readonly string[] SensitiveVerbs =
     {
@@ -65,18 +71,26 @@ public static class AutomationLimits
     };
 
     /// <summary>
-    /// Whether a rule may carry this verb. Blocked: the channel verbs (an
-    /// unattended firing cannot own an interactive input half), the
-    /// sensitive three above, and the evasion/exploit namespaces (contract-only
-    /// categories whose tradecraft is out-of-tree). Matching is
+    /// Whether a rule may carry this verb: the channel verbs (an unattended
+    /// firing cannot own an interactive input half) plus everything the
+    /// sensitivity floor lists (<see cref="IsSensitiveVerb"/>). Matching is
     /// case-insensitive, the same rule every verb gate honors.
     /// </summary>
     public static bool IsBlockedVerb(string? verb)
+        => string.IsNullOrWhiteSpace(verb)
+            || ChannelVerbs.IsChannelVerb(verb)
+            || IsSensitiveVerb(verb);
+
+    /// <summary>
+    /// The static sensitivity floor: the sensitive three and the
+    /// evasion/exploit namespaces (contract-only categories whose tradecraft
+    /// is out-of-tree). The channel verbs are deliberately absent -- they are
+    /// blocked for automation by shape, not by sensitivity.
+    /// </summary>
+    public static bool IsSensitiveVerb(string? verb)
     {
         if (string.IsNullOrWhiteSpace(verb))
-            return true;
-        if (ChannelVerbs.IsChannelVerb(verb))
-            return true;
+            return false;
         foreach (var sensitive in SensitiveVerbs)
         {
             if (string.Equals(sensitive, verb, StringComparison.OrdinalIgnoreCase))

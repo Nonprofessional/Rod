@@ -53,7 +53,9 @@ public class AutomationEngineTests
         public Rig(string? roeVerbPermit = null)
         {
             TaskService = new TaskService(Tasks, Implants, Engagements, Clock, Bus);
-            Service = new AutomationService(Rules, Engagements, Implants, new ClassTableCapabilityResolver(), Audit, Clock);
+            Service = new AutomationService(
+                Rules, Engagements, Implants, new ClassTableCapabilityResolver(),
+                new DefaultSensitiveVerbPolicy(), Audit, Clock);
 
             var engagement = Rod.CoreState.Engagements.Engagement.Create(Scope, "watch", Owner, DateTimeOffset.UnixEpoch);
             if (roeVerbPermit is not null)
