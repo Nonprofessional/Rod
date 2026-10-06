@@ -221,7 +221,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
                           <span
                             title={
                               front
-                                ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + contact${p.beaconEndpoint ? ' of the split shape' : ''})`
+                                ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + contact)`
                                 : `No listener serves this address (typed for a redirector): ${p.endpoint}`
                             }
                           >
@@ -389,8 +389,6 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
       ),
     )
   }
-  if (payload.beaconEndpoint)
-    lines.push(line('Interactive endpoint', <code>{payload.beaconEndpoint}</code>))
   if (b?.fallbackEndpoints?.length)
     lines.push(
       line('Fallback fronts', b.fallbackEndpoints.map((f) => hostPortOf(f)).join(' · ')),

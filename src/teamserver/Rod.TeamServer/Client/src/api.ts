@@ -1230,16 +1230,10 @@ export interface BuildPayloadInput {
   targetArch: string | null
   // Naming the engagement's listener supplies the endpoint from its record;
   // the manual endpoint covers shapes with no listener yet. Mutually
-  // exclusive on the wire.
+  // exclusive on the wire. The contact rides the front the listener names --
+  // there is no second endpoint to pick.
   listenerId: string | null
   endpoint: string | null
-  // The socket the contact stream dials when it differs from the enroll
-  // endpoint (the split-socket shape: enroll on a web front, the interactive
-  // mTLS stream on its own listener). Named by listener or typed URL, and
-  // optional everywhere -- a web front carries its contacts itself over the
-  // envelope POST cycle.
-  beaconListenerId: string | null
-  beaconEndpoint: string | null
   fallbackEndpoints: string[] | null
   enrollPath: string | null
   userAgent: string | null
@@ -1316,9 +1310,6 @@ export interface BuildJob {
   language: string
   target: string
   endpoint: string
-  // The contact socket on a split-socket build; null when the beacon rides
-  // the enroll endpoint.
-  beaconEndpoint: string | null
   mode: string
   error: string | null
   artifact: BuildPayloadResult | null
@@ -1354,7 +1345,6 @@ export interface PayloadSummary {
   language: string
   target: string | null
   endpoint: string | null
-  beaconEndpoint: string | null
   contentType: string
   size: number
   fingerprint: string

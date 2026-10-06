@@ -37,12 +37,9 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // Rust unit compiles (linux amd64/arm64/arm/x86, windows amd64/x86; macOS
 // needs the Apple SDK and Windows ARM has no triple, so neither is
 // offered).
-// Interactive needs no second listener in the common case: every front
-// carries its own contacts -- the envelope POST cycle for poll, the
-// WebSocket beacon for stream, the socket family's held session. The
-// Contact carrier pick is the deliberate exception: it names a different
-// front for steady-state contacts while enrollment keeps riding the picked
-// listener (the split shape, single-point by design).
+// Interactive needs no second listener: every front carries its own
+// contacts -- the envelope POST cycle for poll, the WebSocket beacon for
+// stream, the socket family's held session.
 //
 // The build runs as a server-side job: submitting queues it and returns
 // immediately; the recent-builds list below is the in-process view of the
@@ -143,7 +140,7 @@ export function PayloadBuildView({
 
   // Every web front carries its own contacts -- the envelope POST cycle
   // for poll, the WebSocket beacon for stream -- so one listener is always
-  // the whole story and the form offers no split.
+  // the whole story.
   const selectedListener = listeners.find((l) => l.id === listenerId)
 
   // The poll-only family: DNS/DoH carry no live stream to hold -- one
@@ -300,21 +297,6 @@ export function PayloadBuildView({
     () => listeners.filter((l) => ENROLL_TRANSPORTS.has(l.transport)),
     [listeners],
   )
-  // The steady-state pairing shape (architecture.md Sec 8): contacts ride
-  // the named carrier while enrollment keeps riding the picked front -- the
-  // priority inversion a fallback list cannot express (its entries serve
-  // both exchanges together). Any listener a beacon may name serves: the
-  // web family (the WebSocket stream or the envelope cycle by mode), the
-  // socket family (either mode), and the DNS family (poll, the
-  // egress-restricted TXT carrier). The catcher serves no contact at all.
-  const carriers = useMemo(
-    () => listeners.filter(
-      (l) => l.transport !== 'shellcatch'
-        && (!dialHttps(l) || (l.trustPosture || 'pinned') === frontPosture),
-    ),
-    [listeners, frontPosture],
-  )
-  const [carrierId, setCarrierId] = useState('')
   useEffect(() => {
     if (preselected.current || listeners.length === 0 || listenerId) return
     if (pickable.length === 1) setListenerId(pickable[0].id)
@@ -383,8 +365,6 @@ export function PayloadBuildView({
         targetArch,
         listenerId,
         endpoint: null,
-        beaconListenerId: carrierId || null,
-        beaconEndpoint: null,
         // The walked fallback list: the picked fronts' dials in walk order,
         // family-checked server side.
         fallbackEndpoints: picked.length > 0 ? picked.map(dialOf) : null,
@@ -517,23 +497,6 @@ export function PayloadBuildView({
               )}
             </select>
           </label>
-          {carriers.length > 0 && (
-            <label>
-              Contact carrier
-              <select
-                value={carrierId}
-                onChange={(e) => setCarrierId(e.target.value)}
-                title="Where contacts ride while enrollment keeps riding the front above -- the steady state's own front, independent of the enroll pick (a fallback list cannot express this: its entries serve both exchanges together). Empty: the same front as enrollment. A web/mTLS listener: its native session (stream holds it, poll cycles it). A TCP listener: the socket wire, either mode. A DNS/DoH listener: the egress-restricted TXT carrier (poll only -- presence, short tasking, chunked results, no interactive channels and no staged transfers; the implant dials the listener's own bind as its resolver)."
-              >
-                <option value="">-- same front as enrollment --</option>
-                {carriers.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name} ({l.transport} · {l.publicEndpoint})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           <label>
             OS
             {/* The build unit maps these onto a runtime identifier and refuses
@@ -784,7 +747,6 @@ export function PayloadBuildView({
         </details>
         <BuildSummary
           listener={selectedListener}
-          carrier={carriers.find((l) => l.id === carrierId)}
           mode={mode}
           sleep={sleepSeconds}
           jitter={jitterSeconds}
@@ -847,14 +809,6 @@ export function PayloadBuildView({
                           </>
                         )}
                       </span>
-                      {job.beaconEndpoint && (
-                        <div
-                          className="muted"
-                          title="The socket the interactive stream dials (split-socket build)"
-                        >
-                          interactive <code>{hostPortOf(job.beaconEndpoint)}</code>
-                        </div>
-                      )}
                     </td>
                     <td>
                       {(job.state === 'queued' || job.state === 'running') && (
@@ -957,25 +911,18 @@ export function PayloadBuildView({
   )
 }
 
-// The traffic shape this build bakes, drawn from the current picks: every
-// behavior the artifact dials -- enroll, contact, and (stream mode) the
-// interactive WebSocket beacon -- rides the one named front. The form's
-// words say what each field does; this says what the target will see
-// moving.
 // The baked shape, composed live from the picks above: what the artifact
 // enrolls on, how it contacts, and how interactive rides -- read before the
 // build commits, not discovered on target. The three keys are the fixed
-// vocabulary's three behaviors; the values follow the front's transport,
-// the contact carrier, and the mode.
+// vocabulary's three behaviors; the values follow the front's transport and
+// the mode.
 function BuildSummary({
   listener,
-  carrier,
   mode,
   sleep,
   jitter,
 }: {
   listener?: ListenerSummary
-  carrier?: ListenerSummary
   mode: string
   sleep: string
   jitter: string
@@ -993,23 +940,19 @@ function BuildSummary({
   // instead of living forgotten under Advanced.
   const tlsFront = listener?.transport === 'https' || listener?.transport === 'mtls'
 
-  const contact = carrier
-    ? `DNS TXT polls on ${carrier.bindAddress} · zone ${carrier.publicEndpoint} — short tasking + chunked results (enroll stays on the front above)`
-    : socket
-      ? `one socket connection per contact, ${cadence}, on ${front}`
-      : dnsFront
-        ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one carrier`
-        : mode === 'poll'
-          ? `sealed envelope POSTs ${cadence} on ${front}`
-          : `WebSocket beacon held open on ${front}`
+  const contact = socket
+    ? `one socket connection per contact, ${cadence}, on ${front}`
+    : dnsFront
+      ? `DNS TXT polls, ${cadence}, on ${front} — the whole lifecycle on one front`
+      : mode === 'poll'
+        ? `sealed envelope POSTs ${cadence} on ${front}`
+        : `WebSocket beacon held open on ${front}`
 
-  const interactive = carrier
-    ? 'store-and-forward over the DNS carrier — input on the TXT answers, output as chunked queries'
-      : dnsFront
-        ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
-        : mode === 'poll'
-          ? 'store-and-forward over those contacts — input rides the next cycle (sleep 0 approaches live)'
-          : 'live channel over the WebSocket beacon'
+  const interactive = dnsFront
+    ? 'store-and-forward over the DNS polls — input on the TXT answers, output as chunked queries (query-rate cadence; the slowest wire that carries it)'
+    : mode === 'poll'
+      ? 'store-and-forward over those contacts — input rides the next cycle (sleep 0 approaches live)'
+      : 'live channel over the WebSocket beacon'
 
   return (
     <div className="build-summary" title="What this build bakes, composed from the picks above">
