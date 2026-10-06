@@ -101,6 +101,10 @@ public static class RodPersistenceHost
         // The rendered launcher rows: the durable twin so a credential with a
         // long window stays re-copyable and revocable across a restart.
         services.Replace(ServiceDescriptor.Singleton<CoreState.Launchers.ILauncherStore, Stores.PostgresLauncherStore>());
+        // Engagement-scoped automation rules: the durable twin so a rule's
+        // cadence (next-fire stamp riding the row) survives a restart --
+        // the durability time triggers are designed around (Sec 10.4).
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Automation.IAutomationRuleStore, Stores.PostgresAutomationRuleStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 
