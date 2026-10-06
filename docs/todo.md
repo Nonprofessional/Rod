@@ -21,20 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **MCP server over the operator surface** (serves architecture.md Sec 4,
-  the operator layer). What an engagement cannot do without it: let an
-  operator drive Rod from their own agent tooling (any MCP client) instead
-  of a hand-switched console -- the same roster, task, and audit reads the
-  operator UI makes, discovered and called as standard tools. Shape: an
-  MCP endpoint (Streamable HTTP) on the operator front behind the existing
-  operator token auth, engagement-scoped by construction; read-only
-  toolset first (engagements, implants, sessions, tasks and transcripts,
-  audit reads); task-issuing tools are a separate later item with their
-  own explicit gate, not part of this one.
-  _AC:_ an external MCP client lists an engagement's implants and reads a
-  completed task's output through the operator front's auth, and no write
-  tool is exposed yet.
-
 - **Out-of-band event notifications** (serves architecture.md Sec 4.1,
   layer 4; design lands first). What an engagement cannot do without it:
   reach the operator who is not at the console -- an implant that
@@ -283,3 +269,17 @@ the blocker clears, not skipped.
   build can remove.
   _AC:_ cross-compiling from a macOS host produces a static library a
   carrier app links, and the enrollment leg runs.
+
+- **MCP server over the operator surface** (serves architecture.md Sec 4,
+  the operator layer). What an engagement cannot do without it: let an
+  operator drive Rod from their own agent tooling (any MCP client) instead
+  of a hand-switched console -- the same roster, task, and audit reads the
+  operator UI makes, discovered and called as standard tools. Shape: an
+  MCP endpoint (Streamable HTTP) on the operator front behind the existing
+  operator token auth, engagement-scoped by construction; read-only
+  toolset first (engagements, implants, sessions, tasks and transcripts,
+  audit reads); task-issuing tools are a separate later item with their
+  own explicit gate, not part of this one.
+  _AC:_ an external MCP client lists an engagement's implants and reads a
+  completed task's output through the operator front's auth, and no write
+  tool is exposed yet.
