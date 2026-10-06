@@ -299,11 +299,8 @@ public static class PayloadEndpoints
     // Defaulted so a minimal positional construction (as in the integration
     // tests) stays valid. ListenerId names the engagement's own listener and
     // supplies the endpoint from its record, so the two are mutually
-    // exclusive on the wire. BeaconListenerId/BeaconEndpoint name the
-    // listener the live beacon dials when the contact should not ride the
-    // enroll front's own envelope cycle -- the split-socket shape (enroll on
-    // one web listener, the beacon on another), optional everywhere:
-    // a web front carries its contacts itself, so no split is required.
+    // exclusive on the wire. The contact always rides the front the
+    // listener names -- there is no second endpoint to pick.
     // ContactProtection is its own Advanced knob beside the enroll-body
     // Envelope pick: on unless explicitly false (the lab-debug plaintext
     // frame), sealing every contact body under the per-artifact key the
@@ -336,8 +333,6 @@ public static class PayloadEndpoints
         List<string>? FallbackEndpoints = null,
         int? TokenMaxUses = null,
         long? TokenLifetimeSeconds = null,
-        string? BeaconListenerId = null,
-        string? BeaconEndpoint = null,
         string? Format = null,
         string? Kind = null,
         string? DeliversPayloadId = null,
@@ -371,9 +366,9 @@ public static class PayloadEndpoints
 
     /// <summary>
     /// One row of the payload library: a stored payload's metadata without the
-    /// bytes. The engagement is the path, not the row. <see cref="Target"/>,
-    /// <see cref="Endpoint"/>, and <see cref="BeaconEndpoint"/> are null on
-    /// payloads built before those fields were recorded. The three
+    /// bytes. The engagement is the path, not the row. <see cref="Target"/> and
+    /// <see cref="Endpoint"/> are null on payloads built before those fields
+    /// were recorded. The three
     /// <c>Token*</c> fields are the baked credential's live state; they are
     /// null when no credential was baked, and all null while a
     /// <see cref="TokenId"/> is present only when the token is no longer
@@ -394,7 +389,6 @@ public static class PayloadEndpoints
         string Fingerprint,
         DateTimeOffset BuiltAt,
         string? TokenId = null,
-        string? BeaconEndpoint = null,
         int? TokenMaxUses = null,
         int? TokenRemainingUses = null,
         DateTimeOffset? TokenExpiresAt = null,
@@ -417,7 +411,6 @@ public static class PayloadEndpoints
             record.Fingerprint,
             record.BuiltAt,
             TokenId: record.TokenId?.ToString(),
-            BeaconEndpoint: record.BeaconEndpoint,
             TokenMaxUses: tokenState?.MaxUses,
             TokenRemainingUses: tokenState?.RemainingUses,
             TokenExpiresAt: tokenState?.ExpiresAt,

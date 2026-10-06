@@ -32,7 +32,7 @@ public class CarrierGateEndpointTests
             var engagementId = await CreateEngagementAsync(client);
             var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
-                endpoint: "https://front.example.com:8443", beaconEndpoint: null);
+                endpoint: "https://front.example.com:8443");
             var implantId = await EnrollAsync(client, secret);
 
             var issued = await client.PostAsJsonAsync(
@@ -58,31 +58,7 @@ public class CarrierGateEndpointTests
             var engagementId = await CreateEngagementAsync(client);
             var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
-                endpoint: "dns://10.0.0.1:53/c2.example.test", beaconEndpoint: null);
-            var implantId = await EnrollAsync(client, secret);
-
-            var issued = await client.PostAsJsonAsync(
-                $"/engagements/{engagementId}/tasks",
-                new { ImplantId = implantId, Verb = "shell.interact", Arguments = "" });
-
-            issued.EnsureSuccessStatusCode();
-        }
-    }
-
-    [Fact]
-    public async Task ChannelVerb_IsIssued_ForASplitSocketBuild()
-    {
-        // The split-socket bake: the beacon entry dials the stream, so the
-        // channel verb is claimable even though the enroll front envelopes.
-        var (client, host, _) = AuthenticatedHost.Create();
-        using (client)
-        using (host)
-        {
-            await AuthenticatedHost.LoginAsync(client);
-            var engagementId = await CreateEngagementAsync(client);
-            var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
-            await SavePayloadAsync(host, tokenId, engagementId,
-                endpoint: "https://front.example.com:8443", beaconEndpoint: "mtls.example.com:9443");
+                endpoint: "dns://10.0.0.1:53/c2.example.test");
             var implantId = await EnrollAsync(client, secret);
 
             var issued = await client.PostAsJsonAsync(
@@ -97,9 +73,9 @@ public class CarrierGateEndpointTests
     public async Task ChannelVerb_IsIssued_ForAStreamModeWebBuild()
     {
         // The web posture's interactive tier: a stream-mode build against a
-        // web front dials the WebSocket beacon, so the baked mode stamps the
-        // native carrier and the channel verb is claimable without any
-        // split-socket naming.
+        // web front dials the WebSocket beacon hanging off the same front,
+        // so the baked mode stamps the native carrier and the channel verb
+        // is claimable.
         var (client, host, _) = AuthenticatedHost.Create();
         using (client)
         using (host)
@@ -108,7 +84,7 @@ public class CarrierGateEndpointTests
             var engagementId = await CreateEngagementAsync(client);
             var (secret, tokenId) = await MintDeployTokenAsync(client, engagementId);
             await SavePayloadAsync(host, tokenId, engagementId,
-                endpoint: "https://front.example.com:8443", beaconEndpoint: null, mode: "stream");
+                endpoint: "https://front.example.com:8443", mode: "stream");
             var implantId = await EnrollAsync(client, secret);
 
             var issued = await client.PostAsJsonAsync(
@@ -170,14 +146,13 @@ public class CarrierGateEndpointTests
     }
 
     // The enroll-side derivation reads the payload record the token resolves
-    // (Endpoint, BeaconEndpoint, the build profile's mode and fallbacks);
-    // the fields it does not read are filler.
+    // (Endpoint, the build profile's mode and fallbacks); the fields it does
+    // not read are filler.
     private static async Task SavePayloadAsync(
         IHost host,
         Guid tokenId,
         string engagementId,
         string endpoint,
-        string? beaconEndpoint,
         string? mode = null)
     {
         var payloads = host.Services.GetRequiredService<IPayloadStore>();
@@ -192,7 +167,6 @@ public class CarrierGateEndpointTests
             Size: 0,
             BuiltAt: DateTimeOffset.UtcNow,
             Endpoint: endpoint,
-            BeaconEndpoint: beaconEndpoint,
             TokenId: tokenId,
             Build: mode is null
                 ? null

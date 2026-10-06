@@ -3,7 +3,6 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Rod.CoreState.Listeners;
-using Rod.CoreState.Transports;
 
 namespace Rod.Transport.Listeners.Providers;
 
@@ -90,10 +89,6 @@ public sealed class HostedServiceTransportProvider : ITransportProvider
 
     /// <inheritdoc />
     public IReadOnlyList<string> Carriers { get; }
-
-    /// <inheritdoc />
-    public bool ServesNativeChannel
-        => Carriers.Any(carrier => TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native);
 
     /// <inheritdoc />
     public string PublicEndpointScheme => _publicEndpointScheme;

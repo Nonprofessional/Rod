@@ -25,19 +25,11 @@ public interface ITransportProvider
 
     /// <summary>
     /// The contact carriers this transport serves, by their wire names (the
-    /// registry the core-state capability table keys). The build pipeline
-    /// reads this to decide whether a listener may be named as a beacon -- a
-    /// carrier with native channel support makes it claimable -- and the
-    /// capability story stays one table's answer instead of a second
-    /// transport-to-carrier map somewhere else.
+    /// registry the core-state capability table keys). The capability story
+    /// stays one table's answer instead of a second transport-to-carrier map
+    /// somewhere else.
     /// </summary>
     IReadOnlyList<string> Carriers { get; }
-
-    /// <summary>
-    /// Whether one of this transport's carriers holds a live stream (native
-    /// channel support): the listener may be named as a build's beacon.
-    /// </summary>
-    bool ServesNativeChannel { get; }
 
     /// <summary>
     /// The scheme a public endpoint completes with when the operator supplies

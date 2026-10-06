@@ -176,14 +176,21 @@ internal static class PayloadBuildRequestParser
         if (mode is not ("stream" or "poll"))
             return (null, "Mode must be 'stream' or 'poll'.");
 
-        // The contact the baked artifact runs: named, the mTLS socket the
-        // gRPC stream dials; derived, whatever the enroll front implies -- an
-        // http(s) front carries the envelope POST cycle on its own port (the
-        // mainstream single-port shape), an mTLS front the stream on the same
-        // socket.
-        var beacon = await ResolveBeaconAsync(body, @class, mode, trust, endpoint.Transport, endpoint.Value, engagementId, listeners, cancellationToken);
-        if (beacon.Error is { } beaconRefusal)
-            return (null, beaconRefusal);
+        // The contact the baked artifact runs derives from the enroll front:
+        // an http(s) front carries the envelope POST cycle or the WebSocket
+        // stream on its own port (the baked mode picks the client), the
+        // socket family the held-or-cycled connection, and the DNS family
+        // its TXT poll -- a datagram exchange with no stream to hold, so a
+        // stream-mode build against a DNS front is refused rather than baked
+        // as a contact the family cannot serve.
+        if (TypedPollOnlyScheme(endpoint.Value) is { } typedCarrier && mode != "poll")
+            return (null,
+                $"The {typedCarrier} carrier is one-answer-one-poll; build it mode 'poll' "
+                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
+        if (endpoint.Transport is "dns" or "doh" && mode != "poll")
+            return (null,
+                $"The {endpoint.Transport} carrier is one-answer-one-poll; build it mode 'poll' "
+                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
 
         // The baked token's scope rides the same request: how many implants
         // the artifact's credential may enroll (0 = unlimited), and how long
@@ -245,16 +252,16 @@ internal static class PayloadBuildRequestParser
                 requestedBy,
                 language,
                 @class,
-                new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
-                BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca),
-                    trust == "public" ? TlsTrust.Public : TlsTrust.Pinned),
-                ParseDuration(body.SleepSeconds, DefaultSleep),
-                ParseDuration(body.JitterSeconds, DefaultJitter),
-                body.KillDate,
-                mode,
-                Format: format,
-                Kind: kind,
-                DeliversPayloadId: deliversValue), null);
+            new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
+            BuildTransport(body, endpoint.Value!, ExportCaPem(ca),
+                trust == "public" ? TlsTrust.Public : TlsTrust.Pinned),
+            ParseDuration(body.SleepSeconds, DefaultSleep),
+            ParseDuration(body.JitterSeconds, DefaultJitter),
+            body.KillDate,
+            mode,
+            Format: format,
+            Kind: kind,
+            DeliversPayloadId: deliversValue), null);
         }
 
         // The loader class retired with the .NET trees, so no build carries a
@@ -274,7 +281,7 @@ internal static class PayloadBuildRequestParser
             new TargetProfile(body.TargetOs ?? "linux", body.TargetArch ?? "amd64"),
             // Non-null by construction: every resolution path either returns
             // a dial or an error, and the error returned above.
-            BuildTransport(body, endpoint.Value!, beacon.Value, ExportCaPem(ca),
+            BuildTransport(body, endpoint.Value!, ExportCaPem(ca),
                 trust == "public" ? TlsTrust.Public : TlsTrust.Pinned),
             ParseDuration(body.SleepSeconds, DefaultSleep),
             ParseDuration(body.JitterSeconds, DefaultJitter),
@@ -387,132 +394,6 @@ internal static class PayloadBuildRequestParser
         (string? Value, string? Transport, string? Error) socket, string? trust)
         => (socket.Value, socket.Transport, trust, socket.Error);
 
-    // Resolves the contact the baked artifact runs. A named beacon listener
-    // or a typed beacon endpoint names the web front the WebSocket beacon
-    // dials, hanging off the schemed front itself. With neither named the
-    // contact derives from the enroll front: every web front (http, https,
-    // or a typed http(s) URL) carries the envelope POST cycle on its own
-    // port -- the mainstream single-port shape, no split required, and the
-    // baked mode picks the client.
-    private static async Task<(string? Value, string? Error)> ResolveBeaconAsync(
-        Endpoints.PayloadEndpoints.BuildPayloadRequest body,
-        ImplantClass @class,
-        string mode,
-        string trust,
-        string? enrollTransport,
-        string? enrollEndpoint,
-        EngagementId engagementId,
-        IListenerRegistry listeners,
-        CancellationToken cancellationToken)
-    {
-        if (body.BeaconListenerId is not null && body.BeaconEndpoint is not null)
-            return (null, "Name either beaconListenerId or beaconEndpoint, not both.");
-        if (body.BeaconListenerId is { } beaconListenerText)
-        {
-            if (!Guid.TryParse(beaconListenerText, out var beaconListenerValue))
-                return (null, "BeaconListenerId is not a valid identifier.");
-            var listener = await listeners.FindAsync(new ListenerId(beaconListenerValue), cancellationToken);
-            if (listener is null)
-                return (null, "BeaconListenerId does not name a listener.");
-            if (listener.EngagementId is null)
-                return (null, "BeaconListenerId names a shared-tier listener; an implant dials its own engagement's listener.");
-            if (listener.EngagementId != engagementId)
-                return (null, "BeaconListenerId names another engagement's listener.");
-            var beaconProvider = TransportProviders.Find(listener.Transport);
-            // The DNS family's carriers (architecture.md Sec 8): no native
-            // channel, a TXT poll cycle over raw UDP or RFC 8484 HTTPS --
-            // the beacon names the listener's own bind as the resolver plus
-            // its zone, the dial shape the implant's DNS client parses. A
-            // wildcard bind names no dialable resolver, so it is refused
-            // with the fix rather than baked as one.
-            if (listener.Transport is "dns" or "doh")
-            {
-                if (mode != "poll")
-                    return (null,
-                        $"The {listener.Transport} carrier is one-answer-one-poll; build it mode 'poll' "
-                        + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
-                var dnsDial = DnsDial(listener);
-                if (dnsDial.Error is { } dnsError)
-                    return (null, dnsError);
-                return (dnsDial.Dial, null);
-            }
-            // The socket family's beacon arm (Sec 8): the raw-TCP listener
-            // serves both shapes -- one connection is one poll contact on a
-            // poll-mode bake, and a stream-mode bake holds the live session
-            // the handshake's live advertisement opens -- so either mode may
-            // name one and the baked beacon is the transport's own dial
-            // either way (the baked mode picks the client that dials it).
-            if (listener.Transport == "tcp")
-            {
-                var (dial, _, dialError) = SocketDial(listener.PublicEndpoint);
-                return (dial, dialError);
-            }
-            if (beaconProvider?.ServesNativeChannel != true)
-                return (null,
-                    $"The beacon is a live stream and the {listener.Transport} listener carries none; name a web listener.");
-            // The carrier shares the front's certificate posture whenever its
-            // dial is TLS: the artifact bakes one root set, so a carrier
-            // presenting the other posture is a beacon the artifact cannot
-            // handshake. A cleartext carrier needs no roots and rides either
-            // posture.
-            if (DialIsHttps(listener)
-                && !string.Equals(listener.TrustPosture, trust, StringComparison.OrdinalIgnoreCase))
-                return (null,
-                    $"The carrier {listener.Name} presents a '{listener.TrustPosture}' certificate while this build rides '{trust}' roots; name a carrier that shares the front's posture.");
-            // The baked beacon URL's shape is the client the artifact dials:
-            // the web family's WebSocket beacon hangs off the schemed front
-            // itself.
-            return (listener.PublicEndpoint, null);
-        }
-
-        if (body.BeaconEndpoint is { } beaconEndpoint)
-        {
-            var trimmed = beaconEndpoint.Trim();
-            // The DNS family's manual dials: a resolver and a zone
-            // (dns://resolver[:port]/zone, doh://resolver[:port]/zone) --
-            // the shape the implant's DNS client parses (the authority is
-            // the resolver it queries; there is no system-resolver form).
-            // Anything else is the web family's https.
-            if (trimmed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
-                || trimmed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
-            {
-                if (mode != "poll")
-                    return (null,
-                        $"The {trimmed[..trimmed.IndexOf("://", StringComparison.Ordinal)]} carrier is one-answer-one-poll; build it mode 'poll' "
-                        + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
-                var rest = trimmed[(trimmed.IndexOf("://", StringComparison.Ordinal) + 3)..];
-                if (rest.Length == 0)
-                    return (null,
-                        $"A dns/doh beacon endpoint names a resolver and a zone (dns://resolver:53/zone, doh://resolver:443/zone), got '{beaconEndpoint}'.");
-                return (trimmed, null);
-            }
-            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-                return (null,
-                    $"Beacon endpoint must be an absolute https URL naming the web front the WebSocket beacon dials, or a dns:// dial, got '{beaconEndpoint}'.");
-            return (trimmed, null);
-        }
-
-        // The derived single-front bake never names the beacon: a web front's
-        // native carrier is the WebSocket beacon hanging off the schemed
-        // front, which the single-port shape already dials without a split --
-        // the beacon stays unnamed and the baked mode picks the client. The
-        // socket family bakes the same dial
-        // under either mode (the client the mode picks holds the session or
-        // cycles the connection), so no gate applies to it here. The DNS
-        // family stays poll-only: a datagram poll has no stream to hold,
-        // named listener or typed scheme alike.
-        if (TypedPollOnlyScheme(enrollEndpoint) is { } typedCarrier && mode != "poll")
-            return (null,
-                $"The {typedCarrier} carrier is one-answer-one-poll; build it mode 'poll' "
-                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
-        if (enrollTransport is "dns" or "doh" && mode != "poll")
-            return (null,
-                $"The {enrollTransport} carrier is one-answer-one-poll; build it mode 'poll' "
-                + "(the interactive verbs ride the polls store-and-forward), or name a web front for a live stream.");
-        return (null, (string?)null);
-    }
-
-
     // Builds the malleable transport profile off the request body
     // (architecture.md Sec 7). Endpoint and uri path are the always-set
     // positional fields; the malleable knobs default when the operator omits
@@ -521,7 +402,6 @@ internal static class PayloadBuildRequestParser
     private static TransportProfile BuildTransport(
         Endpoints.PayloadEndpoints.BuildPayloadRequest body,
         string endpoint,
-        string? beaconEndpoint,
         string caPem,
         TlsTrust tlsTrust)
     {
@@ -529,9 +409,6 @@ internal static class PayloadBuildRequestParser
             endpoint,
             body.UriPath ?? "/beacon")
         {
-            // The split-socket shape: enroll dials one host, the beacon
-            // stream another. Null keeps the derived single-front bake.
-            BeaconEndpoint = beaconEndpoint,
             // The pinned teamserver CA rides every build.
             CaPem = caPem,
             // Which roots the TLS dials trust: the CA above alone, or the
@@ -647,17 +524,6 @@ internal static class PayloadBuildRequestParser
         return string.Equals(trimmed, $"{scheme}://{listener.PublicEndpoint.Trim()}", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Whether the listener's dial is TLS: an absolute https public endpoint,
-    // or a bare one completed under an https-family transport.
-    private static bool DialIsHttps(Rod.Transport.Listeners.Listener listener)
-    {
-        var pub = listener.PublicEndpoint.Trim();
-        if (Uri.TryCreate(pub, UriKind.Absolute, out var abs)
-            && (abs.Scheme == Uri.UriSchemeHttp || abs.Scheme == Uri.UriSchemeHttps))
-            return abs.Scheme == Uri.UriSchemeHttps;
-        return listener.Transport is "https" or "mtls";
-    }
-
     // The shapes one family's fallbacks dial, for a refusal that teaches.
     private static string FamilyShapes(string family) => family switch
     {
@@ -667,10 +533,9 @@ internal static class PayloadBuildRequestParser
         _ => "the front's scheme",
     };
 
-    // The DNS carrier a typed endpoint's scheme names -- the typed-endpoint
-    // twin of the named-listener mode gate, so a stream-mode build cannot
-    // bake a datagram poll just because it was typed instead of picked. The
-    // socket schemes are absent: both their shapes bake.
+    // The DNS carrier a typed endpoint's scheme names, so a stream-mode
+    // build cannot bake a datagram poll. The socket schemes are absent:
+    // both their shapes bake.
     private static string? TypedPollOnlyScheme(string? endpoint)
     {
         var trimmed = endpoint?.Trim();

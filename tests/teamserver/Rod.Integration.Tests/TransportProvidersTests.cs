@@ -43,25 +43,6 @@ public class TransportProvidersTests
         Assert.Null(TransportProviders.Find("carrier-not-registered"));
     }
 
-    [Theory]
-    [InlineData("http", true)]
-    [InlineData("https", true)]
-    [InlineData("dns", false)]
-    [InlineData("tcp", false)]
-    public void Carriers_DeclareTheNativeChannelTruthPerTransport(string transport, bool servesNative)
-    {
-        // The build parser's beacon rule reads this: a transport whose
-        // carriers include a native one may be named as a build's beacon --
-        // the web family's WebSocket beacon and the socket family's held
-        // stream hold live channels; the socket-owning polls do not.
-        var provider = TransportProviders.Find(transport);
-
-        Assert.NotNull(provider);
-        Assert.Equal(servesNative, provider!.ServesNativeChannel);
-        if (servesNative)
-            Assert.Contains(provider.Carriers, c => c == "beacon-stream");
-    }
-
     [Fact]
     public void Register_DeclaresATransportTheCoreDoesNotKnow()
     {
@@ -97,8 +78,6 @@ public class TransportProvidersTests
         public string Transport { get; } = transport;
 
         public IReadOnlyList<string> Carriers => Array.Empty<string>();
-
-        public bool ServesNativeChannel => false;
 
         public string PublicEndpointScheme => "https";
 

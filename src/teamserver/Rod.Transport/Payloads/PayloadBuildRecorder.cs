@@ -39,11 +39,6 @@ internal static class PayloadBuildRecorder
         // trail names the token id (never the secret) so a later revocation
         // lines up with the artifact that carried it.
         var tokenTrail = artifact.Params.TokenId is { } tokenId ? $" token={tokenId.ToString()[..8]}" : "";
-        // The split-socket shape names its second front: enroll dials the
-        // endpoint above, the beacon the one here.
-        var beaconTrail = artifact.Params.Transport.BeaconEndpoint is { } beaconEndpoint
-            ? $" beacon={beaconEndpoint}"
-            : "";
         // The loader tier names its delivery on the trail: the artifact id
         // the sealed fetch serves, so a delivery lines up with the payload
         // it carried without opening the store.
@@ -63,7 +58,6 @@ internal static class PayloadBuildRecorder
                 artifact.BuiltAt,
                 Target: $"{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture}",
                 Endpoint: artifact.Params.Transport.Endpoint,
-                BeaconEndpoint: artifact.Params.Transport.BeaconEndpoint,
                 TokenId: artifact.Params.TokenId,
                 EnvelopeKeyId: artifact.Params.EnvelopeKeyId,
                 EnvelopeKey: artifact.Params.EnvelopeKey,
@@ -99,7 +93,7 @@ internal static class PayloadBuildRecorder
                 taskId: Guid.Empty,
                 verb: "payload.build",
                 kind: AuditEventKind.PayloadBuilt,
-                payload: $"{artifact.Language}:{PayloadKinds.Name(artifact.Params.Kind)}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {ArtifactFormats.Name(artifact.Params.Format)} {artifact.Params.Transport.Endpoint}{beaconTrail}{deliversTrail}{transformTrail}{tokenTrail}",
+                payload: $"{artifact.Language}:{PayloadKinds.Name(artifact.Params.Kind)}:{artifact.Params.Target.OperatingSystem}/{artifact.Params.Target.Architecture} {ArtifactFormats.Name(artifact.Params.Format)} {artifact.Params.Transport.Endpoint}{deliversTrail}{transformTrail}{tokenTrail}",
                 output: null,
                 outcome: artifact.Fingerprint,
                 at: artifact.BuiltAt),

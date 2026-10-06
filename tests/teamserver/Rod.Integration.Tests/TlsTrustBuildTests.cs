@@ -16,9 +16,9 @@ namespace Rod.Integration.Tests;
 /// build against it inherits the posture as the roots it bakes. The build
 /// request's old knob may only agree with the front (the fact moved to the
 /// listener, where the certificate is deployed); public rides an https dial
-/// alone, and the walk's other TLS fronts (carriers, fallbacks) must share
-/// the posture -- the artifact bakes one root set, and a front presenting
-/// the other certificate is a dial the walk cannot verify.
+/// alone, and the walk's fallback TLS fronts must share the posture -- the
+/// artifact bakes one root set, and a front presenting the other certificate
+/// is a dial the walk cannot verify.
 /// </summary>
 public class TlsTrustBuildTests
 {
@@ -199,7 +199,7 @@ public class TlsTrustBuildTests
     }
 
     [Fact]
-    public async Task CarriersAndFallbacksMustShareTheFrontsPosture()
+    public async Task FallbacksMustShareTheFrontsPosture()
     {
         await using var env = await TestEnv.StartAsync();
         var engagementId = await CreateEngagementAsync(env.Http, "trust-walk");
@@ -218,24 +218,15 @@ public class TlsTrustBuildTests
                 PublicEndpoint: "https://real.example.test",
                 Trust: "public"));
         publicListener.EnsureSuccessStatusCode();
-        var publicFront = await publicListener.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
-
-        // A carrier presenting the other certificate: the artifact bakes one
-        // root set, so the beacon could not handshake.
-        var refusedCarrier = await env.Http.PostAsJsonAsync(
-            $"/engagements/{engagementId}/payloads",
-            new { ListenerId = pinnedFront, BeaconListenerId = publicFront!.Id });
-        Assert.Equal(HttpStatusCode.BadRequest, refusedCarrier.StatusCode);
-        var text = await refusedCarrier.Content.ReadAsStringAsync();
-        Assert.Contains("name a carrier that shares the front's posture", text);
+        await publicListener.Content.ReadFromJsonAsync<ListenerEndpoints.ListenerResponse>();
 
         // A fallback naming the public front: a dead entry the family check
-        // alone would have passed.
+        // alone would have passed -- the artifact bakes one root set.
         var refusedFallback = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/payloads",
             new { ListenerId = pinnedFront, FallbackEndpoints = new[] { "https://real.example.test" } });
         Assert.Equal(HttpStatusCode.BadRequest, refusedFallback.StatusCode);
-        text = await refusedFallback.Content.ReadAsStringAsync();
+        var text = await refusedFallback.Content.ReadAsStringAsync();
         Assert.Contains("pick fallbacks that share the front's certificate posture", text);
     }
 }

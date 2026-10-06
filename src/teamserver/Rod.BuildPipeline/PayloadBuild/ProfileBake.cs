@@ -33,11 +33,6 @@ public static class ProfileBake
         var map = new Dictionary<string, object>
         {
             ["enrollURL"] = @params.Transport.Endpoint,
-            // The beacon host is the enroll host (the single-front shape)
-            // unless the build names a split -- enroll on one socket, the
-            // contacts on another (architecture.md Sec 8).
-            ["beaconURL"] = @params.Transport.BeaconEndpoint
-                ?? BeaconUrlFromEnroll(@params.Transport.Endpoint),
             // The pinned teamserver CA: the implant validates the server it
             // dials against this anchor. Empty keeps system/default
             // validation. The CA rides every trust posture -- it is the
@@ -86,16 +81,6 @@ public static class ProfileBake
             map["token"] = tokenSecret;
         var json = JsonSerializer.Serialize(map);
         return Base64Url.Encode(Encoding.UTF8.GetBytes(json));
-    }
-
-    // The beacon front is the enroll endpoint with the enroll path stripped;
-    // the build names an explicit split when the two ride different fronts.
-    internal static string BeaconUrlFromEnroll(string enrollEndpoint)
-    {
-        const string suffix = "/implants/enroll";
-        if (enrollEndpoint.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            return enrollEndpoint[..^suffix.Length];
-        return enrollEndpoint;
     }
 
     // The headers as a sorted JSON-object value ({} when empty), so the

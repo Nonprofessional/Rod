@@ -3,7 +3,6 @@ using System.Net.Sockets;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Logging;
 using Rod.CoreState.Listeners;
-using Rod.CoreState.Transports;
 using KestrelClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode;
 
 namespace Rod.Transport.Listeners.Providers;
@@ -71,10 +70,6 @@ public sealed class KestrelEndpointProvider : ITransportProvider
 
     /// <inheritdoc />
     public IReadOnlyList<string> Carriers { get; }
-
-    /// <inheritdoc />
-    public bool ServesNativeChannel
-        => Carriers.Any(carrier => TransportCapabilities.Find(carrier).Channels == ChannelSupport.Native);
 
     /// <inheritdoc />
     public string PublicEndpointScheme => Posture.Scheme;

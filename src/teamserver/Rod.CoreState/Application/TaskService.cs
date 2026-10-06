@@ -200,8 +200,8 @@ public sealed class TaskService
             throw new TaskRejectedException(
                 TaskRejectionReason.NoChannelCarrier,
                 $"Implant {implant.Id} contacts over {string.Join(", ", implant.Carriers)}; " +
-                "no baked carrier can run a channel task. Name the mTLS beacon listener in the " +
-                "build, or bake the degraded-channels opt-in for its poll cadence.");
+                "no baked carrier can run a channel task. Build it against a web front in " +
+                "stream mode, or bake the degraded-channels opt-in for its poll cadence.");
         }
 
         // The engagement's rules-of-engagement scope is the last gate before

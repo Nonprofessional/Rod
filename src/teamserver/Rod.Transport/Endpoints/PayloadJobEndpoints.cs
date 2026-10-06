@@ -151,9 +151,6 @@ public static class PayloadJobEndpoints
         string Language,
         string Target,
         string Endpoint,
-        // The contact socket on a split-socket build; null when the beacon
-        // rides the enroll endpoint.
-        string? BeaconEndpoint,
         string Mode,
         string? Error,
         PayloadEndpoints.BuildPayloadResponse? Artifact)
@@ -170,7 +167,6 @@ public static class PayloadJobEndpoints
             job.Request.Language.ToString(),
             $"{job.Request.Target.OperatingSystem}/{job.Request.Target.Architecture}",
             job.Request.Transport.Endpoint,
-            job.Request.Transport.BeaconEndpoint,
             job.Request.Mode,
             job.Error,
             job.Artifact);
