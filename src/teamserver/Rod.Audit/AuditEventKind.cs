@@ -342,4 +342,36 @@ public enum AuditEventKind
     /// unknown secret belongs to no engagement.
     /// </summary>
     PayloadFetched,
+
+    /// <summary>
+    /// An automation rule fired (architecture.md Sec 10.4): the engine
+    /// matched a rule's trigger and issued the rule's task through the
+    /// ordinary tasking path. The event attributes to the synthetic
+    /// automation operator; the payload names the rule and its trigger, and
+    /// the outcome is the issued task's id or <c>refused:{reason}</c> when a
+    /// gate refused the issuance. The task's own TaskIssued arc follows
+    /// beside it, shaped exactly like an operator-issued one.
+    /// </summary>
+    AutomationRuleFired,
+
+    /// <summary>
+    /// An operator created an automation rule. The payload names the rule
+    /// (id, name, trigger, action); the outcome is the rule id.
+    /// </summary>
+    AutomationRuleCreated,
+
+    /// <summary>
+    /// An automation rule was enabled or disabled -- by an operator (the
+    /// payload's cause is <c>operator</c>) or by the engine's own guards (a
+    /// firing cap reached, repeated issuance refusals; the cause names which,
+    /// attributed to the automation operator). The payload names the rule and
+    /// the cause; the outcome is the rule id.
+    /// </summary>
+    AutomationRuleUpdated,
+
+    /// <summary>
+    /// An operator deleted an automation rule. The payload names the rule;
+    /// the outcome is the rule id.
+    /// </summary>
+    AutomationRuleDeleted,
 }

@@ -187,3 +187,31 @@ public readonly record struct ShellSessionId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies an automation rule -- one engagement-scoped declarative
+/// trigger/condition/action the automation engine fires (architecture.md
+/// Sec 10.4). Disposable with the engagement.
+/// </summary>
+public readonly record struct AutomationRuleId(Guid Value)
+{
+    public static AutomationRuleId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a rule id from its string form. Accepts both the compact "N"
+    /// format produced by <see cref="ToString"/> and the hyphenated Guid
+    /// form; returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out AutomationRuleId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new AutomationRuleId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
