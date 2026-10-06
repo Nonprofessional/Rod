@@ -876,6 +876,18 @@ a:hover {
   background: var(--warn-soft);
 }
 
+/* Automation rules: enabled is the success family, disabled the muted one --
+   a disabled rule exists but does nothing until re-armed. */
+.status.enabled {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: var(--success-soft);
+}
+
+.status.disabled {
+  color: var(--muted);
+}
+
 .dot {
   width: 8px;
   height: 8px;

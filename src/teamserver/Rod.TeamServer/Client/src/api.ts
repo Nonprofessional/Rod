@@ -1505,3 +1505,104 @@ export async function putSessionSettings(input: SessionSettings): Promise<Sessio
     }),
   )
 }
+
+// --- Automation rules (architecture.md Sec 10.4) ------------------------------
+//
+// The declarative rules the engine fires while no operator watches: a trigger
+// (a fixed interval, or one of the triggerable live events with optional
+// condition), one action (a task issuance), and guard state the row carries
+// back -- the fire count, the next-fire stamp a time trigger survives a
+// restart through, and the refusal streak that ends in the engine parking the
+// rule. Firing attributes to the synthetic "automation" operator; the audit
+// trail is the record.
+
+export interface AutomationRule {
+  id: string
+  engagementId: string
+  name: string
+  triggerKind: 'interval' | 'event'
+  intervalSeconds: number | null
+  eventKind: string | null
+  onlyImplantId: string | null
+  completedVerb: string | null
+  targetImplantId: string
+  verb: string
+  arguments: string
+  cooldownSeconds: number
+  maxFirings: number
+  enabled: boolean
+  fireCount: number
+  lastFiredAt: string | null
+  nextFireAt: string | null
+  consecutiveRefusals: number
+  createdAt: string
+  createdBy: string
+  disabledAt: string | null
+}
+
+export type AutomationTriggerInput =
+  | { kind: 'interval'; intervalSeconds: number }
+  | { kind: 'event'; eventKind: string }
+
+export interface CreateAutomationRuleInput {
+  name: string
+  trigger: AutomationTriggerInput
+  // Event-trigger conditions: fire only for this implant's events, or (on
+  // task-completed triggers) only when this verb completed. Null matches all.
+  onlyImplantId?: string | null
+  completedVerb?: string | null
+  targetImplantId: string
+  verb: string
+  arguments: string
+  // Optional guard overrides; the server defaults cooldown to the interval
+  // (event rules: one minute) and the cap to 100.
+  cooldownSeconds?: number | null
+  maxFirings?: number | null
+}
+
+export async function listAutomationRules(engagementId: string): Promise<AutomationRule[]> {
+  const page = await jsonOrThrow<{ rules: AutomationRule[] }>(
+    await fetch(`engagements/${engagementId}/automation-rules`),
+  )
+  return page.rules
+}
+
+export async function createAutomationRule(
+  engagementId: string,
+  input: CreateAutomationRuleInput,
+): Promise<AutomationRule> {
+  const response = await fetch(`engagements/${engagementId}/automation-rules`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function enableAutomationRule(
+  engagementId: string,
+  ruleId: string,
+): Promise<AutomationRule> {
+  const response = await fetch(`engagements/${engagementId}/automation-rules/${ruleId}:enable`, {
+    method: 'POST',
+  })
+  return jsonOrThrow(response)
+}
+
+// The cancel: a disabled rule fires nothing until re-enabled from now.
+export async function disableAutomationRule(
+  engagementId: string,
+  ruleId: string,
+): Promise<AutomationRule> {
+  const response = await fetch(`engagements/${engagementId}/automation-rules/${ruleId}:disable`, {
+    method: 'POST',
+  })
+  return jsonOrThrow(response)
+}
+
+export async function deleteAutomationRule(engagementId: string, ruleId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/automation-rules/${ruleId}`, {
+    method: 'DELETE',
+  })
+  await jsonOrThrow<unknown>(response)
+}

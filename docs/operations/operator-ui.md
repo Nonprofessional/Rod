@@ -185,6 +185,43 @@ verb existed answers "unknown verb" (verbs are baked into the artifact at
 build time); the panes translate that answer into the fix -- rebuild the
 payload and redeploy.
 
+## Automation
+
+The Automation panel manages the engagement's declarative rules
+(architecture.md Sec 10.4): what fires while no operator watches -- the
+overnight command every 30 minutes, the triage batch on first contact, the
+chain that reads a completed result and tasks the follow-up. Every firing
+issues through the ordinary tasking gates, attributes to the synthetic
+**automation** operator (the handle the audit listing shows), and lands in
+the trail as its own `AutomationRuleFired` fact beside the task's arc.
+
+**New rule** is the three-part form:
+
+- **Trigger** -- *Every interval* (seconds; the schedule is durable: it
+  survives a teamserver restart, and fires missed while the server was down
+  are skipped, not made up) or *On event* -- one of the engagement's
+  operational beats (session opened/closed, task issued/completed/
+  cancelled, implant retired), optionally narrowed by *Only this implant*
+  and, on task-completed triggers, by *Completed verb*. Event triggers are
+  best-effort like the bus they ride; the engine's own firings never
+  re-trigger (chains terminate).
+- **Action** -- the target implant and the verb (with its OPSEC badges
+  inline) plus arguments, issued verbatim on every firing. Channel verbs
+  and sensitive verbs never fire unattended; the server refuses them at
+  creation with the reason.
+- **Cooldown / firing cap** (optional) -- the minimum spacing between
+  firings (default: the interval, or one minute for event rules; a burst of
+  matching events yields one firing) and the cap after which the rule
+  disables itself and says so in the trail. Defaults: 100 firings.
+
+**Rules** reads each rule's own guard state back: status (enabled /
+disabled), the trigger and action, the fire count against its cap, the next
+firing (or the last one), and the consecutive-refusal streak -- three
+refusals in a row (an ROE violation, a closed door) disable the rule
+automatically. The list rides the live event tick, so counts move as
+firings land. Row actions: **Disable** (the cancel; **Enable** re-arms from
+now) and the two-click **Delete**.
+
 ## Listeners
 
 An engagement's C2 ingress. Each listener owns two addresses:

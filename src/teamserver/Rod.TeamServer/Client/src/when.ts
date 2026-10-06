@@ -16,6 +16,17 @@ export function ago(iso: string, now: number = Date.now()): string {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+// The future-facing mirror of ago(), for stamps that sit ahead of the clock
+// (a rule's next firing): the same compact ladder, prefixed "in".
+export function until(iso: string, now: number = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((new Date(iso).getTime() - now) / 1000))
+  if (seconds < 10) return 'now'
+  if (seconds < 60) return `in ${seconds}s`
+  if (seconds < 3600) return `in ${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `in ${Math.floor(seconds / 3600)}h`
+  return `in ${Math.floor(seconds / 86400)}d`
+}
+
 // Re-renders the calling view on a fixed interval and returns the current
 // clock, for displays that derive text from the passage of time (relative
 // last-seen stamps) rather than from data changes alone.
