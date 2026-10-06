@@ -1698,6 +1698,21 @@ front-end (JS/Lua) would be a possible follow-on evaluator over the same
 firing path; declarative rules are the first and only evaluator here --
 they are auditable, testable, and cover the needs engagements have shown.
 
+**Evolution notes.** Where later work plugs in, so nobody rediscovers it
+from the code. The sensitive-verb approval workflow the roadmap carries
+queues on the same `ISensitiveVerbPolicy` answer automation refuses on --
+the port exists for exactly that hand-off. A third trigger shape (a cron
+expression, a compound condition) fans out to five places, all additive:
+the `AutomationTrigger` hierarchy, the entity's schedule arithmetic
+(`Create`/`RecordFire`/`RecordRefusal`/`Enable`), the engine's tick filter
+and subscription reconcile, the stored row's columns and translation, and
+the endpoint's trigger parsing. Nothing there is compiler-forced -- the
+hierarchy is sealed but the readers filter with `is`-patterns, so a new
+shape is silently ignored until each reader names it; the persistence
+translation is the tripwire, since an unhandled shape lands in the wrong
+column. Editing a rule's shape (the PUT the surface omits today) is
+service-and-endpoint work only -- the entity is rebuilt whole on save.
+
 ## 11. Evidence and reporting -- a first-class output
 
 A red-team operation ends in a deliverable: timeline, findings, and evidence. Rod
