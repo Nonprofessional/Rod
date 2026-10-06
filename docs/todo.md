@@ -21,28 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Server-side automation: triggers and scheduled tasking** (serves
-  architecture.md Sec 10.3; design lands as a new subsection there before
-  any code). What an engagement cannot do without it: act on a cadence or
-  on a return while no operator watches -- the overnight screenshot every
-  30 minutes, the triage batch on first contact, the chain that reads a
-  result and tasks the follow-up. Shape: an engine beside the operator
-  layer subscribing to the live event bus (Sec 4.1, layer 4) for event
-  triggers and running a scheduler for time triggers; engagement-scoped
-  declarative rules (trigger, condition, action) persisted with the
-  engagement; every firing issues through `TaskService` so the class,
-  carrier, ROE, and closed-engagement gates hold unchanged, attributes to
-  a synthetic automation operator, and lands in the audit trail. Guards:
-  firing caps, cooldowns, chain depth, no sensitive verbs. Time triggers
-  are durable (persisted next-fire stamps); event triggers inherit the
-  bus's best-effort posture and say so. A sandboxed script front-end
-  (JS/Lua) is a possible follow-on evaluator, not the first one --
-  declarative rules are auditable and testable and cover the
-  engagement-shown needs.
-  _AC:_ a rule that issues shell.exec on one implant every 30 minutes
-  survives a teamserver restart, shows automation attribution in the audit
-  trail, and is cancelable from the operator API.
-
 - **MCP server over the operator surface** (serves architecture.md Sec 4,
   the operator layer). What an engagement cannot do without it: let an
   operator drive Rod from their own agent tooling (any MCP client) instead
