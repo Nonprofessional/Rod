@@ -2,8 +2,9 @@
 
 Open work only. An item leaves this file the moment it ships -- its record
 is the commit history, and the design it followed lives in
-[architecture.md](architecture.md); the one designed-but-deferred item
-(sealing) stays in Sec 9. Nothing here is an archive of the done.
+[architecture.md](architecture.md); the designed-but-deferred items (the
+redirector control plane, Sec 8; sealing, Sec 9) stay where they are
+designed. Nothing here is an archive of the done.
 
 Each item names the architecture section it serves and carries a one-line
 acceptance criterion (_AC:_), so "done" stays testable. Follow the
@@ -14,9 +15,11 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
-The list is in priority order: start from the top. An item that names
-its own blocker (a build host, an environment) is worked the moment the
-blocker clears, not skipped.
+The order is advisory, not a queue: the small, infrastructural items sit
+toward the top and the large platform features toward the end, and the
+right item to take is the one an engagement actually needs. An item that
+names its own blocker (a build host, an environment) is worked the moment
+the blocker clears, not skipped.
 
 - **Server-side automation: triggers and scheduled tasking** (serves
   architecture.md Sec 10.3; design lands as a new subsection there before
@@ -54,81 +57,6 @@ blocker clears, not skipped.
   completed task's output through the operator front's auth, and no write
   tool is exposed yet.
 
-- **OpenAI-compatible LLM client for triage and reporting** (serves
-  architecture.md Sec 11). What an engagement cannot do without it:
-  compress operator attention -- summarize a task's captured output,
-  triage a recon sweep, draft report sections from the attributed trail.
-  Shape: an opt-in chat-completions client behind
-  `Microsoft.Extensions.AI`'s `IChatClient` with a configurable
-  OpenAI-compatible base URL and model (cloud or local runtime -- the
-  format is the compatibility contract, not the vendor), disabled by
-  default; every request is engagement-scoped and recorded in the audit
-  trail; the egress decision (which endpoint, local or not) stays the
-  operator's and is documented in the operations runbook.
-  _AC:_ with the integration enabled, an operator generates a summary of a
-  completed task's output from the task read, and the request appears in
-  the engagement's audit trail.
-
-- **External recon workbench: whois/RDAP, subdomains, port scan** (serves
-  architecture.md Sec 10.1 and Sec 11; design lands first). What an
-  engagement cannot do without it: scope a target before the first
-  foothold -- registration data (whois, RDAP), the subdomain surface
-  (certificate transparency plus resolution), and the port map are how the
-  operator aims the first implant, and today that work leaves Rod for
-  ad-hoc tools whose findings never reach the engagement's attributed
-  record. Shape: an operator-layer workbench, not implant tasking -- these
-  lookups and scans run on the teamserver against external services,
-  engagement-scoped and audited, findings recorded as engagement
-  artifacts. Passive lookups (whois, RDAP, CT-log enumeration) are the
-  safe defaults; active scanning (port scan) is gated on the engagement's
-  ROE target scope and carries an explicit egress note -- where the scan
-  originates (teamserver direct, a redirector, or an implant already
-  inside, whose host/port recon already exists) is an OPSEC decision the
-  runbook documents, never a silent default.
-  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
-  against a named engagement target from the operator API, and the
-  findings land as engagement-scoped artifacts in the audit trail.
-
-- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
-  architecture.md Sec 5.2 and Sec 10.1; design lands first). What an
-  engagement cannot do without it: pivot a script-injection foothold into
-  tasking -- the hooked browser is the most common web-facing foothold,
-  and today it needs a separate platform (BeEF) with its own operator
-  surface, storage, and OPSEC story, disconnected from the engagement
-  trail. Shape: a new `Browser` implant class whose artifact is a served
-  hook script (`<script src>`), enrolling and contacting over the
-  certificate-less envelope carrier (Sec 8) on the poll cadence the
-  store-and-forward degraded discipline already models; the reduced verb
-  set starts mainstream and documented -- browser fingerprint, cookie
-  read, DOM read and screenshot, redirect, prompt -- with the sensitive
-  boundary held (Sec 13): input capture and browser-exploit chaining stay
-  out-of-tree capability contracts, not core verbs. Every hooked browser
-  is an engagement-scoped implant entity, so attribution, live events,
-  audit, and the automation engine treat it like any other implant.
-  Where the hook script itself lives -- a second reference artifact beside
-  the Rust implant, or transport-owned like the webshell adapters -- is
-  the first design question.
-  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
-  over the envelope carrier, and an operator tasks a fingerprint and a
-  cookie read against it, with both results in the audit trail.
-
-- **Target intel and situational awareness layer** (serves
-  architecture.md Sec 11 and the operator layer, Sec 4.1; design lands
-  first). What an engagement cannot do without it: hold what the
-  engagement learns -- today recon findings, loot, and host observations
-  live inside task output strings, so the operator re-reads transcripts
-  instead of consulting a picture. Shape: labels and operator notes on
-  implants and hosts (attributed, part of the trail), typed loot views
-  over the exfil artifacts that already exist (credential, file, and
-  screenshot renderers -- the collection verbs are in-repo, the
-  organizer is what is missing), and a topology view assembled from the
-  recon workbench and implant discovery data, pivot links included.
-  Everything is engagement-scoped and audit-backed: the layer organizes
-  the trail, it does not become a second store of truth.
-  _AC:_ an operator tags an implant with a note, opens a captured
-  screenshot from the loot view, and both actions carry attribution in
-  the audit trail.
-
 - **Out-of-band event notifications** (serves architecture.md Sec 4.1,
   layer 4; design lands first). What an engagement cannot do without it:
   reach the operator who is not at the console -- an implant that
@@ -141,50 +69,6 @@ blocker clears, not skipped.
   _AC:_ an operator registers a webhook for session-opened and
   shell-caught events, and a new contact delivers a push to it.
 
-- **Operator roles and interaction ownership** (serves architecture.md
-  Sec 9 and Sec 10.3; design lands first). What an engagement cannot do
-  without it: more than one operator without collisions -- today every
-  operator is a peer who can type into any channel, and nothing marks
-  who is driving which implant. Shape: per-operator claims beyond the
-  current peer model (a read scope, a tasking scope, an approver
-  scope), per-implant activity presence extending the existing presence
-  service, and exclusive claims on live channel interaction (an
-  interactive shell's input half, a tunnel) so two operators cannot
-  type into one shell; claims are visible on the live bus and released
-  on disconnect.
-  _AC:_ two operators on one engagement see each other's claim on an
-  interactive shell, the second's input is refused while the claim
-  holds, and an operator without the tasking scope cannot issue tasks.
-
-- **Sensitive-verb approval workflow** (serves architecture.md Sec 9
-  and Sec 10.2/10.3; design lands first). What an engagement cannot do
-  without it: a second pair of eyes where it matters -- sensitive verbs
-  require engagement authorization by design, but the authorization is
-  configuration-time; there is no in-flow request, approval, and
-  release. Shape: a request queue on the existing gate -- an operator
-  requests a sensitive tasking, a lead holding the approver scope
-  approves or refuses, the approved task enters the queue attributed
-  to both, and the whole arc (requested, approved, refused) lands in
-  the audit trail and on the live bus. Automation firing a sensitive
-  verb is refused outright, never queued for approval.
-  _AC:_ a sensitive verb requested by one operator does not queue until
-  a second approves it, and both the request and the approval appear in
-  the engagement's audit trail.
-
-- **ATT&CK mapping in the capability model and report** (serves
-  architecture.md Sec 10.1 and Sec 11; design lands first). What an
-  engagement cannot do without it: tell the client what was exercised
-  -- a red-team deliverable without technique coverage makes the reader
-  map the report by hand. Shape: capability descriptors carry ATT&CK
-  technique ids as metadata (the tradecraft registry is the single
-  place verbs are described), and the closeout report derives a
-  coverage view from the audit trail -- techniques exercised, by which
-  verbs, against which targets -- with unmapped verbs surfaced as a
-  review list, not silently dropped.
-  _AC:_ a closeout export includes technique coverage derived from the
-  audit trail, and a verb without a mapping shows up as unmapped rather
-  than absent.
-
 - **Shift handoff digest** (serves architecture.md Sec 11; design lands
   first). What an engagement cannot do without it: resume command after
   an absence -- the trail holds everything that happened, but an
@@ -192,8 +76,8 @@ blocker clears, not skipped.
   it raw. Shape: a time-windowed digest view over the audit trail
   (sessions opened and closed, tasking issued and its outcomes,
   sensitive approvals, annotations), assembled by the reporting layer
-  the closeout export already uses; the LLM client item above is the
-  natural narrator for it, but the digest stands without it.
+  the closeout export already uses; the LLM client item later in this
+  list is the natural narrator for it, but the digest stands without it.
   _AC:_ an operator requests the digest for the last watch window and
   gets a single ordered account of sessions, task outcomes, and
   approvals from the audit trail.
@@ -210,28 +94,66 @@ blocker clears, not skipped.
   _AC:_ an operator saves a named task snippet once and issues its
   whole sequence with one command from the palette.
 
-- **Delivery campaigns: tracked spear-phish into tasking** (serves
-  architecture.md Sec 2, the delivery step of the lifecycle, and
-  Sec 11; design lands first). What an engagement cannot do without it:
-  open the door -- the first foothold arrives by delivery, and today
-  that happens outside Rod entirely (a manual mailbox, a separate
-  phishing platform), so the causal chain from lure to implant lives
-  across two tools and the attribution story breaks at the seam. Shape:
-  an engagement-scoped campaign entity -- a sending profile (SMTP
-  relay), a target list, a message template with per-recipient merge --
-  where each recipient's link or attachment binds to a per-recipient
-  deploy token the build pipeline already mints, so an implant -- or a
-  browser hook, the item above -- that follows the lure enrolls already
-  attributed to the campaign and the recipient. Tracking (sent,
-  opened, clicked, executed) rides the public ingress that serves
-  staging, redirector-fronted like every other public edge; the
-  campaign's egress (which relay, whose IP) is an OPSEC decision the
-  runbook documents, never a silent default. Credentials a landing
-  page captures follow the existing standard-store collection posture;
-  evasion-grade social engineering stays out-of-tree.
-  _AC:_ a two-recipient campaign mints per-recipient lure links, and
-  the recipient who executes the lure enrolls with campaign and
-  recipient attribution visible in the audit trail.
+- **ATT&CK mapping in the capability model and report** (serves
+  architecture.md Sec 10.1 and Sec 11; design lands first). What an
+  engagement cannot do without it: tell the client what was exercised
+  -- a red-team deliverable without technique coverage makes the reader
+  map the report by hand. Shape: capability descriptors carry ATT&CK
+  technique ids as metadata (the tradecraft registry is the single
+  place verbs are described), and the closeout report derives a
+  coverage view from the audit trail -- techniques exercised, by which
+  verbs, against which targets -- with unmapped verbs surfaced as a
+  review list, not silently dropped.
+  _AC:_ a closeout export includes technique coverage derived from the
+  audit trail, and a verb without a mapping shows up as unmapped rather
+  than absent.
+
+- **Operator roles and interaction ownership** (serves architecture.md
+  Sec 9 and Sec 10.3; design lands first). What an engagement cannot
+  do without it: more than one operator without collisions -- today every
+  operator is a peer who can type into any channel, and nothing marks
+  who is driving which implant. Shape: per-operator claims beyond the
+  current peer model (a read scope, a tasking scope, an approver
+  scope), per-implant activity presence extending the existing presence
+  service, and exclusive claims on live channel interaction (an
+  interactive shell's input half, a tunnel) so two operators cannot
+  type into one shell; claims are visible on the live bus and released
+  on disconnect.
+  _AC:_ two operators on one engagement see each other's claim on an
+  interactive shell, the second's input is refused while the claim
+  holds, and an operator without the tasking scope cannot issue tasks.
+
+- **Sensitive-verb approval workflow** (serves architecture.md Sec 9
+  and Sec 10.2/10.3; design lands first). What an engagement cannot
+  do without it: a second pair of eyes where it matters -- sensitive verbs
+  require engagement authorization by design, but the authorization is
+  configuration-time; there is no in-flow request, approval, and
+  release. Shape: a request queue on the existing gate -- an operator
+  requests a sensitive tasking, a lead holding the approver scope
+  approves or refuses, the approved task enters the queue attributed
+  to both, and the whole arc (requested, approved, refused) lands in
+  the audit trail and on the live bus. Automation firing a sensitive
+  verb is refused outright, never queued for approval.
+  _AC:_ a sensitive verb requested by one operator does not queue until
+  a second approves it, and both the request and the approval appear in
+  the engagement's audit trail.
+
+- **Target intel and situational awareness layer** (serves
+  architecture.md Sec 11 and the operator layer, Sec 4.1; design lands
+  first). What an engagement cannot do without it: hold what the
+  engagement learns -- today recon findings, loot, and host observations
+  live inside task output strings, so the operator re-reads transcripts
+  instead of consulting a picture. Shape: labels and operator notes on
+  implants and hosts (attributed, part of the trail), typed loot views
+  over the exfil artifacts that already exist (credential, file, and
+  screenshot renderers -- the collection verbs are in-repo, the
+  organizer is what's missing), and a topology view assembled from the
+  recon workbench and implant discovery data, pivot links included.
+  Everything is engagement-scoped and audit-backed: the layer organizes
+  the trail, it does not become a second store of truth.
+  _AC:_ an operator tags an implant with a note, opens a captured
+  screenshot from the loot view, and both actions carry attribution in
+  the audit trail.
 
 - **Rehearsal refresh against the settled surface** (serves
   [operations/rehearsal.md](operations/rehearsal.md); the walk's own
@@ -252,6 +174,26 @@ blocker clears, not skipped.
   _AC:_ the single-host walk and the redirector composition re-executed
   end to end on the settled surface, the refreshed record quoting
   acceptance evidence from the new run rather than the retired one.
+
+- **External recon workbench: whois/RDAP, subdomains, port scan** (serves
+  architecture.md Sec 10.1 and Sec 11; design lands first). What an
+  engagement cannot do without it: scope a target before the first
+  foothold -- registration data (whois, RDAP), the subdomain surface
+  (certificate transparency plus resolution), and the port map are how
+  the operator aims the first implant, and today that work leaves Rod for
+  ad-hoc tools whose findings never reach the engagement's attributed
+  record. Shape: an operator-layer workbench, not implant tasking -- these
+  lookups and scans run on the teamserver against external services,
+  engagement-scoped and audited, findings recorded as engagement
+  artifacts. Passive lookups (whois, RDAP, CT-log enumeration) are the
+  safe defaults; active scanning (port scan) is gated on the engagement's
+  ROE target scope and carries an explicit egress note -- where the scan
+  originates (teamserver direct, a redirector, or an implant already
+  inside, whose host/port recon already exists) is an OPSEC decision the
+  runbook documents, never a silent default.
+  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
+  against a named engagement target from the operator API, and the
+  findings land as engagement-scoped artifacts in the audit trail.
 
 - **Implant-side plugin seam: C-ABI capability modules** (serves
   architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
@@ -292,6 +234,67 @@ blocker clears, not skipped.
   _AC:_ the library cross-compiles for aarch64-linux-android from the Linux
   build host, and loaded by a carrier app on a device it enrolls and
   answers tasking through the same e2e the desktop legs run.
+
+- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
+  architecture.md Sec 5.2 and Sec 10.1; design lands first). What an
+  engagement cannot do without it: pivot a script-injection foothold into
+  tasking -- the hooked browser is the most common web-facing foothold,
+  and today it needs a separate platform (BeEF) with its own operator
+  surface, storage, and OPSEC story, disconnected from the engagement
+  trail. Shape: a new `Browser` implant class whose artifact is a served
+  hook script (`<script src>`), enrolling and contacting over the
+  certificate-less envelope carrier (Sec 8) on the poll cadence the
+  store-and-forward degraded discipline already models; the reduced verb
+  set starts mainstream and documented -- browser fingerprint, cookie
+  read, DOM read and screenshot, redirect, prompt -- with the sensitive
+  boundary held (Sec 13): input capture and browser-exploit chaining stay
+  out-of-tree capability contracts, not core verbs. Every hooked browser
+  is an engagement-scoped implant entity, so attribution, live events,
+  audit, and the automation engine treat it like any other implant.
+  Where the hook script itself lives -- a second reference artifact beside
+  the Rust implant, or transport-owned like the webshell adapters -- is
+  the first design question.
+  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
+  over the envelope carrier, and an operator tasks a fingerprint and a
+  cookie read against it, with both results in the audit trail.
+
+- **OpenAI-compatible LLM client for triage and reporting** (serves
+  architecture.md Sec 11). What an engagement cannot do without it:
+  compress operator attention -- summarize a task's captured output,
+  triage a recon sweep, draft report sections from the attributed trail.
+  Shape: an opt-in chat-completions client behind
+  `Microsoft.Extensions.AI`'s `IChatClient` with a configurable
+  OpenAI-compatible base URL and model (cloud or local runtime -- the
+  format is the compatibility contract, not the vendor), disabled by
+  default; every request is engagement-scoped and recorded in the audit
+  trail; the egress decision (which endpoint, local or not) stays the
+  operator's and is documented in the operations runbook.
+  _AC:_ with the integration enabled, an operator generates a summary of a
+  completed task's output from the task read, and the request appears in
+  the engagement's audit trail.
+
+- **Delivery campaigns: tracked spear-phish into tasking** (serves
+  architecture.md Sec 2, the delivery step of the lifecycle, and
+  Sec 11; design lands first). What an engagement cannot do without it:
+  open the door -- the first foothold arrives by delivery, and today
+  that happens outside Rod entirely (a manual mailbox, a separate
+  phishing platform), so the causal chain from lure to implant lives
+  across two tools and the attribution story breaks at the seam. Shape:
+  an engagement-scoped campaign entity -- a sending profile (SMTP
+  relay), a target list, a message template with per-recipient merge --
+  where each recipient's link or attachment binds to a per-recipient
+  deploy token the build pipeline already mints, so an implant -- or a
+  browser hook (a later item) -- that follows the lure enrolls already
+  attributed to the campaign and the recipient. Tracking (sent,
+  opened, clicked, executed) rides the public ingress that serves
+  staging, redirector-fronted like every other public edge; the
+  campaign's egress (which relay, whose IP) is an OPSEC decision the
+  runbook documents, never a silent default. Credentials a landing
+  page captures follow the existing standard-store collection posture;
+  evasion-grade social engineering stays out-of-tree.
+  _AC:_ a two-recipient campaign mints per-recipient lure links, and
+  the recipient who executes the lure enrolls with campaign and
+  recipient attribution visible in the audit trail.
 
 - **iOS shell for the Rust implant** (serves architecture.md Sec 12.2;
   blocked on a macOS build host -- the Apple link needs Xcode's SDK, which
