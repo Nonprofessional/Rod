@@ -164,6 +164,11 @@ public static class TransportHost
         // the one-liner delivery surface, in-memory by default and
         // Postgres-backed when the connection string is set.
         services.AddSingleton<Rod.CoreState.Launchers.ILauncherStore, Rod.CoreState.Launchers.InMemoryLauncherStore>();
+        // The engagement-scoped automation rules (architecture.md Sec 10.4):
+        // in-memory by default, Postgres-backed when the connection string is
+        // set -- the next-fire stamps ride the row, which is what makes a
+        // time trigger survive a restart.
+        services.AddSingleton<Rod.CoreState.Automation.IAutomationRuleStore, Rod.CoreState.Automation.InMemoryAutomationRuleStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.

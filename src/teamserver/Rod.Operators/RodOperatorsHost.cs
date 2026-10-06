@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Rod.CoreState.Live;
+using Rod.Operators.Automation;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
 using Rod.Operators.Presence;
@@ -23,12 +25,16 @@ public static class RodOperatorsHost
 {
     /// <summary>
     /// Registers the operator layer's services: the live-event bus (an
-    /// in-memory, channel-backed fan-out, one stream per engagement) and the
-    /// operator presence roster. Call after <c>AddRodTransport</c>. The bus
-    /// registration replaces the no-op default <see cref="AddRodTransport"/>
-    /// installed; presence is operator-layer-only.
+    /// in-memory, channel-backed fan-out, one stream per engagement), the
+    /// operator presence roster, and the automation engine beside them
+    /// (architecture.md Sec 10.4) with its rule-management use cases. Call
+    /// after <c>AddRodTransport</c>. The bus registration replaces the no-op
+    /// default <see cref="AddRodTransport"/> installed; presence and
+    /// automation are operator-layer-only.
     /// </summary>
-    public static IServiceCollection AddRodOperators(this IServiceCollection services)
+    public static IServiceCollection AddRodOperators(
+        this IServiceCollection services,
+        IConfiguration? configuration = null)
     {
         // Replace the no-op bus the transport host registered by default with the
         // real, channel-backed fan-out. Replace (not Add) so there is exactly one
@@ -36,17 +42,35 @@ public static class RodOperatorsHost
         // endpoint) shares it.
         services.Replace(ServiceDescriptor.Singleton<ILiveEventBus, InMemoryLiveEventBus>());
         services.TryAddSingleton<OperatorPresenceService>();
+
+        // The automation engine and its surface: the rule CRUD use cases the
+        // endpoints call, and the hosted engine itself (a fixed-delay tick plus
+        // per-engagement bus subscriptions) that turns rules into tasking.
+        // Options bind when configuration is supplied; the defaults stand alone.
+        if (configuration is not null)
+        {
+            services.AddOptions<AutomationOptions>().Bind(configuration.GetSection(AutomationOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<AutomationOptions>();
+        }
+        services.TryAddSingleton<AutomationService>();
+        services.TryAddSingleton<AutomationEngine>();
+        services.AddHostedService(sp => sp.GetRequiredService<AutomationEngine>());
         return services;
     }
 
     /// <summary>
     /// Maps the operator layer's endpoints: the SSE event stream that keeps an
-    /// operator session live per engagement and pushes every engagement event.
-    /// Call alongside <c>MapRodEndpoints</c>.
+    /// operator session live per engagement and pushes every engagement event,
+    /// and the automation-rule surface. Call alongside
+    /// <c>MapRodEndpoints</c>.
     /// </summary>
     public static IEndpointRouteBuilder MapOperatorEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapOperatorEventEndpoints();
+        endpoints.MapAutomationRuleEndpoints();
         return endpoints;
     }
 }
