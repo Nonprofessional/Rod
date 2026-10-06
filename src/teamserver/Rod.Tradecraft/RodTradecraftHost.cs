@@ -106,6 +106,12 @@ public static class RodTradecraftHost
         services.Replace(ServiceDescriptor.Singleton<ITaskCapabilityResolver>(sp =>
             new CapabilityRegistryTaskResolver(sp.GetRequiredService<ICapabilityRegistry>())));
 
+        // The same swap on the sensitivity axis: core state's static floor for
+        // the registry-backed policy, so a verb's automation posture rides its
+        // descriptor's OPSEC metadata instead of a parallel list (Sec 10.4).
+        services.Replace(ServiceDescriptor.Singleton<ISensitiveVerbPolicy>(sp =>
+            new CapabilityRegistrySensitiveVerbPolicy(sp.GetRequiredService<ICapabilityRegistry>())));
+
         return services;
     }
 

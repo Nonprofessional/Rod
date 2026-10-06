@@ -67,6 +67,7 @@ public static class CollectCapabilities
         {
             ["reads-credential"] = "true",
             ["writes-to-disk"] = "true",
+            ["reads-memory"] = "true",
         };
 
     /// <summary>
