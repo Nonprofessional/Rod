@@ -64,12 +64,10 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        // The dev shape: the environment names the endpoints and the
-        // credential, the poll carriage contacts the front that answered the
-        // enrollment, and the plaintext lab posture keeps the harness's
-        // frame reads simple.
+        // The dev shape: the environment names the front and the credential,
+        // the contact route derives off the front, and the plaintext lab
+        // posture keeps the harness's frame reads simple.
         psi.Environment["ROD_ENROLL_URL"] = target.EnrollUrl;
-        psi.Environment["ROD_BEACON_URL"] = $"http://{target.BeaconHostPort}/implants/beacon";
         psi.Environment["ROD_DEPLOY_TOKEN"] = target.DeployToken;
         psi.Environment["ROD_SLEEP"] = "1";
         psi.Environment["ROD_JITTER"] = "0";

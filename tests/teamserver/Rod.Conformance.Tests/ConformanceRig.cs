@@ -32,16 +32,28 @@ namespace Rod.Conformance.Tests;
 // named.
 
 /// <summary>
-/// Where a candidate phase points: the endpoints to dial, the credential to
-/// redeem, the CA to pin, and -- for the kill-date phase -- the baked kill
-/// date the candidate must refuse to outlive.
+/// Where a candidate phase points: the enroll URL to dial (the contact route
+/// derives off the same front), the credential to redeem, the CA to pin, and
+/// -- for the kill-date phase -- the baked kill date the candidate must
+/// refuse to outlive.
 /// </summary>
 public sealed record ConformanceTarget(
     string EnrollUrl,
-    string BeaconHostPort,
     string DeployToken,
     string CaPemPath,
-    DateTimeOffset? KillDate = null);
+    DateTimeOffset? KillDate = null)
+{
+    /// <summary>The contact route hanging off the enroll URL's own front --
+    /// the single-front shape every candidate dials.</summary>
+    public string BeaconUrl
+    {
+        get
+        {
+            var front = new Uri(EnrollUrl);
+            return $"{front.Scheme}://{front.Authority}/implants/beacon";
+        }
+    }
+}
 
 /// <summary>
 /// The implant under test. A candidate may be an in-process loop (the rig's
@@ -116,15 +128,13 @@ public sealed class ConformanceRig : IAsyncDisposable
     private readonly OperatorId _operator;
 
     public int EnrollPort { get; }
-    public int BeaconPort { get; }
     public int ProbePort { get; }
     public string EnrollUrl => $"http://127.0.0.1:{EnrollPort}/implants/enroll";
-    public string BeaconHostPort => $"127.0.0.1:{BeaconPort}";
-    public string ProbeHostPort => $"127.0.0.1:{ProbePort}";
+    public string ProbeEnrollUrl => $"http://127.0.0.1:{ProbePort}/implants/enroll";
 
     private ConformanceRig(
         IHost host, WebApplication probe, TaskingProbe taskingProbe, string caPemPath,
-        int enrollPort, int beaconPort, int probePort)
+        int enrollPort, int probePort)
     {
         _host = host;
         _probe = probe;
@@ -139,7 +149,6 @@ public sealed class ConformanceRig : IAsyncDisposable
         _operator = host.Services.GetRequiredService<IOperatorRepository>()
             .FindByHandleAsync("conformance").GetAwaiter().GetResult()!.Id;
         EnrollPort = enrollPort;
-        BeaconPort = beaconPort;
         ProbePort = probePort;
     }
 
@@ -147,6 +156,7 @@ public sealed class ConformanceRig : IAsyncDisposable
     {
         var enrollPort = GetFreeTcpPort();
         var probePort = GetFreeTcpPort();
+        var enrollUrl = $"http://127.0.0.1:{enrollPort}/implants/enroll";
 
         // The live teamserver: the transport core on a real Kestrel host --
         // plain HTTP carrying enroll, the envelope beacon, and the WebSocket
@@ -170,16 +180,31 @@ public sealed class ConformanceRig : IAsyncDisposable
         await File.WriteAllTextAsync(caPemPath, Pem(
             ca.GetCaCertificate().Export(X509ContentType.Cert)));
 
-        // The hostile tasking probe: a second plain-HTTP endpoint serving the
-        // envelope route, feeding crafted tasking one contact at a time and
-        // recording the results. An enrolled implant reaches it by pointing
-        // its beacon at the probe -- the identity posture under test is the
-        // tasking signature, which travels inside the frames.
+        // The hostile tasking probe: a second plain-HTTP endpoint playing a
+        // front. It forwards the enroll route to the live rig verbatim -- the
+        // candidate enrolls for real through the front it keeps dialing --
+        // and answers the contact route itself, feeding crafted tasking one
+        // contact at a time and recording the results. The identity posture
+        // under test is the tasking signature, which travels inside the
+        // frames; a candidate that dials one front for everything (the only
+        // shape a build bakes now) still runs the whole clause through it.
         var taskingProbe = new TaskingProbe(ca);
         var probe = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
         probe.Services.AddSingleton(taskingProbe);
         probe.WebHost.ConfigureKestrel(kestrel => kestrel.ListenLocalhost(probePort));
         var probeApp = probe.Build();
+        probeApp.MapPost("/implants/enroll", async (HttpContext http) =>
+        {
+            using var body = new MemoryStream();
+            await http.Request.Body.CopyToAsync(body);
+            using var client = new HttpClient();
+            using var forwarded = new ByteArrayContent(body.ToArray());
+            forwarded.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
+                http.Request.ContentType ?? "application/json");
+            using var answer = await client.PostAsync(enrollUrl, forwarded);
+            http.Response.StatusCode = (int)answer.StatusCode;
+            await answer.Content.CopyToAsync(http.Response.Body);
+        });
         probeApp.MapPost("/implants/beacon", async (HttpContext http) =>
         {
             using var body = new MemoryStream();
@@ -192,7 +217,7 @@ public sealed class ConformanceRig : IAsyncDisposable
         });
         await probeApp.StartAsync();
 
-        return new ConformanceRig(host, probeApp, taskingProbe, caPemPath, enrollPort, enrollPort, probePort);
+        return new ConformanceRig(host, probeApp, taskingProbe, caPemPath, enrollPort, probePort);
     }
 
     /// <summary>
@@ -210,7 +235,7 @@ public sealed class ConformanceRig : IAsyncDisposable
         try
         {
             await candidate.StartAsync(new ConformanceTarget(
-                EnrollUrl, BeaconHostPort, engagement.Token, _caPemPath));
+                EnrollUrl, engagement.Token, _caPemPath));
 
             var enrolled = await UntilAsync(ObserveDeadline, async () =>
                 (await _implants.ListByEngagementAsync(engagement.EngagementId)).Count > 0);
@@ -284,8 +309,10 @@ public sealed class ConformanceRig : IAsyncDisposable
             _taskingProbe.Reset();
             try
             {
+                // The candidate's whole dial is the probe front: enrollment
+                // forwards to the live rig, contacts feed the hostile probe.
                 await candidate.StartAsync(new ConformanceTarget(
-                    EnrollUrl, ProbeHostPort, probeEngagement.Token, _caPemPath));
+                    ProbeEnrollUrl, probeEngagement.Token, _caPemPath));
                 var verdict = await _taskingProbe.AwaitVerdictAsync(ObserveDeadline);
                 clauses.Add(new ConformanceClause(SignatureClause, verdict.Passed, verdict.Detail));
             }
@@ -300,7 +327,7 @@ public sealed class ConformanceRig : IAsyncDisposable
         try
         {
             await candidate.StartAsync(new ConformanceTarget(
-                EnrollUrl, BeaconHostPort, killEngagement.Token, _caPemPath,
+                EnrollUrl, killEngagement.Token, _caPemPath,
                 KillDate: DateTimeOffset.UtcNow.AddHours(-1)));
             await Task.Delay(KillDateGrace);
             var ranAnyway =
