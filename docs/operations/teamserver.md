@@ -27,12 +27,10 @@ enrollment is refused on it outright. Implant-facing listeners are
 so a restart rebinds them, unique across ports, and enforced at enrollment --
 anything but that engagement's own token is refused whole on the socket
 (architecture.md Sec 8). A payload build names its engagement's listener and
-the baked endpoint comes from the listener's record; a build against a
-cleartext `Http` listener needs no beacon split -- the WebSocket beacon
-hangs off the same schemed front (architecture.md Sec
-(`beaconListenerId`/`beaconEndpoint` -- the split-socket shape, because the
-sealing keeps the clear socket confidential; see
-[operator-ui.md](operator-ui.md)). The build also mints and
+the baked endpoint comes from the listener's record; every contact rides
+that same front -- the envelope POST cycle for a poll build, the
+WebSocket beacon hanging off the same schemed front for a stream build
+(architecture.md Sec 8). The build also mints and
 bakes the artifact's enrollment credential, so the artifact deploys with zero
 run-time arguments. The manual mint endpoint stays server-side for the
 rotation and re-entry drills, but it is no operator surface. The operator UI

@@ -14,8 +14,8 @@ A transport is three declarations, not a switch arm:
    shapes its public endpoint.
 2. **The carriers it serves** — wire names from the core-state capability
    table (`Rod.CoreState.Transports.TransportCapabilities`): what contact
-   shapes the transport can carry, which is what the build pipeline and the
-   issuance gate read.
+   shapes the transport can carry, which is what the
+   issuance gate reads.
 3. **The registry entries** — `TransportProviders.Register(provider)` for
    the bind, `TransportCapabilities.Register` for any new carrier. Both are
    name-keyed, conflict-refusing, and conservative toward what never
@@ -36,7 +36,6 @@ public interface ITransportProvider
 {
     string Transport { get; }                     // the wire name
     IReadOnlyList<string> Carriers { get; }       // carriers served, by wire name
-    bool ServesNativeChannel { get; }             // may a build name this as its beacon?
     string PublicEndpointScheme { get; }          // scheme for endpoint completion
     bool AcceptsPublicEndpoint(string text);      // the dial shape's validation
     string DescribePublicEndpointRule(string got);// the refusal that teaches
@@ -68,7 +67,7 @@ ChannelSupport: Native | Degraded | None
 ```
 
 - **Native** — the transport holds a live stream; channel verbs claim on
-  it, and a build may name a listener of this transport as its beacon.
+  it.
 - **Degraded** — a poll shape whose unit can carry channel traffic both
   ways by the store-and-forward discipline; every poll artifact
   advertises the handshake capability `channels.poll`, so channel verbs
@@ -79,10 +78,9 @@ ChannelSupport: Native | Degraded | None
   registration slot for a shape the discipline genuinely cannot serve.
 
 Registering a new carrier (`TransportCapabilities.Register(name, new
-CarrierCapabilities(...))`) with `Native` support is what makes a transport
-beacon-nameable; everything downstream -- the parser's beacon rule, the
-issuance gate, the enrollment's baked-carrier stamp -- reads the table, so
-no other edit is needed for that half.
+CarrierCapabilities(...))`) is the whole registration: everything
+downstream -- the issuance gate, the enrollment's baked-carrier stamp --
+reads the table, so no other edit is needed for that half.
 
 The same split decides the dispatch strand (architecture.md Sec 10.3): a
 transport that runs its contacts through `BeaconSessionRunner` -- the live
@@ -131,5 +129,5 @@ the core indifferent to who registered the name.
    frames, the auth, the bounds. The transport changes; the frame paths
    never do.
 5. Pin it: a registry test for the carriers, a listener round-trip for
-   the bind, and -- if the carrier is native -- a build/issuance test
-   that names a listener of the new transport as its beacon.
+   the bind, and -- if the carrier is native -- an issuance test that
+   claims a channel verb over a build against the new transport's front.

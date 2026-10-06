@@ -666,7 +666,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   stack beyond an HTTP client -- the reference implant's stream-mode web
   build dials it, and a poll-mode build keeps the envelope POST cycle.
   The web transports declare the beacon-stream carrier for issuance
-  gating, so a web listener may be named as a build's beacon.
+  gating.
 - **Plain HTTP is the loopback dev posture.** An `Http` listener entry binds a
   socket with no TLS and no client certificates, and every mapped route rides
   it: the operator API and UI in the clear, and contacts identified by the
@@ -855,9 +855,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   for implants no key was ever bound to. The reference implant picks its
   contact client by the baked dial's shape: an `http(s)://` URL runs the
   envelope POST cycle on that port -- the mainstream single-port web
-  posture, the build's derived default for `Http`/`Https` fronts. A build
-  against a web front therefore needs no beacon split: the WebSocket
-  beacon hangs off the same schemed front. Tier 0 is reachable from any
+  posture, the build's derived default for `Http`/`Https` fronts. The
+  WebSocket beacon hangs off the same schemed front. Tier 0 is reachable from any
   language with an HTTP client and a protobuf codec
   ([extending/implants.md](extending/implants.md)). A channel task claims
   over the envelope under the store-and-forward discipline every poll
@@ -968,7 +967,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   it the moment it leaks, and delete the row when it is spent; the rows
   are engagement-scoped operator state, durable with the store.
   Shellcatch serves no contact carrier -- nothing here is
-  implant ingress, and a build may never name it as a beacon. The
+  implant ingress, and a build may never name it as its front. The
   exposure is inherent and named: a shellcatch port accepts whoever
   reaches it (the one-liner carries no secret); the mitigations are a
   fronting redirector's source allow-list, a non-default port, and a
@@ -1071,8 +1070,8 @@ fleet-wide code execution. Security is a first-class concern.
   (`webpki-roots`; still no target-system-store dependence). The CA rides
   the bake under either posture -- it is the tasking signer; the posture
   says only which roots the TLS dials accept. Public is gated to https
-  dials at listener creation, and the walk's other TLS fronts (carriers,
-  fallbacks) must share the posture -- the artifact bakes one root set, so
+  dials at listener creation, and the walk's fallback TLS fronts must
+  share the posture -- the artifact bakes one root set, so
   a front presenting the other certificate is a dial the walk cannot
   verify, refused at parse time with the fix named.
 - **Command signing.** Dispatched tasks are signed so an implant only acts on

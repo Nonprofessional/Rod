@@ -93,7 +93,7 @@ lifecycle rides the one carrier). Interactive rides the stream fronts
 live or the poll cycles store-and-forward -- over DNS, the input arrives
 on the TXT answers and the output chunks up as queries, at the query-rate
 cadence: the slowest wire that carries it, carried anyway. How each
-behavior rides is the build's pick -- mode and carrier -- and the Build
+behavior rides is the build's pick -- the mode -- and the Build
 form's summary spells that out per build.
 
 Three identity layers fold into the UI, and it pays to keep them straight:
@@ -393,12 +393,7 @@ front -- the WebSocket beacon on a web front, the held socket on a
 TCP front, sealed frames under the per-artifact key, or the contacts themselves on
 a poll build. Everything else -- "enroll",
 "contact" in the hover texts -- names the moments inside that one
-relationship. (The build API still accepts a `beaconListenerId` for the
-split-socket shape; the form no longer offers one.) When the engagement
-runs a DNS listener, a **Contact carrier** pick pairs it: contacts step
-down to the TXT carrier (presence, short tasking, chunked results; no
-channels, no staged transfers) while enrollment keeps riding the web
-front, the degraded shape architecture.md Sec 8 documents.
+relationship.
 
 The card's toggle switches to the tab's second artifact kind:
 **Webshell script** renders a placement script with its credential baked
@@ -444,7 +439,7 @@ works for any domain you point at the listener, since the CA mints the
 front's leaf for that host; `public` marks a real-domain front whose
 certificate an operator-run edge terminates -- the shape that survives
 TLS inspection). The build inherits the posture, the pre-build summary's
-`tls` line names it, and the fallback and carrier offers stay inside it:
+`tls` line names it, and the fallback offer stays inside it:
 the artifact bakes one root set, so a TLS front presenting the other
 certificate is a dial the walk cannot verify.
 
@@ -452,10 +447,6 @@ certificate is a dial the walk cannot verify.
 
 - **Public endpoint (enroll + contact, manual)** -- the dial address
   when you deliberately build without naming a listener.
-- **Public endpoint (interactive, manual)** -- the stream front the
-  held beacon dials when it differs from the enroll + contact address
-  (empty = the beacon hangs off the enroll + contact front itself); the
-  typed twin of the Interactive listener pick above.
 - **Fallback public endpoints** -- backup enroll + contact addresses
   baked in behind the primary and dialed in order when it burns; they
   share the enroll path and the fixed contact route.
@@ -520,8 +511,7 @@ same, because the store drops it at zero).
 The row's chevron unfolds the **build parameters** snapshotted at bake
 time: mode, contact cadence and jitter, kill date, the credential's
 minted shape, enroll path, user agent, request timeout, enroll-body
-envelope, contact protection, fallback fronts, and the interactive
-endpoint on a split build -- so "what did I build" never depends on
+envelope, contact protection, and fallback fronts -- so "what did I build" never depends on
 remembering the form.
 **Download** the bytes again, **Revoke** to kill the baked credential (a
 deployed artifact that has not yet enrolled will not be able to), or
@@ -586,28 +576,18 @@ one glance before the first build is ever queued.
 
 Design decisions recorded for later rounds; nothing here is built yet.
 
-### Three independent channels (enroll / contact / interactive)
+### The split-socket contact front (removed)
 
-Today enroll and contact always share one listener (the Build form's single
-"Listener (enroll + contact)" pick) and only the held beacon can split onto
-its own front. The deferred shape generalizes the split: three channel
-picks, each with a "same as enroll + contact" checkbox that is checked by
-default, so the common case stays one address and the operator only touches
-the rows they want to diverge:
-
-- **Enroll** -- the registration listener (always required).
-- **Contact** -- a checkbox riding beside the enroll pick; checked means the
-  same listener (today's behavior), unchecked reveals its own listener select.
-- **Interactive** -- a checkbox riding beside the enroll pick; checked means
-  the same listener, unchecked reveals the web-front select (the held beacon
-  hangs off any web front; the control disables where it cannot apply).
-
-Server side this needs a separately baked `contactEndpoint` (the transport
-profile already models the split for interactive via `BeaconEndpoint`; the
-contact route would gain the same), a listener-side decision about which
-contact shapes each transport may serve, and the wire-shape diagram extended
-to three paths. Naming stays inside the fixed vocabulary: three behaviors,
-two nouns, behaviors in parentheses.
+A build once could name a second front for its steady-state contacts
+(enroll on one listener, the beacon on another). It was removed: every
+front serves its own contact cycle, the fallback walk already covers the
+burned-front case inside one protocol family, and the pairing rules the
+split required (scheme families, certificate postures) were the most
+complicated corner of the build form for a shape no deployment needed. A
+build dials one protocol -- its front's -- and the contact derives from
+it. Reintroducing a split would need the whole chain again: request
+fields, parser gates, a baked second dial, and walk semantics for
+entries the baked carriage cannot serve.
 
 ### Runtime kill-date changes
 

@@ -173,8 +173,9 @@ public class TaskServiceGatingTests
     [Fact]
     public async Task IssueAsync_AllowsAChannelVerbWhenABakedCarrierHoldsAStream()
     {
-        // The split-socket bake: the beacon entry dials the stream, so the
-        // channel verb is claimable even though the enroll front envelopes.
+        // A stream-mode web build bakes both web carriers: the envelope
+        // cycle its front serves and the WebSocket stream its mode holds,
+        // so the channel verb is claimable.
         var implants = new InMemoryImplantRepository();
         var engagement = EngagementId.New();
         var implant = await EnrollWithCarriersAsync(

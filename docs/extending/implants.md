@@ -692,7 +692,7 @@ Adopt per deployment need; absence degrades the feature, not interop:
   targets where only DNS leaves the network. Absence is graceful: an implant
   without it simply beacons over the stream transports. The reference
   implant carries the client: a `dns://` entry in its baked egress walk
-  runs it (a named DNS beacon or a dns-schemed fallback), a build with no
+  runs it, a build with no
   dns-schemed entry compiles without it.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
   headers, timeout, and base64 body envelope shape the enroll request.
@@ -755,7 +755,7 @@ live channels -- so an implant that wants `shell.interact` upgrades to a
 WebSocket client; an implant that only polls never opens one.
 
 The reference Rust implant runs exactly this cut: an artifact built
-against an `http`/`https` front with no beacon named contacts over the
+against an `http`/`https` front contacts over the
 envelope POST cycle on that front's own port (the mainstream single-port
 web shape; a stream-mode build holds the WebSocket beacon on the same
 front), and the socket or datagram dials carry their own sections above
