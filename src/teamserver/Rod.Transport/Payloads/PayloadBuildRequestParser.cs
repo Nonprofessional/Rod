@@ -361,10 +361,9 @@ internal static class PayloadBuildRequestParser
 
         // The DNS family's enroll arm (Sec 8, enrollment over DNS -- the
         // full-independence step for a DNS-only target): the enroll body
-        // uploads as chunked TXT queries and the answer chunks back down, so
-        // a dns or doh listener is enroll-nameable with the carrier pairing
-        // rules the beacon arm applies -- a wildcard bind names no resolver
-        // an implant can dial.
+        // uploads as chunked TXT queries and the answer chunks back down,
+        // so a dns or doh listener is enroll-nameable -- a wildcard bind
+        // names no resolver an implant can dial.
         if (listener.Transport is "dns" or "doh")
         {
             var dial = DnsDial(listener);

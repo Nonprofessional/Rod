@@ -786,7 +786,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   Landing this dissolves three recorded seams: the typed DNS dial (a
   DNS front becomes an attached front like any other), the
   one-listener-per-front workaround, and most of the manual deploy/rotate
-  runbook. The wire protocol, the implant, and the carrier family rules
+  runbook. The wire protocol, the implant, and the walk's family rules
   are untouched -- the whole feature is control plane.
 - **Listener and public endpoint are decoupled, and the endpoint is repointable
   at runtime.** A redirector fronts the listener; a burned redirector is replaced

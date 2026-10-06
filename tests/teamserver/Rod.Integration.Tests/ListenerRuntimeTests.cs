@@ -596,9 +596,8 @@ public class ListenerRuntimeTests
         var engagementId = await CreateEngagementAsync(env.Http);
 
         // The listener publishes the bare host:port redirector shape; a build
-        // naming it dials that shape with the transport's scheme. An https
-        // front carries enroll and beacon on one socket, so the build needs
-        // no beacon split; a cleartext front would have to name one.
+        // naming it dials that shape with the transport's scheme. The front
+        // carries enroll and contact on one socket.
         var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
             new ListenerEndpoints.CreateListenerRequest(
                 Name: "build-front",

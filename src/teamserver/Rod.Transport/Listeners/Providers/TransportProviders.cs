@@ -79,7 +79,7 @@ public static class TransportProviders
         // speaking no Rod protocol at all (architecture.md Sec 8) -- the
         // reverse shells an operator's one-liners dial home over. It serves
         // no contact carrier (nothing here is implant ingress, so a build
-        // may never name it as a beacon), and its public endpoint is the
+        // may never name it as its front), and its public endpoint is the
         // bare host:port the one-liners dial, the family's dial shape.
         Register(new HostedServiceTransportProvider("shellcatch",
             new HostedBindShape(BindReservation.TcpPort, PublicEndpointShape.HostPort),
