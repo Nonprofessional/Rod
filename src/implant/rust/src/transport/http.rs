@@ -21,27 +21,15 @@ pub struct Poll {
 }
 
 impl Poll {
-    pub fn new(profile: &Profile) -> Poll {
-        let url = super::dialed_beacon_url(profile);
+    pub fn new(dial: &str, profile: &Profile) -> Poll {
         Poll {
-            agent: crate::transport::build_agent(&url, profile, profile.request_timeout_seconds),
-            url,
+            agent: crate::transport::build_agent(dial, profile, profile.request_timeout_seconds),
+            url: dial.to_string(),
         }
     }
 }
 
 impl Contact for Poll {
-    fn serves(&self, url: &str, mode: &str) -> bool {
-        // A schemed web URL polls on a poll bake (the stream bake's web URL
-        // belongs to the WebSocket carriage; the socket family's dial
-        // belongs to the raw-TCP carriage).
-        url.contains("://")
-            && !url.starts_with("tcp")
-            && !url.starts_with("dns")
-            && !url.starts_with("doh")
-            && mode != "stream"
-    }
-
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
         // Channel output produced since the last cycle rides this request --
         // the poll discipline's delivery edge.

@@ -251,10 +251,9 @@ pub fn enroll_over_dns(
 }
 
 impl Dns {
-    pub fn new(profile: &Profile) -> Result<Dns, String> {
-        let dial = super::dialed_beacon_url(profile);
+    pub fn new(dial: &str, profile: &Profile) -> Result<Dns, String> {
         let (scheme, resolver, zone) =
-            parse_front(&dial).ok_or_else(|| "the DNS dial is not a DNS front".to_string())?;
+            parse_front(dial).ok_or_else(|| "the DNS dial is not a DNS front".to_string())?;
         let exchange = build_exchange(scheme, &resolver, profile)?;
         Ok(Dns {
             exchange,
@@ -446,10 +445,6 @@ impl Dns {
 }
 
 impl Contact for Dns {
-    fn serves(&self, url: &str, _mode: &str) -> bool {
-        url.starts_with("dns://") || url.starts_with("doh://")
-    }
-
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
         match self.contact(session) {
             Ok(()) => Ok(Attempt::Crossed),

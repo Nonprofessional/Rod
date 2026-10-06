@@ -41,12 +41,11 @@ pub struct Stream {
 }
 
 impl Stream {
-    pub fn new(profile: &Profile) -> Stream {
-        let beacon = super::dialed_beacon_url(profile);
-        let secure = beacon.starts_with("https://");
-        let authority = match beacon.find("://") {
-            Some(at) => beacon[at + 3..].split('/').next().unwrap_or("").to_string(),
-            None => beacon.clone(),
+    pub fn new(dial: &str, profile: &Profile) -> Stream {
+        let secure = dial.starts_with("https://");
+        let authority = match dial.find("://") {
+            Some(at) => dial[at + 3..].split('/').next().unwrap_or("").to_string(),
+            None => dial.to_string(),
         };
         let tls = if secure {
             Some(Arc::new(
@@ -126,14 +125,6 @@ impl ReadWrite for rustls::StreamOwned<rustls::ClientConnection, TcpStream> {
 }
 
 impl Contact for Stream {
-    fn serves(&self, url: &str, mode: &str) -> bool {
-        url.contains("://")
-            && !url.starts_with("tcp")
-            && !url.starts_with("dns")
-            && !url.starts_with("doh")
-            && mode == "stream"
-    }
-
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
         let mut socket = self.connect()?;
 

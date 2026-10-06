@@ -47,9 +47,8 @@ pub struct RawTcp {
 }
 
 impl RawTcp {
-    pub fn new(profile: &Profile) -> RawTcp {
-        let dial = super::dialed_beacon_url(profile);
-        let rest = dial.strip_prefix("tcp://").unwrap_or(&dial);
+    pub fn new(dial: &str, profile: &Profile) -> RawTcp {
+        let rest = dial.strip_prefix("tcp://").unwrap_or(dial);
         let address = rest.split('/').next().unwrap_or(rest).to_string();
         RawTcp {
             address,
@@ -150,10 +149,6 @@ impl RawTcp {
 }
 
 impl Contact for RawTcp {
-    fn serves(&self, url: &str, _mode: &str) -> bool {
-        url.starts_with("tcp://")
-    }
-
     fn attempt(&mut self, session: &mut Session) -> Result<Attempt, ContactError> {
         if self.live {
             self.attempt_live(session)

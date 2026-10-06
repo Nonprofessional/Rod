@@ -492,10 +492,10 @@ internal static class PayloadBuildRequestParser
                 || uri.Scheme.Equals("doh", StringComparison.OrdinalIgnoreCase));
 
     // The egress-walk families (architecture.md Sec 8): the web pair, the
-    // DNS pair, and the raw socket. The artifact's contact carriage is fixed
-    // by the front's own shape, so a fallback outside the front's family
-    // backs the enroll walk alone -- every contact cycle steps over it --
-    // and the build refuses the mix instead of baking a dead entry.
+    // DNS pair, and the raw socket. One build rides one protocol -- the
+    // fallback list is the front's own family in walk order, never a mix,
+    // and the TLS posture spans the walk (the artifact bakes one root set)
+    // -- so a cross-family entry is refused rather than baked.
     private static string? SchemeFamily(string? endpoint)
     {
         var trimmed = endpoint?.Trim();

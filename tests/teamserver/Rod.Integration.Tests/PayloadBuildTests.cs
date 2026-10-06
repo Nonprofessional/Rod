@@ -151,13 +151,11 @@ public class PayloadBuildTests
             var engagementId = await CreateEngagementAsync(client);
             var tcpListenerId = await CreateFrontListenerAsync(client, engagementId);
 
-            // The artifact's contact carriage is fixed by the front's own
-            // shape, so a cross-family fallback backs the enroll walk alone:
-            // every contact cycle would step over it. The build refuses the
-            // mix instead of baking a dead entry -- one refusal per family
-            // pairing, both directions of the socket family included. The
-            // DNS front stays typed: the DNS family's dial is the one a
-            // typed endpoint still names.
+            // One build rides one protocol: the fallback list is the
+            // front's own family in walk order, never a mix -- one refusal
+            // per family pairing, both directions of the socket family
+            // included. The DNS front stays typed: the DNS family's dial is
+            // the one a typed endpoint still names.
             var tcpFrontWithDnsFallback = await client.PostAsJsonAsync(
                 $"/engagements/{engagementId}/payloads",
                 new PayloadEndpoints.BuildPayloadRequest(
