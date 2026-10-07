@@ -174,6 +174,12 @@ public static class TransportHost
         // connection string is set -- the delivery bookkeeping rides the
         // row, so a registered channel survives a restart.
         services.AddSingleton<Rod.CoreState.Webhooks.IWebhookSubscriptionStore, Rod.CoreState.Webhooks.InMemoryWebhookSubscriptionStore>();
+        // The engagement-scoped task snippets (the operator console's
+        // saved command sequences): in-memory by default, Postgres-backed
+        // when the connection string is set. Plain rows -- replay happens
+        // in the console through the ordinary tasking path, so the store
+        // carries no bookkeeping of its own.
+        services.AddSingleton<Rod.CoreState.Snippets.ITaskSnippetStore, Rod.CoreState.Snippets.InMemoryTaskSnippetStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.

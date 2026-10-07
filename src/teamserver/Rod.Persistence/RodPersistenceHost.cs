@@ -109,6 +109,10 @@ public static class RodPersistenceHost
         // registered channel survives a restart with its delivery
         // bookkeeping (Sec 4.4).
         services.Replace(ServiceDescriptor.Singleton<CoreState.Webhooks.IWebhookSubscriptionStore, Stores.PostgresWebhookSubscriptionStore>());
+        // Engagement-scoped task snippets: the durable twin so a saved
+        // command sequence survives a restart for every operator on the
+        // engagement.
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Snippets.ITaskSnippetStore, Stores.PostgresTaskSnippetStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

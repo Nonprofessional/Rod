@@ -243,3 +243,31 @@ public readonly record struct WebhookSubscriptionId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies a task snippet -- one engagement-scoped named sequence of
+/// issue commands the operator console saves and replays through the
+/// ordinary tasking path. Disposable with the engagement.
+/// </summary>
+public readonly record struct TaskSnippetId(Guid Value)
+{
+    public static TaskSnippetId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a snippet id from its string form. Accepts both the compact
+    /// "N" format produced by <see cref="ToString"/> and the hyphenated
+    /// Guid form; returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out TaskSnippetId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new TaskSnippetId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
