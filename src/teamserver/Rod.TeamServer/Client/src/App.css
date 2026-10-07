@@ -2384,3 +2384,255 @@ label.checkbox-label .checkbox-row {
   height: 30px;
   color: var(--text);
 }
+
+/* --- The command palette (Ctrl+K) --------------------------------------------------------- */
+
+/* The palette overlay: a click-away veil with the panel anchored toward the
+   top, the posture every command palette settled on -- the field is where
+   the eye already is, and the list grows downward under it. */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 24px 24px;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+}
+
+.palette {
+  width: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 50%);
+  overflow: hidden;
+}
+
+.palette-input {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.palette-input .wire-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--muted);
+}
+
+.palette-input input {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.palette-input input:focus {
+  outline: none;
+}
+
+.palette-input kbd,
+.palette-trigger kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.palette-error {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.palette-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.palette-empty {
+  padding: 14px 10px;
+  font-size: 12.5px;
+}
+
+.palette-item {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-item.selected {
+  background: var(--surface-3);
+}
+
+.palette-item.selected .palette-item-label {
+  color: var(--accent);
+}
+
+.palette-item .wire-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted);
+}
+
+.palette-item.selected .wire-icon {
+  color: var(--accent);
+}
+
+.palette-item-label {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.palette-item-detail {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+/* The trailing "opens the inspector" affordance on snippet entries: quiet
+   until hovered, and a click opens the steps instead of running. */
+.palette-item-manage {
+  flex: none;
+  padding: 0 4px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.palette-item-manage:hover {
+  color: var(--accent);
+}
+
+.palette-item-section {
+  flex: none;
+  min-width: 52px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.palette-foot {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+}
+
+.palette-context {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-left: auto;
+  color: var(--text);
+}
+
+.palette-context .wire-icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* The topbar's palette opener: reads as a quiet search field affordance
+   with the shortcut beside it. */
+button.palette-trigger {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+
+/* --- Task snippet dialogs ------------------------------------------------------------------ */
+
+/* The save dialog's transcript checklist: newest on top, one line per task
+   in the console line's own geometry (time, verb, arguments). */
+.snippet-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.snippet-pick-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.snippet-pick-row:hover {
+  background: var(--surface-3);
+}
+
+.snippet-pick-row .t {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.snippet-pick-row code {
+  flex: none;
+}
+
+.snippet-pick-row .args {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* The inspector's ordered step list. */
+.snippet-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 4px 4px 4px 24px;
+  font-size: 12px;
+}
+
+.snippet-steps code {
+  font-size: 12px;
+}

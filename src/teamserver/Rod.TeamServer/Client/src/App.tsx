@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { type LoginInput, type SessionOperator, getSessionOperator, login, logout } from './api'
+import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './components/Icons'
 import { EngagementNav } from './components/Nav'
 import { useLive } from './shell'
@@ -63,7 +64,15 @@ function initials(handle: string): string {
   return handle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
 }
 
-function Topbar({ route, operatorId }: { route: Route; operatorId: string }) {
+function Topbar({
+  route,
+  operatorId,
+  onOpenPalette,
+}: {
+  route: Route
+  operatorId: string
+  onOpenPalette: () => void
+}) {
   const live = useLive()
   return (
     <header className="topbar">
@@ -87,6 +96,13 @@ function Topbar({ route, operatorId }: { route: Route; operatorId: string }) {
         )}
       </div>
       <div className="topbar-actions">
+        <button
+          className="ghost sm palette-trigger"
+          onClick={onOpenPalette}
+          title="Open the command palette (Ctrl+K)"
+        >
+          Search… <kbd>ctrl k</kbd>
+        </button>
         {live && route.kind === 'engagement' && (
           <>
             <span
@@ -132,6 +148,20 @@ function App() {
   // the route guard renders the login view in the latter case.
   const [operator, setOperator] = useState<SessionOperator | null>(null)
   const [contactg, setContactg] = useState(true)
+  // The command palette (docs/operations/operator-ui.md): Ctrl+K opens it
+  // anywhere in the authenticated shell, Esc closes it.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -239,7 +269,11 @@ function App() {
         </div>
       </aside>
       <div className="frame">
-        <Topbar route={route} operatorId={operator.operatorId} />
+        <Topbar
+          route={route}
+          operatorId={operator.operatorId}
+          onOpenPalette={() => setPaletteOpen(true)}
+        />
         <main className="main">
           {route.kind === 'engagements' ? (
             <EngagementsView />
@@ -257,6 +291,13 @@ function App() {
           )}
         </main>
       </div>
+      {paletteOpen && (
+        <CommandPalette
+          engagementId={route.kind === 'engagement' ? route.engagementId : null}
+          contextImplantId={route.kind === 'engagement' ? (route.implantId ?? null) : null}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
     </div>
   )
 }

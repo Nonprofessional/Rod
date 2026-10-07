@@ -34,6 +34,14 @@ function classVerbs(klass: string): ReadonlySet<string> {
   return new Set(CLASS_VERBS[klass] ?? [])
 }
 
+// The zero-argument verbs the menu issues outright. Shared with the command
+// palette so both surfaces make the same direct-or-dialog call; a verb this
+// mirror misses simply opens the raw-arguments dialog instead -- the server's
+// gates remain the authority either way.
+export const DIRECT_VERBS: readonly string[] = [
+  'recon.ps', 'recon.hostenum', 'collect.screenshot', 'persist.list',
+]
+
 export interface ImplantMenuActions {
   // Open the session console. Omitted where it would be a no-op (the console
   // itself) -- the menu's Interact entry follows it.
@@ -47,6 +55,9 @@ export interface ImplantMenuActions {
   onProcesses: () => void
   onFiles: () => void
   onNotes?: () => void
+  // Save a task snippet from this console's recent transcript (the console
+  // alone offers it -- the flow reads the transcript it sits on).
+  onSaveSnippet?: () => void
   onRetire?: () => void
 }
 
@@ -248,7 +259,7 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
       'persist.remove',
     ),
   )
-  if (actions.onNotes || (actions.onRetire && !implant.retiredAt)) {
+  if (actions.onNotes || (actions.onRetire && !implant.retiredAt) || actions.onSaveSnippet) {
     entries.push({ kind: 'sep' })
     if (actions.onNotes) {
       entries.push({
@@ -257,6 +268,15 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         icon: 'list',
         title: 'Free-text notes on this implant, attributed and durable',
         onSelect: actions.onNotes,
+      })
+    }
+    if (actions.onSaveSnippet) {
+      entries.push({
+        kind: 'item',
+        label: 'Save task snippet',
+        icon: 'copy',
+        title: 'Pick recent transcript lines and save them as one named sequence, replayed from the palette',
+        onSelect: actions.onSaveSnippet,
       })
     }
     if (actions.onRetire && !implant.retiredAt) {

@@ -18,6 +18,7 @@ import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { ProcessBrowser } from '../components/ProcessBrowser'
 import { ShellDialog } from '../components/ShellDialog'
+import { SnippetSaveDialog } from '../components/SnippetSaveDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
 import { DEFAULT_TASK_FORM, isChannelVerb, VERB_FORMS } from '../verbForms'
@@ -89,6 +90,9 @@ export function InteractView({
   const [dialogVerb, setDialogVerb] = useState<string | null>(null)
   const [processes, setProcesses] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  // The snippet save flow reads this console's transcript; the palette
+  // (Ctrl+K) is where a saved sequence is replayed from.
+  const [saveSnippet, setSaveSnippet] = useState(false)
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([])
   const [line, setLine] = useState('')
   const [hint, setHint] = useState<string | null>(null)
@@ -295,6 +299,7 @@ export function InteractView({
         onDialog: (verb) => setDialogVerb(verb),
         onProcesses: () => setProcesses(true),
         onFiles: () => setFilesOpen(true),
+        onSaveSnippet: () => setSaveSnippet(true),
       })
     : []
 
@@ -448,6 +453,13 @@ export function InteractView({
           implantId={implantId}
           osHint={implant.os}
           onClose={() => setFilesOpen(false)}
+        />
+      )}
+      {saveSnippet && (
+        <SnippetSaveDialog
+          engagementId={engagementId}
+          tasks={tasks}
+          onClose={() => setSaveSnippet(false)}
         />
       )}
       {dialogVerb && implant && (
