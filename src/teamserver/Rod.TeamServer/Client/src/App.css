@@ -263,6 +263,15 @@
   font-weight: 600;
 }
 
+/* The digest's watch-in-numbers row: the non-zero counts that size the watch
+   before the table tells it. */
+.count-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
 .live-dot {
   width: 7px;
   height: 7px;

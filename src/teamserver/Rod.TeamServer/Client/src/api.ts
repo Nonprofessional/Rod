@@ -690,6 +690,105 @@ export async function getReportMarkdown(engagementId: string): Promise<string> {
   return response.text()
 }
 
+// --- Handoff digest  -----------------------------------------------
+//
+// The shift-resume read (architecture.md Sec 11.1): a time-windowed,
+// kind-whitelisted, ordered account of the watch's beats, projected from the
+// same reporting context as the report. Bounds are inclusive ISO-8601
+// timestamps; omitting both asks for the last watch window (to = now, from =
+// twelve hours before it).
+
+export interface DigestActor {
+  operatorId: string
+  handle: string
+}
+
+export interface DigestSubject {
+  implantId: string
+  class: string
+}
+
+export interface DigestTaskRef {
+  taskId: string
+  verb: string | null
+  outcome: string | null
+}
+
+export interface DigestEntry {
+  eventId: string
+  at: string
+  kind: string
+  verb: string
+  operator: DigestActor | null
+  implant: DigestSubject | null
+  task: DigestTaskRef | null
+  payload: string
+  output: string | null
+  outcome: string
+  hash: string
+}
+
+export interface HandoffDigestSummary {
+  sessionsOpened: number
+  sessionsClosed: number
+  implantsEnrolled: number
+  implantsRetired: number
+  tasksIssued: number
+  tasksCompleted: number
+  tasksCancelled: number
+  roeRefusals: number
+  notesAdded: number
+  shellSessionsOpened: number
+  shellSessionsEnded: number
+}
+
+export interface HandoffDigest {
+  engagementId: string
+  engagementName: string
+  from: string
+  to: string
+  generatedAt: string
+  contentHash: string
+  chainVerified: boolean
+  chainBreak: string | null
+  summary: HandoffDigestSummary
+  entries: DigestEntry[]
+}
+
+export interface DigestWindow {
+  from?: string
+  to?: string
+}
+
+function digestQuery(window: DigestWindow, markdown: boolean): string {
+  const params = new URLSearchParams()
+  if (window.from) params.set('from', window.from)
+  if (window.to) params.set('to', window.to)
+  if (markdown) params.set('format', 'markdown')
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export async function getHandoffDigest(
+  engagementId: string,
+  window: DigestWindow = {},
+): Promise<HandoffDigest> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/handoff-digest${digestQuery(window, false)}`))
+}
+
+// The same account as the human handoff note -- what an operator pastes to
+// the next watch.
+export async function getHandoffDigestMarkdown(
+  engagementId: string,
+  window: DigestWindow = {},
+): Promise<string> {
+  const response = await fetch(
+    `engagements/${engagementId}/handoff-digest${digestQuery(window, true)}`,
+  )
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
+  return response.text()
+}
+
 // --- Implant retire / burn  -----------------------------------
 //
 // Takes an implant out of operation: a retired implant is refused at handshake

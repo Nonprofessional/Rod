@@ -256,6 +256,39 @@ console sees, task output included, so pointing it at a third-party IM
 bridge is a decision about engagement data leaving the box
 ([teamserver.md](teamserver.md), the `Webhooks` row).
 
+## Handoff digest
+
+The Handoff digest panel is the resuming operator's read
+(architecture.md Sec 11.1): what happened on the watch while nobody sat
+at this console. The live stream has no replay -- events that fired while
+disconnected never happened, console-side -- so the digest answers the
+resume question from the one place that holds it: the engagement's audit
+trail, windowed and curated into a single ordered account.
+
+**The window** anchors where you pick it: the quick picks (last 12h, 24h,
+48h) set both bounds at click time, the custom fields set explicit
+inclusive bounds (an empty end reads as now), and the server's default,
+with nothing picked, is the last twelve hours. The span is capped at
+thirty-one days -- longer horizons are the Audit ledger's job, which
+pages. Refresh re-reads the same bounds, so late-landing facts inside the
+window appear while the window itself never slides.
+
+**The watch in numbers** sizes the shift first: the non-zero counts of
+sessions opened and closed, implants enrolled and retired, tasking
+issued with its outcomes, ROE refusals, implant notes, and shell
+sessions. **The watch in order** is the account itself, oldest first,
+each entry enriched the way the report timeline enriches it -- the acting
+operator's handle, the implant's class, the task's verb and outcome --
+with the window's integrity line above it (the content hash and the
+chain-verification state, the timeline's discipline). One reading note:
+a `SessionClosed` line is written by the staleness sweep, so it marks a
+stream that went silent; a session closed by a re-enroll leaves the
+successor's `SessionOpened` as its trace and no close event of its own.
+
+**Copy handoff note** renders the same account as Markdown onto the
+clipboard -- the note to paste to the next watch or the channel of your
+choosing.
+
 ## Listeners
 
 An engagement's C2 ingress. Each listener owns two addresses:

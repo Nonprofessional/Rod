@@ -17,6 +17,7 @@ export type TabId =
   | 'audit'
   | 'artifacts'
   | 'report'
+  | 'digest'
   | 'listeners'
   | 'launchers'
   | 'build'
@@ -36,7 +37,9 @@ export interface NavItemDef {
 // (audit, report) stays under Evidence. The timeline's own tab retired with
 // the narrative/report split it duplicated: the audit ledger is the raw
 // reading surface, and the report export's timeline section is the narrative
-// deliverable, so a third projection of the same trail had no job left.
+// deliverable, so a third projection of the same trail had no job left. The
+// digest earned its tab back on a different job: it is the windowed
+// watch-resume read, not a third rendering of the whole trail.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: 'Operate',
@@ -47,6 +50,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
       { id: 'automation', label: 'Automation', icon: 'clock' },
       { id: 'notifications', label: 'Notifications', icon: 'bell' },
+      { id: 'digest', label: 'Handoff digest', icon: 'activity' },
     ],
   },
   {
