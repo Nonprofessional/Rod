@@ -177,7 +177,7 @@ under, and a note on its current state are listed.
 | `Rod.Protocol` | **Not a layer.** The protobuf wire protocol: frames and the enrollment/handshake/tasking messages (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
-| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
+| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
@@ -217,6 +217,94 @@ data. The catalog is a process-global read of the loaded module set -- registry
 metadata, not engagement-scoped domain state -- so it earns no CoreState port
 and no parallel DTO; an operator-scoped capability concern would be a *separate*
 engagement-scoped endpoint, not a retrofit onto the global catalog.
+
+### 4.4 Out-of-band event notifications
+
+The live event bus reaches the operator at the console; an engagement does
+not stop when the console closes. An implant that returns overnight, a caught
+shell, a failed task are visible today only to connected operator sessions --
+the operator who stepped away reconstructs the watch from the trail after the
+fact. Notifications close that gap the way automation (Sec 10.4) closed
+tasking: an engine **beside the operator layer, not a new one**, subscribing
+to the same per-engagement bus and forwarding selected events to
+operator-registered channels -- a webhook today; an IM bridge tomorrow is
+configuration against that webhook (Slack, Discord, and Teams all expose
+incoming-webhook URLs), never new code.
+
+**Subscriptions.** A webhook subscription is engagement-scoped declarative
+state (`WebhookSubscription` in `Rod.CoreState` behind the
+`IWebhookSubscriptionStore` port, the same in-memory/Postgres adapter pair
+every engagement-scoped row uses): a display name, a target URL, and a
+non-empty selection of notifiable event kinds. The notifiable set is the
+engagement's operational beats -- session opened or closed, task issued,
+completed, or cancelled, implant retired, shell session opened or ended,
+payload fetched. Operator presence is console chatter and channel output is a
+per-chunk firehose, so neither is selectable, the exclusions automation's
+trigger list makes for the same reasons. The shell kinds split the other way:
+not triggerable there, but exactly what an off-console operator wants to hear
+about, so they are notifiable here.
+
+**The delivery path.** The engine subscribes once per engagement holding
+enabled subscriptions and, for each matching event, POSTs one request whose
+body is the SSE frame shape verbatim -- kind, engagement, operator, implant,
+task ids, payload, timestamp -- so a channel receives exactly what a
+connected console receives. Delivery is single-attempt with a per-request
+timeout: no retry queue, no redelivery. Every attempt lands in the audit
+trail (`WebhookDelivered`, outcome `delivered:{status}` /
+`failed:{reason}` / `tested:{status}`), and the URL is never written there:
+it is the subscription's bearer secret (the incoming-webhook convention),
+so the trail names the subscription, never the address. What a push carries
+is what a console sees, task output included, so where it is pointed -- a
+self-hosted receiver or a third-party bridge -- is an OPSEC decision the
+operations runbook records, not one the code makes. Registrations and
+mutations land as `WebhookSubscriptionCreated`/`Updated`/`Deleted`
+attributed to the acting operator; deliveries attribute to no operator: a
+push mirrors an event, it does not act on the engagement.
+
+**Guards.** A subscription whose deliveries fail consecutively
+(`WebhookLimits.ConsecutiveFailureLimit`, three) disables itself with the
+cause in the trail, the same self-parking posture a repeatedly-refused
+automation rule holds. A URL must be absolute https -- plain http is
+accepted only for loopback, the lab and self-hosted receivers -- and may
+carry no userinfo or fragment. Kinds outside the notifiable set are refused
+at creation, not silently dropped at delivery.
+
+**Durability posture.** The subscription is durable -- it survives a restart
+with the engagement, bookkeeping included. Delivery is not: events that fire
+while the server is down never happened, process-local and drop-oldest under
+a slow consumer with no replay, the bus's own posture, and the audit trail
+stays the record.
+
+**The operator surface.** Subscriptions are managed from the operator API at
+`/engagements/{engagementId}/webhook-subscriptions` (create, list, read,
+`:enable`, `:disable`, delete) beside the automation rules, in the operator
+layer with the events endpoint -- transport may not reference the layer the
+forwarder lives in. Creation validates eagerly (engagement open, kinds
+notifiable, URL shape, per-engagement cap) so an operator's mistake is a 422
+at registration instead of a quiet miss three hours later. A `:test` action
+pushes one synthetic frame through the same delivery path: an operator who
+registers a channel for the overnight watch verifies it before relying on
+it, without manufacturing a real event.
+
+**Shape of the engine.** One hosted background service with a fixed-delay
+tick (default 5 s, `Webhooks:EngineTickSeconds`) that reconciles the
+per-engagement subscriptions from the store -- at most one tick of latency
+before a new subscription hears events, the same eventual-read posture the
+automation engine and the staleness sweeper hold. Deliveries run
+sequentially inside each engagement's pump under a per-request timeout
+(`Webhooks:DeliveryTimeoutSeconds`, default 10 s): a slow receiver delays
+later pushes to itself, never the bus and never a connected console, and the
+bus's bounded per-subscriber buffer drops oldest under a truly stalled
+forwarder -- the posture a best-effort channel owes its riders.
+
+**Evolution notes.** Where later work plugs in, so nobody rediscovers it
+from the code. Retry with backoff for a 5xx receiver, HMAC request signing
+with a per-subscription secret (stored beside the URL, shown once), and a
+per-subscription implant filter like an event rule's `OnlyImplant` condition
+are the natural widenings -- each touches the entity, the engine's delivery
+call, and nothing else. A channel needing a richer body than the frame shape
+is a new delivery format on the same subscription, not a new subscription
+kind.
 
 ## 5. Implants and profiles
 
