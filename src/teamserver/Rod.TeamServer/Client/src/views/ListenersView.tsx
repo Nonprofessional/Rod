@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   type ListenerSummary,
   type NetworkInterfaceSummary,
@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
+import { useArmedDelete } from '../useArmedDelete'
 
 // The engagement's listeners: the C2 ingress this one engagement owns, each
 // with the socket it opens (bind) and the public endpoint implants dial
@@ -254,31 +255,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     }
   }
 
-  // The delete guard, in two layers. The button itself arms: the first click
-  // turns it into a "Confirm delete" that auto-reverts after a few seconds,
-  // so an accidental click never deletes anything. The armed click runs the
-  // delete; when live implants enrolled through the listener, the server
-  // refuses with a 409 naming them, and that message is the second
-  // confirmation -- only its explicit accept forces the delete.
-  const [armed, setArmed] = useState<string | null>(null)
-  const disarmTimer = useRef<number | null>(null)
-  useEffect(
-    () => () => {
-      if (disarmTimer.current !== null) window.clearTimeout(disarmTimer.current)
-    },
-    [],
-  )
+  // The delete guard, in two layers. The button itself arms (the shared
+  // two-click pattern); the armed click runs the delete, and when live
+  // implants enrolled through the listener the server refuses with a 409
+  // naming them -- that message is the second confirmation, and only its
+  // explicit accept forces the delete.
+  const [armed, armDelete] = useArmedDelete()
 
-  const onArmDelete = (l: ListenerSummary) => {
-    if (armed === l.id) {
-      if (disarmTimer.current !== null) window.clearTimeout(disarmTimer.current)
-      setArmed(null)
-      void onDelete(l)
-      return
-    }
-    setArmed(l.id)
-    disarmTimer.current = window.setTimeout(() => setArmed(null), 4000)
-  }
+  const onArmDelete = (l: ListenerSummary) =>
+    armDelete(l.id, () => void onDelete(l))
 
   const onDelete = async (l: ListenerSummary) => {
     try {

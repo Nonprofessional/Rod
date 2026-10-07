@@ -12,8 +12,9 @@ import {
 import { Icon } from '../components/Icons'
 import { OpsecBadges } from '../components/OpsecBadges'
 import { StatusBadge } from '../components/StatusBadge'
-import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import { CHANNEL_VERBS } from '../verbForms'
+import { useArmedDelete } from '../useArmedDelete'
 import { ago, until, useNow } from '../when'
 
 // The automation panel (architecture.md Sec 10.4): the engagement's declarative
@@ -92,8 +93,7 @@ export function AutomationView({
   const [cooldownSeconds, setCooldownSeconds] = useState('')
   const [maxFirings, setMaxFirings] = useState('')
 
-  // Two-click delete confirmation, the listeners panel's pattern.
-  const [armed, setArmed] = useState<string | null>(null)
+  const [armed, arm] = useArmedDelete()
 
   const now = useNow(10_000)
 
@@ -149,15 +149,9 @@ export function AutomationView({
     setArguments_('')
     setCooldownSeconds('')
     setMaxFirings('')
-    setArmed(null)
   }, [engagementId])
 
-  const attributesByVerb = useMemo(() => {
-    const map = new Map<string, Record<string, string>>()
-    for (const group of capabilityGroups)
-      for (const descriptor of group.descriptors) map.set(descriptor.verb, descriptor.attributes)
-    return map
-  }, [capabilityGroups])
+  const attributesByVerb = useMemo(() => verbAttributes(capabilityGroups), [capabilityGroups])
 
   const onCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -208,7 +202,6 @@ export function AutomationView({
   const onDelete = async (rule: AutomationRule) => {
     try {
       await deleteAutomationRule(engagementId, rule.id)
-      setArmed(null)
       setError(null)
       await refresh()
     } catch (err) {
@@ -455,7 +448,7 @@ export function AutomationView({
                       </span>
                     ) : rule.lastFiredAt ? (
                       <span title={`Last fired ${new Date(rule.lastFiredAt).toLocaleString()}`}>
-                        {ago(rule.lastFiredAt, now)} ago
+                        {ago(rule.lastFiredAt, now)}
                       </span>
                     ) : (
                       <span className="muted">—</span>
@@ -468,14 +461,7 @@ export function AutomationView({
                       </button>
                       <button
                         className={`sm danger${armed === rule.id ? ' armed' : ''}`}
-                        onClick={() => {
-                          if (armed !== rule.id) {
-                            setArmed(rule.id)
-                            window.setTimeout(() => setArmed(null), 4000)
-                            return
-                          }
-                          void onDelete(rule)
-                        }}
+                        onClick={() => arm(rule.id, () => void onDelete(rule))}
                       >
                         {armed === rule.id ? 'Confirm delete' : 'Delete'}
                       </button>
