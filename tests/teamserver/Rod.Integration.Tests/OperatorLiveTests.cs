@@ -8,6 +8,8 @@ using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.Operators.Live;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.EngagementSetup;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -45,16 +47,6 @@ public class OperatorLiveTests
         var client = AuthenticatedHost.CreateClient(host);
         await AuthenticatedHost.LoginAsync(client, handle, OperatorPassword);
         return client;
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client, string name)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: name));
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        Assert.NotNull(body);
-        return body!.EngagementId;
     }
 
     // Opens an SSE stream and returns a reader that surfaces parsed events. The
@@ -275,17 +267,6 @@ public class OperatorLiveTests
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         var map = (System.Collections.ICollection)field.GetValue(bus)!;
         return map.Count;
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
-    {
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     [Fact]

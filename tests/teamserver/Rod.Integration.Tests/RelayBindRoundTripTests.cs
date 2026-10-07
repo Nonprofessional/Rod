@@ -14,6 +14,7 @@ using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -210,7 +211,6 @@ public class RelayBindRoundTripTests
         }
     }
 
-
     // Reads exactly count bytes; a relay delivering the tool's answer is a
     // byte-exact bridge, and a short read would hide a split delivery.
     private static async Task<byte[]> ReadAllAsync(NetworkStream stream, int count)
@@ -252,17 +252,6 @@ public class RelayBindRoundTripTests
         await implants.SaveAsync(implant);
 
         return implant;
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     private sealed class TaskIssuedBody

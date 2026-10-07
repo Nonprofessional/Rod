@@ -12,6 +12,7 @@ using Rod.V1;
 // define a TaskOutcome; pin the BCL Task and reach the wire outcome by name.
 using Task = System.Threading.Tasks.Task;
 using TaskOutcome = Rod.V1.TaskOutcome;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -324,23 +325,6 @@ public class StreamEnrollRoundTripTests
                 new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: foreignToken, Class: null));
             Assert.Equal(HttpStatusCode.OK, webEnroll.StatusCode);
         }
-    }
-
-    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
-    {
-        var mint = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
-        mint.EnsureSuccessStatusCode();
-        var token = await mint.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
-        return token!.Secret;
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Stream Enroll"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     // A free TCP port below the Linux ephemeral range: a bind there is a

@@ -15,6 +15,8 @@ using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.V1;
+using static Rod.Integration.Tests.EngagementSetup;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -287,19 +289,6 @@ public class TimelineAndReportTests
         return (engagementId, owner, implantId);
     }
 
-    private static async Task<string> EnrollImplantAsync(HttpClient http, string secret)
-    {
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var spki = leafKey.ExportSubjectPublicKeyInfo();
-
-        var response = await http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
-        response.EnsureSuccessStatusCode();
-        var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
-
-        return enrolled!.ImplantId!;
-    }
-
     private static Frame HandshakeFrame(string implantId, int major, int minor)
     {
         var request = new HandshakeRequest
@@ -316,17 +305,6 @@ public class TimelineAndReportTests
 
     private static HandshakeResponse ParseResponse(Frame frame)
         => HandshakeResponse.Parser.ParseFrom(frame.Payload);
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
-    }
 
     // --- DTO shadows for JSON deserialization. Mirrors the AuditEndpoints test, ---
     // --- which deserializes the wire shape rather than referencing the DTO.    ---

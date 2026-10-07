@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.V1;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -156,11 +157,4 @@ public class ChildEnrollmentHttpTests
         return (created.EngagementId, secret);
     }
 
-    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
-    {
-        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
-        response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
-        return token!.Secret;
-    }
 }

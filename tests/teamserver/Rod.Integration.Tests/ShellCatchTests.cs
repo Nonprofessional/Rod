@@ -11,6 +11,7 @@ using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.ShellCatch;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -389,15 +390,6 @@ public class ShellCatchTests
         IReadOnlyList<ShellLauncherDto> Launchers);
 
     private sealed record ShellLauncherDto(string Id, string Os, string Command);
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Shellcatch"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
-    }
 
     private static async Task<T> WaitForAsync<T>(
         Func<Task<T>> probe, Func<T, bool> done, string expectation, TimeSpan? budget = null)

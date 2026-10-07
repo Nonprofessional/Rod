@@ -7,6 +7,7 @@ using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -187,15 +188,6 @@ public class EngagementCloseoutTests
 
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         }
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/engagements", new EngagementEndpoints.CreateEngagementRequest(Name: "close-out walk"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     // Enrolls an implant directly through the registry so the task gate

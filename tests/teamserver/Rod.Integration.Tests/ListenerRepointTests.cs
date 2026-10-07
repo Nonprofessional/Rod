@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -102,15 +103,6 @@ public class ListenerRepointTests
             new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "   "));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/engagements", new EngagementEndpoints.CreateEngagementRequest(Name: "repoint walk"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     private static async Task<ListenerEndpoints.ListenerResponse> CreateListenerAsync(

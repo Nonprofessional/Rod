@@ -9,6 +9,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.Transport;
 using Rod.V1;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -234,16 +235,6 @@ public class TaskRoundTripTests
     // Polls until condition is true or the timeout elapses. The capture/audit
     // append runs on the stream thread, asynchronously to the HTTP readback, so
     // the readback needs to wait for it rather than race it.
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
-    }
 
     // Minimal DTOs for the JSON round-trip; the transport owns the wire shape.
     private sealed class TaskIssuedBody

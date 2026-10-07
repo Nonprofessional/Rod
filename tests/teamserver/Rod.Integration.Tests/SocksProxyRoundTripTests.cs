@@ -14,6 +14,7 @@ using Rod.CoreState.Implants;
 using Rod.Transport;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -408,17 +409,6 @@ public class SocksProxyRoundTripTests
             now.AddDays(30), @class, now);
         await implants.SaveAsync(implant);
         return implant;
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     private sealed class TaskIssuedBody

@@ -14,6 +14,8 @@ using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.V1;
+using static Rod.Integration.Tests.EngagementSetup;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -190,19 +192,6 @@ public class OperationalEventLogTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static async Task<string> EnrollImplantAsync(HttpClient http, string secret)
-    {
-        var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var spki = leafKey.ExportSubjectPublicKeyInfo();
-
-        var response = await http.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: Convert.ToBase64String(spki)));
-        response.EnsureSuccessStatusCode();
-        var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
-
-        return enrolled!.ImplantId!;
-    }
-
     private static Frame HandshakeFrame(string implantId, int major, int minor)
     {
         var request = new HandshakeRequest
@@ -242,17 +231,6 @@ public class OperationalEventLogTests
             Assert.NotNull(page);
             var genesis = Assert.Single(page!.Items, e => e.Kind == nameof(AuditEventKind.EngagementCreated));
             Assert.Equal(AuthenticatedHost.Handle, genesis.OperatorHandle);
-        }
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
         }
     }
 

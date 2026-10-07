@@ -12,6 +12,7 @@ using Rod.CoreState.Operators;
 using Rod.Persistence;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -171,32 +172,6 @@ public sealed class OperatorNotesTests : IClassFixture<PostgresFixture>
         var survived = Assert.Single(listed!);
         Assert.Equal(noteId.ToString(), survived.NoteId);
         Assert.Equal("HVXC-web-03, edge web tier", survived.Text);
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
-    }
-
-    private static async Task<string> MintDeployTokenAsync(HttpClient client, string engagementId)
-    {
-        var response = await client.PostAsync($"/engagements/{engagementId}/deploy-tokens", content: null);
-        response.EnsureSuccessStatusCode();
-        var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
-        return token!.Secret;
-    }
-
-    private static async Task<string> EnrollAsync(HttpClient client, string secret)
-    {
-        var response = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: null));
-        response.EnsureSuccessStatusCode();
-        var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
-        return enrolled!.ImplantId!;
     }
 
     /// <summary>

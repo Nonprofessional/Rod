@@ -10,6 +10,7 @@ using Rod.CoreState;
 using Rod.CoreState.Implants;
 using Rod.Transport;
 using Rod.V1;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -229,17 +230,6 @@ public class InteractiveShellRoundTripTests
             now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
         return implant;
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     private sealed class TaskIssuedBody

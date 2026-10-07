@@ -12,6 +12,7 @@ using Rod.V1;
 // define a TaskOutcome; pin the BCL Task and reach the wire outcome by name.
 using Task = System.Threading.Tasks.Task;
 using TaskOutcome = Rod.V1.TaskOutcome;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -180,15 +181,6 @@ public class WebSocketBeaconRoundTripTests
         }
     }
 
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Wss Stream"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
-    }
-
     private static async Task<(string Secret, Guid TokenId)> MintDeployTokenAsync(
         HttpClient client, string engagementId)
     {
@@ -196,15 +188,6 @@ public class WebSocketBeaconRoundTripTests
         response.EnsureSuccessStatusCode();
         var token = await response.Content.ReadFromJsonAsync<EngagementEndpoints.DeployTokenResponse>();
         return (token!.Secret, Guid.Parse(token.DeployTokenId));
-    }
-
-    private static async Task<string> EnrollAsync(HttpClient client, string secret)
-    {
-        var response = await client.PostAsJsonAsync("/implants/enroll",
-            new EnrollmentEndpoints.EnrollRequest(DeployTokenSecret: secret, Class: null, PublicKey: null));
-        response.EnsureSuccessStatusCode();
-        var enrolled = await response.Content.ReadFromJsonAsync<EnrollmentEndpoints.EnrollmentResponse>();
-        return enrolled!.ImplantId!;
     }
 
     private static async Task<T?> WaitUntilAsync<T>(Func<Task<T?>> probe, TimeSpan? timeout = null)

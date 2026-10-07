@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.Operators.Automation;
 using Rod.Transport.Endpoints;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -189,15 +190,6 @@ public class AutomationRuleEndpointTests
                 $"/engagements/{engagementId}/tasks?limit=50");
             Assert.Single(after!.Items, t => t.Verb == "shell.exec");
         }
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Watchtower"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     private static async Task<string> EnrollAnImplantAsync(HttpClient client, string engagementId)

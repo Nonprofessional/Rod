@@ -18,6 +18,7 @@ using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -57,29 +58,10 @@ public class OperatorSurfaceCoverageTests
         return (client, host);
     }
 
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Lantern"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
-    }
-
     // Enrolls a full implant directly through the registry so the task gate
     // has a target across every capability category. The full class carries the
     // class-gated verb set; evasion and exploit are not class-gated and the
     // registry-backed resolver admits them on any class.
-    private static async Task<Implant> EnrollImplantAsync(IHost host, EngagementId engagement)
-    {
-        var implants = host.Services.GetRequiredService<IImplantRepository>();
-        var clock = host.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     [Fact]
     public async Task CapabilityCatalog_ListsEveryCategoryAndBuiltInVerbs()

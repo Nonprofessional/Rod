@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -176,16 +177,6 @@ public class PayloadJobTests
         var missing = await client.GetAsync(
             $"/engagements/{engagementId}/payload-jobs/{Guid.NewGuid()}");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var create = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: $"Operation Jobs {Guid.NewGuid():N}"));
-        create.EnsureSuccessStatusCode();
-        var created = await create.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        Assert.NotNull(created);
-        return created!.EngagementId;
     }
 
     private static async Task<PayloadJobEndpoints.PayloadJobResponse> WaitForTerminalAsync(

@@ -12,6 +12,7 @@ using Rod.CoreState.Pki;
 using Rod.Transport;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -136,16 +137,6 @@ public class StagedPushTests
 
     // Polls until condition is true or the timeout elapses; the audit append
     // runs on the stream thread, asynchronously to the HTTP readback.
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
-    }
 
     private sealed class TaskIssuedBody
     {

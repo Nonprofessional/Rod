@@ -21,6 +21,7 @@ using Rod.Tradecraft.Registry;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -61,15 +62,6 @@ public class TradecraftTaskPathTests
     // has an implant to read. The class is irrelevant to the evasion/exploit gate
     // (those verbs are not class-gated), but it is the class a long-haul implant
     // runs as.
-    private static async Task<Implant> EnrollImplantAsync(IHost host, EngagementId engagement)
-    {
-        var implants = host.Services.GetRequiredService<IImplantRepository>();
-        var clock = host.Services.GetRequiredService<TimeProvider>();
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     [Theory]
     [InlineData(EvasionCapabilities.Avoid)]

@@ -8,6 +8,7 @@ using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.Transport;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -101,17 +102,6 @@ public class RoeEndpointsTests
         created.EnsureSuccessStatusCode();
         var body = await created.Content.ReadFromJsonAsync<EngagementBody>();
         return Guid.Parse(body!.EngagementId);
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     private sealed class EngagementBody

@@ -15,6 +15,7 @@ using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
 using Rod.V1;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -186,15 +187,6 @@ public class ListenerTests
 
     private static ListenerConfig DefaultHttpListener()
         => new("http-default", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Smokeshow"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
-    }
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
     {

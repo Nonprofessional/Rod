@@ -13,6 +13,7 @@ using Rod.CoreState.Pki;
 using Rod.CoreState.Sessions;
 using Rod.Transport;
 using Rod.V1;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -255,17 +256,6 @@ public class EngagementLoopTests
 
     private static HandshakeResponse ParseResponse(Frame frame)
         => HandshakeResponse.Parser.ParseFrom(frame.Payload);
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
-    }
 
     private sealed class TaskIssuedBody
     {

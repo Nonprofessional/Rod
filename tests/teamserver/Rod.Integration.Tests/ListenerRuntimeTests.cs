@@ -10,6 +10,7 @@ using Rod.CoreState.Deployment;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -657,15 +658,6 @@ public class ListenerRuntimeTests
                 Endpoint: "http://typed.example.test", UriPath: "/beacon", SleepSeconds: 30,
                 JitterSeconds: 10, KillDate: null, ListenerId: listener.Id));
         Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync(
-            "/engagements", new EngagementEndpoints.CreateEngagementRequest(Name: "listener runtime"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     // Splits a delimited envelope body (a varint length ahead of each

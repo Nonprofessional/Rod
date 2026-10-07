@@ -15,6 +15,7 @@ using Rod.Transport;
 using Rod.Transport.Listeners;
 using Rod.V1;
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -280,17 +281,6 @@ public class StreamContactTests
             value >>= 7;
         }
         buffer.WriteByte((byte)value);
-    }
-
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
     }
 
     private sealed class TaskIssuedBody

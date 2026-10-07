@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
 using Rod.CoreState.Operators;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -20,16 +21,6 @@ public class OperatorListingTests
 {
     private static (HttpClient Client, IHost Host, OperatorId OperatorId) CreateClient()
         => AuthenticatedHost.Create();
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client, string name)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: name));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        Assert.NotNull(created);
-        return created!.EngagementId;
-    }
 
     private static async Task<string> MintTokenAsync(HttpClient client, string engagementId)
     {

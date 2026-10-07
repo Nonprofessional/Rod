@@ -12,6 +12,7 @@ using Rod.Transport.Endpoints;
 // is async throughout, so pin Task to the BCL type and reach the entity by its
 // full name.
 using Task = System.Threading.Tasks.Task;
+using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
 
@@ -180,15 +181,6 @@ public class ListPaginationTests
             // an invalid paging parameter is a 400 even for an unknown task.
             Assert.Equal(HttpStatusCode.BadRequest, artifactsResponse.StatusCode);
         }
-    }
-
-    private static async Task<string> CreateEngagementAsync(HttpClient client)
-    {
-        var response = await client.PostAsJsonAsync("/engagements",
-            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Ledger"));
-        response.EnsureSuccessStatusCode();
-        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
-        return created!.EngagementId;
     }
 
     private static readonly DateTimeOffset Base = DateTimeOffset.UnixEpoch;

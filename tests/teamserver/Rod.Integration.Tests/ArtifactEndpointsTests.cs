@@ -10,6 +10,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
+using static Rod.Integration.Tests.TestSupport;
 
 namespace Rod.Integration.Tests;
 
@@ -214,16 +215,6 @@ public class ArtifactEndpointsTests
     // Polls until condition is true or the timeout elapses. The audit append runs
     // on the HTTP handler thread; the readback here is a separate call and may
     // need a beat to observe it.
-    private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
-    {
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (await condition())
-                return;
-            await Task.Delay(25);
-        }
-    }
 
     private sealed class TaskIssuedBody
     {
