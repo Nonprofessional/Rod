@@ -118,14 +118,11 @@ impl RawTcp {
         let handshake = [session.handshake_frame()];
         let (body, _) = session.encode_outgoing(&handshake);
         write_message(&mut stream, &body)?;
+        let closed = || ContactError::Protocol("the stream closed before the handshake response");
         let Some(inbound) = read_frames(session, &mut stream, false)? else {
-            return Err(ContactError::Protocol(
-                "the stream closed before the handshake response",
-            ));
+            return Err(closed());
         };
-        let first = inbound.first().ok_or(ContactError::Protocol(
-            "the stream closed before the handshake response",
-        ))?;
+        let first = inbound.first().ok_or_else(closed)?;
         let (acks, attempt) = session
             .handshake_answered(first)
             .map_err(ContactError::Protocol)?;

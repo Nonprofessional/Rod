@@ -6,6 +6,9 @@ use serde_json::Value;
 // or a dev build) falls back to ROD_* environment variables -- the documented
 // dev shape, unbaked and driven from the environment.
 
+/// The enroll route every front serves; the bake may override the path.
+const DEFAULT_ENROLL_PATH: &str = "/implants/enroll";
+
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub enroll_url: String,
@@ -72,7 +75,7 @@ impl Profile {
             jitter_seconds: parse_duration(field(&map, "jitter").unwrap_or("10s")),
             mode: field(&map, "mode").unwrap_or("poll").to_string(),
             enroll_path: field(&map, "enrollPath")
-                .unwrap_or("/implants/enroll")
+                .unwrap_or(DEFAULT_ENROLL_PATH)
                 .to_string(),
             request_timeout_seconds: parse_duration(field(&map, "requestTimeout").unwrap_or("30s")),
             envelope: field(&map, "envelope").unwrap_or("aesgcm").to_string(),
@@ -111,7 +114,7 @@ impl Profile {
                 &std::env::var("ROD_JITTER").unwrap_or_else(|_| "10s".into()),
             ),
             mode: std::env::var("ROD_MODE").unwrap_or_else(|_| "poll".into()),
-            enroll_path: "/implants/enroll".into(),
+            enroll_path: DEFAULT_ENROLL_PATH.into(),
             request_timeout_seconds: 30.0,
             envelope: std::env::var("ROD_ENVELOPE").unwrap_or_else(|_| "none".into()),
             contact_envelope: if envelope_key.is_empty() {
@@ -252,7 +255,7 @@ mod tests {
             sleep_seconds: 30.0,
             jitter_seconds: 10.0,
             mode: "poll".into(),
-            enroll_path: "/implants/enroll".into(),
+            enroll_path: DEFAULT_ENROLL_PATH.into(),
             request_timeout_seconds: 30.0,
             envelope: "aesgcm".into(),
             contact_envelope: "none".into(),

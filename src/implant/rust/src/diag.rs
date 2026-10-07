@@ -8,7 +8,8 @@ use std::sync::OnceLock;
 // e2e suite run with the terminal story restored. Exit codes still tell the
 // bare-bones story when nobody is watching.
 
-fn verbose() -> bool {
+// The macro's gate: public because the macro expands at its call sites.
+pub fn enabled() -> bool {
     static VERBOSE: OnceLock<bool> = OnceLock::new();
     *VERBOSE.get_or_init(|| {
         std::env::var("ROD_VERBOSE")
@@ -25,9 +26,4 @@ macro_rules! diag {
             eprintln!("rod-implant: {}", format!($($arg)*));
         }
     };
-}
-
-// The macro's gate: named for what it answers at the call site.
-pub fn enabled() -> bool {
-    verbose()
 }

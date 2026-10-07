@@ -39,7 +39,11 @@ impl Outbox {
     pub fn result(&mut self, task_id: &str, outcome: Outcome, output: &str) {
         self.ledger
             .insert(task_id.to_string(), (outcome, output.to_string()));
-        let wire = if outcome == Outcome::Succeeded { 1 } else { 2 };
+        let wire = if outcome == Outcome::Succeeded {
+            crate::wire::rod::TaskOutcome::Succeeded as i32
+        } else {
+            crate::wire::rod::TaskOutcome::Failed as i32
+        };
         self.queue.push_back(Frame {
             payload: TaskResult {
                 task_id: task_id.to_string(),

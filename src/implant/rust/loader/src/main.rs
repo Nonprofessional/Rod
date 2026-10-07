@@ -16,10 +16,10 @@
 //! (the build refuses any other front for a loader): the seal, not the
 //! transport, is the boundary, exactly like the cleartext contact posture.
 //!
-//! Exit codes name the failed step for the shell they land in: 3 socket, 4
+//! Exit codes name the failed step for the shell they land in: 3 socket or
 //! connect, 5 send, 6 short response, 7 bad status, 8 malformed response, 9
 //! payload over buffer, 10 memfd, 11 memfd write, 12 not the R1 shape, 13 seal
-//! did not open, 14 exec.
+//! did not open, 14 exec, 15 resolve.
 
 #![no_std]
 #![no_main]
@@ -589,8 +589,6 @@ struct TimeVal {
     microseconds: isize,
 }
 
-// The resolvers a HOST_NAME dial may query: RESOLVER baked as a literal
-// IPv4 (the pinned choice), else every nameserver line resolv.conf carries.
 // The resolvers a HOST_NAME dial may query, capped at three: RESOLVER
 // baked as a literal IPv4 first, else every nameserver line resolv.conf
 // carries.

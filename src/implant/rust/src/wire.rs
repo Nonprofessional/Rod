@@ -83,7 +83,7 @@ mod tests {
         Frame {
             payload: TaskResult {
                 task_id: id.into(),
-                outcome: 1,
+                outcome: rod::TaskOutcome::Succeeded as i32,
                 output: output.into(),
             }
             .encode_to_vec(),
