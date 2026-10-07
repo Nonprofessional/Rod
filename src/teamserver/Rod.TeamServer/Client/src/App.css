@@ -888,6 +888,13 @@ a:hover {
   color: var(--muted);
 }
 
+/* The webhook test outcome: the error slot's quiet sibling -- the success
+   family, because a failed test is still a successful verification of a
+   dead channel and reads as an answer, not a fault. */
+.notice {
+  color: var(--success);
+}
+
 .dot {
   width: 8px;
   height: 8px;

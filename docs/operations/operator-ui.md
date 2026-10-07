@@ -222,6 +222,40 @@ automatically. The list rides the live event tick, so counts move as
 firings land. Row actions: **Disable** (the cancel; **Enable** re-arms from
 now) and the two-click **Delete**.
 
+## Notifications
+
+The Notifications panel manages the engagement's out-of-band channels
+(architecture.md Sec 4.4): the webhook URLs that receive the live events no
+operator sat up for -- the implant that returns overnight, the shell that
+gets caught at 3 a.m. Each push is the frame a connected console sees
+(kind, engagement, implant/task ids, payload, timestamp); delivery is
+single-attempt and best-effort like the bus it rides, every attempt lands
+in the trail as a `WebhookDelivered` fact, and the URL is the channel's
+bearer secret -- the trail and this console show only its host.
+
+**New channel** is the name, the URL (absolute https; plain http on
+loopback only), and the event kinds to push. The notifiable set is the
+engagement's operational beats -- sessions, shell caught/lost, task
+issued/completed/cancelled, implant retired, payload fetched; presence and
+channel output are excluded (console chatter and a per-chunk firehose).
+Note the split from automation's trigger list: a caught shell is exactly
+what an off-console operator wants to hear about, so the shell kinds push
+here though they never trigger a rule.
+
+**Channels** reads each channel's own bookkeeping back: status, the target
+host, the kinds it pushes, the delivery count with the last delivery, and
+the consecutive-failure streak -- three in a row park the channel with the
+cause in the trail (fix the receiver, then **Enable** starts the watch
+fresh). Row actions: **Test** (one synthetic frame down the same delivery
+path -- the verification to run before relying on a channel overnight; the
+outcome is the answer either way), **Disable**/**Enable**, and the
+two-click **Delete**.
+
+Where a channel points is an OPSEC decision: the push body is what the
+console sees, task output included, so pointing it at a third-party IM
+bridge is a decision about engagement data leaving the box
+([teamserver.md](teamserver.md), the `Webhooks` row).
+
 ## Listeners
 
 An engagement's C2 ingress. Each listener owns two addresses:

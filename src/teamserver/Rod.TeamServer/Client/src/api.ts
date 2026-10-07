@@ -1553,3 +1553,123 @@ export async function deleteAutomationRule(engagementId: string, ruleId: string)
   })
   await jsonOrThrow<unknown>(response)
 }
+
+// --- Webhook notifications (architecture.md Sec 4.4) ----------------------------
+//
+// The engagement's out-of-band channels: each subscription pushes the live
+// events it names to one webhook URL -- the SSE frame shape verbatim, so a
+// channel receives exactly what a connected console receives. The URL is the
+// channel's bearer secret (the audit trail never records it; plain http is
+// loopback-only), delivery is single-attempt and best-effort like the bus it
+// rides, and three failures in a row park the channel with the cause in the
+// trail.
+
+export interface WebhookSubscription {
+  id: string
+  engagementId: string
+  name: string
+  url: string
+  eventKinds: string[]
+  enabled: boolean
+  deliveryCount: number
+  lastDeliveredAt: string | null
+  consecutiveFailures: number
+  lastFailureReason: string | null
+  createdAt: string
+  createdBy: string
+  disabledAt: string | null
+}
+
+// The event kinds the server's notifiable whitelist admits. Duplicated here
+// because the server exposes no "notifiable kinds" read; the server stays the
+// authority -- anything else it refuses at registration with a readable 422.
+// Unlike automation's trigger list this includes the shell kinds: a caught
+// shell is exactly what an off-console operator wants to hear about.
+export const NOTIFIABLE_EVENT_KINDS: readonly { value: string; label: string }[] = [
+  { value: 'SessionOpened', label: 'Session opened' },
+  { value: 'SessionClosed', label: 'Session closed' },
+  { value: 'ShellSessionOpened', label: 'Shell caught' },
+  { value: 'ShellSessionEnded', label: 'Shell lost' },
+  { value: 'TaskIssued', label: 'Task issued' },
+  { value: 'TaskCompleted', label: 'Task completed' },
+  { value: 'TaskCancelled', label: 'Task cancelled' },
+  { value: 'ImplantRetired', label: 'Implant retired' },
+  { value: 'PayloadFetched', label: 'Payload fetched' },
+]
+
+export interface RegisterWebhookInput {
+  name: string
+  url: string
+  eventKinds: string[]
+}
+
+export async function listWebhookSubscriptions(
+  engagementId: string,
+): Promise<WebhookSubscription[]> {
+  const page = await jsonOrThrow<{ subscriptions: WebhookSubscription[] }>(
+    await fetch(`engagements/${engagementId}/webhook-subscriptions`),
+  )
+  return page.subscriptions
+}
+
+export async function registerWebhookSubscription(
+  engagementId: string,
+  input: RegisterWebhookInput,
+): Promise<WebhookSubscription> {
+  const response = await fetch(`engagements/${engagementId}/webhook-subscriptions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function enableWebhookSubscription(
+  engagementId: string,
+  subscriptionId: string,
+): Promise<WebhookSubscription> {
+  const response = await fetch(
+    `engagements/${engagementId}/webhook-subscriptions/${subscriptionId}:enable`,
+    { method: 'POST' },
+  )
+  return jsonOrThrow(response)
+}
+
+// The cancel: a disabled channel pushes nothing until re-enabled, which also
+// clears the failure run.
+export async function disableWebhookSubscription(
+  engagementId: string,
+  subscriptionId: string,
+): Promise<WebhookSubscription> {
+  const response = await fetch(
+    `engagements/${engagementId}/webhook-subscriptions/${subscriptionId}:disable`,
+    { method: 'POST' },
+  )
+  return jsonOrThrow(response)
+}
+
+// Pushes one test frame through the same delivery path -- the verification an
+// operator runs before relying on a channel overnight. The outcome is the
+// answer either way; a failed test is a successful verification of a dead
+// channel.
+export async function testWebhookSubscription(
+  engagementId: string,
+  subscriptionId: string,
+): Promise<{ delivered: boolean; outcome: string }> {
+  const response = await fetch(
+    `engagements/${engagementId}/webhook-subscriptions/${subscriptionId}:test`,
+    { method: 'POST' },
+  )
+  return jsonOrThrow(response)
+}
+
+export async function deleteWebhookSubscription(
+  engagementId: string,
+  subscriptionId: string,
+): Promise<void> {
+  const response = await fetch(
+    `engagements/${engagementId}/webhook-subscriptions/${subscriptionId}`,
+    { method: 'DELETE' },
+  )
+  await jsonOrThrow<unknown>(response)
+}

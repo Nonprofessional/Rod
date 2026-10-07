@@ -22,6 +22,7 @@ import { ShellsView } from './ShellsView'
 import { WebShellsView } from './WebShellsView'
 import { TaskLogView } from './TaskLogView'
 import { AutomationView } from './AutomationView'
+import { NotificationsView } from './NotificationsView'
 
 // The engagement detail body: the active view only -- navigation lives in the
 // shell's sidebar and the live summary (connection state, fleet counts,
@@ -145,6 +146,9 @@ export function EngagementView({
       {error && <p className="error">{error}</p>}
       {tab === 'tasking' && <TaskLogView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'automation' && <AutomationView engagementId={engagementId} onlineTick={tick} />}
+      {tab === 'notifications' && (
+        <NotificationsView engagementId={engagementId} onlineTick={tick} />
+      )}
       {tab === 'implants' && implantId && (
         <InteractView
           engagementId={engagementId}

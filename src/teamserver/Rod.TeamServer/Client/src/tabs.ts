@@ -10,6 +10,7 @@ import type { IconName } from './components/Icons'
 export type TabId =
   | 'tasking'
   | 'automation'
+  | 'notifications'
   | 'implants'
   | 'shells'
   | 'webshells'
@@ -45,6 +46,7 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'webshells', label: 'Web shells', icon: 'globe' },
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
       { id: 'automation', label: 'Automation', icon: 'clock' },
+      { id: 'notifications', label: 'Notifications', icon: 'bell' },
     ],
   },
   {
