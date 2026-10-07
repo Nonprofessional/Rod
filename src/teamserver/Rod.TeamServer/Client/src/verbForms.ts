@@ -149,36 +149,6 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     ],
     build: (values) => ({ arguments: text(values.source) }),
   },
-  'lateral.move': {
-    title: 'Derive a child implant',
-    fields: [
-      {
-        key: 'token',
-        label: 'Child enrollment token',
-        type: 'wide',
-        required: true,
-        placeholder: 'the token the child redeems',
-      },
-      {
-        key: 'klass',
-        label: 'Class (optional)',
-        placeholder: 'Pivot',
-        help: 'Empty defaults to a full-implant child.',
-      },
-    ],
-    build: (values) => {
-      const parts = [text(values.token), text(values.klass)].filter(Boolean)
-      return { arguments: parts.join(' ') }
-    },
-  },
-  'lateral.exec_remote': {
-    title: 'Run a command on a remote host',
-    fields: [
-      { key: 'host', label: 'Host', required: true, placeholder: '10.0.0.6' },
-      { key: 'command', label: 'Command', type: 'wide', required: true, placeholder: 'hostname' },
-    ],
-    build: (values) => ({ arguments: `${text(values.host)} ${text(values.command)}` }),
-  },
   'persist.install': {
     title: 'Install persistence',
     fields: [
@@ -209,22 +179,6 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     ],
     build: (values) => ({ arguments: `${text(values.mechanism)} ${text(values.name)}` }),
   },
-  'exfil.push': {
-    title: 'Exfiltrate a file',
-    fields: [
-      { key: 'name', label: 'Evidence name', required: true, placeholder: 'passwd-copy' },
-      { key: 'path', label: 'Remote path', type: 'wide', required: true, placeholder: '/etc/passwd' },
-    ],
-    build: (values) => ({ arguments: `${text(values.name)} ${text(values.path)}` }),
-  },
-  'tunnel.forward': {
-    title: 'Forward a tunnel',
-    fields: [
-      { key: 'host', label: 'Destination host', required: true, placeholder: '10.0.0.7' },
-      { key: 'port', label: 'Destination port', type: 'number', required: true, placeholder: '3389' },
-    ],
-    build: (values) => ({ arguments: `${text(values.host)} ${text(values.port)}` }),
-  },
 }
 
 // The verbs whose tasks run as live channels (the server's ChannelVerbs is the
@@ -235,6 +189,16 @@ export const CHANNEL_VERBS: readonly string[] = [
   'tunnel.forward',
   'tunnel.socks',
 ]
+
+export const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
+
+// The generic task form a verb with no dedicated entry falls back to: the
+// raw argument string, nothing more.
+export const DEFAULT_TASK_FORM: VerbForm = {
+  title: 'Issue task',
+  fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
+  build: (values) => ({ arguments: (values.args ?? '').trim() }),
+}
 
 // Reads a picked file into the SelectedFile shape: the dialog calls it on
 // change and keeps the result in state until submit.

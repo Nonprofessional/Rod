@@ -9,23 +9,25 @@ import type { MenuEntry, MenuItem } from '../components/ContextMenu'
 // the one sentence behind it. (Labels deliberately end without an ellipsis;
 // the desktop "opens a dialog" dot convention read as clipping here.)
 
-// The class verb table mirrored client-side for menu gating. The server's
-// ImplantClassCapabilities (the issuance gate) is the authority; this mirror
-// only decides what the menu offers, exactly like the channel-verb mirror --
-// the server still refuses anything this table gets wrong.
+// The class verb table mirrored client-side for menu gating, carrying only
+// the verbs the menu below gates on. The server's ImplantClassCapabilities
+// (the issuance gate) is the authority; this mirror only decides what the
+// menu offers, exactly like the channel-verb mirror -- the server still
+// refuses anything this table gets wrong. Verbs the menu never offers
+// (lateral, exfil, the tunnel pair) are reached from the session console's
+// quick commands or the raw-task form and need no row here; a Pivot implant
+// therefore gates every menu verb off.
 const CLASS_VERBS: Record<string, readonly string[]> = {
   Implant: [
     'shell.exec', 'shell.interact', 'file.push', 'file.pull', 'fs.list', 'proc.kill',
     'beacon.sleep',
     'recon.portscan', 'recon.hostenum', 'recon.service', 'recon.ps',
-    'lateral.move', 'lateral.token', 'lateral.exec_remote',
     'persist.install', 'persist.remove', 'persist.list',
-    'collect.cred', 'collect.screenshot', 'exfil.push', 'exfil.stage',
-    'tunnel.forward', 'tunnel.socks',
+    'collect.cred', 'collect.screenshot',
   ],
   WebShell: ['shell.exec'],
   Ephemeral: ['shell.exec'],
-  Pivot: ['tunnel.forward', 'tunnel.socks'],
+  Pivot: [],
 }
 
 function classVerbs(klass: string): ReadonlySet<string> {

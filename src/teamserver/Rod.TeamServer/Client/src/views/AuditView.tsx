@@ -8,9 +8,9 @@ import { Icon } from '../components/Icons'
 // event. This is the trail's reading surface -- the dense, paged, filterable
 // table a forensic read wants: kind filter, free-text search across
 // verb/payload/outcome, and "load older" walking back through history. The
-// narrative rendering of the same facts is the Report tab's timeline section
-// (and the standalone /timeline endpoint stays a scripting deliverable); the
-// report exports consume this same trail.
+// narrative rendering of the same facts is the report export's timeline
+// section (and the standalone /timeline endpoint stays a scripting
+// deliverable); the report exports consume this same trail.
 
 const ALL_KINDS = '(all)'
 

@@ -4,7 +4,7 @@ import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 
 // The engagement report: the full evidence bundle -- engagement,
-// operators, implants, tasks, artifacts, and the timeline -- in one reproducible,
+// operators, implants, tasks, artifacts -- in one reproducible,
 // content-hashed export. Toggles between a structured summary (JSON) and the raw
 // Markdown export.
 

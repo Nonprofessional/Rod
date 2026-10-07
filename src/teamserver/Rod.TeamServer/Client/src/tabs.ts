@@ -34,7 +34,7 @@ export interface NavItemDef {
 // because it is the working log, read while operating; the immutable record
 // (audit, report) stays under Evidence. The timeline's own tab retired with
 // the narrative/report split it duplicated: the audit ledger is the raw
-// reading surface, and the report's timeline section is the narrative
+// reading surface, and the report export's timeline section is the narrative
 // deliverable, so a third projection of the same trail had no job left.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {

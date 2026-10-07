@@ -647,35 +647,7 @@ export async function fetchArtifactBlob(engagementId: string, artifactId: string
 // full evidence bundle, JSON by default or Markdown when format='markdown'
 // (returned as text), carrying a content hash so two exports of identical
 // state match. The timeline's standalone endpoint stays a scripting
-// deliverable; the UI's narrative home is this report (its timeline section
-// carries the same enriched entries).
-
-export interface TimelineActor {
-  operatorId: string
-  handle: string
-}
-export interface TimelineSubject {
-  implantId: string
-  class: string
-}
-export interface TimelineTaskRef {
-  taskId: string
-  verb: string | null
-  outcome: string | null
-}
-export interface TimelineEntry {
-  eventId: string
-  at: string
-  kind: string
-  verb: string
-  operator: TimelineActor | null
-  implant: TimelineSubject | null
-  task: TimelineTaskRef | null
-  payload: string
-  output: string | null
-  outcome: string
-  hash: string
-}
+// deliverable; this report is the UI's narrative home.
 
 export interface ReportTask {
   taskId: string
@@ -706,7 +678,6 @@ export interface EngagementReport {
   implants: { implantId: string; class: string; parentImplantId: string | null; retiredAt: string | null }[]
   tasks: ReportTask[]
   artifacts: { artifactId: string; taskId: string; name: string; contentType: string; size: number }[]
-  timeline: TimelineEntry[]
 }
 
 export async function getReport(engagementId: string): Promise<EngagementReport> {
@@ -1044,20 +1015,6 @@ export async function renderLaunchers(
 
 export async function listLaunchers(engagementId: string): Promise<LauncherRow[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/launchers`))
-}
-
-// Revokes the row's credential wherever a copy of the command carries it;
-// the row stays, marked revoked. The UI deletes instead (delete revokes
-// first); the endpoint remains the API's surgical form.
-export async function revokeLauncher(
-  engagementId: string,
-  launcherId: string,
-): Promise<void> {
-  await jsonOrThrow(
-    await fetch(`engagements/${engagementId}/launchers/${launcherId}:revoke`, {
-      method: 'POST',
-    }),
-  )
 }
 
 // Removes the row -- tidying, not disabling: the credential dies by its own

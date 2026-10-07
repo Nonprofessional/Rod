@@ -2,8 +2,8 @@
 // endpoint: the classic documented reverse-shell shapes across the
 // interpreter families a target is likely to have. Pure rendering of
 // (host, port) into commands -- no credential is minted, so the client
-// renders from the listener roster it already holds. Shared by the
-// Launchers tab (the one-liner home) and the shells roster's hint.
+// renders from the listener roster it already holds. The Launchers tab is
+// the one-liner home; the shells roster links there.
 
 export interface CatchLauncher {
   id: string
