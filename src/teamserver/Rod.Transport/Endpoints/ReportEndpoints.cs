@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
@@ -17,14 +18,16 @@ using Task = Rod.CoreState.Tasks.Task;
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The operator-facing timeline and report export endpoints: the
-/// built-in consumers of the event + task + artifact store (architecture.md Sec 11).
+/// The operator-facing timeline, report export, and shift handoff digest
+/// endpoints: the built-in consumers of the event + task + artifact store
+/// (architecture.md Sec 11).
 /// A red-team operation ends in a deliverable -- a timeline, findings, and evidence
 /// -- and Rod treats the audit trail as the <em>source for report generation</em>,
 /// not a post-hoc scrape. These endpoints render the per-engagement trail, tasks,
 /// implants, operators, and artifact index directly into that deliverable, both as
 /// JSON (machine-consumed, e.g. by an operator UI) and as Markdown (the human
-/// deliverable).
+/// deliverable). The digest (Sec 11.1) is the same projection at watch scale: a
+/// windowed, kind-whitelisted account for the operator resuming the watch.
 ///
 /// Read-only by construction: like the audit read and the artifact
 /// listing, these endpoints compose nothing onto the trail and mutate no state.
@@ -44,13 +47,21 @@ namespace Rod.Transport.Endpoints;
 /// </summary>
 public static class ReportEndpoints
 {
+    // The digest window contract (architecture.md Sec 11.1): `to` defaults to
+    // now, `from` to twelve hours before it -- one long watch plus the handoff
+    // gap -- and the span cap keeps a single ordered account bounded. Longer
+    // horizons are the timeline's job, which pages.
+    private static readonly TimeSpan DefaultDigestWindow = TimeSpan.FromHours(12);
+    private static readonly TimeSpan MaxDigestWindow = TimeSpan.FromDays(31);
+
     public static IEndpointRouteBuilder MapReportEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Operator-facing: timeline/report deliverables require an authenticated
-        // operator session.
+        // Operator-facing: timeline/report deliverables and the handoff digest
+        // require an authenticated operator session.
         var group = endpoints.MapGroup("/engagements/{engagementId}").RequireAuthorization();
         group.MapGet("/timeline", GetTimelineAsync).WithName(nameof(GetTimelineAsync));
         group.MapGet("/report", GetReportAsync).WithName(nameof(GetReportAsync));
+        group.MapGet("/handoff-digest", GetHandoffDigestAsync).WithName(nameof(GetHandoffDigestAsync));
         return endpoints;
     }
 
@@ -108,6 +119,61 @@ public static class ReportEndpoints
             : Results.Ok(report);
     }
 
+    private static async Task<IResult> GetHandoffDigestAsync(
+        string engagementId,
+        string? from,
+        string? to,
+        string? format,
+        IEngagementRepository engagements,
+        IAuditStore audit,
+        IArtifactStore artifacts,
+        IOperatorRepository operators,
+        IImplantRepository implants,
+        ITaskRepository tasks,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        var engagement = await engagements.FindAsync(new EngagementId(engagementValue), cancellationToken);
+        if (engagement is null)
+            return Results.NotFound(new Problem("Engagement does not exist."));
+
+        var windowEnd = clock.GetUtcNow();
+        if (to is { } toText)
+        {
+            if (!TryParseTimestamp(toText, out var parsed))
+                return Results.BadRequest(new Problem("to must be an ISO 8601 timestamp."));
+            windowEnd = parsed;
+        }
+
+        var windowStart = windowEnd - DefaultDigestWindow;
+        if (from is { } fromText)
+        {
+            if (!TryParseTimestamp(fromText, out var parsed))
+                return Results.BadRequest(new Problem("from must be an ISO 8601 timestamp."));
+            windowStart = parsed;
+        }
+
+        if (windowStart >= windowEnd)
+            return Results.BadRequest(new Problem("from must precede to."));
+        if (windowEnd - windowStart > MaxDigestWindow)
+            return Results.BadRequest(new Problem(
+                $"The digest window must not exceed {MaxDigestWindow.Days} days; use the timeline for longer horizons."));
+
+        var builder = await ReportBuilder.BuildAsync(
+            engagement, audit, artifacts, operators, implants, tasks, cancellationToken);
+
+        var digest = builder.HandoffDigest(engagement, windowStart, windowEnd);
+        return format is { } f && IsMarkdown(f)
+            ? Results.Text(HandoffDigestMarkdown.Render(digest), "text/markdown; charset=utf-8", Encoding.UTF8)
+            : Results.Ok(digest);
+    }
+
+    private static bool TryParseTimestamp(string text, out DateTimeOffset value)
+        => DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
+
     private static bool IsMarkdown(string format)
         => format.Equals("markdown", StringComparison.OrdinalIgnoreCase)
             || format.Equals("md", StringComparison.OrdinalIgnoreCase);
@@ -135,6 +201,24 @@ public static class ReportEndpoints
 /// </summary>
 internal static class ReportBuilder
 {
+    // The digest's kind whitelist (architecture.md Sec 11.1): the watch's
+    // operational beats. Dispatch plumbing, payload fetches, and configuration
+    // churn stay out -- the timeline remains the view for them.
+    internal static readonly IReadOnlySet<AuditEventKind> DigestKinds = new HashSet<AuditEventKind>
+    {
+        AuditEventKind.SessionOpened,
+        AuditEventKind.SessionClosed,
+        AuditEventKind.ImplantEnrolled,
+        AuditEventKind.ImplantRetired,
+        AuditEventKind.TaskIssued,
+        AuditEventKind.TaskCompleted,
+        AuditEventKind.TaskCancelled,
+        AuditEventKind.TaskRoeRefused,
+        AuditEventKind.ImplantNoteAdded,
+        AuditEventKind.ShellSessionOpened,
+        AuditEventKind.ShellSessionEnded,
+    };
+
     public static async Task<ReportBuilderContext> BuildAsync(
         Engagement engagement,
         IAuditStore audit,
@@ -270,6 +354,22 @@ internal static class ReportBuilder
     {
         var sb = new StringBuilder();
         AppendTimeline(sb, timeline);
+        return Hash(sb.ToString());
+    }
+
+    // The digest's reproducibility join: the window bounds plus the selected
+    // entries, so two digests of the same window are equal no matter when each
+    // was requested (the wall-clock generatedAt is excluded, the timeline's
+    // discipline).
+    internal static string ComputeDigestHash(
+        DateTimeOffset from, DateTimeOffset to, IReadOnlyList<TimelineEntry> entries)
+    {
+        var sb = new StringBuilder();
+        const string sep = "\u001f";
+        const string rec = "\u001e";
+        sb.Append(from.ToUnixTimeMilliseconds()).Append(sep)
+            .Append(to.ToUnixTimeMilliseconds()).Append(rec);
+        AppendTimeline(sb, entries);
         return Hash(sb.ToString());
     }
 
@@ -412,6 +512,44 @@ internal sealed record ReportBuilderContext(
         return report with { ContentHash = ReportBuilder.ComputeReportHash(report) };
     }
 
+    // The shift handoff digest (architecture.md Sec 11.1): the same resolved
+    // context as the timeline, projected onto a window. Filtering is by event
+    // timestamp (inclusive bounds) and the digest kind whitelist; the selected
+    // entries keep the trail's own order -- the chain's append order is the
+    // engagement's event order, and the digest re-sorts nothing.
+    public HandoffDigest HandoffDigest(Engagement engagement, DateTimeOffset from, DateTimeOffset to)
+    {
+        var selected = Trail
+            .Where(e => from <= e.At && e.At <= to && ReportBuilder.DigestKinds.Contains(e.Kind))
+            .ToArray();
+        var entries = selected.Select(EntryOf).ToArray();
+
+        int Count(AuditEventKind kind) => selected.Count(e => e.Kind == kind);
+
+        return new HandoffDigest(
+            EngagementId: engagement.Id.Value,
+            EngagementName: engagement.Name,
+            From: from,
+            To: to,
+            GeneratedAt: DateTimeOffset.UtcNow,
+            ContentHash: ReportBuilder.ComputeDigestHash(from, to, entries),
+            ChainVerified: ChainBreak is null,
+            ChainBreak: ChainBreak?.ToString(),
+            Summary: new HandoffDigestSummary(
+                SessionsOpened: Count(AuditEventKind.SessionOpened),
+                SessionsClosed: Count(AuditEventKind.SessionClosed),
+                ImplantsEnrolled: Count(AuditEventKind.ImplantEnrolled),
+                ImplantsRetired: Count(AuditEventKind.ImplantRetired),
+                TasksIssued: Count(AuditEventKind.TaskIssued),
+                TasksCompleted: Count(AuditEventKind.TaskCompleted),
+                TasksCancelled: Count(AuditEventKind.TaskCancelled),
+                RoeRefusals: Count(AuditEventKind.TaskRoeRefused),
+                NotesAdded: Count(AuditEventKind.ImplantNoteAdded),
+                ShellSessionsOpened: Count(AuditEventKind.ShellSessionOpened),
+                ShellSessionsEnded: Count(AuditEventKind.ShellSessionEnded)),
+            Entries: entries);
+    }
+
     // Enriches one audit event into a timeline entry: resolves the operator
     // handle (system for the unattributed Guid.Empty), the implant class when the
     // event names one, and the task's verb/outcome when the event names one. The
@@ -477,23 +615,28 @@ internal static class TimelineMarkdown
         }
 
         foreach (var e in timeline.Entries)
-        {
-            sb.Append("- `").Append(e.At.ToString("O")).Append("` **").Append(e.Kind).Append("** ");
-            if (e.Operator is { } op)
-                sb.Append("by `").Append(op.Handle).Append("` ");
-            sb.Append("— `").Append(e.Verb).Append("`");
-            if (e.Implant is { } implant)
-                sb.Append(" on implant `").Append(implant.Class).Append("`");
-            if (e.Task is { } task && task.Verb is { } verb)
-                sb.Append(" (task `").Append(verb).Append("`)");
-            sb.Append("  \n  outcome: `").Append(Escape(e.Outcome)).Append("` — hash `").Append(e.Hash).Append("`\n");
-            if (!string.IsNullOrEmpty(e.Payload))
-                sb.Append("  \n  payload: `").Append(Escape(e.Payload)).Append("`\n");
-            if (!string.IsNullOrEmpty(e.Output))
-                sb.Append("  \n  output: `").Append(Escape(e.Output)).Append("`\n");
-        }
+            AppendEntry(sb, e);
 
         return sb.ToString();
+    }
+
+    // One timeline entry as a Markdown line. Shared with the handoff digest
+    // renderer so the two deliverables tell an event the same way.
+    internal static void AppendEntry(StringBuilder sb, TimelineEntry e)
+    {
+        sb.Append("- `").Append(e.At.ToString("O")).Append("` **").Append(e.Kind).Append("** ");
+        if (e.Operator is { } op)
+            sb.Append("by `").Append(op.Handle).Append("` ");
+        sb.Append("— `").Append(e.Verb).Append("`");
+        if (e.Implant is { } implant)
+            sb.Append(" on implant `").Append(implant.Class).Append("`");
+        if (e.Task is { } task && task.Verb is { } verb)
+            sb.Append(" (task `").Append(verb).Append("`)");
+        sb.Append("  \n  outcome: `").Append(Escape(e.Outcome)).Append("` — hash `").Append(e.Hash).Append("`\n");
+        if (!string.IsNullOrEmpty(e.Payload))
+            sb.Append("  \n  payload: `").Append(Escape(e.Payload)).Append("`\n");
+        if (!string.IsNullOrEmpty(e.Output))
+            sb.Append("  \n  output: `").Append(Escape(e.Output)).Append("`\n");
     }
 
     internal static string Escape(string value)
@@ -586,6 +729,48 @@ internal static class ReportMarkdown
                 sb.Append("  \n  outcome: `").Append(TimelineMarkdown.Escape(e.Outcome))
                     .Append("` — hash `").Append(e.Hash).Append("`\n");
             }
+
+        return sb.ToString();
+    }
+}
+
+internal static class HandoffDigestMarkdown
+{
+    public static string Render(HandoffDigest digest)
+    {
+        var sb = new StringBuilder();
+        sb.Append("# Shift handoff digest: ").Append(digest.EngagementName).Append('\n');
+        sb.Append('\n');
+        sb.Append("- Engagement: `").Append(digest.EngagementId.ToString("N")).Append("`\n");
+        sb.Append("- Window: ").Append(digest.From.ToString("O")).Append(" to ")
+            .Append(digest.To.ToString("O")).Append('\n');
+        sb.Append("- Generated: ").Append(digest.GeneratedAt.ToString("O")).Append('\n');
+        sb.Append("- Integrity: `").Append(digest.ContentHash).Append("`\n");
+        if (!digest.ChainVerified)
+            sb.Append("- **Audit chain verification failed:** ").Append(digest.ChainBreak).Append("**\n");
+        sb.Append('\n');
+
+        sb.Append("## The watch in numbers\n\n");
+        var s = digest.Summary;
+        sb.Append("- Sessions: ").Append(s.SessionsOpened).Append(" opened, ")
+            .Append(s.SessionsClosed).Append(" closed\n");
+        sb.Append("- Implants: ").Append(s.ImplantsEnrolled).Append(" enrolled, ")
+            .Append(s.ImplantsRetired).Append(" retired\n");
+        sb.Append("- Tasking: ").Append(s.TasksIssued).Append(" issued -- ")
+            .Append(s.TasksCompleted).Append(" completed, ")
+            .Append(s.TasksCancelled).Append(" cancelled\n");
+        sb.Append("- ROE refusals: ").Append(s.RoeRefusals).Append('\n');
+        sb.Append("- Implant notes: ").Append(s.NotesAdded).Append('\n');
+        sb.Append("- Shell sessions: ").Append(s.ShellSessionsOpened).Append(" opened, ")
+            .Append(s.ShellSessionsEnded).Append(" ended\n");
+        sb.Append('\n');
+
+        sb.Append("## The watch in order\n\n");
+        if (digest.Entries.Count == 0)
+            sb.Append("_No watch events in the window._\n");
+        else
+            foreach (var e in digest.Entries)
+                TimelineMarkdown.AppendEntry(sb, e);
 
         return sb.ToString();
     }
@@ -701,4 +886,41 @@ public sealed record EngagementReport(
     IReadOnlyList<ReportTask> Tasks,
     IReadOnlyList<ReportArtifactIndexEntry> Artifacts,
     IReadOnlyList<TimelineEntry> Timeline);
+
+/// <summary>
+/// The watch-in-numbers header of the digest: one count per whitelisted kind,
+/// so the incoming operator sizes the watch before reading it.
+/// </summary>
+public sealed record HandoffDigestSummary(
+    int SessionsOpened,
+    int SessionsClosed,
+    int ImplantsEnrolled,
+    int ImplantsRetired,
+    int TasksIssued,
+    int TasksCompleted,
+    int TasksCancelled,
+    int RoeRefusals,
+    int NotesAdded,
+    int ShellSessionsOpened,
+    int ShellSessionsEnded);
+
+/// <summary>
+/// The shift handoff digest (architecture.md Sec 11.1): a time-windowed,
+/// kind-whitelisted, ordered account of the watch, projected from the same
+/// resolved report context as the timeline. Entries keep the trail's order and
+/// carry the timeline's enrichment and per-event hashes; the content hash joins
+/// the window bounds with the selected entries, so two digests of the same
+/// window are equal.
+/// </summary>
+public sealed record HandoffDigest(
+    Guid EngagementId,
+    string EngagementName,
+    DateTimeOffset From,
+    DateTimeOffset To,
+    DateTimeOffset GeneratedAt,
+    string ContentHash,
+    bool ChainVerified,
+    string? ChainBreak,
+    HandoffDigestSummary Summary,
+    IReadOnlyList<TimelineEntry> Entries);
 
