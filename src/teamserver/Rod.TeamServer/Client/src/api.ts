@@ -852,6 +852,59 @@ export async function addImplantNote(
   return jsonOrThrow(response)
 }
 
+// --- Task snippets --------------------------------------------
+//
+// The console's saved command sequences (docs/operations/operator-ui.md):
+// a named, engagement-scoped, shareable list of issue commands. Plain CRUD
+// -- replay happens here in the console, which issues each step through
+// the ordinary tasking route, so there is no run endpoint to call.
+
+export interface TaskSnippetStep {
+  verb: string
+  arguments: string
+}
+
+export interface TaskSnippet {
+  id: string
+  engagementId: string
+  name: string
+  steps: TaskSnippetStep[]
+  createdAt: string
+  createdBy: string
+}
+
+export async function listTaskSnippets(engagementId: string): Promise<TaskSnippet[]> {
+  const page = (await jsonOrThrow(
+    await fetch(`engagements/${engagementId}/task-snippets`),
+  )) as { snippets: TaskSnippet[] }
+  return page.snippets
+}
+
+export async function createTaskSnippet(
+  engagementId: string,
+  name: string,
+  steps: TaskSnippetStep[],
+): Promise<TaskSnippet> {
+  const response = await fetch(`engagements/${engagementId}/task-snippets`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, steps }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function deleteTaskSnippet(
+  engagementId: string,
+  snippetId: string,
+): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/task-snippets/${snippetId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`delete task snippet: ${response.status}`)
+  }
+}
+
 // --- Listeners and redirector repoint  -----------------------
 //
 // Listeners are the engagement's own C2 ingress: created here against the
