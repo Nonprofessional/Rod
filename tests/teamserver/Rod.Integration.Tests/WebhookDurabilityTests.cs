@@ -48,16 +48,14 @@ public sealed class WebhookDurabilityTests : IClassFixture<PostgresFixture>
                 (engagementId, subscriptionId) = await SetupChannelAsync(hostA.Http, receiver.Url);
 
                 // One push under host A: the pump attaches on the tick, then
-                // the event rides the bus.
+                // the event rides the bus. The audit fact (not just the
+                // receiver) is the finish line -- it lands after the
+                // bookkeeping save, so the restart below reads a settled row.
                 var busA = hostA.Host.Services.GetRequiredService<ILiveEventBus>();
                 await hostA.Host.Services.GetRequiredService<WebhookDeliveryEngine>().TickOnceAsync();
                 await PublishSessionOpenedAsync(busA, engagementId);
                 await receiver.UntilAsync(1);
-
-                var audit = await hostA.Http.GetFromJsonAsync<AuditListBody>(
-                    $"/engagements/{engagementId}/audit?limit=100");
-                Assert.Contains(audit!.Items, e =>
-                    e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+                Assert.NotNull(await FirstDeliveryFactAsync(hostA.Http, engagementId));
 
                 // Tear the process down: forwarder, bus, in-memory state.
                 await hostA.DisposeAsync();
@@ -77,6 +75,9 @@ public sealed class WebhookDurabilityTests : IClassFixture<PostgresFixture>
             await hostB.Host.Services.GetRequiredService<WebhookDeliveryEngine>().TickOnceAsync();
             await PublishSessionOpenedAsync(busB, engagementId);
             await receiver.UntilAsync(2);
+            // The second delivery's fact means its bookkeeping save is done
+            // too -- the disable below cannot be overwritten by it.
+            Assert.NotNull(await SecondDeliveryFactAsync(hostB.Http, engagementId));
 
             // The cancel, from the operator API: a disabled channel stays
             // quiet even when the matching event fires.
@@ -112,6 +113,40 @@ public sealed class WebhookDurabilityTests : IClassFixture<PostgresFixture>
         Assert.True(EngagementId.TryParse(engagementId, out var scope));
         return bus.PublishAsync(LiveEvent.SessionOpened(
             scope, OperatorId.New(), ImplantId.New(), "2.1", DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>Waits for the first delivery fact to land (polls: it trails the push).</summary>
+    private static async Task<AuditEntry?> FirstDeliveryFactAsync(HttpClient http, string engagementId)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var audit = await http.GetFromJsonAsync<AuditListBody>(
+                $"/engagements/{engagementId}/audit?limit=100");
+            var fact = audit!.Items.FirstOrDefault(e =>
+                e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+            if (fact is not null)
+                return fact;
+            await Task.Delay(50);
+        }
+        return null;
+    }
+
+    /// <summary>Waits for the second delivery fact (the one the restart pushed).</summary>
+    private static async Task<AuditEntry?> SecondDeliveryFactAsync(HttpClient http, string engagementId)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var audit = await http.GetFromJsonAsync<AuditListBody>(
+                $"/engagements/{engagementId}/audit?limit=100");
+            if (audit!.Items.Count(e =>
+                    e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:")) >= 2)
+            {
+                return audit.Items.Last(e =>
+                    e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+            }
+            await Task.Delay(50);
+        }
+        return null;
     }
 
     // The Postgres-backed host pair the core-state durability suite uses:

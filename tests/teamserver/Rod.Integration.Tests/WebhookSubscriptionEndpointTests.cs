@@ -205,16 +205,36 @@ public class WebhookSubscriptionEndpointTests
             Assert.Contains("\"kind\":\"ShellSessionOpened\"", body);
             Assert.Contains(engagementId, body);
 
-            var audit = await client.GetFromJsonAsync<AuditListBody>(
-                $"/engagements/{engagementId}/audit?limit=50");
-            var delivered = Assert.Single(audit!.Items, e => e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+            // The receiver records the push the moment it answers; the audit
+            // fact and the bookkeeping follow the same breath in the pump --
+            // poll for them instead of racing it.
+            var delivered = await UntilAsync(async () =>
+            {
+                var audit = await client.GetFromJsonAsync<AuditListBody>(
+                    $"/engagements/{engagementId}/audit?limit=50");
+                return audit!.Items.FirstOrDefault(e =>
+                    e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+            });
             Assert.Contains("ShellSessionOpened", delivered.Payload);
 
-            // The push updated the channel's bookkeeping through the store.
             var stored = await client.GetFromJsonAsync<SubscriptionBody>(
                 $"/engagements/{engagementId}/webhook-subscriptions/{subscription!.Id}");
             Assert.Equal(1, stored!.DeliveryCount);
         }
+    }
+
+    /// <summary>Waits until the audit probe yields a value.</summary>
+    private static async Task<AuditEntry> UntilAsync(Func<Task<AuditEntry?>> probe)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (await probe() is { } found)
+                return found;
+            await Task.Delay(50);
+        }
+
+        Assert.Fail("The audit fact never landed.");
+        return null!;
     }
 
     private sealed class SubscriptionBody

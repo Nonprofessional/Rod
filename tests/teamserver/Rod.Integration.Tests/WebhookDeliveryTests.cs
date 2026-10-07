@@ -71,16 +71,42 @@ public class WebhookDeliveryTests
         Assert.Contains(implant.Id.ToString(), body);
 
         // And the trail records the delivery beside the session it mirrored.
+        // The receiver records the push the moment it answers; the audit
+        // fact follows the same breath in the pump -- poll instead of
+        // racing it.
+        var delivered = await UntilAsync(async () =>
+        {
+            var audit = await env.Http.GetFromJsonAsync<AuditListBody>(
+                $"/engagements/{engagementId}/audit?limit=100");
+            return audit!.Items.FirstOrDefault(e =>
+                e.Kind == "WebhookDelivered" && e.Outcome.StartsWith("delivered:"));
+        });
+        Assert.Contains("SessionOpened", delivered.Payload);
+
+        // The session's own audit fact precedes the delivery beside it.
         var audit = await env.Http.GetFromJsonAsync<AuditListBody>(
             $"/engagements/{engagementId}/audit?limit=100");
         Assert.Contains(audit!.Items, e => e.Kind == "SessionOpened");
-        var delivered = Assert.Single(audit.Items, e => e.Kind == "WebhookDelivered");
-        Assert.StartsWith("delivered:", delivered.Outcome);
 
-        // The channel's bookkeeping advanced through the store.
+        // The channel's bookkeeping advanced through the store (the fact
+        // lands after the save, so it is safe to read now).
         var subscriptions = await env.Http.GetFromJsonAsync<SubscriptionListBody>(
             $"/engagements/{engagementId}/webhook-subscriptions");
         Assert.Equal(1, Assert.Single(subscriptions!.Subscriptions).DeliveryCount);
+    }
+
+    /// <summary>Waits until the audit probe yields a value.</summary>
+    private static async Task<AuditEntry> UntilAsync(Func<Task<AuditEntry?>> probe)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            if (await probe() is { } found)
+                return found;
+            await Task.Delay(50);
+        }
+
+        Assert.Fail("The audit fact never landed.");
+        return null!;
     }
 
     private static async Task<string> CreateEngagementAsync(HttpClient http)
@@ -152,6 +178,7 @@ public class WebhookDeliveryTests
     private sealed class AuditEntry
     {
         public string Kind { get; set; } = "";
+        public string Payload { get; set; } = "";
         public string Outcome { get; set; } = "";
     }
 }
