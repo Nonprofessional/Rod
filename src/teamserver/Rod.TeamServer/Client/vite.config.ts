@@ -21,16 +21,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Engagement-scoped routes cover tasking, audit, artifacts, timeline,
-      // report, payloads, deploy tokens, and implants. Listeners and the
-      // capability catalog are global routes. Operator
-      // session routes (login/logout/me) are added with operator auth.
+      // Every prefix the UI fetches in dev: the engagement-scoped groups
+      // (tasking, audit, artifacts, report, payloads, deploy tokens,
+      // implants, listeners, automation rules), the operator session and
+      // token routes, the capability catalog, and the settings/system/network
+      // groups. Implant-facing routes (/implants/...) are never called by
+      // the UI and stay unproxied.
       '/engagements': apiTarget,
       '/operators': apiTarget,
-      '/implants': apiTarget,
-      '/listeners': apiTarget,
       '/capabilities': apiTarget,
-      '/health': apiTarget,
+      '/settings': apiTarget,
+      '/system': apiTarget,
+      '/network': apiTarget,
     },
   },
 })
