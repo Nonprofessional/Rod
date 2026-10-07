@@ -43,18 +43,12 @@ interactive verbs store-and-forward.
 ### TLS shape
 
 - **Server identity:** the `https` fronts present the engagement CA's
-  server leaf; the implant pins chain-to-CA from the enrollment's CA
-  chain. No route anywhere asks for a TLS client certificate -- identity
-  is the per-artifact key at the application layer and the handshake id,
-  never a transport certificate (the retired mTLS posture).
-  `CertificateRequest` (it is itself a fingerprint), and the envelope
-  contact authenticates under the baked key instead.
-- **Server identity:** the teamserver presents the engagement CA certificate
-  itself as its server identity (it carries no SANs). Pin **chain-to-CA**, not
-  DNS names: build the chain with the enrolled CA chain in the trust store,
-  allow the unknown-CA error, then require the chain root's fingerprint to
-  equal one of the enrolled CA certificates. This mirrors what the reference
-  client does (`C2.PinServerChain`).
+  server leaf (a SAN naming the front's public host); the implant pins
+  chain-to-CA from the enrollment's CA chain and runs full validation,
+  server-name matching included. No route anywhere asks for a TLS client
+  certificate -- identity is the per-artifact key at the application layer
+  and the handshake id, never a transport certificate (the retired mTLS
+  posture; a `CertificateRequest` is itself a fingerprint).
 
 ### Enrollment
 

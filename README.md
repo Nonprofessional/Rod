@@ -22,11 +22,14 @@
 
 > **Status: implemented; sensitive tradecraft is out-of-tree.** The
 > teamserver, reference implant, build pipeline, operator UI, and durable
-> state are in place; the reference implant runs the standard, documented
-> capability set (shell, file transfer, recon, lateral movement,
-> persistence, collection, exfiltration, tunneling), while exploits,
-> evasion, LSASS dumping, and input capture remain contracts that separate
-> opt-in modules implement ([architecture.md Sec 13](docs/architecture.md)).
+> state are in place; the reference implant runs the compiled core (shell
+> execution one-shot and interactive, file transfer both ways, directory
+> listing, process termination, beacon retiming, tunneling, and the
+> Windows-gated sensitive trio -- shellcode injection, LSASS minidump, input
+> capture), while the long tail (recon sweeps, lateral movement, persistence,
+> credential and screen collection, exfiltration) and the exploit/evasion
+> categories arrive through the extension seams as separate opt-in modules
+> ([architecture.md Sec 13](docs/architecture.md)).
 
 ## What you get
 
@@ -46,10 +49,14 @@
   surface. A `shellcatch` listener catches raw reverse-shell one-liners
   (`nc`, bash `/dev/tcp`, ...), fingerprints the OS, and hands back
   paste-ready lines that upgrade the catch into a full implant.
-- **A stager for delivery discipline.** First contact runs a tiny stage-1
-  loader that fetches the stage-2 artifact, verifies it against the sha256
-  baked at build, and runs it ([architecture.md Sec 5.2, Sec 6](docs/architecture.md)).
-- **Polyglot by contract.** The wire protocol is the product: the .NET
+- **One-liner delivery, plus a sealed loader tier.** Delivery rides
+  paste-ready launcher one-liners (curl/wget/PowerShell fetch-and-run, and a
+  Linux in-memory memfd family that never lands a file); each fetch spends a
+  use of the build's baked credential. For the tightest footprint a ~25 KB
+  `no_std` loader fetches its implant as an AES-GCM-sealed body, verifies it,
+  and execs it straight from memory
+  ([architecture.md Sec 6](docs/architecture.md)).
+- **Polyglot by contract.** The wire protocol is the product: the Rust
   reference implant is one implementation, and Go, C/C++, or Nim implants
   build against the same language-neutral contract without coupling the
   teamserver to their toolchains.
@@ -57,9 +64,9 @@
   interactive shells, file and process browsers, listeners, payload and
   webshell builds, evidence panels -- with server-sent-event updates and
   every action attributed to the operator who took it.
-- **Evidence as a first-class output.** A hash-chained audit trail, the
-  engagement timeline, generated reports (JSON + Markdown), and a close-out
-  evidence package: what happened, who did it, and what it proved.
+- **Evidence as a first-class output.** A hash-chained audit trail,
+  generated reports (JSON + Markdown), and a close-out evidence package:
+  what happened, who did it, and what it proved.
 - **Swappable infrastructure.** Redirectors are near-stateless .NET Native
   AOT single binaries fronting the listeners; a burned one is replaced, not
   mourned.
@@ -82,8 +89,8 @@ tunneling), then close out -- freeze, export the evidence package, retire.
 | Operator UI | React 19, Vite | Lives in the teamserver project; served same-origin. |
 | Implants | Rust reference (static musl / mingw); Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
 | Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |
-| Stager | .NET | Fetch-and-exec only; verifies stage-2 against the baked sha256. |
-| Build units | .NET in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
+| Loader | Rust (`no_std`, no libc) | Sealed fetch-and-exec from memory; Linux amd64/arm64. |
+| Build units | Rust in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint; no runtime install. |
 | Data store | In-memory and file-backed by default; PostgreSQL opt-in | `ConnectionStrings:Postgres` switches in durable state and audit. |
 
@@ -110,9 +117,12 @@ dotnet run --project src/teamserver/Rod.TeamServer
    credential and bakes it in; deploy the artifact anywhere in scope and it
    enrolls on run.
 4. To try the fleet without a build, run the source-tree dev implant: mint
-   a token (`POST /engagements/{id}/stager-tokens`) and run
-   the Rust implant (`src/implant/rust`) with `ROD_ENROLL_URL=<listener endpoint>/implants/enroll
-   -token ...`.
+   a deploy token (`POST /engagements/{id}/deploy-tokens`) and run the Rust
+   implant with the listener from step 2 --
+   `ROD_ENROLL_URL=http://127.0.0.1:8080/implants/enroll
+   ROD_DEPLOY_TOKEN=<secret> cargo run --manifest-path
+   src/implant/rust/Cargo.toml` (`ROD_MODE=stream` for the interactive
+   shape; `ROD_VERBOSE=1` narrates to stderr).
 
 The full lifecycle walk -- single-host and multi-host runs, the win-x64
 adversarial surface walk, the CA rotation drill, with acceptance evidence
@@ -141,9 +151,8 @@ dotnet publish src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj \
   `dotnet ef database update`), a data directory for artifacts and built
   payloads, and the engagement CA (PEM cert + key) under `/etc/rod/pki`.
 - Payload builds compile from source at request time: the deployment names
-  the implant/stager source trees (`Build:ImplantSourceDirectory`,
-  `Build:StagerSourceDirectory`) and keeps the service user's NuGet cache
-  warm.
+  the Rust crate the build unit compiles (`Build:RustSourceDirectory`) and
+  keeps the service user's cargo registry cache warm.
 - Binaries stamp their version and source commit (startup log line and
   `GET /build`); accept an install only when the stamp matches the tag it
   was cut from.

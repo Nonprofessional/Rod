@@ -88,7 +88,8 @@ carries its handler set in the crate (`handlers::dispatch`), and the
 implant-side extension seam ahead is the C-ABI plugin module on the todo:
 a `rod-plugin-sdk` crate (a normal Rust trait plus the macro that emits the
 `extern "C"` shim), delivered over the sealed task channel by a module.load
-verb and staged the way the old stager staged a stage-2. Until that lands,
+verb and staged the way the launcher one-liners stage a payload. Until that
+lands,
 the implant-side answer is the escape hatch below: point the build unit at
 your own tree, or build it directly with cargo.
 

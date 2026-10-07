@@ -75,12 +75,13 @@ environment (`Operators__Initial__Password`) or a secret store, never inline.
 3. Build a payload for it (class, target OS/arch, beacon profile, malleable
    transport) and download the artifact from the payload store.
 4. Run the reference implant for a quick end-to-end check:
-   cargo run --manifest-path src/implant/rust/Cargo.toml (with ROD_ENROLL_URL
-   http://127.0.0.1:8080/implants/enroll -token <secret>` -- the address is
-   the listener from step 2, not the operator front -- or add `-mode poll`
-   for the low-and-slow cadence. It appears in the implants list (grouped
-   under the host it reported at enroll), takes tasking, and its results land
-   in the audit trail.
+   `ROD_ENROLL_URL=http://127.0.0.1:8080/implants/enroll
+   ROD_DEPLOY_TOKEN=<secret> cargo run --manifest-path
+   src/implant/rust/Cargo.toml` -- the address is
+   the listener from step 2, not the operator front; `ROD_MODE=stream`
+   selects the interactive shape (poll is the default). It appears in the
+   implants list (grouped under the host it reported at enroll), takes
+   tasking, and its results land in the audit trail.
 5. For a live shell, open the implant's session console (its Interact link in
    the fleet) and type `interact` -- or issue `shell.interact` from the
    implant's context menu, or `POST /engagements/{id}/tasks` -- and the
@@ -150,7 +151,6 @@ standard `Section__Key` mapping):
 | `Sessions:Staleness` | `Threshold` and `SweepInterval` for the session sweeper -- the close path for streams that die silently and for poll-mode contact cadences. | 15-minute threshold, 1-minute sweep. |
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
-| `Build:ImplantExtensionDirectory` | The tradecraft extension kit's implant half: a directory of out-of-tree handler sources overlaid onto every implant-class build ([extending/tradecraft.md](../extending/tradecraft.md)). A configured-but-missing directory fails startup loudly. | Empty -- the reference implant builds as-is. |
 | `Build:RustSourceDirectory` | An installed teamserver (a publish with no repo above it) names the Rust crate the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/rust`). |
 
 ## Production install and recovery
@@ -233,23 +233,22 @@ Two more install-shape facts, both walked end to end on the supervised
 install:
 
 **Payload builds compile from source at request time**, and the install
-tree has no repo above it, so the deployment names its build source trees
-with `Build:ImplantSourceDirectory`
-(a configured-but-missing directory fails startup loudly). The minimal
-deployed tree both keys can point at:
+tree has no repo above it, so the deployment names its build source tree
+with `Build:RustSourceDirectory`
+(a configured-but-missing directory fails the build loudly). The minimal
+deployed tree the key can point at:
 
 ```
 /opt/rod/src/
-  Directory.Build.props  Directory.Packages.props  global.json
-  src/implant/rust/                               # the build source, no target/
-  src/teamserver/Rod.Protocol/protos/              # the wire contract the implant compiles against
-  tests/                 # the repo-root marker the build unit walks up to
+  src/implant/rust/                                 # the build source, no target/
+  src/teamserver/Rod.Protocol/protos/               # the wire contract the implant compiles against
 ```
 
-The service user also needs a `dotnet` on PATH and a warm NuGet cache
-(`/var/lib/rod/.nuget/packages`) -- the build spawns `dotnet publish`
-and restores into that cache. On a host without registry egress, copy
-the cache from the build host at install time.
+The service user also needs the Rust toolchain (`cargo`, `rustc`, and the
+cross linkers) on PATH and a warm cargo cache
+(`/var/lib/rod/.cargo`) -- the build spawns `cargo build` and pulls crates
+into that cache. On a host without registry egress, copy the cache from
+the build host at install time.
 
 Acceptance from the executed walk: an implant built through the
 supervised install returned its fingerprint, and the downloaded
