@@ -56,6 +56,12 @@ public class WebhookDeliveryEngineTests
         }
     }
 
+    /// <summary>Serves the one handler-backed client the rig pushes with.</summary>
+    private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => client;
+    }
+
     private sealed class Rig
     {
         public readonly FakeTime Clock = new();
@@ -72,7 +78,7 @@ public class WebhookDeliveryEngineTests
 
         public Rig()
         {
-            Pusher = new WebhookPusher(new HttpClient(Http));
+            Pusher = new WebhookPusher(new SingleClientFactory(new HttpClient(Http)));
             Service = new WebhookService(Subscriptions, Engagements, Audit, Pusher, Clock);
 
             foreach (var (scope, name) in new[] { (Scope, "watch"), (OtherScope, "other") })

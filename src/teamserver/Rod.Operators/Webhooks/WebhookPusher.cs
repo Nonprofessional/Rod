@@ -14,6 +14,13 @@ namespace Rod.Operators.Webhooks;
 /// console receives. Single-attempt, bounded by the client's timeout --
 /// retry is deliberately absent (architecture.md Sec 4.4): the trail
 /// records the miss, the engagement does not carry a backlog.
+///
+/// The client is taken lazily from the factory on the first push. Creating
+/// it at construction time would activate the factory's handler cache --
+/// and its cleanup cycle -- in every host that merely registers the
+/// forwarder, pinning each short-lived host's configuration root (and its
+/// file watcher) long past its disposal; a test process that builds
+/// hundreds of hosts exhausts the system's inotify instances that way.
 /// </summary>
 public sealed class WebhookPusher
 {
@@ -26,12 +33,15 @@ public sealed class WebhookPusher
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly HttpClient _http;
+    private readonly IHttpClientFactory _factory;
+    private HttpClient? _client;
 
-    public WebhookPusher(HttpClient http)
+    public WebhookPusher(IHttpClientFactory factory)
     {
-        _http = http;
+        _factory = factory;
     }
+
+    private HttpClient Client => _client ??= _factory.CreateClient("webhooks");
 
     /// <summary>
     /// The outcome of one push: delivered on any 2xx, otherwise the
@@ -57,7 +67,7 @@ public sealed class WebhookPusher
         try
         {
             using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-            using var response = await _http.PostAsync(url, content, cancellationToken);
+            using var response = await Client.PostAsync(url, content, cancellationToken);
             return Result.FromStatus((int)response.StatusCode);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

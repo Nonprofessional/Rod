@@ -82,8 +82,10 @@ public static class RodOperatorsHost
             var delivery = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
             client.Timeout = TimeSpan.FromSeconds(Math.Max(1, delivery.DeliveryTimeoutSeconds));
         });
-        services.TryAddSingleton(sp => new WebhookPusher(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("webhooks")));
+        // The pusher takes its client lazily from the factory (see its doc):
+        // registering the forwarder must not activate the handler cache in
+        // hosts that never push.
+        services.TryAddSingleton<WebhookPusher>();
         services.TryAddSingleton<WebhookService>();
         services.TryAddSingleton<WebhookDeliveryEngine>();
         services.AddHostedService(sp => sp.GetRequiredService<WebhookDeliveryEngine>());
