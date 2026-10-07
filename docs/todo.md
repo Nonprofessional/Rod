@@ -21,19 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Shift handoff digest** (serves architecture.md Sec 11; design lands
-  first). What an engagement cannot do without it: resume command after
-  an absence -- the trail holds everything that happened, but an
-  operator returning to the console reconstructs the watch by reading
-  it raw. Shape: a time-windowed digest view over the audit trail
-  (sessions opened and closed, tasking issued and its outcomes,
-  sensitive approvals, annotations), assembled by the reporting layer
-  the closeout export already uses; the LLM client item later in this
-  list is the natural narrator for it, but the digest stands without it.
-  _AC:_ an operator requests the digest for the last watch window and
-  gets a single ordered account of sessions, task outcomes, and
-  approvals from the audit trail.
-
 - **Console depth for the solo operator** (serves the operator UI,
   docs/operations/operator-ui.md; design lands first). What an
   engagement cannot do without it: speed at the keyboard -- the console

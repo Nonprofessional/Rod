@@ -387,6 +387,28 @@ missing arbiter. Verify a restore the same way the install verifies a
 first boot: `systemctl is-active` plus one login, and the schema guard
 has already vouched for the store underneath.
 
+## Resuming the watch
+
+An operator returning to the console after an absence reads the shift
+handoff digest instead of the raw trail (architecture.md Sec 11.1):
+
+```
+curl -s -b jar.txt \
+  "http://<operator listener>/engagements/<id>/handoff-digest?from=<ISO>&to=<ISO>"
+# ?format=markdown renders the human handoff note for the next watch.
+```
+
+The digest is one ordered account of the watch's beats -- sessions opened
+and closed, implants enrolled and retired, tasking with its outcomes, ROE
+refusals, implant notes, shell sessions -- under a count summary, with the
+timeline's enrichment and integrity stamp. Bounds are inclusive; `to`
+defaults to now and `from` to twelve hours before it, and the span is
+capped at thirty-one days (longer horizons are the timeline's job). One
+semantic to know when reading the session lines: the `SessionClosed` fact
+is written by the staleness sweep, so it marks a stream that went silent;
+a session closed by a re-enroll leaves the successor's `SessionOpened` as
+its trace and no close event of its own.
+
 ## Closing out an engagement
 
 A finished engagement leaves through the close-out (architecture.md Sec 2
