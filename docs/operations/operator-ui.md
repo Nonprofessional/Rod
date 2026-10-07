@@ -185,6 +185,53 @@ verb existed answers "unknown verb" (verbs are baked into the artifact at
 build time); the panes translate that answer into the fix -- rebuild the
 payload and redeploy.
 
+## Command palette
+
+**Ctrl+K** opens the palette anywhere in the console; **Esc** closes it. The
+palette is the keyboard's reach over what the mouse already reaches: one
+fuzzy field whose entries are navigation (every tab, Settings, System, the
+engagements list), entities (implants by hostname, user, or id -- Enter
+opens the session console), verbs (the capability registry; Enter opens the
+verb's dialog), and task snippets (Enter runs). Matching scores a
+subsequence -- a prefix beats a word start beats a substring beats
+scattered letters -- and implant entries tie-break online-first, so the
+shortest reach lands on the live box.
+
+A verb or a snippet picked outside a session console needs a target, and
+the palette asks rather than guesses: the same field re-queries the fleet
+and the second Enter issues against the pick. Inside a session console the
+implant is the context and one Enter issues against it. The palette is a
+dispatcher, not a surface of its own -- every entry routes to the handler
+the mouse would reach, and no verb, gate, or panel exists only inside it.
+
+## Task snippets
+
+A **task snippet** is a named sequence of issue commands,
+engagement-scoped and shareable: saved once by any operator, it lists in
+every operator's palette and survives a restart like every engagement
+fact. The shape is a name plus ordered steps, each step a verb and its
+arguments verbatim -- and no target: a snippet runs against whichever
+implant the operator picks (the console's implant, or the palette's
+target step), so one triage sequence serves the whole fleet.
+
+Saving starts from the session console's menu: a dialog lists the
+implant's recent transcript as a checklist, the operator picks the lines
+in order, names the sequence, saves. Validation at save is structural
+only -- each step's verb must be one the registry knows, and the step
+count and size are bounded (a refusal names the bound) -- because the
+issuance gates at run time are the authority, exactly as if the steps
+were typed. A snippet is keyboard shorthand an operator fires while
+present: it never fires on a schedule and never chains on results --
+unattended tasking is the Automation panel's domain.
+
+Running issues every step at once through the ordinary tasking path: each
+task is attributed to the running operator, gated exactly like a typed
+one (a step a gate refuses refuses alone; the rest still issue), and the
+console shows the sequence landing line by line. Saving and deleting are
+audited engagement facts attributed to the operator; running writes no
+separate record -- the tasks themselves are the trail. Management lives
+in the palette: a snippet entry shows its steps and deletes from there.
+
 ## Automation
 
 The Automation panel manages the engagement's declarative rules

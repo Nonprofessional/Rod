@@ -25,11 +25,12 @@ the blocker clears, not skipped.
   docs/operations/operator-ui.md; design lands first). What an
   engagement cannot do without it: speed at the keyboard -- the console
   exposes every capability, but common sequences are typed out verb by
-  verb every time. Shape: a command palette with fuzzy reach, task
+  verb every time. Shape: a command palette with fuzzy reach and task
   snippets -- a named sequence of issue commands, engagement-scoped and
-  shareable -- and inline action surfaces on the process and file
-  browsers over verbs that already exist (kill, transfer both ways).
-  No new verbs, no new gates: this item is console ergonomics only.
+  shareable, run through the ordinary tasking path. (The inline action
+  surfaces on the process and file browsers already ship -- the browse
+  cache round carried them -- and are dropped from this item.) No new
+  verbs, no new gates: this item is console ergonomics only.
   _AC:_ an operator saves a named task snippet once and issues its
   whole sequence with one command from the palette.
 
