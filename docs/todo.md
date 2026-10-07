@@ -21,19 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Console depth for the solo operator** (serves the operator UI,
-  docs/operations/operator-ui.md; design lands first). What an
-  engagement cannot do without it: speed at the keyboard -- the console
-  exposes every capability, but common sequences are typed out verb by
-  verb every time. Shape: a command palette with fuzzy reach and task
-  snippets -- a named sequence of issue commands, engagement-scoped and
-  shareable, run through the ordinary tasking path. (The inline action
-  surfaces on the process and file browsers already ship -- the browse
-  cache round carried them -- and are dropped from this item.) No new
-  verbs, no new gates: this item is console ergonomics only.
-  _AC:_ an operator saves a named task snippet once and issues its
-  whole sequence with one command from the palette.
-
 - **ATT&CK mapping in the capability model and report** (serves
   architecture.md Sec 10.1 and Sec 11; design lands first). What an
   engagement cannot do without it: tell the client what was exercised
