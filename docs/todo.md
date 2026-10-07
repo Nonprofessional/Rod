@@ -21,18 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Out-of-band event notifications** (serves architecture.md Sec 4.1,
-  layer 4; design lands first). What an engagement cannot do without it:
-  reach the operator who is not at the console -- an implant that
-  returns overnight, a caught shell, a failed task are visible only to
-  connected operator sessions today. Shape: a subscriber on the live
-  event bus forwarding selected event kinds to operator-configured
-  channels (webhook first; IM bridges are configuration, not code),
-  engagement-scoped, the subscription itself audited. Best-effort like
-  the bus it rides -- the audit trail stays the record.
-  _AC:_ an operator registers a webhook for session-opened and
-  shell-caught events, and a new contact delivers a push to it.
-
 - **Shift handoff digest** (serves architecture.md Sec 11; design lands
   first). What an engagement cannot do without it: resume command after
   an absence -- the trail holds everything that happened, but an
