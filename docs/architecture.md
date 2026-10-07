@@ -1858,6 +1858,69 @@ scrape.
   listeners and no stores: the acceptance bar is that a closed engagement's
   package re-verifies byte-exact on a host with nothing Rod running on it.
 
+### 11.1 Shift handoff digest
+
+The trail holds everything that happened; an operator returning to the
+console after an absence still reads it raw to reconstruct the watch. The
+live bus is no help -- it has no replay, so events that fired while nobody
+was connected never happened, console-side -- and the paged audit listing
+and the full timeline are both noise-first at watch scale. The digest
+closes the resume gap: a time-windowed, kind-filtered, ordered account of
+the watch's operational beats, assembled by the reporting layer the
+timeline, the report, and the closeout export already share. It is a read
+of the trail, not a new store and not a replay bus.
+
+**The window.** The digest is bounded by `from` and `to`, ISO 8601
+timestamps on the request; `to` defaults to now and `from` to twelve hours
+before it -- one long watch plus the handoff gap. An event belongs to the
+window when its timestamp falls between the bounds, inclusive. `from` must
+precede `to`, and the span is capped at thirty-one days so a single
+ordered account stays bounded -- longer horizons are the timeline's job,
+which pages.
+
+**Content.** A fixed whitelist of kinds, the beats a returning operator
+asks about: sessions opened and closed, implants enrolled and retired,
+tasking issued with its outcomes (completed, cancelled), ROE refusals --
+the sensitive boundary's trace on the trail today -- operator notes on
+implants, and interactive shell sessions opened and ended. Everything else
+the trail holds (dispatch plumbing, payload fetches, configuration churn)
+stays out; the timeline remains the view for it. One trail gap closes to
+make "closed" true: the staleness sweep lands a system-attributed
+`SessionClosed` event per swept session -- a session that died silently
+mid-watch is exactly what the returning operator needs to see, and until
+now only the live bus knew. A session closed by supersession (a re-enroll
+opening its successor) writes no close event; the successor's
+`SessionOpened` is its trace.
+
+**Assembly.** The reporting builder reads the engagement's full trail
+once, verifies the hash chain, and enriches each event (operator handle,
+implant class, task verb and outcome) -- the digest is a projection over
+that same resolved context: window filter, whitelist, then the enriched
+entries oldest-first under a summary count header. The reproducibility
+discipline is the timeline's: a content hash over the canonical join of
+the window bounds and the selected entries' own hashes, so two digests of
+the same window are equal, and chain state surfaces the same way -- a
+digest built over a broken chain says so rather than silently rendering.
+
+**The operator surface.**
+`GET /engagements/{engagementId}/handoff-digest?from=&to=`, JSON by
+default for the console, `?format=markdown` for the human deliverable --
+the handoff note an operator pastes to the next watch. Malformed bounds,
+an inverted window, or an oversized span is a 400; an unknown or foreign
+engagement is a 404 -- the ladder every engagement-scoped read holds.
+Read-only like its siblings: nothing is composed onto the trail, and the
+digest request itself is not audited -- a read of the evidence is not an
+act on the engagement.
+
+**Evolution notes.** The sensitive-verb approval workflow (Sec 10.4's
+evolution notes) will land requested/approved/refused kinds on the trail;
+they join the whitelist then, so the digest's approvals line grows with
+the workflow rather than ahead of it. An LLM narration over the digest is
+the natural widening once an LLM client exists -- the digest stays a
+plain ordered account without one. No replay is implied in either
+direction: the digest reads what the trail holds, and the trail is the
+record.
+
 ## 12. Technology stack and language boundaries
 
 | Concern | Choice | Why |
