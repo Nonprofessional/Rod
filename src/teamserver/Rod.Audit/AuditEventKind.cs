@@ -374,4 +374,37 @@ public enum AuditEventKind
     /// the outcome is the rule id.
     /// </summary>
     AutomationRuleDeleted,
+
+    /// <summary>
+    /// The notification forwarder pushed one live event to a registered
+    /// webhook (architecture.md Sec 4.4), or an operator fired a
+    /// subscription's <c>:test</c>. The payload names the subscription and
+    /// the event (kind, ids) but never the URL -- the URL is the channel's
+    /// bearer secret and does not enter the trail. The outcome is
+    /// <c>delivered:{status}</c>, <c>failed:{reason}</c>, or
+    /// <c>tested:{status}</c>. Best-effort like the bus it rides: the fact
+    /// records the attempt, and the surrounding trail remains the record.
+    /// </summary>
+    WebhookDelivered,
+
+    /// <summary>
+    /// An operator registered a webhook subscription. The payload names the
+    /// subscription (name, notifiable event kinds); the outcome is the
+    /// subscription id.
+    /// </summary>
+    WebhookSubscriptionCreated,
+
+    /// <summary>
+    /// A webhook subscription was enabled or disabled -- by an operator or
+    /// by the forwarder's failure guard (consecutive delivery failures
+    /// parked it, the cause named in the payload). The outcome is the
+    /// subscription id.
+    /// </summary>
+    WebhookSubscriptionUpdated,
+
+    /// <summary>
+    /// An operator deleted a webhook subscription. The payload names the
+    /// subscription; the outcome is the subscription id.
+    /// </summary>
+    WebhookSubscriptionDeleted,
 }

@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Rod.CoreState.Live;
 using Rod.Operators.Automation;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
 using Rod.Operators.Presence;
+using Rod.Operators.Webhooks;
+using System.Net.Http;
 
 namespace Rod.Operators;
 
@@ -58,6 +61,32 @@ public static class RodOperatorsHost
         services.TryAddSingleton<AutomationService>();
         services.TryAddSingleton<AutomationEngine>();
         services.AddHostedService(sp => sp.GetRequiredService<AutomationEngine>());
+
+        // The notification forwarder and its surface (architecture.md
+        // Sec 4.4): the subscription CRUD use cases the endpoints call, the
+        // pusher that owns the outbound client (its own named client so the
+        // budget and redirects stay push-shaped, the webshells pattern), and
+        // the hosted forwarder (a fixed-delay tick plus per-engagement bus
+        // subscriptions) that turns events into pushes. Options bind when
+        // configuration is supplied; the defaults stand alone.
+        if (configuration is not null)
+        {
+            services.AddOptions<WebhookOptions>().Bind(configuration.GetSection(WebhookOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<WebhookOptions>();
+        }
+        services.AddHttpClient("webhooks", (sp, client) =>
+        {
+            var delivery = sp.GetRequiredService<IOptions<WebhookOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(1, delivery.DeliveryTimeoutSeconds));
+        });
+        services.TryAddSingleton(sp => new WebhookPusher(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient("webhooks")));
+        services.TryAddSingleton<WebhookService>();
+        services.TryAddSingleton<WebhookDeliveryEngine>();
+        services.AddHostedService(sp => sp.GetRequiredService<WebhookDeliveryEngine>());
         return services;
     }
 
@@ -71,6 +100,7 @@ public static class RodOperatorsHost
     {
         endpoints.MapOperatorEventEndpoints();
         endpoints.MapAutomationRuleEndpoints();
+        endpoints.MapWebhookSubscriptionEndpoints();
         return endpoints;
     }
 }
