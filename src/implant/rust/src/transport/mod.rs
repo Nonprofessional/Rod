@@ -1,5 +1,6 @@
 pub mod dns;
 pub mod http;
+pub(crate) mod live;
 pub mod rawtcp;
 pub mod stream;
 
