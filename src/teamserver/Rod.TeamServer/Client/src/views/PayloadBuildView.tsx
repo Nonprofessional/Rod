@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
+import { fmtBytes } from '../format'
 import { StatusBadge } from '../components/StatusBadge'
 import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 
@@ -822,7 +823,7 @@ export function PayloadBuildView({
                       {job.artifact ? (
                         <span>
                           <code>{job.artifact.fingerprint.slice(0, 16)}</code>
-                          <span className="muted"> ({job.artifact.size} bytes)</span>
+                          <span className="muted"> ({fmtBytes(job.artifact.size)})</span>
                         </span>
                       ) : (
                         <span className="muted">—</span>

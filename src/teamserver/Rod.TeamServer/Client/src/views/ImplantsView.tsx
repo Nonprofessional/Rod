@@ -9,7 +9,7 @@ import {
   listImplants,
   retireImplant,
 } from '../api'
-import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
@@ -19,7 +19,7 @@ import { ProcessBrowser } from '../components/ProcessBrowser'
 import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
-import { VERB_FORMS } from '../verbForms'
+import { DEFAULT_TASK_FORM, VERB_FORMS } from '../verbForms'
 import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
@@ -173,15 +173,7 @@ export function ImplantsView({
       })
   }, [])
 
-  const attributesByVerb = useMemo(() => {
-    const map = new Map<string, Record<string, string>>()
-    for (const group of capabilityGroups) {
-      for (const descriptor of group.descriptors) {
-        map.set(descriptor.verb, descriptor.attributes)
-      }
-    }
-    return map
-  }, [capabilityGroups])
+  const attributesByVerb = useMemo(() => verbAttributes(capabilityGroups), [capabilityGroups])
 
   const refresh = useCallback(async () => {
     try {
@@ -762,11 +754,7 @@ export function ImplantsView({
           implantId={dialog.implantId}
           verb={dialog.verb}
           form={
-            VERB_FORMS[dialog.verb] ?? {
-              title: 'Issue task',
-              fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
-              build: (values) => ({ arguments: (values.args ?? '').trim() }),
-            }
+            VERB_FORMS[dialog.verb] ?? DEFAULT_TASK_FORM
           }
           attributes={attributesByVerb.get(dialog.verb) ?? {}}
           onClose={() => setDialog(null)}

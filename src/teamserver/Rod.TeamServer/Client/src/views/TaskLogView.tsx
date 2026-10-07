@@ -12,7 +12,9 @@ import {
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { StatusBadge } from '../components/StatusBadge'
-import { CHANNEL_VERBS } from '../verbForms'
+import { saveBlob } from '../download'
+import { ellipsize, fmtBytes } from '../format'
+import { isChannelVerb } from '../verbForms'
 
 // The task log: the engagement's working record of issued tasking, live on
 // the SSE tick. Issuing moved to the implants menu and the session console;
@@ -23,8 +25,6 @@ import { CHANNEL_VERBS } from '../verbForms'
 // view exists for. Read-only by design: retracting a queued task is an
 // operational action and lives in the session console, next to the implant
 // it targets; channel transcripts still open from their rows.
-
-const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
 export function TaskLogView({
   engagementId,
@@ -397,13 +397,7 @@ function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId:
 
   const onDownload = async (artifact: ArtifactSummary) => {
     try {
-      const blob = await fetchArtifactBlob(engagementId, artifact.artifactId)
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = artifact.name
-      anchor.click()
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      saveBlob(await fetchArtifactBlob(engagementId, artifact.artifactId), artifact.name)
     } catch {
       // The row stays; a failed fetch surfaces on retry.
     }
@@ -414,7 +408,7 @@ function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId:
       <span className="muted">artifacts</span>
       {artifacts.map((a) => (
         <span key={a.artifactId} className="task-detail-artifact">
-          <code>{a.name}</code> <span className="muted">({a.size} bytes)</span>{' '}
+          <code>{a.name}</code> <span className="muted">({fmtBytes(a.size)})</span>{' '}
           <button className="sm" onClick={() => void onDownload(a)}>
             Download
           </button>
@@ -422,9 +416,4 @@ function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId:
       ))}
     </div>
   )
-}
-
-function ellipsize(value: string, max = 72): string {
-  const single = value.replace(/\s+/g, ' ')
-  return single.length > max ? `${single.slice(0, max)}…` : single
 }

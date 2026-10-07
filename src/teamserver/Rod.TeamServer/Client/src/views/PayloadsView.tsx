@@ -9,6 +9,7 @@ import {
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
+import { fmtBytes } from '../format'
 
 // The engagement's payload library: the payload store's durable listing, the
 // view that outlives the Build page's bounded, process-local job queue. A
@@ -33,12 +34,6 @@ function kindLabel(klass: string): string {
   if (klass === 'Implant') return 'implant'
   if (klass === 'WebShell') return 'web shell'
   return klass
-}
-
-function fmtBytes(size: number): string {
-  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
-  if (size >= 1024) return `${(size / 1024).toFixed(0)} KB`
-  return `${size} B`
 }
 
 export function PayloadsView({ engagementId }: { engagementId: string }) {

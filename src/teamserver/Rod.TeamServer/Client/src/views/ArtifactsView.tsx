@@ -8,6 +8,8 @@ import {
   listEngagementTasks,
 } from '../api'
 import { Icon } from '../components/Icons'
+import { saveBlob } from '../download'
+import { fmtBytes } from '../format'
 
 // First-class evidence objects: artifacts are attached to tasks.
 // This view lists the engagement's tasks, shows each task's artifacts, lets an
@@ -128,15 +130,7 @@ export function ArtifactsView({
 
   const onDownload = async (artifact: ArtifactSummary) => {
     try {
-      const blob = await fetchArtifactBlob(engagementId, artifact.artifactId)
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = artifact.name
-      link.click()
-      // Revoke after the click has been handed to the browser: revoking in the
-      // same tick aborts the download in some browsers.
-      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      saveBlob(await fetchArtifactBlob(engagementId, artifact.artifactId), artifact.name)
     } catch (e) {
       setError(String(e))
     }
@@ -227,7 +221,7 @@ export function ArtifactsView({
               <tr key={a.artifactId}>
                 <td>{a.name}</td>
                 <td>{a.contentType}</td>
-                <td>{a.size}</td>
+                <td>{fmtBytes(a.size)}</td>
                 <td>{new Date(a.storedAt).toLocaleString()}</td>
                 <td>
                   <div className="row-actions">

@@ -8,6 +8,8 @@ import {
 import { browseInFlight, ensureBrowse, lastBrowsedPath, rememberBrowsedPath, useBrowseEntry } from '../browserCache'
 import { Icon } from './Icons'
 import { StatusBadge } from './StatusBadge'
+import { saveBlob } from '../download'
+import { fmtBytes } from '../format'
 import { readSelectedFile, VERB_FORMS, type SelectedFile } from '../verbForms'
 
 // The file browser: fs.list walks the target's tree, file.push uploads into
@@ -317,7 +319,7 @@ export function FileBrowser({
                         <code>{fileEntry.name}</code>
                       </button>
                     </td>
-                    <td>{fileEntry.dir ? '—' : `${fileEntry.size} B`}</td>
+                    <td>{fileEntry.dir ? '—' : fmtBytes(fileEntry.size)}</td>
                     <td>{new Date(fileEntry.mtime).toLocaleString()}</td>
                     <td>
                       {!fileEntry.dir && (
@@ -348,13 +350,4 @@ export function FileBrowser({
       </div>
     </div>
   )
-}
-
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = name
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }

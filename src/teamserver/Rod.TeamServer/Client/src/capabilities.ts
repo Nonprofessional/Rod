@@ -99,3 +99,15 @@ export function attributeMeta(key: string): OpsecAttributeMeta {
 export async function loadCapabilityGroups(): Promise<CapabilityGroup[]> {
   return groupByCategory(await listCapabilities())
 }
+
+// Folds the grouped catalog into a verb -> attributes map, the lookup the
+// task dialogs and automation panel share to badge a picked verb.
+export function verbAttributes(groups: readonly CapabilityGroup[]): Map<string, Record<string, string>> {
+  const map = new Map<string, Record<string, string>>()
+  for (const group of groups) {
+    for (const descriptor of group.descriptors) {
+      map.set(descriptor.verb, descriptor.attributes)
+    }
+  }
+  return map
+}

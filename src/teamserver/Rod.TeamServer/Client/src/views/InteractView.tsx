@@ -9,7 +9,7 @@ import {
   listImplantTasks,
   listImplants,
 } from '../api'
-import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
+import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
@@ -20,7 +20,8 @@ import { ProcessBrowser } from '../components/ProcessBrowser'
 import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
-import { CHANNEL_VERBS, VERB_FORMS } from '../verbForms'
+import { DEFAULT_TASK_FORM, isChannelVerb, VERB_FORMS } from '../verbForms'
+import { ellipsize } from '../format'
 import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
@@ -35,8 +36,6 @@ import { implantMenuEntries } from './implantMenu'
 // common verbs, and 'help' lists them. Everything the prompt cannot express
 // (an upload's file picker, the full verb table) stays one menu away in the
 // title bar's three-dot menu -- the same menu the implant rows open.
-
-const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
 // Short outputs render unfolded; anything longer folds behind the line until
 // the operator opens it -- a recon.ps dump should not bury the prompt.
@@ -143,15 +142,7 @@ export function InteractView({
     }
   }, [engagementId, implantId, cursor])
 
-  const descriptorByVerb = useMemo(() => {
-    const map = new Map<string, Record<string, string>>()
-    for (const group of capabilityGroups) {
-      for (const descriptor of group.descriptors) {
-        map.set(descriptor.verb, descriptor.attributes)
-      }
-    }
-    return map
-  }, [capabilityGroups])
+  const descriptorByVerb = useMemo(() => verbAttributes(capabilityGroups), [capabilityGroups])
 
   const presence = onlineImplants.find((p) => p.implantId === implantId)
 
@@ -465,11 +456,7 @@ export function InteractView({
           implantId={implantId}
           verb={dialogVerb}
           form={
-            VERB_FORMS[dialogVerb] ?? {
-              title: 'Issue task',
-              fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
-              build: (values) => ({ arguments: (values.args ?? '').trim() }),
-            }
+            VERB_FORMS[dialogVerb] ?? DEFAULT_TASK_FORM
           }
           attributes={descriptorByVerb.get(dialogVerb) ?? {}}
           onClose={() => setDialogVerb(null)}
@@ -540,11 +527,6 @@ function ConsoleBlock({
       {hasOutput && visible && <pre className="console-output">{output}</pre>}
     </div>
   )
-}
-
-function ellipsize(value: string, max = 96): string {
-  const single = value.replace(/\s+/g, ' ')
-  return single.length > max ? `${single.slice(0, max)}…` : single
 }
 
 // The raw-task escape hatch: any verb in the registry, free-form arguments --

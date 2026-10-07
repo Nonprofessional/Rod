@@ -10,6 +10,7 @@ import {
   unfreezeEngagement,
 } from '../api'
 import { Icon } from '../components/Icons'
+import { saveBlob } from '../download'
 
 // The engagements list: enumerate every engagement the operator can reach,
 // create a new one, edit an engagement's working record (name + description),
@@ -117,14 +118,7 @@ export function EngagementsView() {
   const onDownloadEvidence = async (e: Engagement) => {
     try {
       const blob = await fetchEvidencePackageBlob(e.engagementId)
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `rod-evidence-${e.engagementId}.zip`
-      link.click()
-      // Revoke after the click has been handed to the browser: revoking in the
-      // same tick aborts the download in some browsers.
-      setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      saveBlob(blob, `rod-evidence-${e.engagementId}.zip`)
     } catch (err) {
       setError(String(err))
     }
