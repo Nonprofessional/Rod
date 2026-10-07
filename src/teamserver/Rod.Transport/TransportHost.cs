@@ -169,6 +169,11 @@ public static class TransportHost
         // set -- the next-fire stamps ride the row, which is what makes a
         // time trigger survive a restart.
         services.AddSingleton<Rod.CoreState.Automation.IAutomationRuleStore, Rod.CoreState.Automation.InMemoryAutomationRuleStore>();
+        // The engagement-scoped webhook subscriptions (architecture.md
+        // Sec 4.4): in-memory by default, Postgres-backed when the
+        // connection string is set -- the delivery bookkeeping rides the
+        // row, so a registered channel survives a restart.
+        services.AddSingleton<Rod.CoreState.Webhooks.IWebhookSubscriptionStore, Rod.CoreState.Webhooks.InMemoryWebhookSubscriptionStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.

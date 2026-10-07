@@ -215,3 +215,31 @@ public readonly record struct AutomationRuleId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies a webhook subscription -- one engagement-scoped channel the
+/// notification forwarder pushes selected live events to (architecture.md
+/// Sec 4.4). Disposable with the engagement.
+/// </summary>
+public readonly record struct WebhookSubscriptionId(Guid Value)
+{
+    public static WebhookSubscriptionId New() => new(Guid.NewGuid());
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a subscription id from its string form. Accepts both the
+    /// compact "N" format produced by <see cref="ToString"/> and the
+    /// hyphenated Guid form; returns false on anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out WebhookSubscriptionId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new WebhookSubscriptionId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
