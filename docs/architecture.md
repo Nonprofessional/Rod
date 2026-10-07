@@ -124,8 +124,8 @@ in-house. The dependency rule is enforced by architecture tests.
 
 ### 4.2 External components
 
-- **Build units.** The in-tree build unit is .NET (`Rod.BuildPipeline`'s
-  `DotNetBuildUnit`). It compiles the reference implant on demand and owns its
+- **Build units.** The in-tree build unit is Rust (`Rod.BuildPipeline`'s
+  `RustBuildUnit`). It compiles the reference implant on demand and owns its
   toolchain, coupled to the teamserver only by the build contract. Other
   languages (Go, C/C++, Nim) stay available through that same contract and the
   `Language` enum, supplied as out-of-tree community units -- the project
@@ -142,7 +142,7 @@ in-house. The dependency rule is enforced by architecture tests.
   why). It
   compiles its wire bindings
   from the canonical `src/teamserver/Rod.Protocol/protos/rod.proto` at build time (no
-  committed generated code), and `DotNetBuildUnit` bakes the per-implant
+  committed generated code), and `RustBuildUnit` bakes the per-implant
   profile in at compile time. The reference set it carries is the standard,
   documented tradecraft surface (Sec 13); anything beyond it arrives through
   the extension seams. The wire protocol is the language-neutral product, so a
@@ -258,8 +258,8 @@ fallbacks of the front's own scheme family (the web pair, the DNS pair, or
 the raw socket), walked client-side when an entry burns (Sec 8).
 
 The bake-in is verified end-to-end: the configured sleep, jitter, and kill date
-land in the decoded artifact across the .NET and stub build units, so a
-profile that is silently dropped or defaulted fails the build-pipeline tests.
+land in the decoded artifact the build unit emits, so a profile that is
+silently dropped or defaulted fails the build-pipeline tests.
 
 The kill date is optional: unset (the default) bakes an open-ended artifact --
 the long-haul posture with no time fuse at all -- and the implant reports its
@@ -321,10 +321,12 @@ Implants differ by purpose, not by a "managed device flavor":
   arrives marked with the child's id, and executes in the parent with every
   record attributed to the child (Sec 9's signature already binds the
   target's id into the tuple; the frame's `target_implant_id` marking carries
-  the routing). The reference implant fronts what it enrolled: its
-  `lateral.move` handler records each Pivot child in a fronted ledger, and
-  the beacon loop refuses fronted tasking for an implant not in it -- the
-  enrollment this implant performed is the voucher.
+  the routing). An implant that derives children fronts only what it
+  enrolled -- keep the child ids from the enroll responses and refuse a
+  frame naming anything else, the voucher the enrollment performed (the
+  Tier 2 contract, extending/implants.md). The reference implant compiles
+  no lateral handler (the long tail, Sec 13); the server-side claim is
+  what ships in-tree, pinned by the core-state tests.
 
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
@@ -382,18 +384,19 @@ compiled handler set, and dispatch routes through an
 implant-side handler registry (the implant analog of the server's
 `ICapabilityModule`) rather than a hard-coded `switch`, so adding a verb is a
 handler plus a registration, not an edit to the runner. Registration is
-compile-time -- no runtime assembly loading for *handler plugins* (that would
-break Native AOT, enlarge
-the artifact, and introduce on-disk plugin files; the in-memory loading path
+compile-time -- no runtime library loading for *handler plugins* (a Rust
+dylib boundary is not stable across compiler versions, loading would
+enlarge
+the artifact, and plugin files would land on disk; the in-memory loading path
 that does exist in the tree is the loader's artifact host, a baked artifact
 carriage rather than a plugin mechanism), and the capability set is
-decided per class at build time, so runtime discovery buys nothing. Out-of-tree
-handlers compile in through the build unit's extension overlay (Sec 6) -- a
-configured extension directory whose sources overlay onto the per-build staging
-tree, with generated registrations feeding the registry's `additional` seam.
+decided per class at build time, so runtime discovery buys nothing.
+Out-of-tree handlers are the crate fork -- the build unit pointed at the
+operator's own tree (Sec 6, extending/tradecraft.md) -- with the C-ABI
+plugin seam (todo.md) as the in-process follow-on.
 
-Rejected alternatives: runtime dynamic assembly loading for plugins (breaks
-Native AOT and the lean artifact, and is unnecessary since the set is fixed at
+Rejected alternatives: runtime dynamic loading for plugins (no stable ABI
+and a heavier artifact, and unnecessary since the set is fixed at
 build time); advertising the full baked class set regardless of implemented
 handlers (recreates the unknown-verb-for-an-advertised-verb failure the
 intersection exists to prevent); keeping the hard-coded switch and adding
@@ -472,15 +475,14 @@ recorded.**
   transport profile, and beacon parameters (mode, sleep, jitter, kill date).
   They are produced at request time so each artifact is unique -- this is
   essential for OPSEC. No key material crosses the build contract (Sec 5.1).
-- **The extension overlay is the implant-side out-of-tree seam.**
-  `Build:ImplantExtensionDirectory` names a directory of handler sources; the
-  unit copies its `.cs` files onto the per-build staging tree and generates the
-  registrations that feed the implant registry's `additional` seam (Sec 5.3),
-  so an operator drops a handler in as a source file and every implant-class
-  build whose class permits the verb carries it -- no fork of the implant tree
-  ([extending/tradecraft.md](extending/tradecraft.md)). A configured directory
-  that is missing or yields no handler fails loudly, the same rule the
-  server-side module loader applies; the retired loader tree is never overlaid.
+- **The implant-side out-of-tree seam is the crate fork.** The overlay the
+  .NET unit once compiled (`Build:ImplantExtensionDirectory`, a directory of
+  `.cs` handler sources) retired with the .NET implant it compiled. The Rust
+  seam is the source tree itself: an operator points the unit at a fork that
+  carries the extra handlers (`Build:RustSourceDirectory` names the tree on
+  an installed teamserver), coupled to the teamserver only by the wire
+  contracts -- no fork of the teamserver ([extending/tradecraft.md](extending/tradecraft.md)).
+  The C-ABI plugin module (todo.md) is the follow-on that drops the rebuild.
 - **The bake names the transport each build dials.** The egress walk the
   profile bakes names URL shapes, and the implant picks its contact client
   by the dial's scheme at run: an `http(s)://` front runs the envelope POST
@@ -489,12 +491,13 @@ recorded.**
   Rust crate compiles every client into one lean binary -- the clients
   share the session, the seal, and the wire codec, and the unused ones
   cost tens of kilobytes each, so a per-build module trim buys nothing.
-- **The bake trims each build to the verbs it runs.** The class's verb set
+- **The bake bounds each build to the verbs it runs.** The class's verb set
   (Sec 5.2) is the server's authority for what an artifact may run, and the
-  unit compiles exactly that set's handlers -- the whole-file trim Sec 5.3
-  describes (the selection-seam rewrite, the reduced binary, the overlay's
-  verbs riding every build). The retired loader tree is never trimmed: a
-  loader carries no handlers.
+  bake carries that set: the run dispatches the baked list intersected with
+  the crate's compiled handlers (Sec 5.3). The whole-file trim the deleted
+  .NET unit performed did not carry into the Rust unit -- the handler code
+  is tens of kilobytes against a carriage that dominates the artifact --
+  and a loader bake carries no verb list at all: a loader runs no handlers.
 - **Delivery rides the launcher one-liners.** The loader class is
   retired with the .NET trees: the render families -- the disk fetch-and-run
   trio plus the Linux in-memory family, both for every payload (python3
@@ -743,7 +746,8 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   dns, pipe), the roster badges a dns-carried session as
   degraded, and a task the carrier cannot serve stays queued with its
   visible why -- capability is a property of the carrier at runtime, not of
-  the artifact. The reference Rust implant carries this family end to end: classic UDP and DoH dials, the chunked enroll exchange, sealed polls, and the delivery-confirmed upstream chunks. The reference Rust implant carries this family end to end:\  classic UDP and DoH dials, the chunked enroll exchange, sealed polls, and
+  the artifact. The reference Rust implant carries this family end to end:
+  classic UDP and DoH dials, the chunked enroll exchange, sealed polls, and
   the delivery-confirmed upstream chunks.
 - An implant is always the **connection initiator** (reverse connection). The
   teamserver and redirectors never dial targets.
@@ -820,12 +824,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 - **Malleable transport profile (per implant).** Each implant carries a transport
   profile baked in at generation (Sec 5.1, Sec 7): an enroll URI path, a
   User-Agent, custom HTTP headers, a per-request timeout, and a body envelope. It
-  is applied client-side at enroll -- the reference .NET implant enrolls
+  is applied client-side at enroll -- the reference implant enrolls
   against the profile's path and presents its headers, timeout, and body shape --
   so a profile changes the wire shape. The teamserver's enroll route stays fixed
   at `/implants/enroll`; URI and header routing at the public endpoint is a
-  redirector concern (Sec 7). Verified by a build-pipeline round-trip test and an
-  httptest-backed wire-shape test that captures the enroll request.
+  redirector concern (Sec 7). Verified by the build-pipeline round-trip tests
+  and the end-to-end legs that exercise a profiled enroll.
 - **The plain-HTTP envelope contact is the implant-reach transport and the
   reference implant's web contact.** The same rod.v1 frames every carriage
   carries, marshaled as varint-length-delimited sequences in ordinary
@@ -1249,19 +1253,17 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 
 The recon verbs are registered through the tradecraft layer as first-class
 descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
-concrete behavior runs on the reference implants and is captured as task output
-over the beacon stream (Sec 10.3). Recon is a long-haul activity, so the four
-verbs are gated to the Implant class at task issuance -- a non-Implant class is refused
-before the task is queued (Sec 5.2).
+concrete behavior runs on an artifact that carries a handler for them and is
+captured as task output over the beacon stream (Sec 10.3). Recon is a
+long-haul activity, so the four verbs are gated to the Implant class at task
+issuance -- a non-Implant class is refused before the task is queued (Sec 5.2).
 
 The process verbs close the same operational gap from both ends
-(`Rod.Tradecraft.Core.CoreCapabilities` carries `proc.kill`; `recon.ps` rides
-the recon set above): the reference implant lists live processes over the
-documented OS process APIs -- the `/proc` filesystem on Linux, the Win32
-toolhelp snapshot plus process-token owner query on Windows -- and terminates
-one by pid through the standard kill path, so an operator can see what runs on
-a target and end one of it, the pair every mainstream client carries. Both are
-Implant-class gated like their recon kin.
+(`Rod.Tradecraft.Core.CoreCapabilities` carries `proc.kill` -- an in-repo
+reference handler that ends one pid through the standard kill path -- while
+`recon.ps`, the local process listing over the documented OS process APIs,
+rides the recon set's long-tail posture). Both are Implant-class gated like
+their recon kin.
 
 The lateral verbs are registered the same way
 (`Rod.Tradecraft.Lateral.LateralCapabilities`, category `Lateral`):
@@ -1272,18 +1274,15 @@ recon they are gated to the Implant class at task issuance (Sec 5.2). The core p
 the parentage data model and the child-enrollment path -- the server records a
 child's `ParentImplantId` and validates it against the redeemed token's
 engagement, so a child derives only from a live parent in the same engagement.
-The reference implant carries the matching implant-side path: a
-`lateral.move` handler on the implant parses the child's deploy token from the
+The implant-side half is the long tail (Sec 13): an artifact whose tree
+carries a `lateral.move` handler parses the child's deploy token from the
 task arguments, generates a fresh child keypair, and enrolls a child naming
-itself as parent; the enroll clients thread parentage onto the request, and the
-binary `EnrollResponse` gains a `parent_implant_id` so the wire surface mirrors
-the HTTP path. The `lateral.token` and `lateral.exec_remote` verbs also ship
-as in-repo reference handlers: `lateral.token` enumerates the current process's Windows access-token
-context (user, groups, privileges) via `whoami`, the documented administration
-command for inspecting the calling token; `lateral.exec_remote` runs a command
-on a remote host over documented administration channels (scheduled tasks on
-Windows, SSH on Linux). The same surface every mainstream C2 exposes for
-these activities.
+itself as parent -- the enroll clients thread parentage onto the request, and
+the binary `EnrollResponse` carries `parent_implant_id` so the wire surface
+mirrors the HTTP path. `lateral.token` (the calling process's access-token
+context) and `lateral.exec_remote` (remote execution over scheduled tasks on
+Windows, SSH on Linux) document the administration channels every mainstream
+C2 exposes; the reference crate compiles none of them.
 
 The persistence verbs are registered the same way
 (`Rod.Tradecraft.Persist.PersistCapabilities`, category `Persist`):
@@ -1291,13 +1290,13 @@ The persistence verbs are registered the same way
 (install additionally carries `persists`), and `persist.list` is a read that
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
 lateral they are gated to the Implant class at task issuance (Sec 5.2). Persistence is a
-long-haul activity, and the reference implants ship standard, documented
-mechanisms: the Windows
+long-haul activity over the standard, documented surfaces -- the Windows
 `Run` registry key, scheduled tasks, and services, plus Linux cron and
-systemd user units -- the documented persistence surfaces every system
-administrator and offensive-security curriculum covers. Install, list, and
-remove round-trip against these surfaces. Novel or stealth persistence
-techniques arrive as operator-supplied modules.
+systemd user units, the surfaces every system administrator and
+offensive-security curriculum covers; novel or stealth persistence
+arrives as operator-supplied modules (Sec 13). The handlers are long-tail
+like the recon set: the reference crate compiles none, so the verbs task
+against an artifact whose tree carries them.
 
 The collection and exfiltration verbs are registered the same way
 (`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
@@ -1311,25 +1310,22 @@ channel), and `exfil.stage` is a read that carries no such flag, like
 `persist.list` and the host-local `recon.hostenum` (it stages already-collected
 data on the teamserver). Like recon, lateral, and persist they are gated to
 the Implant class at task issuance (Sec 5.2). Collection and exfiltration are long-haul
-activities. The reference implant
-ships in-repo handlers for the core file verbs (`file.pull` reads the target's
-filesystem -- small files return inline, large ones chunk into the exfil
-channel -- and `file.push` lands an operator-supplied payload on disk),
-`collect.cred` (standard credential-store *listings* -- SSH key presence with
-fingerprints, AWS profile names, Windows saved-credential names via
-`cmdkey /list` -- without dumping secret material), `collect.screenshot`
-(the display read over the standard desktop-capture APIs -- GDI `BitBlt` on
-Windows, `XGetImage` on X11 -- PNG-encoded in-process and chunked into the
-exfil channel, so the capture lands as an artifact joined to its task with no
-new server-side path; a headless target refuses cleanly naming the missing
-display), and `exfil.push` /
-`exfil.stage` (data transferred over the C2 channel into engagement-scoped
-artifact storage, Sec 11). Two collection surfaces ride the Rust reference
-implant's Windows builds (the .NET reference keeps them contract-only):
-LSASS memory dumping (`collect.minidump`, the dbghelp minidump path) and
-`collect.keylog` input capture. On the .NET implant -- and on every platform
-the Rust build does not gate in -- each runs only when an operator supplies a
-module for the verb.
+activities. The reference crate's compiled set covers the core file verbs --
+`file.pull` reads the target's filesystem (small files inline, large ones
+chunked into the exfil channel) and `file.push` lands an operator-supplied
+payload on disk (inline within the server's staging cap, larger uploads
+staged and streamed down on the implant's demand) -- and the chunking
+machinery they run is what every collection verb shares: bulk lands in the
+engagement artifact store joined to its task, no new server-side path
+(Sec 11). The long-tail collectors -- `collect.cred` (credential-store
+listings, no secret material dumped), `collect.screenshot` (the display read
+over the standard desktop-capture APIs, PNG-encoded and chunked to an
+artifact), and `exfil.push` / `exfil.stage` -- run on an artifact whose tree
+carries them. Two sensitive collection surfaces do ship in-repo, Windows-gated
+(`cfg(windows)`, so a Linux artifact compiles neither): LSASS memory dumping
+(`collect.minidump`, the dbghelp minidump path) and `collect.keylog` input
+capture; on every platform the Rust build does not gate them in, each runs
+only when an operator supplies a module for the verb.
 
 The tunnel verbs are registered the same way
 (`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
@@ -1780,7 +1776,7 @@ scrape.
 |---------|--------|-----|
 | Teamserver (monolithic kernel) | .NET 10 (LTS), ASP.NET Core | Strong async networking, strong typing, mature web UI. LTS to ~2028. |
 | Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and dev deployments (see Sec 12.1). |
-| Build units | .NET (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
+| Build units | Rust (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
 | Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). The enrolled-fleet control plane is a recorded future direction (Sec 8). |
 | Implants | Rust (the reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One Rust reference implant, static and cross-platform; community implants slot in by contract for targets it does not fit. |
 | Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. |
