@@ -76,10 +76,6 @@ public sealed class ListenerManager
     /// <summary>The Kestrel section carrying runtime endpoint entries; the host hands it to <c>Configure</c> with reload on change.</summary>
     internal IConfiguration KestrelSection => _endpoints.KestrelSection;
 
-    /// <summary>True when the listener was created at runtime through this manager.</summary>
-    public bool IsRuntime(ListenerId listener)
-        => _runtime.ContainsKey(listener);
-
     /// <summary>
     /// The HTTPS defaults for runtime-created TLS endpoints -- the termination
     /// every transport shares: the CA-issued server leaf, and chain-to-CA

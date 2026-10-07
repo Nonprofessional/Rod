@@ -307,12 +307,11 @@ public static class TransportHost
             services.AddHostedService(sp => sp.GetRequiredService<SessionStalenessSweeper>());
         }
 
-        // Build pipeline (architecture.md Sec 6, ADR 0009): the build-unit registry and
-        // the orchestrator that drives it. The .NET slot holds the real in-tree
-        // reference build unit (compiles the .NET reference implant via dotnet
-        // publish); the stub unit is the contract reference and is exercised by its
-        // own unit tests, not the live host. Community build units for other
-        // languages (Go/C/Nim) live out-of-tree. The service is audit-agnostic by
+        // Build pipeline (architecture.md Sec 6): the build-unit registry and
+        // the orchestrator that drives it. The Rust unit is the in-tree
+        // reference build unit (compiles the reference implant via cargo);
+        // community build units for other languages (Go/C/Nim) live
+        // out-of-tree. The service is audit-agnostic by
         // design -- the payload-build endpoint in transport composes the
         // PayloadBuilt audit write, the same way the beacon stream composes the
         // task-completion write.
@@ -632,23 +631,12 @@ public static class TransportHost
     }
 
     /// <summary>
-    /// Builds a ready-to-run <see cref="WebApplication"/> for <c>dotnet run</c>.
-    /// </summary>
-    public static WebApplication BuildApplication(string[]? args = null)
-    {
-        var builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
-        builder.Services.AddRodTransport();
-
-        return builder.Build().MapRodEndpoints();
-    }
-
-    /// <summary>
     /// A minimal <see cref="Microsoft.Extensions.Hosting.IHostBuilder"/> for tests.
     /// Callers apply <c>UseTestServer</c> (from <c>Microsoft.AspNetCore.TestHost</c>,
     /// an extension on <see cref="Microsoft.Extensions.Hosting.IHostBuilder"/>),
     /// <c>Build()</c> the host, and <c>GetTestClient()</c> for an in-memory
-    /// <see cref="HttpClient"/>. Services and endpoints are wired the same way as
-    /// <see cref="BuildApplication"/>.
+    /// <see cref="HttpClient"/>. Services and endpoints are wired the same way
+    /// the composition root wires them.
     ///
     /// The optional <paramref name="configureServices"/> and
     /// <paramref name="mapEndpoints"/> hooks let a caller layer in additional
