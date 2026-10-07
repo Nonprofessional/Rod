@@ -45,6 +45,9 @@ internal static class IdConverters
     public static ValueConverter<AutomationRuleId, Guid> AutomationRuleId { get; } =
         new(id => id.Value, value => new AutomationRuleId(value));
 
+    public static ValueConverter<WebhookSubscriptionId, Guid> WebhookSubscriptionId { get; } =
+        new(id => id.Value, value => new WebhookSubscriptionId(value));
+
     public static ValueConverter<Rod.CoreState.Operators.OperatorApiTokenId, Guid> OperatorApiTokenId { get; } =
         new(id => id.Value, value => new Rod.CoreState.Operators.OperatorApiTokenId(value));
 }

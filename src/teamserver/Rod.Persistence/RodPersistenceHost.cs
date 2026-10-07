@@ -105,6 +105,10 @@ public static class RodPersistenceHost
         // cadence (next-fire stamp riding the row) survives a restart --
         // the durability time triggers are designed around (Sec 10.4).
         services.Replace(ServiceDescriptor.Singleton<CoreState.Automation.IAutomationRuleStore, Stores.PostgresAutomationRuleStore>());
+        // Engagement-scoped webhook subscriptions: the durable twin so a
+        // registered channel survives a restart with its delivery
+        // bookkeeping (Sec 4.4).
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Webhooks.IWebhookSubscriptionStore, Stores.PostgresWebhookSubscriptionStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

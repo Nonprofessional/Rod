@@ -42,6 +42,7 @@ public sealed class RodPersistenceDbContext : DbContext
     internal DbSet<StoredDeployToken> DeployTokens => Set<StoredDeployToken>();
     internal DbSet<StoredListenerDefinition> ListenerDefinitions => Set<StoredListenerDefinition>();
     internal DbSet<Configurations.StoredAutomationRule> AutomationRules => Set<Configurations.StoredAutomationRule>();
+    internal DbSet<Configurations.StoredWebhookSubscription> WebhookSubscriptions => Set<Configurations.StoredWebhookSubscription>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();
 
