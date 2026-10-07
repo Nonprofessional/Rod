@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Hosting;
+using Rod.Audit;
 using Rod.CoreState.Application;
+using Rod.CoreState.Sessions;
 
 namespace Rod.Transport;
 
@@ -50,7 +52,10 @@ public sealed record SessionStalenessOptions(TimeSpan Threshold, TimeSpan SweepI
 /// close, no more frames -- stops holding its session Active forever. Closing
 /// the session is what drops the implant off the online roster; the beacon
 /// stream's own reader ends the connection on its next frame so a recovered
-/// implant re-handshakes and comes back online.
+/// implant re-handshakes and comes back online. Each close also lands on the
+/// audit trail as a system-attributed <see cref="AuditEventKind.SessionClosed"/>
+/// fact (Sec 11.1) -- a session that died silently mid-watch is part of the
+/// engagement's record, not just a roster change connected operators saw.
 /// </summary>
 /// <remarks>
 /// Both the threshold and the interval are the live
@@ -67,15 +72,18 @@ public sealed class SessionStalenessSweeper : BackgroundService
     private readonly SessionSweepService _sweep;
     private readonly SessionRuntimeSettings _settings;
     private readonly TimeProvider _clock;
+    private readonly IAuditStore _audit;
 
     public SessionStalenessSweeper(
         SessionSweepService sweep,
         SessionRuntimeSettings settings,
-        TimeProvider clock)
+        TimeProvider clock,
+        IAuditStore audit)
     {
         _sweep = sweep;
         _settings = settings;
         _clock = clock;
+        _audit = audit;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -98,12 +106,34 @@ public sealed class SessionStalenessSweeper : BackgroundService
     /// <summary>
     /// Runs one sweep pass: closes every Active session whose last-seen stamp is
     /// older than the current threshold, fanning each close out to connected
-    /// operators. Returns the closed sessions.
+    /// operators and recording it on the audit trail. Returns the closed
+    /// sessions.
     /// </summary>
-    public Task<IReadOnlyList<Rod.CoreState.Sessions.Session>> SweepOnceAsync(
+    public async Task<IReadOnlyList<Rod.CoreState.Sessions.Session>> SweepOnceAsync(
         CancellationToken cancellationToken = default)
     {
-        var cutoff = _clock.GetUtcNow() - _settings.Current.Threshold;
-        return _sweep.SweepStaleAsync(cutoff, cancellationToken);
+        var now = _clock.GetUtcNow();
+        var cutoff = now - _settings.Current.Threshold;
+        var closed = await _sweep.SweepStaleAsync(cutoff, cancellationToken);
+
+        foreach (var session in closed)
+        {
+            await _audit.AppendAsync(
+                AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: session.EngagementId.Value,
+                    operatorId: Guid.Empty,
+                    implantId: session.ImplantId.Value,
+                    taskId: Guid.Empty,
+                    verb: "sweep",
+                    kind: AuditEventKind.SessionClosed,
+                    payload: $"swept: last seen {session.LastSeenAt:O}, silent for {now - session.LastSeenAt}",
+                    output: null,
+                    outcome: session.Id.ToString(),
+                    at: now),
+                cancellationToken);
+        }
+
+        return closed;
     }
 }

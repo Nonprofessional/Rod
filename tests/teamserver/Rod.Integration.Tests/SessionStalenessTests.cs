@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
@@ -14,8 +15,10 @@ namespace Rod.Integration.Tests;
 /// The session staleness sweep acceptance (architecture.md Sec 10.3): a session
 /// whose last-seen stamp is older than the configured threshold is closed and
 /// the implant drops off the online roster -- the fix for a beacon stream that
-/// dies silently and otherwise stays Active forever. Drives the hosted sweeper
-/// directly (SweepOnceAsync) for determinism instead of racing the timer.
+/// dies silently and otherwise stays Active forever. The close also lands on
+/// the audit trail (Sec 11.1), so the silent death is part of the engagement's
+/// record. Drives the hosted sweeper directly (SweepOnceAsync) for
+/// determinism instead of racing the timer.
 /// </summary>
 public class SessionStalenessTests
 {
@@ -70,6 +73,16 @@ public class SessionStalenessTests
             Assert.Equal(implant.Id, swept.ImplantId);
             Assert.Equal(SessionStatus.Closed, swept.Status);
 
+            // The silent death lands on the audit trail: system-attributed,
+            // bound to the implant, naming the closed session as its outcome.
+            var audit = host.Services.GetRequiredService<IAuditStore>();
+            var trail = await audit.ListAsync(engagement.Value);
+            var recorded = Assert.Single(trail, e => e.Kind == AuditEventKind.SessionClosed);
+            Assert.Equal(Guid.Empty, recorded.OperatorId);
+            Assert.Equal(implant.Id.Value, recorded.ImplantId);
+            Assert.Equal(swept.Id.ToString(), recorded.Outcome);
+            Assert.Contains("silent for", recorded.Payload);
+
             // The implant dropped off the online roster: presence is empty and
             // the implant listing reads offline.
             var presence = await client.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
@@ -103,6 +116,11 @@ public class SessionStalenessTests
             var active = await sessions.GetActiveAsync(implant.Id);
             Assert.NotNull(active);
             Assert.Equal(SessionStatus.Active, active!.Status);
+
+            // Nothing swept, nothing recorded: the trail carries no close.
+            var audit = host.Services.GetRequiredService<IAuditStore>();
+            var trail = await audit.ListAsync(engagement.Value);
+            Assert.DoesNotContain(trail, e => e.Kind == AuditEventKind.SessionClosed);
 
             var presence = await client.GetFromJsonAsync<PresenceEndpoints.PresenceRecordResponse[]>(
                 $"/engagements/{engagement}/presence");

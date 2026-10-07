@@ -407,4 +407,15 @@ public enum AuditEventKind
     /// subscription; the outcome is the subscription id.
     /// </summary>
     WebhookSubscriptionDeleted,
+
+    /// <summary>
+    /// The staleness sweep closed a session whose beacon stream went silent
+    /// (architecture.md Sec 10.3, Sec 11.1). The payload carries the last-seen
+    /// stamp and how long the stream had been silent; the outcome is the closed
+    /// session id. The sweep is server-driven, so the event attributes to no
+    /// operator. A session closed by supersession (a re-enroll opening its
+    /// successor) writes no close event; the successor's
+    /// <see cref="SessionOpened"/> is its trace.
+    /// </summary>
+    SessionClosed,
 }
