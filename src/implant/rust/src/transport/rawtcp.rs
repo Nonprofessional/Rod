@@ -27,7 +27,7 @@ use crate::wire::{Frame, FrameKind, StagedChunk, TaskRequest};
 
 /// The handshake capability that switches a socket connection from the poll
 /// exchange to the held live session (the server's LiveSessionCapability).
-pub const LIVE_SESSION_CAPABILITY: &str = "channels.live";
+const LIVE_SESSION_CAPABILITY: &str = "channels.live";
 
 /// One message budget per direction, the envelope's own body cap (the wire
 /// contract's sizing rule; nothing larger is legal on any carriage).
