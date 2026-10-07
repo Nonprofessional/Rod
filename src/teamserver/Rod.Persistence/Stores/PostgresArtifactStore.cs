@@ -64,7 +64,7 @@ internal sealed class PostgresArtifactStore : IArtifactStore
         if (cursor is not null)
         {
             if (!TimestampIdCursor.TryDecode(cursor, out var afterTicks, out var afterId))
-                throw new ArgumentException("Cursor is not a valid list page cursor.", nameof(cursor));
+                throw TimestampIdCursor.InvalidCursor();
             var afterAt = new DateTimeOffset(afterTicks, TimeSpan.Zero);
             query = query.Where(a => a.StoredAt < afterAt || (a.StoredAt == afterAt && a.ArtifactId.CompareTo(afterId) < 0));
         }

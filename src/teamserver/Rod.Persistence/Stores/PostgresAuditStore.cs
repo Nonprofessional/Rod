@@ -137,7 +137,7 @@ internal sealed class PostgresAuditStore : IAuditStore
         if (cursor is not null)
         {
             if (!TimestampIdCursor.TryDecode(cursor, out var afterTicks, out var afterId))
-                throw new ArgumentException("Cursor is not a valid list page cursor.", nameof(cursor));
+                throw TimestampIdCursor.InvalidCursor();
             var afterAt = new DateTimeOffset(afterTicks, TimeSpan.Zero);
             query = query.Where(e => e.At < afterAt || (e.At == afterAt && e.EventId.CompareTo(afterId) < 0));
         }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Rod.CoreState;
 
 namespace Rod.CoreState.Operators;
 
@@ -103,10 +104,9 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
         DateTimeOffset at,
         CancellationToken cancellationToken = default)
     {
-        var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var secret = Base64Url.Encode(secretBytes);
+        var (secret, digest) = SecretDigest.Mint();
         var tokenId = OperatorApiTokenId.New();
-        _tokens[tokenId] = new Stored(operatorId, SHA256.HashData(secretBytes), at);
+        _tokens[tokenId] = new Stored(operatorId, digest, at);
         return Task.FromResult(new MintedOperatorApiToken(tokenId, operatorId, secret, at));
     }
 
@@ -114,17 +114,10 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
         string secret,
         CancellationToken cancellationToken = default)
     {
-        byte[] presented;
-        try
-        {
-            presented = Base64Url.Decode(secret);
-        }
-        catch (FormatException)
-        {
+        var digest = SecretDigest.DigestOf(secret);
+        if (digest is null)
             return Task.FromResult<OperatorId?>(null); // malformed never reaches the lookup
-        }
 
-        var digest = SHA256.HashData(presented);
         foreach (var stored in _tokens.Values)
         {
             if (CryptographicOperations.FixedTimeEquals(digest, stored.Hash))

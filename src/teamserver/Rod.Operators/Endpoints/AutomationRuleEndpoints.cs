@@ -252,7 +252,6 @@ public static class AutomationRuleEndpoints
         return true;
     }
 
-    public sealed record Problem(string Error);
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 

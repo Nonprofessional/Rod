@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
@@ -69,7 +68,7 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
 
         var effectiveMaxUses = maxUses ?? DefaultMaxUses;
         var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);
-        var secretBytes = RandomNumberGenerator.GetBytes(32);
+        var (secret, digest) = SecretDigest.Mint();
         var id = DeployTokenId.New();
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -78,7 +77,7 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
             Id = id,
             EngagementId = engagementId,
             IssuedBy = issuedBy,
-            Hash = SHA256.HashData(secretBytes),
+            Hash = digest,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
             MaxUses = effectiveMaxUses,
@@ -90,7 +89,7 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
         {
             Id = id,
             EngagementId = engagementId,
-            Secret = Base64Url.Encode(secretBytes),
+            Secret = secret,
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
@@ -105,15 +104,8 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
     {
         // The plaintext is never stored, so hash the presented secret and look it
         // up by digest. A bad format yields no match -> Unknown.
-        byte[] presentedHash;
-        try
-        {
-            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
-        }
-        catch (FormatException)
-        {
-            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
-        }
+        var presentedHash = SecretDigest.DigestOf(secret)
+            ?? throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -234,15 +226,8 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
         // payload fetch must leave the credential whole for the artifact's
         // enroll (architecture.md Sec 6). A plain read suffices -- nothing
         // mutates, so no transaction and no conditional UPDATE are needed.
-        byte[] presentedHash;
-        try
-        {
-            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
-        }
-        catch (FormatException)
-        {
-            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
-        }
+        var presentedHash = SecretDigest.DigestOf(secret)
+            ?? throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var entry = await db.DeployTokens

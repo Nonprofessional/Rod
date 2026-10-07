@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text;
+using Rod.CoreState;
 using Rod.CoreState.Engagements;
 
 namespace Rod.CoreState.Deployment;
@@ -52,18 +52,18 @@ public sealed class InMemoryDeployTokenService : IDeployTokenService
 
         var effectiveMaxUses = maxUses ?? DefaultMaxUses;
         var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);
-        var secretBytes = RandomNumberGenerator.GetBytes(32);
+        var (secret, digest) = SecretDigest.Mint();
         var id = DeployTokenId.New();
 
         _stored[id] = new StoredToken(
-            SHA256.HashData(secretBytes), engagementId, issuedBy, issuedAt, expiresAt,
+            digest, engagementId, issuedBy, issuedAt, expiresAt,
             effectiveMaxUses, effectiveMaxUses, RevokedAt: null);
 
         return new DeployToken
         {
             Id = id,
             EngagementId = engagementId,
-            Secret = Base64Url.Encode(secretBytes),
+            Secret = secret,
             IssuedBy = issuedBy,
             IssuedAt = issuedAt,
             ExpiresAt = expiresAt,
@@ -130,15 +130,8 @@ public sealed class InMemoryDeployTokenService : IDeployTokenService
     {
         // The plaintext is never stored, so we hash the presented secret and look
         // it up by digest. A bad format simply yields no match -> Unknown.
-        byte[] presentedHash;
-        try
-        {
-            presentedHash = SHA256.HashData(Base64Url.Decode(secret));
-        }
-        catch (FormatException)
-        {
-            throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
-        }
+        var presentedHash = SecretDigest.DigestOf(secret)
+            ?? throw new DeployTokenRedeemException(DeployTokenRedeemReason.Unknown, "Deploy token is malformed.");
 
         var entryId = _stored.FirstOrDefault(kv => kv.Value.Hash.SequenceEqual(presentedHash)).Key;
         if (entryId == default)

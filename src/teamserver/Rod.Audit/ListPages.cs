@@ -58,8 +58,15 @@ public static class TimestampIdCursor
     // True when (aTicks, aId) sorts at-or-newer than (bTicks, bId). The page
     // window walks from the newest end, so a cursor skips every key this
     // returns true for.
-    public static bool AtOrNewer(long aTicks, Guid aId, long bTicks, Guid bId)
+    internal static bool AtOrNewer(long aTicks, Guid aId, long bTicks, Guid bId)
         => aTicks != bTicks ? aTicks > bTicks : aId.CompareTo(bId) >= 0;
+
+    /// <summary>
+    /// The refusal every adapter answers a cursor that does not decode with,
+    /// so the message and the parameter name read identically everywhere.
+    /// </summary>
+    public static ArgumentException InvalidCursor()
+        => new("Cursor is not a valid list page cursor.", "cursor");
 
     private static string Base64Url(byte[] bytes)
         => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -92,7 +99,7 @@ internal static class ListPageWindow
         if (cursor is not null)
         {
             if (!TimestampIdCursor.TryDecode(cursor, out var decodedTicks, out var decodedId))
-                throw new ArgumentException("Cursor is not a valid list page cursor.", nameof(cursor));
+                throw TimestampIdCursor.InvalidCursor();
             afterTicks = decodedTicks;
             afterId = decodedId;
         }

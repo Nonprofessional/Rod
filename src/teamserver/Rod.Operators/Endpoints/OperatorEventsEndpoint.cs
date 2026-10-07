@@ -143,5 +143,4 @@ public static class OperatorEventsEndpoint
         await response.Body.FlushAsync(cancellationToken);
     }
 
-    public sealed record Problem(string Error);
 }

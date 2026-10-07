@@ -14,13 +14,24 @@ namespace Rod.Transport.WebShells;
 /// </summary>
 public abstract class RodSealedAdapter : IWebShellProtocolAdapter
 {
+    /// <summary>Where <see cref="RenderScript"/> splices the baked key in.</summary>
+    protected const string KeyPlaceholder = "__ROD_KEY__";
+
     protected const int KeyBytes = 32;
     private const int NonceBytes = 12;
     private const int TagBytes = 16;
 
     public abstract string Id { get; }
     public abstract string ScriptLanguage { get; }
-    public abstract string RenderScript(string credential);
+
+    /// <summary>
+    /// The subclass's rendered script, carrying <see cref="KeyPlaceholder"/>
+    /// where the baked key lands.
+    /// </summary>
+    protected abstract string Script { get; }
+
+    public string RenderScript(string credential)
+        => Script.Replace(KeyPlaceholder, credential);
 
     /// <summary>
     /// How the rendered script spells its baked-key literal: the text

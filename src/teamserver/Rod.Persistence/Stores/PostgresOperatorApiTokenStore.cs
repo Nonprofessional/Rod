@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Rod.CoreState;
 using Rod.CoreState.Operators;
@@ -26,8 +25,7 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
     {
         // The mint itself is the in-memory shape (fresh random bytes, digest
         // computed alongside); the row is what persists here.
-        var secretBytes = RandomNumberGenerator.GetBytes(32);
-        var secret = Base64Url.Encode(secretBytes);
+        var (secret, digest) = SecretDigest.Mint();
         var tokenId = OperatorApiTokenId.New();
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -35,7 +33,7 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
         {
             TokenId = tokenId,
             OperatorId = operatorId,
-            Hash = SHA256.HashData(secretBytes),
+            Hash = digest,
             CreatedAt = at,
         });
         await db.SaveChangesAsync(cancellationToken);
@@ -47,19 +45,13 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
         string secret,
         CancellationToken cancellationToken = default)
     {
-        byte[] presented;
-        try
-        {
-            presented = Base64Url.Decode(secret);
-        }
-        catch (FormatException)
-        {
+        var digest = SecretDigest.DigestOf(secret);
+        if (digest is null)
             return null; // malformed never reaches the lookup
-        }
 
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var row = await db.Set<StoredOperatorApiToken>().AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Hash == SHA256.HashData(presented), cancellationToken);
+            .FirstOrDefaultAsync(t => t.Hash == digest, cancellationToken);
         return row?.OperatorId;
     }
 
