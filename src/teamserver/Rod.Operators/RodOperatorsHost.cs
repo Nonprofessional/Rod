@@ -8,6 +8,7 @@ using Rod.Operators.Automation;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
 using Rod.Operators.Presence;
+using Rod.Operators.Snippets;
 using Rod.Operators.Webhooks;
 using System.Net.Http;
 
@@ -89,20 +90,27 @@ public static class RodOperatorsHost
         services.TryAddSingleton<WebhookService>();
         services.TryAddSingleton<WebhookDeliveryEngine>();
         services.AddHostedService(sp => sp.GetRequiredService<WebhookDeliveryEngine>());
+
+        // The task-snippet use cases (the console's saved command
+        // sequences): plain CRUD -- replay happens in the console, which
+        // issues each step through the ordinary tasking path, so there is
+        // no engine and no run endpoint here.
+        services.TryAddSingleton<TaskSnippetService>();
         return services;
     }
 
     /// <summary>
     /// Maps the operator layer's endpoints: the SSE event stream that keeps an
     /// operator session live per engagement and pushes every engagement event,
-    /// and the automation-rule surface. Call alongside
-    /// <c>MapRodEndpoints</c>.
+    /// the automation-rule surface, the webhook-subscription surface, and the
+    /// task-snippet surface. Call alongside <c>MapRodEndpoints</c>.
     /// </summary>
     public static IEndpointRouteBuilder MapOperatorEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapOperatorEventEndpoints();
         endpoints.MapAutomationRuleEndpoints();
         endpoints.MapWebhookSubscriptionEndpoints();
+        endpoints.MapTaskSnippetEndpoints();
         return endpoints;
     }
 }

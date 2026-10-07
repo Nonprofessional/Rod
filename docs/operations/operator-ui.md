@@ -217,12 +217,12 @@ target step), so one triage sequence serves the whole fleet.
 Saving starts from the session console's menu: a dialog lists the
 implant's recent transcript as a checklist, the operator picks the lines
 in order, names the sequence, saves. Validation at save is structural
-only -- each step's verb must be one the registry knows, and the step
-count and size are bounded (a refusal names the bound) -- because the
-issuance gates at run time are the authority, exactly as if the steps
-were typed. A snippet is keyboard shorthand an operator fires while
-present: it never fires on a schedule and never chains on results --
-unattended tasking is the Automation panel's domain.
+only -- steps present, in order, and bounded (a refusal names the
+bound) -- because the issuance gates at run time are the authority,
+exactly as if the steps were typed. A snippet is keyboard shorthand an
+operator fires while present: it never fires on a schedule and never
+chains on results -- unattended tasking is the Automation panel's
+domain.
 
 Running issues every step at once through the ordinary tasking path: each
 task is attributed to the running operator, gated exactly like a typed

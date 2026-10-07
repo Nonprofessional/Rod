@@ -418,4 +418,20 @@ public enum AuditEventKind
     /// <see cref="SessionOpened"/> is its trace.
     /// </summary>
     SessionClosed,
+
+    /// <summary>
+    /// An operator saved a task snippet -- a named sequence of issue
+    /// commands the console replays through the ordinary tasking path. The
+    /// payload names the snippet and its steps; the outcome is the snippet
+    /// id. Running a snippet writes no record of its own: the tasks it
+    /// issues are the trail, attributed to the running operator exactly
+    /// like typed tasking.
+    /// </summary>
+    TaskSnippetSaved,
+
+    /// <summary>
+    /// An operator deleted a task snippet. The payload names the snippet;
+    /// the outcome is the snippet id.
+    /// </summary>
+    TaskSnippetDeleted,
 }
