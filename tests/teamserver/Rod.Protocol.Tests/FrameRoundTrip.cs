@@ -4,50 +4,13 @@ using Rod.V1;
 namespace Rod.Protocol.Tests;
 
 /// <summary>
-/// Smoke test: a Frame survives a serialize/parse round trip with
-/// every field intact. This proves the generated bindings are usable end to end.
+/// Schema-contract tests over the generated rod.v1 bindings: each pinned
+/// property is a wire contract beyond what protobuf itself guarantees --
+/// optional-field presence semantics, the arms' additive shape -- as the
+/// messages the runtime round-trips.
 /// </summary>
 public class FrameRoundTrip
 {
-    [Fact]
-    public void Frame_RoundTrips_WithKindAndPayload()
-    {
-        var original = new Frame
-        {
-            Kind = FrameKind.TaskResult,
-            Payload = ByteString.CopyFrom(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }),
-        };
-
-        Frame restored = Frame.Parser.ParseFrom(original.ToByteArray());
-
-        Assert.Equal(FrameKind.TaskResult, restored.Kind);
-        Assert.Equal(original.Payload, restored.Payload);
-    }
-
-    [Fact]
-    public void ProtocolVersion_RoundTrips()
-    {
-        var original = new ProtocolVersion { Major = 1, Minor = 0 };
-
-        var restored = ProtocolVersion.Parser.ParseFrom(original.ToByteArray());
-
-        Assert.Equal(1, restored.Major);
-        Assert.Equal(0, restored.Minor);
-    }
-
-    [Fact]
-    public void Frame_PayloadStaysOpaque()
-    {
-        // A redirector forwards the inner payload without parsing it; it must
-        // survive the trip regardless of content, including non-UTF8 bytes.
-        var bytes = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray();
-
-        var restored = Frame.Parser.ParseFrom(
-            new Frame { Payload = ByteString.CopyFrom(bytes) }.ToByteArray());
-
-        Assert.Equal(bytes, restored.Payload.Span.ToArray());
-    }
-
     // Staged tasking (architecture.md Sec 10, the typed arm): the optional
     // marker on TaskRequest, the demand, and the chunk run. The unset case is
     // the Tier 0 fallback property stated in extending/implants.md -- an

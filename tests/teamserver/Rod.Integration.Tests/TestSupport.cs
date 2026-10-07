@@ -31,28 +31,6 @@ internal static class TestSupport
         };
 
 
-    // Builds a "<start>-<end>" port range for a recon.portscan argument that
-    // covers a tight window around the given open port, so the scan finishes
-    // promptly while still reporting the port as open. Clamped to [1, 65535].
-    // (Relocated from the Go reference implant tests when that implant moved
-    // out-of-tree, ADR 0009.)
-    internal static string PortScanRangeAround(int port)
-    {
-        var start = Math.Max(1, port - 2);
-        var end = Math.Min(65535, port + 2);
-        return $"{start}-{end}";
-    }
-
-    // A deadline for beacon-stream waits. A lost dispatch frame must fail
-    // the test with a stack in ninety seconds, not suspend it forever: the
-    // Sep 1 hangs were exactly that -- a test awaiting a server frame no
-    // thread would ever produce, invisible to stacks and fatal to the run.
-    // Ninety seconds sits far above any healthy exchange and far below the
-    // blame-hang window; the per-call token is never disposed, which is fine
-    // at test scale (a timer per await, collected with its token).
-    internal static CancellationToken BeaconDeadline()
-        => new CancellationTokenSource(TimeSpan.FromSeconds(90)).Token;
-
     // Hands out distinct ports for test listeners. The per-file probe this
     // replaces (bind :0, read the port, release, let Kestrel rebind later)
     // handed the same released port to two TestEnvs racing in parallel test
@@ -66,6 +44,24 @@ internal static class TestSupport
     // kill the Kestrel bind with "address already in use" -- exactly the two
     // bind failures the Sep 14 CI run hit in its first Test attempt.
     private static readonly object PortGate = new();
+
+    // The wait most suites end with: poll the condition until it holds or the
+    // deadline passes, then return either way -- the caller's next assert
+    // turns a miss into the failure with the context this loop lacks.
+    internal static async Task WaitUntilAsync(
+        Func<Task<bool>> condition,
+        TimeSpan? timeout = null,
+        TimeSpan? poll = null)
+    {
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (await condition())
+                return;
+            await Task.Delay(poll ?? TimeSpan.FromMilliseconds(25));
+        }
+    }
+
     // Strictly below 32768, where the Linux ephemeral port range begins.
     private const int PortCeiling = 32_760;
     private const int PortFloor = 20_000;

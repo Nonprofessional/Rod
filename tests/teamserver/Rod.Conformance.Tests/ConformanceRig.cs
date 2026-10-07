@@ -33,14 +33,13 @@ namespace Rod.Conformance.Tests;
 
 /// <summary>
 /// Where a candidate phase points: the enroll URL to dial (the contact route
-/// derives off the same front), the credential to redeem, the CA to pin, and
-/// -- for the kill-date phase -- the baked kill date the candidate must
-/// refuse to outlive.
+/// derives off the same front), the credential to redeem, and -- for the
+/// kill-date phase -- the baked kill date the candidate must refuse to
+/// outlive.
 /// </summary>
 public sealed record ConformanceTarget(
     string EnrollUrl,
     string DeployToken,
-    string CaPemPath,
     DateTimeOffset? KillDate = null)
 {
     /// <summary>The contact route hanging off the enroll URL's own front --
@@ -118,7 +117,6 @@ public sealed class ConformanceRig : IAsyncDisposable
     private readonly IHost _host;
     private readonly WebApplication _probe;
     private readonly TaskingProbe _taskingProbe;
-    private readonly string _caPemPath;
     private readonly IImplantRepository _implants;
     private readonly ISessionRegistry _sessions;
     private readonly EngagementService _engagements;
@@ -133,13 +131,12 @@ public sealed class ConformanceRig : IAsyncDisposable
     public string ProbeEnrollUrl => $"http://127.0.0.1:{ProbePort}/implants/enroll";
 
     private ConformanceRig(
-        IHost host, WebApplication probe, TaskingProbe taskingProbe, string caPemPath,
+        IHost host, WebApplication probe, TaskingProbe taskingProbe,
         int enrollPort, int probePort)
     {
         _host = host;
         _probe = probe;
         _taskingProbe = taskingProbe;
-        _caPemPath = caPemPath;
         _implants = host.Services.GetRequiredService<IImplantRepository>();
         _sessions = host.Services.GetRequiredService<ISessionRegistry>();
         _engagements = host.Services.GetRequiredService<EngagementService>();
@@ -174,11 +171,9 @@ public sealed class ConformanceRig : IAsyncDisposable
         }
         await host.StartAsync();
 
+        // The rig fronts are plain HTTP, so no candidate pins a CA; the
+        // authority here exists for the tasking probe's signatures.
         var ca = host.Services.GetRequiredService<IImplantCertificateAuthority>();
-        var caPemPath = Path.Combine(
-            Path.GetTempPath(), "rod-conformance-ca-" + Guid.NewGuid().ToString("N") + ".pem");
-        await File.WriteAllTextAsync(caPemPath, Pem(
-            ca.GetCaCertificate().Export(X509ContentType.Cert)));
 
         // The hostile tasking probe: a second plain-HTTP endpoint playing a
         // front. It forwards the enroll route to the live rig verbatim -- the
@@ -212,12 +207,11 @@ public sealed class ConformanceRig : IAsyncDisposable
             var inbound = EnvelopeProbeCodec.Parse(body.ToArray());
             var session = taskingProbe.SessionFor(inbound);
             var outbound = session.Handle(inbound);
-            File.AppendAllText("/tmp/probe-diag.log", $"contact: inbound={inbound.Count} outbound={outbound.Count}\n");
             await http.Response.Body.WriteAsync(EnvelopeProbeCodec.Encode(outbound));
         });
         await probeApp.StartAsync();
 
-        return new ConformanceRig(host, probeApp, taskingProbe, caPemPath, enrollPort, probePort);
+        return new ConformanceRig(host, probeApp, taskingProbe, enrollPort, probePort);
     }
 
     /// <summary>
@@ -235,7 +229,7 @@ public sealed class ConformanceRig : IAsyncDisposable
         try
         {
             await candidate.StartAsync(new ConformanceTarget(
-                EnrollUrl, engagement.Token, _caPemPath));
+                EnrollUrl, engagement.Token));
 
             var enrolled = await UntilAsync(ObserveDeadline, async () =>
                 (await _implants.ListByEngagementAsync(engagement.EngagementId)).Count > 0);
@@ -312,7 +306,7 @@ public sealed class ConformanceRig : IAsyncDisposable
                 // The candidate's whole dial is the probe front: enrollment
                 // forwards to the live rig, contacts feed the hostile probe.
                 await candidate.StartAsync(new ConformanceTarget(
-                    ProbeEnrollUrl, probeEngagement.Token, _caPemPath));
+                    ProbeEnrollUrl, probeEngagement.Token));
                 var verdict = await _taskingProbe.AwaitVerdictAsync(ObserveDeadline);
                 clauses.Add(new ConformanceClause(SignatureClause, verdict.Passed, verdict.Detail));
             }
@@ -327,7 +321,7 @@ public sealed class ConformanceRig : IAsyncDisposable
         try
         {
             await candidate.StartAsync(new ConformanceTarget(
-                EnrollUrl, killEngagement.Token, _caPemPath,
+                EnrollUrl, killEngagement.Token,
                 KillDate: DateTimeOffset.UtcNow.AddHours(-1)));
             await Task.Delay(KillDateGrace);
             var ranAnyway =
@@ -347,16 +341,10 @@ public sealed class ConformanceRig : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        try { File.Delete(_caPemPath); } catch { }
         await _probe.DisposeAsync();
         await _host.StopAsync();
         _host.Dispose();
     }
-
-    private static string Pem(byte[] der)
-        => "-----BEGIN CERTIFICATE-----\n"
-           + Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks)
-           + "\n-----END CERTIFICATE-----\n";
 
     private async Task<(EngagementId EngagementId, string Token)> MintEngagementTokenAsync()
     {
@@ -515,7 +503,6 @@ internal sealed class TaskingProbe
 
     internal void Record(string kind, Rod.V1.TaskOutcome outcome)
     {
-        File.AppendAllText("/tmp/probe-diag.log", $"record: {kind} -> {outcome}\n");
         lock (_gate)
             _results[kind] = outcome;
     }

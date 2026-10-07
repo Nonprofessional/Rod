@@ -77,11 +77,10 @@ public sealed class ReferenceImplantCandidate : IImplantCandidate
         if (target.KillDate is { } killDate)
             psi.Environment["ROD_KILL_DATE"] = killDate.ToString("O");
         _process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start the implant.");
-        _process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is not null)
-                File.AppendAllText("/tmp/candidate-diag.log", e.Data + "\n");
-        };
+        // Drain stderr so a chatty candidate cannot stall on a full pipe;
+        // nothing consumes the lines -- a failed clause's verdict names the
+        // cause, and the candidate runs with ROD_VERBOSE off.
+        _process.ErrorDataReceived += (_, _) => { };
         _process.BeginErrorReadLine();
         return Task.CompletedTask;
     }
