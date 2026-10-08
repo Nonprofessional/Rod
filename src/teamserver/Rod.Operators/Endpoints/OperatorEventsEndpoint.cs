@@ -6,6 +6,7 @@ using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Live;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Operators.Interaction;
 using Rod.Operators.Presence;
 
 namespace Rod.Operators.Endpoints;
@@ -36,7 +37,7 @@ public static class OperatorEventsEndpoint
     {
         endpoints.MapGet("/engagements/{engagementId}/events", StreamAsync)
             .WithName("StreamOperatorEvents")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         return endpoints;
     }
@@ -46,6 +47,7 @@ public static class OperatorEventsEndpoint
         HttpContext context,
         ILiveEventBus bus,
         OperatorPresenceService presence,
+        Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var idValue))
@@ -88,7 +90,10 @@ public static class OperatorEventsEndpoint
         var first = events.MoveNextAsync();
 
         // Join before opening the stream so peers see the join, and seed the
-        // late joiner with the current roster as the first event.
+        // late joiner with the current roster -- and the ownership state
+        // (architecture.md Sec 4.5): the claims other operators hold (each a
+        // "held by" lock on a typing half) and the driving map (who works
+        // which implant) -- as the first event.
         await presence.JoinAsync(engagement, identity, cancellationToken);
         try
         {
@@ -96,6 +101,23 @@ public static class OperatorEventsEndpoint
             {
                 operators = (await presence.ListAsync(engagement, cancellationToken))
                     .Select(o => new { id = o.Id.ToString(), handle = o.Handle, displayName = o.DisplayName })
+                    .ToArray(),
+                claims = (await interaction.ListAsync(engagement, cancellationToken))
+                    .Select(c => new
+                    {
+                        kind = c.Surface.RouteKind(),
+                        surfaceId = c.SurfaceWireId(),
+                        operatorId = c.OperatorId.ToString(),
+                        acquiredAt = c.AcquiredAt,
+                    })
+                    .ToArray(),
+                driving = (await interaction.ListDrivingAsync(engagement, cancellationToken))
+                    .Select(d => new
+                    {
+                        implantId = d.ImplantId.ToString(),
+                        operatorId = d.OperatorId.ToString(),
+                        at = d.At,
+                    })
                     .ToArray(),
             }, cancellationToken);
 
@@ -127,6 +149,11 @@ public static class OperatorEventsEndpoint
         }
         finally
         {
+            // The disconnect is the claim reaper (architecture.md Sec 4.5): a
+            // claim is only as durable as its holder's connection, so leaving
+            // the engagement's live stream releases every claim the operator
+            // holds -- each release publishing to the peers still connected.
+            await interaction.ReleaseAllForOperatorAsync(engagement, identity.Id, CancellationToken.None);
             await presence.LeaveAsync(engagement, identity.Id, CancellationToken.None);
         }
     }
