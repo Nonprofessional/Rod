@@ -25,7 +25,9 @@ public sealed class Operator
             throw new ArgumentException("Operator handle is required.", nameof(handle));
         if (string.IsNullOrWhiteSpace(displayName))
             throw new ArgumentException("Operator display name is required.", nameof(displayName));
-        if (!Enum.IsDefined(scopes))
+        // Flags semantics: any combination of the defined scopes is a valid
+        // set; a bit outside the mask is not (a value from a newer server).
+        if ((~OperatorScope.All & scopes) != 0)
             throw new ArgumentException($"Operator scopes '{scopes}' are not a valid scope set.", nameof(scopes));
 
         Id = id;

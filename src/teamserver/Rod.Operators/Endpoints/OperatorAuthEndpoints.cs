@@ -25,15 +25,104 @@ public static class OperatorAuthEndpoints
     {
         // Login is anonymous (it is how a session is established); logout, the
         // current-operator read, credential revocation, and API-token
-        // management require an existing session.
+        // management require an existing session. Scope assignment
+        // additionally requires the acting scope (architecture.md Sec 4.5):
+        // a read-only operator cannot widen themselves, and an operator who
+        // can already act on every engagement is not elevated by granting
+        // what they hold.
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
         endpoints.MapPost("/logout", LogoutAsync).RequireAuthorization();
         endpoints.MapGet("/me", MeAsync).RequireAuthorization();
         endpoints.MapPost("/{operatorId}/credentials:revoke", RevokeCredentialAsync).RequireAuthorization();
+        endpoints.MapPut("/{operatorId}/scopes", SetScopesAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
         endpoints.MapPost("/{operatorId}/tokens", MintTokenAsync).RequireAuthorization();
         endpoints.MapGet("/{operatorId}/tokens", ListTokensAsync).RequireAuthorization();
         endpoints.MapPost("/{operatorId}/tokens/{tokenId}:revoke", RevokeTokenAsync).RequireAuthorization();
         return endpoints;
+    }
+
+    // Scope assignment (architecture.md Sec 4.5): the one guarded piece of
+    // account machinery. The caller must hold the task scope (the route's
+    // policy); the target's new set is validated (task and approve each
+    // require read) and may not remove the last task holder -- a lockout
+    // guard, not a security boundary. Like every operator-account change it
+    // is global state, so it lands in no engagement trail; the per-request
+    // session validation delivers the new set to the target's live cookie at
+    // its next request.
+    private static async Task<IResult> SetScopesAsync(
+        string operatorId,
+        ScopeAssignmentRequest? body,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new { message = "Operator id is not a valid identifier." });
+
+        if (!TryParseScopes(body?.Scopes, out var scopes, out var parseError))
+            return Results.BadRequest(new { message = parseError });
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new { message = $"Operator {operatorId} does not exist." });
+
+        var violation = OperatorScopes.Validate(scopes);
+        if (violation is not null)
+            return Results.Json(new { message = violation }, statusCode: StatusCodes.Status422UnprocessableEntity);
+
+        // The lockout guard: removing the target's task scope must leave
+        // another task holder standing.
+        if (target.Scopes.HasFlag(OperatorScope.Task) && !scopes.HasFlag(OperatorScope.Task))
+        {
+            var others = (await operators.ListAsync(cancellationToken))
+                .Where(o => o.Id != target.Id && o.Scopes.HasFlag(OperatorScope.Task))
+                .ToList();
+            if (others.Count == 0)
+                return Results.Conflict(new
+                {
+                    message = "Refusing to remove the last task scope: another operator must hold it first.",
+                });
+        }
+
+        var updated = target.WithScopes(scopes);
+        await operators.SaveAsync(updated, cancellationToken);
+        return Results.Ok(ToSummary(updated));
+    }
+
+    // Parses the request's scope names. Unknown names are refused here -- an
+    // assignment naming a scope this server does not know is a client error,
+    // unlike the claim-value parser's degrade posture.
+    private static bool TryParseScopes(string[]? names, out OperatorScope scopes, out string error)
+    {
+        scopes = OperatorScope.None;
+        if (names is null || names.Length == 0)
+        {
+            // An empty assignment is valid: the operator is locked out of the
+            // engagement surface entirely (login and account reads remain).
+            error = string.Empty;
+            return true;
+        }
+
+        foreach (var name in names)
+        {
+            switch (name?.Trim().ToLowerInvariant())
+            {
+                case "read":
+                    scopes |= OperatorScope.Read;
+                    break;
+                case "task":
+                    scopes |= OperatorScope.Task;
+                    break;
+                case "approve":
+                    scopes |= OperatorScope.Approve;
+                    break;
+                default:
+                    error = $"Unknown scope '{name}'.";
+                    return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
     }
 
     // API-token management (architecture.md Sec 9 -- the identity model's API
@@ -196,14 +285,25 @@ public static class OperatorAuthEndpoints
     }
 
     private static OperatorAuthSummary ToSummary(Operator op)
-        => new(op.Id.Value, op.Handle, op.DisplayName);
+        => new(op.Id.Value, op.Handle, op.DisplayName, OperatorScopes.ToClaimValue(op.Scopes)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 }
 
 /// <summary>Login credentials submitted to <c>POST /operators/login</c>.</summary>
 public sealed record LoginRequest(string Handle, string Password);
 
-/// <summary>The authenticated operator returned by login and <c>GET /operators/me</c>.</summary>
-public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName);
+/// <summary>
+/// The scope assignment submitted to <c>PUT /operators/{id}/scopes</c>: the
+/// complete new set by name (an empty assignment locks the operator out of
+/// the engagement surface).
+/// </summary>
+public sealed record ScopeAssignmentRequest(string[]? Scopes);
+
+/// <summary>
+/// The authenticated operator returned by login and <c>GET /operators/me</c>:
+/// identity and the scope set the session carries.
+/// </summary>
+public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName, string[] Scopes);
 
 /// <summary>
 /// A freshly minted API token: the secret is shown exactly once, here -- only

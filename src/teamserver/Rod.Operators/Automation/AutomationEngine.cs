@@ -417,11 +417,16 @@ public sealed class AutomationEngine : BackgroundService
         if (existing is not null)
             return;
 
-        var automation = Operator.Register(
+        // Scope-less by construction: the synthetic operator never
+        // authenticates, so no policy ever reads its set -- but the scope
+        // guards that read the whole roster (the last task holder,
+        // architecture.md Sec 4.5) must not count an engine among the humans.
+        var automation = new Operator(
             AutomationOperatorIdentity.OperatorId,
             AutomationOperatorIdentity.Handle,
             AutomationOperatorIdentity.DisplayName,
-            _clock.GetUtcNow());
+            _clock.GetUtcNow(),
+            OperatorScope.None);
         await _operators.SaveAsync(automation, cancellationToken);
         _logger.LogInformation("Seeded the synthetic automation operator '{Handle}'.", AutomationOperatorIdentity.Handle);
     }

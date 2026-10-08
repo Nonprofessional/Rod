@@ -80,7 +80,18 @@ public static class RodOperatorAuthHost
             .AddScheme<AuthenticationSchemeOptions, OperatorTokenAuthHandler>(
                 OperatorAuthConstants.TokenScheme, _ => { });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            // The scope policies (architecture.md Sec 4.5): endpoint groups in
+            // transport and this layer require them by name through the
+            // constants core state carries, the same way the identity claims
+            // cross the boundary. Assertion-based because the scope set is one
+            // claim value holding a set, not one claim per scope.
+            options.AddPolicy(OperatorScopes.ReadPolicy,
+                policy => policy.RequireAssertion(ctx => ctx.User.HasScope(OperatorScope.Read)));
+            options.AddPolicy(OperatorScopes.TaskPolicy,
+                policy => policy.RequireAssertion(ctx => ctx.User.HasScope(OperatorScope.Task)));
+        });
 
         services.AddSingleton<IPasswordHasher<Operator>, PasswordHasher<Operator>>();
         services.AddSingleton<OperatorAuthService>();
@@ -112,6 +123,13 @@ public static class RodOperatorAuthHost
     // the comparison, and the principal is rejected at the request that
     // presented the cookie. Reading the verifier per attempt is the same
     // fresh-read discipline login applies.
+    //
+    // The same read bounds the session's scope set against the store
+    // (architecture.md Sec 4.5): when the operator's scopes moved and the
+    // cookie still carries the old set, the principal is replaced with the
+    // current one at this very request -- a demotion takes effect immediately
+    // and a promotion needs no re-login, and the renewed cookie carries the
+    // new set so the comparison settles.
     private static async Task ValidateSessionAsync(CookieValidatePrincipalContext context)
     {
         var operatorId = context.Principal?.TryGetOperatorId();
@@ -121,13 +139,26 @@ public static class RodOperatorAuthHost
             return;
         }
 
-        var credentials = context.HttpContext.RequestServices
-            .GetRequiredService<IOperatorCredentialStore>();
-        var hash = await credentials.FindHashAsync(
-            operatorId.Value, context.HttpContext.RequestAborted);
+        var services = context.HttpContext.RequestServices;
+        var credentials = services.GetRequiredService<IOperatorCredentialStore>();
+        var hash = await credentials.FindHashAsync(operatorId.Value, context.HttpContext.RequestAborted);
 
         var stamp = context.Principal!.FindFirst(SessionStamp.ClaimType)?.Value;
         if (hash is null || stamp is null || stamp != SessionStamp.Compute(hash))
+        {
             context.RejectPrincipal();
+            return;
+        }
+
+        var @operator = await services.GetRequiredService<IOperatorRepository>()
+            .FindAsync(operatorId.Value, context.HttpContext.RequestAborted);
+        if (@operator is null)
+        {
+            context.RejectPrincipal();
+            return;
+        }
+
+        if (context.Principal!.TryGetScopes() != @operator.Scopes)
+            context.ReplacePrincipal(OperatorAuthService.CreatePrincipal(@operator, hash));
     }
 }
