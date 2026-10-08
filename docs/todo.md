@@ -35,21 +35,6 @@ the blocker clears, not skipped.
   audit trail, and a verb without a mapping shows up as unmapped rather
   than absent.
 
-- **Operator roles and interaction ownership** (serves architecture.md
-  Sec 9 and Sec 10.3; design lands first). What an engagement cannot
-  do without it: more than one operator without collisions -- today every
-  operator is a peer who can type into any channel, and nothing marks
-  who is driving which implant. Shape: per-operator claims beyond the
-  current peer model (a read scope, a tasking scope, an approver
-  scope), per-implant activity presence extending the existing presence
-  service, and exclusive claims on live channel interaction (an
-  interactive shell's input half, a tunnel) so two operators cannot
-  type into one shell; claims are visible on the live bus and released
-  on disconnect.
-  _AC:_ two operators on one engagement see each other's claim on an
-  interactive shell, the second's input is refused while the claim
-  holds, and an operator without the tasking scope cannot issue tasks.
-
 - **Sensitive-verb approval workflow** (serves architecture.md Sec 9
   and Sec 10.2/10.3; design lands first). What an engagement cannot
   do without it: a second pair of eyes where it matters -- sensitive verbs
