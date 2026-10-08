@@ -72,7 +72,7 @@ public class OperatorInteractionServiceTests
             e => e.Kind == LiveEventKind.ClaimAcquired);
         Assert.Equal(alice, acquired.OperatorId);
         Assert.Equal(new TaskId(surfaceId), acquired.TaskId);
-        Assert.Equal($"channel/{surfaceId}", acquired.Payload);
+        Assert.Equal($"channel/{InteractionClaim.WireId(InteractionSurface.ChannelTask, surfaceId)}", acquired.Payload);
     }
 
     [Fact]
