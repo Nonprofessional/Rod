@@ -2032,6 +2032,72 @@ plain ordered account without one. No replay is implied in either
 direction: the digest reads what the trail holds, and the trail is the
 record.
 
+### 11.2 Target intel and situational awareness
+
+The trail holds everything that happened; the picture holds what the
+engagement learned. Recon findings, loot, and host observations live
+inside task output strings today, so an operator re-reads transcripts
+instead of consulting a picture. The intel layer closes that gap the way
+the digest closed the resume gap: read-side projections over the stores
+that already exist, plus a small family of new attributed facts. It
+organizes the trail; it does not become a second store of truth -- no new
+entity, no parallel index, nothing to keep consistent -- and every write
+it adds is an audit event like the ones beside it.
+
+**Labels and notes on implants and hosts.** An implant already carries
+operator notes (`ImplantNoteAdded`, read back as a query over the trail);
+the layer widens that shape in two directions. Labels are short set/clear
+markers (`ImplantLabeled`, payload the label text, outcome `set` or
+`cleared`) reduced at read time last-wins per label, so an append-only
+chain can change a label without rewriting history. Hosts are the device
+dimension the enrollment's own hostname stamp groups (Sec 5.1): a host is
+that grouping read-side -- no Host entity, no host store -- and host
+facts key on the normalized hostname (trimmed, case-folded), the join
+every view applies. `HostNoteAdded` and `HostLabeled` carry a small JSON
+payload naming the host: the audit record's field set is frozen (the
+chain's canonical form, above), so a new subject rides the free string
+fields the way notes and artifact bindings already do rather than growing
+the record. Labels are bounded per subject (length and count) at the
+write route, the same eager validation the note cap applies.
+
+**Typed loot views.** The artifact store already holds what the collection
+verbs bring back -- screenshots as PNG artifacts, pulled files, dumps --
+and the trail already binds each to its task and verb (`ExfilCaptured`,
+`ArtifactAttached`). The loot view is the organizer that was missing: an
+engagement-wide paged listing (the same limit-plus-cursor discipline every
+listing holds) whose entries classify by the producing verb and content
+type into screenshot, credential, and file, each entry carrying its
+capture attribution. Classification is a read-time judgment over metadata;
+nothing is stamped on the artifact. Inline task results (small
+`file.pull`s) stay in transcripts -- loot organizes the artifact store,
+not the task history.
+
+**Topology.** The engagement's network picture is assembled, not stored:
+hosts group from implant enrollments, pivot links from the parentage the
+child-enrollment path records (Sec 5.2), and observed hosts and ports from
+completed recon task outputs parsed at read time. The recon verbs'
+handlers are out-of-tree (Sec 13), so the parse targets a documented
+output contract the handler authors write for -- JSON lines, one finding
+per line ([extending/tradecraft.md](extending/tradecraft.md)) -- and a
+line that does not parse is not a finding: unparseable output stays in
+the transcript instead of erroring the view. When the external recon
+workbench (todo.md) lands, its findings arrive as engagement artifacts
+and join the same projection -- findings-as-artifacts is the seam.
+
+**Evidence access is part of the story.** Reads of projections stay
+unaudited (the digest's own posture: a read of the evidence is not an act
+on the engagement). Retrieving evidence bytes is different -- an artifact
+leaves the platform, the chain-of-custody question "who pulled what" --
+so the artifact retrieve route records an `ArtifactViewed` event
+attributed to the downloading operator, the same posture the payload
+fetch route holds for delivered bytes.
+
+**Evolution notes.** The intel kinds joining the digest's whitelist (a
+label change is a watch beat), live events on label changes for connected
+consoles, and an LLM narration over the picture (beside the digest's own
+evolution note) are the natural widenings -- each is one view or one
+whitelist entry, and no storage decision waits behind them.
+
 ## 12. Technology stack and language boundaries
 
 | Concern | Choice | Why |
