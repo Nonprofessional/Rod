@@ -391,31 +391,14 @@ function toBase64Utf8(text: string): string {
 // holds it, the input routes refuse. Claims are visible on the live stream
 // (ClaimAcquired / ClaimReleased, and the hello frame's seed) and released on
 // the holder's disconnect -- the pane that holds one releases it on dismiss.
+// The console needs only the release half: taking is implicit in typing, and
+// the views read the claim state from the live stream, not a listing.
 
 export interface ClaimSummary {
   kind: 'channel' | 'shell'
   surfaceId: string
   operatorId: string
   acquiredAt: string
-}
-
-export async function listClaims(engagementId: string): Promise<ClaimSummary[]> {
-  return jsonOrThrow(await fetch(`engagements/${engagementId}/claims`))
-}
-
-// Takes the claim on a surface before typing, to signal intent. Refused (409)
-// with the holder named when another operator holds it.
-export async function acquireClaim(
-  engagementId: string,
-  kind: 'channel' | 'shell',
-  surfaceId: string,
-): Promise<void> {
-  const response = await fetch(`engagements/${engagementId}/claims`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind, taskId: kind === 'channel' ? surfaceId : undefined, shellId: kind === 'shell' ? surfaceId : undefined }),
-  })
-  await jsonOrThrow<unknown>(response)
 }
 
 // Releases a claim this operator holds; the surface is claimable again.
