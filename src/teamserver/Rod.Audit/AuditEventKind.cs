@@ -469,4 +469,18 @@ public enum AuditEventKind
     /// discipline on the host key.
     /// </summary>
     HostLabeled,
+
+    /// <summary>
+    /// An operator retrieved an evidence artifact's bytes (architecture.md
+    /// Sec 11.2) -- the loot view's open, or any artifact download. Reading
+    /// a projection of the evidence is not an act on the engagement (the
+    /// digest's posture), but retrieving the bytes is: the artifact leaves
+    /// the platform, and the chain-of-custody question "who pulled what"
+    /// deserves the same trail record the payload fetch route writes for
+    /// delivered bytes (<see cref="PayloadFetched"/>). The payload carries
+    /// the artifact's name and content type; the outcome is the artifact
+    /// id. Attributed to the downloading operator and bound to the task
+    /// that gathered the evidence.
+    /// </summary>
+    ArtifactViewed,
 }

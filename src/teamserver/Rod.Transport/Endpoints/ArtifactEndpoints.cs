@@ -47,6 +47,13 @@ public static class ArtifactEndpoints
             .RequireAuthorization(OperatorScopes.ReadPolicy);
         engagementGroup.MapGet("/{artifactId}", GetArtifactAsync).WithName(nameof(GetArtifactAsync));
 
+        // The typed loot view (architecture.md Sec 11.2): the engagement-wide
+        // artifact listing classified by what gathered each artifact -- the
+        // organizer over evidence the collection verbs already captured.
+        endpoints.MapGet("/engagements/{engagementId}/loot", ListLootAsync)
+            .RequireAuthorization(OperatorScopes.ReadPolicy)
+            .WithName(nameof(ListLootAsync));
+
         return endpoints;
     }
 
@@ -162,7 +169,11 @@ public static class ArtifactEndpoints
     private static async Task<IResult> GetArtifactAsync(
         string engagementId,
         string artifactId,
+        ClaimsPrincipal user,
         IArtifactStore artifacts,
+        ITaskRepository tasks,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -174,7 +185,140 @@ public static class ArtifactEndpoints
         if (artifact is null || artifact.EngagementId != engagementValue)
             return Results.NotFound(new Problem("Artifact does not exist in this engagement."));
 
+        // Retrieving evidence bytes is an act on the engagement, unlike
+        // reading a projection of it (architecture.md Sec 11.2): the artifact
+        // leaves the platform, so the chain-of-custody question "who pulled
+        // what" gets the same trail record the payload fetch route writes for
+        // delivered bytes. The task's implant binds the event to the target
+        // the evidence came from; a task that no longer resolves leaves the
+        // id unused rather than blocking the read.
+        var implantId = Guid.Empty;
+        var task = await tasks.FindAsync(new TaskId(artifact.TaskId), cancellationToken);
+        if (task is not null)
+            implantId = task.ImplantId.Value;
+        var viewer = user.TryGetOperatorId();
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: viewer is { } who ? who.Value : Guid.Empty,
+                implantId: implantId,
+                taskId: artifact.TaskId,
+                verb: "view-artifact",
+                kind: AuditEventKind.ArtifactViewed,
+                payload: $"{artifact.Name};{artifact.ContentType}",
+                output: null,
+                outcome: artifact.ArtifactId.ToString("N"),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
         return Results.File(artifact.Content, artifact.ContentType, artifact.Name);
+    }
+
+    // The loot kinds: what gathered the artifact, the read-time judgment the
+    // loot view classifies by. The verbs are the collection-family names the
+    // capability catalog carries; transport cannot reference the tradecraft
+    // layer that owns them (the layer rule), so the strings stand here with
+    // the catalog as their authority.
+    internal const string LootKindScreenshot = "screenshot";
+    internal const string LootKindCredential = "credential";
+    internal const string LootKindFile = "file";
+    internal const string LootKindOther = "other";
+
+    private static readonly IReadOnlySet<string> LootKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        LootKindScreenshot, LootKindCredential, LootKindFile, LootKindOther,
+    };
+
+    private static async Task<IResult> ListLootAsync(
+        string engagementId,
+        string? kind,
+        int? limit,
+        string? cursor,
+        IEngagementRepository engagements,
+        IArtifactStore artifacts,
+        ITaskRepository tasks,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (kind is not null && !LootKinds.Contains(kind))
+            return Results.BadRequest(new Problem($"kind must be one of: {string.Join(", ", LootKinds)}."));
+        if (!ListPaging.TryBind(limit, cursor, c => TimestampIdCursor.TryDecode(c, out _, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
+
+        var engagement = await engagements.FindAsync(new EngagementId(engagementValue), cancellationToken);
+        if (engagement is null)
+            return Results.NotFound(new Problem("Engagement does not exist."));
+
+        // One page of the engagement's artifacts, newest window first, then
+        // the classification join: the producing task names the verb, and the
+        // verb plus content type name the kind. The kind filter applies to
+        // the classified page, so a filtered walk may hold fewer items per
+        // page -- the cursor still walks strictly older, the paging
+        // contract's own guarantee.
+        var page = await artifacts.ListPageAsync(engagementValue, boundLimit, boundCursor, cancellationToken);
+        var taskCache = new Dictionary<Guid, Rod.CoreState.Tasks.Task?>();
+        var items = new List<LootEntry>();
+        foreach (var artifact in page.Items)
+        {
+            if (!taskCache.TryGetValue(artifact.TaskId, out var task))
+            {
+                task = await tasks.FindAsync(new TaskId(artifact.TaskId), cancellationToken);
+                taskCache[artifact.TaskId] = task;
+            }
+
+            var lootKind = ClassifyLoot(task?.Verb, artifact.ContentType);
+            if (kind is not null && !string.Equals(lootKind, kind, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            items.Add(new LootEntry(
+                artifact.ArtifactId.ToString("N"),
+                lootKind,
+                artifact.TaskId.ToString("N"),
+                task?.ImplantId.ToString(),
+                task?.Verb,
+                artifact.OperatorId,
+                artifact.Name,
+                artifact.ContentType,
+                artifact.Size,
+                artifact.StoredAt));
+        }
+
+        return Results.Ok(new LootListResponse([.. items], page.NextCursor));
+    }
+
+    // The classification: the producing verb names the intent, the content
+    // type catches what a verb-less record still declares (an operator
+    // attaching a PNG needs no task verb to be a screenshot in the view).
+    // Anything else is still loot -- "other" keeps the view complete rather
+    // than silently dropping what the vocabulary has not met.
+    private static string ClassifyLoot(string? verb, string contentType)
+    {
+        if (string.Equals(verb, "collect.screenshot", StringComparison.OrdinalIgnoreCase)
+            || contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return LootKindScreenshot;
+        }
+
+        if (string.Equals(verb, "collect.cred", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(verb, "collect.minidump", StringComparison.OrdinalIgnoreCase))
+        {
+            return LootKindCredential;
+        }
+
+        if (string.Equals(verb, "file.pull", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(verb, "file.push", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(verb, "exfil.push", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(verb, "exfil.stage", StringComparison.OrdinalIgnoreCase))
+        {
+            return LootKindFile;
+        }
+
+        return LootKindOther;
     }
 
     // Attachment bounds: a name longer than this is hostile or a bug, and a
@@ -226,5 +370,33 @@ public static class ArtifactEndpoints
                 artifact.Size,
                 artifact.StoredAt);
     }
+
+    /// <summary>
+    /// One page of the engagement's typed loot (architecture.md Sec 11.2): the
+    /// classified artifact records plus the cursor that walks one page older,
+    /// null when the beginning is reached. A kind-filtered page may hold fewer
+    /// items than the limit -- the filter applies to the classified page, not
+    /// the store walk.
+    /// </summary>
+    public sealed record LootListResponse(
+        LootEntry[] Items,
+        string? NextCursor);
+
+    // One piece of loot: the artifact's metadata, the kind the view classifies
+    // it into, and the capture attribution -- which task (and verb) gathered
+    // it, from which implant, credited to which operator. The bytes are fetched
+    /// on demand through the retrieve endpoint; the retrieval is what the
+    /// ArtifactViewed event records.
+    public sealed record LootEntry(
+        string ArtifactId,
+        string Kind,
+        string TaskId,
+        string? ImplantId,
+        string? Verb,
+        Guid? CapturedBy,
+        string Name,
+        string ContentType,
+        long Size,
+        DateTimeOffset StoredAt);
 
 }

@@ -62,4 +62,21 @@ public sealed class InMemoryArtifactStore : IArtifactStore
             .ToArray();
         return Task.FromResult<IReadOnlyList<Artifact>>(matches);
     }
+
+    public Task<ArtifactPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default)
+    {
+        // The artifact id breaks stored-at ties so a page boundary is stable.
+        var ordered = _artifacts.Values
+            .Where(a => a.EngagementId == engagementId)
+            .OrderBy(a => a.StoredAt)
+            .ThenBy(a => a.ArtifactId)
+            .ToArray();
+        var (items, next) = ListPageWindow.TakeNewest(
+            ordered, limit, cursor, a => a.StoredAt, a => a.ArtifactId);
+        return Task.FromResult(new ArtifactPage(items, next));
+    }
 }

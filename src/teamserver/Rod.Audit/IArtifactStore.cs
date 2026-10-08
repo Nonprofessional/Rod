@@ -48,4 +48,18 @@ public interface IArtifactStore
     /// cross-engagement access never reaches this with another engagement's id.
     /// </summary>
     Task<IReadOnlyList<Artifact>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One page of the engagement's artifacts (architecture.md Sec 11.2): the
+    /// newest <paramref name="limit"/> records, or the next older page when
+    /// <paramref name="cursor"/> carries the previous page's
+    /// <see cref="ArtifactPage.NextCursor"/>, with the same newest-window-first
+    /// semantics as the audit trail's pages -- the engagement-wide listing the
+    /// typed loot view walks.
+    /// </summary>
+    Task<ArtifactPage> ListPageAsync(
+        Guid engagementId,
+        int limit,
+        string? cursor,
+        CancellationToken cancellationToken = default);
 }
