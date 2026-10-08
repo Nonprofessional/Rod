@@ -177,7 +177,7 @@ under, and a note on its current state are listed.
 | `Rod.Protocol` | **Not a layer.** The protobuf wire protocol: frames and the enrollment/handshake/tasking messages (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
-| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Per-engagement RBAC is deliberately absent -- the trusted-operators model (Sec 4.1, Sec 9): every authenticated operator reaches every endpoint, and a per-handle login throttle slows brute force. |
+| `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Roles are the three global operator scopes of Sec 4.5 (read, task, approve -- coordination discipline among trusted operators, not per-engagement RBAC, which stays deliberately absent), with the exclusive interaction claims and activity presence that mark who drives what; a per-handle login throttle slows brute force. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
@@ -305,6 +305,109 @@ are the natural widenings -- each touches the entity, the engine's delivery
 call, and nothing else. A channel needing a richer body than the frame shape
 is a new delivery format on the same subscription, not a new subscription
 kind.
+
+### 4.5 Operator roles and interaction ownership
+
+The peer model -- every authenticated operator is an equal who can type into
+anything -- stops working at two operators: nothing marks who is driving
+which implant, and two consoles can type into one shell at the same moment.
+Roles and interaction ownership close that gap with three pieces: scopes
+(what an operator may do), activity presence (who is working what, soft),
+and interaction claims (who holds an interaction surface, exclusive). All
+three are coordination discipline among trusted operators, not a defense
+against a hostile one -- an operator is inside the trust boundary by
+definition (Sec 9); the scopes name responsibility, they do not contain a
+compromise.
+
+**Scopes.** The operator identity carries three global scopes: `read`,
+`task`, and `approve`. `read` is the viewing scope -- every engagement-scoped
+read and the live event stream. `task` is the acting scope -- every
+engagement-scoped write: tasking (issue, cancel, channel input, relay
+binds), caught-shell interaction, implant retirement and notes, and the
+engagement's own management (listeners, payloads, launchers, ROE, snippets,
+automation, webhooks, closeout). `approve` is the second-pair-of-eyes scope
+the sensitive-verb workflow consumes; it is carried now and checked when
+that item lands. Assignment is validated at the store: `task` and `approve`
+each require `read` -- an operator who cannot see an engagement cannot act
+or approve on it. Every provisioned operator holds all three by default, so
+the peer model is the default and scopes are the narrowing. The scopes are
+global account state, like the credential they ride beside, so their changes
+land in no engagement trail -- the same posture credential revocation keeps
+-- and the account machinery (login, token mint and revoke, credential
+revoke) stays trusted-operator. Scope assignment itself
+(`PUT /operators/{id}/scopes`) is the one guarded addition: the caller must
+hold `task` (a read-only operator cannot widen themselves; an operator who
+can already act on every engagement is not elevated by granting what they
+hold), and the change may not remove the last `task` holder -- a lockout,
+not a security boundary, refused the same way.
+
+**Scope mechanics.** The scope set rides the authenticated principal as one
+claim (`rod:operator-scopes`), stamped where the principal is built: at
+cookie login and at API-token authentication. The token path resolves the
+operator fresh on every request, so its scopes are always current; the
+cookie path extends the per-request validation that already bounds a
+session against its credential generation (Sec 9) -- when the store's scope
+set no longer matches the cookie's, the principal is replaced with the
+current set at that very request, so a demotion takes effect immediately
+and a promotion needs no re-login. Enforcement is authorization policies
+(`rod-scope:read`, `rod-scope:task`) required on route groups and the
+individual write routes inside read groups, so the gate lives at the
+endpoint layer and the core use cases stay scope-free: the automation
+engine's synthetic operator never authenticates and is unaffected by
+construction.
+
+**Activity presence.** The presence roster (who is online) extends to who
+is driving which implant: every tasking action -- an issuance, a channel
+input post -- notes activity against its implant, and the roster holds one
+driving entry per implant (operator, last-at). A refresh by the current
+driver publishes nothing; a change of driver publishes one `ImplantActivity`
+live event, so tasking cadence never becomes a firehose and a hand-off is
+one beat. The hello frame carries the driving map beside the roster, so a
+late joiner sees who works what before any event arrives. Activity is soft
+state -- it marks, it does not block.
+
+**Interaction claims.** The exclusive half: one operator holds the claim on
+an interaction surface, and the surfaces are exactly the typing halves -- a
+live channel task (its input posts and relay binds; `shell.interact` and
+the tunnels ride the same rule) and a caught shell session (its input).
+Acquire is explicit (`POST /engagements/{id}/claims`, idempotent for the
+holder, `409` naming the holder otherwise) and implicit: an input post or
+relay bind against an unclaimed surface takes the claim as its first effect,
+so the first keystroke is the claim and existing automation of the input
+routes keeps working unclaimed-to-claimed. While another operator holds the
+claim, the input routes refuse (`409`, the holder named) -- two operators
+cannot type into one shell. Release is explicit (`DELETE` by the holder),
+automatic on the holder's disconnect from the engagement's live stream
+(the SSE close path that ends presence releases every claim the operator
+holds -- the bus's own lifecycle is the reaper), and lazy on read: a claim
+on a surface that ended is inert -- the task's state or the shell's status
+refuses input before the claim is consulted -- and the claims listing drops
+such claims when it sees them, so a dead claim never outlives its holder's
+connection. Claims are visible on the live bus (`ClaimAcquired`,
+`ClaimReleased`, holder and surface in the payload), in the claims listing,
+and in the hello frame, so a late joiner sees every held claim on connect.
+Teardown stays open to any task-scoped operator: closing a caught shell or
+unbinding a relay are safety valves a colleague must always be able to
+pull, and the upgrade render mints a credential without typing anything
+(its paste rides the audited, claim-checked input route). Claims are
+coordination state, not audit facts -- presence's own posture: ephemeral,
+process-local, and already attributed downstream, because every input post
+lands in the trail as it happens (`ChannelInput`, `ShellSessionInput`),
+which is the forensic who-typed-what record.
+
+**The console surface.** The interact panes render the claim: held by
+another operator, the input line locks and names the holder; held by me or
+unclaimed, typing proceeds (the first post taking the claim server-side),
+and dismissing a pane I hold releases it. The roster shows the driving
+badges from activity presence, and an operator without `task` sees a
+read-only mark in the shell -- the badge explains what the server already
+refuses; it is not the enforcement.
+
+**Evolution notes.** The approver scope's consumer is the sensitive-verb
+approval queue (a designed item); a scope-management view in the console
+and per-engagement role overrides (an operator lead on one engagement,
+read-only on another) are the natural widenings, each a new assignment
+surface over the same claim, not a new scope model.
 
 ## 5. Implants and profiles
 
@@ -1086,7 +1189,11 @@ fleet-wide code execution. Security is a first-class concern.
 - **Identity.** Operator identities (credentials and API tokens) verified at
   login and per request; implant identities bound to their engagement by the
   transport they contact over -- the per-artifact contact key on every
-  transport (below). API tokens are
+  transport (below). Each operator carries the three global scopes (read,
+  task, approve -- Sec 4.5) that name what it may do on the engagement
+  surface; the scope set rides the authenticated principal and is revalidated
+  against the store per request, so a role change takes effect at the next
+  request. API tokens are
   bearer credentials minted per operator
   through the operator API (shown once, stored as a digest), honored alongside
   cookie sessions through a front scheme that authenticates by what the
@@ -1644,7 +1751,11 @@ back as ChannelOutput chunks that land on the task's transcript while it is
 still Dispatched (an operator reads the shell live, over the same task read),
 and the operator's typing flows down as ChannelInput frames -- routed from
 the operator input route through a per-implant live-channel hub into the
-stream's dispatch writer, so the stream's single-writer discipline holds. A
+stream's dispatch writer, so the stream's single-writer discipline holds. The
+typing half is exclusively owned (Sec 4.5): input posts and relay binds
+require holding the channel's interaction claim -- the first post takes the
+claim on an unclaimed surface, and a surface another operator holds refuses
+the input outright, so two operators cannot type into one shell. A
 final ordinary TaskResult closes the task with the whole session as its
 record; the operator's eof closes the shell's stdin, which is the natural end
 of the session -- and for the tunnel it half-closes the TCP send side, the
