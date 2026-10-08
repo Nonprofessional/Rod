@@ -66,6 +66,10 @@ sections.
 |------|---------|
 | **Audit event** | An immutable, hash-chained, attributed record of a privileged action; the engagement timeline and report source by construction. |
 | **Artifact** | A first-class object (file, screenshot, command output) linked to a task; part of the evidence store. |
+| **Label** | The marker vocabulary on implants and hosts ("jump", "owned", "watch-edr"; Sec 11.2): setting and clearing append attributed audit events, and the live set is the last-wins reduction over them -- no store, the trail is the storage. |
+| **Host picture** | The device dimension read-side (Sec 11.2): a host is the enrollment-hostname grouping (case-insensitive), never an entity; notes and labels on one ride the trail keyed on the normalized hostname. |
+| **Loot** | The typed view over the artifact store (Sec 11.2): artifacts classified by the producing verb and content type into screenshot, credential, and file, each entry carrying its capture attribution; retrieving bytes records an `ArtifactViewed` event. |
+| **Topology** | The engagement's network picture assembled at read time (Sec 11.2): enrollment grouping, pivot links from recorded parentage, and recon observations parsed from completed task outputs against the documented JSON-lines grammar. Nothing stored. |
 | **Retire** | Marking an implant retired from the operator API; a retired implant is refused at handshake (`HANDSHAKE_STATUS_IMPLANT_RETIRED`), untaskable, and its active session is closed. Idempotent; recorded as an `ImplantRetired` audit event.
 | **Burn handling** | The recovery flow when an implant or endpoint is compromised: retire the implant, repoint (swap) the burned endpoint, and rebuild a fresh artifact with a fresh key. |
 | **ROE guardrails** | The engagement's rules-of-engagement profile (`PermittedVerbs`, `PermittedImplants`); the server blocks task issuance outside it at queue time and records the refusal. |

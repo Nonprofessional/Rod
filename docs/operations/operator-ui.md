@@ -356,6 +356,39 @@ successor's `SessionOpened` as its trace and no close event of its own.
 clipboard -- the note to paste to the next watch or the channel of your
 choosing.
 
+## Intel
+
+The Intel panel is the picture of what the engagement learned
+(architecture.md Sec 11.2) -- the read the operator consults instead of
+re-reading transcripts. Three sections share the card.
+
+**Hosts** is the device dimension: implants grouped under the hostname
+they reported at enroll (case-insensitive; an implant that reported
+none stands alone under the Implants tab), each row showing fleet
+occupancy, the OS and account the enrollment reported, the crew's
+labels, and the note count. "Notes & labels" opens the attributed-facts
+panel: notes append (immutable, like implant notes), labels set and
+clear -- each action an audit event, and the live set is the last-wins
+reduction over them. A host only a note or label names still appears:
+recon can see what nothing occupies.
+
+**Loot** is the typed board over the artifact store: each row is an
+artifact the engagement captured or attached, classified by what
+gathered it (screenshot, credential, file, other) and carrying its
+capture attribution -- the task, its verb, the implant, the credited
+operator. Screenshots open as an inline preview; other kinds download.
+Opening a piece of loot records an `ArtifactViewed` event attributed to
+you: reading a projection of the evidence is not an act on the
+engagement, but bytes leaving the platform are. "Load older" walks the
+pages.
+
+**Topology** is the assembled network picture: hosts grouped from
+enrollments (accented) beside the ones only recon observed (dashed) or
+a note named, pivot links drawn outward along recorded parentage, and
+the recon observations listed underneath. Nothing is stored -- the
+projection re-reads the fleet, the trail, and the recon outputs every
+time -- and a broken audit chain refuses to render over it.
+
 ## Listeners
 
 An engagement's C2 ingress. Each listener owns two addresses:

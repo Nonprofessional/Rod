@@ -21,23 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Target intel and situational awareness layer** (serves
-  architecture.md Sec 11 and the operator layer, Sec 4.1; design lands
-  first). What an engagement cannot do without it: hold what the
-  engagement learns -- today recon findings, loot, and host observations
-  live inside task output strings, so the operator re-reads transcripts
-  instead of consulting a picture. Shape: labels and operator notes on
-  implants and hosts (attributed, part of the trail), typed loot views
-  over the exfil artifacts that already exist (credential, file, and
-  screenshot renderers -- the collection verbs are in-repo, the
-  organizer is what's missing), and a topology view assembled from the
-  recon workbench and implant discovery data, pivot links included.
-  Everything is engagement-scoped and audit-backed: the layer organizes
-  the trail, it does not become a second store of truth.
-  _AC:_ an operator tags an implant with a note, opens a captured
-  screenshot from the loot view, and both actions carry attribution in
-  the audit trail.
-
 - **Rehearsal refresh against the settled surface** (serves
   [operations/rehearsal.md](operations/rehearsal.md); the walk's own
   dated header already queues this). What an engagement cannot do
