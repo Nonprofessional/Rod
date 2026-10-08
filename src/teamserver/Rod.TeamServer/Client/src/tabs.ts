@@ -18,6 +18,7 @@ export type TabId =
   | 'artifacts'
   | 'report'
   | 'digest'
+  | 'intel'
   | 'listeners'
   | 'launchers'
   | 'build'
@@ -51,6 +52,9 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'automation', label: 'Automation', icon: 'clock' },
       { id: 'notifications', label: 'Notifications', icon: 'bell' },
       { id: 'digest', label: 'Handoff digest', icon: 'activity' },
+      // The target picture (architecture.md Sec 11.2): hosts, loot, and the
+      // topology -- what the engagement learned, not what it did.
+      { id: 'intel', label: 'Intel', icon: 'target' },
     ],
   },
   {

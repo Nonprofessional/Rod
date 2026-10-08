@@ -934,6 +934,215 @@ export async function addImplantNote(
   return jsonOrThrow(response)
 }
 
+// --- Target intel ---------------------------------------------
+//
+// The layer that holds what the engagement learned (architecture.md Sec
+// 11.2): labels on implants and hosts (the marker vocabulary -- attributed
+// set/clear trail facts reduced last-wins), notes on hosts, the typed loot
+// view over the artifact store, and the assembled topology projection.
+// Everything reads back from stores that already hold the data; the trail
+// is the only storage anything here writes.
+
+export interface ImplantLabel {
+  label: string
+  setBy: string
+  setAt: string
+}
+
+export async function listImplantLabels(
+  engagementId: string,
+  implantId: string,
+): Promise<ImplantLabel[]> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/implants/${implantId}/labels`),
+  )
+}
+
+export async function setImplantLabel(
+  engagementId: string,
+  implantId: string,
+  label: string,
+): Promise<ImplantLabel> {
+  const response = await fetch(`engagements/${engagementId}/implants/${implantId}/labels`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function clearImplantLabel(
+  engagementId: string,
+  implantId: string,
+  label: string,
+): Promise<void> {
+  const response = await fetch(
+    `engagements/${engagementId}/implants/${implantId}/labels/${encodeURIComponent(label)}`,
+    { method: 'DELETE' },
+  )
+  return jsonOrThrow(response)
+}
+
+export interface HostNote {
+  noteId: string
+  host: string
+  author: string
+  text: string
+  at: string
+}
+
+export interface HostLabel {
+  label: string
+  setBy: string
+  setAt: string
+}
+
+export interface HostEntry {
+  host: string
+  labels: string[]
+  noteCount: number
+  implantIds: string[]
+  onlineCount: number
+  os: string | null
+  arch: string | null
+  username: string | null
+  firstSeenAt: string | null
+}
+
+export interface HostsResponse {
+  hosts: HostEntry[]
+  ungroupedImplantIds: string[]
+}
+
+// Hosts key on the normalized hostname; the caller passes the spelling it
+// has and the route folds the case.
+export async function listHosts(engagementId: string): Promise<HostsResponse> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/hosts`))
+}
+
+export async function listHostNotes(engagementId: string, host: string): Promise<HostNote[]> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/hosts/${encodeURIComponent(host)}/notes`),
+  )
+}
+
+export async function addHostNote(
+  engagementId: string,
+  host: string,
+  text: string,
+): Promise<HostNote> {
+  const response = await fetch(`engagements/${engagementId}/hosts/${encodeURIComponent(host)}/notes`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function listHostLabels(engagementId: string, host: string): Promise<HostLabel[]> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/hosts/${encodeURIComponent(host)}/labels`),
+  )
+}
+
+export async function setHostLabel(
+  engagementId: string,
+  host: string,
+  label: string,
+): Promise<HostLabel> {
+  const response = await fetch(`engagements/${engagementId}/hosts/${encodeURIComponent(host)}/labels`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function clearHostLabel(
+  engagementId: string,
+  host: string,
+  label: string,
+): Promise<void> {
+  const response = await fetch(
+    `engagements/${engagementId}/hosts/${encodeURIComponent(host)}/labels/${encodeURIComponent(label)}`,
+    { method: 'DELETE' },
+  )
+  return jsonOrThrow(response)
+}
+
+// One piece of loot: an artifact the engagement captured or attached, with
+// the kind the view classifies it into and the capture attribution.
+export interface LootEntry {
+  artifactId: string
+  kind: string
+  taskId: string
+  implantId: string | null
+  verb: string | null
+  capturedBy: string | null
+  name: string
+  contentType: string
+  size: number
+  storedAt: string
+}
+
+export async function listLoot(
+  engagementId: string,
+  kind?: string,
+  cursor?: string,
+): Promise<ListPage<LootEntry>> {
+  const params = new URLSearchParams()
+  if (kind) params.set('kind', kind)
+  if (cursor) params.set('cursor', cursor)
+  const query = params.size > 0 ? `?${params.toString()}` : ''
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/loot${query}`))
+}
+
+export interface TopologyHost {
+  host: string
+  kind: string
+  os: string | null
+  arch: string | null
+  implantIds: string[]
+  online: number
+  labels: string[]
+}
+
+export interface TopologyLink {
+  fromImplantId: string
+  toImplantId: string
+  fromHost: string
+  toHost: string
+  kind: string
+}
+
+export interface TopologyObservation {
+  host: string
+  port: number | null
+  state: string | null
+  service: string | null
+  address: string | null
+  os: string | null
+  arch: string | null
+  taskId: string
+  implantId: string
+  verb: string
+  at: string
+}
+
+export interface Topology {
+  engagementId: string
+  hosts: TopologyHost[]
+  links: TopologyLink[]
+  observations: TopologyObservation[]
+  chainVerified: boolean
+  chainBreak: string | null
+}
+
+export async function getTopology(engagementId: string): Promise<Topology> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/topology`))
+}
+
+
 // --- Task snippets --------------------------------------------
 //
 // The console's saved command sequences (docs/operations/operator-ui.md):

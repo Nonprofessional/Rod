@@ -2636,3 +2636,109 @@ button.palette-trigger {
 .snippet-steps code {
   font-size: 12px;
 }
+
+/* --- Target intel (architecture.md Sec 11.2) -------------------------------- */
+
+/* Label chips: the marker vocabulary on implants and hosts. The chip carries
+   its clear button inline; the form that adds one rides the same row. */
+.label-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.label-chips .task-form {
+  margin: 0;
+}
+
+.chip-x {
+  margin-left: 4px;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* The screenshot preview of an opened loot capture. */
+.loot-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.loot-preview img {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+/* The topology canvas: a fixed-metric grid of host nodes with SVG pivot
+   edges between the layer centers. */
+.topo-canvas {
+  position: relative;
+  margin: 8px 0;
+}
+
+.topo-canvas svg {
+  position: absolute;
+  inset: 0;
+}
+
+.topo-edge {
+  stroke: var(--accent);
+  stroke-opacity: 0.55;
+  stroke-width: 1.5;
+}
+
+.topo-edge + defs path,
+.topo-canvas marker path {
+  fill: var(--accent);
+}
+
+.topo-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.topo-node strong {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topo-enrolled {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.topo-observed {
+  border-style: dashed;
+}
+
+.topo-labels {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topo-observations {
+  margin-top: 8px;
+  font-size: 12px;
+}

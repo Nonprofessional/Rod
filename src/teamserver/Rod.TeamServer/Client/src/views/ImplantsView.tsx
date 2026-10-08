@@ -1,13 +1,17 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type Implant,
+  type ImplantLabel,
   type ImplantNote,
   type PresenceRecord,
   addImplantNote,
+  clearImplantLabel,
   issueTask,
+  listImplantLabels,
   listImplantNotes,
   listImplants,
   retireImplant,
+  setImplantLabel,
 } from '../api'
 import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
@@ -129,6 +133,10 @@ export function ImplantsView({
   const [notes, setNotes] = useState<ImplantNote[]>([])
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
+  // Labels ride the notes panel: the marker vocabulary, reduced last-wins off
+  // the trail (architecture.md Sec 11.2).
+  const [labels, setLabels] = useState<ImplantLabel[]>([])
+  const [labelDraft, setLabelDraft] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   // Driving presence (architecture.md Sec 4.5): the live driving map names
   // which operator each worked implant last saw; the roster resolves the
@@ -206,6 +214,7 @@ export function ImplantsView({
     setNotesFor(null)
     setDetailsFor(null)
     setNotes([])
+    setLabels([])
     setCollapsed(new Set())
     setSearchDraft('')
     setSearch('')
@@ -357,8 +366,14 @@ export function ImplantsView({
     }
     setNotesFor(implantId)
     setNoteDraft('')
+    setLabelDraft('')
     try {
-      setNotes(await listImplantNotes(engagementId, implantId))
+      const [refreshedNotes, refreshedLabels] = await Promise.all([
+        listImplantNotes(engagementId, implantId),
+        listImplantLabels(engagementId, implantId),
+      ])
+      setNotes(refreshedNotes)
+      setLabels(refreshedLabels)
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -378,6 +393,34 @@ export function ImplantsView({
       setError(String(e))
     } finally {
       setNoteBusy(false)
+    }
+  }
+
+  // Label set and clear: the marker vocabulary, one trail fact per action,
+  // refreshed from the reduction like the notes refresh from the trail.
+  const onSetLabel = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!notesFor || !labelDraft.trim() || noteBusy) return
+    setNoteBusy(true)
+    try {
+      await setImplantLabel(engagementId, notesFor, labelDraft.trim())
+      setLabelDraft('')
+      setLabels(await listImplantLabels(engagementId, notesFor))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setNoteBusy(false)
+    }
+  }
+
+  const onClearLabel = async (implantId: string, label: string) => {
+    try {
+      await clearImplantLabel(engagementId, implantId, label)
+      setLabels(await listImplantLabels(engagementId, implantId))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
     }
   }
 
@@ -690,6 +733,34 @@ export function ImplantsView({
                           <tr className="notes-row">
                             <td colSpan={8}>
                               <div className="notes-panel">
+                                <div className="label-chips">
+                                  {labels.length === 0 ? (
+                                    <span className="muted">No labels.</span>
+                                  ) : (
+                                    labels.map((l) => (
+                                      <span key={l.label} className="chip" title={`set by ${l.setBy.slice(0, 8)}`}>
+                                        {l.label}
+                                        <button
+                                          className="chip-x"
+                                          title="Clear this label (an attributed trail fact)"
+                                          onClick={() => void onClearLabel(implant.implantId, l.label)}
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))
+                                  )}
+                                  <form className="task-form" onSubmit={onSetLabel}>
+                                    <input
+                                      placeholder="label"
+                                      value={labelDraft}
+                                      onChange={(e) => setLabelDraft(e.target.value)}
+                                    />
+                                    <button className="sm" type="submit" disabled={noteBusy || !labelDraft.trim()}>
+                                      Label
+                                    </button>
+                                  </form>
+                                </div>
                                 <ul className="notes-list">
                                   {notes.length === 0 ? (
                                     <li className="muted">No notes on this implant yet.</li>

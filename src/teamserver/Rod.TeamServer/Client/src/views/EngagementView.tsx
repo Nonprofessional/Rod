@@ -26,6 +26,7 @@ import { TaskLogView } from './TaskLogView'
 import { AutomationView } from './AutomationView'
 import { DigestView } from './DigestView'
 import { NotificationsView } from './NotificationsView'
+import { IntelView } from './IntelView'
 
 // The engagement detail body: the active view only -- navigation lives in the
 // shell's sidebar and the live summary (connection state, fleet counts,
@@ -181,6 +182,7 @@ export function EngagementView({
         <NotificationsView engagementId={engagementId} onlineTick={tick} />
       )}
       {tab === 'digest' && <DigestView engagementId={engagementId} onlineTick={tick} />}
+      {tab === 'intel' && <IntelView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'implants' && implantId && (
         <InteractView
           engagementId={engagementId}
