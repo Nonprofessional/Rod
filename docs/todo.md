@@ -21,21 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Sensitive-verb approval workflow** (serves architecture.md Sec 9
-  and Sec 10.2/10.3; design lands first). What an engagement cannot
-  do without it: a second pair of eyes where it matters -- sensitive verbs
-  require engagement authorization by design, but the authorization is
-  configuration-time; there is no in-flow request, approval, and
-  release. Shape: a request queue on the existing gate -- an operator
-  requests a sensitive tasking, a lead holding the approver scope
-  approves or refuses, the approved task enters the queue attributed
-  to both, and the whole arc (requested, approved, refused) lands in
-  the audit trail and on the live bus. Automation firing a sensitive
-  verb is refused outright, never queued for approval.
-  _AC:_ a sensitive verb requested by one operator does not queue until
-  a second approves it, and both the request and the approval appear in
-  the engagement's audit trail.
-
 - **Target intel and situational awareness layer** (serves
   architecture.md Sec 11 and the operator layer, Sec 4.1; design lands
   first). What an engagement cannot do without it: hold what the

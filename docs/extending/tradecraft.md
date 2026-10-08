@@ -130,8 +130,7 @@ Four of those attributes also decide the verb's **unattended posture**
 ([architecture.md Sec 10.4](../architecture.md)): declare `reads-input`,
 `reads-memory`, `executes-code`, or `modifies-defenses`, or register under
 the Evasion/Exploit categories, and the verb never fires without a human --
-the automation engine refuses to build a rule on it, and the sensitive-verb
-approval workflow reads the same judgment. The stance is deliberate: the
+the automation engine refuses to build a rule on it. The stance is deliberate: the
 metadata you declare is the whole contract, so a module nobody anticipated
 gets the right posture at registration and no list anywhere needs an edit.
 Attributes the policy does not key on (`reads-credential`, `persists`,

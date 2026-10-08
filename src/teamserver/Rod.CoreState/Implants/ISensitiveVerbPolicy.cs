@@ -6,8 +6,7 @@ namespace Rod.CoreState.Implants;
 /// for dispatchability, ROE for scope) are separate concerns; this is the
 /// sensitivity axis, consulted by the surfaces that act unattended: the
 /// automation engine refuses to build a rule on a sensitive verb
-/// (architecture.md Sec 10.4), and the sensitive-verb approval workflow the
-/// roadmap carries will queue human tasking on the same answer.
+/// (architecture.md Sec 10.4), reading this one answer.
 /// </summary>
 /// <remarks>
 /// The port lives in core state (the inner ring every layer may reach) and

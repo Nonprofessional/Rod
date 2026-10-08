@@ -325,9 +325,10 @@ read and the live event stream. `task` is the acting scope -- every
 engagement-scoped write: tasking (issue, cancel, channel input, relay
 binds), caught-shell interaction, implant retirement and notes, and the
 engagement's own management (listeners, payloads, launchers, ROE, snippets,
-automation, webhooks, closeout). `approve` is the second-pair-of-eyes scope
-the sensitive-verb workflow consumes; it is carried now and checked when
-that item lands. Assignment is validated at the store: `task` and `approve`
+automation, webhooks, closeout). `approve` is the second-pair-of-eyes
+scope; no surface consumes it today (the sensitive-verb approval queue it
+was shaped for is declined -- owner decision), so it stays carried for a
+future consumer. Assignment is validated at the store: `task` and `approve`
 each require `read` -- an operator who cannot see an engagement cannot act
 or approve on it. Every provisioned operator holds all three by default, so
 the peer model is the default and scopes are the narrowing. The scopes are
@@ -403,8 +404,9 @@ badges from activity presence, and an operator without `task` sees a
 read-only mark in the shell -- the badge explains what the server already
 refuses; it is not the enforcement.
 
-**Evolution notes.** The approver scope's consumer is the sensitive-verb
-approval queue (a designed item); a scope-management view in the console
+**Evolution notes.** The approver scope carries no consumer (the
+sensitive-verb approval queue it was shaped for is declined by owner
+decision); a scope-management view in the console
 and per-engagement role overrides (an operator lead on one engagement,
 read-only on another) are the natural widenings, each a new assignment
 surface over the same claim, not a new scope model.
@@ -1892,9 +1894,10 @@ firing path; declarative rules are the first and only evaluator here --
 they are auditable, testable, and cover the needs engagements have shown.
 
 **Evolution notes.** Where later work plugs in, so nobody rediscovers it
-from the code. The sensitive-verb approval workflow the roadmap carries
-queues on the same `ISensitiveVerbPolicy` answer automation refuses on --
-the port exists for exactly that hand-off. A third trigger shape (a cron
+from the code. The sensitivity axis lives behind `ISensitiveVerbPolicy`
+so every surface that needs the judgment reads one answer -- automation
+refuses on it; the sensitive-verb approval queue the port was once shaped
+to hand off to is declined (owner decision). A third trigger shape (a cron
 expression, a compound condition) fans out to five places, all additive:
 the `AutomationTrigger` hierarchy, the entity's schedule arithmetic
 (`Create`/`RecordFire`/`RecordRefusal`/`Enable`), the engine's tick filter
@@ -2023,10 +2026,7 @@ Read-only like its siblings: nothing is composed onto the trail, and the
 digest request itself is not audited -- a read of the evidence is not an
 act on the engagement.
 
-**Evolution notes.** The sensitive-verb approval workflow (Sec 10.4's
-evolution notes) will land requested/approved/refused kinds on the trail;
-they join the whitelist then, so the digest's approvals line grows with
-the workflow rather than ahead of it. An LLM narration over the digest is
+**Evolution notes.** An LLM narration over the digest is
 the natural widening once an LLM client exists -- the digest stays a
 plain ordered account without one. No replay is implied in either
 direction: the digest reads what the trail holds, and the trail is the
