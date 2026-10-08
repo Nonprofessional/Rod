@@ -35,12 +35,16 @@ public static class PayloadEndpoints
     public static IEndpointRouteBuilder MapPayloadEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Operator-facing: a payload build requires an authenticated operator session.
-        var group = endpoints.MapGroup("/engagements/{engagementId}/payloads").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/payloads")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
-        group.MapPost("/", BuildAsync).WithName(nameof(BuildAsync));
+        group.MapPost("/", BuildAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(BuildAsync));
         group.MapGet("/", ListPayloadsAsync).WithName(nameof(ListPayloadsAsync));
         group.MapGet("/{artifactId}", DownloadAsync).WithName(nameof(DownloadAsync));
-        group.MapDelete("/{artifactId}", DeleteAsync).WithName(nameof(DeleteAsync));
+        group.MapDelete("/{artifactId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(DeleteAsync));
 
         return endpoints;
     }

@@ -37,13 +37,14 @@ public static class ArtifactEndpoints
         // operator-facing and require an authenticated operator session.
         var taskGroup = endpoints
             .MapGroup("/engagements/{engagementId}/tasks/{taskId}/artifacts")
-            .RequireAuthorization();
-        taskGroup.MapPost("/", AttachArtifactAsync).WithName(nameof(AttachArtifactAsync));
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
+        taskGroup.MapPost("/", AttachArtifactAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(AttachArtifactAsync));
         taskGroup.MapGet("/", ListArtifactsAsync).WithName(nameof(ListArtifactsAsync));
 
         var engagementGroup = endpoints
             .MapGroup("/engagements/{engagementId}/artifacts")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
         engagementGroup.MapGet("/{artifactId}", GetArtifactAsync).WithName(nameof(GetArtifactAsync));
 
         return endpoints;

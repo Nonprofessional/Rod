@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
@@ -15,12 +16,16 @@ public static class SettingsEndpoints
 {
     public static IEndpointRouteBuilder MapSettingsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/settings").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/settings")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         group.MapGet("/sessions", GetSessionsAsync).WithName(nameof(GetSessionsAsync));
-        group.MapPut("/sessions", PutSessionsAsync).WithName(nameof(PutSessionsAsync));
+        group.MapPut("/sessions", PutSessionsAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(PutSessionsAsync));
         group.MapGet("/build", GetBuildAsync).WithName(nameof(GetBuildAsync));
-        group.MapPut("/build", PutBuildAsync).WithName(nameof(PutBuildAsync));
+        group.MapPut("/build", PutBuildAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(PutBuildAsync));
 
         return endpoints;
     }

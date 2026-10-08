@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
 using Rod.CoreState.Sessions;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
@@ -25,7 +26,7 @@ public static class PresenceEndpoints
         // Operator-facing: presence reads require an authenticated operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/presence")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         group.MapGet("/", ListOnlineAsync).WithName(nameof(ListOnlineAsync));
 

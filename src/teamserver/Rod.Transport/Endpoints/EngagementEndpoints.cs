@@ -23,22 +23,31 @@ public static class EngagementEndpoints
     {
         // Operator-facing: every engagement route requires an authenticated
         // operator session (cookie auth wired via AddRodOperatorAuth). The
-        // implant-facing enrollment path is mapped separately and stays anonymous.
-        var group = endpoints.MapGroup("/engagements").RequireAuthorization();
+        // listing reads with the viewing scope; creating, editing, minting,
+        // revoking, and scoping the ROE are acting (architecture.md Sec 4.5).
+        // The implant-facing enrollment path is mapped separately and stays anonymous.
+        var group = endpoints
+            .MapGroup("/engagements")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
         group.MapPost("/", CreateEngagementAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(CreateEngagementAsync));
         group.MapPut("/{engagementId}", EditEngagementAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(EditEngagementAsync));
 
         group.MapPost("/{engagementId}/deploy-tokens", MintDeployTokenAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(MintDeployTokenAsync));
 
         group.MapPost("/{engagementId}/deploy-tokens/{tokenId}:revoke", RevokeDeployTokenAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(RevokeDeployTokenAsync));
 
         group.MapPut("/{engagementId}/roe", ApplyRoeAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(ApplyRoeAsync));
 
         return endpoints;

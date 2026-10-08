@@ -38,13 +38,28 @@ public static class ShellSessionEndpoints
 
     public static IEndpointRouteBuilder MapShellSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/shells").RequireAuthorization();
+        // The roster and output reads need the viewing scope; interacting with
+        // a caught shell -- typing, closing, growing it into an implant -- is
+        // acting (architecture.md Sec 4.5).
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/shells")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         group.MapGet("/", ListShellsAsync).WithName(nameof(ListShellsAsync));
         group.MapGet("/{id}/output", ReadOutputAsync).WithName(nameof(ReadOutputAsync));
-        group.MapPost("/{id}:input", SendInputAsync).WithName(nameof(SendInputAsync));
-        group.MapPost("/{id}:close", CloseShellAsync).WithName(nameof(CloseShellAsync));
-        group.MapPost("/{id}:upgrade", UpgradeAsync).WithName(nameof(UpgradeAsync));
+        group.MapPost("/{id}:input", SendInputAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(SendInputAsync));
+        // Closing is teardown: any task-scoped operator may kill a runaway
+        // shell, claim or no claim -- the safety valve stays open.
+        group.MapPost("/{id}:close", CloseShellAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(CloseShellAsync));
+        // The upgrade renders launchers but types nothing into the shell: the
+        // paste rides the audited, claim-checked input route above.
+        group.MapPost("/{id}:upgrade", UpgradeAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(UpgradeAsync));
 
         return endpoints;
     }
@@ -117,6 +132,8 @@ public static class ShellSessionEndpoints
         ClaimsPrincipal user,
         IShellSessionRegistry sessions,
         ShellCatchHub hub,
+        Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
+        Rod.CoreState.Operators.IOperatorRepository operators,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -137,6 +154,25 @@ public static class ShellSessionEndpoints
 
         if (string.IsNullOrEmpty(body.Text))
             return Results.BadRequest(new Problem("Input text is required."));
+
+        // The typing half is exclusively owned (architecture.md Sec 4.5): the
+        // first line takes an unclaimed shell, and a shell another operator
+        // holds refuses the input -- two operators cannot type into one.
+        var claim = await interaction.TryAcquireAsync(
+            scope.Session.EngagementId,
+            Rod.CoreState.Operators.Interaction.InteractionSurface.ShellSession,
+            scope.Session.Id.Value,
+            operatorId.Value,
+            cancellationToken);
+        if (!claim.Acquired)
+        {
+            var holder = claim.HeldBy!;
+            var handle = (await operators.FindAsync(holder.OperatorId, cancellationToken))?.Handle
+                ?? holder.OperatorId.ToString();
+            return Results.Conflict(new Problem(
+                $"This shell is held by {handle} since {holder.AcquiredAt:O}; "
+                + "input is refused until they release it or disconnect."));
+        }
 
         if (!await shell.WriteInputAsync(body.Text, cancellationToken))
             return Results.Conflict(

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Builder;
+using Rod.CoreState.Operators;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -25,7 +26,9 @@ public static class SystemEndpoints
 {
     public static IEndpointRouteBuilder MapSystemEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/system").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/system")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
         group.MapGet("/", GetSystemAsync).WithName(nameof(GetSystemAsync));
         return endpoints;
     }

@@ -26,14 +26,18 @@ public static class AutomationRuleEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/automation-rules")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
-        group.MapPost(string.Empty, CreateAsync).WithName("CreateAutomationRule");
+        group.MapPost(string.Empty, CreateAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("CreateAutomationRule");
         group.MapGet(string.Empty, ListAsync).WithName("ListAutomationRules");
         group.MapGet("/{ruleId}", GetAsync).WithName("GetAutomationRule");
-        group.MapPost("/{ruleId}:enable", EnableAsync).WithName("EnableAutomationRule");
-        group.MapPost("/{ruleId}:disable", DisableAsync).WithName("DisableAutomationRule");
-        group.MapDelete("/{ruleId}", DeleteAsync).WithName("DeleteAutomationRule");
+        group.MapPost("/{ruleId}:enable", EnableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("EnableAutomationRule");
+        group.MapPost("/{ruleId}:disable", DisableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("DisableAutomationRule");
+        group.MapDelete("/{ruleId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("DeleteAutomationRule");
         return endpoints;
     }
 

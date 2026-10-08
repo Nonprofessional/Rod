@@ -27,15 +27,20 @@ public static class WebhookSubscriptionEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/webhook-subscriptions")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
-        group.MapPost(string.Empty, RegisterAsync).WithName("RegisterWebhookSubscription");
+        group.MapPost(string.Empty, RegisterAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("RegisterWebhookSubscription");
         group.MapGet(string.Empty, ListAsync).WithName("ListWebhookSubscriptions");
         group.MapGet("/{subscriptionId}", GetAsync).WithName("GetWebhookSubscription");
-        group.MapPost("/{subscriptionId}:enable", EnableAsync).WithName("EnableWebhookSubscription");
-        group.MapPost("/{subscriptionId}:disable", DisableAsync).WithName("DisableWebhookSubscription");
-        group.MapPost("/{subscriptionId}:test", TestAsync).WithName("TestWebhookSubscription");
-        group.MapDelete("/{subscriptionId}", DeleteAsync).WithName("DeleteWebhookSubscription");
+        group.MapPost("/{subscriptionId}:enable", EnableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("EnableWebhookSubscription");
+        group.MapPost("/{subscriptionId}:disable", DisableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("DisableWebhookSubscription");
+        group.MapPost("/{subscriptionId}:test", TestAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("TestWebhookSubscription");
+        group.MapDelete("/{subscriptionId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("DeleteWebhookSubscription");
         return endpoints;
     }
 

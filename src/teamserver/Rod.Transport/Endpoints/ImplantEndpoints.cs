@@ -36,13 +36,17 @@ public static class ImplantEndpoints
     {
         // Operator-facing: implant views and retire require an authenticated
         // operator session.
-        var group = endpoints.MapGroup("/engagements/{engagementId}/implants").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/implants")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
         group.MapGet("/", ListImplantsAsync).WithName(nameof(ListImplantsAsync));
         group.MapGet("/{implantId}/tasks", ListImplantTasksAsync)
             .WithName(nameof(ListImplantTasksAsync));
         group.MapGet("/{implantId}/notes", ListNotesAsync).WithName(nameof(ListNotesAsync));
-        group.MapPost("/{implantId}/notes", AddNoteAsync).WithName(nameof(AddNoteAsync));
-        group.MapPost("/{implantId}:retire", RetireAsync).WithName(nameof(RetireAsync));
+        group.MapPost("/{implantId}/notes", AddNoteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(AddNoteAsync));
+        group.MapPost("/{implantId}:retire", RetireAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(RetireAsync));
         return endpoints;
     }
 

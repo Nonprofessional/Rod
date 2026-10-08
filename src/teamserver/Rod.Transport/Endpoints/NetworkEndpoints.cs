@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
@@ -21,7 +22,9 @@ public static class NetworkEndpoints
     {
         // Operator-facing: the interface list requires an authenticated
         // operator session, like every other operator surface.
-        var group = endpoints.MapGroup("/network").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/network")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
         group.MapGet("/interfaces", ListInterfacesAsync).WithName("ListNetworkInterfaces");
         return endpoints;
     }

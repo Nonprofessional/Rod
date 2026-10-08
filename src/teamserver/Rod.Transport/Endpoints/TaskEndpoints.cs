@@ -32,10 +32,16 @@ public static class TaskEndpoints
 {
     public static IEndpointRouteBuilder MapTaskEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // Operator-facing: tasking requires an authenticated operator session.
-        var group = endpoints.MapGroup("/engagements/{engagementId}/tasks").RequireAuthorization();
+        // Tasking reads need the viewing scope; issuing, retracting, typing,
+        // and bridging are acting (architecture.md Sec 4.5) and require the
+        // task scope on top of the group's read.
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/tasks")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
-        group.MapPost("/", IssueAsync).WithName("IssueTask");
+        group.MapPost("/", IssueAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("IssueTask");
         // The collection route is listed before {taskId} so the literal "/" does
         // not get captured as a task id; ASP.NET Core route matching prefers the
         // more specific template, and the {taskId} segment requires a non-empty
@@ -45,15 +51,25 @@ public static class TaskEndpoints
         group.MapGet("/{taskId}", GetAsync).WithName("GetTask");
         // The queued tasking's way back (architecture.md Sec 10.3): retract a
         // task before the implant wakes.
-        group.MapPost("/{taskId}:cancel", CancelAsync).WithName("CancelTask");
+        group.MapPost("/{taskId}:cancel", CancelAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("CancelTask");
         // The streaming task shape's other half (architecture.md Sec 10.3):
         // operator input into a live channel task.
-        group.MapPost("/{taskId}/input", SendInputAsync).WithName("SendTaskInput");
+        group.MapPost("/{taskId}/input", SendInputAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("SendTaskInput");
         // The operator-side relay bind (architecture.md Sec 10.1 tunnel,
         // Sec 10.3): bridge a local TCP listener onto a live tunnel channel,
         // so unmodified tooling rides the tunnel without per-byte input posts.
-        group.MapPost("/{taskId}/relay", BindRelayAsync).WithName("BindTaskRelay");
-        group.MapDelete("/{taskId}/relay", UnbindRelayAsync).WithName("UnbindTaskRelay");
+        group.MapPost("/{taskId}/relay", BindRelayAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("BindTaskRelay");
+        // Unbinding is teardown -- the safety valve any task-scoped operator
+        // may pull, claim or no claim (the bind required one).
+        group.MapDelete("/{taskId}/relay", UnbindRelayAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName("UnbindTaskRelay");
 
         return endpoints;
     }
@@ -75,6 +91,7 @@ public static class TaskEndpoints
         IssueTaskRequest body,
         ClaimsPrincipal user,
         TaskService service,
+        Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
         IArtifactStore artifacts,
         IAuditStore audit,
         TimeProvider clock,
@@ -178,6 +195,12 @@ public static class TaskEndpoints
             issued.Verb,
             issued.Arguments,
             issued.CreatedAt);
+
+        // Issuing is driving activity (architecture.md Sec 4.5): the implant
+        // the tasking targets gains its issuer as driver. Publishes only on a
+        // hand-off, so routine tasking stays silent on the bus.
+        await interaction.NoteActivityAsync(
+            issued.EngagementId, issued.ImplantId, issued.IssuedBy, cancellationToken);
 
         // The task's issuance audit write ran inside IssueAsync (the onIssued
         // hook, above the dispatch wake release): the push dispatch the wake
@@ -416,6 +439,8 @@ public static class TaskEndpoints
         IImplantRepository implants,
         LiveChannelHub channels,
         Rod.Transport.Channels.DegradedChannelHub degraded,
+        Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
+        Rod.CoreState.Operators.IOperatorRepository operators,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -450,6 +475,26 @@ public static class TaskEndpoints
         if (task.Status != Rod.CoreState.Tasks.TaskStatus.Dispatched)
             return Results.Conflict(
                 new Problem("The task's channel is not live: it is queued or already completed."));
+
+        // The typing half is exclusively owned (architecture.md Sec 4.5): the
+        // first input takes an unclaimed channel, and a channel another
+        // operator holds refuses the input outright -- two operators cannot
+        // type into one shell.
+        var claim = await interaction.TryAcquireAsync(
+            task.EngagementId,
+            Rod.CoreState.Operators.Interaction.InteractionSurface.ChannelTask,
+            taskValue,
+            operatorId.Value,
+            cancellationToken);
+        if (!claim.Acquired)
+        {
+            var holder = claim.HeldBy!;
+            var handle = (await operators.FindAsync(holder.OperatorId, cancellationToken))?.Handle
+                ?? holder.OperatorId.ToString();
+            return Results.Conflict(new Problem(
+                $"This channel is held by {handle} since {holder.AcquiredAt:O}; "
+                + "input is refused until they release it or disconnect."));
+        }
 
         // A poll-mode implant (the degraded advertisement) takes its input
         // through the parking queue even while one of its cycle's streams
@@ -515,6 +560,12 @@ public static class TaskEndpoints
                 at: clock.GetUtcNow()),
             cancellationToken);
 
+        // Driving activity (architecture.md Sec 4.5): typing into an implant
+        // marks its driver. Publishes only on a hand-off, so this is silent
+        // for the operator already driving.
+        await interaction.NoteActivityAsync(
+            task.EngagementId, task.ImplantId, operatorId.Value, cancellationToken);
+
         return Results.Ok(new TaskInputResponse(taskValue.ToString(), body.Eof));
     }
 
@@ -536,6 +587,8 @@ public static class TaskEndpoints
         ITaskRepository tasks,
         TaskRelayHub relays,
         SocksProxyHub socks,
+        Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
+        Rod.CoreState.Operators.IOperatorRepository operators,
         IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
@@ -569,6 +622,26 @@ public static class TaskEndpoints
                 new Problem("The task's channel is not live: it is queued or already completed."));
         if (relays.IsBound(taskValue) || socks.IsBound(taskValue))
             return Results.Conflict(new Problem("A relay is already bound for this task."));
+
+        // A relay is the tunnel's other typing half (architecture.md Sec 4.5):
+        // the machine producer rides the same exclusive claim the input posts
+        // do -- binding takes an unclaimed channel and refuses onto a held
+        // one, so an operator's tool and a peer's keystrokes never mix.
+        var claim = await interaction.TryAcquireAsync(
+            task.EngagementId,
+            Rod.CoreState.Operators.Interaction.InteractionSurface.ChannelTask,
+            taskValue,
+            operatorId.Value,
+            cancellationToken);
+        if (!claim.Acquired)
+        {
+            var holder = claim.HeldBy!;
+            var handle = (await operators.FindAsync(holder.OperatorId, cancellationToken))?.Handle
+                ?? holder.OperatorId.ToString();
+            return Results.Conflict(new Problem(
+                $"This tunnel is held by {handle} since {holder.AcquiredAt:O}; "
+                + "a relay cannot bind until they release it or disconnect."));
+        }
 
         var bind = new TaskRelayHub.RelayBind(
             new EngagementId(engagementValue),

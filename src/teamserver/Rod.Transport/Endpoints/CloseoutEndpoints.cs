@@ -43,7 +43,9 @@ public static class CloseoutEndpoints
         // The colon-action routes follow the listeners' repoint shape: the
         // action rides the id's segment (/{id}:freeze), so the close-out reads
         // as an action on the engagement itself.
-        var group = endpoints.MapGroup("/engagements").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/engagements")
+            .RequireAuthorization(OperatorScopes.TaskPolicy);
         group.MapPost("/{engagementId}:freeze", FreezeAsync).WithName("FreezeEngagement");
         group.MapPost("/{engagementId}:unfreeze", UnfreezeAsync).WithName("UnfreezeEngagement");
         group.MapPost("/{engagementId}:evidence-package", ExportEvidencePackageAsync).WithName("ExportEvidencePackage");

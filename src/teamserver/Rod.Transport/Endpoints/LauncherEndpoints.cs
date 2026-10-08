@@ -41,16 +41,21 @@ public static class LauncherEndpoints
 {
     public static IEndpointRouteBuilder MapLauncherEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/engagements/{engagementId}/launchers").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/launchers")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         // POST on the collection renders a launcher set and keeps the row:
         // the call creates the one artifact this resource exists to produce
         // (the minted credential plus the one-liners), so the plain
         // collection POST is the render.
-        group.MapPost("/", RenderLauncherAsync).WithName(nameof(RenderLauncherAsync));
+        group.MapPost("/", RenderLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(RenderLauncherAsync));
         group.MapGet("/", ListLaunchersAsync).WithName(nameof(ListLaunchersAsync));
-        group.MapPost("/{launcherId}:revoke", RevokeLauncherAsync).WithName(nameof(RevokeLauncherAsync));
-        group.MapDelete("/{launcherId}", DeleteLauncherAsync).WithName(nameof(DeleteLauncherAsync));
+        group.MapPost("/{launcherId}:revoke", RevokeLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(RevokeLauncherAsync));
+        group.MapDelete("/{launcherId}", DeleteLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(DeleteLauncherAsync));
 
         return endpoints;
     }

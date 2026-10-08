@@ -190,7 +190,7 @@ public sealed record LiveEvent(
             holder,
             ImplantId: null,
             TaskId: surface == InteractionSurface.ChannelTask ? new TaskId(surfaceId) : null,
-            $"{surface.RouteKind()}/{surfaceId}",
+            $"{surface.RouteKind()}/{InteractionClaim.WireId(surface, surfaceId)}",
             at);
 
     /// <summary>

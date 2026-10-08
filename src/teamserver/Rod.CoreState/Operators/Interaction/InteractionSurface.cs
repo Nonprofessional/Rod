@@ -1,5 +1,7 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.CoreState.ShellSessions;
+using Rod.CoreState.Tasks;
 
 namespace Rod.CoreState.Operators.Interaction;
 
@@ -59,7 +61,21 @@ public sealed record InteractionClaim(
     InteractionSurface Surface,
     Guid SurfaceId,
     OperatorId OperatorId,
-    DateTimeOffset AcquiredAt);
+    DateTimeOffset AcquiredAt)
+{
+    /// <summary>
+    /// The surface id in its id type's wire form ("N", the same shape every
+    /// task and shell id already uses on the API) -- so a claim names the
+    /// task or shell exactly the way the routes that took it do.
+    /// </summary>
+    public string SurfaceWireId() => WireId(Surface, SurfaceId);
+
+    /// <summary>The wire form of a surface id, without a claim in hand.</summary>
+    public static string WireId(InteractionSurface surface, Guid surfaceId)
+        => surface == InteractionSurface.ChannelTask
+            ? new TaskId(surfaceId).ToString()
+            : new ShellSessionId(surfaceId).ToString();
+}
 
 /// <summary>
 /// One per-implant driving entry of activity presence (architecture.md

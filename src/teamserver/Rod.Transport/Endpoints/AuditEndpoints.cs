@@ -24,7 +24,7 @@ public static class AuditEndpoints
         // Operator-facing: the event trail requires an authenticated operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/audit")
-            .RequireAuthorization();
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
         group.MapGet("/", ListAsync).WithName(nameof(ListAsync));
         return endpoints;
     }

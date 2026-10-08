@@ -8,6 +8,7 @@ using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
 using Rod.Transport.Listeners;
 using Rod.Transport.Listeners.Providers;
+using Rod.CoreState.Operators;
 
 namespace Rod.Transport.Endpoints;
 
@@ -28,12 +29,17 @@ public static class ListenerEndpoints
     {
         // Operator-facing: listener views and actions require an authenticated
         // operator session.
-        var group = endpoints.MapGroup("/engagements/{engagementId}/listeners").RequireAuthorization();
+        var group = endpoints
+            .MapGroup("/engagements/{engagementId}/listeners")
+            .RequireAuthorization(OperatorScopes.ReadPolicy);
 
         group.MapGet("/", ListListenersAsync).WithName(nameof(ListListenersAsync));
-        group.MapPost("/", CreateListenerAsync).WithName(nameof(CreateListenerAsync));
-        group.MapPost("/{id}:repoint", RepointAsync).WithName(nameof(RepointAsync));
-        group.MapDelete("/{id}", DeleteListenerAsync).WithName(nameof(DeleteListenerAsync));
+        group.MapPost("/", CreateListenerAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(CreateListenerAsync));
+        group.MapPost("/{id}:repoint", RepointAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(RepointAsync));
+        group.MapDelete("/{id}", DeleteListenerAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(DeleteListenerAsync));
 
         return endpoints;
     }

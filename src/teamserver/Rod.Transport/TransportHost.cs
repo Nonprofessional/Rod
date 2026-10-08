@@ -74,6 +74,12 @@ public static class TransportHost
         // Operator API tokens (architecture.md Sec 9): the same default /
         // durable swap shape as the credential store above.
         services.AddSingleton<IOperatorApiTokenStore, InMemoryOperatorApiTokenStore>();
+        // Interaction ownership (architecture.md Sec 4.5): the engagement-
+        // scoped claims and activity map. Process-local by design (ephemeral
+        // coordination state beside presence), so it has no durable adapter;
+        // both outer layers reach it -- transport enforces the claims, the
+        // operator layer seeds its hello frame and reaps on disconnect.
+        services.AddSingleton<Rod.CoreState.Operators.Interaction.OperatorInteractionService>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
         services.AddSingleton<IDeployTokenService, InMemoryDeployTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
@@ -600,6 +606,9 @@ public static class TransportHost
         // form's bind dropdown.
         endpoints.MapNetworkEndpoints();
         endpoints.MapPresenceEndpoints();
+        // Interaction ownership (architecture.md Sec 4.5): the exclusive
+        // claims on the typing halves -- listing, explicit acquire, release.
+        endpoints.MapClaimEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
         // Operator-facing runtime settings (the live session-presence knobs).
