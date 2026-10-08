@@ -262,6 +262,14 @@ function App() {
           <div className="operator-chip" title={`Signed in as ${operator.handle}`}>
             <span className="avatar">{initials(operator.handle)}</span>
             <span className="handle">{operator.handle}</span>
+            {!operator.scopes.includes('task') && (
+              <span
+                className="muted"
+                title="This session holds the viewing scope only -- the server refuses tasking and every other acting route; the mark explains, it does not enforce"
+              >
+                read-only
+              </span>
+            )}
           </div>
           <button className="link" onClick={() => void onLogout()}>
             Sign out

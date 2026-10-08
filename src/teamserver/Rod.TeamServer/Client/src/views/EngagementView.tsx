@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  type ClaimSummary,
+  type DrivingEntry,
   type LiveOperator,
   type PresenceRecord,
   type SessionOperator,
@@ -58,6 +60,12 @@ export function EngagementView({
   const [tick, setTick] = useState(0)
   const [implantCount, setImplantCount] = useState(0)
   const [onlineImplants, setOnlineImplants] = useState<PresenceRecord[]>([])
+  // Interaction ownership (architecture.md Sec 4.5): the engagement's held
+  // claims and driving map, seeded by the hello frame and kept current by
+  // the claim/activity events. The interact panes read them through the live
+  // context to lock a surface another operator holds.
+  const [claims, setClaims] = useState<ClaimSummary[]>([])
+  const [driving, setDriving] = useState<DrivingEntry[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const refreshCount = useCallback(async () => {
@@ -75,15 +83,34 @@ export function EngagementView({
 
   useEffect(() => {
     const close = subscribeToEngagement(engagementId, {
-      onHello: (operators) => {
+      onHello: (operators, heldClaims, drivingMap) => {
         setConnected(true)
         setOnline(operators)
+        setClaims(heldClaims)
+        setDriving(drivingMap)
       },
       onOperatorJoined: (id, handle) =>
         setOnline((current) =>
           current.some((o) => o.id === id) ? current : [...current, { id, handle, displayName: handle }],
         ),
       onOperatorLeft: (id) => setOnline((current) => current.filter((o) => o.id !== id)),
+      onClaimAcquired: (claim) =>
+        setClaims((current) =>
+          current.some((c) => c.kind === claim.kind && c.surfaceId === claim.surfaceId)
+            ? current.map((c) => (c.kind === claim.kind && c.surfaceId === claim.surfaceId ? claim : c))
+            : [...current, claim],
+        ),
+      onClaimReleased: (claim) =>
+        setClaims((current) =>
+          current.filter((c) => !(c.kind === claim.kind && c.surfaceId === claim.surfaceId)),
+        ),
+      onImplantActivity: (implantId, operatorId) =>
+        setDriving((current) => {
+          const at = new Date().toISOString()
+          return current.some((d) => d.implantId === implantId)
+            ? current.map((d) => (d.implantId === implantId ? { ...d, operatorId, at } : d))
+            : [...current, { implantId, operatorId, at }]
+        }),
       onError: () => setConnected(false),
       onTaskIssued: () => setTick((t) => t + 1),
       onTaskCompleted: () => setTick((t) => t + 1),
@@ -138,8 +165,11 @@ export function EngagementView({
       operators: online,
       implantCount,
       onlineCount: onlineImplants.length,
+      operatorId: operator.operatorId,
+      claims,
+      driving,
     }),
-    [connected, online, implantCount, onlineImplants.length],
+    [connected, online, implantCount, onlineImplants.length, operator.operatorId, claims, driving],
   )
 
   return (

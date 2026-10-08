@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getTask, sendTaskInput } from '../api'
+import { useClaim } from '../useClaim'
 import { StatusBadge } from './StatusBadge'
 
 // The channel pane, styled as a terminal: a live channel task's transcript
@@ -8,6 +9,11 @@ import { StatusBadge } from './StatusBadge'
 // while the channel runs instead of holding a second event stream; typing
 // posts through the input route and Close stdin sends the eof that ends (or
 // half-closes, for a tunnel) the channel.
+//
+// The input half is claim-aware (architecture.md Sec 4.5): while another
+// operator holds the channel's claim the input line locks and names the
+// holder; this console's typing takes the claim on first post (server-side),
+// and dismissing the pane releases it.
 //
 // Shared by the task log (a channel row's Interact action), the session
 // console (inline channel panes), and the shell dialog (the live session at
@@ -34,6 +40,7 @@ export function InteractPane({
   const transcriptRef = useRef<HTMLPreElement>(null)
   const doneRef = useRef(false)
   doneRef.current = status !== 'Dispatched'
+  const { locked, holderHandle } = useClaim(engagementId, 'channel', taskId)
 
   useEffect(() => {
     let stopped = false
@@ -117,6 +124,11 @@ export function InteractPane({
         <span>·</span>
         <code>{taskId.slice(0, 8)}</code>
         <StatusBadge status={status} />
+        {locked && (
+          <span className="muted" title="Another operator holds this channel's input; it releases when they dismiss their pane or disconnect">
+            held by {holderHandle}
+          </span>
+        )}
         {!embedded && (
           <span className="spacer">
             <button className="ghost sm" onClick={onClose}>
@@ -134,24 +146,29 @@ export function InteractPane({
         </span>
         <input
           className="wide"
-          placeholder={done ? 'channel closed' : 'type a command'}
+          placeholder={done ? 'channel closed' : locked ? `held by ${holderHandle}` : 'type a command'}
           value={line}
-          disabled={done || busy}
+          disabled={done || busy || locked}
           onChange={(e) => setLine(e.target.value)}
         />
-        <button className="primary sm" type="submit" disabled={busy || done || !line}>
+        <button className="primary sm" type="submit" disabled={busy || done || locked || !line}>
           Send
         </button>
         <button
           className="ghost sm"
           type="button"
           onClick={() => void onInterrupt()}
-          disabled={busy || done}
+          disabled={busy || done || locked}
           title="Send the interrupt byte (Ctrl+C) -- SIGINT to the foreground program on a PTY-backed shell"
         >
           ^C
         </button>
-        <button className="ghost sm" type="button" onClick={() => void onCloseStdin()} disabled={busy || done}>
+        <button
+          className="ghost sm"
+          type="button"
+          onClick={() => void onCloseStdin()}
+          disabled={busy || done || locked}
+        >
           Close stdin
         </button>
       </form>

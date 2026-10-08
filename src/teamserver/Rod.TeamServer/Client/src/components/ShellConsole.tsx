@@ -10,6 +10,7 @@ import {
   upgradeShell,
 } from '../api'
 import { launcherHint } from '../launcherFamilies'
+import { useClaim } from '../useClaim'
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
 
@@ -17,10 +18,12 @@ import { StatusBadge } from './StatusBadge'
 // output read by cursor -- each read parks server-side until the next chunk,
 // so one request stays in flight instead of a spinning poll -- with typing
 // posted through the input route and the close route ending the shell as an
-// operator action. The upgrade button renders the paste-ready launchers
-// that grow the shell into a real implant (naming the web front the fetch
-// rides when several exist); the paste itself is the operator's, through
-// this same input line.
+// operator action. The input half is claim-aware (architecture.md Sec 4.5):
+// a shell another operator holds locks the input line and names the holder,
+// and this console's typing takes the claim on first post. The upgrade
+// button renders the paste-ready launchers that grow the shell into a real
+// implant (naming the web front the fetch rides when several exist); the
+// paste itself is the operator's, through this same input line.
 export function ShellConsole({
   engagementId,
   shell,
@@ -42,6 +45,7 @@ export function ShellConsole({
   // The output cursor survives re-renders; the console never re-reads what
   // it already holds.
   const cursorRef = useRef(0)
+  const { locked, holderHandle } = useClaim(engagementId, 'shell', shell.sessionId)
 
   useEffect(() => {
     setTranscript('')
@@ -154,6 +158,11 @@ export function ShellConsole({
         <span>·</span>
         <code>{shell.remoteAddress}</code>
         <StatusBadge status={shell.status} />
+        {locked && (
+          <span className="muted" title="Another operator holds this shell's input; it releases when they dismiss their console or disconnect">
+            held by {holderHandle}
+          </span>
+        )}
         <span className="spacer">
           <button className="ghost sm" onClick={() => void onUpgrade()} disabled={busy}>
             Upgrade
@@ -177,15 +186,15 @@ export function ShellConsole({
         </span>
         <input
           className="wide"
-          placeholder={done ? 'shell ended' : 'type a command'}
+          placeholder={done ? 'shell ended' : locked ? `held by ${holderHandle}` : 'type a command'}
           value={line}
-          disabled={done || busy}
+          disabled={done || busy || locked}
           onChange={(e) => setLine(e.target.value)}
         />
-        <button className="primary sm" type="submit" disabled={busy || done || !line}>
+        <button className="primary sm" type="submit" disabled={busy || done || locked || !line}>
           Send
         </button>
-        <button className="ghost sm" type="button" onClick={() => void onInterrupt()} disabled={busy || done}>
+        <button className="ghost sm" type="button" onClick={() => void onInterrupt()} disabled={busy || done || locked}>
           ^C
         </button>
       </form>

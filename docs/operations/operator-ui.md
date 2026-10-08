@@ -55,6 +55,26 @@ overrides for lab runs), the next shell starts fresh -- a new process in
 its home directory -- under the separator. Closing the dialog keeps a
 running session alive server-side; reopening continues it.
 
+## Interaction ownership
+
+One operator at a time types into a surface (architecture.md Sec 4.5). The
+typing halves -- a live channel pane (shell or tunnel, relay binds
+included) and a caught shell's console -- are exclusively claimed: the
+first thing this console sends takes the claim, the pane's header and input
+placeholder name the holder (`held by alice`) while another operator holds
+it, and dismissing the pane releases it. A disconnect releases it too --
+the claim lives exactly as long as its holder's live stream -- and the
+server refuses a second operator's input outright (a 409 naming the holder)
+rather than interleaving two keyboards into one shell. Teardown never needs
+the claim: closing a caught shell or unbinding a relay stays open to every
+acting operator, so a runaway surface is always killable.
+
+Beside the exclusive claims, the fleet table carries **driving** badges --
+the operator whose tasking each implant last saw, a soft signal refreshed
+on every hand-off -- and an operator holding only the viewing scope sees a
+`read-only` mark beside their handle in the sidebar: the server refuses
+their acting routes; the mark explains why.
+
 ## Naming -- the fixed vocabulary
 
 The three connection behaviors above are the whole vocabulary, and the two

@@ -146,6 +146,10 @@ export interface SessionOperator {
   operatorId: string
   handle: string
   displayName: string
+  // The scope set the session carries (read / task / approve); a read-only
+  // operator can watch but not act -- the server refuses her writes, the UI
+  // marks them.
+  scopes: string[]
 }
 
 export interface LoginInput {
@@ -175,8 +179,18 @@ export async function getSessionOperator(): Promise<SessionOperator> {
   if (!response.ok) {
     throw new Error(`${response.status} ${response.statusText}`)
   }
-  const body = (await response.json()) as { id: string; handle: string; displayName: string }
-  return { operatorId: body.id, handle: body.handle, displayName: body.displayName }
+  const body = (await response.json()) as {
+    id: string
+    handle: string
+    displayName: string
+    scopes?: string[]
+  }
+  return {
+    operatorId: body.id,
+    handle: body.handle,
+    displayName: body.displayName,
+    scopes: body.scopes ?? [],
+  }
 }
 
 export interface CreateEngagementInput {
@@ -369,6 +383,55 @@ function toBase64Utf8(text: string): string {
   return btoa(binary)
 }
 
+// --- Interaction claims (architecture.md Sec 4.5)  ---------------------------
+//
+// The exclusive ownership of a typing half: one operator holds the claim on a
+// live channel task (its input posts and relay binds) or a caught shell's
+// input. The first input takes an unclaimed surface; while another operator
+// holds it, the input routes refuse. Claims are visible on the live stream
+// (ClaimAcquired / ClaimReleased, and the hello frame's seed) and released on
+// the holder's disconnect -- the pane that holds one releases it on dismiss.
+
+export interface ClaimSummary {
+  kind: 'channel' | 'shell'
+  surfaceId: string
+  operatorId: string
+  acquiredAt: string
+}
+
+export async function listClaims(engagementId: string): Promise<ClaimSummary[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/claims`))
+}
+
+// Takes the claim on a surface before typing, to signal intent. Refused (409)
+// with the holder named when another operator holds it.
+export async function acquireClaim(
+  engagementId: string,
+  kind: 'channel' | 'shell',
+  surfaceId: string,
+): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/claims`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, taskId: kind === 'channel' ? surfaceId : undefined, shellId: kind === 'shell' ? surfaceId : undefined }),
+  })
+  await jsonOrThrow<unknown>(response)
+}
+
+// Releases a claim this operator holds; the surface is claimable again.
+export async function releaseClaim(
+  engagementId: string,
+  kind: 'channel' | 'shell',
+  surfaceId: string,
+): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/claims/${kind}/${surfaceId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) {
+    throw new ApiError(`${response.status} ${response.statusText}`, response.status)
+  }
+}
+
 // --- Live event stream  ---------------------------------------
 //
 // Server-Sent Events keep each connected operator session live on an engagement.
@@ -383,6 +446,16 @@ export interface LiveOperator {
   displayName: string
 }
 
+// Who is driving which implant (architecture.md Sec 4.5 activity presence):
+// the operator whose tasking the implant last saw.
+export interface DrivingEntry {
+  implantId: string
+  operatorId: string
+  at: string
+}
+
+// One parsed SSE frame. The hello frame seeds the full ownership picture --
+// roster, held claims, driving map -- and the claim events keep it current.
 export interface LiveEventPayload {
   kind?: string
   engagementId?: string
@@ -392,12 +465,17 @@ export interface LiveEventPayload {
   payload?: string
   at?: string
   operators?: LiveOperator[]
+  claims?: ClaimSummary[]
+  driving?: DrivingEntry[]
 }
 
 export interface EngagementStreamHandlers {
-  onHello?: (operators: LiveOperator[]) => void
+  onHello?: (operators: LiveOperator[], claims: ClaimSummary[], driving: DrivingEntry[]) => void
   onOperatorJoined?: (operatorId: string, handle: string) => void
   onOperatorLeft?: (operatorId: string, handle: string) => void
+  onClaimAcquired?: (claim: ClaimSummary) => void
+  onClaimReleased?: (claim: ClaimSummary) => void
+  onImplantActivity?: (implantId: string, operatorId: string) => void
   onTaskIssued?: (taskId: string, payload: string) => void
   onTaskCompleted?: (taskId: string, payload: string) => void
   onTaskCancelled?: (taskId: string, payload: string) => void
@@ -408,6 +486,13 @@ export interface EngagementStreamHandlers {
   onShellSessionEnded?: (payload: string) => void
   onPayloadFetched?: (payload: string) => void
   onError?: (event: Event) => void
+}
+
+// Parses the claim events' surface payload ("channel/{id}" / "shell/{id}").
+function parseClaimPayload(operatorId: string, payload: string, at?: string): ClaimSummary | null {
+  const match = /^(channel|shell)\/([\da-fA-F-]+)$/.exec(payload)
+  if (!match) return null
+  return { kind: match[1] as ClaimSummary['kind'], surfaceId: match[2], operatorId, acquiredAt: at ?? '' }
 }
 
 // Opens an SSE stream for an engagement. The auth cookie identifies the operator
@@ -430,7 +515,7 @@ export function subscribeToEngagement(
 
   source.addEventListener('hello', (e) => {
     const payload = parse((e as MessageEvent).data)
-    handlers.onHello?.(payload?.operators ?? [])
+    handlers.onHello?.(payload?.operators ?? [], payload?.claims ?? [], payload?.driving ?? [])
   })
   source.addEventListener('OperatorJoined', (e) => {
     const payload = parse((e as MessageEvent).data)
@@ -439,6 +524,20 @@ export function subscribeToEngagement(
   source.addEventListener('OperatorLeft', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onOperatorLeft?.(payload?.operatorId ?? '', payload?.payload ?? '')
+  })
+  source.addEventListener('ClaimAcquired', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    const claim = payload && parseClaimPayload(payload.operatorId ?? '', payload.payload ?? '', payload.at)
+    if (claim) handlers.onClaimAcquired?.(claim)
+  })
+  source.addEventListener('ClaimReleased', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    const claim = payload && parseClaimPayload(payload.operatorId ?? '', payload.payload ?? '', payload.at)
+    if (claim) handlers.onClaimReleased?.(claim)
+  })
+  source.addEventListener('ImplantActivity', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onImplantActivity?.(payload?.implantId ?? '', payload?.operatorId ?? '')
   })
   source.addEventListener('TaskIssued', (e) => {
     const payload = parse((e as MessageEvent).data)

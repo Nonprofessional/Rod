@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
+import { useLive } from '../shell'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
@@ -129,6 +130,17 @@ export function ImplantsView({
   const [noteDraft, setNoteDraft] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Driving presence (architecture.md Sec 4.5): the live driving map names
+  // which operator each worked implant last saw; the roster resolves the
+  // handle for the row badge.
+  const live = useLive()
+  const driverHandle = useMemo(() => {
+    const byOperator = new Map(live?.operators.map((o) => [o.id, o.handle]) ?? [])
+    return (implantId: string) => {
+      const entry = live?.driving.find((d) => d.implantId === implantId)
+      return entry ? byOperator.get(entry.operatorId) ?? entry.operatorId.slice(0, 8) : null
+    }
+  }, [live])
   // The per-verb dialog and process browser targets: an implant plus the verb
   // (or just the implant for the browser). One at a time -- the operator acts
   // on one row at a time.
@@ -589,6 +601,15 @@ export function ImplantsView({
                               >
                                 {' '}
                                 degraded · dns
+                              </span>
+                            )}
+                            {!retired && driverHandle(implant.implantId) && (
+                              <span
+                                className="muted"
+                                title="Activity presence (Sec 4.5): the operator whose tasking this implant last saw -- soft signal, not an exclusive claim"
+                              >
+                                {' '}
+                                driving: {driverHandle(implant.implantId)}
                               </span>
                             )}
                           </td>
