@@ -446,4 +446,27 @@ public enum AuditEventKind
     /// a label annotates the implant, it does not task it.
     /// </summary>
     ImplantLabeled,
+
+    /// <summary>
+    /// An operator wrote a free-text note about a host -- the device
+    /// dimension of the picture, grouped by the hostname the implants
+    /// themselves report at enroll (architecture.md Sec 11.2). A host is
+    /// that grouping read-side; there is no host entity, so the note's
+    /// payload carries a small JSON object naming the host alongside the
+    /// text (the audit record's field set is frozen -- the chain's
+    /// canonical form -- so a new subject rides the free string fields).
+    /// The outcome is <c>added</c>; notes are immutable appends read back
+    /// as a query over the trail, exactly like implant notes.
+    /// </summary>
+    HostNoteAdded,
+
+    /// <summary>
+    /// An operator set or cleared a label on a host (architecture.md Sec
+    /// 11.2). The payload carries the same JSON shape as
+    /// <see cref="HostNoteAdded"/> with the label in place of the text; the
+    /// outcome is <c>set</c> or <c>cleared</c>, and the live label set is
+    /// the last-wins reduction over these events -- the implant-label
+    /// discipline on the host key.
+    /// </summary>
+    HostLabeled,
 }

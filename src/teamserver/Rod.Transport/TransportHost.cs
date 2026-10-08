@@ -592,6 +592,10 @@ public static class TransportHost
         endpoints.MapEngagementEndpoints();
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
+        // The host picture of the intel layer (architecture.md Sec 11.2): the
+        // enrollment-hostname grouping read-side, with attributed notes and
+        // labels riding the trail like their implant-side twins.
+        endpoints.MapHostEndpoints();
         endpoints.MapListenerEndpoints();
         // The standalone one-liner launchers: the paste-ready payload fetch
         // renders, shared with the shell console's upgrade flow.
