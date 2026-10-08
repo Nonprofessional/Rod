@@ -28,7 +28,10 @@ public sealed class InMemoryOperatorRepository : IOperatorRepository
 
     public async Task<Operator> GetOrThrowAsync(OperatorId id, CancellationToken cancellationToken = default)
         => await FindAsync(id, cancellationToken)
-            ?? throw new InvalidOperationException($"Operator {id} does not exist.");
+           ?? throw new InvalidOperationException($"Operator {id} does not exist.");
+
+    public Task<IReadOnlyList<Operator>> ListAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<Operator>>(_operators.Values.OrderBy(o => o.Handle).ToArray());
 
     public Task SaveAsync(Operator @operator, CancellationToken cancellationToken = default)
     {

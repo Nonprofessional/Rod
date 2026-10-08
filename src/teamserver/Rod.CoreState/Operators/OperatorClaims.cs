@@ -33,6 +33,31 @@ public static class OperatorClaims
     public const string OperatorDisplayNameClaimType = "rod:operator-display-name";
 
     /// <summary>
+    /// The claim that carries the authenticated operator's scope set, as the
+    /// canonical value <see cref="OperatorScopes.ToClaimValue"/> renders
+    /// (architecture.md Sec 4.5). Stamped wherever the principal is built --
+    /// cookie login and API-token authentication -- and revalidated against
+    /// the store per request, so a role change reaches the next request.
+    /// </summary>
+    public const string OperatorScopesClaimType = "rod:operator-scopes";
+
+    /// <summary>
+    /// Reads the authenticated operator's scope set off the principal. A
+    /// principal stamped before scopes existed carries no claim; it resolves
+    /// to <see cref="OperatorScope.None"/> and the per-request store
+    /// comparison replaces it with the operator's current set.
+    /// </summary>
+    public static OperatorScope TryGetScopes(this ClaimsPrincipal principal)
+        => OperatorScopes.FromClaimValue(principal.FindFirst(OperatorScopesClaimType)?.Value);
+
+    /// <summary>
+    /// Whether the principal's operator holds a scope -- the read the
+    /// authorization policies and the endpoint gates share.
+    /// </summary>
+    public static bool HasScope(this ClaimsPrincipal principal, OperatorScope scope)
+        => principal.TryGetScopes().HasFlag(scope);
+
+    /// <summary>
     /// Reads the authenticated operator's id from a principal, or null when the
     /// principal has no operator-id claim (the caller is anonymous or the claim
     /// is malformed).

@@ -37,6 +37,15 @@ internal sealed class PostgresOperatorRepository : IOperatorRepository
         => await FindAsync(id, cancellationToken)
             ?? throw new InvalidOperationException($"Operator {id} does not exist.");
 
+    public async Task<IReadOnlyList<Operator>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        // The roster is small (an operator crew, not a user base) and the
+        // assignment path reads it whole to enforce its guards; ordered by
+        // handle so the listing is stable for an operator-facing reply.
+        return await db.Operators.AsNoTracking().OrderBy(o => o.Handle).ToListAsync(cancellationToken);
+    }
+
     public async Task SaveAsync(Operator @operator, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);

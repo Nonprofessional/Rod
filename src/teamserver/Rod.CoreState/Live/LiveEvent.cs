@@ -1,6 +1,7 @@
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
+using Rod.CoreState.Operators.Interaction;
 using Rod.CoreState.Tasks;
 
 namespace Rod.CoreState.Live;
@@ -168,4 +169,41 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.PayloadFetched, OperatorId.Empty, ImplantId: null, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds an interaction-claim event -- acquired or released
+    /// (architecture.md Sec 4.5). Attributed to the holder the claim concerns;
+    /// a channel claim carries the surface's task id so a console binds the
+    /// lock to its pane, a shell claim carries none, and the payload names
+    /// the surface (<c>channel/{id}</c> / <c>shell/{id}</c>).
+    /// </summary>
+    public static LiveEvent Claim(
+        EngagementId engagement,
+        LiveEventKind kind,
+        OperatorId holder,
+        InteractionSurface surface,
+        Guid surfaceId,
+        DateTimeOffset at)
+        => new(
+            engagement,
+            kind,
+            holder,
+            ImplantId: null,
+            TaskId: surface == InteractionSurface.ChannelTask ? new TaskId(surfaceId) : null,
+            $"{surface.RouteKind()}/{surfaceId}",
+            at);
+
+    /// <summary>
+    /// Builds an implant-activity event (architecture.md Sec 4.5, activity
+    /// presence): a different operator's tasking action marked the implant as
+    /// theirs -- a hand-off, one beat. Attributed to the new driver; the
+    /// payload carries the driving stamp.
+    /// </summary>
+    public static LiveEvent ImplantActivity(
+        EngagementId engagement,
+        OperatorId driver,
+        ImplantId implant,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.ImplantActivity, driver, implant, TaskId: null, payload, at);
 }

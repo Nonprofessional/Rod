@@ -19,6 +19,14 @@ public interface IOperatorRepository
     /// </summary>
     Task<Operator?> FindByHandleAsync(string handle, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Every operator, ordered by handle. Scope assignment reads the whole
+    /// roster to enforce its guards (the last task holder must not be
+    /// removed, architecture.md Sec 4.5); the store is small and the
+    /// assignment is rare, so a full listing is the honest shape.
+    /// </summary>
+    Task<IReadOnlyList<Operator>> ListAsync(CancellationToken cancellationToken = default);
+
     Task<Operator> GetOrThrowAsync(OperatorId id, CancellationToken cancellationToken = default);
 
     Task SaveAsync(Operator @operator, CancellationToken cancellationToken = default);

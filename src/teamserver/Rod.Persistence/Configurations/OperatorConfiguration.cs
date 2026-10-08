@@ -24,6 +24,13 @@ internal sealed class OperatorConfiguration : IEntityTypeConfiguration<global::R
 
         builder.Property(o => o.Handle).HasColumnName("handle").HasMaxLength(256).IsRequired();
         builder.Property(o => o.DisplayName).HasColumnName("display_name").HasMaxLength(512).IsRequired();
+        // The role scopes (architecture.md Sec 4.5) as their flag set: three
+        // bits in an int. The default is the full peer set, so rows that
+        // predate scopes keep the reach they were provisioned with.
+        builder.Property(o => o.Scopes)
+            .HasConversion<int>()
+            .HasColumnName("scopes")
+            .HasDefaultValue(global::Rod.CoreState.Operators.OperatorScope.All);
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
     }
 }

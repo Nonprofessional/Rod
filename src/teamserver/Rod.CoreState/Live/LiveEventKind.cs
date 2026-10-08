@@ -103,4 +103,32 @@ public enum LiveEventKind
     /// fetcher's address and user agent.
     /// </summary>
     PayloadFetched,
+
+    /// <summary>
+    /// An operator took the claim on an interaction surface
+    /// (architecture.md Sec 4.5) -- a live channel task's typing half or a
+    /// caught shell's input. Carries the holder as its operator; the payload
+    /// names the surface, and a channel claim also carries the task id so a
+    /// console can bind the lock to its pane. Connected operators render the
+    /// claim as "held by" state on the surface.
+    /// </summary>
+    ClaimAcquired,
+
+    /// <summary>
+    /// An interaction claim ended -- released by its holder, or dropped
+    /// because the holder left the engagement's live stream or the claimed
+    /// surface itself ended (architecture.md Sec 4.5). The mirror of
+    /// <see cref="ClaimAcquired"/>: connected operators clear the "held by"
+    /// lock and may take the surface themselves.
+    /// </summary>
+    ClaimReleased,
+
+    /// <summary>
+    /// The operator driving an implant changed (architecture.md Sec 4.5,
+    /// activity presence): a different operator's tasking action marked the
+    /// implant as theirs. Carries the new driver and the implant; a refresh
+    /// by the current driver publishes nothing, so the beat fires only on a
+    /// hand-off. Connected operators refresh the roster's driving badges.
+    /// </summary>
+    ImplantActivity,
 }
