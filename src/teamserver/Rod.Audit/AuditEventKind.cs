@@ -434,4 +434,16 @@ public enum AuditEventKind
     /// the outcome is the snippet id.
     /// </summary>
     TaskSnippetDeleted,
+
+    /// <summary>
+    /// An operator set or cleared a label on an implant -- the short marker
+    /// vocabulary ("jump", "owned", "watch-edr") the fleet's picture groups
+    /// and filters by (architecture.md Sec 11.2). The payload is the label
+    /// text, the outcome <c>set</c> or <c>cleared</c>; the live label set is
+    /// the last-wins reduction over these events, so an append-only trail
+    /// can still change a label without rewriting history. Attributed to
+    /// the acting operator and bound to the implant it marks; like a note,
+    /// a label annotates the implant, it does not task it.
+    /// </summary>
+    ImplantLabeled,
 }

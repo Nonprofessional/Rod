@@ -29,6 +29,9 @@ namespace Rod.Transport.Endpoints;
 /// Operators can also write free-text, attributed notes on an implant -- the
 /// "whose beacon is this" memory -- recorded as audit events and read back
 /// from the same trail, so they survive a restart like every engagement fact.
+/// Labels are the marker vocabulary beside the notes (architecture.md Sec
+/// 11.2): set and cleared as appended events, reduced last-wins at read time
+/// off the same trail.
 /// </summary>
 public static class ImplantEndpoints
 {
@@ -45,6 +48,11 @@ public static class ImplantEndpoints
         group.MapGet("/{implantId}/notes", ListNotesAsync).WithName(nameof(ListNotesAsync));
         group.MapPost("/{implantId}/notes", AddNoteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(AddNoteAsync));
+        group.MapGet("/{implantId}/labels", ListLabelsAsync).WithName(nameof(ListLabelsAsync));
+        group.MapPost("/{implantId}/labels", SetLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(SetLabelAsync));
+        group.MapDelete("/{implantId}/labels/{label}", ClearLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(ClearLabelAsync));
         group.MapPost("/{implantId}:retire", RetireAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(RetireAsync));
         return endpoints;
@@ -155,9 +163,7 @@ public static class ImplantEndpoints
     // A note is a sentence or three -- "web server, HVXC-web-03, JBS's box" --
     // not a paste target; anything larger belongs in an artifact attached to a
     // task. Bounded so one post cannot pin the trail's JSON lines.
-    private const int MaxNoteChars = 8 * 1024;
-
-    // Operator notes on implants: the free-text, attributed "whose beacon is
+    private const int MaxNoteChars = 8 * 1024;    // Operator notes on implants: the free-text, attributed "whose beacon is
     // this" memory. Notes are recorded as ImplantNoteAdded audit events and
     // read back from the same trail (architecture.md Sec 11), so they ride the
     // hash chain -- attributed, immutable, and durable exactly like every other
@@ -252,6 +258,183 @@ public static class ImplantEndpoints
                 author.Value.ToString(),
                 body.Text,
                 at));
+    }
+
+    // A label is a marker, not a sentence: "jump", "owned", "watch-edr". The
+    // bounds keep the vocabulary chip-sized on the fleet view and the trail's
+    // JSON lines cheap, and cap how many distinct markers one implant carries
+    // so the set stays a picture, not a diary.
+    private const int MaxLabelChars = 64;
+    private const int MaxLabelsPerImplant = 32;
+
+    // Operator labels on implants: the set/clear marker vocabulary the intel
+    // layer groups and filters by (architecture.md Sec 11.2). Like notes, a
+    // label's only storage is the trail -- ImplantLabeled events reduced at
+    // read time last-wins per label, so setting and clearing are appends and
+    // the append-only chain never rewrites history to change a label.
+    private static async Task<IResult> ListLabelsAsync(
+        string engagementId,
+        string implantId,
+        IImplantRepository implants,
+        IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+
+        // Confirm the implant belongs to this engagement before reading its
+        // labels; a foreign implant id yields no rows here (architecture.md
+        // Sec 3).
+        var implant = await implants.FindAsync(new ImplantId(implantValue), cancellationToken);
+        if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Implant does not exist in this engagement."));
+
+        var labels = ReduceLabels(await audit.ForImplantAsync(implantValue, cancellationToken));
+        return Results.Ok(labels);
+    }
+
+    private static async Task<IResult> SetLabelAsync(
+        string engagementId,
+        string implantId,
+        SetLabelRequest body,
+        ClaimsPrincipal user,
+        IImplantRepository implants,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        // The acting operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth).
+        var actor = user.TryGetOperatorId();
+        if (actor is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+        var label = body.Label?.Trim();
+        if (string.IsNullOrWhiteSpace(label))
+            return Results.BadRequest(new Problem("Label text is required."));
+        if (label.Length > MaxLabelChars)
+            return Results.BadRequest(new Problem($"Label text exceeds {MaxLabelChars} characters."));
+
+        var implant = await implants.FindAsync(new ImplantId(implantValue), cancellationToken);
+        if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Implant does not exist in this engagement."));
+
+        // The cap is evaluated against the reduced set, so re-setting a label
+        // the implant already carries never trips it and a cleared label's
+        // slot is free again.
+        var current = ReduceLabels(await audit.ForImplantAsync(implantValue, cancellationToken));
+        if (current.Count >= MaxLabelsPerImplant
+            && !current.Any(l => string.Equals(l.Label, label, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.Json(
+                new Problem($"An implant carries at most {MaxLabelsPerImplant} labels."),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+
+        // The label change is the operator's action on the engagement
+        // (architecture.md Sec 11.2): attributed to the actor, bound to the
+        // implant it marks, the payload the label text, the outcome the
+        // action. The reduced set is a query over the same trail.
+        var at = clock.GetUtcNow();
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: actor.Value.Value,
+                implantId: implantValue,
+                taskId: Guid.Empty,
+                verb: "label",
+                kind: AuditEventKind.ImplantLabeled,
+                payload: label,
+                output: null,
+                outcome: "set",
+                at: at),
+            cancellationToken);
+
+        return Results.Created(
+            $"/engagements/{engagementId}/implants/{implantId}/labels",
+            new ImplantLabelResponse(label, actor.Value.ToString(), at));
+    }
+
+    private static async Task<IResult> ClearLabelAsync(
+        string engagementId,
+        string implantId,
+        string label,
+        ClaimsPrincipal user,
+        IImplantRepository implants,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        // The acting operator is the authenticated operator, resolved off the
+        // session principal rather than named in the body (operator auth).
+        var actor = user.TryGetOperatorId();
+        if (actor is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+        if (!Guid.TryParse(implantId, out var implantValue))
+            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+
+        var implant = await implants.FindAsync(new ImplantId(implantValue), cancellationToken);
+        if (implant is null || implant.EngagementId != new EngagementId(engagementValue))
+            return Results.NotFound(new Problem("Implant does not exist in this engagement."));
+
+        // Idempotent like retirement: every clear is appended, so the trail
+        // reflects each operator action even when the label was already gone;
+        // the reduction decides what the live set holds.
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: actor.Value.Value,
+                implantId: implantValue,
+                taskId: Guid.Empty,
+                verb: "label",
+                kind: AuditEventKind.ImplantLabeled,
+                payload: label,
+                output: null,
+                outcome: "cleared",
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
+        return Results.NoContent();
+    }
+
+    // The live label set: walk the implant's label events oldest first and let
+    // the newest action per label win (case-insensitive -- "web" and "Web"
+    // are the same marker). Returns the reduced set in the order the labels
+    // were (re)set.
+    private static List<ImplantLabelResponse> ReduceLabels(IReadOnlyList<AuditEvent> events)
+    {
+        var order = new List<string>();
+        var byLabel = new Dictionary<string, ImplantLabelResponse>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in events)
+        {
+            if (e.Kind != AuditEventKind.ImplantLabeled)
+                continue;
+
+            if (string.Equals(e.Outcome, "cleared", StringComparison.OrdinalIgnoreCase))
+            {
+                if (byLabel.Remove(e.Payload))
+                    order.Remove(e.Payload);
+                continue;
+            }
+
+            if (!byLabel.ContainsKey(e.Payload))
+                order.Add(e.Payload);
+            byLabel[e.Payload] = new ImplantLabelResponse(
+                e.Payload,
+                new OperatorId(e.OperatorId).ToString(),
+                e.At);
+        }
+
+        return order.Select(label => byLabel[label]).ToList();
     }
 
     private static async Task<IResult> RetireAsync(
@@ -373,6 +556,10 @@ public static class ImplantEndpoints
     // authenticated operator, never a body field.
     public sealed record AddNoteRequest(string Text);
 
+    // A label's request body: the marker text. The actor is the authenticated
+    // operator, never a body field.
+    public sealed record SetLabelRequest(string Label);
+
     // One note on an implant: the audit event's id (a note is its event -- the
     // two are one object), the implant it describes, the writing operator, the
     // text, and when.
@@ -382,6 +569,15 @@ public static class ImplantEndpoints
         string Author,
         string Text,
         DateTimeOffset At);
+
+    // One label an implant currently carries: the marker text, the operator
+    // whose set action last won the reduction, and when. No event id -- a
+    // label is the reduced state of many events, not one object the way a
+    // note is.
+    public sealed record ImplantLabelResponse(
+        string Label,
+        string SetBy,
+        DateTimeOffset SetAt);
 
     public sealed record RetireImplantResponse(
         string ImplantId,
