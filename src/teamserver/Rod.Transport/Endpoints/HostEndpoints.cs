@@ -100,12 +100,21 @@ public static class HostEndpoints
         foreach (var fact in hostFacts.Where(f => f.Kind == AuditEventKind.HostNoteAdded))
             noteCounts[fact.Host] = noteCounts.GetValueOrDefault(fact.Host) + 1;
 
+        // The fact half: every host a label or note names gets an entry --
+        // including one no implant reported, because recon can see what
+        // nothing occupies.
         var hosts = new SortedDictionary<string, HostResponse>(StringComparer.Ordinal);
-        foreach (var (host, labels) in labelsByHost)
+        var factHosts = labelsByHost.Keys
+            .Concat(noteCounts.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(h => h, StringComparer.Ordinal);
+        foreach (var host in factHosts)
         {
             hosts[host] = new HostResponse(
                 Host: host,
-                Labels: labels.Select(l => l.Label).ToArray(),
+                Labels: labelsByHost.GetValueOrDefault(host, [])
+                    .Select(l => l.Label)
+                    .ToArray(),
                 NoteCount: noteCounts.GetValueOrDefault(host),
                 ImplantIds: [],
                 OnlineCount: 0,

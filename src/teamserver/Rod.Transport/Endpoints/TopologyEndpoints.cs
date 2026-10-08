@@ -92,13 +92,14 @@ public static class TopologyEndpoints
 
         // The picture's hosts, assembled from the three sources. Kind records
         // the strongest claim: a host the fleet occupies beats one recon saw,
-        // which beats one only a note names.
+        // which beats one only a fact names. A host a note or label names
+        // enters here even with no implant and no observation behind it.
         var hosts = new Dictionary<string, TopologyHost>(StringComparer.Ordinal);
-        foreach (var (host, labels) in labelsByHost)
+        foreach (var host in facts.Select(f => f.Host).Distinct(StringComparer.Ordinal))
         {
             hosts[host] = new TopologyHost(
                 host, KindNoted, null, null, [], 0,
-                labels.Select(l => l.Label).ToArray());
+                labelsByHost.GetValueOrDefault(host, []).Select(l => l.Label).ToArray());
         }
 
         var observations = await ParseObservationsAsync(tasks, engagementKey, cancellationToken);

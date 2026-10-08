@@ -128,13 +128,26 @@ public sealed class HostIntelEndpointsTests
             var owned = Assert.Single(labels!);
             Assert.Equal("owned", owned.Label);
 
+            // A host only a note names -- no label, no implant, no
+            // observation -- still holds its place in the listing: the
+            // picture spans what the crew has written down, not only what
+            // carries a marker.
+            await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/hosts/fw-edge/notes",
+                new HostEndpoints.AddHostNoteRequest(Text: "perimeter firewall, no agent possible"));
+
             var listing = await client.GetFromJsonAsync<HostEndpoints.HostsResponse>(
                 $"/engagements/{engagementId}/hosts");
-            var entry = Assert.Single(listing!.Hosts);
+            Assert.Equal(2, listing!.Hosts.Length);
+            var entry = Assert.Single(listing.Hosts, h => h.Host == "db-internal");
             Assert.Equal("db-internal", entry.Host);
             Assert.Equal(1, entry.NoteCount);
             Assert.Equal(new[] { "owned" }, entry.Labels);
             Assert.Empty(entry.ImplantIds);
+            var noteOnly = Assert.Single(listing.Hosts, h => h.Host == "fw-edge");
+            Assert.Equal(1, noteOnly.NoteCount);
+            Assert.Empty(noteOnly.Labels);
+            Assert.Empty(noteOnly.ImplantIds);
         }
     }
 
