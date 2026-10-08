@@ -369,7 +369,7 @@ public static class HostEndpoints
     // The host key: trimmed and case-folded -- hostnames are case-insensitive
     // by convention, so "WEB01" and "web01" are one host in every view. Null
     // when the name carries nothing.
-    private static string? NormalizeHost(string? host)
+    internal static string? NormalizeHost(string? host)
     {
         var key = host?.Trim().ToLowerInvariant();
         return string.IsNullOrWhiteSpace(key) ? null : key;
@@ -388,7 +388,7 @@ public static class HostEndpoints
         string Outcome,
         DateTimeOffset At);
 
-    private static List<HostFact> ParseHostFacts(IReadOnlyList<AuditEvent> trail)
+    internal static List<HostFact> ParseHostFacts(IReadOnlyList<AuditEvent> trail)
     {
         var facts = new List<HostFact>();
         foreach (var e in trail)
@@ -420,7 +420,7 @@ public static class HostEndpoints
     // the implant-label discipline lifted one key up. Markers compare
     // case-insensitively ("web" and "Web" are one label) with the last
     // spelling kept; a label-less fact (a note) is not the reduction's input.
-    private static Dictionary<string, List<(string Label, Guid OperatorId, DateTimeOffset At)>> ReduceLabels(
+    internal static Dictionary<string, List<(string Label, Guid OperatorId, DateTimeOffset At)>> ReduceLabels(
         List<HostFact> facts)
     {
         var byHost = new Dictionary<

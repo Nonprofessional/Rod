@@ -106,6 +106,28 @@ own: string arguments in, outcome plus output back, with exfil chunks for
 bulk -- the same shape the compiled handlers speak, so an operator's console
 reads a module verb exactly like a built-in one.
 
+## Recon output grammar (the topology contract)
+
+Recon findings are the one task output the server reads back structurally:
+the engagement's topology view ([architecture.md Sec
+11.2](../architecture.md)) parses the completed output of `recon.portscan`
+and `recon.hostenum` tasks into the picture's observed hosts and ports.
+The grammar is JSON lines -- one finding per line, `host` required,
+everything else optional, unknown fields ignored:
+
+```json
+{"host":"10.0.0.5","port":445,"state":"open","service":"smb"}
+{"host":"web01","addresses":["10.0.0.5"],"os":"linux","arch":"x86_64"}
+```
+
+A line carrying a `port` is a portscan finding; one carrying `addresses`
+or `os`/`arch` is a hostenum finding. A line that does not parse is not a
+finding: it stays in the transcript, and nothing errors -- print your
+sweep in this shape and the operator's picture assembles itself, print
+anything else and the transcript remains the read, which is the honest
+fallback. The parse is bounded (ten thousand lines per task), so a sweep
+against a /24 may print freely.
+
 ## Building an artifact that carries your handler
 
 The build unit compiles the Rust crate through the uniform build contract

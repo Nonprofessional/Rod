@@ -596,6 +596,10 @@ public static class TransportHost
         // enrollment-hostname grouping read-side, with attributed notes and
         // labels riding the trail like their implant-side twins.
         endpoints.MapHostEndpoints();
+        // The network picture of the intel layer (architecture.md Sec 11.2):
+        // hosts, pivot links, and recon observations assembled at read time --
+        // a projection of the fleet, the trail, and the recon outputs.
+        endpoints.MapTopologyEndpoints();
         endpoints.MapListenerEndpoints();
         // The standalone one-liner launchers: the paste-ready payload fetch
         // renders, shared with the shell console's upgrade flow.
