@@ -21,20 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **ATT&CK mapping in the capability model and report** (serves
-  architecture.md Sec 10.1 and Sec 11; design lands first). What an
-  engagement cannot do without it: tell the client what was exercised
-  -- a red-team deliverable without technique coverage makes the reader
-  map the report by hand. Shape: capability descriptors carry ATT&CK
-  technique ids as metadata (the tradecraft registry is the single
-  place verbs are described), and the closeout report derives a
-  coverage view from the audit trail -- techniques exercised, by which
-  verbs, against which targets -- with unmapped verbs surfaced as a
-  review list, not silently dropped.
-  _AC:_ a closeout export includes technique coverage derived from the
-  audit trail, and a verb without a mapping shows up as unmapped rather
-  than absent.
-
 - **Sensitive-verb approval workflow** (serves architecture.md Sec 9
   and Sec 10.2/10.3; design lands first). What an engagement cannot
   do without it: a second pair of eyes where it matters -- sensitive verbs
