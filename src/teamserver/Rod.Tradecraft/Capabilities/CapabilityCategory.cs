@@ -41,6 +41,18 @@ public enum CapabilityCategory
     Tunnel,
 
     /// <summary>
+    /// The implant-side plugin seam's own verbs (architecture.md Sec 5.4):
+    /// <c>module.load</c>, <c>module.unload</c>, and <c>module.list</c> --
+    /// the machinery that widens an implanted artifact's runtime verb set
+    /// with C-ABI capability modules delivered over the task channel. The
+    /// verbs they load arrive through the categories above (recon, lateral,
+    /// persist, collect, exfil) or a paired out-of-tree descriptor; this
+    /// category holds the loading machinery itself, and no other class
+    /// carries it (module support is the Implant class's, Sec 5.2).
+    /// </summary>
+    Module,
+
+    /// <summary>
     /// Detection-evasion hooks. Contract and dispatch only; concrete behavior
     /// is out-of-tree (architecture.md Sec 13).
     /// </summary>

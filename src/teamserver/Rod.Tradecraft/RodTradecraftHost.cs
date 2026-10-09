@@ -9,6 +9,7 @@ using Rod.Tradecraft.Evasion;
 using Rod.Tradecraft.Exfil;
 using Rod.Tradecraft.Exploit;
 using Rod.Tradecraft.Lateral;
+using Rod.Tradecraft.Module;
 using Rod.Tradecraft.Modules;
 using Rod.Tradecraft.Persist;
 using Rod.Tradecraft.Recon;
@@ -29,8 +30,9 @@ namespace Rod.Tradecraft;
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers a placeholder per core verb, per recon verb, per lateral verb, per
 /// persist verb, per collect verb, per exfil verb, per tunnel verb, per evasion
-/// verb, and per exploit verb, so the registry lists the full core, recon,
-/// lateral, persist, collect, exfil, tunnel, evasion, and exploit sets. A real
+/// verb, per exploit verb, and per module-family verb, so the registry lists
+/// the full core, recon, lateral, persist, collect, exfil, tunnel, evasion,
+/// exploit, and module sets. A real
 /// module registered later for the same verb replaces the placeholder (the
 /// last registration wins -- see <see cref="ICapabilityRegistry"/>).
 ///
@@ -137,7 +139,7 @@ public static class RodTradecraftHost
     /// <summary>
     /// A fresh in-memory registry preloaded with the built-in capability verbs
     /// (core plus recon plus lateral plus persist plus collect plus exfil plus
-    /// tunnel plus evasion plus exploit). Convenience for tests and for a
+    /// tunnel plus evasion plus exploit plus module). Convenience for tests and for a
     /// process that does not run the full ASP.NET Core host: it owns one registry
     /// and loads the verbs into it.
     /// </summary>
@@ -153,7 +155,8 @@ public static class RodTradecraftHost
     /// Registers every built-in capability module into <paramref name="registry"/>:
     /// a placeholder per core verb, per recon verb, per lateral verb, per persist
     /// verb, per collect verb, per exfil verb, per tunnel verb, per evasion verb,
-    /// and per exploit verb so the registry lists all nine full sets. Idempotent:
+    /// per exploit verb, and per module-family verb so the registry lists all ten
+    /// full sets. Idempotent:
     /// each verb is registered at most once by deduplicating against what
     /// <paramref name="registry"/> already holds.
     /// </summary>
@@ -254,12 +257,21 @@ public static class RodTradecraftHost
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }
+
+        // The module family loads the same way (architecture.md Sec 5.4): the
+        // plugin seam's own verbs, placeholders like every framework verb --
+        // execution lives on the implant's plugin table, and the server gates
+        // and forwards only.
+        foreach (var descriptor in ModuleCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
     }
 
     // Registers a placeholder for descriptor's verb unless the registry already
     // has a module for it (an out-of-tree override). Centralized so the core,
-    // recon, lateral, persist, collect, exfil, evasion, and exploit loops share
-    // one dedup rule and one placeholder path.
+    // recon, lateral, persist, collect, exfil, evasion, exploit, and module loops
+    // share one dedup rule and one placeholder path.
     private static async Task RegisterPlaceholderAsync(
         ICapabilityRegistry registry,
         CapabilityDescriptor descriptor,

@@ -36,6 +36,9 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Implant, "collect.screenshot")]
     [InlineData(ImplantClass.Implant, "exfil.push")]
     [InlineData(ImplantClass.Implant, "exfil.stage")]
+    [InlineData(ImplantClass.Implant, "module.load")]
+    [InlineData(ImplantClass.Implant, "module.unload")]
+    [InlineData(ImplantClass.Implant, "module.list")]
     [InlineData(ImplantClass.WebShell, "shell.exec")]
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
     [InlineData(ImplantClass.Pivot, "tunnel.forward")]
@@ -51,6 +54,7 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.WebShell, "exfil.push", "collection and exfiltration are long-haul class activities")]
     [InlineData(ImplantClass.WebShell, "recon.ps", "process listing is a long-haul class activity")]
     [InlineData(ImplantClass.WebShell, "tunnel.forward", "tunneling joins the full class's core operations and the pivot set")]
+    [InlineData(ImplantClass.WebShell, "module.load", "module support is the long-haul class's")]
     [InlineData(ImplantClass.Ephemeral, "file.push", "an ephemeral does not push")]
     [InlineData(ImplantClass.Ephemeral, "recon.service", "recon is a long-haul class activity")]
     [InlineData(ImplantClass.Ephemeral, "lateral.exec_remote", "lateral movement is a long-haul class activity")]
@@ -81,14 +85,15 @@ public class ImplantClassCapabilitiesTests
         => Assert.False(ImplantClassCapabilities.Allows(ImplantClass.Implant, verb));
 
     [Fact]
-    public void For_TheImplantClass_ReturnsTheFullCoreTunnelReconLateralPersistCollectAndExfilSet()
+    public void For_TheImplantClass_ReturnsTheFullCoreTunnelReconLateralPersistCollectExfilAndModuleSet()
     {
         // The Implant class is the primary long-haul one: it carries the full core set
         // plus the tunnel set, the recon set, the lateral set, the persist set,
-        // the collect set, and the exfil set, since tunneling is a core
-        // operation (architecture.md Sec 14) and recon, lateral movement,
+        // the collect set, the exfil set, and the module family, since tunneling
+        // is a core operation (architecture.md Sec 14), recon, lateral movement,
         // persistence, collection, and exfiltration are long-haul activities
-        // (architecture.md Sec 5.2, Sec 10.1). Every other class carries a subset
+        // (architecture.md Sec 5.2, Sec 10.1), and the plugin seam rides the
+        // long-haul class alone (Sec 5.4). Every other class carries a subset
         // for its purpose.
         var verbs = ImplantClassCapabilities.For(ImplantClass.Implant);
         Assert.Equal(
@@ -104,6 +109,7 @@ public class ImplantClassCapabilitiesTests
                 "collect.minidump",
                 "inject.shellcode",
                 "exfil.push", "exfil.stage",
+                "module.load", "module.unload", "module.list",
             },
             verbs);
     }

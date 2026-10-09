@@ -55,6 +55,7 @@ public static class ImplantClassCapabilities
                 "collect.minidump",
                 "inject.shellcode",
                 "exfil.push", "exfil.stage",
+                "module.load", "module.unload", "module.list",
             },
 
             // A script in a web root: code execution over HTTP, no file transfer
