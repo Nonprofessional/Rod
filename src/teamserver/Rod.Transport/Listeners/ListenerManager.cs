@@ -120,7 +120,15 @@ public sealed class ListenerManager
                 && int.TryParse(bind[(separator + 1)..], out var bindPort)
                 && bindPort == bound)
             {
-                return ServerLeaf.HostOf(entry.Listener.PublicEndpoint);
+                // The web family is dialed at its public endpoint, but a
+                // zone-shaped front (DoH) is dialed at its bind: the bake
+                // names the resolver it dials, and the zone names only the
+                // queries -- so the leaf must cover the bind's host, or the
+                // first rustls handshake fails name validation.
+                return TransportProviders.Find(entry.Listener.Transport)
+                           is KestrelEndpointProvider { EndpointShape: PublicEndpointShape.DnsZone }
+                    ? bind[..separator]
+                    : ServerLeaf.HostOf(entry.Listener.PublicEndpoint);
             }
         }
         return null;

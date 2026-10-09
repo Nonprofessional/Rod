@@ -85,6 +85,37 @@ public class DnsOverHttpsTests
         Assert.Equal(HttpStatusCode.NotFound, elsewhere.StatusCode);
     }
 
+    // The listener's leaf must name what the client dialed: a doh bake
+    // dials its bind as the resolver, so an IP-bound listener presents an
+    // IP-SAN leaf. The zone-name leaf this replaces chains fine but fails
+    // the reference implant's rustls name validation at the first
+    // handshake -- a defect only a name-checking client can see.
+    [Fact]
+    public async Task DohListener_LeafNamesTheDialedBindHost()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await env.LoginAsync();
+        var engagementId = await env.CreateEngagementAsync();
+
+        var dohPort = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "doh-front", Transport: "doh",
+                BindAddress: $"127.0.0.1:{dohPort}", PublicEndpoint: Zone));
+        created.EnsureSuccessStatusCode();
+
+        using var validating = new HttpClient(
+            TestEnv.BuildNameValidatingHandler(env.Ca.GetCaCertificate(), "127.0.0.1"))
+        {
+            BaseAddress = new Uri($"https://127.0.0.1:{dohPort}"),
+        };
+        var pollName = DnsContactNames.PollName(ImplantId.New(), Zone);
+        var post = await validating.PostAsync(
+            $"{DnsOverHttpsEndpoints.Route}", new ByteArrayContent(Query(pollName)));
+        Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+    }
+
     // Builds one TXT query wire message for a name, the hand-rolled shape
     // the DNS codec's own round-trip test pins: header, single question,
     // and the EDNS0 OPT record a real resolver sends.
@@ -136,6 +167,8 @@ public class DnsOverHttpsTests
         public HttpClient Http { get; private set; } = null!;
         public HttpClient Doh { get; private set; } = null!;
         public int HttpPort { get; private set; }
+
+        public Rod.CoreState.Pki.IImplantCertificateAuthority Ca => _ca;
 
         public static async Task<TestEnv> StartAsync()
         {
@@ -189,6 +222,59 @@ public class DnsOverHttpsTests
                 },
             };
             return handler;
+        }
+
+        // The pinned handler plus the name check the reference implant's
+        // rustls client performs: the presented leaf's SAN must name the
+        // host the client dialed, or the handshake fails exactly the way
+        // the implant's does.
+        public static HttpClientHandler BuildNameValidatingHandler(
+            System.Security.Cryptography.X509Certificates.X509Certificate2 ca, string dialedHost)
+        {
+            var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, chain, _) =>
+                {
+                    chain!.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+                    chain!.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+                    chain!.ChainPolicy.ExtraStore.Add(ca);
+                    return chain.Build(cert!) && SanNames(cert!).Contains(dialedHost);
+                },
+            };
+            return handler;
+        }
+
+        // The leaf's SAN entries as dialable text: dNSName ([2] IA5String)
+        // verbatim, iPAddress ([7]) as its canonical string.
+        private static IReadOnlyList<string> SanNames(
+            System.Security.Cryptography.X509Certificates.X509Certificate2 cert)
+        {
+            var ext = cert.Extensions.FirstOrDefault(e => e.Oid?.Value == "2.5.29.17");
+            if (ext is null)
+                return Array.Empty<string>();
+
+            var names = new List<string>();
+            var sequence = new System.Formats.Asn1.AsnReader(
+                ext.RawData, System.Formats.Asn1.AsnEncodingRules.DER).ReadSequence();
+            while (sequence.HasData)
+            {
+                var tag = sequence.PeekTag();
+                if (tag.TagClass != System.Formats.Asn1.TagClass.ContextSpecific)
+                {
+                    sequence.ReadEncodedValue();
+                    continue;
+                }
+                if (tag.TagValue == 2)
+                    names.Add(sequence.ReadCharacterString(
+                        System.Formats.Asn1.UniversalTagNumber.IA5String,
+                        new System.Formats.Asn1.Asn1Tag(System.Formats.Asn1.TagClass.ContextSpecific, 2)));
+                else if (tag.TagValue == 7)
+                    names.Add(new IPAddress(sequence.ReadOctetString(
+                        new System.Formats.Asn1.Asn1Tag(System.Formats.Asn1.TagClass.ContextSpecific, 7))).ToString());
+                else
+                    sequence.ReadEncodedValue();
+            }
+            return names;
         }
 
         public async ValueTask DisposeAsync()
