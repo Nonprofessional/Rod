@@ -15,31 +15,15 @@ cannot do without it; refactors, deletions, and answering with docs
 instead of code are first-class items here, equal to features. New work
 starts from a gap an actual engagement surfaces.
 
-The order is advisory, not a queue: the small, infrastructural items sit
-toward the top and the large platform features toward the end, and the
-right item to take is the one an engagement actually needs. An item that
-names its own blocker (a build host, an environment) is worked the moment
-the blocker clears, not skipped.
+Active is advisory order, not a queue: depth before breadth -- making the
+platform's standing promises real (the compiled capability surface, the
+advertised reach) ahead of widening the story, the small bounded items
+behind those -- and the right item to take is still the one an engagement
+actually needs. On hold is parking, not rejection: each item there names
+the fact or decision that reopens it, and a cleared condition prompts the
+move back into Active -- it does not make the move on its own.
 
-- **External recon workbench: whois/RDAP, subdomains, port scan** (serves
-  architecture.md Sec 10.1 and Sec 11; design lands first). What an
-  engagement cannot do without it: scope a target before the first
-  foothold -- registration data (whois, RDAP), the subdomain surface
-  (certificate transparency plus resolution), and the port map are how
-  the operator aims the first implant, and today that work leaves Rod for
-  ad-hoc tools whose findings never reach the engagement's attributed
-  record. Shape: an operator-layer workbench, not implant tasking -- these
-  lookups and scans run on the teamserver against external services,
-  engagement-scoped and audited, findings recorded as engagement
-  artifacts. Passive lookups (whois, RDAP, CT-log enumeration) are the
-  safe defaults; active scanning (port scan) is gated on the engagement's
-  ROE target scope and carries an explicit egress note -- where the scan
-  originates (teamserver direct, a redirector, or an implant already
-  inside, whose host/port recon already exists) is an OPSEC decision the
-  runbook documents, never a silent default.
-  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
-  against a named engagement target from the operator API, and the
-  findings land as engagement-scoped artifacts in the audit trail.
+## Active
 
 - **Implant-side plugin seam: C-ABI capability modules** (serves
   architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
@@ -81,28 +65,39 @@ the blocker clears, not skipped.
   build host, and loaded by a carrier app on a device it enrolls and
   answers tasking through the same e2e the desktop legs run.
 
-- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
-  architecture.md Sec 5.2 and Sec 10.1; design lands first). What an
-  engagement cannot do without it: pivot a script-injection foothold into
-  tasking -- the hooked browser is the most common web-facing foothold,
-  and today it needs a separate platform (BeEF) with its own operator
-  surface, storage, and OPSEC story, disconnected from the engagement
-  trail. Shape: a new `Browser` implant class whose artifact is a served
-  hook script (`<script src>`), enrolling and contacting over the
-  certificate-less envelope carrier (Sec 8) on the poll cadence the
-  store-and-forward degraded discipline already models; the reduced verb
-  set starts mainstream and documented -- browser fingerprint, cookie
-  read, DOM read and screenshot, redirect, prompt -- with the sensitive
-  boundary held (Sec 13): input capture and browser-exploit chaining stay
-  out-of-tree capability contracts, not core verbs. Every hooked browser
-  is an engagement-scoped implant entity, so attribution, live events,
-  audit, and the automation engine treat it like any other implant.
-  Where the hook script itself lives -- a second reference artifact beside
-  the Rust implant, or transport-owned like the webshell adapters -- is
-  the first design question.
-  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
-  over the envelope carrier, and an operator tasks a fingerprint and a
-  cookie read against it, with both results in the audit trail.
+- **External recon workbench: passive lookups -- whois/RDAP and subdomain
+  enumeration** (serves architecture.md Sec 10.1 and Sec 11; design lands
+  first). What an engagement cannot do without it: scope a target before
+  the first foothold -- registration data (whois, RDAP) and the subdomain
+  surface (certificate transparency plus resolution) are how the operator
+  aims the first implant, and today that work leaves Rod for ad-hoc tools
+  whose findings never reach the engagement's attributed record. Shape: an
+  operator-layer workbench, not implant tasking -- the lookups run on the
+  teamserver against external services, engagement-scoped and audited,
+  findings recorded as engagement artifacts that join the intel layer's
+  topology projection through the seam Sec 11.2 already holds open
+  (findings-as-artifacts). Even passive lookups egress from the
+  teamserver, so which resolver and which CT mirror they ride -- direct or
+  fronted -- is the operator's call, documented in the runbook, never a
+  silent default. The scan half is parked below until an engagement needs
+  it.
+  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
+  against a named engagement target from the operator API, and the
+  findings land as engagement-scoped artifacts in the audit trail.
+
+- **MCP server over the operator surface** (serves architecture.md Sec 4,
+  the operator layer). What an engagement cannot do without it: let an
+  operator drive Rod from their own agent tooling (any MCP client) instead
+  of a hand-switched console -- the same roster, task, and audit reads the
+  operator UI makes, discovered and called as standard tools. Shape: an
+  MCP endpoint (Streamable HTTP) on the operator front behind the existing
+  operator token auth, engagement-scoped by construction; read-only
+  toolset first (engagements, implants, sessions, tasks and transcripts,
+  audit reads); task-issuing tools are a separate later item with their
+  own explicit gate, not part of this one.
+  _AC:_ an external MCP client lists an engagement's implants and reads a
+  completed task's output through the operator front's auth, and no write
+  tool is exposed yet.
 
 - **OpenAI-compatible LLM client for triage and reporting** (serves
   architecture.md Sec 11). What an engagement cannot do without it:
@@ -119,9 +114,56 @@ the blocker clears, not skipped.
   completed task's output from the task read, and the request appears in
   the engagement's audit trail.
 
+## On hold
+
+- **Port scan from the recon workbench** (serves the same Sec 10.1 and
+  Sec 11 surface as the passive workbench above). Parked until an
+  engagement actually needs a scan originated outside a foothold -- an
+  implant already inside carries `recon.portscan` for its own segment, so
+  this is the pre-foothold map only. The design bill is real: the scan is
+  gated on the engagement's ROE target scope, a dimension the profile does
+  not carry today (it has PermittedVerbs and PermittedImplants, Sec 9),
+  so it means a new ROE dimension with its own update semantics; and where
+  the scan originates (teamserver direct, a redirector, or an implant
+  already inside) is an OPSEC decision the runbook documents, never a
+  silent default.
+  _AC:_ an operator runs a port scan against a named target inside the
+  engagement's ROE target scope from the operator API and the findings
+  land as engagement-scoped artifacts, while the same scan against a
+  target outside the scope is refused with the refusal in the audit trail.
+
+- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
+  architecture.md Sec 5.2 and Sec 10.1; design lands first). Parked on
+  sizing, not dependency -- the certificate-less envelope carrier it would
+  ride is shipped (Sec 8) -- but the item is a second reference artifact
+  with its own serving and storage story (where the hook script lives is
+  the first design question), too large to ride along beside the plugin
+  seam; it reopens as a deliberate project once that seam lands. What an
+  engagement cannot do without it: pivot a script-injection foothold into
+  tasking -- the hooked browser is the most common web-facing foothold,
+  and today it needs a separate platform (BeEF) with its own operator
+  surface, storage, and OPSEC story, disconnected from the engagement
+  trail. Shape: a new `Browser` implant class whose artifact is a served
+  hook script (`<script src>`), enrolling and contacting over the
+  certificate-less envelope carrier (Sec 8) on the poll cadence the
+  store-and-forward degraded discipline already models; the reduced verb
+  set starts mainstream and documented -- browser fingerprint, cookie
+  read, DOM read and screenshot, redirect, prompt -- with the sensitive
+  boundary held (Sec 13): input capture and browser-exploit chaining stay
+  out-of-tree capability contracts, not core verbs. Every hooked browser
+  is an engagement-scoped implant entity, so attribution, live events,
+  audit, and the automation engine treat it like any other implant.
+  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
+  over the envelope carrier, and an operator tasks a fingerprint and a
+  cookie read against it, with both results in the audit trail.
+
 - **Delivery campaigns: tracked spear-phish into tasking** (serves
-  architecture.md Sec 2, the delivery step of the lifecycle, and
-  Sec 11; design lands first). What an engagement cannot do without it:
+  architecture.md Sec 2, the delivery step of the lifecycle, and Sec 11;
+  design lands first). Parked on the boundary call: Sec 2 item 4 holds
+  delivery out of Rod's scope by design, so this item is an amendment to
+  that line rather than a quiet drift -- its design lands together with
+  the Sec 2 change, and reopening it is that decision made. What an
+  engagement cannot do without it:
   open the door -- the first foothold arrives by delivery, and today
   that happens outside Rod entirely (a manual mailbox, a separate
   phishing platform), so the causal chain from lure to implant lives
@@ -142,26 +184,12 @@ the blocker clears, not skipped.
   the recipient who executes the lure enrolls with campaign and
   recipient attribution visible in the audit trail.
 
-- **iOS shell for the Rust implant** (serves architecture.md Sec 12.2;
-  blocked on a macOS build host -- the Apple link needs Xcode's SDK, which
-  the Linux host cannot carry). Shape: the same library-plus-shell pattern
+- **iOS shell for the Rust implant** (serves architecture.md Sec 12.2).
+  Parked on a macOS build host: the Apple link needs Xcode's SDK, which
+  the Linux host cannot carry. Shape: the same library-plus-shell pattern
   as the Android item against aarch64-apple-ios; delivery is inherently
   sideloading territory (a signed carrier app or a jailbroken device), an
   operational constraint the runbook documents rather than something the
   build can remove.
   _AC:_ cross-compiling from a macOS host produces a static library a
   carrier app links, and the enrollment leg runs.
-
-- **MCP server over the operator surface** (serves architecture.md Sec 4,
-  the operator layer). What an engagement cannot do without it: let an
-  operator drive Rod from their own agent tooling (any MCP client) instead
-  of a hand-switched console -- the same roster, task, and audit reads the
-  operator UI makes, discovered and called as standard tools. Shape: an
-  MCP endpoint (Streamable HTTP) on the operator front behind the existing
-  operator token auth, engagement-scoped by construction; read-only
-  toolset first (engagements, implants, sessions, tasks and transcripts,
-  audit reads); task-issuing tools are a separate later item with their
-  own explicit gate, not part of this one.
-  _AC:_ an external MCP client lists an engagement's implants and reads a
-  completed task's output through the operator front's auth, and no write
-  tool is exposed yet.
