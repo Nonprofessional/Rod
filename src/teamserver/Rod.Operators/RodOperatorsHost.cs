@@ -7,6 +7,7 @@ using Rod.CoreState.Live;
 using Rod.Operators.Automation;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
+using Rod.Operators.Mcp;
 using Rod.Operators.Presence;
 using Rod.Operators.Snippets;
 using Rod.Operators.Webhooks;
@@ -96,14 +97,24 @@ public static class RodOperatorsHost
         // issues each step through the ordinary tasking path, so there is
         // no engine and no run endpoint here.
         services.TryAddSingleton<TaskSnippetService>();
+
+        // The MCP server over the operator surface (architecture.md Sec 4,
+        // the agent tooling seam): read-only tools, Streamable HTTP, mapped
+        // at /mcp behind the operator token auth. Registered here so every
+        // host that composes the operator layer carries it; unmapped, the
+        // registration is inert.
+        services.AddRodMcp();
+
         return services;
     }
 
     /// <summary>
     /// Maps the operator layer's endpoints: the SSE event stream that keeps an
     /// operator session live per engagement and pushes every engagement event,
-    /// the automation-rule surface, the webhook-subscription surface, and the
-    /// task-snippet surface. Call alongside <c>MapRodEndpoints</c>.
+    /// the automation-rule surface, the webhook-subscription surface, the
+    /// task-snippet surface, and the LLM summarize route. Call alongside
+    /// <c>MapRodEndpoints</c>. The MCP endpoint is deliberately not folded in
+    /// here -- <c>MapRodMcp</c> is a composition-root act (see its doc).
     /// </summary>
     public static IEndpointRouteBuilder MapOperatorEndpoints(this IEndpointRouteBuilder endpoints)
     {

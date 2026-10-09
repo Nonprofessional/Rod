@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Rod.Audit;
 using Rod.Operators;
 using Rod.Operators.Auth;
+using Rod.Operators.Mcp;
 using Rod.Persistence;
 using Rod.TeamServer;
 using Rod.Tradecraft;
@@ -146,6 +147,11 @@ app.MapRodEndpoints();
 // transport endpoints from the composition root for the same layer-separation
 // reason as AddRodOperators above.
 app.MapOperatorEndpoints();
+// The operator layer's MCP server: mapped here, deliberately, because the
+// SDK's endpoint mapping pins the host's configuration root -- harmless for
+// this one long-lived host, hostile to a test process that churns hosts. See
+// RodMcpHost's doc for the posture.
+app.MapRodMcp();
 // The operator session endpoints (login/logout/me): mapped alongside the other
 // operator-layer endpoints from the composition root for the same layer-
 // separation reason as AddRodOperators above.
