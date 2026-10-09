@@ -25,38 +25,12 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **External recon workbench: passive lookups -- whois/RDAP and subdomain
-  enumeration** (serves architecture.md Sec 10.1 and Sec 11; the design
-  lands with the item in architecture.md Sec 11.4). The gap: scope a
-  target before the first foothold -- registration data (whois, RDAP) and
-  the subdomain surface (certificate transparency plus resolution) are how
-  the operator aims the first implant, and today that work leaves Rod for
-  ad-hoc tools whose findings never reach the engagement's attributed
-  record. Shape: an operator-layer workbench, not implant tasking -- the
-  lookups run on the teamserver against external services,
-  engagement-scoped and audited, findings recorded as engagement artifacts
-  that join the intel layer's topology projection through the seam Sec
-  11.2 already holds open (findings-as-artifacts). Even passive lookups
-  egress from the teamserver, so which resolver and which CT mirror they
-  ride -- direct or fronted -- is the operator's call, configured, and
-  documented in the runbook (operations/recon.md), never a silent default.
-  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
-  against a named engagement target from the operator API, and the
-  findings land as engagement-scoped artifacts in the audit trail.
-
-- **Port scan from the recon workbench** (serves the same Sec 10.1 and
-  Sec 11 surface as the passive workbench above; design in Sec 11.4 too).
-  The pre-foothold map only -- an implant already inside carries
-  `recon.portscan` for its own segment. The scan is gated on the
-  engagement's ROE target scope, a new `PermittedTargets` dimension on the
-  profile (Sec 9), with its own update semantics riding the existing ROE
-  route; and where the scan originates is an OPSEC decision the runbook
-  documents, never a silent default (the shipped origin is
-  teamserver-direct, config-gated).
-  _AC:_ an operator runs a port scan against a named target inside the
-  engagement's ROE target scope from the operator API and the findings
-  land as engagement-scoped artifacts, while the same scan against a
-  target outside the scope is refused with the refusal in the audit trail.
+(Empty: both items that were here -- the external recon workbench's
+passive lookups and its port scan -- shipped together with the design in
+architecture.md Sec 11.4 and the runbook in operations/recon.md. Their
+natural widenings -- DNS resolution answers, whois behind the RDAP flag,
+and further scan origins -- are evolution notes in Sec 11.4, not open
+work here; they reopen as todo items when an engagement needs them.)
 
 ## On hold
 

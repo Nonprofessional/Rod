@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -37,6 +38,7 @@ public static class TopologyEndpoints
     // and the grammar as the contract.
     private const string PortscanVerb = "recon.portscan";
     private const string HostenumVerb = "recon.hostenum";
+    private const string SubdomainsVerb = "recon.subdomains";
 
     // A recon sweep against a /24 can print a lot of lines; past this the
     // parse stops and the rest stays in the transcript -- the read stays
@@ -68,6 +70,7 @@ public static class TopologyEndpoints
         ISessionRegistry sessions,
         ITaskRepository tasks,
         IAuditStore audit,
+        IArtifactStore artifacts,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -102,7 +105,8 @@ public static class TopologyEndpoints
                 labelsByHost.GetValueOrDefault(host, []).Select(l => l.Label).ToArray());
         }
 
-        var observations = await ParseObservationsAsync(tasks, engagementKey, cancellationToken);
+        var observations = await ParseTaskObservationsAsync(tasks, engagementKey, cancellationToken);
+        observations.AddRange(await ParseArtifactObservationsAsync(artifacts, engagementValue, cancellationToken));
         var observedAttributes = new Dictionary<string, (string? Os, string? Arch)>(StringComparer.Ordinal);
         foreach (var observation in observations)
         {
@@ -185,7 +189,7 @@ public static class TopologyEndpoints
     // One recon finding parsed off a completed task's output. The grammar is
     // the documented JSON-lines contract: one object per line, "host"
     // required, the rest optional and unknown fields ignored.
-    private static async Task<List<TopologyObservation>> ParseObservationsAsync(
+    private static async Task<List<TopologyObservation>> ParseTaskObservationsAsync(
         ITaskRepository tasks,
         EngagementId engagement,
         CancellationToken cancellationToken)
@@ -234,7 +238,73 @@ public static class TopologyEndpoints
                     task.Id.ToString(),
                     task.ImplantId.ToString(),
                     task.Verb,
-                    task.CompletedAt ?? task.CreatedAt));
+                    task.CompletedAt ?? task.CreatedAt,
+                    null));
+            }
+        }
+
+        return observations;
+    }
+
+    // The workbench half of the seam (Sec 11.4): findings artifacts carry
+    // the recon grammar as JSON lines under a verb-prefixed name, with no
+    // task and no implant behind them -- the artifact is the whole
+    // attribution. The name prefix is the workbench's namespace; anything
+    // else in the artifact store is not a finding source, and a line that
+    // does not parse stays unparsed, the task-side discipline.
+    private const string SubdomainsArtifactPrefix = "recon.subdomains:";
+    private const string PortscanArtifactPrefix = "recon.portscan:";
+
+    private static async Task<List<TopologyObservation>> ParseArtifactObservationsAsync(
+        IArtifactStore artifacts,
+        Guid engagement,
+        CancellationToken cancellationToken)
+    {
+        var observations = new List<TopologyObservation>();
+        var findingsArtifacts = (await artifacts.ListAsync(engagement, cancellationToken))
+            .Where(a => a.Name.StartsWith(SubdomainsArtifactPrefix, StringComparison.Ordinal)
+                || a.Name.StartsWith(PortscanArtifactPrefix, StringComparison.Ordinal))
+            .OrderBy(a => a.StoredAt);
+        foreach (var artifact in findingsArtifacts)
+        {
+            var verb = artifact.Name.StartsWith(PortscanArtifactPrefix, StringComparison.Ordinal)
+                ? PortscanVerb
+                : SubdomainsVerb;
+            var parsed = 0;
+            foreach (var line in Encoding.UTF8.GetString(artifact.Content).Split('\n'))
+            {
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+                if (parsed >= MaxObservationLinesPerTask)
+                    break;
+
+                Finding? finding;
+                try
+                {
+                    finding = ParseFinding(line);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (finding is null)
+                    continue;
+
+                parsed++;
+                observations.Add(new TopologyObservation(
+                    finding.Value.Host,
+                    finding.Value.Port,
+                    finding.Value.State,
+                    finding.Value.Service,
+                    finding.Value.Address,
+                    finding.Value.Os,
+                    finding.Value.Arch,
+                    null,
+                    null,
+                    verb,
+                    artifact.StoredAt,
+                    artifact.ArtifactId.ToString()));
             }
         }
 
@@ -325,9 +395,10 @@ public static class TopologyEndpoints
         string ToHost,
         string Kind);
 
-    // One recon finding, attributed to the task that produced it: a port
-    // observation (port, state, service) or a host observation (address, os,
-    // arch as far as the grammar carried them).
+    // One recon finding: a port observation (port, state, service) or a
+    // host observation (address, os, arch as far as the grammar carried
+    // them), attributed to the task that produced it or -- for a
+    // pre-foothold finding -- to the workbench artifact it landed as.
     public sealed record TopologyObservation(
         string Host,
         int? Port,
@@ -336,10 +407,11 @@ public static class TopologyEndpoints
         string? Address,
         string? Os,
         string? Arch,
-        string TaskId,
-        string ImplantId,
+        string? TaskId,
+        string? ImplantId,
         string Verb,
-        DateTimeOffset At);
+        DateTimeOffset At,
+        string? ArtifactId);
 
     // The whole picture: hosts, links, and observations over the projection's
     // own integrity stamp.

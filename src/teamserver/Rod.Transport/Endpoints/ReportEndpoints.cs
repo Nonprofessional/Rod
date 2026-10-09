@@ -283,21 +283,21 @@ internal static class ReportBuilder
         foreach (var task in engagementTasks)
             taskById[task.Id.Value] = task;
 
-    // Artifacts folded onto their task for the task-history view. A
-    // task-less artifact (a pre-foothold finding) has no bucket: it stays
-    // in the artifact index and the workbench event names it there.
-    var artifactsByTask = new Dictionary<Guid, List<Artifact>>();
-    foreach (var artifact in engagementArtifacts)
-    {
-        if (artifact.TaskId is not { } taskKey)
-            continue;
-        if (!artifactsByTask.TryGetValue(taskKey, out var bucket))
+        // Artifacts folded onto their task for the task-history view. A
+        // task-less artifact (a pre-foothold finding) has no bucket: it stays
+        // in the artifact index and the workbench event names it there.
+        var artifactsByTask = new Dictionary<Guid, List<Artifact>>();
+        foreach (var artifact in engagementArtifacts)
         {
-            bucket = new List<Artifact>();
-            artifactsByTask[taskKey] = bucket;
+            if (artifact.TaskId is not { } taskKey)
+                continue;
+            if (!artifactsByTask.TryGetValue(taskKey, out var bucket))
+            {
+                bucket = new List<Artifact>();
+                artifactsByTask[taskKey] = bucket;
+            }
+            bucket.Add(artifact);
         }
-        bucket.Add(artifact);
-    }
 
         return new ReportBuilderContext(
             engagement, trail, engagementImplants, engagementTasks, engagementArtifacts,

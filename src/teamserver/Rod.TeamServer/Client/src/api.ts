@@ -1128,10 +1128,13 @@ export interface TopologyObservation {
   address: string | null
   os: string | null
   arch: string | null
-  taskId: string
-  implantId: string
+  // Null for pre-foothold findings: the workbench artifact below is the
+  // whole attribution (no task, no implant existed yet).
+  taskId: string | null
+  implantId: string | null
   verb: string
   at: string
+  artifactId: string | null
 }
 
 export interface Topology {

@@ -12,6 +12,7 @@ using Rod.Operators.Mcp;
 using Rod.Operators.Presence;
 using Rod.Operators.Snippets;
 using Rod.Operators.Webhooks;
+using Rod.Operators.Workbench;
 using System.Net.Http;
 
 namespace Rod.Operators;
@@ -113,6 +114,28 @@ public static class RodOperatorsHost
         }
         services.TryAddSingleton<LlmSummarizer>();
 
+        // The external recon workbench (architecture.md Sec 11.4): the
+        // pre-foothold lookups and the scan, opt-in per half like the LLM
+        // client -- an unset service base or scan origin leaves its route
+        // answering 503, never a silent default. The lookups ride their own
+        // named client (the webhook-pusher pattern); the service takes it
+        // lazily so registering the workbench activates nothing in hosts
+        // that never run one.
+        if (configuration is not null)
+        {
+            services.AddOptions<ReconWorkbenchOptions>().Bind(configuration.GetSection(ReconWorkbenchOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<ReconWorkbenchOptions>();
+        }
+        services.AddHttpClient("recon", (sp, client) =>
+        {
+            var recon = sp.GetRequiredService<IOptions<ReconWorkbenchOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(1, recon.RequestTimeoutSeconds));
+        });
+        services.TryAddSingleton<ReconWorkbenchService>();
+
         // The MCP server over the operator surface (architecture.md Sec 4,
         // the agent tooling seam): read-only tools, Streamable HTTP, mapped
         // at /mcp behind the operator token auth. Registered here so every
@@ -127,7 +150,8 @@ public static class RodOperatorsHost
     /// Maps the operator layer's endpoints: the SSE event stream that keeps an
     /// operator session live per engagement and pushes every engagement event,
     /// the automation-rule surface, the webhook-subscription surface, the
-    /// task-snippet surface, and the LLM summarize route. Call alongside
+    /// task-snippet surface, the LLM summarize route, and the recon workbench.
+    /// Call alongside
     /// <c>MapRodEndpoints</c>. The MCP endpoint is deliberately not folded in
     /// here -- <c>MapRodMcp</c> is a composition-root act (see its doc).
     /// </summary>
@@ -138,6 +162,7 @@ public static class RodOperatorsHost
         endpoints.MapWebhookSubscriptionEndpoints();
         endpoints.MapTaskSnippetEndpoints();
         endpoints.MapLlmEndpoints();
+        endpoints.MapReconWorkbenchEndpoints();
         return endpoints;
     }
 }

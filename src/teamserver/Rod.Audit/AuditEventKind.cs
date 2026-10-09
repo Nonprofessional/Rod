@@ -498,4 +498,41 @@ public enum AuditEventKind
     /// the requesting operator and bound to the task whose output was sent.
     /// </summary>
     LlmSummaryGenerated,
+
+    /// <summary>
+    /// The recon workbench ran one passive lookup on an operator's behalf
+    /// (architecture.md Sec 11.4): an RDAP registration query or a
+    /// certificate-transparency subdomain enumeration against a named
+    /// target, egressing the teamserver toward the configured service.
+    /// Every attempt lands here, succeeded or failed -- the egress itself
+    /// is the act the trail records. The payload names the lookup and the
+    /// target but never the egress endpoint (configuration names the
+    /// endpoint, the runbook the decision); the output carries a one-line
+    /// summary of what came back; the outcome is the findings artifact id
+    /// or <c>failed:{reason}</c>. Attributed to the requesting operator;
+    /// no implant and no task exist pre-foothold, so the artifact carries
+    /// the operator attribution alone.
+    /// </summary>
+    ReconLookupCompleted,
+
+    /// <summary>
+    /// The recon workbench ran a port scan on an operator's behalf
+    /// (architecture.md Sec 11.4): a TCP connect scan of a named target
+    /// from the configured scan origin, its open ports landing as JSON-lines
+    /// findings. The payload names the target and the ports scanned; the
+    /// outcome is the findings artifact id or <c>failed:{reason}</c>. A
+    /// target outside the engagement's ROE scope never reaches this event
+    /// -- <see cref="ReconScanRefused"/> records the refusal instead.
+    /// </summary>
+    ReconScanCompleted,
+
+    /// <summary>
+    /// The recon workbench's scan was refused by the engagement's ROE
+    /// target scope before a connection was opened (architecture.md Sec 9,
+    /// Sec 11.4) -- the task gate's <see cref="TaskRoeRefused"/> posture on
+    /// the workbench's own kind, because no task exists to refuse. The
+    /// payload names the target and the ports asked for; the outcome names
+    /// the violated rule. Attributed to the requesting operator.
+    /// </summary>
+    ReconScanRefused,
 }
