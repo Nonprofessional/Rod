@@ -84,7 +84,7 @@ public class RoeGateTests
     }
 
     [Fact]
-    public async Task ImplantOutsidePermittedTargets_IsRefusedNamingTheRule()
+    public async Task ImplantOutsidePermittedImplants_IsRefusedNamingTheRule()
     {
         var h = await EngageAsync(new RoeProfile(null, ["ffffffffffffffffffffffffffffffff"]));
 
@@ -92,12 +92,14 @@ public class RoeGateTests
             () => h.Service.IssueAsync(TaskFor(h, "shell.exec")));
 
         Assert.Equal(TaskRejectionReason.RoeViolation, ex.Reason);
-        Assert.Contains("permitted targets", ex.Message);
+        // The implant dimension names implants; "targets" is the profile's
+        // external-target dimension (the recon workbench's gate).
+        Assert.Contains("permitted implants", ex.Message);
         Assert.Contains(h.Implant.Id.ToString(), ex.Message);
     }
 
     [Fact]
-    public async Task ImplantInsidePermittedTargets_IsIssued()
+    public async Task ImplantInsidePermittedImplants_IsIssued()
     {
         var h = await EngageAsync();
         h.Engagement.ApplyRoe(new RoeProfile(null, [h.Implant.Id.ToString()]));
@@ -129,5 +131,77 @@ public class RoeGateTests
 
         Assert.Equal(["shell.exec"], profile.PermittedVerbs);
         Assert.Equal(["a"], profile.PermittedImplants);
+    }
+
+    // --- The target dimension (architecture.md Sec 11.4): the recon
+    // workbench's scan gate. Empty means unrestricted; entries are exact
+    // hostnames (case-folded), exact IPs, or CIDR blocks; a hostname never
+    // matches by resolution.
+
+    [Fact]
+    public void TargetDimension_Empty_IsUnrestricted()
+    {
+        var profile = new RoeProfile(null, null);
+        Assert.Null(profile.EvaluateTarget("203.0.113.10"));
+        Assert.Null(profile.EvaluateTarget("anything.example.com"));
+    }
+
+    [Fact]
+    public void TargetDimension_MatchesExactIp_ExactHost_CaseFolded_AndCidr()
+    {
+        var profile = new RoeProfile(null, null,
+            ["203.0.113.10", "Web01.Example.COM", "10.0.0.0/24"]);
+
+        Assert.Null(profile.EvaluateTarget("203.0.113.10"));
+        Assert.Null(profile.EvaluateTarget("web01.example.com"));
+        Assert.Null(profile.EvaluateTarget("10.0.0.7"));
+    }
+
+    [Fact]
+    public void TargetDimension_RefusesOutsideEntries_NamingTheTarget()
+    {
+        var profile = new RoeProfile(null, null, ["10.0.0.0/24", "web01.example.com"]);
+
+        Assert.Contains("203.0.113.10", profile.EvaluateTarget("203.0.113.10"));
+        Assert.Contains("10.1.0.1", profile.EvaluateTarget("10.1.0.1"));
+        Assert.Contains("web02.example.com", profile.EvaluateTarget("web02.example.com"));
+    }
+
+    [Fact]
+    public void TargetDimension_AHostEntryNeverMatchesByResolution()
+    {
+        // The entry names a host, the target is that host's address: a DNS
+        // answer is not an authorization fact, so the scope must not depend
+        // on what the target's own nameservers say.
+        var profile = new RoeProfile(null, null, ["web01.example.com"]);
+
+        Assert.NotNull(profile.EvaluateTarget("203.0.113.10"));
+    }
+
+    [Fact]
+    public void TargetDimension_ANetworkEntryNeverMatchesAHostname()
+    {
+        var profile = new RoeProfile(null, null, ["10.0.0.0/24"]);
+
+        Assert.NotNull(profile.EvaluateTarget("web01.example.com"));
+    }
+
+    [Fact]
+    public void TargetDimension_TrimsTheEvaluatedTarget()
+    {
+        var profile = new RoeProfile(null, null, ["web01.example.com"]);
+
+        Assert.Null(profile.EvaluateTarget("  web01.example.com  "));
+    }
+
+    [Fact]
+    public void IsValidTargetEntry_AcceptsHostsAndIps_RequiresNetworksToParse()
+    {
+        Assert.True(RoeProfile.IsValidTargetEntry("web01.example.com"));
+        Assert.True(RoeProfile.IsValidTargetEntry("203.0.113.10"));
+        Assert.True(RoeProfile.IsValidTargetEntry("10.0.0.0/24"));
+        Assert.True(RoeProfile.IsValidTargetEntry("2001:db8::/32"));
+        Assert.False(RoeProfile.IsValidTargetEntry("10.0.0.0/99"));
+        Assert.False(RoeProfile.IsValidTargetEntry("not a network/24"));
     }
 }

@@ -82,7 +82,9 @@ public class RoeEndpointsTests
             new { ImplantId = implant.Id.ToString(), Verb = "recon.hostenum", Arguments = "" });
         Assert.Equal(HttpStatusCode.UnprocessableEntity, refusedTarget.StatusCode);
         var targetProblem = await refusedTarget.Content.ReadFromJsonAsync<ProblemBody>();
-        Assert.Contains("permitted targets", targetProblem!.Error);
+        // The implant dimension names implants now; "targets" is the profile's
+        // external-target dimension (the recon workbench's gate).
+        Assert.Contains("permitted implants", targetProblem!.Error);
 
         // Applying the empty profile reopens the engagement: the previously
         // refused tasking now queues.

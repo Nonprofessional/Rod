@@ -35,7 +35,7 @@ internal sealed class EngagementConfiguration : IEntityTypeConfiguration<Engagem
         builder.Property(e => e.FrozenAt).HasColumnName("frozen_at");
         builder.Property(e => e.RetiredAt).HasColumnName("retired_at");
 
-        // The ROE scope is one JSON document column: the profile is a pair of
+        // The ROE scope is one JSON document column: the profile is a set of
         // allow-lists the domain reads whole, never queries field-by-field, so
         // a value converter keeps the aggregate mapping scalar-simple. A null
         // column is the unrestricted scope (the record predates the profile).
@@ -55,17 +55,23 @@ internal sealed class EngagementConfiguration : IEntityTypeConfiguration<Engagem
 /// <summary>JSON round-trip for <see cref="RoeProfile"/> storage.</summary>
 internal static class RoeProfileConverters
 {
-    private sealed record StoredRoe(IReadOnlyList<string>? PermittedVerbs, IReadOnlyList<string>? PermittedImplants);
+    private sealed record StoredRoe(
+        IReadOnlyList<string>? PermittedVerbs,
+        IReadOnlyList<string>? PermittedImplants,
+        IReadOnlyList<string>? PermittedTargets);
 
     public static string ToJson(RoeProfile profile)
         => System.Text.Json.JsonSerializer.Serialize(
-            new StoredRoe(profile.PermittedVerbs, profile.PermittedImplants));
+            new StoredRoe(profile.PermittedVerbs, profile.PermittedImplants, profile.PermittedTargets));
 
     public static RoeProfile FromJson(string? json)
     {
         if (string.IsNullOrEmpty(json))
             return RoeProfile.Unrestricted;
+        // Records that predate a dimension deserialize with it null -- the
+        // unrestricted default on that dimension, the same posture a null
+        // column carries.
         var stored = System.Text.Json.JsonSerializer.Deserialize<StoredRoe>(json);
-        return new RoeProfile(stored?.PermittedVerbs, stored?.PermittedImplants);
+        return new RoeProfile(stored?.PermittedVerbs, stored?.PermittedImplants, stored?.PermittedTargets);
     }
 }

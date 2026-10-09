@@ -6,6 +6,9 @@
 export interface RoeProfile {
   permittedVerbs: string[]
   permittedImplants: string[]
+  // Exact hostnames (case-folded), exact IPs, or CIDR blocks; empty = unrestricted.
+  // Gates the recon workbench's scan, never tasking.
+  permittedTargets: string[]
 }
 
 // The close-out state rides on timestamps: null while the engagement is open,

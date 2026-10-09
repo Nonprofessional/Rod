@@ -349,10 +349,26 @@ public static class EngagementEndpoints
 
         try
         {
+            // A target entry naming a network must parse as one: a mistyped
+            // CIDR sitting in the profile would match nothing and silently
+            // narrow the scope to zero -- refuse it here, named, instead.
+            if (body.PermittedTargets is { } targetEntries)
+            {
+                foreach (var entry in targetEntries)
+                {
+                    if (!string.IsNullOrWhiteSpace(entry)
+                        && !RoeProfile.IsValidTargetEntry(entry.Trim()))
+                    {
+                        return Results.BadRequest(new Problem(
+                            $"ROE target entry '{entry.Trim()}' does not parse as a hostname, IP, or CIDR block."));
+                    }
+                }
+            }
+
             var applied = await service.ApplyRoeAsync(
                 new ApplyRoeCommand(
                     new EngagementId(idValue),
-                    new RoeProfile(body.PermittedVerbs, body.PermittedImplants)),
+                    new RoeProfile(body.PermittedVerbs, body.PermittedImplants, body.PermittedTargets)),
                 cancellationToken);
 
             // The scope change is recorded (architecture.md Sec 9, Sec 11):
@@ -391,8 +407,9 @@ public static class EngagementEndpoints
     internal static string Describe(RoeProfile profile)
     {
         var verbs = profile.PermittedVerbs.Count == 0 ? "*" : string.Join(",", profile.PermittedVerbs);
-        var targets = profile.PermittedImplants.Count == 0 ? "*" : string.Join(",", profile.PermittedImplants);
-        return $"permittedVerbs={verbs} permittedTargets={targets}";
+        var implants = profile.PermittedImplants.Count == 0 ? "*" : string.Join(",", profile.PermittedImplants);
+        var targets = profile.PermittedTargets.Count == 0 ? "*" : string.Join(",", profile.PermittedTargets);
+        return $"permittedVerbs={verbs} permittedImplants={implants} permittedTargets={targets}";
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
@@ -417,18 +434,20 @@ public static class EngagementEndpoints
         DateTimeOffset? FrozenAt = null,
         DateTimeOffset? RetiredAt = null);
 
-    // The ROE scope request: two allow-lists, each empty (or omitted) meaning
-    // unrestricted on that dimension.
+    // The ROE scope request: three allow-lists, each empty (or omitted)
+    // meaning unrestricted on that dimension.
     public sealed record ApplyRoeRequest(
         IReadOnlyList<string>? PermittedVerbs,
-        IReadOnlyList<string>? PermittedImplants);
+        IReadOnlyList<string>? PermittedImplants,
+        IReadOnlyList<string>? PermittedTargets = null);
 
     public sealed record RoeProfileResponse(
         IReadOnlyList<string> PermittedVerbs,
-        IReadOnlyList<string> PermittedImplants)
+        IReadOnlyList<string> PermittedImplants,
+        IReadOnlyList<string> PermittedTargets)
     {
         public static RoeProfileResponse From(RoeProfile profile)
-            => new(profile.PermittedVerbs, profile.PermittedImplants);
+            => new(profile.PermittedVerbs, profile.PermittedImplants, profile.PermittedTargets);
     }
 
     public sealed record EngagementScopedRoeResponse(
