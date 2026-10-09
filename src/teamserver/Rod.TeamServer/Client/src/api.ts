@@ -677,7 +677,8 @@ export async function listAudit(
 
 export interface ArtifactSummary {
   artifactId: string
-  taskId: string
+  // Null for pre-foothold findings (the recon workbench) -- no task gathered them.
+  taskId: string | null
   name: string
   contentType: string
   operatorId: string | null
@@ -1075,7 +1076,8 @@ export async function clearHostLabel(
 export interface LootEntry {
   artifactId: string
   kind: string
-  taskId: string
+  // Null for pre-foothold findings (the recon workbench) -- no task gathered them.
+  taskId: string | null
   implantId: string | null
   verb: string | null
   capturedBy: string | null

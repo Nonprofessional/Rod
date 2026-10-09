@@ -395,7 +395,7 @@ function LootSection({ engagementId, onlineTick }: { engagementId: string; onlin
                 <span className="chip">{entry.kind}</span>
               </td>
               <td title={entry.contentType}>{entry.name}</td>
-              <td title={`task ${entry.taskId}`}>
+              <td title={entry.taskId ? `task ${entry.taskId}` : 'pre-foothold finding'}>
                 {entry.verb ?? '—'}
                 {entry.implantId ? ` (implant ${entry.implantId.slice(0, 8)})` : ''}
               </td>

@@ -190,12 +190,18 @@ public static class ArtifactEndpoints
         // leaves the platform, so the chain-of-custody question "who pulled
         // what" gets the same trail record the payload fetch route writes for
         // delivered bytes. The task's implant binds the event to the target
-        // the evidence came from; a task that no longer resolves leaves the
-        // id unused rather than blocking the read.
+        // the evidence came from; a task that no longer resolves (or an
+        // artifact that never had one) leaves the id unused rather than
+        // blocking the read.
         var implantId = Guid.Empty;
-        var task = await tasks.FindAsync(new TaskId(artifact.TaskId), cancellationToken);
-        if (task is not null)
-            implantId = task.ImplantId.Value;
+        var auditTaskId = Guid.Empty;
+        if (artifact.TaskId is { } taskKey)
+        {
+            var task = await tasks.FindAsync(new TaskId(taskKey), cancellationToken);
+            if (task is not null)
+                implantId = task.ImplantId.Value;
+            auditTaskId = taskKey;
+        }
         var viewer = user.TryGetOperatorId();
         await audit.AppendAsync(
             AuditEvent.Fact(
@@ -203,7 +209,7 @@ public static class ArtifactEndpoints
                 engagementId: engagementValue,
                 operatorId: viewer is { } who ? who.Value : Guid.Empty,
                 implantId: implantId,
-                taskId: artifact.TaskId,
+                taskId: auditTaskId,
                 verb: "view-artifact",
                 kind: AuditEventKind.ArtifactViewed,
                 payload: $"{artifact.Name};{artifact.ContentType}",
@@ -265,10 +271,17 @@ public static class ArtifactEndpoints
         var items = new List<LootEntry>();
         foreach (var artifact in page.Items)
         {
-            if (!taskCache.TryGetValue(artifact.TaskId, out var task))
+            // A task-less artifact (the recon workbench's pre-foothold
+            // findings) classifies by content type alone -- the verb join has
+            // nothing to read, and the entry carries its operator attribution.
+            Rod.CoreState.Tasks.Task? task = null;
+            if (artifact.TaskId is { } taskKey)
             {
-                task = await tasks.FindAsync(new TaskId(artifact.TaskId), cancellationToken);
-                taskCache[artifact.TaskId] = task;
+                if (!taskCache.TryGetValue(taskKey, out task))
+                {
+                    task = await tasks.FindAsync(new TaskId(taskKey), cancellationToken);
+                    taskCache[taskKey] = task;
+                }
             }
 
             var lootKind = ClassifyLoot(task?.Verb, artifact.ContentType);
@@ -278,7 +291,7 @@ public static class ArtifactEndpoints
             items.Add(new LootEntry(
                 artifact.ArtifactId.ToString("N"),
                 lootKind,
-                artifact.TaskId.ToString("N"),
+                artifact.TaskId?.ToString("N"),
                 task?.ImplantId.ToString(),
                 task?.Verb,
                 artifact.OperatorId,
@@ -351,9 +364,10 @@ public static class ArtifactEndpoints
     // The list shape omits the artifact bytes -- an artifact's metadata is small
     // and enumerable, its content is fetched on demand through the retrieve
     // endpoint. Mirrors how TaskResponse carries the task but not its result blob.
+    // The task id is nullable: pre-foothold findings carry no task.
     public sealed record ArtifactResponse(
         string ArtifactId,
-        string TaskId,
+        string? TaskId,
         Guid? OperatorId,
         string Name,
         string ContentType,
@@ -363,7 +377,7 @@ public static class ArtifactEndpoints
         public static ArtifactResponse Of(Artifact artifact)
             => new(
                 artifact.ArtifactId.ToString("N"),
-                artifact.TaskId.ToString("N"),
+                artifact.TaskId?.ToString("N"),
                 artifact.OperatorId,
                 artifact.Name,
                 artifact.ContentType,
@@ -384,13 +398,15 @@ public static class ArtifactEndpoints
 
     // One piece of loot: the artifact's metadata, the kind the view classifies
     // it into, and the capture attribution -- which task (and verb) gathered
-    // it, from which implant, credited to which operator. The bytes are fetched
+    // it, from which implant, credited to which operator. A pre-foothold
+    // finding carries no task: the task, implant, and verb are null and the
+    // operator attribution is the whole story. The bytes are fetched
     /// on demand through the retrieve endpoint; the retrieval is what the
     /// ArtifactViewed event records.
     public sealed record LootEntry(
         string ArtifactId,
         string Kind,
-        string TaskId,
+        string? TaskId,
         string? ImplantId,
         string? Verb,
         Guid? CapturedBy,

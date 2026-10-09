@@ -98,4 +98,39 @@ public abstract class ArtifactStoreContractTests
         var store = CreateStore();
         Assert.Null(await store.FindAsync(Guid.NewGuid()));
     }
+
+    [Fact]
+    public async Task Save_KeepsATaskLessArtifact_EngagementScoped()
+    {
+        // A pre-foothold finding (architecture.md Sec 11.4): no task gathered
+        // it, so it carries a null task reference and only the engagement and
+        // its operator attribute it. It must not surface under any task, and
+        // every adapter must round-trip the null unchanged.
+        var store = CreateStore();
+        var engagement = Guid.NewGuid();
+        var task = Guid.NewGuid();
+
+        var saved = new Artifact(
+            ArtifactId: Guid.NewGuid(),
+            EngagementId: engagement,
+            TaskId: null,
+            OperatorId: Guid.NewGuid(),
+            Name: "recon.subdomains:example.com",
+            ContentType: "application/x-ndjson",
+            Content: "{\"host\":\"a.example.com\"}\n"u8.ToArray(),
+            Size: 26,
+            StoredAt: T0);
+        await store.SaveAsync(saved);
+
+        var byId = await store.FindAsync(saved.ArtifactId);
+        Assert.NotNull(byId);
+        Assert.Null(byId!.TaskId);
+        Assert.Equal(saved.Content, byId.Content);
+
+        Assert.Empty(await store.ForTaskAsync(task));
+        var engagementList = await store.ListAsync(engagement);
+        var only = Assert.Single(engagementList);
+        Assert.Equal(saved.ArtifactId, only.ArtifactId);
+        Assert.Null(only.TaskId);
+    }
 }

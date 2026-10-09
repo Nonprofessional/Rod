@@ -17,8 +17,8 @@ namespace Rod.Audit;
 public interface IArtifactStore
 {
     /// <summary>
-    /// Saves <paramref name="artifact"/>. The artifact becomes retrievable by id,
-    /// by its task, and within its engagement.
+    /// Saves <paramref name="artifact"/>. The artifact becomes retrievable by
+    /// id, by its task when it carries one, and within its engagement.
     /// </summary>
     Task SaveAsync(Artifact artifact, CancellationToken cancellationToken = default);
 

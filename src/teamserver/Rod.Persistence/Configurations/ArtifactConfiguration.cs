@@ -7,8 +7,10 @@ namespace Rod.Persistence.Configurations;
 /// <summary>
 /// EF Core mapping for <see cref="Artifact"/> (ADR 0003). The positional record
 /// constructor binds all 9 fields by name. Content is a Postgres <c>bytea</c>;
-/// the operator id is nullable (an artifact may be implant-attached). Scoping is
-/// by engagement and by the task the evidence is linked to.
+/// the operator id is nullable (an artifact may be implant-attached), and so is
+/// the task id -- pre-foothold findings (architecture.md Sec 11.4) carry none.
+/// Scoping is by engagement and, when present, by the task the evidence is
+/// linked to.
 /// </summary>
 internal sealed class ArtifactConfiguration : IEntityTypeConfiguration<Artifact>
 {

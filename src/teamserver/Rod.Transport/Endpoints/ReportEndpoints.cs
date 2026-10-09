@@ -283,17 +283,21 @@ internal static class ReportBuilder
         foreach (var task in engagementTasks)
             taskById[task.Id.Value] = task;
 
-        // Artifacts folded onto their task for the task-history view.
-        var artifactsByTask = new Dictionary<Guid, List<Artifact>>();
-        foreach (var artifact in engagementArtifacts)
+    // Artifacts folded onto their task for the task-history view. A
+    // task-less artifact (a pre-foothold finding) has no bucket: it stays
+    // in the artifact index and the workbench event names it there.
+    var artifactsByTask = new Dictionary<Guid, List<Artifact>>();
+    foreach (var artifact in engagementArtifacts)
+    {
+        if (artifact.TaskId is not { } taskKey)
+            continue;
+        if (!artifactsByTask.TryGetValue(taskKey, out var bucket))
         {
-            if (!artifactsByTask.TryGetValue(artifact.TaskId, out var bucket))
-            {
-                bucket = new List<Artifact>();
-                artifactsByTask[artifact.TaskId] = bucket;
-            }
-            bucket.Add(artifact);
+            bucket = new List<Artifact>();
+            artifactsByTask[taskKey] = bucket;
         }
+        bucket.Add(artifact);
+    }
 
         return new ReportBuilderContext(
             engagement, trail, engagementImplants, engagementTasks, engagementArtifacts,
@@ -711,9 +715,15 @@ internal static class ReportMarkdown
             sb.Append("_None._\n");
         else
             foreach (var a in report.Artifacts)
+            {
                 sb.Append("- `").Append(a.Name).Append("` (").Append(a.ContentType)
-                    .Append(", ").Append(a.Size).Append(" B) — task `").Append(a.TaskId.ToString("N"))
-                    .Append("` (`").Append(a.ArtifactId.ToString("N")).Append("`)\n");
+                    .Append(", ").Append(a.Size).Append(" B) — ");
+                // A pre-foothold finding has no task; the workbench lookup that
+                // produced it is its own trail entry.
+                if (a.TaskId is { } taskId)
+                    sb.Append("task `").Append(taskId.ToString("N")).Append("` ");
+                sb.Append("(`").Append(a.ArtifactId.ToString("N")).Append("`)\n");
+            }
         sb.Append('\n');
 
         sb.Append("## Timeline\n\n");
@@ -862,10 +872,10 @@ public sealed record ReportTask(
     string? Output,
     IReadOnlyList<string> Artifacts);
 
-/// <summary>An artifact in the engagement's evidence index -- metadata only, bytes excluded.</summary>
+/// <summary>An artifact in the engagement's evidence index -- metadata only, bytes excluded. The task reference is null for pre-foothold findings (Sec 11.4).</summary>
 public sealed record ReportArtifactIndexEntry(
     Guid ArtifactId,
-    Guid TaskId,
+    Guid? TaskId,
     string Name,
     string ContentType,
     long Size);
