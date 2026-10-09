@@ -578,19 +578,20 @@ implant-side handler registry (the implant analog of the server's
 `ICapabilityModule`) rather than a hard-coded `switch`, so adding a verb is a
 handler plus a registration, not an edit to the runner. Registration is
 compile-time -- no runtime library loading for *handler plugins* (a Rust
-dylib boundary is not stable across compiler versions, loading would
-enlarge
-the artifact, and plugin files would land on disk; the in-memory loading path
-that does exist in the tree is the loader's artifact host, a baked artifact
-carriage rather than a plugin mechanism), and the capability set is
-decided per class at build time, so runtime discovery buys nothing.
+dylib boundary is not stable across compiler versions, and the capability
+set is
+decided per class at build time, so runtime discovery buys nothing).
 Out-of-tree handlers are the crate fork -- the build unit pointed at the
 operator's own tree (Sec 6, extending/tradecraft.md) -- with the C-ABI
-plugin seam (todo.md) as the in-process follow-on.
+plugin seam (Sec 5.4) as the in-process follow-on: per-engagement modules
+that load on demand over the task channel, after deployment, inside the
+artifact that never compiled them.
 
-Rejected alternatives: runtime dynamic loading for plugins (no stable ABI
-and a heavier artifact, and unnecessary since the set is fixed at
-build time); advertising the full baked class set regardless of implemented
+Rejected alternatives: runtime dynamic loading over a Rust dylib boundary
+for *handler* plugins (no stable ABI across compiler versions, and the
+compiled set is decided per class at build time, so discovery buys nothing
+-- the scoped C-ABI seam of Sec 5.4 is what runtime loading is for, and it
+arrives as its own design there); advertising the full baked class set regardless of implemented
 handlers (recreates the unknown-verb-for-an-advertised-verb failure the
 intersection exists to prevent); keeping the hard-coded switch and adding
 `collect.keylog` in-repo behind a flag (bypasses the module contract and
@@ -618,11 +619,120 @@ crate compiles one lean handler set per platform (the sensitive three
 behind `cfg(windows)`), and per-class tailoring rides the baked verb list
 instead, because the handler code is tens of kilobytes against a carriage
 that dominates the artifact's size. Out-of-tree handlers are the crate
-fork (extending/tradecraft.md) today and the C-ABI plugin seam on the todo
-tomorrow; the plugin domain is the long tail -- recon sweeps, lateral
+fork (extending/tradecraft.md) and the C-ABI plugin seam (Sec 5.4); the
+plugin domain is the long tail -- recon sweeps, lateral
 movement, persistence, credential and screen collection -- while the
 channel verbs and the file/exec core stay compiled, because a plugin
 cannot own a live channel or a carriage.
+
+### 5.4 Implant-side plugin modules (the C-ABI seam)
+
+The crate fork adds a capability at build time; the plugin seam adds one to
+an artifact already deployed -- a per-engagement tradecraft module that
+loads on demand over the task channel and never rides a standing artifact.
+The domain is the stateless long tail (Sec 13): the recon set, lateral
+movement, persistence, credential and screen collection -- string-in,
+string-out work a module shape holds naturally. The channel verbs and the
+file/exec core stay compiled, because a plugin cannot own a live channel or
+a carriage.
+
+**The boundary is the C ABI.** A Rust dylib boundary is not stable across
+compiler versions (the reason Sec 5.3 keeps handler registration
+compile-time), so the module interface is a handful of `extern "C"`
+symbols over `#[repr(C)]` data -- the one boundary every compiler version
+and every language keeps. The authoring surface is the `rod-plugin-sdk`
+crate (`src/implant/rust/plugin-sdk/`): a plain Rust trait -- a module
+names itself and lists its verbs, each verb a `fn(&str) -> Result<String,
+String>` over the shared task grammar -- plus the `rod_plugin!` macro that
+emits the shim exports. A module is a cdylib compiled for the target's own
+platform and carries its whole runtime statically, the posture the loader
+tier set (Sec 6). The exported family, of which the SDK is the documented
+authority:
+
+- `rod_plugin_abi() -> u32` -- the ABI version; a loader that does not
+  recognize it refuses the module whole.
+- `rod_plugin_name() -> RodStr` -- the module's self-declared name.
+- `rod_plugin_init() -> u32` -- construct the plugin and register its verb
+  table; answers the verb count.
+- `rod_plugin_verb_name(index) -> RodStr` -- the verb at an index.
+- `rod_plugin_run(index, RodStr, &mut RodStr) -> i32` -- execute one verb
+  under the shared string grammar; 0 is success, 1 a handler failure whose
+  output string carries the cause, negative a shim error. Panics are
+  fenced at the boundary: the shim catches and reports, they never unwind
+  into the host.
+- `rod_plugin_free(ptr, len)` -- module-allocated strings die in the
+  module's own allocator; the host never frees module memory itself.
+
+`RodStr` is a length-delimited `(ptr, len)` pair, not a NUL-terminated C
+string: the argument grammar is opaque bytes and cannot ride a C string.
+
+**The carriage is the staged arm.** `module.load <name>` is issued with the
+module bytes as the task's `Content`: the issuer stages them as a
+task-bound artifact, binds their sha256 into the signed tasking tuple, and
+sets the typed staged-bytes field (Sec 10's per-verb arm); the implant
+demands the bytes with the same `StagedPull` a large `file.push` rides and
+receives the same chunked run. Nothing new crosses the wire -- the module
+arrives over the existing sealed task channel, integrity-bound by the same
+signature, chunked under the same budget, its bytes resting server-side as
+engagement-scoped evidence (Sec 11). The family's other verbs are plain
+one-shot tasks: `module.list` reports the loaded modules and their verbs,
+and `module.unload <name>` retracts one -- best-effort, because a library
+in flight is the platform's business: verb routes drop immediately, a
+handler mid-execution finishes. All three are Implant-class verbs (module
+support is the Implant class's, Sec 5.2) registered as descriptors in the
+tradecraft layer, `module.load` carrying the `executes-code` OPSEC
+attribute: loading a module is running new code, so automation never fires
+it unattended (Sec 10.4).
+
+**The loader stages the bytes the way the launcher one-liners do.** On
+Linux the bytes are written to a memfd and loaded from `/proc/self/fd`
+through `dlopen` (`RTLD_NOW | RTLD_LOCAL`), the entry family resolved with
+`dlsym` -- nothing lands on the filesystem at any step. On Windows the
+bytes are a manually mapped PE -- allocate, copy sections, apply base
+relocations, resolve imports against the system DLLs through
+`LoadLibrary`/`GetProcAddress`, invoke the image entry, then walk the
+export table for the family -- because `LoadLibrary` wants a path and the
+seam keeps modules off disk.
+
+**The platform boundary is honest.** The seam rides the host platform's
+own in-process loading, and the static musl artifact -- every fielded
+Linux build (Sec 12.2) -- carries none: musl's static shape has no
+`dlopen`, and the Rust toolchain produces no musl cdylib for a module to
+even be. On a musl artifact `module.load` fails cleanly with the boundary
+named, and that artifact's extension path stays the crate fork
+(`Build:RustSourceDirectory`, Sec 6). The seam serves the builds whose
+platforms load code in process: the glibc-linked dev shape the conformance
+harness and the e2e legs drive, Windows builds, and any community artifact
+built dynamic. A musl cdylib story in the toolchain is the fact that
+reopens the musl leg.
+
+**Dispatch and advertisement.** A module verb reads exactly like a
+compiled one: the one-shot dispatch path consults the compiled handler
+table first and the module table second, the result rides the same
+TaskResult (first-wins dedup, the audit arc of any task), and the module's
+verbs join the advertised set at load, so the widened surface reports at
+the next contact the way a cadence retune does (Sec 5.1). Registrations
+are run-state, not persisted state: a restarted implant re-advertises
+without them, and an operator who still needs the module re-loads it. The
+loader refuses at load what a module cannot own -- a verb the artifact
+compiles (the compiled arm would shadow it forever) and a channel verb
+(Sec 10.3's live machinery is not reachable from a module) -- with the
+refusal naming the verb and failing the task; verb names must follow the
+`namespace.action` grammar every verb already follows. Replacement is
+last-registration-wins: a later module's registration for a verb an
+earlier one held replaces the route, the same rule the server-side seam
+applies (Sec 10.2).
+
+**The server-side pairing.** A module verb in a standard namespace --
+recon, lateral, persist, collect, exfil -- is class-admissible for the
+Implant class already (Sec 5.2), so it tasks with no server-side ceremony.
+A module carrying a novel namespace pairs with a server-side descriptor
+module (`ICapabilityModule`, extending/tradecraft.md) that widens the
+issuance gate -- the two halves of a capability the extending guide
+teaches, now met by a real implant-side half instead of a fork. The
+reference module in-tree (`src/implant/rust/modules/hostenum/`) is the
+worked example: `recon.hostenum` against the SDK, benign and readable,
+the shape every operator module copies.
 
 ## 6. Payload build pipeline (polyglot via decoupled build units)
 
@@ -675,7 +785,7 @@ recorded.**
   carries the extra handlers (`Build:RustSourceDirectory` names the tree on
   an installed teamserver), coupled to the teamserver only by the wire
   contracts -- no fork of the teamserver ([extending/tradecraft.md](extending/tradecraft.md)).
-  The C-ABI plugin module (todo.md) is the follow-on that drops the rebuild.
+  The C-ABI plugin module (Sec 5.4) is the follow-on that drops the rebuild.
 - **The bake names the transport each build dials.** The egress walk the
   profile bakes names URL shapes, and the implant picks its contact client
   by the dial's scheme at run: an `http(s)://` front runs the envelope POST
@@ -1445,6 +1555,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **collect** | `collect.cred`, `collect.keylog`, `collect.screenshot` | Credential, screen, and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. `collect.screenshot` captures the display as a PNG artifact joined to its task (Sec 11). |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
 | **tunnel** | `tunnel.forward`, `tunnel.socks` | Network tunneling through an implant (Sec 14, core operations): `tunnel.forward` bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it; `tunnel.socks` is the multiplexed arm -- the channel's byte stream is a connection-multiplexed grammar, so every proxied connection rides the one task and each destination arrives per connection. Both run as live channels (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes either channel as a teamserver-side listener -- the raw one-connection bridge for `tunnel.forward`, a SOCKS5 listener for `tunnel.socks` -- so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
+| **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers a C-ABI capability module's bytes as the task's staged content and the implant's loader registers its verbs, `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 
@@ -2156,9 +2267,11 @@ WebSocket stream on stream bakes), the streaming channel layer
 (`shell.interact` under a pseudo-terminal, `tunnel.forward`, and
 `tunnel.socks`'s connection-multiplexed proxy -- live on the stream
 carriage, the degraded park-and-drain discipline over the poll cycle), the
-one-shot core verbs, and the Windows sensitive set (inject.shellcode,
-collect.minidump, collect.keylog) that self-gate on `cfg(windows)` so a
-Linux build compiles none of them. The wire protocol is
+one-shot core verbs, the module family of the plugin seam (Sec 5.4,
+compiled on every platform -- on the static musl shapes its load answers
+with the platform boundary named), and the Windows sensitive set
+(inject.shellcode, collect.minidump, collect.keylog) that self-gate on
+`cfg(windows)` so a Linux build compiles none of them. The wire protocol is
 the language-neutral product (rod.proto, the baked profile's base64url
 JSON, the sealed envelope); the Rust implant is proven against it by the
 conformance harness (its reference candidate) and the end-to-end legs

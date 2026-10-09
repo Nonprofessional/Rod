@@ -25,31 +25,6 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **Implant-side plugin seam: C-ABI capability modules** (serves
-  architecture.md Sec 5.3; design lands as a subsection beside Sec 5.3
-  first). What an engagement cannot do without it: add a capability to a
-  deployed implant without a rebuild-and-redeploy -- a per-engagement
-  tradecraft module loads on demand over the task channel and never rides a
-  standing artifact. Shape: a `rod-plugin-sdk` crate (the authoring surface
-  -- a normal Rust trait plus the macro that emits the `extern "C"` shim;
-  the C ABI is the only boundary stable across compiler versions), a
-  module.load verb family that carries the module bytes over the existing
-  sealed task channel, and a loader that stages the bytes the way the
-  launcher's memfd one-liner does (memfd on Linux, a manual PE map on Windows) and
-  resolves the entry through dlsym/GetProcAddress. Dispatch keeps the
-  string-in/string-out task grammar, so a module verb reads exactly like a
-  compiled one; the advertised set widens at load and reports on the next
-  contact. The domain is the stateless long tail -- the recon set, lateral
-  movement, persistence, credential and screen collection (the verbs the
-  retired .NET implant compiled and the Rust core deliberately leaves to
-  this seam); the channel verbs and the file/exec core stay compiled,
-  because a plugin cannot own a live channel or a carriage.
-  Unload is best-effort; replacement is last-registration-wins,
-  the same rule the server-side module seam applies.
-  _AC:_ a module built against the SDK, delivered through module.load,
-  executes a verb the artifact did not compile, and its result lands in the
-  audit trail attributed like any task.
-
 - **Android shell for the Rust implant** (serves architecture.md Sec 12.2,
   the reach story). What an engagement cannot do without it: a presence on
   an Android device -- the lab and the target base both carry phones, and

@@ -279,6 +279,16 @@ run-time arguments. What ran, and what it produced:
   local port fetched a probe file through the Windows socket pump, both
   hops verified.
 
+The plugin seam's Windows leg (`module.load`'s manual PE map,
+architecture.md Sec 5.4) is rehearsal territory the same way this leg
+was: the mapper compiles and its parsing is unit-pinned on Linux, but
+the load itself -- relocation, import resolution, the loading-thread TLS
+block, the export walk against a live mingw cdylib -- only runs on a
+Windows guest. The leg to run when a guest is next available: build the
+reference hostenum module for `x86_64-pc-windows-gnu`, `module.load`
+it into the Windows implant, task `recon.hostenum`, then `module.unload`
+and confirm the verb fails with the grammar named afterward.
+
 Two adversarial observations from that run, now operator guidance:
 
 - A pipeline win-x64 build defect the Linux legs cannot see: the unit

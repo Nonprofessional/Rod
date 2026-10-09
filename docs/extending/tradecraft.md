@@ -79,27 +79,81 @@ or a same-named dll in the application directory) -- it never scans
 directories. A module reaches the process exactly when an operator built it,
 placed it, and named it.
 
-## Implant-side half: the plugin seam ahead
+## Implant-side half: write a plugin module
 
-The compile-time handler overlay these pages used to teach -- a directory of
-`ICapabilityHandler` sources the .NET build unit compiled into every
-artifact -- retired with the .NET implant it compiled. The Rust reference
-carries its handler set in the crate (`handlers::dispatch`), and the
-implant-side extension seam ahead is the C-ABI plugin module on the todo:
-a `rod-plugin-sdk` crate (a normal Rust trait plus the macro that emits the
-`extern "C"` shim), delivered over the sealed task channel by a module.load
-verb and staged the way the launcher one-liners stage a payload. Until that
-lands,
-the implant-side answer is the escape hatch below: point the build unit at
-your own tree, or build it directly with cargo.
+The crate fork (below) adds a handler at build time. The plugin seam adds
+one to an artifact already deployed (architecture.md Sec 5.4): a C-ABI
+module written against the `rod-plugin-sdk` crate
+(`src/implant/rust/plugin-sdk/`), delivered over the sealed task channel by
+`module.load`'s staged content, dispatched like any compiled verb. The
+authoring surface is a plain Rust trait plus one macro:
 
-The verb families the seam is *for* are the long tail -- recon sweeps,
-lateral movement, persistence, credential and screen collection -- the
-stateless run-code-return-bytes work a plugin shape holds naturally. The
-channel verbs (`shell.interact`, `tunnel.forward`, `tunnel.socks`) and the
-file/exec core stay compiled on purpose: a live channel owns process
-handles and carriage multiplexing that spans tasking cycles, which no
-post-build module can reach (architecture.md Sec 13's line).
+```rust
+use rod_plugin_sdk::{rod_plugin, Plugin, Verb};
+
+pub struct Sweep;
+
+impl Plugin for Sweep {
+    fn name(&self) -> &'static str { "sweep" }
+    fn verbs(&self) -> Vec<Verb> {
+        vec![Verb::new("recon.portscan", portscan)]
+    }
+}
+
+fn portscan(arguments: &str) -> Result<String, String> {
+    // arguments is the opaque task string; Ok is the task's output,
+    // Err its failure. Print recon findings in the JSON-lines grammar
+    // below and the topology view picks them up.
+    Ok(sweep(arguments))
+}
+
+rod_plugin!(Sweep);
+```
+
+Build it as a `cdylib` for the target's own platform (`cargo build
+--release` on the target host or with its cross triple), then issue the
+load with the library's bytes as the task's content: `module.load sweep`.
+The loader stages the bytes in a memfd and resolves the entry family
+(`dlopen` on a dynamic libc host, a manual PE map on Windows), the verbs
+join the dispatch table, and the next contact advertises them -- the
+operator's console reads a module verb exactly like a built-in one.
+`module.list` reports what is loaded, and `module.unload sweep` retracts
+it (best-effort: routes drop immediately, a running handler finishes).
+
+The reference module in-tree (`src/implant/rust/modules/hostenum/`) is the
+worked example to copy: `recon.hostenum` against the SDK, benign and
+readable.
+
+The rules the loader enforces, all reported on the load task itself:
+
+- **Namespaced verbs only.** `namespace.action`, the grammar every Rod
+  verb follows.
+- **The compiled set and the channel verbs stay compiled.** A module
+  cannot register a verb the artifact compiles (the compiled arm would
+  shadow it forever) or a channel verb (`shell.interact`,
+  `tunnel.forward`, `tunnel.socks`) -- a live channel owns process
+  handles and carriage multiplexing that span tasking cycles, which no
+  post-build module can reach (architecture.md Sec 13's line).
+- **Replacement is last-registration-wins.** A later module's verb
+  replaces an earlier module's route, the same rule the server-side seam
+  applies.
+- **Panics are fenced.** The shim catches a panicking handler and reports
+  it as the task's failure; build without `panic = "abort"`, which turns
+  the fence off.
+
+**The platform boundary.** The seam rides the host platform's own
+in-process loading: it works on dynamic-libc builds (the glibc dev shape)
+and on Windows, while the static musl artifact -- every fielded Linux
+build -- carries no `dlopen` and the Rust toolchain produces no musl
+cdylib, so its `module.load` fails cleanly naming that boundary. For the
+musl artifact the crate fork below remains the extension path.
+
+**Pairing with the server half.** A module verb in a standard namespace
+(recon, lateral, persist, collect, exfil) is class-admissible for the
+Implant class already, so it tasks with no server-side ceremony. A module
+carrying a novel namespace pairs with a server-side descriptor module
+(the `ICapabilityModule` half above) that widens the issuance gate -- two
+halves, one verb string, nothing else shared.
 
 The dispatch grammar your code answers either way is the task contract's
 own: string arguments in, outcome plus output back, with exfil chunks for
