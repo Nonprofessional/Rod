@@ -25,55 +25,40 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-(Empty: both items that were here shipped. The natural widenings each
-named -- write tools behind an explicit gate for the MCP surface, digest
-and report narration for the LLM client -- are evolution notes in
-architecture.md Sec 4.3 and Sec 11.3, not open work here; they reopen as
-todo items when an engagement needs them.)
-
-## On hold
-
 - **External recon workbench: passive lookups -- whois/RDAP and subdomain
-  enumeration** (serves architecture.md Sec 10.1 and Sec 11; design lands
-  first). Parked on demand, not a blocker: the external tooling for
-  passive lookups is mature, so the scoping work happens regardless --
-  what is missing is an engagement that needs its pre-foothold findings
-  in the attributed record from day one; it reopens when one does, with
-  its design bill paid first (pre-foothold findings have no task, and
-  artifacts are task-joined today, so their landing shape is the first
-  design question, beside the egress runbook). What an engagement cannot
-  do without it: scope a target before the first foothold -- registration
-  data (whois, RDAP) and the subdomain surface (certificate transparency
-  plus resolution) are how the operator aims the first implant, and today
-  that work leaves Rod for ad-hoc tools whose findings never reach the
-  engagement's attributed record. Shape: an operator-layer workbench, not
-  implant tasking -- the lookups run on the teamserver against external
-  services, engagement-scoped and audited, findings recorded as engagement
-  artifacts that join the intel layer's topology projection through the
-  seam Sec 11.2 already holds open (findings-as-artifacts). Even passive
-  lookups egress from the teamserver, so which resolver and which CT
-  mirror they ride -- direct or fronted -- is the operator's call,
-  documented in the runbook, never a silent default. The scan half is
-  parked below until an engagement needs it.
+  enumeration** (serves architecture.md Sec 10.1 and Sec 11; the design
+  lands with the item in architecture.md Sec 11.4). The gap: scope a
+  target before the first foothold -- registration data (whois, RDAP) and
+  the subdomain surface (certificate transparency plus resolution) are how
+  the operator aims the first implant, and today that work leaves Rod for
+  ad-hoc tools whose findings never reach the engagement's attributed
+  record. Shape: an operator-layer workbench, not implant tasking -- the
+  lookups run on the teamserver against external services,
+  engagement-scoped and audited, findings recorded as engagement artifacts
+  that join the intel layer's topology projection through the seam Sec
+  11.2 already holds open (findings-as-artifacts). Even passive lookups
+  egress from the teamserver, so which resolver and which CT mirror they
+  ride -- direct or fronted -- is the operator's call, configured, and
+  documented in the runbook (operations/recon.md), never a silent default.
   _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
   against a named engagement target from the operator API, and the
   findings land as engagement-scoped artifacts in the audit trail.
 
 - **Port scan from the recon workbench** (serves the same Sec 10.1 and
-  Sec 11 surface as the passive workbench above). Parked until an
-  engagement actually needs a scan originated outside a foothold -- an
-  implant already inside carries `recon.portscan` for its own segment, so
-  this is the pre-foothold map only. The design bill is real: the scan is
-  gated on the engagement's ROE target scope, a dimension the profile does
-  not carry today (it has PermittedVerbs and PermittedImplants, Sec 9),
-  so it means a new ROE dimension with its own update semantics; and where
-  the scan originates (teamserver direct, a redirector, or an implant
-  already inside) is an OPSEC decision the runbook documents, never a
-  silent default.
+  Sec 11 surface as the passive workbench above; design in Sec 11.4 too).
+  The pre-foothold map only -- an implant already inside carries
+  `recon.portscan` for its own segment. The scan is gated on the
+  engagement's ROE target scope, a new `PermittedTargets` dimension on the
+  profile (Sec 9), with its own update semantics riding the existing ROE
+  route; and where the scan originates is an OPSEC decision the runbook
+  documents, never a silent default (the shipped origin is
+  teamserver-direct, config-gated).
   _AC:_ an operator runs a port scan against a named target inside the
   engagement's ROE target scope from the operator API and the findings
   land as engagement-scoped artifacts, while the same scan against a
   target outside the scope is refused with the refusal in the audit trail.
+
+## On hold
 
 - **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
   architecture.md Sec 5.2 and Sec 10.1; design lands first). Parked on
