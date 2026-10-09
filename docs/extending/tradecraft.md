@@ -116,7 +116,7 @@ module's tree emits the Linux executable (build against a musl triple,
 module that runs from any artifact with no libc coupling) and the
 Windows `cdylib`. Issue the load with the artifact's bytes as the task's
 content: `module.load sweep`. The loader stages the bytes in a memfd and
-execs the module through `/proc/self/fd` on Linux -- one process per
+execs the module through the anonymous fd on Linux -- one process per
 dispatch, nothing on disk -- or maps the PE by hand on Windows; the
 verbs join the dispatch table, and the next contact advertises them --
 the operator's console reads a module verb exactly like a built-in one.

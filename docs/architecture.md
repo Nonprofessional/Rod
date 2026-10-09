@@ -693,9 +693,11 @@ attribute: loading a module is running new code, so automation never fires
 it unattended (Sec 10.4).
 
 **The loader stages the bytes the way the launcher one-liners do.** On
-Linux the bytes are written to a memfd and the module is exec'd through
-`/proc/self/fd` -- the loader tier's own proven mechanism (Sec 6) -- one
-process per verb dispatch, the request and its answer crossing stdio.
+Linux the bytes are written to a close-on-exec memfd and the module is
+exec'd through the anonymous fd itself -- `execveat(AT_EMPTY_PATH)`, the
+loader tier's own syscall (Sec 6), no `/proc` path involved, so the
+shape holds wherever the kernel does -- one process per verb dispatch,
+the request and its answer crossing stdio.
 Nothing lands on the filesystem at any step, nothing dlopens, and the
 shape carries no libc coupling: the static musl artifact -- every fielded
 Linux build (Sec 12.2) -- loads modules exactly like any other, which is

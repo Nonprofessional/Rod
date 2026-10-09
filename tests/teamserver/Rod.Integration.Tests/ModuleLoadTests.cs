@@ -121,6 +121,9 @@ public class ModuleLoadTests
                 env, sweep.TaskId, t => t.Status == "Completed", stderr, "the recon.hostenum task");
             Assert.Equal("Succeeded", swept.Outcome);
             Assert.Contains("\"host\":", swept.Output);
+            // The module inherits the implant's environment through the
+            // exec -- USER is recon data the reference module reports.
+            Assert.Contains("\"user\":", swept.Output);
             var sweepTrail = await audit.ForTaskAsync(Guid.Parse(sweep.TaskId));
             Assert.Contains(sweepTrail, e => e.Kind == AuditEventKind.TaskCompleted);
             Assert.Contains(sweepTrail, e => e.ImplantId == Guid.Parse(implantId));
@@ -259,6 +262,9 @@ public class ModuleLoadTests
                 env, sweep.TaskId, t => t.Status == "Completed", stderr, "the recon.hostenum task");
             Assert.Equal("Succeeded", swept.Outcome);
             Assert.Contains("\"host\":", swept.Output);
+            // The module inherits the implant's environment through the
+            // exec -- USER is recon data the reference module reports.
+            Assert.Contains("\"user\":", swept.Output);
 
             var audit = env.Host.Services.GetRequiredService<IAuditStore>();
             var trail = await audit.ForTaskAsync(Guid.Parse(sweep.TaskId));
