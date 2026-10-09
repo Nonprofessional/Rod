@@ -10,10 +10,12 @@
 //! cannot own a live channel or a carriage), and verb names must follow
 //! the `namespace.action` grammar every Rod verb follows.
 //!
-//! The platform boundary is honest (architecture.md Sec 5.4): the seam
-//! rides the host platform's own in-process loading. The static musl
-//! artifact carries none -- `load` there refuses with the boundary named
-//! -- and the crate fork stays that artifact's extension path.
+//! The loader shapes are the design's two halves (architecture.md Sec
+//! 5.4): Linux stages the bytes in a memfd and execs the module through
+//! `/proc/self/fd` -- the loader tier's own mechanism -- one process per
+//! verb dispatch over a stdio protocol, uniform across static musl and
+//! dynamic builds alike; Windows maps the PE by hand. The registry itself
+//! is platform-blind behind the Library trait.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -21,23 +23,25 @@ use std::sync::{Arc, Mutex};
 use crate::channel;
 use crate::handlers::{self, Outcome};
 
-/// The C-ABI version the loader speaks; the mirror of
-/// `rod_plugin_sdk::ABI_VERSION`. The two crates share the contract, not a
-/// dependency: the implant defines its own copy the way every implant
-/// language would.
+/// The module ABI version the loader speaks; the mirror of
+/// `rod_plugin_sdk::ABI_VERSION` (the Windows extern family) and of its
+/// `PROTOCOL_VERSION` (the Linux stdio frames) -- one number, two shapes.
+/// The crates share the contract, not a dependency: the implant defines
+/// its own copy the way every implant language would.
 const ABI_VERSION: u32 = 1;
 
-/// A length-delimited byte string as it crosses the boundary -- the shape
-/// `rod-plugin-sdk`'s `RodStr` defines. Not NUL-terminated: task arguments
-/// are opaque bytes and cannot ride a C string.
-#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+/// A length-delimited byte string as it crosses the Windows boundary --
+/// the shape `rod-plugin-sdk`'s `RodStr` defines. Not NUL-terminated: task
+/// arguments are opaque bytes and cannot ride a C string. The Linux
+/// protocol frames carry the same bytes length-prefixed instead.
+#[cfg(windows)]
 #[repr(C)]
 struct AbiStr {
     ptr: *mut u8,
     len: usize,
 }
 
-#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+#[cfg(windows)]
 impl AbiStr {
     fn empty() -> AbiStr {
         AbiStr {
@@ -67,7 +71,6 @@ impl AbiStr {
 /// One run's outcome as the shim reports it: success or failure with the
 /// module's output string, or a shim error (an unknown index, a fenced
 /// panic) carrying the cause.
-#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
 enum RunStatus {
     Succeeded(String),
     Failed(String),
@@ -77,11 +80,12 @@ enum RunStatus {
 /// One loaded module's library half: the platform handle behind the entry
 /// family. A trait, not a struct, so the registry's guards and dispatch
 /// are unit-testable without a dynamic loader in the loop.
-#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
 trait Library: Send {
-    /// The ABI version the module reports. A loader that does not
-    /// recognize it refuses the module whole.
-    fn abi(&self) -> u32;
+    /// The ABI version the module reports, or the cause it could not
+    /// answer (bytes that are not a module, a dead process, a protocol
+    /// mismatch). A loader that does not recognize the version refuses
+    /// the module whole.
+    fn abi(&self) -> Result<u32, String>;
 
     /// The module's self-declared name.
     fn name(&self) -> String;
@@ -94,11 +98,6 @@ trait Library: Send {
 
     /// Execute one verb under the shared string grammar.
     fn run(&self, index: u32, arguments: &str) -> RunStatus;
-
-    /// Return module-allocated memory. The host never frees module memory
-    /// itself; an export the module did not ship means nothing was
-    /// allocated to return.
-    fn free_string(&self, string: AbiStr);
 }
 
 /// A registered route: the module that owns the verb and its index in the
@@ -133,8 +132,8 @@ impl ModuleEntry {
             name: &'static str,
         }
         impl Library for StubLibrary {
-            fn abi(&self) -> u32 {
-                ABI_VERSION
+            fn abi(&self) -> Result<u32, String> {
+                Ok(ABI_VERSION)
             }
             fn name(&self) -> String {
                 self.name.into()
@@ -148,7 +147,6 @@ impl ModuleEntry {
             fn run(&self, _index: u32, _arguments: &str) -> RunStatus {
                 RunStatus::Succeeded("stub".into())
             }
-            fn free_string(&self, _string: AbiStr) {}
         }
         ModuleEntry::new(
             name.into(),
@@ -213,11 +211,10 @@ impl Plugins {
         validate_handle(handle)?;
         verify_sha256(bytes, expected_sha256)?;
         let library = load_library(bytes)?;
-        if library.abi() != ABI_VERSION {
+        let reported = library.abi()?;
+        if reported != ABI_VERSION {
             return Err(format!(
-                "module reports ABI {} and this build loads {}",
-                library.abi(),
-                ABI_VERSION
+                "module reports ABI {reported} and this build loads {ABI_VERSION}"
             ));
         }
         let declared = library.name();
@@ -411,21 +408,9 @@ fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
 
 // --- The platform loaders ---------------------------------------------------
 
-#[cfg(all(unix, not(target_env = "musl")))]
+#[cfg(unix)]
 fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
-    DlopenLibrary::load(bytes)
-}
-
-/// The static musl artifact carries no in-process dynamic loading
-/// (architecture.md Sec 5.4): musl's static shape has no dlopen, and the
-/// Rust toolchain produces no musl cdylib for a module to even be. The
-/// refusal is clean and names the boundary.
-#[cfg(all(unix, target_env = "musl"))]
-fn load_library(_bytes: &[u8]) -> Result<Box<dyn Library>, String> {
-    Err(
-        "module.load: this build's platform carries no dynamic module loader (the static musl artifact); rebuild the tradecraft into the artifact or load it on a dynamic platform"
-            .into(),
-    )
+    executed::ExecLibrary::load(bytes)
 }
 
 #[cfg(windows)]
@@ -433,37 +418,60 @@ fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
     pe::PeLibrary::load(bytes)
 }
 
-// --- Linux: the memfd + dlopen loader ---------------------------------------
+// --- Linux: the memfd + exec loader -------------------------------------------
 
-#[cfg(all(unix, not(target_env = "musl")))]
-mod dlopened {
-    use std::ffi::{CStr, CString};
+#[cfg(unix)]
+mod executed {
+    //! The Linux module shape (architecture.md Sec 5.4): the bytes stage in
+    //! a memfd and the loader execs them through `/proc/self/fd` -- the
+    //! loader tier's own mechanism (Sec 6) -- with the string grammar
+    //! spoken over stdio as length-prefixed request/response frames. One
+    //! process per exchange; a verb dispatch is a fresh child, so a module
+    //! that dies cannot take the implant with it, and the shape carries no
+    //! libc coupling: the static musl artifact loads modules exactly like
+    //! any other.
 
-    use super::{AbiStr, Library, RunStatus};
+    use std::io::{Read, Write};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
 
-    type AbiFn = unsafe extern "C" fn() -> u32;
-    type NameFn = unsafe extern "C" fn() -> AbiStr;
-    type InitFn = unsafe extern "C" fn() -> u32;
-    type VerbNameFn = unsafe extern "C" fn(u32) -> AbiStr;
-    type RunFn = unsafe extern "C" fn(u32, AbiStr, *mut AbiStr) -> i32;
-    type FreeFn = unsafe extern "C" fn(*mut u8, usize);
+    use super::{Library, RunStatus};
 
-    /// One dlopen'd module: the platform's own library object behind the
-    /// entry family, resolved per call through dlsym. The drop path's
-    /// dlclose is the best-effort unload the registry documents.
-    pub struct DlopenLibrary {
-        handle: *mut std::ffi::c_void,
+    /// The protocol's version and operations, the mirror of
+    /// rod-plugin-sdk's `protocol` module: the crates share the contract,
+    /// not a dependency.
+    const PROTOCOL_VERSION: u8 = 1;
+    const MAX_PAYLOAD: u32 = 64 << 20;
+
+    mod op {
+        pub const PING: u8 = 0;
+        pub const NAME: u8 = 1;
+        pub const COUNT: u8 = 2;
+        pub const VERB_NAME: u8 = 3;
+        pub const RUN: u8 = 4;
     }
 
-    // dlopen handles are thread-safe for dlsym; the run loop owns the
-    // registry anyway.
-    unsafe impl Send for DlopenLibrary {}
+    mod status {
+        pub const OK: u8 = 0;
+        pub const FAILED: u8 = 1;
+        pub const BAD_REQUEST: u8 = 2;
+        pub const PANICKED: u8 = 3;
+    }
 
-    impl DlopenLibrary {
-        /// Stages the bytes in a memfd and dlopens it through
-        /// `/proc/self/fd` -- the same anonymous-fd staging the launcher
-        /// one-liners perform, so nothing lands on the filesystem at any
-        /// step.
+    /// One exec'd module: the memfd holding its bytes. Every exchange
+    /// spawns a fresh process off the fd; the fd dies with the library,
+    /// which is the unload's best-effort other half.
+    pub struct ExecLibrary {
+        fd: i32,
+    }
+
+    // The fd is a plain kernel handle; spawning children from it is
+    // thread-safe.
+    unsafe impl Send for ExecLibrary {}
+
+    impl ExecLibrary {
+        /// Stages the bytes in a memfd -- nothing lands on the filesystem
+        /// at any step -- and defers execution to each exchange.
         pub fn load(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
             let name = c"rod-module";
             let fd = unsafe { libc::memfd_create(name.as_ptr(), 0) };
@@ -491,74 +499,101 @@ mod dlopened {
                 }
                 written += count as usize;
             }
-            // The loader keeps its own reference to the mapping; the fd
-            // can close as soon as dlopen answers.
-            let path = CString::new(format!("/proc/self/fd/{fd}"))
-                .map_err(|_| "module.load: bad staging path".to_string())?;
-            let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
-            let cause = unsafe { libc::dlerror() };
-            unsafe { libc::close(fd) };
-            if handle.is_null() {
-                let detail = if cause.is_null() {
-                    "unknown".into()
-                } else {
-                    unsafe { CStr::from_ptr(cause).to_string_lossy().into_owned() }
-                };
+            Ok(Box::new(ExecLibrary { fd }))
+        }
+
+        /// One request/response exchange over a fresh process: exec the
+        /// memfd, write the frame, read the answer, reap.
+        fn exchange(&self, op: u8, arg: u32, payload: &[u8]) -> Result<(u8, Vec<u8>), String> {
+            let path = format!("/proc/self/fd/{}", self.fd);
+            let mut child = Command::new(&path)
+                .arg0("rod-module")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .map_err(|err| format!("exec {path}: {err}"))?;
+
+            let mut frame = Vec::with_capacity(9 + payload.len());
+            frame.push(op);
+            frame.extend_from_slice(&arg.to_le_bytes());
+            frame.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+            frame.extend_from_slice(payload);
+            let Some(mut stdin) = child.stdin.take() else {
+                return Err("the module process took no stdin".into());
+            };
+            let write = stdin.write_all(&frame).and_then(|()| stdin.flush());
+            // Close the input either way: serve() answers the request it
+            // holds, then exits at the end of stream.
+            drop(stdin);
+            write.map_err(|err| format!("writing the request: {err}"))?;
+
+            let Some(mut stdout) = child.stdout.take() else {
+                return Err("the module process gave no stdout".into());
+            };
+            let mut header = [0u8; 6];
+            stdout
+                .read_exact(&mut header)
+                .map_err(|err| format!("the module did not answer the protocol: {err}"))?;
+            if header[0] != PROTOCOL_VERSION {
                 return Err(format!(
-                    "module.load: the bytes are not a loadable module: {detail}"
+                    "module speaks protocol {} and this build speaks {PROTOCOL_VERSION}",
+                    header[0]
                 ));
             }
-            Ok(Box::new(DlopenLibrary { handle }))
-        }
-
-        fn symbol(&self, export: &CStr) -> Result<*mut std::ffi::c_void, String> {
-            let symbol = unsafe { libc::dlsym(self.handle, export.as_ptr()) };
-            if symbol.is_null() {
+            let len = u32::from_le_bytes([header[2], header[3], header[4], header[5]]);
+            if len > MAX_PAYLOAD {
                 return Err(format!(
-                    "module does not export {}",
-                    export.to_string_lossy()
+                    "the module's {len}-byte answer exceeds the exchange budget"
                 ));
             }
-            Ok(symbol)
-        }
-
-        fn read_owned(&self, string: AbiStr) -> String {
-            let text = unsafe { string.as_text() };
-            self.free_string(string);
-            text
-        }
-
-        fn entry<Entry: Copy>(&self, export: &CStr) -> Result<Entry, String> {
-            let symbol = self.symbol(export)?;
-            Ok(unsafe { std::mem::transmute_copy(&symbol) })
+            let mut body = vec![0u8; len as usize];
+            stdout
+                .read_exact(&mut body)
+                .map_err(|err| format!("the module's answer ended early: {err}"))?;
+            let _ = child.wait();
+            Ok((header[1], body))
         }
     }
 
-    impl Library for DlopenLibrary {
-        fn abi(&self) -> u32 {
-            let Ok(abi) = self.entry::<AbiFn>(c"rod_plugin_abi") else {
-                return u32::MAX; // not a Rod module; the load refuses it
-            };
-            unsafe { abi() }
+    impl Drop for ExecLibrary {
+        fn drop(&mut self) {
+            unsafe { libc::close(self.fd) };
+        }
+    }
+
+    impl Library for ExecLibrary {
+        fn abi(&self) -> Result<u32, String> {
+            match self.exchange(op::PING, 0, &[]) {
+                Ok((status::OK, _)) => Ok(PROTOCOL_VERSION as u32),
+                Ok((other, text)) => Err(format!(
+                    "module.load: the module's own ping answered status {other}: {}",
+                    String::from_utf8_lossy(&text)
+                )),
+                Err(cause) => Err(format!(
+                    "module.load: the bytes are not a loadable module: {cause}"
+                )),
+            }
         }
 
         fn name(&self) -> String {
-            let Ok(name) = self.entry::<NameFn>(c"rod_plugin_name") else {
-                return String::new();
-            };
-            self.read_owned(unsafe { name() })
+            self.exchange(op::NAME, 0, &[])
+                .map(|(_, body)| String::from_utf8_lossy(&body).into_owned())
+                .unwrap_or_default()
         }
 
         fn verb_count(&self) -> u32 {
-            let Ok(init) = self.entry::<InitFn>(c"rod_plugin_init") else {
-                return 0;
-            };
-            unsafe { init() }
+            self.exchange(op::COUNT, 0, &[])
+                .ok()
+                .and_then(|(_, body)| {
+                    let bytes: [u8; 4] = body.as_slice().try_into().ok()?;
+                    Some(u32::from_le_bytes(bytes))
+                })
+                .unwrap_or(0)
         }
 
         fn verb_name(&self, index: u32) -> Option<String> {
-            let verb_name = self.entry::<VerbNameFn>(c"rod_plugin_verb_name").ok()?;
-            let name = self.read_owned(unsafe { verb_name(index) });
+            let body = self.exchange(op::VERB_NAME, index, &[]).ok()?.1;
+            let name = String::from_utf8_lossy(&body).into_owned();
             if name.is_empty() {
                 None
             } else {
@@ -567,40 +602,29 @@ mod dlopened {
         }
 
         fn run(&self, index: u32, arguments: &str) -> RunStatus {
-            let Ok(run) = self.entry::<RunFn>(c"rod_plugin_run") else {
-                return RunStatus::Error("module does not export rod_plugin_run".into());
-            };
-            let args = AbiStr::from_slice(arguments.as_bytes());
-            let mut out = AbiStr::empty();
-            let status = unsafe { run(index, args, &mut out) };
-            let text = self.read_owned(out);
-            match status {
-                0 => RunStatus::Succeeded(text),
-                1 => RunStatus::Failed(text),
-                other => RunStatus::Error(format!("shim status {other}: {text}")),
+            match self.exchange(op::RUN, index, arguments.as_bytes()) {
+                Ok((status::OK, body)) => {
+                    RunStatus::Succeeded(String::from_utf8_lossy(&body).into_owned())
+                }
+                Ok((status::FAILED, body)) => {
+                    RunStatus::Failed(String::from_utf8_lossy(&body).into_owned())
+                }
+                Ok((status::BAD_REQUEST, _)) => {
+                    RunStatus::Error("the module no longer holds that verb index".into())
+                }
+                Ok((status::PANICKED, body)) => RunStatus::Error(format!(
+                    "module handler panicked: {}",
+                    String::from_utf8_lossy(&body)
+                )),
+                Ok((other, body)) => RunStatus::Error(format!(
+                    "module answered status {other}: {}",
+                    String::from_utf8_lossy(&body)
+                )),
+                Err(cause) => RunStatus::Error(format!("the module process failed: {cause}")),
             }
-        }
-
-        fn free_string(&self, string: AbiStr) {
-            if string.ptr.is_null() || string.len == 0 {
-                return;
-            }
-            let Ok(free) = self.entry::<FreeFn>(c"rod_plugin_free") else {
-                return;
-            };
-            unsafe { free(string.ptr, string.len) };
-        }
-    }
-
-    impl Drop for DlopenLibrary {
-        fn drop(&mut self) {
-            unsafe { libc::dlclose(self.handle) };
         }
     }
 }
-
-#[cfg(all(unix, not(target_env = "musl")))]
-use dlopened::DlopenLibrary;
 
 // --- Windows: the manual PE map ----------------------------------------------
 
@@ -719,6 +743,18 @@ mod pe {
             self.free_string(string);
             text
         }
+
+        /// Returns module-allocated memory through the export the module
+        /// ships for it; the host never frees module memory itself.
+        fn free_string(&self, string: AbiStr) {
+            if string.ptr.is_null() || string.len == 0 {
+                return;
+            }
+            let Ok(free) = self.entry::<FreeFn>("rod_plugin_free") else {
+                return;
+            };
+            unsafe { free(string.ptr, string.len) };
+        }
     }
 
     // The image's export addresses are RVAs into the mapped image.
@@ -727,11 +763,9 @@ mod pe {
     }
 
     impl Library for PeLibrary {
-        fn abi(&self) -> u32 {
-            let Ok(abi) = self.entry::<AbiFn>("rod_plugin_abi") else {
-                return u32::MAX;
-            };
-            unsafe { abi() }
+        fn abi(&self) -> Result<u32, String> {
+            let abi: AbiFn = self.entry("rod_plugin_abi")?;
+            Ok(unsafe { abi() })
         }
 
         fn name(&self) -> String {
@@ -771,16 +805,6 @@ mod pe {
                 1 => RunStatus::Failed(text),
                 other => RunStatus::Error(format!("shim status {other}: {text}")),
             }
-        }
-
-        fn free_string(&self, string: AbiStr) {
-            if string.ptr.is_null() || string.len == 0 {
-                return;
-            }
-            let Ok(free) = self.entry::<FreeFn>("rod_plugin_free") else {
-                return;
-            };
-            unsafe { free(string.ptr, string.len) };
         }
     }
 
@@ -1220,8 +1244,8 @@ mod tests {
     }
 
     impl Library for FakeLibrary {
-        fn abi(&self) -> u32 {
-            ABI_VERSION
+        fn abi(&self) -> Result<u32, String> {
+            Ok(ABI_VERSION)
         }
         fn name(&self) -> String {
             self.name.into()
@@ -1243,7 +1267,6 @@ mod tests {
                 RunStatus::Succeeded(format!("{verb} ran: {arguments}"))
             }
         }
-        fn free_string(&self, _string: AbiStr) {}
     }
 
     fn installed(name: &'static str, verbs: &[&'static str]) -> Plugins {
@@ -1340,7 +1363,7 @@ mod tests {
         assert!(verify_sha256(b"bytes", &good.to_uppercase()).is_ok());
     }
 
-    #[cfg(all(unix, not(target_env = "musl")))]
+    #[cfg(unix)]
     #[test]
     fn garbage_bytes_refuse_as_a_module() {
         let plugins = Plugins::new();
@@ -1353,20 +1376,5 @@ mod tests {
             .load("junk", b"not a module", &hash)
             .expect_err("not a loadable image");
         assert!(cause.contains("not a loadable module"), "{cause}");
-    }
-
-    #[cfg(all(unix, target_env = "musl"))]
-    #[test]
-    fn the_musl_boundary_refuses_cleanly() {
-        let plugins = Plugins::new();
-        use sha2::Digest;
-        let hash: String = Sha256::digest(b"anything")
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        let cause = plugins
-            .load("x", b"anything", &hash)
-            .expect_err("no loader on this platform");
-        assert!(cause.contains("musl"), "{cause}");
     }
 }
