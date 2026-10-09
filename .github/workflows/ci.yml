@@ -219,13 +219,13 @@ jobs:
           cargo test --manifest-path src/implant/rust/plugin-sdk/Cargo.toml
           cargo test --manifest-path src/implant/rust/modules/hostenum/Cargo.toml
       - name: Build the plugin seam's shipped shapes
-        # The SDK's reference module (architecture.md Sec 5.4) as the two
-        # shapes a target loads: the host cdylib the module.load e2e drives
-        # and the Windows PE the manual map carries. The musl shape does
-        # not exist by design -- the toolchain produces no musl cdylib, the
-        # boundary the seam documents.
+        # The SDK's reference module (architecture.md Sec 5.4) in every
+        # shape a target loads: the Linux executable the loader execs (the
+        # musl-static build is the delivery shape -- no libc coupling), and
+        # the Windows cdylib the manual PE map carries.
         run: |
           cargo build --release --manifest-path src/implant/rust/modules/hostenum/Cargo.toml
+          cargo build --release --target x86_64-unknown-linux-musl --manifest-path src/implant/rust/modules/hostenum/Cargo.toml
           cargo build --release --target x86_64-pc-windows-gnu --manifest-path src/implant/rust/modules/hostenum/Cargo.toml
       - name: Build the reference crosses
         # The implant of record's shipped shapes (architecture.md Sec 12.2):

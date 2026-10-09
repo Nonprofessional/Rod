@@ -11,6 +11,35 @@ using Rod.Transport.Endpoints;
 namespace Rod.Integration.Tests;
 
 /// <summary>
+/// A fact that runs only when the musl cross toolchain is present: the
+/// static-artifact legs need musl-gcc for the implant's C bits.
+/// </summary>
+public sealed class MuslFactAttribute : FactAttribute
+{
+    public MuslFactAttribute()
+    {
+        try
+        {
+            var probe = Process.Start(new ProcessStartInfo
+            {
+                FileName = "musl-gcc",
+                ArgumentList = { "--version" },
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            probe?.WaitForExit(5000);
+            if (probe is null || probe.ExitCode != 0)
+                Skip = "musl-gcc is not usable on PATH";
+        }
+        catch
+        {
+            Skip = "musl-gcc is not on PATH";
+        }
+    }
+}
+
+/// <summary>
 /// Acceptance for the implant-side plugin seam (architecture.md Sec 5.4):
 /// a module built against the SDK, delivered through module.load's staged
 /// content, executes a verb the artifact did not compile -- and the result
@@ -170,6 +199,82 @@ public class ModuleLoadTests
         }
     }
 
+    /// <summary>
+    /// The seam's fielded acceptance on Linux: the static musl artifact --
+    /// the shape every pipeline Linux build is -- loads the module through
+    /// the exec loader and runs its verb like any compiled one. The module
+    /// is the musl-static executable, itself with no libc coupling: proof
+    /// the two sides of the exchange share nothing but the byte protocol.
+    /// </summary>
+    [MuslFact]
+    public async Task ModuleLoad_OnTheFieldedMuslArtifact_RunsTheVerbItNeverCompiled()
+    {
+        var rustDir = ModuleLoadTestSupport.FindRustTree()
+            ?? throw new InvalidOperationException("the Rust implant tree was not found from the test assembly");
+        const string triple = "x86_64-unknown-linux-musl";
+        await RunCargoAsync(rustDir, $"build --release --target {triple}");
+        var binary = Path.Combine(rustDir, "target", triple, "release", "rod-implant");
+        Assert.True(File.Exists(binary), $"cargo reported success but {binary} is missing");
+        var moduleBytes = await BuildModuleAsync(rustDir, triple);
+
+        await using var env = await TestEnv.StartAsync();
+        await env.CreateEngagementAsync();
+
+        var mint = await env.Http.PostAsync(
+            $"/engagements/{env.EngagementId}/deploy-tokens", content: null);
+        mint.EnsureSuccessStatusCode();
+        var token = await mint.Content.ReadFromJsonAsync<MintedToken>();
+
+        var stderr = new StringBuilder();
+        var start = new ProcessStartInfo
+        {
+            FileName = binary,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+        };
+        start.Environment["ROD_ENROLL_URL"] = $"http://127.0.0.1:{env.HttpPort}/implants/enroll";
+        start.Environment["ROD_DEPLOY_TOKEN"] = token!.Secret;
+        start.Environment["ROD_VERBOSE"] = "1";
+        start.Environment["ROD_SLEEP"] = "1";
+        start.Environment["ROD_JITTER"] = "0";
+        start.Environment["ROD_ENVELOPE"] = "none";
+        start.Environment["ROD_VERBS"] = "shell.exec,module.load,module.unload,module.list";
+        using var process = Process.Start(start);
+        Assert.NotNull(process);
+        process!.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderr.AppendLine(e.Data); };
+        process.BeginErrorReadLine();
+
+        try
+        {
+            var implantId = await ModuleLoadTestSupport.WaitForOnlineAsync(env, TimeSpan.FromSeconds(90), stderr);
+
+            var load = await IssueAsync(env, implantId, "module.load", "hostenum", moduleBytes);
+            var loaded = await ModuleLoadTestSupport.WaitForTaskAsync(
+                env, load.TaskId, t => t.Status == "Completed", stderr, "the module.load task");
+            Assert.Equal("Succeeded", loaded.Outcome);
+            Assert.Contains("recon.hostenum", loaded.Output);
+
+            var sweep = await IssueAsync(env, implantId, "recon.hostenum", "");
+            var swept = await ModuleLoadTestSupport.WaitForTaskAsync(
+                env, sweep.TaskId, t => t.Status == "Completed", stderr, "the recon.hostenum task");
+            Assert.Equal("Succeeded", swept.Outcome);
+            Assert.Contains("\"host\":", swept.Output);
+
+            var audit = env.Host.Services.GetRequiredService<IAuditStore>();
+            var trail = await audit.ForTaskAsync(Guid.Parse(sweep.TaskId));
+            Assert.Contains(trail, e => e.Kind == AuditEventKind.TaskCompleted);
+            Assert.Contains(trail, e => e.ImplantId == Guid.Parse(implantId));
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                process.WaitForExit(5000);
+            }
+        }
+    }
+
     private static async Task<TaskBody> IssueAsync(
         TestEnv env, string implantId, string verb, string arguments, byte[]? content = null)
     {
@@ -184,7 +289,7 @@ public class ModuleLoadTests
 
     /// <summary>
     /// Cargo-builds the dev-shape implant and the reference hostenum module
-    /// (the platform's own cdylib shape), once per test run.
+    /// (the Linux executable shape the loader execs), once per test run.
     /// </summary>
     private static async Task<(string Implant, byte[] Module)> BuildImplantAndModuleAsync()
     {
@@ -193,15 +298,25 @@ public class ModuleLoadTests
         await RunCargoAsync(rustDir, "build --release");
         var binary = Path.Combine(rustDir, "target", "release", "rod-implant");
         Assert.True(File.Exists(binary), $"cargo reported success but {binary} is missing");
+        var module = await BuildModuleAsync(rustDir, triple: null);
+        return (binary, module);
+    }
 
+    /// <summary>
+    /// Builds the reference module's Linux delivery shape -- an executable
+    /// the loader execs out of a memfd. Built against the musl triple when
+    /// one is named, the static module that runs from any artifact.
+    /// </summary>
+    private static async Task<byte[]> BuildModuleAsync(string rustDir, string? triple)
+    {
         var moduleDir = Path.Combine(rustDir, "modules", "hostenum");
         Assert.True(Directory.Exists(moduleDir), $"the reference module tree is missing: {moduleDir}");
-        await RunCargoAsync(moduleDir, "build --release");
-        var module = Path.Combine(moduleDir, "target", "release", "librod_module_hostenum.so");
-        if (!File.Exists(module))
-            module = Path.Combine(moduleDir, "target", "release", "rod_module_hostenum.dll");
-        Assert.True(File.Exists(module), $"cargo reported success but {module} is missing");
-        return (binary, await File.ReadAllBytesAsync(module));
+        await RunCargoAsync(moduleDir, triple is null ? "build --release" : $"build --release --target {triple}");
+        var binary = triple is null
+            ? Path.Combine(moduleDir, "target", "release", "rod-module-hostenum")
+            : Path.Combine(moduleDir, "target", triple, "release", "rod-module-hostenum");
+        Assert.True(File.Exists(binary), $"cargo reported success but {binary} is missing");
+        return await File.ReadAllBytesAsync(binary);
     }
 
     private static async Task RunCargoAsync(string workingDirectory, string arguments)
