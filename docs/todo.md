@@ -21,26 +21,6 @@ right item to take is the one an engagement actually needs. An item that
 names its own blocker (a build host, an environment) is worked the moment
 the blocker clears, not skipped.
 
-- **Rehearsal refresh against the settled surface** (serves
-  [operations/rehearsal.md](operations/rehearsal.md); the walk's own
-  dated header already queues this). What an engagement cannot do
-  without it: a pre-deployment walk that matches what would actually be
-  deployed -- the recorded walk predates the four-family decision
-  (architecture.md Sec 8), the engagement-scoped listener model, and
-  the Rust artifact, and reads through patch notes instead of as one
-  procedure. Shape: re-execute the single-host walk and the redirector
-  composition on the current surface (Https one-port listener, the
-  envelope and WebSocket beacons, raw-TCP and DNS/DoH fronts,
-  pipeline-built Rust payloads), then rewrite the record as the
-  procedure it now is, dated-header patch notes folded in or dropped;
-  the CA rotation drill carries over where it still holds. The
-  multi-host Windows leg is done -- the 2026-09-23 addendum in the walk
-  records it -- and folds into the rewrite like every other leg;
-  everything else runs from Linux now.
-  _AC:_ the single-host walk and the redirector composition re-executed
-  end to end on the settled surface, the refreshed record quoting
-  acceptance evidence from the new run rather than the retired one.
-
 - **External recon workbench: whois/RDAP, subdomains, port scan** (serves
   architecture.md Sec 10.1 and Sec 11; design lands first). What an
   engagement cannot do without it: scope a target before the first

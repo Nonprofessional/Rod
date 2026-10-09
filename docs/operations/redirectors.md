@@ -190,14 +190,16 @@ not to the forwarder: the in-tree redirector stays a minimal mover and gains no
 routing code for it (architecture.md Sec 8). Any L4 SNI switcher works; nginx's
 `stream` module with `ssl_preread` is the worked example here.
 
-One constraint shapes the whole setup: the front must not terminate TLS for the
-beacon path. The client-certificate handshake is the identity the security
-model runs on, and a TLS-terminating front cannot re-present the implant's
-certificate upstream (Sec 7). `ssl_preread` peeks at the ClientHello's SNI
-extension and switches at L4 -- the TLS records, the ALPN h2 negotiation, and
-the client certificate all carry through untouched, exactly as they do through
-the redirector. The cover name is the one that terminates: it lands on an
-ordinary HTTPS server holding the cover certificate, the only termination in
+One constraint shapes the whole setup: the front must not terminate TLS
+for the beacon path. The per-artifact key sealing every contact body is
+the identity (Sec 7), and a terminating hop the engagement does not
+control sits between that key's endpoints for no gain -- the bodies are
+ciphertext either way, so pass-through keeps the trust path short.
+`ssl_preread` peeks at the ClientHello's SNI
+extension and switches at L4 -- the TLS records, the ALPN h2 negotiation,
+and the sealed bodies all carry through untouched, exactly as they do
+through the redirector. The cover name is the one that terminates: it lands on
+an ordinary HTTPS server holding the cover certificate, the only termination in
 the picture.
 
 With the front and the forwarder on the same host, the chain is:
