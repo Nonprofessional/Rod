@@ -110,33 +110,33 @@ pub fn accept_staged(session: &mut Session, inbound: &[Frame], demands: &[TaskRe
             );
             continue;
         }
-        let (outcome, output) = dispatch_staged(&task.verb, &task.arguments, &payload);
+        let (outcome, output) = dispatch_staged(session, &task.verb, &task.arguments, &payload);
         session.outbox.result(&task.task_id, outcome, &output);
     }
 }
 
 /// The staged dispatch arm: the payload arrived, the arguments carry the
-/// grammar. Only file.push uses the staged arm today; anything else fails
-/// with the grammar named.
-pub fn dispatch_staged(verb: &str, arguments: &str, payload: &[u8]) -> (Outcome, String) {
+/// grammar. file.push lands bytes on disk; module.load hands them to the
+/// plugin loader (architecture.md Sec 5.4). Anything else fails with the
+/// grammar named.
+pub fn dispatch_staged(
+    session: &mut Session,
+    verb: &str,
+    arguments: &str,
+    payload: &[u8],
+) -> (Outcome, String) {
     use sha2::{Digest, Sha256};
-    if verb != "file.push" {
-        return (
-            Outcome::Failed,
-            format!("{verb}: this build carries no staged handler for the verb"),
-        );
-    }
     let Some(space) = arguments.rfind(' ') else {
         return (
             Outcome::Failed,
-            "file.push staged expects '<path> sha256:<hex>'".into(),
+            format!("{verb} staged expects '<...> sha256:<hex>'"),
         );
     };
-    let path = arguments[..space].trim();
+    let head = arguments[..space].trim();
     let Some(expected) = arguments[space + 1..].trim().strip_prefix("sha256:") else {
         return (
             Outcome::Failed,
-            "file.push staged expects '<path> sha256:<hex>'".into(),
+            format!("{verb} staged expects '<...> sha256:<hex>'"),
         );
     };
     let actual: String = Sha256::digest(payload)
@@ -146,11 +146,33 @@ pub fn dispatch_staged(verb: &str, arguments: &str, payload: &[u8]) -> (Outcome,
     if !actual.eq_ignore_ascii_case(expected) {
         return (
             Outcome::Failed,
-            format!(
-                "file.push staged: payload hash mismatch: expected {expected}, received {actual}"
-            ),
+            format!("{verb} staged: payload hash mismatch: expected {expected}, received {actual}"),
         );
     }
+    if verb == "module.load" {
+        let name = head.trim();
+        if name.is_empty() {
+            return (
+                Outcome::Failed,
+                "module.load staged expects '<name> sha256:<hex>'".into(),
+            );
+        }
+        return match session.plugins.load(name, payload, expected) {
+            Ok(report) => {
+                // The routes widened: the next contact advertises them.
+                session.sync_module_advertisements();
+                (Outcome::Succeeded, report)
+            }
+            Err(cause) => (Outcome::Failed, cause),
+        };
+    }
+    if verb != "file.push" {
+        return (
+            Outcome::Failed,
+            format!("{verb}: this build carries no staged handler for the verb"),
+        );
+    }
+    let path = head;
     if let Some(parent) = std::path::Path::new(path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }

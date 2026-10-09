@@ -123,8 +123,12 @@ pub(crate) fn run_staged(
                 if chunk.task_id == task.task_id {
                     payload.extend_from_slice(&chunk.data);
                     if chunk.terminal {
-                        let (outcome, output) =
-                            super::http::dispatch_staged(&task.verb, &task.arguments, &payload);
+                        let (outcome, output) = super::http::dispatch_staged(
+                            session,
+                            &task.verb,
+                            &task.arguments,
+                            &payload,
+                        );
                         session.outbox.result(&task.task_id, outcome, &output);
                         return Ok(());
                     }
