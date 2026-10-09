@@ -25,21 +25,6 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **Android shell for the Rust implant** (serves architecture.md Sec 12.2,
-  the reach story). What an engagement cannot do without it: a presence on
-  an Android device -- the lab and the target base both carry phones, and
-  today Rod has no artifact for them. Shape: the Rust crate grows a
-  `cdylib`/`staticlib` output and the NDK cross (aarch64-linux-android via
-  the SDK's toolchain, wired through the build unit's cargo environment
-  like the musl crosses), plus a thin carrier app shell that loads the
-  library and keeps the contact loop alive under Android's background
-  execution limits (a foreground service is the documented shape).
-  Enroll/contact behavior is the shared wire, unchanged; the shell is
-  plumbing, not protocol.
-  _AC:_ the library cross-compiles for aarch64-linux-android from the Linux
-  build host, and loaded by a carrier app on a device it enrolls and
-  answers tasking through the same e2e the desktop legs run.
-
 - **External recon workbench: passive lookups -- whois/RDAP and subdomain
   enumeration** (serves architecture.md Sec 10.1 and Sec 11; design lands
   first). What an engagement cannot do without it: scope a target before
@@ -158,6 +143,27 @@ move back into Active -- it does not make the move on its own.
   _AC:_ a two-recipient campaign mints per-recipient lure links, and
   the recipient who executes the lure enrolls with campaign and
   recipient attribution visible in the audit trail.
+
+- **Android shell for the Rust implant** (serves architecture.md Sec 12.2,
+  the reach story). Parked on demand, not a blocker: the Linux build host
+  can carry the whole NDK cross itself, so what is missing is an engagement
+  that names an Android target -- it reopens when one does, with its design
+  bill paid first (where the carrier app lives in-tree and what builds it;
+  whether the memfd-exec module load survives Android's SELinux and bionic
+  constraints, or the module family stays compiled-but-dormant on that
+  leg). What an engagement cannot do without it: a presence on an Android
+  device -- the lab and the target base both carry phones, and today Rod
+  has no artifact for them. Shape: the Rust crate grows a
+  `cdylib`/`staticlib` output and the NDK cross (aarch64-linux-android via
+  the SDK's toolchain, wired through the build unit's cargo environment
+  like the musl crosses), plus a thin carrier app shell that loads the
+  library and keeps the contact loop alive under Android's background
+  execution limits (a foreground service is the documented shape).
+  Enroll/contact behavior is the shared wire, unchanged; the shell is
+  plumbing, not protocol.
+  _AC:_ the library cross-compiles for aarch64-linux-android from the Linux
+  build host, and loaded by a carrier app on a device it enrolls and
+  answers tasking through the same e2e the desktop legs run.
 
 - **iOS shell for the Rust implant** (serves architecture.md Sec 12.2).
   Parked on a macOS build host: the Apple link needs Xcode's SDK, which
