@@ -25,34 +25,11 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **MCP server over the operator surface** (serves architecture.md Sec 4,
-  the operator layer). What an engagement cannot do without it: let an
-  operator drive Rod from their own agent tooling (any MCP client) instead
-  of a hand-switched console -- the same roster, task, and audit reads the
-  operator UI makes, discovered and called as standard tools. Shape: an
-  MCP endpoint (Streamable HTTP) on the operator front behind the existing
-  operator token auth, engagement-scoped by construction; read-only
-  toolset first (engagements, implants, sessions, tasks and transcripts,
-  audit reads); task-issuing tools are a separate later item with their
-  own explicit gate, not part of this one.
-  _AC:_ an external MCP client lists an engagement's implants and reads a
-  completed task's output through the operator front's auth, and no write
-  tool is exposed yet.
-
-- **OpenAI-compatible LLM client for triage and reporting** (serves
-  architecture.md Sec 11). What an engagement cannot do without it:
-  compress operator attention -- summarize a task's captured output,
-  triage a recon sweep, draft report sections from the attributed trail.
-  Shape: an opt-in chat-completions client behind
-  `Microsoft.Extensions.AI`'s `IChatClient` with a configurable
-  OpenAI-compatible base URL and model (cloud or local runtime -- the
-  format is the compatibility contract, not the vendor), disabled by
-  default; every request is engagement-scoped and recorded in the audit
-  trail; the egress decision (which endpoint, local or not) stays the
-  operator's and is documented in the operations runbook.
-  _AC:_ with the integration enabled, an operator generates a summary of a
-  completed task's output from the task read, and the request appears in
-  the engagement's audit trail.
+(Empty: both items that were here shipped. The natural widenings each
+named -- write tools behind an explicit gate for the MCP surface, digest
+and report narration for the LLM client -- are evolution notes in
+architecture.md Sec 4.3 and Sec 11.3, not open work here; they reopen as
+todo items when an engagement needs them.)
 
 ## On hold
 
