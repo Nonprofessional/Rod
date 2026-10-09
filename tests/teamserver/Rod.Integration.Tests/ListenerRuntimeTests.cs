@@ -365,6 +365,60 @@ public class ListenerRuntimeTests
     }
 
     [Fact]
+    public async Task StoredKestrelDefinition_RebindsOnHostStartup()
+    {
+        // A restart must bring the persisted HTTP-family listeners back: the
+        // restore runs at ApplicationStarted, after the web server exists.
+        // Restoring from StartAsync instead probed the Kestrel-published
+        // endpoints before the endpoint reloader was live, timed out, and
+        // withdrew them -- every https and doh listener stayed down after
+        // every restart.
+        var port = TestSupport.GetFreeTcpPort();
+        var definition = new ListenerDefinition(
+            Guid.NewGuid(), EngagementId.New(), "stored-https", "https",
+            $"127.0.0.1:{port}", $"https://127.0.0.1:{port}", DateTimeOffset.UtcNow);
+
+        var config = AuthenticatedHost.BuildConfig();
+        using var host = TransportHost.CreateHostBuilder(
+                configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                configuration: config)
+            .ConfigureWebHost(webBuilder => webBuilder.UseRodListeners(new[]
+            {
+                new ListenerConfig("operator-http", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                    "http://localhost:5080"),
+            }))
+            .Build();
+
+        // The store holds the definition before the start -- the state a
+        // restart finds -- so the restore path runs inside this StartAsync.
+        var store = host.Services.GetRequiredService<IListenerStore>();
+        await store.SaveAsync(definition);
+        await host.StartAsync();
+
+        // The restore rides the started callback asynchronously; the roster
+        // turns running once the endpoint reloader has bound the socket.
+        var registry = host.Services.GetRequiredService<IListenerRegistry>();
+        Listener? bound = null;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            bound = await registry.FindAsync(new ListenerId(definition.Id));
+            if (bound is not null && bound.State.ToString() == "Running")
+                break;
+            await Task.Delay(100);
+        }
+        Assert.NotNull(bound);
+        Assert.Equal("running", bound!.State.ToString().ToLowerInvariant());
+
+        // The restored endpoint is a real socket: the port accepts.
+        using (var probe = new TcpClient())
+        {
+            await probe.ConnectAsync(IPAddress.Loopback, port, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task TcpListener_CreatedAtRuntime_AcceptsAndStops()
     {
         var port = TestSupport.GetFreeTcpPort();
