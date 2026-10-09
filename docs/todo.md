@@ -25,26 +25,6 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **External recon workbench: passive lookups -- whois/RDAP and subdomain
-  enumeration** (serves architecture.md Sec 10.1 and Sec 11; design lands
-  first). What an engagement cannot do without it: scope a target before
-  the first foothold -- registration data (whois, RDAP) and the subdomain
-  surface (certificate transparency plus resolution) are how the operator
-  aims the first implant, and today that work leaves Rod for ad-hoc tools
-  whose findings never reach the engagement's attributed record. Shape: an
-  operator-layer workbench, not implant tasking -- the lookups run on the
-  teamserver against external services, engagement-scoped and audited,
-  findings recorded as engagement artifacts that join the intel layer's
-  topology projection through the seam Sec 11.2 already holds open
-  (findings-as-artifacts). Even passive lookups egress from the
-  teamserver, so which resolver and which CT mirror they ride -- direct or
-  fronted -- is the operator's call, documented in the runbook, never a
-  silent default. The scan half is parked below until an engagement needs
-  it.
-  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
-  against a named engagement target from the operator API, and the
-  findings land as engagement-scoped artifacts in the audit trail.
-
 - **MCP server over the operator surface** (serves architecture.md Sec 4,
   the operator layer). What an engagement cannot do without it: let an
   operator drive Rod from their own agent tooling (any MCP client) instead
@@ -75,6 +55,32 @@ move back into Active -- it does not make the move on its own.
   the engagement's audit trail.
 
 ## On hold
+
+- **External recon workbench: passive lookups -- whois/RDAP and subdomain
+  enumeration** (serves architecture.md Sec 10.1 and Sec 11; design lands
+  first). Parked on demand, not a blocker: the external tooling for
+  passive lookups is mature, so the scoping work happens regardless --
+  what is missing is an engagement that needs its pre-foothold findings
+  in the attributed record from day one; it reopens when one does, with
+  its design bill paid first (pre-foothold findings have no task, and
+  artifacts are task-joined today, so their landing shape is the first
+  design question, beside the egress runbook). What an engagement cannot
+  do without it: scope a target before the first foothold -- registration
+  data (whois, RDAP) and the subdomain surface (certificate transparency
+  plus resolution) are how the operator aims the first implant, and today
+  that work leaves Rod for ad-hoc tools whose findings never reach the
+  engagement's attributed record. Shape: an operator-layer workbench, not
+  implant tasking -- the lookups run on the teamserver against external
+  services, engagement-scoped and audited, findings recorded as engagement
+  artifacts that join the intel layer's topology projection through the
+  seam Sec 11.2 already holds open (findings-as-artifacts). Even passive
+  lookups egress from the teamserver, so which resolver and which CT
+  mirror they ride -- direct or fronted -- is the operator's call,
+  documented in the runbook, never a silent default. The scan half is
+  parked below until an engagement needs it.
+  _AC:_ an operator runs an RDAP lookup and a CT-log subdomain enumeration
+  against a named engagement target from the operator API, and the
+  findings land as engagement-scoped artifacts in the audit trail.
 
 - **Port scan from the recon workbench** (serves the same Sec 10.1 and
   Sec 11 surface as the passive workbench above). Parked until an
