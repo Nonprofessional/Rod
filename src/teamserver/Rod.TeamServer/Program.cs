@@ -32,10 +32,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Absent, the in-memory adapters stay in place.
 builder.Services.AddRodTransport(builder.Configuration);
 // Layer in the operator layer: the live-event bus that fans task
-// and presence events out to connected operator sessions, plus the presence
-// roster. Transport cannot reference Rod.Operators (architecture test
+// and presence events out to connected operator sessions, the presence
+// roster, the MCP server over the operator surface, and the opt-in LLM
+// triage client (bound from the Llm configuration section). Transport
+// cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here.
-builder.Services.AddRodOperators();
+builder.Services.AddRodOperators(builder.Configuration);
 // Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3):
 // the capability registry and the registry-backed task resolver that replaces
 // core state's strict class-table default, plus any out-of-tree capability

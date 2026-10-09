@@ -7,6 +7,7 @@ using Rod.CoreState.Live;
 using Rod.Operators.Automation;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
+using Rod.Operators.Llm;
 using Rod.Operators.Mcp;
 using Rod.Operators.Presence;
 using Rod.Operators.Snippets;
@@ -98,6 +99,20 @@ public static class RodOperatorsHost
         // no engine and no run endpoint here.
         services.TryAddSingleton<TaskSnippetService>();
 
+        // The LLM triage client (architecture.md Sec 11): opt-in and
+        // OpenAI-compatible, its client built lazily on first call with the
+        // request budget on the client pipeline. Options bind when
+        // configuration is supplied; the defaults stand alone (and disabled).
+        if (configuration is not null)
+        {
+            services.AddOptions<LlmOptions>().Bind(configuration.GetSection(LlmOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<LlmOptions>();
+        }
+        services.TryAddSingleton<LlmSummarizer>();
+
         // The MCP server over the operator surface (architecture.md Sec 4,
         // the agent tooling seam): read-only tools, Streamable HTTP, mapped
         // at /mcp behind the operator token auth. Registered here so every
@@ -122,6 +137,7 @@ public static class RodOperatorsHost
         endpoints.MapAutomationRuleEndpoints();
         endpoints.MapWebhookSubscriptionEndpoints();
         endpoints.MapTaskSnippetEndpoints();
+        endpoints.MapLlmEndpoints();
         return endpoints;
     }
 }

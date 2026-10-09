@@ -71,7 +71,10 @@ internal static class AuthenticatedHost
         IConfiguration configuration,
         Action<IServiceCollection>? extra = null)
     {
-        services.AddRodOperators();
+        // Configuration flows in so the layers whose options read config (the
+        // LLM integration's Llm section) bind from the test's settings the
+        // same way the teamserver host binds them.
+        services.AddRodOperators(configuration);
         services.AddRodOperatorAuth(configuration);
         extra?.Invoke(services);
     }

@@ -483,4 +483,19 @@ public enum AuditEventKind
     /// that gathered the evidence.
     /// </summary>
     ArtifactViewed,
+
+    /// <summary>
+    /// The LLM triage client made one request on an operator's behalf
+    /// (architecture.md Sec 11, the attention-compression surface). Every
+    /// request lands here, succeeded or failed: engagement content left the
+    /// platform toward the configured endpoint, so the trail records the
+    /// egress itself, not just the answer. The payload names what was sent
+    /// (the task summarized, its verb, the input size) but never the
+    /// endpoint or the key -- configuration names the endpoint and the
+    /// runbook documents the egress decision, and neither belongs in the
+    /// chain. The output is the generated summary on success; the outcome
+    /// is <c>succeeded:{model}</c> or <c>failed:{reason}</c>. Attributed to
+    /// the requesting operator and bound to the task whose output was sent.
+    /// </summary>
+    LlmSummaryGenerated,
 }

@@ -153,6 +153,7 @@ standard `Section__Key` mapping):
 | `Tradecraft:Modules` | Out-of-tree capability modules, each a `Namespace.Type, AssemblyName` entry; see [extending/tradecraft.md](../extending/tradecraft.md). | Built-in placeholders only. |
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
 | `Build:RustSourceDirectory` | An installed teamserver (a publish with no repo above it) names the Rust crate the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/rust`). |
+| `Llm` | The opt-in LLM triage client (architecture.md Sec 11): `Enabled`, `BaseUrl` (any OpenAI-compatible chat-completions endpoint, cloud or local), `ApiKey` (bind through the environment, `Llm__ApiKey`), `Model`, plus `RequestTimeoutSeconds`/`MaxInputChars`/`MaxOutputTokens` budgets. Every summarize request is engagement-scoped and audited; the egress decision is the operator's -- see [llm.md](llm.md) before enabling. | Disabled (the summarize route answers 503). |
 
 ## Production install and recovery
 
