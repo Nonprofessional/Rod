@@ -636,18 +636,24 @@ string-out work a module shape holds naturally. The channel verbs and the
 file/exec core stay compiled, because a plugin cannot own a live channel or
 a carriage.
 
-**The boundary is the C ABI.** A Rust dylib boundary is not stable across
-compiler versions (the reason Sec 5.3 keeps handler registration
-compile-time), so the module interface is a handful of `extern "C"`
-symbols over `#[repr(C)]` data -- the one boundary every compiler version
-and every language keeps. The authoring surface is the `rod-plugin-sdk`
-crate (`src/implant/rust/plugin-sdk/`): a plain Rust trait -- a module
-names itself and lists its verbs, each verb a `fn(&str) -> Result<String,
-String>` over the shared task grammar -- plus the `rod_plugin!` macro that
-emits the shim exports. A module is a cdylib compiled for the target's own
-platform and carries its whole runtime statically, the posture the loader
-tier set (Sec 6). The exported family, of which the SDK is the documented
-authority:
+**The boundary is ABI-stable, not compiler-stable.** A Rust dylib
+boundary is not stable across compiler versions (the reason Sec 5.3 keeps
+handler registration compile-time), so neither module shape couples the
+module to the host's compiler. On Windows the interface is a handful of
+`extern "C"` symbols over `#[repr(C)]` data -- the C ABI, the one
+boundary every toolchain keeps. On Linux the interface is a byte protocol
+over stdio: length-prefixed request/response frames carrying the same
+string grammar, no dynamic loader and no libc in the picture at all. The
+authoring surface is the `rod-plugin-sdk` crate
+(`src/implant/rust/plugin-sdk/`) either way: a plain Rust trait -- a
+module names itself and lists its verbs, each verb a `fn(&str) ->
+Result<String, String>` over the shared task grammar -- plus the
+`rod_plugin!` macro (the extern shims the Windows shape maps) and
+`serve()` (the stdio loop the Linux shape execs). One module source
+builds both artifacts: the cdylib for Windows, the executable for Linux
+-- built against a musl triple, so it is static and runs from any
+artifact with no libc coupling. The Windows exported family, of which
+the SDK is the documented authority:
 
 - `rod_plugin_abi() -> u32` -- the ABI version; a loader that does not
   recognize it refuses the module whole.
@@ -663,8 +669,10 @@ authority:
 - `rod_plugin_free(ptr, len)` -- module-allocated strings die in the
   module's own allocator; the host never frees module memory itself.
 
-`RodStr` is a length-delimited `(ptr, len)` pair, not a NUL-terminated C
-string: the argument grammar is opaque bytes and cannot ride a C string.
+On Windows strings cross as `RodStr`, a length-delimited `(ptr, len)`
+pair -- not a NUL-terminated C string, because the argument grammar is
+opaque bytes and cannot ride one. The Linux protocol frames carry the
+same bytes length-prefixed, for the same reason.
 
 **The carriage is the staged arm.** `module.load <name>` is issued with the
 module bytes as the task's `Content`: the issuer stages them as a
@@ -685,26 +693,34 @@ attribute: loading a module is running new code, so automation never fires
 it unattended (Sec 10.4).
 
 **The loader stages the bytes the way the launcher one-liners do.** On
-Linux the bytes are written to a memfd and loaded from `/proc/self/fd`
-through `dlopen` (`RTLD_NOW | RTLD_LOCAL`), the entry family resolved with
-`dlsym` -- nothing lands on the filesystem at any step. On Windows the
-bytes are a manually mapped PE -- allocate, copy sections, apply base
-relocations, resolve imports against the system DLLs through
-`LoadLibrary`/`GetProcAddress`, invoke the image entry, then walk the
-export table for the family -- because `LoadLibrary` wants a path and the
-seam keeps modules off disk.
+Linux the bytes are written to a memfd and the module is exec'd through
+`/proc/self/fd` -- the loader tier's own proven mechanism (Sec 6) -- one
+process per verb dispatch, the request and its answer crossing stdio.
+Nothing lands on the filesystem at any step, nothing dlopens, and the
+shape carries no libc coupling: the static musl artifact -- every fielded
+Linux build (Sec 12.2) -- loads modules exactly like any other, which is
+the point of the exec shape; no platform split, no build knob for it.
+Crash isolation is real -- a module that dies cannot take the implant
+with it, and a `panic = "abort"` build merely reads as a dead child whose
+task fails with the cause -- and the per-dispatch process event is the
+shape's OPSEC entry, the same visibility a `shell.exec` child already
+has. On Windows the bytes are a manually mapped PE -- allocate, copy
+sections, apply base relocations, resolve imports against the system
+DLLs through `LoadLibrary`/`GetProcAddress`, give the image its TLS
+block on the loading thread, invoke the entry, then walk the export
+table for the family -- because `LoadLibrary` wants a path and the seam
+keeps modules off disk.
 
-**The platform boundary is honest.** The seam rides the host platform's
-own in-process loading, and the static musl artifact -- every fielded
-Linux build (Sec 12.2) -- carries none: musl's static shape has no
-`dlopen`, and the Rust toolchain produces no musl cdylib for a module to
-even be. On a musl artifact `module.load` fails cleanly with the boundary
-named, and that artifact's extension path stays the crate fork
-(`Build:RustSourceDirectory`, Sec 6). The seam serves the builds whose
-platforms load code in process: the glibc-linked dev shape the conformance
-harness and the e2e legs drive, Windows builds, and any community artifact
-built dynamic. A musl cdylib story in the toolchain is the fact that
-reopens the musl leg.
+**The scope boundary is honest.** The two shapes divide the labor the
+documented domain already draws. A Linux module answers one request per
+process -- the stateless long tail made mechanical, no state carrying
+between calls -- while the resident collectors (`collect.keylog`'s input
+hook is the reference case) need a process that stays, which is the
+Windows in-process shape's half. Unload keeps its best-effort meaning on
+both: verb routes drop immediately, a dispatch in flight finishes; on
+Linux the memfd closes once the table drops it, on Windows the mapped
+image leaks by design (freeing pages under a live handler is worse than
+the leak).
 
 **Dispatch and advertisement.** A module verb reads exactly like a
 compiled one: the one-shot dispatch path consults the compiled handler
@@ -1555,7 +1571,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **collect** | `collect.cred`, `collect.keylog`, `collect.screenshot` | Credential, screen, and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. `collect.screenshot` captures the display as a PNG artifact joined to its task (Sec 11). |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
 | **tunnel** | `tunnel.forward`, `tunnel.socks` | Network tunneling through an implant (Sec 14, core operations): `tunnel.forward` bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it; `tunnel.socks` is the multiplexed arm -- the channel's byte stream is a connection-multiplexed grammar, so every proxied connection rides the one task and each destination arrives per connection. Both run as live channels (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes either channel as a teamserver-side listener -- the raw one-connection bridge for `tunnel.forward`, a SOCKS5 listener for `tunnel.socks` -- so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
-| **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers a C-ABI capability module's bytes as the task's staged content and the implant's loader registers its verbs, `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
+| **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers an SDK module's bytes as the task's staged content and the implant's loader registers its verbs -- memfd and exec on Linux, the manual PE map on Windows -- `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 
@@ -2268,8 +2284,9 @@ WebSocket stream on stream bakes), the streaming channel layer
 `tunnel.socks`'s connection-multiplexed proxy -- live on the stream
 carriage, the degraded park-and-drain discipline over the poll cycle), the
 one-shot core verbs, the module family of the plugin seam (Sec 5.4,
-compiled on every platform -- on the static musl shapes its load answers
-with the platform boundary named), and the Windows sensitive set
+compiled on every platform; Linux loads modules by exec'ing them out of a
+memfd, so the static musl artifact loads them like any other), and the
+Windows sensitive set
 (inject.shellcode, collect.minidump, collect.keylog) that self-gate on
 `cfg(windows)` so a Linux build compiles none of them. The wire protocol is
 the language-neutral product (rod.proto, the baked profile's base64url

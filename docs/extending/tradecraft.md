@@ -110,13 +110,16 @@ fn portscan(arguments: &str) -> Result<String, String> {
 rod_plugin!(Sweep);
 ```
 
-Build it as a `cdylib` for the target's own platform (`cargo build
---release` on the target host or with its cross triple), then issue the
-load with the library's bytes as the task's content: `module.load sweep`.
-The loader stages the bytes in a memfd and resolves the entry family
-(`dlopen` on a dynamic libc host, a manual PE map on Windows), the verbs
-join the dispatch table, and the next contact advertises them -- the
-operator's console reads a module verb exactly like a built-in one.
+One source builds both delivery shapes: `cargo build --release` in the
+module's tree emits the Linux executable (build against a musl triple,
+`--target x86_64-unknown-linux-musl` on an amd64 host, for a static
+module that runs from any artifact with no libc coupling) and the
+Windows `cdylib`. Issue the load with the artifact's bytes as the task's
+content: `module.load sweep`. The loader stages the bytes in a memfd and
+execs the module through `/proc/self/fd` on Linux -- one process per
+dispatch, nothing on disk -- or maps the PE by hand on Windows; the
+verbs join the dispatch table, and the next contact advertises them --
+the operator's console reads a module verb exactly like a built-in one.
 `module.list` reports what is loaded, and `module.unload sweep` retracts
 it (best-effort: routes drop immediately, a running handler finishes).
 
@@ -137,16 +140,18 @@ The rules the loader enforces, all reported on the load task itself:
 - **Replacement is last-registration-wins.** A later module's verb
   replaces an earlier module's route, the same rule the server-side seam
   applies.
-- **Panics are fenced.** The shim catches a panicking handler and reports
-  it as the task's failure; build without `panic = "abort"`, which turns
-  the fence off.
+- **Panics are fenced.** On Windows the shim catches a panicking
+  handler and reports it as the task's failure (build without
+  `panic = "abort"`, which turns that fence off). On Linux the process
+  edge is the fence: a panicking or aborted module reads as a dead child
+  and the task fails with the cause.
 
-**The platform boundary.** The seam rides the host platform's own
-in-process loading: it works on dynamic-libc builds (the glibc dev shape)
-and on Windows, while the static musl artifact -- every fielded Linux
-build -- carries no `dlopen` and the Rust toolchain produces no musl
-cdylib, so its `module.load` fails cleanly naming that boundary. For the
-musl artifact the crate fork below remains the extension path.
+**The scope boundary.** The two loader shapes divide the labor the
+domain already draws: a Linux module answers one request per process --
+the stateless long tail, no state between calls -- while resident
+tradecraft (an input-capture hook that stays) is the Windows in-process
+shape's half. Build the Linux shape against a musl triple and it loads
+from any artifact, the static musl fielded build included.
 
 **Pairing with the server half.** A module verb in a standard namespace
 (recon, lateral, persist, collect, exfil) is class-admissible for the
