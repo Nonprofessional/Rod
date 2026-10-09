@@ -1,7 +1,9 @@
 //! The authoring surface for Rod implant-side plugin modules
-//! (architecture.md Sec 5.4). A module is a normal Rust cdylib: implement
-//! [`Plugin`], register the macro, and the shims below speak the C ABI the
-//! implant's loader resolves.
+//! (architecture.md Sec 5.4). A module is normal Rust code against one
+//! trait: implement [`Plugin`], register [`macro@rod_plugin`] for the
+//! Windows cdylib shape (the extern "C" shims the manual PE map
+//! resolves), and call [`serve`] from a `main` for the Linux executable
+//! shape (the stdio loop the loader execs). One source, two artifacts.
 //!
 //! The seam's whole contract is the task grammar's own -- a verb name and
 //! an opaque argument string in, an outcome and an output string back --
@@ -44,18 +46,23 @@
 //! rod_plugin!(HostEnum);
 //! ```
 //!
-//! Build it as a cdylib for the target's own platform
-//! (`crate-type = ["cdylib"]`), deliver the bytes as a `module.load`
-//! task's content, and the loader stages them the way the launcher
-//! one-liners stage a payload. Panics are fenced at the boundary: the
-//! shim catches them and reports a failure; they never unwind into the
-//! host, so do not build with `panic = "abort"`.
+//! One module source builds both delivery shapes. The Windows cdylib:
+//! `crate-type = ["cdylib"]` plus `rod_plugin!`. The Linux executable:
+//! a `[[bin]]` whose `main` calls [`serve`] over the same plugin (the
+//! lib target needs `crate-type = ["cdylib", "rlib"]` so the bin can
+//! link it) -- build it against a musl triple for a static module that
+//! runs from any artifact. Deliver the artifact's bytes as a
+//! `module.load` task's content either way. Panics are fenced: the
+//! Windows shim catches and reports; on Linux the process edge is the
+//! fence, and an aborted module merely reads as a dead child.
 
 /// The C-ABI version this SDK speaks. The loader refuses a module whose
 /// `rod_plugin_abi` answer it does not recognize, whole and named, so an
 /// ABI change is a version bump here and a matching loader, never a
 /// silent mismatch.
 pub const ABI_VERSION: u32 = 1;
+
+pub mod protocol;
 
 /// A length-delimited byte string crossing the C ABI. Not a NUL-terminated
 /// C string: the task grammar's arguments and outputs are opaque bytes and
@@ -144,15 +151,77 @@ impl Verb {
 }
 
 /// A plugin module: a name and the verbs it brings. One implementation
-/// per cdylib, handed to [`macro@rod_plugin`].
+/// per module, handed to [`macro@rod_plugin`] (the Windows shape) and
+/// [`serve`] (the Linux shape).
 pub trait Plugin {
     /// The module's self-declared name. Short and lowercase -- it is the
     /// handle `module.list` reports and `module.unload` retracts.
     fn name(&self) -> &'static str;
 
-    /// The verbs this module registers. Collected once, at
-    /// `rod_plugin_init`.
+    /// The verbs this module registers. Collected once, at init.
     fn verbs(&self) -> Vec<Verb>;
+}
+
+/// The Linux module shape's entry point (architecture.md Sec 5.4): answer
+/// the loader's stdio protocol until stdin ends. A module's `main` is
+/// exactly `rod_plugin_sdk::serve(MyPlugin);` -- the loop holds the verb
+/// table, fences panics (a panicking handler answers a `PANICKED`
+/// status rather than dying mid-frame), and keeps the process
+/// exchange-per-request so the host can exec a fresh process per verb
+/// dispatch.
+pub fn serve<P: Plugin>(plugin: P) {
+    let verbs = plugin.verbs();
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let mut input = stdin.lock();
+    let mut output = stdout.lock();
+    while let Some(request) = protocol::read_request(&mut input) {
+        let response = answer(&plugin, &verbs, request);
+        if protocol::write_response(&mut output, response.0, &response.1).is_err() {
+            return; // the host went away; nothing to serve
+        }
+    }
+}
+
+// One request to one (status, payload) pair. Everything the loader can
+// ask -- liveness, the name, the table, a run -- answers through here, so
+// the loop above stays transport and this stays semantics.
+fn answer<P: Plugin>(plugin: &P, verbs: &[Verb], request: protocol::Request) -> (u8, Vec<u8>) {
+    use protocol::{op, status};
+    match request.op {
+        op::PING => (status::OK, Vec::new()),
+        op::NAME => (status::OK, plugin.name().as_bytes().to_vec()),
+        op::COUNT => (status::OK, (verbs.len() as u32).to_le_bytes().to_vec()),
+        op::VERB_NAME => match verbs.get(request.arg as usize) {
+            Some(verb) => (status::OK, verb.name.as_bytes().to_vec()),
+            None => (status::BAD_REQUEST, Vec::new()),
+        },
+        op::RUN => match verbs.get(request.arg as usize) {
+            None => (status::BAD_REQUEST, Vec::new()),
+            Some(verb) => {
+                let run = verb.run;
+                let name = verb.name;
+                let arguments = String::from_utf8_lossy(&request.payload).into_owned();
+                // The panic fence: a handler must not die mid-frame, so the
+                // loop answers a PANICKED status instead. An abort build
+                // turns this off -- the process edge is the backstop, the
+                // host reads a dead child and fails the task.
+                match std::panic::catch_unwind(move || run(&arguments)) {
+                    Ok(Ok(output)) => (status::OK, output.into_bytes()),
+                    Ok(Err(cause)) => (status::FAILED, cause.into_bytes()),
+                    Err(panic) => {
+                        let message = panic
+                            .downcast_ref::<&str>()
+                            .map(|text| text.to_string())
+                            .or_else(|| panic.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "module handler panicked".to_string());
+                        (status::PANICKED, format!("{name}: {message}").into_bytes())
+                    }
+                }
+            }
+        },
+        _ => (status::BAD_REQUEST, Vec::new()),
+    }
 }
 
 /// Emits the extern "C" shim a Rod loader resolves (architecture.md Sec

@@ -9,7 +9,13 @@ edition = "2021"
 # delivered as a module.load task's content -- it never rides an artifact.
 
 [lib]
-crate-type = ["cdylib"]
+# rlib beside cdylib so the bin target below links the same plugin code;
+# cargo emits the rlib for internal use only, the cdylib is the artifact.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "rod-module-hostenum"
+path = "src/main.rs"
 
 [dependencies]
 rod-plugin-sdk = { path = "../../plugin-sdk" }
