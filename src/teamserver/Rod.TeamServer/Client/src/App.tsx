@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { type LoginInput, type SessionOperator, getSessionOperator, login, logout } from './api'
 import { CommandPalette } from './components/CommandPalette'
@@ -12,12 +12,11 @@ import { SettingsView } from './views/SettingsView'
 import { SystemView } from './views/SystemView'
 import { LoginView } from './views/LoginView'
 
-// Operator UI shell: a fixed sidebar plus a scrolling content column, the
-// layout operations consoles settled on. The sidebar carries brand,
-// engagement navigation, and operator identity; the topbar carries the
-// engagement breadcrumb and the live engagement state (connection, fleet
-// online counts, operator presence) that EngagementView publishes through
-// LiveContext. Each open engagement holds a Server-Sent Events stream open so
+// Operator UI shell: the topbar carries what is global -- the breadcrumb,
+// the command palette, the deployment-level entry points (settings, system),
+// the live engagement state, and the signed-in operator -- while the sidebar
+// is purely contextual: the brand (itself the way home) and the engagement's
+// tab groups. Each open engagement holds a Server-Sent Events stream open so
 // every connected operator sees tasking, results, and presence in real time.
 //
 // The session is the teamserver's cookie: GET /operators/me resolves the signed-
@@ -66,14 +65,19 @@ function initials(handle: string): string {
 
 function Topbar({
   route,
-  operatorId,
+  operator,
   onOpenPalette,
+  onLogout,
 }: {
   route: Route
-  operatorId: string
+  operator: SessionOperator
   onOpenPalette: () => void
+  onLogout: () => void
 }) {
   const live = useLive()
+  // Others' presence; the signed-in operator sits at the corner as their own
+  // identity instead of appearing inside the stack a second time.
+  const others = (live?.operators ?? []).filter((o) => o.id !== operator.operatorId)
   return (
     <header className="topbar">
       <div className="topbar-crumb">
@@ -120,14 +124,9 @@ function Topbar({
               <strong>{live.onlineCount}</strong>
               <span>/ {live.implantCount} online</span>
             </span>
-            {live.operators.length > 0 && (
-              <span
-                className="avatar-stack"
-                title={live.operators
-                  .map((o) => (o.id === operatorId ? `${o.handle} (you)` : o.handle))
-                  .join(', ')}
-              >
-                {live.operators.slice(0, 4).map((o) => (
+            {others.length > 0 && (
+              <span className="avatar-stack" title={others.map((o) => o.handle).join(', ')}>
+                {others.slice(0, 4).map((o) => (
                   <span key={o.id} className="avatar">
                     {initials(o.handle || o.id)}
                   </span>
@@ -136,8 +135,82 @@ function Topbar({
             )}
           </>
         )}
+        {/* Deployment-level surfaces: global to every context, so they ride
+            the topbar instead of the sidebar's context navigation. */}
+        <a
+          className={`topbar-icon${route.kind === 'settings' ? ' active' : ''}`}
+          href="#/settings"
+          title="Teamserver runtime settings"
+        >
+          <Icon name="settings" />
+        </a>
+        <a
+          className={`topbar-icon${route.kind === 'system' ? ' active' : ''}`}
+          href="#/system"
+          title="The host and its build environment -- detected toolchains and what is missing"
+        >
+          <Icon name="activity" />
+        </a>
+        <Identity operator={operator} onLogout={onLogout} />
       </div>
     </header>
+  )
+}
+
+// The signed-in operator at the topbar's right corner: the identity the
+// server's session vouches for, the viewing-scope mark when the session
+// cannot act, and sign-out underneath. The menu closes on any click outside
+// it, so a navigation click never leaves it dangling.
+function Identity({
+  operator,
+  onLogout,
+}: {
+  operator: SessionOperator
+  onLogout: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (root.current && !root.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const acting = operator.scopes.includes('task')
+
+  return (
+    <div className="identity" ref={root}>
+      <button
+        className={`identity-button${open ? ' open' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        title={acting ? `Signed in as ${operator.handle}` : 'Viewing scope only'}
+      >
+        <span className="avatar">{initials(operator.handle)}</span>
+        <span className="handle">{operator.handle}</span>
+        {!acting && <span className="identity-scope">read-only</span>}
+      </button>
+      {open && (
+        <div className="identity-menu">
+          <div className="muted" title={operator.operatorId}>
+            {operator.handle} · {operator.operatorId.slice(0, 8)}
+          </div>
+          {!acting && (
+            <div className="muted">
+              This session holds the viewing scope only -- the server refuses
+              tasking and every other acting route; the mark explains, it does
+              not enforce.
+            </div>
+          )}
+          <button className="link" onClick={onLogout}>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -237,59 +310,18 @@ function App() {
             <span className="brand-sub">teamserver</span>
           </span>
         </a>
-        <nav className="sidebar-nav">
-          <div className="nav-group">
-            <a
-              className={`nav-item${route.kind === 'engagements' ? ' active' : ''}`}
-              href="#/engagements"
-            >
-              <Icon name="globe" />
-              <span className="label">Engagements</span>
-            </a>
-            <a
-              className={`nav-item${route.kind === 'settings' ? ' active' : ''}`}
-              href="#/settings"
-              title="Teamserver runtime settings"
-            >
-              <Icon name="settings" />
-              <span className="label">Settings</span>
-            </a>
-            <a
-              className={`nav-item${route.kind === 'system' ? ' active' : ''}`}
-              href="#/system"
-              title="The host and its build environment -- detected toolchains and what is missing"
-            >
-              <Icon name="activity" />
-              <span className="label">System</span>
-            </a>
-          </div>
-          {route.kind === 'engagement' && (
+        {route.kind === 'engagement' && (
+          <nav className="sidebar-nav">
             <EngagementNav engagementId={route.engagementId} active={activeTab} />
-          )}
-        </nav>
-        <div className="sidebar-footer">
-          <div className="operator-chip" title={`Signed in as ${operator.handle}`}>
-            <span className="avatar">{initials(operator.handle)}</span>
-            <span className="handle">{operator.handle}</span>
-            {!operator.scopes.includes('task') && (
-              <span
-                className="muted"
-                title="This session holds the viewing scope only -- the server refuses tasking and every other acting route; the mark explains, it does not enforce"
-              >
-                read-only
-              </span>
-            )}
-          </div>
-          <button className="link" onClick={() => void onLogout()}>
-            Sign out
-          </button>
-        </div>
+          </nav>
+        )}
       </aside>
       <div className="frame">
         <Topbar
           route={route}
-          operatorId={operator.operatorId}
+          operator={operator}
           onOpenPalette={() => setPaletteOpen(true)}
+          onLogout={() => void onLogout()}
         />
         <main className="main">
           {route.kind === 'engagements' ? (

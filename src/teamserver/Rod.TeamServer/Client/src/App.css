@@ -136,37 +136,6 @@
   flex: none;
 }
 
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.operator-chip {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  min-width: 0;
-}
-
-.operator-chip .handle {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.operator-chip button.link {
-  font-size: 11.5px;
-}
-
 .avatar {
   width: 24px;
   height: 24px;
@@ -312,6 +281,82 @@
 
 .avatar-stack .avatar + .avatar {
   margin-left: -7px;
+}
+
+/* The topbar's global entries: deployment-level surfaces (settings, system)
+   as icon anchors, one click away from any context. They borrow the sidebar
+   item's hover language since they are navigation, not actions. */
+a.topbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  transition: background 0.12s, color 0.12s;
+}
+
+a.topbar-icon:hover,
+a.topbar-icon.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The signed-in operator at the topbar's right corner: identity chip plus
+   the small menu under it (operator id, viewing-scope note, sign out). */
+.identity {
+  position: relative;
+}
+
+.identity-button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.identity-button:hover,
+.identity-button.open {
+  background: var(--surface-3);
+}
+
+.identity-button .handle {
+  font-family: var(--font-mono);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity-scope {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.identity-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  min-width: 230px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  text-align: left;
 }
 
 /* --- Main column ------------------------------------------------------------ */
@@ -1506,15 +1551,6 @@ tbody tr.selected {
     justify-content: center;
     padding: 9px 0;
   }
-
-  .operator-chip {
-    padding: 5px;
-    justify-content: center;
-  }
-
-  .operator-chip .handle {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -1553,24 +1589,17 @@ tbody tr.selected {
     padding: 6px 10px;
   }
 
-  .sidebar-footer {
-    margin-left: auto;
-    flex-direction: row;
-    align-items: center;
-    border-top: none;
-    padding-top: 0;
-    gap: 10px;
-  }
-
-  .operator-chip .handle {
-    display: inline;
-  }
-
   .topbar {
     padding: 0 16px;
   }
 
   .topbar-actions .chip.optional {
+    display: none;
+  }
+
+  /* The corner keeps the avatar and the scope mark; the handle gives way
+       first when the row runs tight. */
+  .identity-button .handle {
     display: none;
   }
 

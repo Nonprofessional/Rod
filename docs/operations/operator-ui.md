@@ -72,7 +72,7 @@ acting operator, so a runaway surface is always killable.
 Beside the exclusive claims, the fleet table carries **driving** badges --
 the operator whose tasking each implant last saw, a soft signal refreshed
 on every hand-off -- and an operator holding only the viewing scope sees a
-`read-only` mark beside their handle in the sidebar: the server refuses
+`read-only` mark in their topbar identity chip: the server refuses
 their acting routes; the mark explains why.
 
 ## Naming -- the fixed vocabulary
@@ -779,7 +779,7 @@ ROE profile has no editor here; it is API-only today
 
 ## Settings
 
-`#/settings`, beside Engagements in the sidebar -- operator-level runtime
+`#/settings`, from the topbar's settings entry -- operator-level runtime
 settings, server-wide rather than per-engagement. **Build cache** is the
 shared cargo target dir payload builds compile against: a persistent
 directory turns a cold cross-compile into a one-time cost (dependency
@@ -800,7 +800,7 @@ reason rather than clamping.
 
 ## System
 
-`#/system`, beside Settings in the sidebar -- the deployment's preflight.
+`#/system`, from the topbar's system entry -- the deployment's preflight.
 **Server** names the host facts (machine, OS, .NET runtime, uptime);
 **Persistence** names the adapter each store runs on and where the data
 lives -- the configured data directory, or the Postgres target with its
