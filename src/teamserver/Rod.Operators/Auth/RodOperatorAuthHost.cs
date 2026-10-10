@@ -104,9 +104,12 @@ public static class RodOperatorAuthHost
     }
 
     /// <summary>
-    /// Maps the operator session endpoints under <c>/operators</c>:
-    /// <c>POST /operators/login</c> (anonymous), <c>POST /operators/logout</c>,
-    /// and <c>GET /operators/me</c>. Call alongside <c>MapOperatorEndpoints</c>.
+    /// Maps the operator session and account endpoints under
+    /// <c>/operators</c>: <c>POST /operators/login</c> (anonymous),
+    /// <c>POST /operators/logout</c>, <c>GET /operators/me</c>, the roster
+    /// read and account provisioning (<c>GET/POST /operators</c>), and the
+    /// credential and API-token management routes. Call alongside
+    /// <c>MapOperatorEndpoints</c>.
     /// </summary>
     public static IEndpointRouteBuilder MapOperatorAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {

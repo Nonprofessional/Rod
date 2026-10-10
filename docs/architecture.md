@@ -339,13 +339,21 @@ or approve on it. Every provisioned operator holds all three by default, so
 the peer model is the default and scopes are the narrowing. The scopes are
 global account state, like the credential they ride beside, so their changes
 land in no engagement trail -- the same posture credential revocation keeps
--- and the account machinery (login, token mint and revoke, credential
-revoke) stays trusted-operator. Scope assignment itself
-(`PUT /operators/{id}/scopes`) is the one guarded addition: the caller must
-hold `task` (a read-only operator cannot widen themselves; an operator who
-can already act on every engagement is not elevated by granting what they
-hold), and the change may not remove the last `task` holder -- a lockout,
-not a security boundary, refused the same way.
+-- and the account machinery (login, the roster read, token mint and
+revoke, credential revoke) stays trusted-operator. The guarded pieces are
+the ones that confer scopes: scope assignment
+(`PUT /operators/{id}/scopes`), account provisioning
+(`POST /operators`), and password re-provision
+(`PUT /operators/{id}/credentials`) each require the caller to hold `task`
+(a read-only operator cannot widen themselves; an operator who can already
+act on every engagement is not elevated by granting what they hold; a
+provisioned account or a reset password hands its recipient every scope by
+default), and a scope change may not remove the last `task` holder -- a
+lockout, not a security boundary, refused the same way. Provisioning is the
+management path the bootstrap seed stood in for: the configured initial
+account is the first operator, and every account after it arrives through
+the API (a provisioned handle is loginable the moment the response
+returns, its initial password set in the same step).
 
 **Scope mechanics.** The scope set rides the authenticated principal as one
 claim (`rod:operator-scopes`), stamped where the principal is built: at
@@ -1502,8 +1510,14 @@ fleet-wide code execution. Security is a first-class concern.
   (no verifier) or a re-provisioned one (a new password is a new generation)
   fails the comparison at the very request that presented the cookie; the
   stamp is a digest, so the cookie carries nothing usable. Re-provisioning
-  the operator with a new password restores login without resurrecting the
-  revoked generation's sessions. Revocation is not recorded in the audit
+  the operator with a new password (`PUT /operators/{operatorId}/credentials`)
+  restores login without resurrecting the revoked generation's sessions;
+  `POST /operators` provisions new accounts the same two-step way -- the
+  aggregate and the hash of its initial password -- so a created handle is
+  loginable the moment the response returns, the management path the
+  configuration seed stood in for (`GET /operators` lists the roster with
+  whether a credential stands behind each account, trusted-operator like the
+  rest of the account machinery). Revocation is not recorded in the audit
   trail: the trail is engagement-scoped and an operator credential is global
   state, so it has no engagement to live in.
 - **Kill-date enforcement.** Both sides refuse past the baked date, the

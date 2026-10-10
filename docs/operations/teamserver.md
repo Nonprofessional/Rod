@@ -67,6 +67,14 @@ configured without an initial operator starts with no loginable account, and
 operators must be provisioned by configuration. Bind the password via
 environment (`Operators__Initial__Password`) or a secret store, never inline.
 
+The initial account is the bootstrap, not the limit: `POST /operators`
+provisions further accounts (handle, initial password of at least 8
+characters, and a scope set defaulting to every scope) and `GET /operators`
+lists the roster -- the UI's Settings panel drives both. `PUT
+/operators/{id}/credentials` re-provisions a password (the previous
+generation's sessions end at their next request). Both writes require the
+acting scope, like every account operation that confers scopes.
+
 ## The dev loop
 
 1. Log in at the UI (or `POST /operators/login`).
