@@ -63,4 +63,13 @@ public enum CapabilityCategory
     /// behavior is out-of-tree (architecture.md Sec 13).
     /// </summary>
     Exploit,
+
+    /// <summary>
+    /// The Browser class's hook verbs (architecture.md Sec 5.2, Sec 10.1):
+    /// the read-and-steer set a hooked page justifies. The concrete handlers
+    /// run inside the served hook script, not on a compiled implant; what
+    /// sits past the set -- input capture, browser-exploit chaining -- is an
+    /// out-of-tree capability contract, not a category here (Sec 13).
+    /// </summary>
+    Browser,
 }

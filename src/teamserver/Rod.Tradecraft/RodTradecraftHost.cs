@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Rod.CoreState.Implants;
+using Rod.Tradecraft.Browser;
 using Rod.Tradecraft.Collect;
 using Rod.Tradecraft.Capabilities;
 using Rod.Tradecraft.Core;
@@ -30,9 +31,9 @@ namespace Rod.Tradecraft;
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
 /// registers a placeholder per core verb, per recon verb, per lateral verb, per
 /// persist verb, per collect verb, per exfil verb, per tunnel verb, per evasion
-/// verb, per exploit verb, and per module-family verb, so the registry lists
-/// the full core, recon, lateral, persist, collect, exfil, tunnel, evasion,
-/// exploit, and module sets. A real
+/// verb, per exploit verb, per module-family verb, and per browser verb, so the
+/// registry lists the full core, recon, lateral, persist, collect, exfil,
+/// tunnel, evasion, exploit, module, and browser sets. A real
 /// module registered later for the same verb replaces the placeholder (the
 /// last registration wins -- see <see cref="ICapabilityRegistry"/>).
 ///
@@ -155,8 +156,8 @@ public static class RodTradecraftHost
     /// Registers every built-in capability module into <paramref name="registry"/>:
     /// a placeholder per core verb, per recon verb, per lateral verb, per persist
     /// verb, per collect verb, per exfil verb, per tunnel verb, per evasion verb,
-    /// per exploit verb, and per module-family verb so the registry lists all ten
-    /// full sets. Idempotent:
+    /// per exploit verb, per module-family verb, and per browser verb so the
+    /// registry lists all eleven full sets. Idempotent:
     /// each verb is registered at most once by deduplicating against what
     /// <paramref name="registry"/> already holds.
     /// </summary>
@@ -266,12 +267,22 @@ public static class RodTradecraftHost
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
         }
+
+        // Browser verbs load the same way (architecture.md Sec 5.2, Sec 10.1):
+        // the hooked-browser class's read-and-steer set. The handlers live in
+        // the served hook script, not in any compiled implant, and the verbs
+        // past the set are out-of-tree contracts -- the server gates and
+        // forwards only, as for every category.
+        foreach (var descriptor in BrowserCapabilities.All)
+        {
+            await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
+        }
     }
 
     // Registers a placeholder for descriptor's verb unless the registry already
     // has a module for it (an out-of-tree override). Centralized so the core,
-    // recon, lateral, persist, collect, exfil, evasion, exploit, and module loops
-    // share one dedup rule and one placeholder path.
+    // recon, lateral, persist, collect, exfil, tunnel, evasion, exploit,
+    // browser, and module loops share one dedup rule and one placeholder path.
     private static async Task RegisterPlaceholderAsync(
         ICapabilityRegistry registry,
         CapabilityDescriptor descriptor,
