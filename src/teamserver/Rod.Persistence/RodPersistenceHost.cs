@@ -81,6 +81,9 @@ public static class RodPersistenceHost
         // survives a teamserver restart and revocation lands in the database.
         services.Replace(ServiceDescriptor.Singleton<IOperatorApiTokenStore, PostgresOperatorApiTokenStore>());
         services.Replace(ServiceDescriptor.Singleton<IEngagementRepository, PostgresEngagementRepository>());
+        // Engagement memberships: the durable twin, so the access an owner
+        // granted survives a restart (architecture.md Sec 3).
+        services.Replace(ServiceDescriptor.Singleton<IEngagementMembershipStore, Stores.PostgresEngagementMembershipStore>());
         services.Replace(ServiceDescriptor.Singleton<IImplantRepository, PostgresImplantRepository>());
         // The Postgres session registry keeps the last-seen decorator the
         // in-memory registration wears (the durable stamp is written through

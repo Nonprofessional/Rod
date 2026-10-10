@@ -159,6 +159,7 @@ public static class CloseoutEndpoints
         IOperatorRepository operators,
         IImplantRepository implants,
         ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -180,7 +181,7 @@ public static class CloseoutEndpoints
         // and verifies all of it (a broken chain surfaces here, before anything
         // leaves the server).
         var builder = await ReportBuilder.BuildAsync(
-            engagement, audit, artifacts, operators, implants, tasks, cancellationToken);
+            engagement, audit, artifacts, operators, implants, tasks, memberships, cancellationToken);
         var report = builder.Report(engagement);
 
         var documents = new List<KeyValuePair<string, byte[]>>

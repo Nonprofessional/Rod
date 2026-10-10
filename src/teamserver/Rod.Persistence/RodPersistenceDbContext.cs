@@ -32,6 +32,7 @@ public sealed class RodPersistenceDbContext : DbContext
     internal DbSet<StoredOperatorCredential> OperatorCredentials => Set<StoredOperatorCredential>();
     internal DbSet<StoredOperatorApiToken> OperatorApiTokens => Set<StoredOperatorApiToken>();
     public DbSet<Engagement> Engagements => Set<Engagement>();
+    internal DbSet<Configurations.StoredEngagementMembership> EngagementMembers => Set<Configurations.StoredEngagementMembership>();
     public DbSet<Implant> Implants => Set<Implant>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Rod.CoreState.ShellSessions.ShellSession> ShellSessions => Set<Rod.CoreState.ShellSessions.ShellSession>();

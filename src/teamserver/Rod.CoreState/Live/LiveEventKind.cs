@@ -131,4 +131,13 @@ public enum LiveEventKind
     /// hand-off. Connected operators refresh the roster's driving badges.
     /// </summary>
     ImplantActivity,
+
+    /// <summary>
+    /// The engagement's membership changed (architecture.md Sec 3): the owner
+    /// added a member, changed a role, or removed one. Carries the acting
+    /// owner as its operator; the payload names the member, the action, and
+    /// the role. Connected operators refresh their members view on it -- the
+    /// roster-paced mirror of the audit trail's durable record.
+    /// </summary>
+    MembershipChanged,
 }

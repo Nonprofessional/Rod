@@ -158,6 +158,33 @@ public enum AuditEventKind
     RoeUpdated,
 
     /// <summary>
+    /// The engagement's owner granted an operator membership
+    /// (architecture.md Sec 3, the membership model). The payload names the
+    /// granted role ("reader" / "writer") and the member's handle; the
+    /// outcome is the member's operator id. Membership is engagement state,
+    /// unlike operator account state, so the change lands in this
+    /// engagement's own trail -- the who-was-let-in record the story keeps.
+    /// </summary>
+    EngagementMemberAdded,
+
+    /// <summary>
+    /// The engagement's owner changed a member's role (reader to writer or
+    /// back, architecture.md Sec 3). The payload names the new role and the
+    /// member's handle; the outcome is the member's operator id. The role
+    /// change takes effect on the member's next request -- the access check
+    /// reads the store fresh.
+    /// </summary>
+    EngagementMemberRoleChanged,
+
+    /// <summary>
+    /// The engagement's owner removed a member (architecture.md Sec 3). The
+    /// payload names the removed member's handle and last role; the outcome
+    /// is the member's operator id. From the next request on, the removed
+    /// operator no longer sees the engagement at all.
+    /// </summary>
+    EngagementMemberRemoved,
+
+    /// <summary>
     /// A task issuance was refused by the engagement's rules-of-engagement
     /// profile before it was queued (architecture.md Sec 9). The payload
     /// carries the verb and arguments that were refused, and the outcome names

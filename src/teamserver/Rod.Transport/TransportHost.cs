@@ -81,6 +81,12 @@ public static class TransportHost
         // operator layer seeds its hello frame and reaps on disconnect.
         services.AddSingleton<Rod.CoreState.Operators.Interaction.OperatorInteractionService>();
         services.AddSingleton<IEngagementRepository, InMemoryEngagementRepository>();
+        // Engagement memberships (architecture.md Sec 3): the granted-access
+        // roster beside each engagement. The default is in-memory; the
+        // durable Postgres twin replaces it through the composition root,
+        // the same shape every other core-state store keeps.
+        services.AddSingleton<EngagementAccessResolver>();
+        services.AddSingleton<IEngagementMembershipStore, InMemoryEngagementMembershipStore>();
         services.AddSingleton<IDeployTokenService, InMemoryDeployTokenService>();
         services.AddSingleton<IImplantRepository, InMemoryImplantRepository>();
         // Implant CA (architecture.md Sec 9): the self-signed DevCertificateAuthority
@@ -590,6 +596,7 @@ public static class TransportHost
     public static void MapRodEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapEngagementEndpoints();
+        endpoints.MapEngagementMemberEndpoints();
         endpoints.MapEnrollmentEndpoints();
         endpoints.MapImplantEndpoints();
         // The host picture of the intel layer (architecture.md Sec 11.2): the

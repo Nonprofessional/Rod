@@ -76,6 +76,7 @@ public static class ReportEndpoints
         IOperatorRepository operators,
         IImplantRepository implants,
         ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -86,7 +87,7 @@ public static class ReportEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var builder = await ReportBuilder.BuildAsync(
-            engagement, audit, artifacts, operators, implants, tasks, cancellationToken);
+            engagement, audit, artifacts, operators, implants, tasks, memberships, cancellationToken);
 
         var timeline = builder.Timeline(engagement);
         return format is { } f && IsMarkdown(f)
@@ -103,6 +104,7 @@ public static class ReportEndpoints
         IOperatorRepository operators,
         IImplantRepository implants,
         ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -113,7 +115,7 @@ public static class ReportEndpoints
             return Results.NotFound(new Problem("Engagement does not exist."));
 
         var builder = await ReportBuilder.BuildAsync(
-            engagement, audit, artifacts, operators, implants, tasks, cancellationToken);
+            engagement, audit, artifacts, operators, implants, tasks, memberships, cancellationToken);
 
         var report = builder.Report(engagement);
         return format is { } f && IsMarkdown(f)
@@ -132,6 +134,7 @@ public static class ReportEndpoints
         IOperatorRepository operators,
         IImplantRepository implants,
         ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -165,7 +168,7 @@ public static class ReportEndpoints
                 $"The digest window must not exceed {MaxDigestWindow.Days} days; use the timeline for longer horizons."));
 
         var builder = await ReportBuilder.BuildAsync(
-            engagement, audit, artifacts, operators, implants, tasks, cancellationToken);
+            engagement, audit, artifacts, operators, implants, tasks, memberships, cancellationToken);
 
         var digest = builder.HandoffDigest(engagement, windowStart, windowEnd);
         return format is { } f && IsMarkdown(f)
@@ -228,6 +231,7 @@ internal static class ReportBuilder
         IOperatorRepository operators,
         IImplantRepository implants,
         ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
         CancellationToken cancellationToken)
     {
         var engagementId = engagement.Id;
@@ -244,6 +248,7 @@ internal static class ReportBuilder
         var engagementImplants = await implants.ListByEngagementAsync(engagementId, cancellationToken);
         var engagementTasks = await tasks.ListByEngagementAsync(engagementId, cancellationToken);
         var engagementArtifacts = await artifacts.ListAsync(engagementValue, cancellationToken);
+        var engagementMembers = await memberships.ListAsync(engagementId, cancellationToken);
 
         // Operator resolution: the engagement owner and every operator named on
         // the trail/task/artifact. Unknown ids (an event predates the operator
@@ -252,6 +257,8 @@ internal static class ReportBuilder
         // events that predate attribution) renders as "system".
         var operatorIds = new HashSet<Guid>();
         operatorIds.Add(engagement.OwnerId.Value);
+        foreach (var m in engagementMembers)
+            operatorIds.Add(m.OperatorId.Value);
         foreach (var e in trail)
             if (e.OperatorId != Guid.Empty)
                 operatorIds.Add(e.OperatorId);
@@ -300,7 +307,7 @@ internal static class ReportBuilder
         }
 
         return new ReportBuilderContext(
-            engagement, trail, engagementImplants, engagementTasks, engagementArtifacts,
+            engagement, trail, engagementMembers, engagementImplants, engagementTasks, engagementArtifacts,
             operatorNames, implantClasses, implantById, taskById, artifactsByTask, chainBreak);
     }
 
@@ -324,7 +331,8 @@ internal static class ReportBuilder
 
         foreach (var op in report.Operators)
             sb.Append(op.OperatorId).Append(sep)
-                .Append(op.Handle).Append(rec);
+                .Append(op.Handle).Append(sep)
+                .Append(op.Role).Append(rec);
 
         foreach (var implant in report.Implants)
             sb.Append(implant.ImplantId).Append(sep)
@@ -418,6 +426,7 @@ internal static class ReportBuilder
 internal sealed record ReportBuilderContext(
     Engagement Engagement,
     IReadOnlyList<AuditEvent> Trail,
+    IReadOnlyList<EngagementMembership> Memberships,
     IReadOnlyList<Implant> Implants,
     IReadOnlyList<Task> Tasks,
     IReadOnlyList<Artifact> Artifacts,
@@ -444,18 +453,25 @@ internal sealed record ReportBuilderContext(
             Entries: entries);
     }
 
-    // The report bundle. Built in display order: operators (the engagement
-    // owner), implants and tasks oldest-first (the store order), artifacts
-    // oldest-first, and the enriched timeline. The content hash is stamped last,
-    // over the fully resolved facts.
+    // The report bundle. Built in display order: the crew (the owner and
+    // every granted membership, role-tagged), implants and tasks oldest-first
+    // (the store order), artifacts oldest-first, and the enriched timeline.
+    // The content hash is stamped last, over the fully resolved facts.
     public EngagementReport Report(Engagement engagement)
     {
-        var operatorRoster = new[]
+        // The owner first (access by creation), then the granted memberships
+        // in roster order -- the crew view the member routes render.
+        var operatorRoster = new List<ReportOperator>
         {
             new ReportOperator(
                 OperatorId: engagement.OwnerId.Value,
-                Handle: OperatorHandle(engagement.OwnerId.Value))
+                Handle: OperatorHandle(engagement.OwnerId.Value),
+                Role: "owner"),
         };
+        operatorRoster.AddRange(Memberships.Select(m => new ReportOperator(
+            m.OperatorId.Value,
+            OperatorHandle(m.OperatorId.Value),
+            EngagementRoles.ToName(m.Role))));
 
         var implantInventory = Implants
             .Select(i => new ReportImplant(
@@ -671,7 +687,8 @@ internal static class ReportMarkdown
             sb.Append("_None._\n");
         else
             foreach (var op in report.Operators)
-                sb.Append("- `").Append(op.Handle).Append("` (`")
+                sb.Append("- `").Append(op.Handle).Append("` (")
+                    .Append(op.Role).Append(", `")
                     .Append(op.OperatorId.ToString("N")).Append("`)\n");
         sb.Append('\n');
 
@@ -844,10 +861,15 @@ public sealed record ReportEngagement(
     string OwnerHandle,
     DateTimeOffset CreatedAt);
 
-/// <summary>An operator who acted on the engagement, with the resolved handle.</summary>
+/// <summary>
+/// One crew row of the report: an operator who holds standing on the
+/// engagement (the owner by creation, members by grant), with the resolved
+/// handle and the role the access ran under.
+/// </summary>
 public sealed record ReportOperator(
     Guid OperatorId,
-    string Handle);
+    string Handle,
+    string Role);
 
 /// <summary>An enrolled implant, with its class, parentage, and retirement state.</summary>
 public sealed record ReportImplant(

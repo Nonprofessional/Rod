@@ -206,4 +206,17 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.ImplantActivity, driver, implant, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a membership-changed event (architecture.md Sec 3): the owner
+    /// added a member, changed a role, or removed one. Attributed to the
+    /// acting owner; the payload names the member, action, and role for
+    /// direct rendering.
+    /// </summary>
+    public static LiveEvent Membership(
+        EngagementId engagement,
+        OperatorId actingOwner,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.MembershipChanged, actingOwner, ImplantId: null, TaskId: null, payload, at);
 }
