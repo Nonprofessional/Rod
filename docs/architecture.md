@@ -1318,7 +1318,7 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
 
 ## 9. Security model
 
-Rod is remote-code-execution infrastructure: a compromised teamserver is
+Rod delivers remote code execution for its operators: a compromised teamserver is
 fleet-wide code execution. Security is a first-class concern.
 
 - **Identity.** Operator identities (credentials and API tokens) verified at

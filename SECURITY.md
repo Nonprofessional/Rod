@@ -1,6 +1,6 @@
 # Security Policy
 
-Rod is remote-code-execution infrastructure: a compromised control plane
+Rod delivers remote code execution for its operators: a compromised control plane
 (teamserver) is fleet-wide code execution against every connected implant. We
 take vulnerabilities seriously and appreciate coordinated disclosure. The full
 threat model and controls are described in [docs/architecture.md](docs/architecture.md)

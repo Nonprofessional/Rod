@@ -19,10 +19,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
 </p>
 
-> **Authorized use only.** Rod is remote-code-execution infrastructure. It
-> must **only** be used against systems and networks you own or are
-> **expressly authorized** to test. Unauthorized use is illegal in most
-> jurisdictions.
+> **Authorized use only.** Rod gives its operators remote code execution
+> wherever its artifacts run. It must **only** be used against systems
+> and networks you own or are **expressly authorized** to test.
+> Unauthorized use is illegal in most jurisdictions.
 
 > **Status: implemented; sensitive tradecraft is out-of-tree.** The
 > teamserver, reference implant, build pipeline, operator UI, and durable
