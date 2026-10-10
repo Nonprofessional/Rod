@@ -8,8 +8,8 @@
 
 ## 1. Overview
 
-Rod is an **authorized-use offensive-security platform** for
-red-team operations, penetration tests, and security research. A team of
+Rod is an **authorized-use red-team operations platform** for
+penetration tests and security research. A team of
 operators drives a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver, reaching hosts behind NAT and firewalls over
 implant-initiated connections; the external recon workbench scopes those
