@@ -60,6 +60,12 @@ internal sealed class OperatorTokenAuthHandler : AuthenticationHandler<Authentic
         if (op is null)
             return AuthenticateResult.Fail("The API token resolves to no operator.");
 
+        // A disabled account authenticates through no path; the token's own
+        // row stays valid, so an enable restores it with the rest of the
+        // account.
+        if (op.Disabled)
+            return AuthenticateResult.Fail("The API token resolves to a disabled operator.");
+
         var principal = OperatorAuthService.CreatePrincipal(op);
         return AuthenticateResult.Success(
             new AuthenticationTicket(principal, OperatorAuthConstants.TokenScheme));

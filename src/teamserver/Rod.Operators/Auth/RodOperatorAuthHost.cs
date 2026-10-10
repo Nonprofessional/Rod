@@ -155,8 +155,10 @@ public static class RodOperatorAuthHost
 
         var @operator = await services.GetRequiredService<IOperatorRepository>()
             .FindAsync(operatorId.Value, context.HttpContext.RequestAborted);
-        if (@operator is null)
+        if (@operator is null || @operator.Disabled)
         {
+            // Null and disabled reject identically: a disabled account's
+            // cookie is as dead as a revoked credential's.
             context.RejectPrincipal();
             return;
         }

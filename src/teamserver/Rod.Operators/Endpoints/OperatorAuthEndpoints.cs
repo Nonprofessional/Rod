@@ -19,8 +19,10 @@ namespace Rod.Operators.Endpoints;
 /// clears it, and <c>GET /operators/me</c> returns the authenticated operator.
 /// The account half provisions and administers the roster the bootstrap seed
 /// used to be the only source of: <c>GET /operators</c> lists it,
-/// <c>POST /operators</c> creates an account, and
-/// <c>PUT /operators/{id}/credentials</c> re-provisions a password.
+/// <c>POST /operators</c> creates an account,
+/// <c>PUT /operators/{id}/credentials</c> re-provisions a password, and
+/// <c>POST /operators/{id}:disable</c> / <c>:enable</c> are the account's
+/// off and back on.
 /// </summary>
 public static class OperatorAuthEndpoints
 {
@@ -33,12 +35,13 @@ public static class OperatorAuthEndpoints
     {
         // Login is anonymous (it is how a session is established); the roster
         // read, credential administration, and API-token management require
-        // an existing session. Scope assignment, account provisioning, and
-        // the credential re-provision additionally require the acting scope
-        // (architecture.md Sec 4.5): a read-only operator cannot widen
-        // themselves, an operator who can already act on every engagement is
-        // not elevated by granting what they hold, and a provisioned account
-        // or a reset password confers exactly that acting scope by default.
+        // an existing session. Scope assignment, account provisioning, the
+        // credential re-provision, and the disable/enable pair additionally
+        // require the acting scope (architecture.md Sec 4.5): a read-only
+        // operator cannot widen themselves, an operator who can already act
+        // on every engagement is not elevated by granting what they hold,
+        // and a provisioned account or a reset password confers exactly that
+        // acting scope by default.
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
         endpoints.MapGet("/", ListAsync).RequireAuthorization();
         endpoints.MapPost("/", CreateAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
@@ -47,6 +50,8 @@ public static class OperatorAuthEndpoints
         endpoints.MapPost("/{operatorId}/credentials:revoke", RevokeCredentialAsync).RequireAuthorization();
         endpoints.MapPut("/{operatorId}/credentials", SetCredentialAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
         endpoints.MapPut("/{operatorId}/scopes", SetScopesAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
+        endpoints.MapPost("/{operatorId}:disable", DisableAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
+        endpoints.MapPost("/{operatorId}:enable", EnableAsync).RequireAuthorization(OperatorScopes.TaskPolicy);
         endpoints.MapPost("/{operatorId}/tokens", MintTokenAsync).RequireAuthorization();
         endpoints.MapGet("/{operatorId}/tokens", ListTokensAsync).RequireAuthorization();
         endpoints.MapPost("/{operatorId}/tokens/{tokenId}:revoke", RevokeTokenAsync).RequireAuthorization();
@@ -152,6 +157,71 @@ public static class OperatorAuthEndpoints
         return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 
+    // The administrative off switch: a disabled operator authenticates
+    // nowhere -- login fails indistinguishably, live cookie sessions reject
+    // at their next request, and API tokens refuse -- while scopes ride
+    // along untouched, so an enable restores exactly the reach the account
+    // had. This is the honest "retire a colleague" shape: the row stays (its
+    // id anchors every task and audit attribution it ever collected), unlike
+    // the parked account (scopes none, still loginable) it is deliberately
+    // distinct from. Idempotent; guarded by the acting scope like every
+    // account change that gates authentication, and by the same lockout
+    // guard as scope removal -- disabling the last standing task holder
+    // would leave nobody able to task or to enable it back.
+    private static async Task<IResult> DisableAsync(
+        string operatorId,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
+
+        if (!target.Disabled && target.Scopes.HasFlag(OperatorScope.Task))
+        {
+            var others = (await operators.ListAsync(cancellationToken))
+                .Where(o => o.Id != target.Id && !o.Disabled && o.Scopes.HasFlag(OperatorScope.Task))
+                .ToList();
+            if (others.Count == 0)
+                return Results.Conflict(new Problem(
+                    "Refusing to disable the last task holder: another operator must hold it first."));
+        }
+
+        if (target.Disabled)
+            return Results.Ok(new { operatorId = target.Id.ToString(), disabled = true });
+
+        var updated = target.WithDisabled(true);
+        await operators.SaveAsync(updated, cancellationToken);
+        return Results.Ok(new { operatorId = updated.Id.ToString(), disabled = true });
+    }
+
+    // The restore twin: enabling re-opens every authentication path for the
+    // account with the scopes it kept through the disable. No guard applies
+    // -- enabling widens reach back to what the account already held, and
+    // nobody locks themselves out by enabling someone.
+    private static async Task<IResult> EnableAsync(
+        string operatorId,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(operatorId, out var operatorValue))
+            return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+
+        var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
+        if (target is null)
+            return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
+
+        if (!target.Disabled)
+            return Results.Ok(new { operatorId = target.Id.ToString(), disabled = false });
+
+        var updated = target.WithDisabled(false);
+        await operators.SaveAsync(updated, cancellationToken);
+        return Results.Ok(new { operatorId = updated.Id.ToString(), disabled = false });
+    }
+
     // Scope assignment (architecture.md Sec 4.5): the one guarded piece of
     // account machinery. The caller must hold the task scope (the route's
     // policy); the target's new set is validated (task and approve each
@@ -181,11 +251,13 @@ public static class OperatorAuthEndpoints
             return Results.Json(new { message = violation }, statusCode: StatusCodes.Status422UnprocessableEntity);
 
         // The lockout guard: removing the target's task scope must leave
-        // another task holder standing.
+        // another standing task holder. A disabled operator cannot exercise
+        // the scope (no path authenticates), so only non-disabled holders
+        // count.
         if (target.Scopes.HasFlag(OperatorScope.Task) && !scopes.HasFlag(OperatorScope.Task))
         {
             var others = (await operators.ListAsync(cancellationToken))
-                .Where(o => o.Id != target.Id && o.Scopes.HasFlag(OperatorScope.Task))
+                .Where(o => o.Id != target.Id && !o.Disabled && o.Scopes.HasFlag(OperatorScope.Task))
                 .ToList();
             if (others.Count == 0)
                 return Results.Conflict(new
@@ -402,7 +474,7 @@ public static class OperatorAuthEndpoints
     private static OperatorAccountResponse ToAccount(Operator op, bool hasCredential)
         => new(op.Id.Value, op.Handle, op.DisplayName, OperatorScopes.ToClaimValue(op.Scopes)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-            op.CreatedAt, hasCredential);
+            op.CreatedAt, hasCredential, op.Disabled);
 }
 
 /// <summary>Login credentials submitted to <c>POST /operators/login</c>.</summary>
@@ -428,9 +500,10 @@ public sealed record CredentialSetRequest(string? Password);
 
 /// <summary>
 /// A roster row as <c>GET /operators</c> returns it: the account's identity,
-/// scope set, creation time, and whether a password currently stands behind
-/// it (false after credential revocation -- the account exists but cannot
-/// log in until re-provisioned).
+/// scope set, creation time, whether a password currently stands behind it
+/// (false after credential revocation -- the account exists but cannot log in
+/// until re-provisioned), and whether the account is disabled (no
+/// authentication path accepts it until enabled).
 /// </summary>
 public sealed record OperatorAccountResponse(
     Guid Id,
@@ -438,7 +511,8 @@ public sealed record OperatorAccountResponse(
     string DisplayName,
     string[] Scopes,
     DateTimeOffset CreatedAt,
-    bool HasCredential);
+    bool HasCredential,
+    bool Disabled);
 
 /// <summary>
 /// The authenticated operator returned by login and <c>GET /operators/me</c>:

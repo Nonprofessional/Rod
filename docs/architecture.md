@@ -341,15 +341,25 @@ global account state, like the credential they ride beside, so their changes
 land in no engagement trail -- the same posture credential revocation keeps
 -- and the account machinery (login, the roster read, token mint and
 revoke, credential revoke) stays trusted-operator. The guarded pieces are
-the ones that confer scopes: scope assignment
+the ones that confer scopes or gate authentication: scope assignment
 (`PUT /operators/{id}/scopes`), account provisioning
-(`POST /operators`), and password re-provision
-(`PUT /operators/{id}/credentials`) each require the caller to hold `task`
+(`POST /operators`), password re-provision
+(`PUT /operators/{id}/credentials`), and the disable pair
+(`POST /operators/{id}:disable` / `:enable`) each require the caller to
+hold `task`
 (a read-only operator cannot widen themselves; an operator who can already
 act on every engagement is not elevated by granting what they hold; a
 provisioned account or a reset password hands its recipient every scope by
 default), and a scope change may not remove the last `task` holder -- a
-lockout, not a security boundary, refused the same way. Provisioning is the
+lockout, not a security boundary, refused the same way. The disable flag
+is the account off switch: a disabled operator authenticates nowhere --
+login fails indistinguishably from an unknown handle, live cookie sessions
+reject at their next request, and API tokens refuse -- while keeping its
+scopes, so an enable restores exactly the reach the account had; the row
+is never deleted, because its id anchors every task and audit attribution
+it ever collected. The last-holder guard covers disabling too, and a
+disabled holder no longer counts as standing in either guard.
+Provisioning is the
 management path the bootstrap seed stood in for: the configured initial
 account is the first operator, and every account after it arrives through
 the API (a provisioned handle is loginable the moment the response
@@ -1517,7 +1527,9 @@ fleet-wide code execution. Security is a first-class concern.
   loginable the moment the response returns, the management path the
   configuration seed stood in for (`GET /operators` lists the roster with
   whether a credential stands behind each account, trusted-operator like the
-  rest of the account machinery). Revocation is not recorded in the audit
+  rest of the account machinery). A disabled account refuses its API tokens
+  too (Sec 4.5) -- the token row stays valid, so an enable restores it with
+  the rest of the account. Revocation is not recorded in the audit
   trail: the trail is engagement-scoped and an operator credential is global
   state, so it has no engagement to live in.
 - **Kill-date enforcement.** Both sides refuse past the baked date, the

@@ -41,12 +41,14 @@ public sealed class OperatorAuthService
         CancellationToken cancellationToken = default)
     {
         // Resolve the account by handle. A null handle or whitespace short-
-        // circuits to a failed login without touching the store.
+        // circuits to a failed login without touching the store. A disabled
+        // account fails the same way -- an attacker cannot tell a disabled
+        // handle from an unknown one.
         var op = string.IsNullOrWhiteSpace(handle)
             ? null
             : await _operators.FindByHandleAsync(handle, cancellationToken);
 
-        if (op is null)
+        if (op is null || op.Disabled)
             return OperatorLoginResult.Failed;
 
         var hash = await _credentials.FindHashAsync(op.Id, cancellationToken);

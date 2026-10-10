@@ -5,6 +5,10 @@ namespace Rod.CoreState.Operators;
 /// operator authenticates with a handle and password; the scopes it holds
 /// (architecture.md Sec 4.5) name what it may do on the engagement surface --
 /// every provisioned operator holds all three by default, the peer model.
+/// A disabled operator authenticates nowhere (login, cookie session, API
+/// token all refuse) but keeps its scopes, so enabling restores exactly the
+/// reach it had -- disable is the administrative off switch, not the parked
+/// account shape (scopes none, still loginable).
 /// </summary>
 public sealed class Operator
 {
@@ -13,13 +17,15 @@ public sealed class Operator
     public string DisplayName { get; }
     public OperatorScope Scopes { get; }
     public DateTimeOffset CreatedAt { get; }
+    public bool Disabled { get; }
 
     public Operator(
         OperatorId id,
         string handle,
         string displayName,
         DateTimeOffset createdAt,
-        OperatorScope scopes = OperatorScope.All)
+        OperatorScope scopes = OperatorScope.All,
+        bool disabled = false)
     {
         if (string.IsNullOrWhiteSpace(handle))
             throw new ArgumentException("Operator handle is required.", nameof(handle));
@@ -35,6 +41,7 @@ public sealed class Operator
         DisplayName = displayName.Trim();
         Scopes = scopes;
         CreatedAt = createdAt;
+        Disabled = disabled;
     }
 
     /// <summary>Factory for a newly registered operator.</summary>
@@ -48,5 +55,14 @@ public sealed class Operator
     /// opinion about the set's validity).
     /// </summary>
     public Operator WithScopes(OperatorScope scopes)
-        => new(Id, Handle, DisplayName, CreatedAt, scopes);
+        => new(Id, Handle, DisplayName, CreatedAt, scopes, Disabled);
+
+    /// <summary>
+    /// This operator with its disabled flag flipped -- the immutable-entity
+    /// way a disable or enable lands in the store. The flag gates
+    /// authentication only; scopes ride along untouched so an enable restores
+    /// the account exactly as it stood.
+    /// </summary>
+    public Operator WithDisabled(bool disabled)
+        => new(Id, Handle, DisplayName, CreatedAt, Scopes, disabled);
 }

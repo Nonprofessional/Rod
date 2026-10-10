@@ -32,5 +32,9 @@ internal sealed class OperatorConfiguration : IEntityTypeConfiguration<global::R
             .HasColumnName("scopes")
             .HasDefaultValue(global::Rod.CoreState.Operators.OperatorScope.All);
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
+        // The administrative off switch (architecture.md Sec 4.5): a disabled
+        // account authenticates nowhere but keeps its scopes. Rows that
+        // predate the flag were loginable, so the default is enabled.
+        builder.Property(o => o.Disabled).HasColumnName("disabled").HasDefaultValue(false);
     }
 }
