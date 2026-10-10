@@ -169,13 +169,7 @@ public class ReplayNonceTests
 
         public async Task<Implant> EnrollImplantAsync()
         {
-            var implants = Host.Services.GetRequiredService<IImplantRepository>();
-            var clock = Host.Services.GetRequiredService<TimeProvider>();
-            var now = clock.GetUtcNow();
-            var implant = Implant.Enroll(
-                ImplantId.New(), EngagementId.New(), now.AddDays(30), ImplantClass.Implant, now);
-            await implants.SaveAsync(implant);
-            return implant;
+            return await EngagementSetup.EnrollOwnedImplantAsync(Host);
         }
 
         public async Task<BeaconConnection> ConnectBeaconAsync(Implant implant, bool advertiseReplayNonces)

@@ -45,7 +45,7 @@ public class TunnelForwardRoundTripTests
         // The third host: reachable from the implant's vantage, not the
         // operator's -- everything below reaches it only through the tunnel.
         await using var thirdHost = EchoHost.Start();
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.forward" });
@@ -145,7 +145,7 @@ public class TunnelForwardRoundTripTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         await using var thirdHost = EchoHost.Start();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.forward" });
@@ -222,17 +222,6 @@ public class TunnelForwardRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), @class, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     private sealed class TaskIssuedBody
     {

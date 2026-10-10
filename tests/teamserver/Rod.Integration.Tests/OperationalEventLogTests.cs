@@ -177,10 +177,11 @@ public class OperationalEventLogTests
         Assert.Null(AuditChain.VerifyTrail(trail));
         Assert.Equal(trail.Select(e => e.EventId), trail.OrderBy(e => e.At).Select(e => e.EventId));
 
-        // Cross-engagement isolation: a foreign engagement id yields an empty trail.
-        var foreign = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
-            $"/engagements/{Guid.NewGuid()}/audit");
-        Assert.Empty(foreign!.Items);
+        // Cross-engagement isolation: a foreign engagement id is concealed
+        // like a missing one (architecture.md Sec 3) -- the route answers
+        // the same 404 whether the engagement is absent or merely hidden.
+        var foreign = await env.Http.GetAsync($"/engagements/{Guid.NewGuid()}/audit");
+        Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
     }
 
     [Fact]

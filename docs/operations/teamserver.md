@@ -68,16 +68,17 @@ operators must be provisioned by configuration. Bind the password via
 environment (`Operators__Initial__Password`) or a secret store, never inline.
 
 The initial account is the bootstrap, not the limit: `POST /operators`
-provisions further accounts (handle, initial password of at least 8
-characters, and a scope set defaulting to every scope) and `GET /operators`
-lists the roster -- the UI's Settings panel drives both. `PUT
+provisions further accounts (handle and initial password of at least 8
+characters) and `GET /operators` lists the roster -- the UI's Settings
+panel drives both. An account carries no permission: any authenticated
+operator may provision, and reach arrives per engagement, as memberships
+engagement owners grant (`POST /engagements/{id}/members`). `PUT
 /operators/{id}/credentials` re-provisions a password (the previous
 generation's sessions end at their next request), and
 `POST /operators/{id}:disable` / `:enable` are the account's off and back
 on -- a disabled account authenticates nowhere (login, cookie session, API
-token) but keeps its scopes, so enabling restores exactly what it had.
-These writes require the acting scope, like every account operation that
-confers scopes or gates authentication.
+token) but keeps its memberships, so enabling restores exactly what it
+had.
 
 ## The dev loop
 

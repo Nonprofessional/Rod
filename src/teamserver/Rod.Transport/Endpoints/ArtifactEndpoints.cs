@@ -37,21 +37,21 @@ public static class ArtifactEndpoints
         // operator-facing and require an authenticated operator session.
         var taskGroup = endpoints
             .MapGroup("/engagements/{engagementId}/tasks/{taskId}/artifacts")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
-        taskGroup.MapPost("/", AttachArtifactAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
+        taskGroup.MapPost("/", AttachArtifactAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(AttachArtifactAsync));
         taskGroup.MapGet("/", ListArtifactsAsync).WithName(nameof(ListArtifactsAsync));
 
         var engagementGroup = endpoints
             .MapGroup("/engagements/{engagementId}/artifacts")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         engagementGroup.MapGet("/{artifactId}", GetArtifactAsync).WithName(nameof(GetArtifactAsync));
 
         // The typed loot view (architecture.md Sec 11.2): the engagement-wide
         // artifact listing classified by what gathered each artifact -- the
         // organizer over evidence the collection verbs already captured.
         endpoints.MapGet("/engagements/{engagementId}/loot", ListLootAsync)
-            .RequireAuthorization(OperatorScopes.ReadPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read))
             .WithName(nameof(ListLootAsync));
 
         return endpoints;

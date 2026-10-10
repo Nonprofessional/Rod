@@ -2,6 +2,7 @@ using System.Text.Json;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Rod.Audit;
+using Microsoft.AspNetCore.Http;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
@@ -36,30 +37,47 @@ public sealed class RodReadTools
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly IEngagementRepository _engagements;
+    private readonly IEngagementMembershipStore _memberships;
+    private readonly EngagementAccessResolver _access;
     private readonly IImplantRepository _implants;
     private readonly ISessionRegistry _sessions;
     private readonly ITaskRepository _tasks;
     private readonly IAuditStore _audit;
+    private readonly IHttpContextAccessor _http;
 
     public RodReadTools(
         IEngagementRepository engagements,
+        IEngagementMembershipStore memberships,
+        EngagementAccessResolver access,
         IImplantRepository implants,
         ISessionRegistry sessions,
         ITaskRepository tasks,
-        IAuditStore audit)
+        IAuditStore audit,
+        IHttpContextAccessor http)
     {
         _engagements = engagements;
+        _memberships = memberships;
+        _access = access;
         _implants = implants;
         _sessions = sessions;
         _tasks = tasks;
         _audit = audit;
+        _http = http;
     }
 
     [McpServerTool(Name = "list_engagements")]
-    [Description("List every engagement on this teamserver: id, name, state, and creation time. The id scopes every other tool here.")]
+    [Description("List the engagements the caller can reach (owned or a member of): id, name, state, and creation time. The id scopes every other tool here.")]
     public async Task<string> ListEngagements(CancellationToken cancellationToken)
     {
-        var rows = await _engagements.ListAsync(cancellationToken);
+        // The toolset rides an operator's own standing (architecture.md
+        // Sec 3): the token's operator sees its engagements and no others --
+        // the same reach the console's listing applies.
+        var operatorId = CurrentOperator();
+        var reach = (await _memberships.ListForOperatorAsync(operatorId, cancellationToken))
+            .Select(m => m.EngagementId)
+            .ToHashSet();
+        var rows = (await _engagements.ListAsync(cancellationToken))
+            .Where(e => e.OwnerId == operatorId || reach.Contains(e.Id));
         return JsonSerializer.Serialize(rows.Select(e => new
         {
             engagementId = e.Id.ToString(),
@@ -173,13 +191,30 @@ public sealed class RodReadTools
         }, Json);
     }
 
+    // The single choke point every engagement-scoped tool reads through: the
+    // membership gate lives here, so a token's operator sees its engagements
+    // and no others -- a stranger's engagement renders the same "no such
+    // engagement" a missing one does, the concealment the operator API keeps.
     private async Task<Engagement> ResolveEngagementAsync(string engagementId, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var value))
             throw new McpException("The engagement id is not a valid identifier.");
-        return await _engagements.FindAsync(new EngagementId(value), cancellationToken)
-            ?? throw new McpException("No such engagement.");
+        var id = new EngagementId(value);
+        var engagement = await _engagements.FindAsync(id, cancellationToken);
+        if (engagement is null)
+            throw new McpException("No such engagement.");
+
+        var standing = await _access.ResolveAsync(id, CurrentOperator(), cancellationToken);
+        if (!standing.EngagementExists || standing.Level == EngagementAccessLevel.None)
+            throw new McpException("No such engagement.");
+        return engagement;
     }
+
+    // The toolset runs inside the authenticated MCP request; the accessor
+    // resolves the operator whose token is driving it.
+    private OperatorId CurrentOperator()
+        => _http.HttpContext?.User.TryGetOperatorId()
+            ?? throw new McpException("No operator session backs this tool call.");
 
     private static int BoundLimit(int? limit)
         => Math.Clamp(limit ?? 25, 1, 100);

@@ -35,7 +35,7 @@ public class ExfilRoundTripTests
         var artifacts = env.Host.Services.GetRequiredService<IArtifactStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         // Open the beacon stream and complete the handshake first.
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
@@ -122,7 +122,7 @@ public class ExfilRoundTripTests
         var artifacts = env.Host.Services.GetRequiredService<IArtifactStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
@@ -195,17 +195,6 @@ public class ExfilRoundTripTests
         Assert.Equal(full.Length, captured.Size);
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     private static Frame ResultFrame(TaskResult result)
         => new()

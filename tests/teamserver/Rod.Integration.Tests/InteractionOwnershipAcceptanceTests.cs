@@ -49,23 +49,29 @@ public class InteractionOwnershipAcceptanceTests
         using var bob = await LoginAsync(env, "bob");
         using var carol = await LoginAsync(env, "carol");
 
-        // Carol holds the viewing scope only -- narrowed through the
-        // assignment route by a task-holding operator.
-        var demoted = await alice.PutAsJsonAsync(
-            $"/operators/{carolId}/scopes", new { scopes = new[] { "read" } });
-        Assert.Equal(HttpStatusCode.OK, demoted.StatusCode);
+        // Alice owns the working engagement; Bob works beside her at the
+        // writer tier; Carol watches at the reader tier -- the same
+        // viewing-versus-acting story the old global scopes told, granted
+        // per engagement now (architecture.md Sec 3).
+        var engagement = await EngagementSetup.CreateEngagementAsync(alice, "Operation handoff");
+        foreach (var (handle, role) in new[] { ("bob", "writer"), ("carol", "reader") })
+        {
+            var invite = await alice.PostAsJsonAsync(
+                $"/engagements/{engagement}/members", new { handle, role });
+            invite.EnsureSuccessStatusCode();
+        }
 
-        var implant = await EnrollImplantAsync(implants, clock);
-        var engagement = implant.EngagementId.ToString();
+        var implant = await EngagementSetup.EnrollImplantAsync(
+            env.Host, new EngagementId(Guid.Parse(engagement)));
 
         // The live channel: an interactive shell on a connected implant.
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "shell.interact" });
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
 
-        // An operator without the tasking scope cannot issue tasks -- the
-        // surface refuses her acting outright, while the viewing surface
-        // still answers.
+        // An operator at the reader tier cannot issue tasks -- the surface
+        // refuses her acting outright, while the viewing surface still
+        // answers.
         var carolIssue = await carol.PostAsJsonAsync(
             $"/engagements/{engagement}/tasks",
             new { ImplantId = implant.Id.ToString(), Verb = "shell.interact" });

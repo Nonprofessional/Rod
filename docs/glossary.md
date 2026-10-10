@@ -9,7 +9,8 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Engagement** | The unit of tenancy, isolation, authorization, and evidence -- one authorized operation. All domain state is engagement-scoped and disposable with the operation. |
-| **Operator** | A global human identity; an authenticated user of the platform. Any authenticated operator can operate on any engagement; accountability is through the attributed audit trail. |
+| **Operator** | A global human identity; an authenticated user of the platform. An account carries no permission: reach arrives per engagement, as the memberships its owners grant. Accountability is through the attributed audit trail. |
+| **Membership** | An operator's standing in one engagement, granted by its owner: `reader` (view and live stream) or `writer` (act and manage). The owner holds access by creation, not membership, and is the only one who grants, re-tiers, or removes. | 
 | **Deploy token** | An engagement-scoped, short-lived, bounded-use secret used only during initial enrollment/deployment. |
 
 ## Implants and sessions

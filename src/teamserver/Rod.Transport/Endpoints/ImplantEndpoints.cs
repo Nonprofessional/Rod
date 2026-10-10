@@ -41,19 +41,19 @@ public static class ImplantEndpoints
         // operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/implants")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         group.MapGet("/", ListImplantsAsync).WithName(nameof(ListImplantsAsync));
         group.MapGet("/{implantId}/tasks", ListImplantTasksAsync)
             .WithName(nameof(ListImplantTasksAsync));
         group.MapGet("/{implantId}/notes", ListNotesAsync).WithName(nameof(ListNotesAsync));
-        group.MapPost("/{implantId}/notes", AddNoteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{implantId}/notes", AddNoteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(AddNoteAsync));
         group.MapGet("/{implantId}/labels", ListLabelsAsync).WithName(nameof(ListLabelsAsync));
-        group.MapPost("/{implantId}/labels", SetLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{implantId}/labels", SetLabelAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(SetLabelAsync));
-        group.MapDelete("/{implantId}/labels/{label}", ClearLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{implantId}/labels/{label}", ClearLabelAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ClearLabelAsync));
-        group.MapPost("/{implantId}:retire", RetireAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{implantId}:retire", RetireAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RetireAsync));
         return endpoints;
     }

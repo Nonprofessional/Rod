@@ -44,7 +44,7 @@ public class RelayBindRoundTripTests
         // operator-side tool below never opens a socket to it -- everything
         // crosses the tunnel.
         await using var thirdHost = EchoHost.Start();
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.forward" });
@@ -146,7 +146,7 @@ public class RelayBindRoundTripTests
         await using var env = await TestEnv.StartAsync();
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host, ImplantClass.Implant);
 
         await AuthenticatedHost.LoginAsync(env.Http);
 
@@ -242,17 +242,6 @@ public class RelayBindRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), @class, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     private sealed class TaskIssuedBody
     {

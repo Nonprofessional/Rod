@@ -24,7 +24,7 @@ public static class NetworkEndpoints
         // operator session, like every other operator surface.
         var group = endpoints
             .MapGroup("/network")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization();
         group.MapGet("/interfaces", ListInterfacesAsync).WithName("ListNetworkInterfaces");
         return endpoints;
     }

@@ -209,16 +209,6 @@ public class ListenerTests
         return created!;
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class = ImplantClass.Implant)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), @class, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     private static Frame HandshakeFrame(ImplantId implant, int major, int minor)
     {

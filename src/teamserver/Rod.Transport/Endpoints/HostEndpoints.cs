@@ -59,15 +59,15 @@ public static class HostEndpoints
         // additionally hold the task scope, like every engagement mutation.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/hosts")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         group.MapGet("/", ListHostsAsync).WithName(nameof(ListHostsAsync));
         group.MapGet("/{host}/notes", ListHostNotesAsync).WithName(nameof(ListHostNotesAsync));
-        group.MapPost("/{host}/notes", AddHostNoteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{host}/notes", AddHostNoteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(AddHostNoteAsync));
         group.MapGet("/{host}/labels", ListHostLabelsAsync).WithName(nameof(ListHostLabelsAsync));
-        group.MapPost("/{host}/labels", SetHostLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{host}/labels", SetHostLabelAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(SetHostLabelAsync));
-        group.MapDelete("/{host}/labels/{label}", ClearHostLabelAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{host}/labels/{label}", ClearHostLabelAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ClearHostLabelAsync));
         return endpoints;
     }

@@ -25,6 +25,7 @@ namespace Rod.CoreState.Deployment;
 public sealed class InMemoryDeployTokenService : IDeployTokenService
 {
     private readonly IEngagementRepository _engagements;
+    private readonly IEngagementMembershipStore _memberships;
     private readonly ConcurrentDictionary<DeployTokenId, StoredToken> _stored = new();
     private readonly Lock _redeemLock = new();
 
@@ -32,8 +33,13 @@ public sealed class InMemoryDeployTokenService : IDeployTokenService
     private static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(1);
     private const int DefaultMaxUses = 1;
 
-    public InMemoryDeployTokenService(IEngagementRepository engagements)
-        => _engagements = engagements;
+    public InMemoryDeployTokenService(
+        IEngagementRepository engagements,
+        IEngagementMembershipStore memberships)
+    {
+        _engagements = engagements;
+        _memberships = memberships;
+    }
 
     public async Task<DeployToken> MintAsync(
         EngagementId engagementId,
@@ -46,9 +52,16 @@ public sealed class InMemoryDeployTokenService : IDeployTokenService
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
             ?? throw new DeployTokenException($"Engagement {engagementId} does not exist.");
 
+        // The mint gate (architecture.md Sec 3): the owner or a writer member
+        // mints -- deploying implants is engagement work, so the standing a
+        // writer holds anywhere else on the engagement applies here too.
         if (engagement.OwnerId != issuedBy)
-            throw new DeployTokenException(
-                $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint deploy tokens for it.");
+        {
+            var membership = await _memberships.FindAsync(engagementId, issuedBy, cancellationToken);
+            if (membership?.Role != EngagementRole.Writer)
+                throw new DeployTokenException(
+                    $"Operator {issuedBy} holds no write standing on engagement {engagementId} and cannot mint deploy tokens for it.");
+        }
 
         var effectiveMaxUses = maxUses ?? DefaultMaxUses;
         var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);

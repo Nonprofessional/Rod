@@ -54,7 +54,7 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryDeployTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         var minted = await tokens.MintAsync(engagement.Id, owner, Now);
 
         var first = await tokens.RedeemAsync(minted.Secret, Now.AddSeconds(1));
@@ -75,7 +75,7 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryDeployTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         var minted = await tokens.MintAsync(engagement.Id, owner, Now);
 
         var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(
@@ -91,7 +91,7 @@ public class ImplantDomainTests
         var engagement = Engagement.Create(EngagementId.New(), "Op A", owner, Now);
         await engagements.SaveAsync(engagement);
 
-        var tokens = new InMemoryDeployTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         await tokens.MintAsync(engagement.Id, owner, Now);
 
         var ex = await Assert.ThrowsAsync<DeployTokenRedeemException>(

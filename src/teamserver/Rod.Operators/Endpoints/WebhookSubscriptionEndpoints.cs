@@ -27,19 +27,19 @@ public static class WebhookSubscriptionEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/webhook-subscriptions")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
-        group.MapPost(string.Empty, RegisterAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost(string.Empty, RegisterAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("RegisterWebhookSubscription");
         group.MapGet(string.Empty, ListAsync).WithName("ListWebhookSubscriptions");
         group.MapGet("/{subscriptionId}", GetAsync).WithName("GetWebhookSubscription");
-        group.MapPost("/{subscriptionId}:enable", EnableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{subscriptionId}:enable", EnableAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("EnableWebhookSubscription");
-        group.MapPost("/{subscriptionId}:disable", DisableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{subscriptionId}:disable", DisableAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("DisableWebhookSubscription");
-        group.MapPost("/{subscriptionId}:test", TestAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{subscriptionId}:test", TestAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("TestWebhookSubscription");
-        group.MapDelete("/{subscriptionId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{subscriptionId}", DeleteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("DeleteWebhookSubscription");
         return endpoints;
     }

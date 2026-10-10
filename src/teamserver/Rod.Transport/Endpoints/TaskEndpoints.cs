@@ -37,10 +37,10 @@ public static class TaskEndpoints
         // task scope on top of the group's read.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/tasks")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapPost("/", IssueAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("IssueTask");
         // The collection route is listed before {taskId} so the literal "/" does
         // not get captured as a task id; ASP.NET Core route matching prefers the
@@ -52,23 +52,23 @@ public static class TaskEndpoints
         // The queued tasking's way back (architecture.md Sec 10.3): retract a
         // task before the implant wakes.
         group.MapPost("/{taskId}:cancel", CancelAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("CancelTask");
         // The streaming task shape's other half (architecture.md Sec 10.3):
         // operator input into a live channel task.
         group.MapPost("/{taskId}/input", SendInputAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("SendTaskInput");
         // The operator-side relay bind (architecture.md Sec 10.1 tunnel,
         // Sec 10.3): bridge a local TCP listener onto a live tunnel channel,
         // so unmodified tooling rides the tunnel without per-byte input posts.
         group.MapPost("/{taskId}/relay", BindRelayAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("BindTaskRelay");
         // Unbinding is teardown -- the safety valve any task-scoped operator
         // may pull, claim or no claim (the bind required one).
         group.MapDelete("/{taskId}/relay", UnbindRelayAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("UnbindTaskRelay");
 
         return endpoints;

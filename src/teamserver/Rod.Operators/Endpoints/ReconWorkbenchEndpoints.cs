@@ -45,16 +45,16 @@ public static class ReconWorkbenchEndpoints
     public static IEndpointRouteBuilder MapReconWorkbenchEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/engagements/{engagementId}/recon:rdap", RdapAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RdapAsync));
         endpoints.MapPost("/engagements/{engagementId}/recon:subdomains", SubdomainsAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(SubdomainsAsync));
         endpoints.MapPost("/engagements/{engagementId}/recon:portscan", PortscanAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(PortscanAsync));
         endpoints.MapPost("/engagements/{engagementId}/recon:resolve", ResolveAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ResolveAsync));
         return endpoints;
     }

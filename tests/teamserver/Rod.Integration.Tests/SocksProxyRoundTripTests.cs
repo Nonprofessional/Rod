@@ -42,7 +42,7 @@ public class SocksProxyRoundTripTests
         // per connection -- arbitrary, not baked at task time.
         await using var thirdOne = EchoHost.Start();
         await using var thirdTwo = EchoHost.Start();
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host, ImplantClass.Implant);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
@@ -133,7 +133,7 @@ public class SocksProxyRoundTripTests
         var deadPort = ((IPEndPoint)taken.LocalEndpoint).Port;
         taken.Stop();
 
-        var implant = await EnrollImplantAsync(implants, clock, ImplantClass.Implant);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host, ImplantClass.Implant);
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "tunnel.socks" });
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
@@ -400,16 +400,6 @@ public class SocksProxyRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock, ImplantClass @class)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), @class, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     private sealed class TaskIssuedBody
     {

@@ -45,7 +45,7 @@ public static class CloseoutEndpoints
         // as an action on the engagement itself.
         var group = endpoints
             .MapGroup("/engagements")
-            .RequireAuthorization(OperatorScopes.TaskPolicy);
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write));
         group.MapPost("/{engagementId}:freeze", FreezeAsync).WithName("FreezeEngagement");
         group.MapPost("/{engagementId}:unfreeze", UnfreezeAsync).WithName("UnfreezeEngagement");
         group.MapPost("/{engagementId}:evidence-package", ExportEvidencePackageAsync).WithName("ExportEvidencePackage");

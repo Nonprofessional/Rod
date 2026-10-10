@@ -59,7 +59,7 @@ public static class TopologyEndpoints
     public static IEndpointRouteBuilder MapTopologyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/engagements/{engagementId}/topology", GetTopologyAsync)
-            .RequireAuthorization(OperatorScopes.ReadPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read))
             .WithName(nameof(GetTopologyAsync));
         return endpoints;
     }

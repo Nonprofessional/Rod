@@ -28,7 +28,7 @@ public static class SystemEndpoints
     {
         var group = endpoints
             .MapGroup("/system")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization();
         group.MapGet("/", GetSystemAsync).WithName(nameof(GetSystemAsync));
         return endpoints;
     }

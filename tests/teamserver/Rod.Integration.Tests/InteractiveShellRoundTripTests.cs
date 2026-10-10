@@ -36,7 +36,7 @@ public class InteractiveShellRoundTripTests
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "shell.interact" });
@@ -124,7 +124,7 @@ public class InteractiveShellRoundTripTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         await AuthenticatedHost.LoginAsync(env.Http);
 
@@ -221,16 +221,6 @@ public class InteractiveShellRoundTripTests
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     private sealed class TaskIssuedBody
     {

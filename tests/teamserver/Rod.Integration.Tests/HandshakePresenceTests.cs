@@ -37,7 +37,7 @@ public class HandshakePresenceTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "shell.exec", "file.push" });
@@ -83,7 +83,7 @@ public class HandshakePresenceTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(
             env.HttpPort, implant.Id.ToString(), new[] { "shell.exec", "file.push" },
@@ -118,7 +118,7 @@ public class HandshakePresenceTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
         var response = await beacon.ReceiveHandshakeAsync();
         Assert.Equal(HandshakeStatus.Ok, response.Status);
@@ -143,17 +143,6 @@ public class HandshakePresenceTests
         Assert.Equal(implant.Id, online[0].ImplantId);
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     // The canonical signed encoding from rod.proto: for each field, the
     // little-endian uint32 length of its UTF-8 bytes followed by the bytes.

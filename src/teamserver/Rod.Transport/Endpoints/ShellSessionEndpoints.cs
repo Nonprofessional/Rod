@@ -43,22 +43,22 @@ public static class ShellSessionEndpoints
         // acting (architecture.md Sec 4.5).
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/shells")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapGet("/", ListShellsAsync).WithName(nameof(ListShellsAsync));
         group.MapGet("/{id}/output", ReadOutputAsync).WithName(nameof(ReadOutputAsync));
         group.MapPost("/{id}:input", SendInputAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(SendInputAsync));
         // Closing is teardown: any task-scoped operator may kill a runaway
         // shell, claim or no claim -- the safety valve stays open.
         group.MapPost("/{id}:close", CloseShellAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(CloseShellAsync));
         // The upgrade renders launchers but types nothing into the shell: the
         // paste rides the audited, claim-checked input route above.
         group.MapPost("/{id}:upgrade", UpgradeAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(UpgradeAsync));
 
         return endpoints;

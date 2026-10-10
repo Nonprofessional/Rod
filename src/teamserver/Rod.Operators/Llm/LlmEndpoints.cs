@@ -32,7 +32,7 @@ public static class LlmEndpoints
     public static IEndpointRouteBuilder MapLlmEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/engagements/{engagementId}/tasks/{taskId}:summarize", SummarizeAsync)
-            .RequireAuthorization(OperatorScopes.ReadPolicy)
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read))
             .WithName("SummarizeTask");
         return endpoints;
     }

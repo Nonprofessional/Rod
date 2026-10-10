@@ -27,7 +27,7 @@ public static class EngagementMemberEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization();
 
         group.MapGet("/{engagementId}/members", ListMembersAsync).WithName(nameof(ListMembersAsync));
         group.MapPost("/{engagementId}/members", AddMemberAsync).WithName(nameof(AddMemberAsync));

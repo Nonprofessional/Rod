@@ -26,17 +26,17 @@ public static class AutomationRuleEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/automation-rules")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
-        group.MapPost(string.Empty, CreateAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost(string.Empty, CreateAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("CreateAutomationRule");
         group.MapGet(string.Empty, ListAsync).WithName("ListAutomationRules");
         group.MapGet("/{ruleId}", GetAsync).WithName("GetAutomationRule");
-        group.MapPost("/{ruleId}:enable", EnableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{ruleId}:enable", EnableAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("EnableAutomationRule");
-        group.MapPost("/{ruleId}:disable", DisableAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{ruleId}:disable", DisableAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("DisableAutomationRule");
-        group.MapDelete("/{ruleId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{ruleId}", DeleteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("DeleteAutomationRule");
         return endpoints;
     }

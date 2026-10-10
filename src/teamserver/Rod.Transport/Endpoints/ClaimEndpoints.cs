@@ -25,14 +25,14 @@ public static class ClaimEndpoints
         // Reads need the viewing scope; acquiring and releasing are acting.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/claims")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapGet("/", ListAsync).WithName("ListInteractionClaims");
         group.MapPost("/", AcquireAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("AcquireInteractionClaim");
         group.MapDelete("/{kind}/{surfaceId}", ReleaseAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("ReleaseInteractionClaim");
 
         return endpoints;

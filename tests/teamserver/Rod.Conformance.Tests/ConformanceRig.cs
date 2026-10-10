@@ -350,8 +350,8 @@ public sealed class ConformanceRig : IAsyncDisposable
     {
         var created = await _engagements.CreateEngagementAsync(
             new CreateEngagementCommand(_operator, "conformance-" + Guid.NewGuid().ToString("N")[..8]));
-        var minted = await _engagements.MintDeployTokenForOwnerAsync(
-            new MintDeployTokenCommand(created.EngagementId));
+        var minted = await _engagements.MintDeployTokenAsync(
+            new MintDeployTokenCommand(created.EngagementId, _operator));
         return (created.EngagementId, minted.Secret);
     }
 

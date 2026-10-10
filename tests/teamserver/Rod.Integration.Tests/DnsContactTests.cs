@@ -682,11 +682,9 @@ public class DnsContactTests
         public async Task<Implant> EnrollImplantAsync()
         {
             var implants = Host.Services.GetRequiredService<IImplantRepository>();
-            var engagements = Host.Services.GetRequiredService<IEngagementRepository>();
-            var engagement = Engagement.Create(EngagementId.New(), "dns-test", OperatorId.New(), DateTimeOffset.UtcNow);
-            await engagements.SaveAsync(engagement);
+            var engagementId = await EngagementSetup.CreateOwnedEngagementAsync(Host);
             var implant = Implant.Enroll(
-                ImplantId.New(), engagement.Id, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Implant, DateTimeOffset.UtcNow);
+                ImplantId.New(), engagementId, DateTimeOffset.UtcNow.AddDays(30), ImplantClass.Implant, DateTimeOffset.UtcNow);
             await implants.SaveAsync(implant);
             return implant;
         }

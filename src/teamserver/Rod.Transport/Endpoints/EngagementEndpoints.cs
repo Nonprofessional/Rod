@@ -25,44 +25,60 @@ public static class EngagementEndpoints
     {
         // Operator-facing: every engagement route requires an authenticated
         // operator session (cookie auth wired via AddRodOperatorAuth). The
-        // listing reads with the viewing scope; creating, editing, minting,
-        // revoking, and scoping the ROE are acting (architecture.md Sec 4.5).
-        // The implant-facing enrollment path is mapped separately and stays anonymous.
+        // listing is the caller's own reach (owner or member, filtered in the
+        // handler -- it spans engagements); creating is open to any
+        // authenticated operator (the creator becomes the owner,
+        // architecture.md Sec 3); the engagement-scoped routes carry the
+        // membership gate as their write filter. The implant-facing
+        // enrollment path is mapped separately and stays anonymous.
         var group = endpoints
             .MapGroup("/engagements")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization();
 
         group.MapGet("/", ListEngagementsAsync).WithName(nameof(ListEngagementsAsync));
         group.MapPost("/", CreateEngagementAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(CreateEngagementAsync));
         group.MapPut("/{engagementId}", EditEngagementAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(EditEngagementAsync));
 
         group.MapPost("/{engagementId}/deploy-tokens", MintDeployTokenAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(MintDeployTokenAsync));
 
         group.MapPost("/{engagementId}/deploy-tokens/{tokenId}:revoke", RevokeDeployTokenAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RevokeDeployTokenAsync));
 
         group.MapPut("/{engagementId}/roe", ApplyRoeAsync)
-            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ApplyRoeAsync));
 
         return endpoints;
     }
 
     private static async Task<IResult> ListEngagementsAsync(
+        ClaimsPrincipal user,
         IEngagementRepository engagements,
+        IEngagementMembershipStore memberships,
         IOperatorRepository operators,
         IImplantRepository implants,
         ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
-        var all = await engagements.ListAsync(cancellationToken);
+        var caller = user.TryGetOperatorId();
+        if (caller is null)
+            return Results.Unauthorized();
+
+        // The listing is the caller's own reach (architecture.md Sec 3): the
+        // engagements they own plus the ones an owner granted them into. A
+        // stranger's engagement does not appear -- the same concealment the
+        // per-engagement routes keep, at the roster level.
+        var reach = (await memberships.ListForOperatorAsync(caller.Value, cancellationToken))
+            .ToDictionary(m => m.EngagementId, m => EngagementRoles.ToName(m.Role));
+        var all = (await engagements.ListAsync(cancellationToken))
+            .Where(e => e.OwnerId == caller.Value || reach.ContainsKey(e.Id))
+            .ToList();
 
         // The owner handle lives on the Operator, not the engagement. Resolve it
         // per engagement; an unknown owner (engagement predates the operator) is
@@ -86,6 +102,7 @@ public static class EngagementEndpoints
                 e.Description,
                 e.OwnerId.ToString(),
                 owner?.Handle ?? string.Empty,
+                e.OwnerId == caller.Value ? "owner" : reach[e.Id],
                 e.CreatedAt,
                 RoeProfileResponse.From(e.Roe),
                 e.FrozenAt,
@@ -124,6 +141,7 @@ public static class EngagementEndpoints
             created.Description,
             created.OwnerId.ToString(),
             created.OwnerHandle,
+            "owner",
             created.CreatedAt,
             RoeProfileResponse.From(RoeProfile.Unrestricted),
             FrozenAt: null,
@@ -213,6 +231,7 @@ public static class EngagementEndpoints
             edited.Engagement.Description,
             edited.Engagement.OwnerId.ToString(),
             edited.OwnerHandle,
+            edited.Engagement.OwnerId == operatorId.Value ? "owner" : "member",
             edited.Engagement.CreatedAt,
             RoeProfileResponse.From(edited.Engagement.Roe),
             edited.Engagement.FrozenAt,
@@ -221,11 +240,15 @@ public static class EngagementEndpoints
 
     private static async Task<IResult> MintDeployTokenAsync(
         string engagementId,
+        ClaimsPrincipal user,
         HttpContext context,
         EngagementService service,
         IAuditStore audit,
         CancellationToken cancellationToken)
     {
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
         if (!Guid.TryParse(engagementId, out var idValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
@@ -253,8 +276,8 @@ public static class EngagementEndpoints
 
         try
         {
-            var minted = await service.MintDeployTokenForOwnerAsync(
-                new MintDeployTokenCommand(new EngagementId(idValue), request?.MaxUses, lifetime),
+            var minted = await service.MintDeployTokenAsync(
+                new MintDeployTokenCommand(new EngagementId(idValue), operatorId.Value, request?.MaxUses, lifetime),
                 cancellationToken);
 
             var response = new DeployTokenResponse(
@@ -445,6 +468,7 @@ public static class EngagementEndpoints
         string? Description,
         string OwnerId,
         string OwnerHandle,
+        string YourRole,
         DateTimeOffset CreatedAt,
         RoeProfileResponse Roe,
         DateTimeOffset? FrozenAt = null,

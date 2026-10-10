@@ -52,7 +52,7 @@ public class PivotFrontingRoundTripTests
         // recorded server-side with its ParentImplantId. The child never
         // connects: no handshake, no session, no stream of its own.
         var now = clock.GetUtcNow();
-        var engagement = EngagementId.New();
+        var engagement = await EngagementSetup.CreateOwnedEngagementAsync(env.Host);
         var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(parent);
         var child = Implant.EnrollChild(
@@ -175,7 +175,7 @@ public class PivotFrontingRoundTripTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
         var now = clock.GetUtcNow();
-        var engagement = EngagementId.New();
+        var engagement = await EngagementSetup.CreateOwnedEngagementAsync(env.Host);
         var parent = Implant.Enroll(ImplantId.New(), engagement, now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(parent);
         var child = Implant.EnrollChild(

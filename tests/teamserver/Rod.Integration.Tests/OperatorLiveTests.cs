@@ -92,6 +92,12 @@ public class OperatorLiveTests
         var engagementId = await CreateEngagementAsync(clientA, "Operation alpha");
         var implantId = await EnrollImplantAsync(clientA, engagementId);
 
+        // The live stream is a member surface (architecture.md Sec 3): alpha
+        // grants bravo the reader tier before bravo may connect.
+        var invite = await clientA.PostAsJsonAsync(
+            $"/engagements/{engagementId}/members", new { handle = "bravo", role = "reader" });
+        invite.EnsureSuccessStatusCode();
+
         // Operator A connects first and reads its hello frame.
         await using var streamA = await OpenStreamAsync(clientA, engagementId);
         var helloA = await streamA.ReadAsync();
@@ -212,6 +218,12 @@ public class OperatorLiveTests
 
         var engagementX = await CreateEngagementAsync(clientX, "Operation x-ray");
         var engagementY = await CreateEngagementAsync(clientY, "Operation yankee");
+
+        // yankee-2 reaches Y's stream the same way every member does: by
+        // yankee's grant (the membership model, architecture.md Sec 3).
+        var invite = await clientY.PostAsJsonAsync(
+            $"/engagements/{engagementY}/members", new { handle = "yankee-2", role = "reader" });
+        invite.EnsureSuccessStatusCode();
 
         // An operator connected to engagement X should never see engagement Y's
         // presence or tasking.

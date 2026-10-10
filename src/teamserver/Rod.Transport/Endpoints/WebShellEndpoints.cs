@@ -39,18 +39,18 @@ public static class WebShellEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/webshells")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapGet("/", ListWebShellsAsync).WithName(nameof(ListWebShellsAsync));
-        group.MapPost("/", RegisterWebShellAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/", RegisterWebShellAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RegisterWebShellAsync));
-        group.MapDelete("/{implantId}", RemoveWebShellAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{implantId}", RemoveWebShellAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RemoveWebShellAsync));
-        group.MapPost("/{implantId}:test", ProbeWebShellAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{implantId}:test", ProbeWebShellAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ProbeWebShellAsync));
-        group.MapPost("/{implantId}:exec", ExecuteWebShellAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{implantId}:exec", ExecuteWebShellAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(ExecuteWebShellAsync));
-        group.MapPost("/scripts", GenerateScriptAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/scripts", GenerateScriptAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(GenerateScriptAsync));
 
         return endpoints;

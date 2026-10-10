@@ -25,13 +25,13 @@ public static class TaskSnippetEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/task-snippets")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
-        group.MapPost(string.Empty, CreateAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost(string.Empty, CreateAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("CreateTaskSnippet");
         group.MapGet(string.Empty, ListAsync).WithName("ListTaskSnippets");
         group.MapGet("/{snippetId}", GetAsync).WithName("GetTaskSnippet");
-        group.MapDelete("/{snippetId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{snippetId}", DeleteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName("DeleteTaskSnippet");
         return endpoints;
     }

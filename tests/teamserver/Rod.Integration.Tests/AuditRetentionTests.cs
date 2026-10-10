@@ -83,34 +83,36 @@ public class AuditRetentionTests
         var recoveredAudit = envB.Host.Services.GetRequiredService<IAuditStore>();
         var recoveredArtifacts = envB.Host.Services.GetRequiredService<IArtifactStore>();
 
-        // The trail reads back through the per-engagement audit endpoint on the
-        // new host, oldest-first, every kind present and correctly attributed.
-        var trailResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
-            $"/engagements/{engagementId}/audit");
-        Assert.NotNull(trailResponse);
-        Assert.Equal(trailCountAfterA, trailResponse!.Items.Length);
+        // The recovered trail reads back through the recovered store,
+        // oldest-first, every kind present and correctly attributed. The
+        // engagement itself was in-memory state and did not survive the
+        // teardown, so the per-engagement HTTP route renders the same 404 a
+        // missing engagement does -- the evidence store, not the route, is
+        // what recovery must answer for.
+        var recoveredTrail = await recoveredAudit.ListAsync(engagementId);
+        Assert.Equal(trailCountAfterA, recoveredTrail.Count);
 
-        var byKind = trailResponse.Items.ToDictionary(e => e.Kind);
-        Assert.Contains("EngagementCreated", byKind.Keys);
-        Assert.Contains("DeployTokenMinted", byKind.Keys);
-        Assert.Contains("ImplantEnrolled", byKind.Keys);
-        Assert.Contains("SessionOpened", byKind.Keys);
-        Assert.Contains("TaskIssued", byKind.Keys);
-        Assert.Contains("TaskDispatched", byKind.Keys);
-        Assert.Contains("TaskCompleted", byKind.Keys);
-        Assert.Contains("ImplantRetired", byKind.Keys);
-        Assert.Contains("ArtifactAttached", byKind.Keys);
+        var byKind = recoveredTrail.ToDictionary(e => e.Kind);
+        Assert.Contains(Rod.Audit.AuditEventKind.EngagementCreated, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.DeployTokenMinted, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.ImplantEnrolled, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.SessionOpened, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.TaskIssued, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.TaskDispatched, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.TaskCompleted, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.ImplantRetired, byKind.Keys);
+        Assert.Contains(Rod.Audit.AuditEventKind.ArtifactAttached, byKind.Keys);
 
         // Attribution survived the teardown: every operator-bound event still
         // points at the operator who acted.
-        Assert.Equal(owner.Value, byKind["EngagementCreated"].OperatorId);
-        Assert.Equal(owner.Value, byKind["ImplantEnrolled"].OperatorId);
-        Assert.Equal(taskIssuer.Value, byKind["TaskIssued"].OperatorId);
+        Assert.Equal(owner.Value, byKind[Rod.Audit.AuditEventKind.EngagementCreated].OperatorId);
+        Assert.Equal(owner.Value, byKind[Rod.Audit.AuditEventKind.ImplantEnrolled].OperatorId);
+        Assert.Equal(taskIssuer.Value, byKind[Rod.Audit.AuditEventKind.TaskIssued].OperatorId);
 
         // Oldest-first ordering survived the reload.
         Assert.Equal(
-            trailResponse.Items.Select(e => e.EventId),
-            trailResponse.Items.OrderBy(e => e.At).Select(e => e.EventId));
+            recoveredTrail.Select(e => e.EventId),
+            recoveredTrail.OrderBy(e => e.At).Select(e => e.EventId));
 
         // The hash chain still verifies after the teardown -- the reloaded trail
         // is tamper-evident across the restart, not just within one host. This is
@@ -130,9 +132,11 @@ public class AuditRetentionTests
         var foreignTrail = await recoveredAudit.ListAsync(Guid.NewGuid());
         Assert.Empty(foreignTrail);
 
-        var foreignResponse = await envB.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
-            $"/engagements/{Guid.NewGuid()}/audit");
-        Assert.Empty(foreignResponse!.Items);
+        // The HTTP route conceals a foreign engagement the same way a missing
+        // one (architecture.md Sec 3) -- the store-level isolation above is
+        // the honest assertion for a nonexistent id.
+        var foreignResponse = await envB.Http.GetAsync($"/engagements/{Guid.NewGuid()}/audit");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, foreignResponse.StatusCode);
     }
 
     // Drives the full  lifecycle (mirrors OperationalEventLogTests) so the

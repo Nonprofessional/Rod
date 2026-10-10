@@ -26,7 +26,7 @@ public static class PresenceEndpoints
         // Operator-facing: presence reads require an authenticated operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/presence")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapGet("/", ListOnlineAsync).WithName(nameof(ListOnlineAsync));
 

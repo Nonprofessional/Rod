@@ -30,7 +30,7 @@ public class EnrollmentServiceTests
         TimeProvider? clock = null)
     {
         var engagements = new InMemoryEngagementRepository();
-        var tokens = new InMemoryDeployTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         implants ??= new InMemoryImplantRepository();
         var ca = new DevCertificateAuthority();
         var service = new EnrollmentService(engagements, tokens, implants, ca, clock ?? new FakeClock(Now));

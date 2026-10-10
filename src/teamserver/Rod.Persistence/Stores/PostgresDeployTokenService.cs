@@ -41,13 +41,16 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
     private const int DefaultMaxUses = 1;
 
     private readonly IEngagementRepository _engagements;
+    private readonly IEngagementMembershipStore _memberships;
     private readonly IDbContextFactory<RodPersistenceDbContext> _factory;
 
     public PostgresDeployTokenService(
         IEngagementRepository engagements,
+        IEngagementMembershipStore memberships,
         IDbContextFactory<RodPersistenceDbContext> factory)
     {
         _engagements = engagements;
+        _memberships = memberships;
         _factory = factory;
     }
 
@@ -62,9 +65,16 @@ internal sealed class PostgresDeployTokenService : IDeployTokenService
         var engagement = await _engagements.FindAsync(engagementId, cancellationToken)
             ?? throw new DeployTokenException($"Engagement {engagementId} does not exist.");
 
+        // The mint gate (architecture.md Sec 3): the owner or a writer member
+        // mints -- deploying implants is engagement work, so the standing a
+        // writer holds anywhere else on the engagement applies here too.
         if (engagement.OwnerId != issuedBy)
-            throw new DeployTokenException(
-                $"Operator {issuedBy} is not the owner of engagement {engagementId} and cannot mint deploy tokens for it.");
+        {
+            var membership = await _memberships.FindAsync(engagementId, issuedBy, cancellationToken);
+            if (membership?.Role != EngagementRole.Writer)
+                throw new DeployTokenException(
+                    $"Operator {issuedBy} holds no write standing on engagement {engagementId} and cannot mint deploy tokens for it.");
+        }
 
         var effectiveMaxUses = maxUses ?? DefaultMaxUses;
         var expiresAt = issuedAt + (lifetime ?? DefaultLifetime);

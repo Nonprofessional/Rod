@@ -60,13 +60,15 @@ public sealed class EngagementService
     }
 
     /// <summary>
-    /// Mints a deploy token for an engagement, issued by its owner. The secret is
-    /// returned once; only the caller sees it. A closed engagement (frozen for
-    /// close-out or retired) mints nothing -- it accepts no new deployments. The
-    /// command's optional scope (max uses, lifetime) sizes the token for a
-    /// deployment batch; absent values keep the single-use, one-hour default.
+    /// Mints a deploy token for an engagement, issued by the acting operator
+    /// (the owner or a writer member -- the deploy service enforces the
+    /// standing). The secret is returned once; only the caller sees it. A
+    /// closed engagement (frozen for close-out or retired) mints nothing --
+    /// it accepts no new deployments. The command's optional scope (max
+    /// uses, lifetime) sizes the token for a deployment batch; absent values
+    /// keep the single-use, one-hour default.
     /// </summary>
-    public async Task<DeployTokenMinted> MintDeployTokenForOwnerAsync(
+    public async Task<DeployTokenMinted> MintDeployTokenAsync(
         MintDeployTokenCommand command,
         CancellationToken cancellationToken = default)
     {
@@ -82,7 +84,7 @@ public sealed class EngagementService
         }
 
         var token = await _deployTokens.MintAsync(
-            engagement.Id, engagement.OwnerId, now, command.MaxUses, command.Lifetime,
+            engagement.Id, command.IssuedBy, now, command.MaxUses, command.Lifetime,
             cancellationToken: cancellationToken);
 
         return new DeployTokenMinted(
@@ -214,6 +216,7 @@ public sealed record EngagementCreated(
 /// </summary>
 public sealed record MintDeployTokenCommand(
     EngagementId EngagementId,
+    OperatorId IssuedBy,
     int? MaxUses = null,
     TimeSpan? Lifetime = null);
 

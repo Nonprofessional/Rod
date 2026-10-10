@@ -18,13 +18,13 @@ public static class SettingsEndpoints
     {
         var group = endpoints
             .MapGroup("/settings")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization();
 
         group.MapGet("/sessions", GetSessionsAsync).WithName(nameof(GetSessionsAsync));
-        group.MapPut("/sessions", PutSessionsAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPut("/sessions", PutSessionsAsync)
             .WithName(nameof(PutSessionsAsync));
         group.MapGet("/build", GetBuildAsync).WithName(nameof(GetBuildAsync));
-        group.MapPut("/build", PutBuildAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPut("/build", PutBuildAsync)
             .WithName(nameof(PutBuildAsync));
 
         return endpoints;

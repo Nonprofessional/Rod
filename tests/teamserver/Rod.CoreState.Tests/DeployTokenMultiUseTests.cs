@@ -23,7 +23,7 @@ public class DeployTokenMultiUseTests
         var owner = OperatorId.New();
         var engagements = new InMemoryEngagementRepository();
         await engagements.SaveAsync(Engagement.Create(engagementId, "multi-use-test", owner, Now));
-        return new Harness(new InMemoryDeployTokenService(engagements), engagementId, owner);
+        return new Harness(new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore()), engagementId, owner);
     }
 
     [Fact]

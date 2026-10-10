@@ -33,7 +33,7 @@ public class TaskRoundTripTests
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         // Open the beacon stream and complete the handshake first.
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
@@ -106,7 +106,7 @@ public class TaskRoundTripTests
         var audit = env.Host.Services.GetRequiredService<IAuditStore>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
         Assert.Equal(HandshakeStatus.Ok, (await beacon.ReceiveHandshakeAsync()).Status);
@@ -159,8 +159,8 @@ public class TaskRoundTripTests
         // Two implants in two engagements. The victim holds the task; the
         // impostor is a fully authenticated session of its own -- the strongest
         // position a forged result can come from.
-        var victim = await EnrollImplantAsync(implants, clock);
-        var impostor = await EnrollImplantAsync(implants, clock);
+        var victim = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
+        var impostor = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         using var victimBeacon = await WsBeaconClient.ConnectAsync(env.HttpPort, victim.Id.ToString());
         Assert.Equal(HandshakeStatus.Ok, (await victimBeacon.ReceiveHandshakeAsync()).Status);
@@ -218,16 +218,6 @@ public class TaskRoundTripTests
         Assert.Equal("uid=0", fetched.Audit.Single(e => e.Kind == "TaskCompleted").Output);
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-        return implant;
-    }
 
     private static Frame ResultFrame(TaskResult result)
         => new() { Payload = ByteString.CopyFrom(result.ToByteArray()) };

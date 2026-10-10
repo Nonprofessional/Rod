@@ -73,9 +73,9 @@ public sealed class OperatorAuthService
     /// display name under their claims (so transport can resolve the full
     /// operator identity off the principal without referencing this layer), the
     /// handle as the name, and the authentication scheme as the identity label.
-    /// It also carries the operator's scope set (architecture.md Sec 4.5) under
-    /// <see cref="OperatorClaims.OperatorScopesClaimType"/>, so the endpoint
-    /// layer's scope policies read it off the principal the same way. With
+    /// The principal carries no permission: what the operator may reach
+    /// resolves fresh from the engagement memberships on every
+    /// engagement-scoped request (architecture.md Sec 3). With
     /// <paramref name="verifierHash"/> it also carries the session stamp
     /// that binds the session to that credential generation.
     /// </summary>
@@ -88,9 +88,6 @@ public sealed class OperatorAuthService
         identity.AddClaim(new Claim(OperatorClaims.OperatorIdClaimType, op.Id.Value.ToString()));
         identity.AddClaim(new Claim(OperatorClaims.OperatorHandleClaimType, op.Handle));
         identity.AddClaim(new Claim(OperatorClaims.OperatorDisplayNameClaimType, op.DisplayName));
-        identity.AddClaim(new Claim(
-            OperatorClaims.OperatorScopesClaimType,
-            OperatorScopes.ToClaimValue(op.Scopes)));
         identity.AddClaim(new Claim(ClaimTypes.Name, op.Handle));
         if (verifierHash is not null)
             identity.AddClaim(SessionStamp.Claim(verifierHash));

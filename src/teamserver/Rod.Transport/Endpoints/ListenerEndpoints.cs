@@ -31,14 +31,14 @@ public static class ListenerEndpoints
         // operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/listeners")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         group.MapGet("/", ListListenersAsync).WithName(nameof(ListListenersAsync));
-        group.MapPost("/", CreateListenerAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/", CreateListenerAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(CreateListenerAsync));
-        group.MapPost("/{id}:repoint", RepointAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{id}:repoint", RepointAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RepointAsync));
-        group.MapDelete("/{id}", DeleteListenerAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{id}", DeleteListenerAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(DeleteListenerAsync));
 
         return endpoints;

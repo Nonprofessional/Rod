@@ -27,9 +27,9 @@ public static class PayloadJobEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/payload-jobs")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
-        group.MapPost("/", EnqueueBuildJobAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/", EnqueueBuildJobAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(EnqueueBuildJobAsync));
         group.MapGet("/", ListBuildJobsAsync).WithName(nameof(ListBuildJobsAsync));
         group.MapGet("/{jobId}", GetBuildJobAsync).WithName(nameof(GetBuildJobAsync));

@@ -200,7 +200,7 @@ public class ArtifactEndpointsTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         var now = clock.GetUtcNow();
 
-        var engagementId = EngagementId.New();
+        var engagementId = await EngagementSetup.CreateOwnedEngagementAsync(env.Host);
         var implantId = ImplantId.New();
         var implant = Implant.Enroll(
             implantId,

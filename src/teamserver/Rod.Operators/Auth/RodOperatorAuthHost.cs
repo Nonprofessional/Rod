@@ -80,19 +80,6 @@ public static class RodOperatorAuthHost
             .AddScheme<AuthenticationSchemeOptions, OperatorTokenAuthHandler>(
                 OperatorAuthConstants.TokenScheme, _ => { });
 
-        services.AddAuthorization(options =>
-        {
-            // The scope policies (architecture.md Sec 4.5): endpoint groups in
-            // transport and this layer require them by name through the
-            // constants core state carries, the same way the identity claims
-            // cross the boundary. Assertion-based because the scope set is one
-            // claim value holding a set, not one claim per scope.
-            options.AddPolicy(OperatorScopes.ReadPolicy,
-                policy => policy.RequireAssertion(ctx => ctx.User.HasScope(OperatorScope.Read)));
-            options.AddPolicy(OperatorScopes.TaskPolicy,
-                policy => policy.RequireAssertion(ctx => ctx.User.HasScope(OperatorScope.Task)));
-        });
-
         services.AddSingleton<IPasswordHasher<Operator>, PasswordHasher<Operator>>();
         services.AddSingleton<OperatorAuthService>();
         // The per-handle login throttle shares the process clock; a successful
@@ -125,14 +112,11 @@ public static class RodOperatorAuthHost
     // credential (no verifier) or a re-provisioned one (a new verifier) fails
     // the comparison, and the principal is rejected at the request that
     // presented the cookie. Reading the verifier per attempt is the same
-    // fresh-read discipline login applies.
-    //
-    // The same read bounds the session's scope set against the store
-    // (architecture.md Sec 4.5): when the operator's scopes moved and the
-    // cookie still carries the old set, the principal is replaced with the
-    // current one at this very request -- a demotion takes effect immediately
-    // and a promotion needs no re-login, and the renewed cookie carries the
-    // new set so the comparison settles.
+    // fresh-read discipline login applies. The disable flag rejects the same
+    // way: a disabled account's cookie is as dead as a revoked credential's.
+    // What the operator may reach is not the session's business anymore --
+    // engagement access resolves fresh from the memberships on every
+    // engagement-scoped request (architecture.md Sec 3).
     private static async Task ValidateSessionAsync(CookieValidatePrincipalContext context)
     {
         var operatorId = context.Principal?.TryGetOperatorId();
@@ -160,10 +144,6 @@ public static class RodOperatorAuthHost
             // Null and disabled reject identically: a disabled account's
             // cookie is as dead as a revoked credential's.
             context.RejectPrincipal();
-            return;
         }
-
-        if (context.Principal!.TryGetScopes() != @operator.Scopes)
-            context.ReplacePrincipal(OperatorAuthService.CreatePrincipal(@operator, hash));
     }
 }

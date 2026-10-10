@@ -8,16 +8,15 @@ using Rod.Transport;
 namespace Rod.Integration.Tests;
 
 /// <summary>
-/// Operator provisioning over the API (architecture.md Sec 4.5 and Sec 9):
+/// Operator provisioning over the API (architecture.md Sec 3 and Sec 9):
 /// the management path the bootstrap seed stood in for. <c>POST /operators</c>
 /// registers an account with its initial password in one step (the new handle
 /// can log in the moment the response returns), <c>GET /operators</c> lists
 /// the roster, and <c>PUT /operators/{id}/credentials</c> re-provisions a
 /// password -- a new credential generation that ends the target's live cookie
-/// sessions at their next request, exactly like the revocation flow Sec 9
-/// describes. Provisioning and re-provisioning require the acting scope of
-/// the caller (a provisioned account defaults to every scope); the roster
-/// read stays trusted-operator like the token routes.
+/// sessions at their next request. An account carries no permission: reach
+/// arrives per engagement, as memberships owners grant, so provisioning is
+/// trusted-operator like the rest of the account machinery.
 /// </summary>
 public class OperatorProvisioningTests
 {
@@ -28,11 +27,11 @@ public class OperatorProvisioningTests
         Guid Id,
         string Handle,
         string DisplayName,
-        string[] Scopes,
         DateTimeOffset CreatedAt,
-        bool HasCredential);
+        bool HasCredential,
+        bool Disabled);
 
-    private sealed record CreateBody(string Handle, string? DisplayName, string Password, string[]? Scopes);
+    private sealed record CreateBody(string Handle, string? DisplayName, string Password);
 
     [Fact]
     public async Task Create_RegistersALoginableAccount_AndListsInTheRoster()
@@ -41,7 +40,7 @@ public class OperatorProvisioningTests
         await AuthenticatedHost.LoginAsync(env.Http);
 
         var response = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, "Alice Aaron", Password, null));
+            new CreateBody(Handle, "Alice Aaron", Password));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.StartsWith("/operators/", response.Headers.Location?.ToString() ?? string.Empty);
 
@@ -49,13 +48,11 @@ public class OperatorProvisioningTests
         Assert.NotNull(created);
         Assert.Equal(Handle, created!.Handle);
         Assert.Equal("Alice Aaron", created.DisplayName);
-        // Omitted scopes are the peer default: the full set.
-        Assert.Equal(new[] { "read", "task", "approve" }, created.Scopes);
         Assert.True(created.HasCredential);
+        Assert.False(created.Disabled);
 
-        // The roster carries the new account beside the seed (and the
-        // automation engine's synthetic row, which holds no credential),
-        // ordered by handle.
+        // The roster carries both accounts, ordered by handle, and the
+        // account is loginable straight away.
         var roster = await env.Http.GetFromJsonAsync<AccountBody[]>("/operators");
         Assert.NotNull(roster);
         var handles = roster!.Select(o => o.Handle).ToArray();
@@ -70,34 +67,25 @@ public class OperatorProvisioningTests
     }
 
     [Fact]
-    public async Task Create_BlankDisplayNameDefaultsToHandle_AndEmptyScopeSetParksTheAccount()
+    public async Task Create_BlankDisplayNameDefaultsToHandle_AndTheAccountCanCreateEngagements()
     {
         await using var env = await TestEnv.StartAsync();
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // No display name: the handle stands in, the bootstrap seed's rule.
-        var parked = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("bob", null, Password, Array.Empty<string>()));
-        Assert.Equal(HttpStatusCode.Created, parked.StatusCode);
-        var account = await parked.Content.ReadFromJsonAsync<AccountBody>();
+        var created = await env.Http.PostAsJsonAsync("/operators",
+            new CreateBody("bob", null, Password));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var account = await created.Content.ReadFromJsonAsync<AccountBody>();
         Assert.Equal("bob", account!.DisplayName);
-        // An explicit empty set is honored -- the parked-account shape: the
-        // login works but the engagement surface refuses the session.
-        Assert.Empty(account.Scopes);
 
+        // A fresh account holds no permission and needs none to start work:
+        // it creates its own engagement and becomes that engagement's owner.
         using var session = env.NewClient();
         await AuthenticatedHost.LoginAsync(session, "bob", Password);
-        var me = await session.GetAsync("/operators/me");
-        Assert.Equal(HttpStatusCode.OK, me.StatusCode);
-        var engagements = await session.GetAsync("/engagements");
-        Assert.Equal(HttpStatusCode.Forbidden, engagements.StatusCode);
-
-        // A narrowed set lands the same way it does through assignment.
-        var reader = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("carol", null, Password, new[] { "read" }));
-        Assert.Equal(HttpStatusCode.Created, reader.StatusCode);
-        var readerAccount = await reader.Content.ReadFromJsonAsync<AccountBody>();
-        Assert.Equal(new[] { "read" }, readerAccount!.Scopes);
+        var engagement = await session.PostAsJsonAsync("/engagements",
+            new { name = "Operation Newcomer" });
+        Assert.Equal(HttpStatusCode.Created, engagement.StatusCode);
     }
 
     [Fact]
@@ -107,32 +95,28 @@ public class OperatorProvisioningTests
         await AuthenticatedHost.LoginAsync(env.Http);
 
         var first = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, null, Password, null));
+            new CreateBody(Handle, null, Password));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
         // A handle is one account: the second claim is a conflict, not a
         // second row.
         var duplicate = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, null, "another-p@ss", null));
+            new CreateBody(Handle, null, "another-p@ss"));
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
 
-        // Unknown scope names and incoherent sets refuse exactly like
-        // assignment; a short password is refused before anything is stored.
-        var unknownScope = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("dave", null, Password, new[] { "read", "root" }));
-        Assert.Equal(HttpStatusCode.BadRequest, unknownScope.StatusCode);
-
-        var incoherent = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("dave", null, Password, new[] { "task" }));
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, incoherent.StatusCode);
-
+        // A short password is refused before anything is stored, as are the
+        // missing fields.
         var shortPassword = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("dave", null, "short", null));
+            new CreateBody("dave", null, "short"));
         Assert.Equal(HttpStatusCode.BadRequest, shortPassword.StatusCode);
 
         var missingHandle = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(" ", null, Password, null));
+            new CreateBody(" ", null, Password));
         Assert.Equal(HttpStatusCode.BadRequest, missingHandle.StatusCode);
+
+        var missingPassword = await env.Http.PostAsJsonAsync("/operators",
+            new CreateBody("dave", null, ""));
+        Assert.Equal(HttpStatusCode.BadRequest, missingPassword.StatusCode);
 
         // None of the refused attempts left an account behind.
         var roster = await env.Http.GetFromJsonAsync<AccountBody[]>("/operators");
@@ -140,26 +124,24 @@ public class OperatorProvisioningTests
     }
 
     [Fact]
-    public async Task Provisioning_RequiresTheActingScope_WhileTheRosterReadStaysSessionGated()
+    public async Task Provisioning_IsTrustedOperator_WhileAnonymousReadsRefuse()
     {
         await using var env = await TestEnv.StartAsync();
-        var viewerId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "viewer", "Viewer", Password);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
         await AuthenticatedHost.LoginAsync(env.Http);
-        await env.Http.PutAsJsonAsync($"/operators/{viewerId}/scopes", new { scopes = new[] { "read" } });
 
-        // Anonymous reads refuse at the session, not the scope.
+        // Anonymous requests refuse at the session; any authenticated
+        // operator may provision -- accounts are identity, not permission.
         using var anonymous = env.NewClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/operators")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await anonymous.PostAsJsonAsync("/operators", new CreateBody("eve", null, Password))).StatusCode);
 
-        // A read-only operator may read the roster but not widen it: the
-        // provisioned account defaults to every scope, so creating one
-        // grants what the caller does not hold.
-        using var viewer = env.NewClient();
-        await AuthenticatedHost.LoginAsync(viewer, "viewer", Password);
-        Assert.Equal(HttpStatusCode.OK, (await viewer.GetAsync("/operators")).StatusCode);
-        var provision = await viewer.PostAsJsonAsync("/operators",
-            new CreateBody("eve", null, Password, null));
-        Assert.Equal(HttpStatusCode.Forbidden, provision.StatusCode);
+        using var colleague = env.NewClient();
+        await AuthenticatedHost.LoginAsync(colleague, "colleague", Password);
+        var provision = await colleague.PostAsJsonAsync("/operators",
+            new CreateBody("eve", null, Password));
+        Assert.Equal(HttpStatusCode.Created, provision.StatusCode);
     }
 
     [Fact]

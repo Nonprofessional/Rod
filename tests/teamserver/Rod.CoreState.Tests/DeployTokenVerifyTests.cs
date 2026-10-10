@@ -26,7 +26,7 @@ public class DeployTokenVerifyTests
         var engagements = new InMemoryEngagementRepository();
         await engagements.SaveAsync(Engagement.Create(engagementId, "verify-test", owner, Now));
 
-        var service = new InMemoryDeployTokenService(engagements);
+        var service = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         var token = await service.MintAsync(engagementId, owner, Now);
         return new Harness(service, token);
     }

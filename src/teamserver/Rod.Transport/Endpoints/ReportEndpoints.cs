@@ -60,7 +60,7 @@ public static class ReportEndpoints
         // require an authenticated operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         group.MapGet("/timeline", GetTimelineAsync).WithName(nameof(GetTimelineAsync));
         group.MapGet("/report", GetReportAsync).WithName(nameof(GetReportAsync));
         group.MapGet("/handoff-digest", GetHandoffDigestAsync).WithName(nameof(GetHandoffDigestAsync));

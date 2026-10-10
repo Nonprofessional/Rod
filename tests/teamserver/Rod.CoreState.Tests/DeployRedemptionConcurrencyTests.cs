@@ -18,7 +18,7 @@ public class DeployRedemptionConcurrencyTests
     private static (InMemoryEngagementRepository Engagements, InMemoryDeployTokenService Tokens) NewService()
     {
         var engagements = new InMemoryEngagementRepository();
-        var tokens = new InMemoryDeployTokenService(engagements);
+        var tokens = new InMemoryDeployTokenService(engagements, new InMemoryEngagementMembershipStore());
         return (engagements, tokens);
     }
 

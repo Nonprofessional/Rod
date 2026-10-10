@@ -34,6 +34,10 @@ public static class RodMcpHost
     /// <summary>Registers the MCP server with its read-only toolset.</summary>
     public static IServiceCollection AddRodMcp(this IServiceCollection services)
     {
+        // The toolset resolves its operator off the authenticated MCP request
+        // (stateless HTTP transport: every tool call is a request), so the
+        // tools can apply the caller's own engagement reach.
+        services.AddHttpContextAccessor();
         services.AddMcpServer(options =>
         {
             options.ServerInfo = new Implementation { Name = "Rod teamserver", Version = "1.0" };
@@ -49,7 +53,7 @@ public static class RodMcpHost
     /// </summary>
     public static IEndpointRouteBuilder MapRodMcp(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapMcp("/mcp").RequireAuthorization(OperatorScopes.ReadPolicy);
+        endpoints.MapMcp("/mcp").RequireAuthorization();
         return endpoints;
     }
 }

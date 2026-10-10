@@ -37,7 +37,7 @@ public static class OperatorEventsEndpoint
     {
         endpoints.MapGet("/engagements/{engagementId}/events", StreamAsync)
             .WithName("StreamOperatorEvents")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         return endpoints;
     }

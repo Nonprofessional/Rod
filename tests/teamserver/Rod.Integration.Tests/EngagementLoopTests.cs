@@ -38,7 +38,7 @@ public class EngagementLoopTests
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
         var authority = env.Host.Services.GetRequiredService<IImplantCertificateAuthority>();
         var caCert = authority.GetCaCertificate();
 
@@ -228,17 +228,6 @@ public class EngagementLoopTests
         return buffer.ToArray();
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     private static Frame HandshakeFrame(ImplantId implant)
     {

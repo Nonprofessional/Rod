@@ -43,18 +43,18 @@ public static class LauncherEndpoints
     {
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/launchers")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
         // POST on the collection renders a launcher set and keeps the row:
         // the call creates the one artifact this resource exists to produce
         // (the minted credential plus the one-liners), so the plain
         // collection POST is the render.
-        group.MapPost("/", RenderLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/", RenderLauncherAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RenderLauncherAsync));
         group.MapGet("/", ListLaunchersAsync).WithName(nameof(ListLaunchersAsync));
-        group.MapPost("/{launcherId}:revoke", RevokeLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/{launcherId}:revoke", RevokeLauncherAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(RevokeLauncherAsync));
-        group.MapDelete("/{launcherId}", DeleteLauncherAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{launcherId}", DeleteLauncherAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(DeleteLauncherAsync));
 
         return endpoints;

@@ -417,16 +417,16 @@ public sealed class AutomationEngine : BackgroundService
         if (existing is not null)
             return;
 
-        // Scope-less by construction: the synthetic operator never
-        // authenticates, so no policy ever reads its set -- but the scope
-        // guards that read the whole roster (the last task holder,
-        // architecture.md Sec 4.5) must not count an engine among the humans.
+        // An account like any other, minus the authentication: the synthetic
+        // operator never logs in, and its engagements' work rides the engine's
+        // direct core-state calls (no HTTP, no authorization) -- but the
+        // last-enabled-account guard reads the whole roster, so the disable
+        // path must not count an engine among the humans it can strand.
         var automation = new Operator(
             AutomationOperatorIdentity.OperatorId,
             AutomationOperatorIdentity.Handle,
             AutomationOperatorIdentity.DisplayName,
-            _clock.GetUtcNow(),
-            OperatorScope.None);
+            _clock.GetUtcNow());
         await _operators.SaveAsync(automation, cancellationToken);
         _logger.LogInformation("Seeded the synthetic automation operator '{Handle}'.", AutomationOperatorIdentity.Handle);
     }

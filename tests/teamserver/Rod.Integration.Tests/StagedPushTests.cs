@@ -38,7 +38,7 @@ public class StagedPushTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var implant = await EnrollImplantAsync(implants, clock);
+        var implant = await EngagementSetup.EnrollOwnedImplantAsync(env.Host);
 
         // Open the beacon stream and complete the handshake first.
         using var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString());
@@ -111,17 +111,6 @@ public class StagedPushTests
         Assert.Equal(content.Length, staged.Size);
     }
 
-    private static async Task<Implant> EnrollImplantAsync(
-        IImplantRepository implants, TimeProvider clock)
-    {
-        var now = clock.GetUtcNow();
-        var implant = Implant.Enroll(
-            ImplantId.New(), EngagementId.New(),
-            now.AddDays(30), ImplantClass.Implant, now);
-        await implants.SaveAsync(implant);
-
-        return implant;
-    }
 
     private static Frame ResultFrame(string taskId, string output)
         => new()

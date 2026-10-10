@@ -37,13 +37,13 @@ public static class PayloadEndpoints
         // Operator-facing: a payload build requires an authenticated operator session.
         var group = endpoints
             .MapGroup("/engagements/{engagementId}/payloads")
-            .RequireAuthorization(OperatorScopes.ReadPolicy);
+            .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
 
-        group.MapPost("/", BuildAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapPost("/", BuildAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(BuildAsync));
         group.MapGet("/", ListPayloadsAsync).WithName(nameof(ListPayloadsAsync));
         group.MapGet("/{artifactId}", DownloadAsync).WithName(nameof(DownloadAsync));
-        group.MapDelete("/{artifactId}", DeleteAsync).RequireAuthorization(OperatorScopes.TaskPolicy)
+        group.MapDelete("/{artifactId}", DeleteAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(DeleteAsync));
 
         return endpoints;
