@@ -435,3 +435,60 @@ translate, so every report over a live Postgres died in the crew section
 ordering and never met it. Fixed to order by the converted column, with
 a regression test over the real-Postgres durability fixture that fails
 on the old line and passes on the new one.
+
+## 8. The browser-hook leg (dated 2026-10-10)
+
+The Browser class shipped (architecture.md Sec 5.2, Sec 8); this leg ran
+its acceptance criterion live: a real browser, a real teamserver, and the
+two verbs the criterion names. The lab shape: the dev teamserver
+(`dotnet run`, in-memory core state), a fresh engagement, one http
+listener direct on loopback (public endpoint equals bind -- fronting was
+not this leg's question), and a minted sealed hook (5s poll, 10-use
+enrollment budget, fingerprint `636c1642…`). The browser is the host's
+headless Chromium (`--headless=new`), loading the mint's own test page --
+the stand-in for a script-injection foothold, the exact artifact a victim
+fetches.
+
+What ran, and what it produced:
+
+- **The mint and the serve.** `POST /engagements/{id}/hooks` answered
+  `hookId 66277163…` with the serving URL and the paste-ready
+  `<script src>` snippet; the roster lists the hook with its posture and
+  cadence. Loading the test page wrote the first-touch trail exactly as
+  designed: three `HookFetched` facts (script, test page) naming each
+  fetcher's address and user agent before any identity existed, then the
+  identity-bearing half followed.
+- **The enrollment.** The hook enrolled over the sealed envelope carrier
+  in the real browser's JavaScript -- the hand-rolled protobuf codec, the
+  WebCrypto AES-256-GCM R1 body, the strictly increasing counter, and the
+  sealed JSON enroll all executed as served, unmodified: the roster row
+  is class `Browser`, online, reporting `os=Linux x86_64
+  arch=browser`, carrier `envelope`, and the trail carries
+  `ImplantEnrolled` with the class beside a single `SessionOpened` (the
+  poll cadence's session-reuse guard holding).
+- **The criterion's task pair.** `browser.fingerprint` and
+  `browser.cookies` issued at 16:17:37, both dispatched on one poll
+  contact at 16:17:40, both completed `Succeeded` at 16:17:41 -- about
+  four seconds end to end. The fingerprint answered the full navigator
+  facts of the headless browser (HeadlessChrome/150 UA, en-US, 800x600,
+  Asia/Shanghai timezone, the hooked page's own URL); the cookie read
+  answered `(no readable cookies)`, the honest empty set of the origin's
+  non-HttpOnly jar. Both tasks' audit arcs read
+  `TaskIssued → TaskDispatched → TaskCompleted` attributed to the
+  Browser-class implant.
+
+The teardown followed the standing shape: implant retired, engagement
+frozen and retired.
+
+One composed-system defect, again caught exactly the way this document
+exists to catch them: the first live run stranded every dispatched task.
+The hook's seal decode resolved the raw ArrayBuffer WebCrypto returns,
+and the script's readers speak Uint8Array -- so the hook never parsed a
+response at all, polled on happily, and silently ignored its tasking
+while every CI pin stayed green (the fake hook in the e2e suite decodes
+with .NET's own primitives and never met the shape). The node
+golden-vector smoke shared the blind spot: it round-tripped frames
+through the codec but never through a decrypt. Fixed with the wrap the
+encrypt side always had, hardened the failed-contact re-queue beside it,
+and re-run green end to end -- the leg below is the fixed artifact's
+evidence, not the first attempt's.

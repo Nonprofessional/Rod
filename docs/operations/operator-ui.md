@@ -590,6 +590,25 @@ surgical revoke that keeps the row, the API's `:revoke` endpoint remains.
 The rows survive a teamserver restart when the durable store is
 configured, like every other engagement fact.
 
+**Hook a browser** is the XSS foothold's delivery, the third surface:
+the mint renders the in-tree hook script with its bake (enrollment
+credential, seal key, cadence, verbs) and answers the paste-ready
+`<script src>` tag to inject on the vulnerable page, plus a test page
+URL that enrolls the first browser pointed at it. The pick that matters
+is the **front** -- an http(s) listener whose public endpoint every
+victim's browser dials; the cadence, enrollment budget, and seal posture
+sit behind the fold (the budget is enrollments, one per hooked browser
+and one per reload where the page's storage is blocked -- serving the
+script itself is unbudgeted; the cleartext posture exists for hooking
+plain-http pages where the browser offers no `crypto.subtle`). Every
+mint lands in the roster below with **Revoke**: the serving URL 404s,
+the baked credential stops enrolling, and browsers already holding the
+script go quiet at their next contact. The hooked browsers themselves
+need no surface of their own -- they are Browser-class rows in the
+Implants table, taskable from the same menu (fingerprint, cookies, DOM
+read, screenshot, redirect, prompt), their results in the same task log
+and audit trail as any implant's.
+
 ## Build
 
 The main path is the mainstream shape: pick the **Listener (enroll +

@@ -25,30 +25,9 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
-  architecture.md Sec 5.2 and Sec 10.1; design landed). In flight: the
-  plugin seam it waited on shipped, and the design amendment is in
-  [architecture.md](architecture.md) Sec 5.2, Sec 8, Sec 10.1, and Sec 13
-  (the serving story answers the first design question -- the hook script
-  is a rendered payload record served from the public edge under an
-  unguessable route id). What an
-  engagement cannot do without it: pivot a script-injection foothold into
-  tasking -- the hooked browser is the most common web-facing foothold,
-  and today it needs a separate platform (BeEF) with its own operator
-  surface, storage, and OPSEC story, disconnected from the engagement
-  trail. Shape: a new `Browser` implant class whose artifact is a served
-  hook script (`<script src>`), enrolling and contacting over the
-  certificate-less envelope carrier (Sec 8) on the poll cadence the
-  store-and-forward degraded discipline already models; the reduced verb
-  set starts mainstream and documented -- browser fingerprint, cookie
-  read, DOM read and screenshot, redirect, prompt -- with the sensitive
-  boundary held (Sec 13): input capture and browser-exploit chaining stay
-  out-of-tree capability contracts, not core verbs. Every hooked browser
-  is an engagement-scoped implant entity, so attribution, live events,
-  audit, and the automation engine treat it like any other implant.
-  _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
-  over the envelope carrier, and an operator tasks a fingerprint and a
-  cookie read against it, with both results in the audit trail.
+(Nothing queued. The browser-hook implant class shipped 2026-10-10; the
+rehearsal walk covers it as Sec 8, per
+[operations/rehearsal.md](operations/rehearsal.md).)
 
 ## On hold
 
