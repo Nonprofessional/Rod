@@ -12,6 +12,9 @@
 
 <p align="center">
   <a href="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml"><img src="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/.NET_10-512BD4?logo=dotnet&logoColor=white" alt=".NET 10">
+  <img src="https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black" alt="Rust">
+  <img src="https://img.shields.io/badge/React_19-61DAFB?logo=react&logoColor=black" alt="React 19">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
 </p>
 
@@ -107,6 +110,32 @@ boundary, by construction. An engagement runs the red-team lifecycle:
 stand up listeners, build payloads, operate the fleet (shell, transfer,
 recon, lateral movement, persistence, collection, exfiltration,
 tunneling), then close out -- freeze, export the evidence package, retire.
+
+```mermaid
+flowchart LR
+    subgraph T [In-scope targets]
+        I[Implant fleet]
+        W[Web shells]
+    end
+    R[Redirectors - disposable]
+    subgraph S [Teamserver]
+        E[Engagement listeners]
+        K[Kernel - state, tasking, builds]
+        F[Operator front - console, /mcp]
+    end
+    subgraph O [Operator side]
+        B[Browser console]
+        M[MCP agents]
+    end
+    D[(Postgres + audit trail)]
+    I -->|implant-initiated contacts| R
+    W -->|placement-script callbacks| R
+    R --> E --> K
+    B --> F
+    M --> F
+    F --> K
+    K --> D
+```
 
 ## Components
 
@@ -210,34 +239,20 @@ next to it documents.
 
 The doc tree, by what you came for:
 
-- **The design** -- [docs/architecture.md](docs/architecture.md) is the
-  blueprint: lifecycle, engagement model, kernel layers, implants and
-  profiles, build pipeline, OPSEC, transports, security, and the
-  sensitive-capability boundary.
-- **Building against Rod** (`docs/extending/`) --
-  [implants.md](docs/extending/implants.md) is the wire reference a
-  from-scratch implant builds against;
-  [transports.md](docs/extending/transports.md) is the contract a new C2
-  carrier registers under, in-tree or out;
-  [tradecraft.md](docs/extending/tradecraft.md) is how out-of-tree
-  capability modules plug in.
-- **Running Rod** (`docs/operations/`) --
-  [teamserver.md](docs/operations/teamserver.md) is the stand-up,
-  configuration, and production runbook;
-  [operator-ui.md](docs/operations/operator-ui.md) is the operator
-  console's panels and fields;
-  [redirectors.md](docs/operations/redirectors.md) is the redirector
-  build/deploy/rotate runbook;
-  [rehearsal.md](docs/operations/rehearsal.md) is the pre-deployment
-  rehearsal walk;
-  [recon.md](docs/operations/recon.md) is the external recon workbench --
-  its egress decisions, configuration, and the scan's ROE gate;
-  [mcp.md](docs/operations/mcp.md) is the read-only MCP server for agent
-  tooling over the operator surface;
-  [llm.md](docs/operations/llm.md) is the opt-in LLM triage client.
-- **Project state** -- [docs/todo.md](docs/todo.md) tracks open work;
-  [docs/glossary.md](docs/glossary.md) holds terminology;
-  [SECURITY.md](SECURITY.md) covers vulnerability reporting and scope.
+| What you came for | Start here |
+|-------------------|------------|
+| The design -- lifecycle, engagement model, kernel layers, implants and profiles, build pipeline, OPSEC, transports, the sensitive-capability boundary | [docs/architecture.md](docs/architecture.md) |
+| A from-scratch implant against the wire contract | [docs/extending/implants.md](docs/extending/implants.md) |
+| A new C2 carrier, in-tree or out | [docs/extending/transports.md](docs/extending/transports.md) |
+| An out-of-tree capability module against the plugin seam | [docs/extending/tradecraft.md](docs/extending/tradecraft.md) |
+| Stand-up, configuration, and the production runbook | [docs/operations/teamserver.md](docs/operations/teamserver.md) |
+| The operator console's panels and fields | [docs/operations/operator-ui.md](docs/operations/operator-ui.md) |
+| Redirector build, deploy, and rotation | [docs/operations/redirectors.md](docs/operations/redirectors.md) |
+| The pre-deployment rehearsal walk | [docs/operations/rehearsal.md](docs/operations/rehearsal.md) |
+| Pre-foothold recon -- egress decisions and the scan's ROE gate | [docs/operations/recon.md](docs/operations/recon.md) |
+| Agent tooling over the read side (MCP) | [docs/operations/mcp.md](docs/operations/mcp.md) |
+| The opt-in LLM triage client | [docs/operations/llm.md](docs/operations/llm.md) |
+| Open work, terminology, vulnerability reporting | [docs/todo.md](docs/todo.md), [docs/glossary.md](docs/glossary.md), [SECURITY.md](SECURITY.md) |
 
 ## Sensitive tradecraft stays out of the core
 
