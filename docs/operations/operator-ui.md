@@ -332,12 +332,14 @@ bridge is a decision about engagement data leaving the box
 
 ## Handoff digest
 
-The Handoff digest panel is the resuming operator's read
-(architecture.md Sec 11.1): what happened on the watch while nobody sat
-at this console. The live stream has no replay -- events that fired while
-disconnected never happened, console-side -- so the digest answers the
-resume question from the one place that holds it: the engagement's audit
-trail, windowed and curated into a single ordered account.
+The Handoff digest is the Audit panel's window mode (architecture.md
+Sec 11.1): the resuming operator's read of what happened on the watch
+while nobody sat at this console. The live stream has no replay -- events
+that fired while disconnected never happened, console-side -- so the
+digest answers the resume question from the one place that holds it: the
+engagement's audit trail, windowed and curated into a single ordered
+account. It earned its own tab once and retired it again: the resume
+question is a query over the ledger, and the ledger is where it is asked.
 
 **The window** anchors where you pick it: the quick picks (last 12h, 24h,
 48h) set both bounds at click time, the custom fields set explicit
@@ -820,7 +822,9 @@ one glance before the first build is ever queued.
 
 - **Audit** -- the append-only, hash-chained ledger; tampering with a stored
   event breaks the chain at the next link. Paged and filterable; the raw feed
-  the report renders from. (The Timeline tab retired: it was a third
+  the report renders from. Its second reading mode is the handoff digest
+  (see [Handoff digest](#handoff-digest)) -- the windowed watch-resume read
+  of the same trail. (The Timeline tab retired: it was a third
   projection of the same trail -- the narrative rendering lives as the
   Report's timeline section, and the standalone `/timeline` endpoint stays a
   scripting deliverable.)

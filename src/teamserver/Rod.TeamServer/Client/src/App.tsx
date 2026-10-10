@@ -216,6 +216,8 @@ function App() {
   const RETIRED_TAB_REDIRECTS: Partial<Record<string, TabId>> = {
     // Evidence attach/download moved into the task log's expanded rows.
     artifacts: 'tasking',
+    // The windowed watch-resume read became the Audit panel's window mode.
+    digest: 'audit',
   }
 
   // Unknown tab segments (stale links) fall back to the fleet -- the primary

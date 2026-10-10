@@ -16,7 +16,6 @@ export type TabId =
   | 'webshells'
   | 'audit'
   | 'report'
-  | 'digest'
   | 'recon'
   | 'intel'
   | 'listeners'
@@ -35,12 +34,12 @@ export interface NavItemDef {
 // feed of everything issued) -- infrastructure next, evidence last in
 // reading order. The task log sits with Implants rather than under Evidence
 // because it is the working log, read while operating; the immutable record
-// (audit, report) stays under Evidence. The timeline's own tab retired with
-// the narrative/report split it duplicated: the audit ledger is the raw
-// reading surface, and the report export's timeline section is the narrative
-// deliverable, so a third projection of the same trail had no job left. The
-// digest earned its tab back on a different job: it is the windowed
-// watch-resume read, not a third rendering of the whole trail.
+// (audit, report) stays under Evidence. Two feed-shaped tabs retired the
+// same way the timeline did -- as extra projections of surfaces that
+// already render them: the handoff digest is the Audit panel's window mode
+// (the resume question is a query over the ledger), and task artifacts
+// surface in the task log's expanded rows, where the task they document
+// already lives.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
     label: 'Operate',
@@ -51,7 +50,6 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
       { id: 'automation', label: 'Automation', icon: 'clock' },
       { id: 'notifications', label: 'Notifications', icon: 'bell' },
-      { id: 'digest', label: 'Handoff digest', icon: 'activity' },
       // The pre-foothold scoping surface (architecture.md Sec 11.4): the
       // external recon workbench, which runs before the target picture it
       // feeds -- so it sits ahead of Intel, the read projection it fills.

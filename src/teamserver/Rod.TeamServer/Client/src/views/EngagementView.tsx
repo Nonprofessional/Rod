@@ -23,7 +23,6 @@ import { ShellsView } from './ShellsView'
 import { WebShellsView } from './WebShellsView'
 import { TaskLogView } from './TaskLogView'
 import { AutomationView } from './AutomationView'
-import { DigestView } from './DigestView'
 import { NotificationsView } from './NotificationsView'
 import { IntelView } from './IntelView'
 import { ReconView } from './ReconView'
@@ -181,7 +180,6 @@ export function EngagementView({
       {tab === 'notifications' && (
         <NotificationsView engagementId={engagementId} onlineTick={tick} />
       )}
-      {tab === 'digest' && <DigestView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'recon' && <ReconView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'intel' && <IntelView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'implants' && implantId && (
