@@ -710,6 +710,46 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             seenEvents.OrderBy(id => id).ToArray());
     }
 
+    [Fact]
+    public async Task ReportExport_RendersTheCrew_WhenPostgresMembershipStoreWired()
+    {
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        await using var env = await TestEnv.StartAsync(_postgres);
+
+        var created = await env.Http.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Ledger"));
+        created.EnsureSuccessStatusCode();
+        var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        Assert.True(EngagementId.TryParse(engagement!.EngagementId, out var engagementId));
+
+        // The crew section reads the membership store's roster listing. Over
+        // the in-memory adapter every ordering translates; over Postgres only
+        // a translatable one does -- the rehearsal walk met a .Value reach-in
+        // here as a 500 on the export, so this test pins the durable path.
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", "Bob Baker", "bob-pass-123");
+        var added = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/members", new AddMemberBody(Handle: "bob", Role: "reader"));
+        added.EnsureSuccessStatusCode();
+
+        var report = await env.Http.GetFromJsonAsync<ReportBody>(
+            $"/engagements/{engagementId}/report");
+        Assert.NotNull(report);
+        var crew = report!.Operators.OrderBy(o => o.Handle).ToArray();
+        Assert.Equal(2, crew.Length);
+        Assert.Equal(("bob", "reader"), (crew[0].Handle, crew[0].Role));
+        Assert.Equal((AuthenticatedHost.Handle, "owner"), (crew[1].Handle, crew[1].Role));
+    }
+
+    private sealed record AddMemberBody(string Handle, string Role);
+    private sealed record ReportBody(ReportEngagementBody Engagement, ReportOperatorBody[] Operators);
+    private sealed record ReportEngagementBody(string EngagementId, string Name);
+    private sealed record ReportOperatorBody(string OperatorId, string Handle, string Role);
+
     // Helper: enqueue a task and return its id, keeping the test bodies linear.
     private static async Task<TaskId> EnqueueAsync(
         ITaskRepository tasks,

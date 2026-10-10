@@ -39,7 +39,9 @@ internal sealed class PostgresEngagementMembershipStore : IEngagementMembershipS
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var rows = await db.EngagementMembers.AsNoTracking()
             .Where(m => m.EngagementId == engagementId)
-            .OrderBy(m => m.OperatorId.Value)
+            // The converted property translates to the backing column's
+            // order; reaching into .Value is opaque to EF and 500s the query.
+            .OrderBy(m => m.OperatorId)
             .ToListAsync(cancellationToken);
         return rows.Select(ToMembership).ToArray();
     }
