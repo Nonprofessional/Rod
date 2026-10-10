@@ -25,12 +25,23 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-(Empty: both items that were here -- the external recon workbench's
-passive lookups and its port scan -- shipped together with the design in
-architecture.md Sec 11.4 and the runbook in operations/recon.md. Their
-natural widenings -- DNS resolution answers, whois behind the RDAP flag,
-and further scan origins -- are evolution notes in Sec 11.4, not open
-work here; they reopen as todo items when an engagement needs them.)
+- **Rehearsal refresh: walk the new surfaces with acceptance evidence**
+  (serves architecture.md Secs 4, 5.4, 11.3, and 11.4; the rehearsal is
+  the executed path). The rehearsal walk
+  ([operations/rehearsal.md](operations/rehearsal.md)) predates the MCP
+  server, the LLM triage client, the recon workbench, and the Linux
+  module load: a reader walking it today never exercises a quarter of
+  the operator surface, and the document is an evidence record, so it
+  cannot be paper-synced -- the legs must actually run. What an
+  engagement cannot do without it: trust that the pre-deployment drill
+  still covers the stack it is about to point at a client network.
+  Shape: extend the existing walk with one leg per surface -- a
+  `recon:*` lookup and an ROE-refused scan, an MCP read through an
+  operator API token, a summarize against a local OpenAI-compatible
+  endpoint, and a Linux `module.load`/`module.list`/`module.unload`
+  round-trip on the reference module -- each landing its expected audit
+  events. _AC:_ the rehearsal document gains the four legs with dated
+  acceptance evidence, like every leg it already carries.
 
 ## On hold
 

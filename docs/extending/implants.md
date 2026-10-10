@@ -692,6 +692,12 @@ Adopt per deployment need; absence degrades the feature, not interop:
   headers, timeout, and base64 body envelope shape the enroll request.
 - **Child derivation** -- the parent-naming enroll flow behind
   `lateral.move` (architecture.md Sec 5.2).
+- **Plugin modules** -- the `module.load` / `module.list` /
+  `module.unload` family (architecture.md Sec 5.4): staged task content
+  carrying a module's bytes, the loader registering its verbs for later
+  dispatch. The wire shape and the loader's rules live in
+  [tradecraft.md](tradecraft.md); an implant without the family reports
+  the verbs unknown and nothing else changes.
 
 ## Evolution rules
 
