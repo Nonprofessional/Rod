@@ -62,6 +62,14 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
+        // The pipeline UseRodTransportCore installs always runs the auth pair,
+        // so their middleware plumbing is registered with the layer that owns
+        // the pipeline -- every host gets it whether or not an outer layer
+        // adds schemes or policies on top (with no scheme configured, an
+        // authorization-requiring request fails closed instead of throwing at
+        // startup).
+        services.AddAuthentication();
+        services.AddAuthorization();
 
         // Core-state ports -> default in-memory adapters.
         services.AddSingleton<IOperatorRepository, InMemoryOperatorRepository>();

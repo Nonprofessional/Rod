@@ -80,6 +80,13 @@ public static class RodOperatorAuthHost
             .AddScheme<AuthenticationSchemeOptions, OperatorTokenAuthHandler>(
                 OperatorAuthConstants.TokenScheme, _ => { });
 
+        // The authorization middleware stays in the pipeline for the session
+        // gate (RequireAuthorization on every route); the permission gate is
+        // not a policy anymore -- engagement access resolves per request
+        // through the membership filters, so there is nothing to register
+        // here beyond the middleware's own plumbing.
+        services.AddAuthorization();
+
         services.AddSingleton<IPasswordHasher<Operator>, PasswordHasher<Operator>>();
         services.AddSingleton<OperatorAuthService>();
         // The per-handle login throttle shares the process clock; a successful
