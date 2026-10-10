@@ -460,7 +460,7 @@ function App() {
           {route.kind === 'engagements' ? (
             <EngagementsView />
           ) : route.kind === 'settings' ? (
-            <SettingsView />
+            <SettingsView operator={operator} />
           ) : route.kind === 'system' ? (
             <SystemView />
           ) : (

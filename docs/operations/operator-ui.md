@@ -806,6 +806,25 @@ server) so a restart remembers them; the `Sessions:Staleness` config
 section remains the boot default. Bounds violations refuse with the
 reason rather than clamping.
 
+The page's second card is **Operators** -- the account roster and the
+provisioning form (the management path the `Operators:Initial` seed stood
+in for; see [teamserver.md](teamserver.md)). The table lists every
+account: handle (yours marked *you*; a revoked credential reads *no
+password*), display name, scope set, and creation date. *New operator*
+provisions an account with handle, display name (optional; defaults to
+the handle), initial password (8 characters minimum, handed over out of
+band), and the three scope checkboxes -- all checked is the peer
+default, the checkboxes enforce the server's coherence rules as they are
+clicked (task and approve each require read), and all-unchecked is the
+parked shape (loginable, sees nothing) rather than a silent fallback to
+the default. *Reset password* re-provisions an account's password; a
+reset is a new credential generation, so that account's live sessions
+end at their next request (resetting your own signs this session out
+too). Both writes hide from a viewing-scope session: they hand the
+recipient scopes, so the server requires the acting scope of the caller
+(architecture.md Sec 4.5). Scope *changes* to an existing account remain
+API-only (`PUT /operators/{id}/scopes`).
+
 ## System
 
 `#/system`, from the topbar's system entry -- the deployment's preflight.

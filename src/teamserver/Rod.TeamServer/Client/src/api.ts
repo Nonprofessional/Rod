@@ -200,6 +200,64 @@ export async function getSessionOperator(): Promise<SessionOperator> {
   }
 }
 
+// --- Operator roster (the account machinery) ---------------------------------
+//
+// The provisioned accounts beside the session's own: GET /operators lists the
+// roster (every account, whether a password stands behind it), POST
+// /operators provisions a new one with its initial password, and
+// PUT /operators/{id}/credentials re-provisions a password. Both writes
+// require the task scope server-side -- they hand the recipient scopes -- so
+// the settings panel hides them from a read-only session instead of letting
+// the server refuse.
+
+export interface OperatorAccount {
+  id: string
+  handle: string
+  displayName: string
+  // The scope names the account holds; empty = the parked shape (loginable,
+  // sees nothing, acts on nothing).
+  scopes: string[]
+  createdAt: string
+  // False after credential revocation: the account exists but no password
+  // verifies, so it cannot log in until re-provisioned.
+  hasCredential: boolean
+}
+
+export interface CreateOperatorInput {
+  handle: string
+  displayName?: string
+  password: string
+  // Omitted = the peer default (every scope); an explicit empty array is the
+  // parked shape, sent as-is so the form's unchecked boxes cannot silently
+  // widen back to the default.
+  scopes?: string[]
+}
+
+export async function listOperators(): Promise<OperatorAccount[]> {
+  return jsonOrThrow(await fetch('operators'))
+}
+
+export async function createOperator(input: CreateOperatorInput): Promise<OperatorAccount> {
+  const response = await fetch('operators', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return jsonOrThrow<OperatorAccount>(response)
+}
+
+// A reset is a new credential generation: the target's live sessions end at
+// their next request. Resetting your own password signs this session out too.
+export async function setOperatorPassword(operatorId: string, password: string): Promise<void> {
+  jsonOrThrow(
+    await fetch(`operators/${operatorId}/credentials`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    }),
+  )
+}
+
 export interface CreateEngagementInput {
   name: string
   description?: string

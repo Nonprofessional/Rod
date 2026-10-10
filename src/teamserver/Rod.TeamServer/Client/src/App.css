@@ -2365,6 +2365,26 @@ button.file-entry {
   margin-top: 28px;
 }
 
+/* The provisioning form's scope row: the three scope checkboxes share one
+   grid cell so the narrowing reads as one decision, not three fields; the
+   inputs sit beside their names (a checkbox over its label would read as
+   three stacked toggles). */
+.scope-checks {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.scope-checks .scope-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  color: var(--text);
+  text-transform: none;
+}
+
 /* --- System page --------------------------------------------------------------------------- */
 
 /* One build unit's report block: findings list over the target table,
