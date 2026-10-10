@@ -35,7 +35,11 @@ bakes the artifact's enrollment credential, so the artifact deploys with zero
 run-time arguments. The manual mint endpoint stays server-side for the
 rotation and re-entry drills, but it is no operator surface. The operator UI
 is served same-origin at `/`; its panels and every build/listener field are
-documented in [operator-ui.md](operator-ui.md). During UI development,
+documented in [operator-ui.md](operator-ui.md). The same front also carries
+the read-only MCP endpoint (`/mcp`) that an operator's agent tooling drives
+on an operator API token -- same principal, same scopes
+([mcp.md](mcp.md)) -- so whoever can reach the console can reach it, and
+nobody else should be able to reach either. During UI development,
 `npm run dev` in
 `src/teamserver/Rod.TeamServer/Client` proxies the API to :5080.
 
@@ -136,6 +140,21 @@ to the terminal it was launched from (exit codes alone tell the bare
 story); run it with `ROD_VERBOSE=1` while testing to see enrollment and
 contact diagnostics.
 
+## The engagement ROE profile
+
+Each engagement carries a rules-of-engagement profile the server enforces
+(architecture.md Sec 9): `permittedVerbs` (exact verbs or `namespace.*`
+wildcards) and `permittedImplants` (exact implant ids) gate task issuance
+-- a task outside the profile is refused with `422` and a `TaskRoeRefused`
+audit event naming the violated rule -- and `permittedTargets` (exact
+hostnames, exact IPs, or CIDR blocks) gates the recon workbench's port
+scan before any connection opens. Every dimension is empty meaning
+unrestricted; the scope change itself lands in the trail as `RoeUpdated`.
+Operators apply the profile over the API (`PUT /engagements/{id}/roe`;
+there is no UI editor today); applying an empty profile reopens the
+engagement. The target-scope entry shapes and their matching rules are
+spelled out in [recon.md](recon.md).
+
 ## Configuration reference
 
 Opt-in sections of `appsettings.json` (environment variables work through the
@@ -154,6 +173,8 @@ standard `Section__Key` mapping):
 | `Build:Transforms` | Out-of-tree post-build payload transforms, each a `Namespace.Type, AssemblyName` entry, applied in listed order; the fingerprint and `PayloadBuilt` audit event cover the transformed bytes. | The empty chain (no transform runs; bytes stored as built). |
 | `Build:RustSourceDirectory` | An installed teamserver (a publish with no repo above it) names the Rust crate the build unit compiles at request time. | The repo walk-up a checkout uses (`src/implant/rust`). |
 | `Llm` | The opt-in LLM triage client (architecture.md Sec 11): `Enabled`, `BaseUrl` (any OpenAI-compatible chat-completions endpoint, cloud or local), `ApiKey` (bind through the environment, `Llm__ApiKey`), `Model`, plus `RequestTimeoutSeconds`/`MaxInputChars`/`MaxOutputTokens` budgets. Every summarize request is engagement-scoped and audited; the egress decision is the operator's -- see [llm.md](llm.md) before enabling. | Disabled (the summarize route answers 503). |
+| `Recon` | The external recon workbench's halves (architecture.md Sec 11.4): `RdapBaseUrl`, `CtBaseUrl`, `DohBaseUrl`, and `WhoisServer` arm the passive lookups; `ScanOrigin` (`Teamserver` is the only shipped origin) arms the port scan; `RequestTimeoutSeconds` and the `Max*`/`Scan*` caps bound each run. Naming an endpoint is the egress decision -- see [recon.md](recon.md) before arming any half; the scan additionally gates on the engagement's ROE target scope. | Every half closed (each route answers 503 naming this section). |
+| `RuntimeSettings` | Where the operator-facing runtime settings persist: `FilePath` for the session-staleness pair, `BuildFilePath` for the build section (the shared cargo target dir). Best-effort persistence of operator preferences, not engagement data. | `runtime-settings.json` / `runtime-build-settings.json` beside the working directory. |
 
 ## Production install and recovery
 
@@ -463,6 +484,15 @@ trail ends one event before the export's own record -- a later re-export
   stamp matches the release tag it was cut from (see "Build provenance"
   above) -- the binaries name their commit, so provenance is read off the
   running system, not off deployment notes.
+- The teamserver **originates egress, not just ingress**, where an operator
+  arms it: the recon workbench's lookups and scan (RDAP, CT, DoH, whois to
+  the configured endpoints; scan connections from the teamserver process
+  when `Recon:ScanOrigin` names it -- [recon.md](recon.md)) and the LLM
+  triage client's summarize requests to its endpoint
+  ([llm.md](llm.md)). Each half stays closed until its endpoint is named,
+  and the egress posture of each is a deliberate per-engagement decision --
+  a hardened deployment leaves every one of them disabled unless the
+  engagement calls for it.
 - Before pointing the stack at a client network, walk the full lifecycle on
   the production shape once -- the procedure and its acceptance evidence
   live in [rehearsal.md](rehearsal.md).
