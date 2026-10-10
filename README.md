@@ -3,10 +3,11 @@
 <h1 align="center">Rod</h1>
 
 <p align="center">
-  An <b>authorized-use red-team command-and-control (C2) platform</b> for
-  penetration tests, red-team operations, and security research.<br>
-  One teamserver, a fleet of disposable implants, hosts behind NAT and
-  firewalls over implant-initiated connections --<br>
+  An <b>authorized-use red-team operations platform</b> for penetration
+  tests and security research.<br>
+  Pre-foothold recon, one teamserver, a fleet of disposable implants
+  reaching hosts behind NAT and firewalls over implant-initiated
+  connections --<br>
   and an audit trail that becomes the report.
 </p>
 

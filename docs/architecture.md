@@ -1,18 +1,23 @@
 # Rod -- Architecture & Design
 
 > **Status:** Living document. This is the agreed architecture for Rod as an
-> authorized-use red-team command-and-control (C2) platform. The repository
+> authorized-use red-team operations platform. The repository
 > holds the teamserver (the .NET control plane) and the Rust reference implant, with a Postgres persistence
 > layer; [todo.md](todo.md) tracks open work. Sections marked _(future)_ are
 > designed for but not yet implemented.
 
 ## 1. Overview
 
-Rod is an **authorized-use offensive-security command-and-control platform** for
+Rod is an **authorized-use offensive-security platform** for
 red-team operations, penetration tests, and security research. A team of
 operators drives a fleet of short-lived, disposable implants on authorized
 targets from a central teamserver, reaching hosts behind NAT and firewalls over
-implant-initiated connections.
+implant-initiated connections; the external recon workbench scopes those
+targets from the teamserver before the first foothold. Command-and-control
+remains the load-bearing core -- the wire protocol, the implant fleet, the
+listener tier -- but the platform's span runs from pre-foothold scoping to
+the close-out evidence package, the span Sec 14's capability bar already
+describes.
 
 The design follows from a few load-bearing priorities, and the rest of this
 document is their consequence. Implants are short-lived and untrusted by default,
