@@ -4,8 +4,9 @@ Operational runbook for the rehearsal every deployment gets before it faces
 a client network: one full engagement lifecycle on production-shaped
 infrastructure -- an externally provisioned CA, Postgres persistence,
 redirector fronts with a burn and repoint, a mid-engagement crash with
-audit-chain recovery, a mid-engagement CA rotation, and a teardown to
-report ([architecture.md](../architecture.md) Sec 8, Sec 9, Sec 12.1).
+audit-chain recovery, a mid-engagement CA rotation, a teardown to
+report, and the dated surface refresh legs of Sec 7
+([architecture.md](../architecture.md) Sec 8, Sec 9, Sec 12.1).
 
 This record was executed 2026-10-09 against the settled four-family
 surface (architecture.md Sec 8): the Https one-port listener carrying the
@@ -361,3 +362,76 @@ presence. Budget one fresh build-and-render per implant that must come
 back, and treat every pre-rotation leaf as dead the moment the service
 restarts -- including the DNS-carried ones the roster has not given up
 on yet.
+
+## 7. The surface refresh legs (dated 2026-10-10)
+
+The base walk settles the carrier and lifecycle surface; the operator
+surface has since grown four families it never exercised -- the recon
+workbench ([recon.md](recon.md)), the MCP endpoint ([mcp.md](mcp.md)),
+the LLM summarize client ([llm.md](llm.md)), and the Linux module load
+(extending/tradecraft.md). These legs ran all four against a live
+engagement on the same single-host shape: a fresh engagement in the
+standing rehearsal database, one Https listener direct on loopback (no
+redirectors -- fronting was the base walk's question, not this one's),
+and a freshly provisioned operator, so every route ran under the
+membership model's owner role rather than any global scope. One
+pipeline-built Linux poll implant enrolled through the front (fetch
+sha256 equal to the build fingerprint) and carried the module leg.
+
+What ran, and what it produced:
+
+- **The recon workbench, passive and active.** A `recon:resolve` on
+  `www.example.com` through the configured DoH resolver answered four
+  addresses and landed `recon.resolve:www.example.com` as a task-less
+  artifact under the running operator's attribution
+  (`ReconLookupCompleted`). With the ROE target scope narrowed to
+  `127.0.0.1`, a port scan of the loopback passed the gate
+  (`ReconScanCompleted`, the three open ports as findings), and the same
+  scan aimed at `203.0.113.10` was refused before any connection opened:
+  `422` on the route, `ReconScanRefused` in the trail naming the violated
+  rule.
+- **An MCP read through an operator API token.** A minted token
+  authenticated the endpoint as its principal (Streamable HTTP,
+  stateless): `initialize` answered the server's toolset, `tools/call
+  list_implants` read the live roster -- the enrolled implant, its host
+  and liveness -- and `list_engagements` rendered exactly the engagements
+  the token's operator holds membership on. A read naming a foreign
+  engagement answered not-found: the scope rule holds through the agent
+  surface. Reads are unaudited by design (the digest's posture); the
+  token's mint is the trail's record of the surface's use.
+- **A summarize against a local OpenAI-compatible endpoint.** llama.cpp's
+  server (build b11541, CPU) serving Qwen2.5-0.5B-Instruct (q4_k_m) on
+  the teamserver host -- the local-runtime posture [llm.md](llm.md)
+  names, engagement content staying on the engagement's own
+  infrastructure. A completed `shell.exec` (uname/id/uptime, 267 chars
+  captured) summarized to a faithful paragraph; the route answered
+  `{taskId, model, summary}` and the trail carries
+  `LlmSummaryGenerated` with outcome `succeeded:qwen2.5-0.5b-instruct`,
+  the endpoint and key absent from the event as designed.
+- **The Linux module round-trip.** The reference hostenum module built
+  for `x86_64-unknown-linux-musl` (589,272 bytes, sha256 `3a1887a9…`,
+  bound into the load task's signed arguments and verified by the
+  implant) loaded through `module.load hostenum` with the bytes as the
+  task's staged content: staged in a memfd -- the live implant's fd table
+  shows `/memfd:rod-module (deleted)`, and nothing matching the module
+  ever touched disk. `module.list` reported `hostenum: recon.hostenum`;
+  the tasked verb answered host enumeration in the JSON-lines grammar
+  (arch, host, os, path, user); `module.unload` retracted it; and a
+  second `recon.hostenum` task completed with outcome `Failed` and the
+  refusal "this build carries no handler for the verb" -- the grammar
+  named afterward, the same acceptance the Windows module drill
+  specifies.
+
+The teardown followed the base walk's shape: implant retired, report
+exported (integrity digest `A0D1C113…`), engagement frozen, evidence
+package taken, engagement retired.
+
+One composed-system defect, caught the way this document exists to catch
+them: the report export 500'd on the first attempt. The Postgres
+membership store's roster listing ordered its rows by reaching into the
+typed id (`.OrderBy(m => m.OperatorId.Value)`), which EF Core cannot
+translate, so every report over a live Postgres died in the crew section
+-- while the in-memory adapter the test suite runs translates any
+ordering and never met it. Fixed to order by the converted column, with
+a regression test over the real-Postgres durability fixture that fails
+on the old line and passes on the new one.
