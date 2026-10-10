@@ -24,6 +24,10 @@ export interface Engagement {
   roe: RoeProfile
   frozenAt: string | null
   retiredAt: string | null
+  // The landing roster's fleet posture, carried by the list response: active
+  // (non-retired) implants and how many hold a live session. Null on the
+  // create and edit responses, which do not size the fleet.
+  summary: { implantCount: number; onlineCount: number } | null
 }
 
 export interface Implant {

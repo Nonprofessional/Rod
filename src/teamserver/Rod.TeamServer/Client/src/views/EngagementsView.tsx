@@ -177,7 +177,8 @@ export function EngagementsView() {
       ) : (
         <>
           {/* The roster at a glance: the close-out pipeline's stages sized
-              before the table tells it. */}
+              before the table tells it, with the deployment's live fleet
+              posture beside them. */}
           {items.length > 0 && (
             <div className="count-row">
               <span className="chip">
@@ -189,6 +190,16 @@ export function EngagementsView() {
               <span className="chip">
                 <strong>{items.filter((e) => e.retiredAt).length}</strong> retired
               </span>
+              {items.some((e) => (e.summary?.implantCount ?? 0) > 0) && (
+                <span
+                  className="chip"
+                  title="Active (non-retired) implants across every engagement, and how many hold a live session"
+                >
+                  <span className="dot online" />
+                  <strong>{items.reduce((n, e) => n + (e.summary?.onlineCount ?? 0), 0)}</strong>
+                  <span>/ {items.reduce((n, e) => n + (e.summary?.implantCount ?? 0), 0)} implants online</span>
+                </span>
+              )}
             </div>
           )}
           <div className="table-wrap">
@@ -201,13 +212,14 @@ export function EngagementsView() {
                 <th>Owner</th>
                 <th>Created</th>
                 <th>Status</th>
+                <th>Fleet</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="empty">
                       <Icon name="globe" />
                       No engagements yet -- create one to begin.
@@ -234,6 +246,23 @@ export function EngagementsView() {
                     <td>{new Date(e.createdAt).toLocaleString()}</td>
                     <td>
                       <span className={status.tone}>{status.label}</span>
+                    </td>
+                    <td>
+                      {/* The fleet posture inline: live sessions over active
+                          (non-retired) implants; the dot marks one that still
+                          has implants breathing. */}
+                      {e.summary ? (
+                        <span
+                          title={`${e.summary.onlineCount} online of ${e.summary.implantCount} active implants (retired excluded)`}
+                        >
+                          {e.summary.onlineCount > 0 && <span className="dot online" />}
+                          <code>
+                            {e.summary.onlineCount}/{e.summary.implantCount}
+                          </code>
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td className="row-actions">
                       {!e.retiredAt && (

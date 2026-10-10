@@ -6,8 +6,10 @@ using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
 using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Deployment;
+using Rod.CoreState.Sessions;
 
 namespace Rod.Transport.Endpoints;
 
@@ -56,17 +58,28 @@ public static class EngagementEndpoints
     private static async Task<IResult> ListEngagementsAsync(
         IEngagementRepository engagements,
         IOperatorRepository operators,
+        IImplantRepository implants,
+        ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
         var all = await engagements.ListAsync(cancellationToken);
 
         // The owner handle lives on the Operator, not the engagement. Resolve it
         // per engagement; an unknown owner (engagement predates the operator) is
-        // surfaced as empty rather than failing the whole list.
+        // surfaced as empty rather than failing the whole list. The same loop
+        // sizes each engagement's fleet -- active (non-retired) implants and how
+        // many hold a live session -- off the same repositories the fleet table
+        // reads, so the landing roster carries the posture without the operator
+        // drilling in.
         var body = new List<EngagementResponse>(all.Count);
         foreach (var e in all)
         {
             var owner = await operators.FindAsync(e.OwnerId, cancellationToken);
+            var enrolled = await implants.ListByEngagementAsync(e.Id, cancellationToken);
+            var onlineIds = (await sessions.ListActiveAsync(e.Id, cancellationToken))
+                .Select(s => s.ImplantId)
+                .ToHashSet();
+            var active = enrolled.Where(i => i.RetiredAt is null).ToList();
             body.Add(new EngagementResponse(
                 e.Id.ToString(),
                 e.Name,
@@ -76,7 +89,10 @@ public static class EngagementEndpoints
                 e.CreatedAt,
                 RoeProfileResponse.From(e.Roe),
                 e.FrozenAt,
-                e.RetiredAt));
+                e.RetiredAt,
+                Summary: new EngagementFleetSummaryResponse(
+                    active.Count,
+                    active.Count(i => onlineIds.Contains(i.Id)))));
         }
 
         return Results.Ok(body);
@@ -432,7 +448,15 @@ public static class EngagementEndpoints
         DateTimeOffset CreatedAt,
         RoeProfileResponse Roe,
         DateTimeOffset? FrozenAt = null,
-        DateTimeOffset? RetiredAt = null);
+        DateTimeOffset? RetiredAt = null,
+        EngagementFleetSummaryResponse? Summary = null);
+
+    /// <summary>
+    /// The landing roster's fleet posture: active (non-retired) implants and
+    /// how many of them hold a live session. Only the list carries it; the
+    /// create and edit responses leave it unset.
+    /// </summary>
+    public sealed record EngagementFleetSummaryResponse(int ImplantCount, int OnlineCount);
 
     // The ROE scope request: three allow-lists, each empty (or omitted)
     // meaning unrestricted on that dimension.

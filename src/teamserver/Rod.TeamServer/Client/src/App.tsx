@@ -64,6 +64,43 @@ function initials(handle: string): string {
   return handle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
 }
 
+// The engagement's display name for the crumb, resolved off the list (the
+// API has no single-engagement read) and cached for the session so the
+// topbar does not re-fetch per navigation.
+const engagementNames = new Map<string, string>()
+let engagementNamesLoad: Promise<void> | null = null
+
+function useEngagementName(engagementId: string): string | undefined {
+  const [name, setName] = useState<string | undefined>(engagementNames.get(engagementId))
+
+  useEffect(() => {
+    const cached = engagementNames.get(engagementId)
+    if (cached !== undefined) {
+      setName(cached)
+      return
+    }
+    let cancelled = false
+    // A failed read resets the load so a later navigation retries; the crumb
+    // shows the bare id until a name resolves.
+    engagementNamesLoad ??= listEngagements()
+      .then((all) => {
+        for (const e of all) engagementNames.set(e.engagementId, e.name)
+      })
+      .catch(() => {
+        engagementNamesLoad = null
+      })
+    void engagementNamesLoad.then(() => {
+      const resolved = engagementNames.get(engagementId)
+      if (!cancelled && resolved !== undefined) setName(resolved)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [engagementId])
+
+  return name
+}
+
 // Outside an engagement the sidebar has no context to navigate, so it carries
 // the recent list instead: quick jumps into the workspaces the operator
 // actually uses, newest first. Sealed records stay off it -- the engagements
@@ -115,6 +152,27 @@ function RecentEngagements() {
   )
 }
 
+// The engagement's position in the topbar: its name once resolved, then the
+// short id chip every other surface joins by.
+function EngagementCrumb({ engagementId }: { engagementId: string }) {
+  const name = useEngagementName(engagementId)
+  return name ? (
+    <>
+      <span className="crumb-name" title={name}>
+        {name}
+      </span>
+      <Icon name="chevronRight" className="sep-icon" />
+      <span className="current" title={engagementId}>
+        {engagementId.slice(0, 8)}
+      </span>
+    </>
+  ) : (
+    <span className="current" title={engagementId}>
+      {engagementId.slice(0, 8)}
+    </span>
+  )
+}
+
 function Topbar({
   route,
   operator,
@@ -132,23 +190,13 @@ function Topbar({
   const others = (live?.operators ?? []).filter((o) => o.id !== operator.operatorId)
   return (
     <header className="topbar">
+      {/* The crumb is position, not navigation: the way back to the roster
+          is the topbar's Engagements anchor, so no leading link duplicates
+          it. */}
       <div className="topbar-crumb">
-        <a href="#/engagements">Engagements</a>
-        {route.kind === 'engagement' && (
-          <>
-            <Icon name="chevronRight" className="sep-icon" />
-            <span className="current" title={route.engagementId}>
-              {route.engagementId.slice(0, 8)}
-            </span>
-          </>
-        )}
+        {route.kind === 'engagement' && <EngagementCrumb engagementId={route.engagementId} />}
         {(route.kind === 'settings' || route.kind === 'system') && (
-          <>
-            <Icon name="chevronRight" className="sep-icon" />
-            <span className="current">
-              {route.kind === 'settings' ? 'Settings' : 'System'}
-            </span>
-          </>
+          <span className="current">{route.kind === 'settings' ? 'Settings' : 'System'}</span>
         )}
       </div>
       <div className="topbar-actions">

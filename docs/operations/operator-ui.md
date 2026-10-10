@@ -764,8 +764,12 @@ history.
 
 The landing roster: every engagement the operator can reach, created and
 edited here, with the close-out arc on the row. The count chips above the
-table size the close-out pipeline at a glance (open, frozen, retired), and
-outside an engagement the sidebar carries a recent-engagements quick-jump
+table size the close-out pipeline at a glance (open, frozen, retired) and
+the deployment's live posture beside it (online/active implants across
+every engagement); the table's **Fleet** column sizes each engagement the
+same way -- live sessions over active (non-retired) implants, the green
+dot marking one that still has implants breathing. Outside an engagement
+the sidebar carries a recent-engagements quick-jump
 (newest first, sealed records excluded; the roster is the full account).
 Create takes a name and
 an optional description; **Edit** reworks the working record (name and

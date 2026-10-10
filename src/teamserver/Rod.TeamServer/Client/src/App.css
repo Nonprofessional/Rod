@@ -178,14 +178,13 @@
   opacity: 0.6;
 }
 
-.topbar-crumb a {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.topbar-crumb a:hover {
+.topbar-crumb .crumb-name {
   color: var(--text);
-  text-decoration: none;
+  font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-crumb .sep-icon {
