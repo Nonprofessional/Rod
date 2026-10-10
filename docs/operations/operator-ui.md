@@ -71,9 +71,10 @@ acting operator, so a runaway surface is always killable.
 
 Beside the exclusive claims, the fleet table carries **driving** badges --
 the operator whose tasking each implant last saw, a soft signal refreshed
-on every hand-off -- and an operator holding only the viewing scope sees a
-`read-only` mark in their topbar identity chip: the server refuses
-their acting routes; the mark explains why.
+on every hand-off. What an operator may do on an engagement is their
+membership tier (see [Members](#members)): a reader watches while the
+server refuses her acting routes with 403 -- the landing roster's *You*
+column names each engagement's tier for you.
 
 ## Naming -- the fixed vocabulary
 
@@ -810,30 +811,41 @@ The page's second card is **Operators** -- the account roster and its
 management sheet (the management path the `Operators:Initial` seed stood
 in for; see [teamserver.md](teamserver.md)). The table lists every
 account: handle (yours marked *you*; a switched-off account reads
-*disabled*; a revoked credential reads *no password*), display name,
-scope set, and creation date. *New operator* provisions an account with
-handle, display name (optional; defaults to the handle), initial
-password (8 characters minimum, handed over out of band), and the three
-scope checkboxes -- all checked is the peer default, the checkboxes
-enforce the server's coherence rules as they are clicked (task and
-approve each require read), and all-unchecked is the parked shape
-(loginable, sees nothing) rather than a silent fallback to the default.
+*disabled*; a revoked credential reads *no password*), display name, and
+creation date. An account carries no permission -- reach arrives per
+engagement, from each engagement's Members panel -- so *New operator*
+takes just handle, display name (optional; defaults to the handle), and
+an initial password (8 characters minimum, handed over out of band).
 *Reset password* re-provisions an account's password; a reset is a new
 credential generation, so that account's live sessions end at their next
 request (resetting your own signs this session out too). *Disable* is
 the account off switch (two clicks): every authentication path -- login,
 live cookie session, API token -- refuses at its next use, while the
-scopes wait as they were, so *Enable* restores exactly the reach the
-account had; the last task holder cannot be disabled (the 409 names the
-rule), and disabling yourself ends your own session with no way back
-alone. *Manage* opens the row's sheet: **Scopes** edits the complete set
-(live sessions carry the new set at their next request; narrowing away
-the last task scope refuses), and **API tokens** mints, lists, and
-revokes the account's bearer credentials -- a minted secret is shown
-exactly once beside a copy button, because only its digest is stored.
-Every write here hides from a viewing-scope session: each confers scopes
-or gates authentication, so the server requires the acting scope of the
-caller (architecture.md Sec 4.5).
+memberships wait as they were, so *Enable* restores exactly the reach
+the account had; the last enabled account cannot be disabled (the 409
+names the rule), and disabling yourself ends your own session with no
+way back alone. *Manage* opens the row's sheet: **API tokens** mints,
+lists, and revokes the account's bearer credentials -- a minted secret
+is shown exactly once beside a copy button, because only its digest is
+stored. Any authenticated operator may write here: accounts are
+identity, not permission (architecture.md Sec 4.5).
+
+## Members
+
+Each engagement's `#/engagements/{id}/members` tab -- the crew roster
+that decides reach (architecture.md Sec 3). The table lists the owner
+first (access by creation: writes plus grant management) beside every
+member with their tier and grant date: a **writer** acts (tasking,
+listeners, closeout, deploy-token minting), a **reader** watches (every
+read and the live stream; the server refuses writes with 403). Grant
+management is the owner's alone: *Invite an operator* takes a handle and
+the tier being granted, and member rows offer *Make reader/writer*
+re-tiering (effective on the member's next request) and *Remove* (from
+its next request on, the engagement is invisible to that operator
+again). The owner cannot be removed or re-tiered. Every grant, re-tier,
+and removal lands in the engagement's own audit trail, and the landing
+roster's *You* column names your tier on each engagement you can see --
+a row there always means you hold one.
 
 ## System
 

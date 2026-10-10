@@ -20,6 +20,9 @@ export interface Engagement {
   description: string | null
   ownerId: string
   ownerHandle: string
+  // The caller's standing on this engagement (owner / writer / reader); null
+  // on responses that do not carry it.
+  yourRole: string | null
   createdAt: string
   roe: RoeProfile
   frozenAt: string | null
@@ -153,10 +156,6 @@ export interface SessionOperator {
   operatorId: string
   handle: string
   displayName: string
-  // The scope set the session carries (read / task / approve); a read-only
-  // operator can watch but not act -- the server refuses her writes, the UI
-  // marks them.
-  scopes: string[]
 }
 
 export interface LoginInput {
@@ -190,13 +189,11 @@ export async function getSessionOperator(): Promise<SessionOperator> {
     id: string
     handle: string
     displayName: string
-    scopes?: string[]
   }
   return {
     operatorId: body.id,
     handle: body.handle,
     displayName: body.displayName,
-    scopes: body.scopes ?? [],
   }
 }
 
@@ -207,23 +204,20 @@ export async function getSessionOperator(): Promise<SessionOperator> {
 // /operators provisions a new one with its initial password, and
 // PUT /operators/{id}/credentials re-provisions a password. Both writes
 // require the task scope server-side -- they hand the recipient scopes -- so
-// the settings panel hides them from a read-only session instead of letting
-// the server refuse.
+// any authenticated operator may drive them (the trusted-operators stance:
+// accounts are identity, reach arrives per engagement).
 
 export interface OperatorAccount {
   id: string
   handle: string
   displayName: string
-  // The scope names the account holds; empty = the parked shape (loginable,
-  // sees nothing, acts on nothing).
-  scopes: string[]
   createdAt: string
   // False after credential revocation: the account exists but no password
   // verifies, so it cannot log in until re-provisioned.
   hasCredential: boolean
   // True while the account is switched off: no authentication path accepts
-  // it (login, cookie session, API token), and its scopes wait as they were
-  // so an enable restores exactly the reach it had.
+  // it (login, cookie session, API token), and its memberships wait as they
+  // were, so an enable restores exactly the reach it had.
   disabled: boolean
 }
 
@@ -231,10 +225,6 @@ export interface CreateOperatorInput {
   handle: string
   displayName?: string
   password: string
-  // Omitted = the peer default (every scope); an explicit empty array is the
-  // parked shape, sent as-is so the form's unchecked boxes cannot silently
-  // widen back to the default.
-  scopes?: string[]
 }
 
 export async function listOperators(): Promise<OperatorAccount[]> {
@@ -262,15 +252,6 @@ export async function setOperatorPassword(operatorId: string, password: string):
   )
 }
 
-// The summary PUT /operators/{id}/scopes returns: identity plus the new
-// scope set (the roster row carries the fuller account shape).
-export interface OperatorScopesResult {
-  id: string
-  handle: string
-  displayName: string
-  scopes: string[]
-}
-
 export interface OperatorTokenRow {
   tokenId: string
   createdAt: string
@@ -282,21 +263,6 @@ export interface MintedOperatorToken {
   tokenId: string
   token: string
   createdAt: string
-}
-
-// The complete new scope set. The target's live sessions pick the set up at
-// their next request -- demotion and promotion both, no re-login. Removing
-// the last task scope refuses with a 409 naming the rule.
-export async function updateOperatorScopes(
-  operatorId: string,
-  scopes: string[],
-): Promise<OperatorScopesResult> {
-  const response = await fetch(`operators/${operatorId}/scopes`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scopes }),
-  })
-  return jsonOrThrow<OperatorScopesResult>(response)
 }
 
 // The account off switch and its restore. Disabling ends every
@@ -326,6 +292,56 @@ export async function mintOperatorToken(operatorId: string): Promise<MintedOpera
 
 export async function revokeOperatorToken(operatorId: string, tokenId: string): Promise<void> {
   jsonOrThrow(await fetch(`operators/${operatorId}/tokens/${tokenId}:revoke`, { method: 'POST' }))
+}
+
+// --- Engagement members (the membership model, architecture.md Sec 3) ------
+//
+// An engagement's reach is its member roster: the owner grants, re-tiers,
+// and removes. Every console holding a membership reads the roster; the
+// mutations are the owner's alone (the server refuses with 403 otherwise).
+
+export interface EngagementMember {
+  operatorId: string
+  handle: string
+  displayName: string
+  // owner / writer / reader -- the owner row renders beside the members.
+  role: string
+  addedAt: string
+}
+
+export async function listMembers(engagementId: string): Promise<EngagementMember[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/members`))
+}
+
+// The invite names a handle (the shared vocabulary) and the granted tier.
+export async function addMember(
+  engagementId: string,
+  handle: string,
+  role: 'reader' | 'writer',
+): Promise<EngagementMember> {
+  const response = await fetch(`engagements/${engagementId}/members`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ handle, role }),
+  })
+  return jsonOrThrow<EngagementMember>(response)
+}
+
+export async function setMemberRole(
+  engagementId: string,
+  operatorId: string,
+  role: 'reader' | 'writer',
+): Promise<EngagementMember> {
+  const response = await fetch(`engagements/${engagementId}/members/${operatorId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+  return jsonOrThrow<EngagementMember>(response)
+}
+
+export async function removeMember(engagementId: string, operatorId: string): Promise<void> {
+  jsonOrThrow(await fetch(`engagements/${engagementId}/members/${operatorId}`, { method: 'DELETE' }))
 }
 
 export interface CreateEngagementInput {

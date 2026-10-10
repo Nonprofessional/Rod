@@ -210,6 +210,7 @@ export function EngagementsView() {
                 <th>Name</th>
                 <th>Description</th>
                 <th>Owner</th>
+                <th>You</th>
                 <th>Created</th>
                 <th>Status</th>
                 <th>Fleet</th>
@@ -219,7 +220,7 @@ export function EngagementsView() {
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={9}>
                     <div className="empty">
                       <Icon name="globe" />
                       No engagements yet -- create one to begin.
@@ -243,6 +244,26 @@ export function EngagementsView() {
                     </td>
                     <td className="muted">{e.description ?? ''}</td>
                     <td>{e.ownerHandle || e.ownerId.slice(0, 8)}</td>
+                    <td>
+                      {/*
+                          Your standing on this engagement (architecture.md
+                          Sec 3): the tier every surface inside rides --
+                          owner manages the roster, writer acts, reader
+                          watches. A row here always means you hold one.
+                      */}
+                      <span
+                        className="muted"
+                        title={
+                          e.yourRole === 'owner'
+                            ? 'You created this engagement: full write access plus member management.'
+                            : e.yourRole === 'writer'
+                              ? 'The acting tier: task, operate, and manage this engagement. Granted by its owner.'
+                              : 'The watching tier: read and the live stream. The server refuses writes; ask the owner for the writer tier.'
+                        }
+                      >
+                        {e.yourRole}
+                      </span>
+                    </td>
                     <td>{new Date(e.createdAt).toLocaleString()}</td>
                     <td>
                       <span className={status.tone}>{status.label}</span>

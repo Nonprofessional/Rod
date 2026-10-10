@@ -308,18 +308,15 @@ function Identity({
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
-  const acting = operator.scopes.includes('task')
-
   return (
     <div className="identity" ref={root}>
       <button
         className={`identity-button${open ? ' open' : ''}`}
         onClick={() => setOpen((v) => !v)}
-        title={acting ? `Signed in as ${operator.handle}` : 'Viewing scope only'}
+        title={`Signed in as ${operator.handle}`}
       >
         <span className="avatar">{initials(operator.handle)}</span>
         <span className="handle">{operator.handle}</span>
-        {!acting && <span className="identity-scope">read-only</span>}
       </button>
       {open && (
         <div className="identity-menu">
@@ -329,13 +326,6 @@ function Identity({
               {operator.operatorId.slice(0, 8)}
             </span>
           </div>
-          {!acting && (
-            <div className="muted">
-              This session holds the viewing scope only -- the server refuses
-              tasking and every other acting route; the mark explains, it does
-              not enforce.
-            </div>
-          )}
           <button className="link" onClick={onLogout}>
             Sign out
           </button>

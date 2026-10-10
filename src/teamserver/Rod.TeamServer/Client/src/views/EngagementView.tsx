@@ -25,6 +25,7 @@ import { TaskLogView } from './TaskLogView'
 import { AutomationView } from './AutomationView'
 import { NotificationsView } from './NotificationsView'
 import { IntelView } from './IntelView'
+import { MembersView } from './MembersView'
 import { ReconView } from './ReconView'
 
 // The engagement detail body: the active view only -- navigation lives in the
@@ -182,6 +183,7 @@ export function EngagementView({
       )}
       {tab === 'recon' && <ReconView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'intel' && <IntelView engagementId={engagementId} onlineTick={tick} />}
+      {tab === 'members' && <MembersView engagementId={engagementId} operator={operator} />}
       {tab === 'implants' && implantId && (
         <InteractView
           engagementId={engagementId}

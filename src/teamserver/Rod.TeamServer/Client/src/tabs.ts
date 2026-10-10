@@ -8,6 +8,7 @@
 import type { IconName } from './components/Icons'
 
 export type TabId =
+  | 'members'
   | 'tasking'
   | 'automation'
   | 'notifications'
@@ -57,6 +58,9 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       // The target picture (architecture.md Sec 11.2): hosts, loot, and the
       // topology -- what the engagement learned, not what it did.
       { id: 'intel', label: 'Intel', icon: 'target' },
+      // The membership model (architecture.md Sec 3): the crew roster beside
+      // the work -- who holds which tier, and the owner's grant management.
+      { id: 'members', label: 'Members', icon: 'users' },
     ],
   },
   {
