@@ -43,6 +43,12 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Ephemeral, "shell.exec")]
     [InlineData(ImplantClass.Pivot, "tunnel.forward")]
     [InlineData(ImplantClass.Pivot, "tunnel.socks")]
+    [InlineData(ImplantClass.Browser, "browser.fingerprint")]
+    [InlineData(ImplantClass.Browser, "browser.cookies")]
+    [InlineData(ImplantClass.Browser, "browser.dom")]
+    [InlineData(ImplantClass.Browser, "browser.screenshot")]
+    [InlineData(ImplantClass.Browser, "browser.redirect")]
+    [InlineData(ImplantClass.Browser, "browser.prompt")]
     public void Allows_AdmitsTheReducedVerbSetForTheClass(ImplantClass @class, string verb)
         => Assert.True(ImplantClassCapabilities.Allows(@class, verb));
 
@@ -67,6 +73,12 @@ public class ImplantClassCapabilitiesTests
     [InlineData(ImplantClass.Pivot, "lateral.move", "lateral movement is a long-haul class activity")]
     [InlineData(ImplantClass.Pivot, "persist.install", "persistence is a long-haul class activity")]
     [InlineData(ImplantClass.Pivot, "exfil.stage", "collection and exfiltration are long-haul class activities")]
+    [InlineData(ImplantClass.Browser, "shell.exec", "a hooked browser steers the page, it does not shell")]
+    [InlineData(ImplantClass.Browser, "file.pull", "file transfer belongs to a process footprint, not a page")]
+    [InlineData(ImplantClass.Browser, "recon.portscan", "recon is a long-haul class activity")]
+    [InlineData(ImplantClass.Browser, "collect.cred", "credential collection is a long-haul class activity")]
+    [InlineData(ImplantClass.Browser, "exfil.push", "exfiltration is a long-haul class activity")]
+    [InlineData(ImplantClass.Browser, "module.load", "module support is the long-haul class's")]
     public void Allows_DeniesAVerbOutsideTheClassSet(ImplantClass @class, string verb, string rationale)
     {
         _ = rationale; // documents the case; not asserted.
@@ -161,5 +173,21 @@ public class ImplantClassCapabilitiesTests
         Assert.Equal(
             new[] { "tunnel.forward", "tunnel.socks" },
             ImplantClassCapabilities.For(ImplantClass.Pivot));
+    }
+
+    [Fact]
+    public void For_TheBrowserClass_ReturnsExactlyTheHookSet()
+    {
+        // The hooked-browser class (architecture.md Sec 5.2, Sec 10.1): the
+        // read-and-steer verbs a hooked page justifies, and nothing past
+        // them -- input capture and browser-exploit chaining are out-of-tree
+        // capability contracts, never core verbs.
+        Assert.Equal(
+            new[]
+            {
+                "browser.fingerprint", "browser.cookies", "browser.dom",
+                "browser.screenshot", "browser.redirect", "browser.prompt",
+            },
+            ImplantClassCapabilities.For(ImplantClass.Browser));
     }
 }

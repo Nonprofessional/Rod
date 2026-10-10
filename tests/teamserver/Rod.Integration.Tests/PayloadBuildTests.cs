@@ -588,6 +588,36 @@ public class PayloadBuildTests
     }
 
     [Fact]
+    public async Task BuildPayload_Returns400_ForTheServedBrowserClass()
+    {
+        // The browser class's artifact is a rendered hook script served by
+        // the teamserver (architecture.md Sec 8), so the compiled-build
+        // contract refuses the spelling and names the mint that owns it.
+        var (client, host, _) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagementId = await CreateEngagementAsync(client);
+
+            var response = await client.PostAsJsonAsync(
+                $"/engagements/{engagementId}/payloads",
+                new PayloadEndpoints.BuildPayloadRequest(
+                    Language: null,
+                    Class: "Browser",
+                    TargetOs: null,
+                    TargetArch: null,
+                    Endpoint: null,
+                    UriPath: null,
+                    SleepSeconds: null,
+                    JitterSeconds: null,
+                    KillDate: null));
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task BuildPayload_Returns400_ForTheRetiredStagerClass()
     {
         // The stager class retired with the .NET trees; the request answers

@@ -345,4 +345,11 @@ public enum ImplantClass
 
     /// <summary>Represents a host that cannot run its own implant; forwards tasking.</summary>
     Pivot,
+
+    /// <summary>
+    /// A hooked browser, not a process: the artifact is a served hook script
+    /// a script-injection foothold loads, riding the certificate-less
+    /// envelope carrier (architecture.md Sec 5.2, Sec 8).
+    /// </summary>
+    Browser,
 }

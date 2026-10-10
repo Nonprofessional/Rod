@@ -61,6 +61,13 @@ internal static class PayloadBuildRequestParser
         if (string.Equals(body.Class?.Trim(), "stager", StringComparison.OrdinalIgnoreCase))
             return (null,
                 "The stager class is retired; deliver the payload through the launcher one-liners (launchers render them per payload).");
+        // The browser class's artifact is a rendered hook script the
+        // teamserver itself serves (architecture.md Sec 5.2, Sec 8), not a
+        // compiled build a unit produces -- the hooks mint renders it, so
+        // the build contract refuses the spelling outright.
+        if (string.Equals(body.Class?.Trim(), "browser", StringComparison.OrdinalIgnoreCase))
+            return (null,
+                "The browser class is a served hook script, not a compiled artifact; mint it through the engagement's hooks endpoint.");
         if (!TryParseClass(body.Class, out var @class))
             return (null, "Implant class is not recognized.");
         // The kind names the delivery tier: the implant (the default, the

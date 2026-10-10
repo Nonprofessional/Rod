@@ -72,6 +72,16 @@ public static class ImplantClassCapabilities
             // set -- a pivot forwards, it does not shell -- so a Pivot-class
             // build is the minimal tunneling artifact and nothing else.
             [ImplantClass.Pivot] = new[] { "tunnel.forward", "tunnel.socks" },
+
+            // The hooked-browser class (architecture.md Sec 5.2, Sec 10.1):
+            // the read-and-steer verbs a hooked page justifies. Everything
+            // past them -- input capture, browser-exploit chaining -- arrives
+            // as an out-of-tree capability contract, never a core verb.
+            [ImplantClass.Browser] = new[]
+            {
+                "browser.fingerprint", "browser.cookies", "browser.dom",
+                "browser.screenshot", "browser.redirect", "browser.prompt",
+            },
         };
 
     /// <summary>
