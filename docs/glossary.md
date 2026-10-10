@@ -40,9 +40,10 @@ sections.
 | Term | Meaning |
 |------|---------|
 | **Teamserver** | The monolithic .NET control-plane kernel: core state, transport, build pipeline, operator layer, storage/audit, tradecraft. |
-| **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), DNS, TCP, DoH). Decoupled from the public endpoint. |
+| **Listener** | The ingress endpoint that terminates a C2 transport (HTTP(S), DNS, TCP, DoH; plus `shellcatch`, the kind that catches a raw reverse-shell one-liner and hands back upgrade lines). Decoupled from the public endpoint. |
 | **Redirector** | A near-stateless .NET Native AOT forwarder (a single static binary) that fronts a listener for OPSEC and infra flexibility, splicing the byte stream without inspecting it. Burned redirectors are swappable at runtime by repointing the listener. No engagement state, no business logic. |
 | **Repoint** | Repointing a listener swaps its public endpoint at runtime (`POST /engagements/{engagementId}/listeners/{id}:repoint`) without touching the Kestrel bind; the old endpoint stops resolving, which severs it. |
+| **DoH** | DNS-over-HTTPS: the DNS grammar carried over RFC 8484 HTTPS bodies -- one of the five in-tree transports, and the resolution carrier the recon workbench's `recon:resolve` rides. |
 | **Build unit** | A per-language compilation service driven by the teamserver through the build contract (Rust in-tree; Go, C/C++, and Nim as out-of-tree community units). |
 | **Build contract** | The uniform message schema coupling the teamserver to build units; the language-neutrality boundary for generation. |
 
@@ -61,16 +62,25 @@ sections.
 | **Evasion** | The `evasion.avoid` and `evasion.unload` verbs (category `Evasion`); detection-evasion hooks within an authorized engagement. Unlike the recon, lateral, persist, collect, and exfil verbs these are **not** gated to a class (Sec 5.2, Sec 10.2): evasion is contract and dispatch only, so which class an evasion module runs on is decided when the operator deploys the out-of-tree module. The descriptors and dispatch live in the tradecraft layer; the concrete behavior is out-of-tree (Sec 13) and the core ships no bypass techniques. |
 | **Task / Tasking** | An operator-issued request targeting a session; has a state machine, result, and attribution. |
 
+## Operator surfaces
+
+| Term | Meaning |
+|------|---------|
+| **Workbench** | The external recon workbench (Sec 11.4): the operator layer's pre-foothold surface -- passive RDAP, certificate-transparency, DoH, and whois lookups plus an ROE-gated port scan, run on the teamserver, engagement-scoped, findings landing as task-less artifacts. Each half stays closed until its egress endpoint is configured. |
+| **MCP server** | The read-only Model Context Protocol endpoint (`/mcp`) riding the operator front (Sec 4): six tools over the engagement's read side -- engagements, implants, sessions, tasks, audit -- authenticated by an operator API token under the console's scopes. |
+| **Operator API token** | A bearer credential minted per operator through the operator API (shown once, stored as a digest, revocable by its own route); authenticates non-console clients -- today the MCP endpoint -- as the principal a console session would carry. Distinct from the deploy token, which enrolls implants. |
+| **Triage** | The opt-in LLM client's job (Sec 11.3): summarize a completed task's captured output through any OpenAI-compatible endpoint (cloud or local) from the task read. Disabled until configured; every attempt audited as `LlmSummaryGenerated`. |
+
 ## Evidence and OPSEC
 
 | Term | Meaning |
 |------|---------|
 | **Audit event** | An immutable, hash-chained, attributed record of a privileged action; the engagement timeline and report source by construction. |
-| **Artifact** | A first-class object (file, screenshot, command output) linked to a task; part of the evidence store. |
+| **Artifact** | A first-class object (file, screenshot, command output, findings) in the evidence store; usually linked to its producing task, but pre-foothold workbench findings land task-less under the acting operator's attribution. |
 | **Label** | The marker vocabulary on implants and hosts ("jump", "owned", "watch-edr"; Sec 11.2): setting and clearing append attributed audit events, and the live set is the last-wins reduction over them -- no store, the trail is the storage. |
 | **Host picture** | The device dimension read-side (Sec 11.2): a host is the enrollment-hostname grouping (case-insensitive), never an entity; notes and labels on one ride the trail keyed on the normalized hostname. |
 | **Loot** | The typed view over the artifact store (Sec 11.2): artifacts classified by the producing verb and content type into screenshot, credential, and file, each entry carrying its capture attribution; retrieving bytes records an `ArtifactViewed` event. |
-| **Topology** | The engagement's network picture assembled at read time (Sec 11.2): enrollment grouping, pivot links from recorded parentage, and recon observations parsed from completed task outputs against the documented JSON-lines grammar. Nothing stored. |
+| **Topology** | The engagement's network picture assembled at read time (Sec 11.2): enrollment grouping, pivot links from recorded parentage, and recon observations parsed from completed task outputs and the workbench's findings artifacts against the documented JSON-lines grammar. Nothing stored. |
 | **Retire** | Marking an implant retired from the operator API; a retired implant is refused at handshake (`HANDSHAKE_STATUS_IMPLANT_RETIRED`), untaskable, and its active session is closed. Idempotent; recorded as an `ImplantRetired` audit event.
 | **Burn handling** | The recovery flow when an implant or endpoint is compromised: retire the implant, repoint (swap) the burned endpoint, and rebuild a fresh artifact with a fresh key. |
-| **ROE guardrails** | The engagement's rules-of-engagement profile (`PermittedVerbs`, `PermittedImplants`); the server blocks task issuance outside it at queue time and records the refusal. |
+| **ROE guardrails** | The engagement's rules-of-engagement profile (`PermittedVerbs`, `PermittedImplants`, `PermittedTargets`); the server blocks task issuance -- and the workbench's scan -- outside it and records the refusal (`TaskRoeRefused`, `ReconScanRefused`). |
