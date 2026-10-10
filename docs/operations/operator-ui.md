@@ -179,7 +179,12 @@ carrier returns.
   interval** entry as a labeled dialog. The transcript follows the newest line while
   the operator is parked at the bottom and pins when they scroll up. The
   Advanced disclosure is the raw verb+arguments escape hatch, pinned to
-  this implant.
+  this implant. Module verbs carry no menu entry or shortcut of their
+  own: `module.list` and `module.unload <name>` ride the raw hatch like
+  any verb, while `module.load` -- whose staged content is the module's
+  bytes -- goes through the API (`POST /engagements/{id}/tasks` with the
+  content-bearing body), the console having no content-bearing path.
+  Once a module is loaded, its verbs answer here exactly like built-ins.
 - **Task log** (beside Implants, in the Operate group) -- the engagement's
   task history as a filterable, live log: by implant (switches to that
   implant's own feed), verb, status, issuing operator, or free text. Each
@@ -375,8 +380,10 @@ recon can see what nothing occupies.
 **Loot** is the typed board over the artifact store: each row is an
 artifact the engagement captured or attached, classified by what
 gathered it (screenshot, credential, file, other) and carrying its
-capture attribution -- the task, its verb, the implant, the credited
-operator. Screenshots open as an inline preview; other kinds download.
+capture attribution -- the task and its verb, the implant, the credited
+operator; a pre-foothold workbench finding carries the running operator
+alone, there being no task to join. Screenshots open as an inline
+preview; other kinds download.
 Opening a piece of loot records an `ArtifactViewed` event attributed to
 you: reading a projection of the evidence is not an act on the
 engagement, but bytes leaving the platform are. "Load older" walks the
@@ -386,7 +393,8 @@ pages.
 enrollments (accented) beside the ones only recon observed (dashed) or
 a note named, pivot links drawn outward along recorded parentage, and
 the recon observations listed underneath. Nothing is stored -- the
-projection re-reads the fleet, the trail, and the recon outputs every
+projection re-reads the fleet, the trail, and the recon outputs (task
+outputs and the workbench's task-less findings artifacts alike) every
 time -- and a broken audit chain refuses to render over it.
 
 ## Listeners
@@ -684,6 +692,46 @@ remembering the form.
 deployed artifact that has not yet enrolled will not be able to), or
 **Delete** the payload -- the bytes and the row are gone, a launcher
 fetching it 404s from then on, and the deletion is an audited fact.
+
+## Web shells
+
+The operating side of the web-shell builds: the roster of scripts placed
+in targets' web roots, bound to the engagement by registration. A
+web-shell never enrolls; execution is synchronous and every line lands
+on the task log like any other tasking. The scripts themselves generate
+under Build (that tab's Webshell script half).
+
+Registering takes the reachable URL plus the family and credential,
+either way: **claim a generated script** -- picked from the engagement's
+WebShell-class payloads, the family and baked key coming from the stored
+script so the key never travels through the operator's clipboard -- or
+enter the family and credential by hand: the sealed Rod shapes (PHP,
+JSP) or the universal eval one-liners (PHP, ASPX, classic ASP), an empty
+credential minting a fresh one. When the register call mints a script it
+answers with the paste-ready one-liner and its credential. Each row
+shows the URL, adapter, credential, last probe (ok or failed, with its
+stamp), and status. **Test** probes the endpoint, **Remove** unregisters
+it, and **Console** opens the line-oriented runner: each submitted line
+is one synchronous execution whose output appends to a local transcript
+-- a web-shell has no live stream, and the task log carries the durable
+history.
+
+## Engagements
+
+The landing roster: every engagement the operator can reach, created and
+edited here, with the close-out arc on the row. Create takes a name and
+an optional description; **Edit** reworks the working record (name and
+description -- a retired record is sealed, its editing refused). The
+status chip reads open, frozen, or retired, and drilling in hands off to
+the engagement's detail view with the full capability surface. The row
+actions drive the close-out: **Freeze** stops new tasking, enrollments,
+and token mints (in-flight results still land; a mistaken freeze
+reverses with **Unfreeze**), **Export evidence** downloads the close-out
+ZIP (audit trail, artifacts, report, manifest), and **Retire** is the
+terminal step, refused until frozen -- a close-out, not an erasure: the
+evidence stays readable while the record stops serving. The engagement's
+ROE profile has no editor here; it is API-only today
+(`PUT /engagements/{id}/roe`, see [teamserver.md](teamserver.md)).
 
 ## Settings
 
