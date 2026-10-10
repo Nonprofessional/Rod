@@ -177,6 +177,12 @@ const ICONS = {
       <polyline points="21 3 21 8.5 15.5 8.5" />
     </>
   ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16" y2="16" />
+    </>
+  ),
   inbox: (
     <>
       <polyline points="22 12 16.5 12 14.5 15 9.5 15 7.5 12 2 12" />

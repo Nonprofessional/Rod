@@ -1150,6 +1150,65 @@ export async function getTopology(engagementId: string): Promise<Topology> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/topology`))
 }
 
+// --- Recon workbench ------------------------------------------
+//
+// The pre-foothold scoping surface (docs/operations/recon.md): registration
+// lookups, certificate-transparency subdomain enumeration, resolution, and
+// the ROE-gated port scan. Each route runs synchronously -- the egress, the
+// artifact, and the audit event all happen inside the request, so the answer
+// carries the landed artifact's metadata rather than a run id. An
+// unconfigured half answers 503 naming the setting it wants; that sentence
+// is the UI's error line, verbatim.
+
+export interface ReconWorkbenchResult {
+  artifactId: string
+  name: string
+  contentType: string
+  findings: number
+  size: number
+  summary: string
+}
+
+async function runRecon(
+  engagementId: string,
+  route: string,
+  body: unknown,
+): Promise<ReconWorkbenchResult> {
+  const response = await fetch(`engagements/${engagementId}/recon:${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return jsonOrThrow(response)
+}
+
+// RDAP registration data (with the whois fallback behind it) and the
+// certificate-transparency subdomain census share the one-target shape.
+export function runReconLookup(
+  engagementId: string,
+  kind: 'rdap' | 'subdomains',
+  target: string,
+): Promise<ReconWorkbenchResult> {
+  return runRecon(engagementId, kind, { target })
+}
+
+export function runReconResolve(
+  engagementId: string,
+  targets: string[],
+): Promise<ReconWorkbenchResult> {
+  return runRecon(engagementId, 'resolve', { targets })
+}
+
+// Ports omitted = the curated default set; the grammar (comma list with
+// hyphen ranges) is the server's to enforce -- a bad list answers 400 with
+// the reason.
+export function runReconPortScan(
+  engagementId: string,
+  target: string,
+  ports?: string,
+): Promise<ReconWorkbenchResult> {
+  return runRecon(engagementId, 'portscan', ports ? { target, ports } : { target })
+}
 
 // --- Task snippets --------------------------------------------
 //

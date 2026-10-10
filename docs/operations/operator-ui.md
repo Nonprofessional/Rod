@@ -361,6 +361,46 @@ successor's `SessionOpened` as its trace and no close event of its own.
 clipboard -- the note to paste to the next watch or the channel of your
 choosing.
 
+## Recon
+
+The Recon panel is the external workbench's acting surface
+(architecture.md Sec 11.4; the egress decisions, configuration keys, and
+caps live in [recon.md](recon.md)): the scoping an operator runs before
+the first foothold. One form, four runs -- the **RDAP** registration
+lookup (whois behind it for zones without RDAP), the **Subdomains**
+census over certificate transparency, **Resolve** over DNS-over-HTTPS
+(one name per line; the first line alone is a single lookup, a full box
+is a bulk run), and the **Port scan** with the optional ports grammar
+(`22,80,443`, `1-1024`; blank scans the curated default set).
+
+A run is synchronous: the egress, the artifact, and the audit event all
+happen inside the request, so the button holds at "Running…" -- a scan
+at the port cap can take half a minute -- and the answer is the landed
+finding itself, rendered in the pane below the form. Each artifact shape
+reads as its own table (the census as a name list, resolution as
+host/addresses/CNAME, the scan as open ports ordered by port), the
+registration record as indented JSON and the whois fallback verbatim;
+long findings cap at five hundred rows inline -- the download is the
+exhaustive read, and opening one records the trail's `ArtifactViewed`
+event like any other loot.
+
+The panel carries no egress decisions of its own. Which RDAP mirror,
+which CT mirror, whose resolver, and where a scan dials from are
+teamserver configuration (recon.md again); a half that is not configured
+answers `503` naming the setting it wants, and the form's error line
+shows that sentence verbatim rather than paraphrasing the decision into
+a dead end. The scan alone carries the ROE target gate: the form shows
+the engagement's `permittedTargets` beside it, and a target outside the
+scope is refused before any connection opens (`422` with the violated
+rule, the refusal its own audit event).
+
+The **Findings** list under the form is the workbench's own history --
+the engagement's `recon.*` artifacts paged out of the loot board,
+task-less and attributed to the running operator -- reopening in the
+same pane. The findings join the Intel picture beside this panel: the
+Loot section's rows and the Topology projection's dashed recon-seen
+hosts both read the same artifacts this panel produces.
+
 ## Intel
 
 The Intel panel is the picture of what the engagement learned

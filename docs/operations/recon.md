@@ -158,8 +158,10 @@ The audit payload names the lookup and the target but never the egress
 endpoint -- configuration names the endpoint, this runbook the decision.
 The outcome is the findings artifact id on success, `failed:{reason}` on
 failure; the refusal the ROE gate causes is its own `ReconScanRefused`
-event. The findings appear in the loot view (task-less, attributed to the
-running operator) and in the topology projection beside implant-side recon.
+event. The findings appear in the operator UI's Recon tab (the run form beside
+its findings list, each artifact rendered by its shape), in the loot
+view (task-less, attributed to the running operator), and in the
+topology projection beside implant-side recon.
 
 ## Evolution notes
 

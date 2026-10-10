@@ -18,6 +18,7 @@ export type TabId =
   | 'artifacts'
   | 'report'
   | 'digest'
+  | 'recon'
   | 'intel'
   | 'listeners'
   | 'launchers'
@@ -52,6 +53,10 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'automation', label: 'Automation', icon: 'clock' },
       { id: 'notifications', label: 'Notifications', icon: 'bell' },
       { id: 'digest', label: 'Handoff digest', icon: 'activity' },
+      // The pre-foothold scoping surface (architecture.md Sec 11.4): the
+      // external recon workbench, which runs before the target picture it
+      // feeds -- so it sits ahead of Intel, the read projection it fills.
+      { id: 'recon', label: 'Recon', icon: 'search' },
       // The target picture (architecture.md Sec 11.2): hosts, loot, and the
       // topology -- what the engagement learned, not what it did.
       { id: 'intel', label: 'Intel', icon: 'target' },
