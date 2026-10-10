@@ -533,6 +533,27 @@ Implants differ by purpose, not by a "managed device flavor":
   Tier 2 contract, extending/implants.md). The reference implant compiles
   no lateral handler (the long tail, Sec 13); the server-side claim is
   what ships in-tree, pinned by the core-state tests.
+- **Browser class** -- a hooked browser, not a process: the artifact is a
+  served hook script (`<script src>`) a script-injection foothold loads,
+  and the implant it enrolls is the browser that executed it. The class
+  turns the most common web-facing foothold into tasking inside the
+  engagement trail -- today it needs a separate platform with its own
+  operator surface, storage, and OPSEC story, disconnected from the
+  attribution arc. Enrollment and contact ride the certificate-less
+  envelope carrier (Sec 8) on the poll cadence the store-and-forward
+  degraded discipline already models -- the hook speaks the same rod.v1
+  frames over the same `POST /implants/beacon`, the wire codec carried in
+  vanilla JavaScript inside the served script. Every hooked browser is an
+  engagement-scoped implant entity like any other: attribution, live
+  events, audit, and the automation engine treat it identically. The
+  artifact is rendered by the teamserver (the web-shell generator's
+  pattern, not the external build contract, which stays
+  compiled-artifacts only) and served from the public edge under an
+  unguessable route id (Sec 8). Identity is per browser tab: sessionStorage
+  holds the implant id and the seal counter, so a reload resumes rather
+  than re-enrolls; a storage-blocked context re-enrolls on reload, spending
+  one token use each time -- the mint's token budget is the enrollment
+  budget.
 
 Each class carries a **reduced verb set** -- the subset of the verbs its
 purpose justifies, defined in `Rod.CoreState.ImplantClassCapabilities` (the
@@ -549,8 +570,14 @@ artifact it loads; a web-shell and an ephemeral run `shell.exec` over their
 short-lived channels; a pivot carries exactly the tunnel set --
 `tunnel.forward`, the port-forward verb, and `tunnel.socks`, the
 multiplexed proxy (Sec 10.3) -- enough to forward traffic for hosts that
-cannot run their own implant and nothing a long-haul footprint justifies.
-No class but Implant carries a recon, lateral, persist, collect, or exfil
+cannot run their own implant and nothing a long-haul footprint justifies; a
+browser carries exactly the hook set -- `browser.fingerprint`,
+`browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`,
+`browser.prompt` (Sec 10.1) -- the read-and-steer verbs a hooked page
+justifies, with everything past them (input capture, browser-exploit
+chaining) arriving as out-of-tree capability contracts exactly like the
+evasion and exploit families (Sec 13). No class but Implant carries a
+recon, lateral, persist, collect, or exfil
 verb. The set is the server's authority for what a class
 may do: task issuance gates on it in core state (a verb outside the set is
 refused before it is queued, Sec 10.3), and the build pipeline bakes it into
@@ -1201,6 +1228,29 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and an artifact's exfil chunk run must
   complete within one request body -- the poll-transport bounds, documented
   with the wire grammar.
+- **The browser-hook serving edge is a public route on the implant-facing
+  listeners, gated by an unguessable id.** A Browser-class hook (Sec 5.2)
+  is minted per engagement (`POST /engagements/{id}/hooks`): the mint
+  renders the hook script from the in-tree template with the enroll URL,
+  deploy token, seal key, cadence, and verb list baked in, and stores the
+  rendered artifact as an engagement payload record, so the serving route
+  reads the same store every artifact route does.
+  `GET /implants/hooks/{hookId}` serves the script and
+  `GET /implants/hooks/{hookId}/page` a minimal test page, both scoped by
+  the ingress listener's engagement and gated by the route's unguessable
+  id -- the shape where the capability URL is the credential -- with
+  no-store caching and one `HookFetched` audit event per fetch recording
+  the fetcher's wire facts, the first-touch attribution the fetching
+  browser's enrollment then binds to an implant row. The token the bake
+  carries is the enrollment budget: each hooked browser's enrollment spends
+  one use, so the operator sizes the mint. Because the hook runs on the
+  victim page's origin, its contacts are cross-origin: the hook routes (and
+  the enroll and beacon routes they ride) answer
+  `Access-Control-Allow-Origin: *` only when the request carries an
+  `Origin` header -- a browser-only shape, so non-browser implant traffic
+  and its fingerprint are unchanged -- and the hook stays a
+  simple-request client (plain bodies, no custom headers), so no preflight
+  is ever needed.
 - **The raw-TCP listener answers weak-inspection egress.** It is the front
   for environments that permit arbitrary outbound sockets but put nothing
   between them and the internet -- no HTTP inspection to blend with, no
@@ -1603,6 +1653,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers an SDK module's bytes as the task's staged content and the implant's loader registers its verbs -- memfd and exec on Linux, the manual PE map on Windows -- `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
+| **browser** | `browser.fingerprint`, `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`, `browser.prompt` | The Browser class's hook set (Sec 5.2): the read-and-steer verbs a hooked page justifies. `browser.fingerprint` reports the navigator facts; `browser.cookies` reads the current origin's `document.cookie` (non-HttpOnly only -- the browser's own boundary, documented rather than worked around); `browser.dom` returns `outerHTML`, optionally narrowed by a CSS selector argument, truncated at 1 MiB; `browser.screenshot` rasterizes the DOM (the SVG foreignObject shape, cross-origin imagery stripped) into a PNG artifact through the exfil-chunk path (Sec 11); `browser.redirect` navigates the tab (the hook dies with the page it left); `browser.prompt` returns what the user answered, carrying `reads-input` so automation never fires it unattended (Sec 10.4). Input capture (keylogging, form-field harvesting) and browser-exploit chaining are not core verbs -- they arrive as out-of-tree capability contracts (Sec 13). |
 
 The recon verbs are registered through the tradecraft layer as first-class
 descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
@@ -2519,6 +2570,12 @@ credential and screen collection) is plugin-domain work for the C-ABI seam,
 composed per engagement rather than compiled into every artifact. The
 families beyond them -- QUIC above all -- come back as out-of-tree units
 against the same frozen contracts when an engagement names the need.
+
+The browser hook draws its line the same way: its compiled-in set is the
+read-and-steer six (Sec 10.1), while input capture in a hooked page
+(keylogging, form-field harvesting) and browser-exploit chaining are
+out-of-tree capability contracts, never core verbs -- the boundary Sec 5.2
+carries in the class set itself.
 
 - All use assumes an authorized context; see [SECURITY.md](../SECURITY.md).
 

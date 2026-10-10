@@ -264,6 +264,42 @@ discipline, and the staged/channel grammar are identical on every carriage
 the envelope needs a WebSocket client, a protobuf codec, and AES-256-GCM --
 the same bar the envelope sets, plus the socket.
 
+### The browser hook (the in-tree script client)
+
+The Browser-class hook (architecture.md Sec 5.2) is the one client Rod ships
+outside the Rust crate: a served `<script src>` artifact that speaks this
+contract from the victim page's origin. It is a Tier 0 client with the Tier 1
+seal, and the wire bar it holds is the envelope contact's own grammar --
+nothing in the protocol exists only for it.
+
+- Enrollment is the JSON enroll above with `"class": "browser"`; the keypair
+  obligation (Tier 0's optional-on-the-wire public key) is met only in the
+  sealed posture, where `crypto.subtle` is available.
+- Contacts are `POST /implants/beacon` with the sealed body: the frame codec
+  (handshake, task, result, exfil chunk) is hand-encoded inside the script
+  in dependency-free vanilla JavaScript, and the script fetches nothing but
+  the two routes it owns.
+- Identity is per browser tab: sessionStorage carries the implant id and the
+  seal counter across reloads; a context that blocks storage re-enrolls on
+  every reload, spending one token use each time (the mint's token budget is
+  the enrollment budget, sized by the operator).
+- Two postures, chosen at mint. `aesgcm` (mainstream): the key is baked into
+  the served script, enroll and contacts seal under it, and the response's
+  GCM tag is the hook's server authentication. `none` (the plaintext framed
+  body): for hooking plain-`http` pages where `crypto.subtle` is unavailable
+  -- no seal and no server authentication, the lab-debug shape the beacon
+  route serves only to implants no key was ever bound to.
+- Tasking-signature verification (Tier 1) is a named limit of the in-tree
+  hook: verifying would mean walking an X.509 chain in vanilla JavaScript.
+  The documented follow-up is baking the tasking CA's raw SPKI into the
+  script at render, which retires the X.509 walk. A fork wanting the
+  hardening today edits the in-tree template the way the crate fork edits
+  the Rust source.
+- The hook must stay a simple-request client (plain bodies, no custom
+  headers): the cross-origin contacts trigger no preflight, and the routes
+  answer `Access-Control-Allow-Origin: *` only when the request carries an
+  `Origin` header (architecture.md Sec 8).
+
 ### Task results and bulk data
 
 A `TaskResult` echoes the task id with an outcome (`1` succeeded, `2` failed)

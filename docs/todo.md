@@ -25,19 +25,13 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-(Nothing queued. The four surface refresh legs shipped 2026-10-10; the
-rehearsal walk again covers every operator surface, per
-[operations/rehearsal.md](operations/rehearsal.md) Sec 7.)
-
-## On hold
-
 - **Browser-hook implant class: a BeEF-shaped XSS platform** (serves
-  architecture.md Sec 5.2 and Sec 10.1; design lands first). Parked on
-  sizing, not dependency -- the certificate-less envelope carrier it would
-  ride is shipped (Sec 8) -- but the item is a second reference artifact
-  with its own serving and storage story (where the hook script lives is
-  the first design question), too large to ride along beside the plugin
-  seam; it reopens as a deliberate project once that seam lands. What an
+  architecture.md Sec 5.2 and Sec 10.1; design landed). In flight: the
+  plugin seam it waited on shipped, and the design amendment is in
+  [architecture.md](architecture.md) Sec 5.2, Sec 8, Sec 10.1, and Sec 13
+  (the serving story answers the first design question -- the hook script
+  is a rendered payload record served from the public edge under an
+  unguessable route id). What an
   engagement cannot do without it: pivot a script-injection foothold into
   tasking -- the hooked browser is the most common web-facing foothold,
   and today it needs a separate platform (BeEF) with its own operator
@@ -55,6 +49,8 @@ rehearsal walk again covers every operator surface, per
   _AC:_ a hooked browser on a test page enrolls as a Browser-class implant
   over the envelope carrier, and an operator tasks a fingerprint and a
   cookie read against it, with both results in the audit trail.
+
+## On hold
 
 - **Delivery campaigns: tracked spear-phish into tasking** (serves
   architecture.md Sec 2, the delivery step of the lifecycle, and Sec 11;
