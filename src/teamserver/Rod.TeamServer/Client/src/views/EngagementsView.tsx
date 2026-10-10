@@ -175,7 +175,23 @@ export function EngagementsView() {
           Loading engagements…
         </div>
       ) : (
-        <div className="table-wrap">
+        <>
+          {/* The roster at a glance: the close-out pipeline's stages sized
+              before the table tells it. */}
+          {items.length > 0 && (
+            <div className="count-row">
+              <span className="chip">
+                <strong>{items.filter((e) => !e.frozenAt && !e.retiredAt).length}</strong> open
+              </span>
+              <span className="chip">
+                <strong>{items.filter((e) => e.frozenAt && !e.retiredAt).length}</strong> frozen
+              </span>
+              <span className="chip">
+                <strong>{items.filter((e) => e.retiredAt).length}</strong> retired
+              </span>
+            </div>
+          )}
+          <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -249,7 +265,8 @@ export function EngagementsView() {
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {editing && (

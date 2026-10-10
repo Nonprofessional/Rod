@@ -763,7 +763,11 @@ history.
 ## Engagements
 
 The landing roster: every engagement the operator can reach, created and
-edited here, with the close-out arc on the row. Create takes a name and
+edited here, with the close-out arc on the row. The count chips above the
+table size the close-out pipeline at a glance (open, frozen, retired), and
+outside an engagement the sidebar carries a recent-engagements quick-jump
+(newest first, sealed records excluded; the roster is the full account).
+Create takes a name and
 an optional description; **Edit** reworks the working record (name and
 description -- a retired record is sealed, its editing refused). The
 status chip reads open, frozen, or retired, and drilling in hands off to

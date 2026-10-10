@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { type LoginInput, type SessionOperator, getSessionOperator, login, logout } from './api'
+import { type Engagement, type LoginInput, type SessionOperator, getSessionOperator, listEngagements, login, logout } from './api'
 import { CommandPalette } from './components/CommandPalette'
 import { Icon } from './components/Icons'
 import { EngagementNav } from './components/Nav'
@@ -13,11 +13,12 @@ import { SystemView } from './views/SystemView'
 import { LoginView } from './views/LoginView'
 
 // Operator UI shell: the topbar carries what is global -- the breadcrumb,
-// the command palette, the deployment-level entry points (settings, system),
+// the command palette, the global surfaces (engagements, settings, system),
 // the live engagement state, and the signed-in operator -- while the sidebar
-// is purely contextual: the brand (itself the way home) and the engagement's
-// tab groups. Each open engagement holds a Server-Sent Events stream open so
-// every connected operator sees tasking, results, and presence in real time.
+// is purely contextual: the brand, the engagement's tab groups inside an
+// engagement, and a recent-engagements quick-jump outside one. Each open
+// engagement holds a Server-Sent Events stream open so every connected
+// operator sees tasking, results, and presence in real time.
 //
 // The session is the teamserver's cookie: GET /operators/me resolves the signed-
 // in operator (never a client-generated id), and an unauthenticated browser is
@@ -61,6 +62,57 @@ function useRoute(): Route {
 // Up to two leading characters of a handle, for avatar tiles.
 function initials(handle: string): string {
   return handle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
+}
+
+// Outside an engagement the sidebar has no context to navigate, so it carries
+// the recent list instead: quick jumps into the workspaces the operator
+// actually uses, newest first. Sealed records stay off it -- the engagements
+// list remains the full account.
+function RecentEngagements() {
+  const [items, setItems] = useState<Engagement[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    listEngagements()
+      .then((all) => {
+        if (!cancelled) {
+          setItems(
+            all
+              .filter((e) => !e.retiredAt)
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .slice(0, 6),
+          )
+        }
+      })
+      .catch(() => {
+        // A failed read just leaves the quick-jump empty; the list page is
+        // the authoritative surface.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (items.length === 0) return null
+
+  return (
+    <nav className="sidebar-nav">
+      <div className="nav-group">
+        <div className="nav-group-label">Recent engagements</div>
+        {items.map((e) => (
+          <a
+            key={e.engagementId}
+            className="nav-item"
+            href={`#/engagements/${e.engagementId}`}
+            title={`${e.name} (${e.engagementId.slice(0, 8)})`}
+          >
+            <Icon name="globe" />
+            <span className="label">{e.name}</span>
+          </a>
+        ))}
+      </div>
+    </nav>
+  )
 }
 
 function Topbar({
@@ -135,21 +187,32 @@ function Topbar({
             )}
           </>
         )}
-        {/* Deployment-level surfaces: global to every context, so they ride
-            the topbar instead of the sidebar's context navigation. */}
+        {/* The global surfaces, labeled: navigation that belongs to no
+            single context rides the topbar instead of the sidebar's context
+            navigation. */}
         <a
-          className={`topbar-icon${route.kind === 'settings' ? ' active' : ''}`}
+          className={`topbar-link${route.kind === 'engagements' ? ' active' : ''}`}
+          href="#/engagements"
+          title="The engagements list"
+        >
+          <Icon name="globe" />
+          <span className="label">Engagements</span>
+        </a>
+        <a
+          className={`topbar-link${route.kind === 'settings' ? ' active' : ''}`}
           href="#/settings"
           title="Teamserver runtime settings"
         >
           <Icon name="settings" />
+          <span className="label">Settings</span>
         </a>
         <a
-          className={`topbar-icon${route.kind === 'system' ? ' active' : ''}`}
+          className={`topbar-link${route.kind === 'system' ? ' active' : ''}`}
           href="#/system"
           title="The host and its build environment -- detected toolchains and what is missing"
         >
           <Icon name="activity" />
+          <span className="label">System</span>
         </a>
         <Identity operator={operator} onLogout={onLogout} />
       </div>
@@ -195,8 +258,11 @@ function Identity({
       </button>
       {open && (
         <div className="identity-menu">
-          <div className="muted" title={operator.operatorId}>
-            {operator.handle} · {operator.operatorId.slice(0, 8)}
+          <div className="identity-menu-head">
+            <strong>{operator.handle}</strong>
+            <span className="muted" title={operator.operatorId}>
+              {operator.operatorId.slice(0, 8)}
+            </span>
           </div>
           {!acting && (
             <div className="muted">
@@ -310,10 +376,12 @@ function App() {
             <span className="brand-sub">teamserver</span>
           </span>
         </a>
-        {route.kind === 'engagement' && (
+        {route.kind === 'engagement' ? (
           <nav className="sidebar-nav">
             <EngagementNav engagementId={route.engagementId} active={activeTab} />
           </nav>
+        ) : (
+          <RecentEngagements />
         )}
       </aside>
       <div className="frame">
