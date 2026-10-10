@@ -11,7 +11,6 @@ import {
 } from '../api'
 import type { TabId } from '../tabs'
 import { LiveContext } from '../shell'
-import { ArtifactsView } from './ArtifactsView'
 import { AuditView } from './AuditView'
 import { ImplantsView } from './ImplantsView'
 import { InteractView } from './InteractView'
@@ -200,9 +199,6 @@ export function EngagementView({
       {tab === 'shells' && <ShellsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'webshells' && <WebShellsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'audit' && <AuditView engagementId={engagementId} onlineTick={tick} />}
-      {tab === 'artifacts' && (
-        <ArtifactsView engagementId={engagementId} onlineTick={tick} />
-      )}
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
       {tab === 'launchers' && <LaunchersView engagementId={engagementId} onlineTick={tick} />}

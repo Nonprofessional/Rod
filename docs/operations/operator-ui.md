@@ -189,10 +189,12 @@ carrier returns.
   task history as a filterable, live log: by implant (switches to that
   implant's own feed), verb, status, issuing operator, or free text. Each
   row carries a chevron that unfolds the full output (and a one-line
-  preview of the answer while collapsed); channels open their pane. The
-  log is read-only -- canceling a queued task happens in that implant's
-  session console. Issuing happens in the implant menu and the console;
-  this tab is for reading.
+  preview of the answer while collapsed); channels open their pane, and
+  the unfolded row lists the task's artifacts with downloads and the
+  operator-side attach that binds an evidence file to the task's record.
+  The log's tasking is read-only -- canceling a queued task happens in
+  that implant's session console. Issuing happens in the implant menu and
+  the console; this tab is for reading.
 
 Two browsing panes open from the menu (and the console): the **process
 browser** (`recon.ps` as a filterable table with a confirmed per-row
@@ -822,10 +824,10 @@ one glance before the first build is ever queued.
   projection of the same trail -- the narrative rendering lives as the
   Report's timeline section, and the standalone `/timeline` endpoint stays a
   scripting deliverable.)
-- **Artifacts** -- evidence objects attached to tasks (file pulls, exfil
-  chunks): pick a task to list, attach, and download its artifacts.
 - **Report** -- the whole engagement as a reproducible JSON/Markdown export,
-  timeline included.
+  timeline included. (The Artifacts tab retired: evidence objects -- file
+  pulls, exfil chunks, the operator-side attach -- surface in the task
+  log's expanded rows, where the task they document already lives.)
 
 ## Deferred work
 

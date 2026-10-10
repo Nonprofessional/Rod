@@ -211,12 +211,19 @@ function App() {
     return <LoginView onLogin={onLogin} />
   }
 
+  // Retired tab ids redirect to where their surface went, so stale deep
+  // links land on the work instead of the fallback.
+  const RETIRED_TAB_REDIRECTS: Partial<Record<string, TabId>> = {
+    // Evidence attach/download moved into the task log's expanded rows.
+    artifacts: 'tasking',
+  }
+
   // Unknown tab segments (stale links) fall back to the fleet -- the primary
   // operating surface.
   const routeTab = route.kind === 'engagement' ? route.tab : ''
-  const activeTab: TabId = (ENGAGEMENT_TABS as readonly string[]).includes(routeTab)
-    ? (routeTab as TabId)
-    : 'implants'
+  const activeTab: TabId =
+    RETIRED_TAB_REDIRECTS[routeTab] ??
+    ((ENGAGEMENT_TABS as readonly string[]).includes(routeTab) ? (routeTab as TabId) : 'implants')
 
   return (
     <div className="shell">

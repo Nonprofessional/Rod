@@ -15,7 +15,6 @@ export type TabId =
   | 'shells'
   | 'webshells'
   | 'audit'
-  | 'artifacts'
   | 'report'
   | 'digest'
   | 'recon'
@@ -77,7 +76,6 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     label: 'Evidence',
     items: [
       { id: 'audit', label: 'Audit', icon: 'list' },
-      { id: 'artifacts', label: 'Artifacts', icon: 'archive' },
       { id: 'report', label: 'Report', icon: 'file' },
     ],
   },

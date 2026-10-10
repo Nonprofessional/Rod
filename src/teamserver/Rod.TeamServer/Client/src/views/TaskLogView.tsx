@@ -3,6 +3,7 @@ import {
   type ArtifactSummary,
   type EngagementTask,
   type Implant,
+  attachArtifact,
   fetchArtifactBlob,
   listArtifacts,
   listEngagementTasks,
@@ -22,9 +23,11 @@ import { isChannelVerb } from '../verbForms'
 // engagement-wide when unfiltered), by verb, by status, by operator, or
 // free text over verb/arguments/output, and watch new rows land as operators
 // work. "Show me every shell command this engagement ran" is the shape this
-// view exists for. Read-only by design: retracting a queued task is an
+// view exists for. Tasking stays read-only: retracting a queued task is an
 // operational action and lives in the session console, next to the implant
-// it targets; channel transcripts still open from their rows.
+// it targets. The one write is evidence -- the expanded row attaches an
+// operator-side file to the task's record, the job the retired Artifacts
+// tab held. Channel transcripts still open from their rows.
 
 export function TaskLogView({
   engagementId,
@@ -374,26 +377,62 @@ function LogRow({
 
 // The artifacts a task produced or consumed, lazily fetched on expand: a
 // staged upload binds its bytes to the task, a large pull streams into the
-// store -- the expanded row carries the download instead of making the
-// operator cross to the Artifacts tab.
+// store. The same line carries the operator-side attach -- evidence a task
+// did not produce itself, bound to the task it documents -- so evidence
+// work stays in the row it belongs to.
 function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId: string }) {
   const [artifacts, setArtifacts] = useState<ArtifactSummary[] | null>(null)
+  const [fileName, setFileName] = useState('')
+  const [fileBytes, setFileBytes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let stopped = false
-    void listArtifacts(engagementId, taskId)
-      .then((page) => {
-        if (!stopped) setArtifacts(page.items)
-      })
-      .catch(() => {
-        if (!stopped) setArtifacts([])
-      })
-    return () => {
-      stopped = true
+  const refresh = useCallback(async () => {
+    try {
+      setArtifacts((await listArtifacts(engagementId, taskId)).items)
+    } catch {
+      setArtifacts([])
     }
   }, [engagementId, taskId])
 
-  if (!artifacts || artifacts.length === 0) return null
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const onFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = () => {
+      // reader.result is a data URL; strip the prefix to get the raw base64.
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      setFileBytes(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const onAttach = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!fileName) return
+    setBusy(true)
+    try {
+      await attachArtifact(engagementId, taskId, {
+        name: fileName,
+        contentType: null,
+        content: fileBytes,
+      })
+      setFileName('')
+      setFileBytes('')
+      await refresh()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const onDownload = async (artifact: ArtifactSummary) => {
     try {
@@ -406,7 +445,7 @@ function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId:
   return (
     <div className="task-detail-artifacts">
       <span className="muted">artifacts</span>
-      {artifacts.map((a) => (
+      {artifacts?.map((a) => (
         <span key={a.artifactId} className="task-detail-artifact">
           <code>{a.name}</code> <span className="muted">({fmtBytes(a.size)})</span>{' '}
           <button className="sm" onClick={() => void onDownload(a)}>
@@ -414,6 +453,20 @@ function TaskArtifacts({ engagementId, taskId }: { engagementId: string; taskId:
           </button>
         </span>
       ))}
+      <form className="inline-form" onSubmit={onAttach}>
+        <input type="file" onChange={onFile} aria-label="Evidence file" />
+        <input
+          placeholder="name"
+          value={fileName}
+          onChange={(e) => setFileName(e.target.value)}
+          title="The evidence name; defaults to the chosen file's name"
+          aria-label="Artifact name"
+        />
+        <button className="sm" type="submit" disabled={busy || !fileBytes}>
+          {busy ? 'Attaching…' : 'Attach'}
+        </button>
+        {error && <span className="error">{error}</span>}
+      </form>
     </div>
   )
 }
