@@ -51,12 +51,17 @@ public class ReconWorkbenchTests
     private const string CtAnswer =
         """[{"name_value":"example.com\nwww.example.com","common_name":"example.com"}]""";
 
+    private const string DohAnswerA =
+        """{"Status":0,"Answer":[{"name":"asked.","type":1,"TTL":60,"data":"203.0.113.10"}]}""";
+
     /// <summary>
-    /// Serves both stub services on one ephemeral loopback port until the
-    /// returned stopper runs: <c>/domain/...</c> answers the RDAP shape,
-    /// the query string names the CT mirror's ask.
+    /// Serves the stub services on one ephemeral loopback port until the
+    /// returned stopper runs: <c>/domain/...</c> answers the RDAP shape
+    /// (404 when the test plays a registry without the record), a
+    /// <c>name=</c> query answers the DoH resolver shape, and anything
+    /// else is the CT mirror's ask.
     /// </summary>
-    private static (string BaseUrl, Action Stop) ServeStubServices()
+    private static (string BaseUrl, Action Stop) ServeStubServices(int rdapStatus = 200)
     {
         using var probe = TcpListener.Create(0);
         probe.Start();
@@ -75,12 +80,16 @@ public class ReconWorkbenchTests
                 {
                     var ctx = await server.GetContextAsync();
                     using var _ = ctx.Response;
-                    var (status, body) = ctx.Request.Url!.AbsolutePath.StartsWith("/domain/")
-                        ? (200, RdapAnswer)
-                        : (200, CtAnswer);
+                    var url = ctx.Request.Url!;
+                    var (status, body) = url.AbsolutePath.StartsWith("/domain/")
+                        ? (rdapStatus, RdapAnswer)
+                        : ctx.Request.QueryString["name"] is not null
+                            ? (200, DohAnswerA)
+                            : (200, CtAnswer);
                     var buffer = Encoding.UTF8.GetBytes(body);
                     ctx.Response.ContentType = "application/json";
                     ctx.Response.ContentLength64 = buffer.Length;
+                    ctx.Response.StatusCode = status;
                     await ctx.Response.OutputStream.WriteAsync(buffer);
                 }
             }
@@ -92,6 +101,45 @@ public class ReconWorkbenchTests
         {
             stopped.TrySetResult();
             server.Stop();
+        }
+        );
+    }
+
+    /// <summary>
+    /// Serves a whois server on an ephemeral loopback port: reads each
+    /// query line, answers with the fixed record, closes -- port 43's
+    /// whole conversation, one client at a time.
+    /// </summary>
+    private static (int Port, Action Stop) ServeWhois()
+    {
+        var listener = TcpListener.Create(0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var stopped = new TaskCompletionSource();
+        var serve = Task.Run(async () =>
+        {
+            try
+            {
+                while (listener.Server.IsBound)
+                {
+                    using var client = await listener.AcceptTcpClientAsync();
+                    using var stream = client.GetStream();
+                    using var reader = new StreamReader(stream, Encoding.ASCII);
+                    await reader.ReadLineAsync();
+                    var answer = Encoding.ASCII.GetBytes(
+                        "Domain: example.com\r\nRegistrar: Example Registrar, Inc.\r\n");
+                    await stream.WriteAsync(answer);
+                    await stream.FlushAsync();
+                }
+            }
+            catch (Exception) when (stopped.Task.IsCompleted)
+            {
+            }
+        });
+        return (port, () =>
+        {
+            stopped.TrySetResult();
+            listener.Stop();
         }
         );
     }
@@ -308,7 +356,7 @@ public class ReconWorkbenchTests
             await AuthenticatedHost.LoginAsync(client);
             var engagement = await CreateEngagementAsync(client);
 
-            foreach (var action in new[] { "rdap", "subdomains", "portscan" })
+            foreach (var action in new[] { "rdap", "subdomains", "resolve", "portscan" })
             {
                 var response = await client.PostAsJsonAsync(
                     $"/engagements/{engagement}/recon:{action}", new { Target = "example.com" });
@@ -380,6 +428,122 @@ public class ReconWorkbenchTests
                 $"/engagements/{engagement}/recon:portscan",
                 new { Target = "127.0.0.1", Ports = "70000" });
             Assert.Equal(HttpStatusCode.BadRequest, badPorts.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_CapturesAddressBearingFindings_AndJoinsThePictureWithThem()
+    {
+        var (baseUrl, stop) = ServeStubServices();
+        try
+        {
+            var (client, host, operatorId) = AuthenticatedHost.Create(extendConfig: settings =>
+            {
+                settings["Recon:DohBaseUrl"] = baseUrl;
+            });
+            using (host)
+            using (client)
+            {
+                await AuthenticatedHost.LoginAsync(client);
+                var engagement = await CreateEngagementAsync(client);
+
+                var resolved = await RunOkAsync(client, engagement, "resolve",
+                    new { Target = "www.example.com" });
+                Assert.Equal("recon.resolve:www.example.com", resolved.GetProperty("name").GetString());
+                Assert.Equal(1, resolved.GetProperty("findings").GetInt32());
+
+                var stored = Assert.Single(await host.Services.GetRequiredService<IArtifactStore>()
+                    .ListAsync(engagement));
+                Assert.Equal(operatorId.Value, stored.OperatorId);
+
+                var lookup = Assert.Single(
+                    await host.Services.GetRequiredService<IAuditStore>().ListAsync(engagement),
+                    e => e.Kind == AuditEventKind.ReconLookupCompleted);
+                Assert.Equal("resolve;www.example.com", lookup.Payload);
+
+                // The address rides the picture: the host is observed with
+                // what it resolved to.
+                var topology = await client.GetFromJsonAsync<JsonElement>(
+                    $"/engagements/{engagement}/topology");
+                var observation = Assert.Single(topology.GetProperty("observations").EnumerateArray());
+                Assert.Equal("www.example.com", observation.GetProperty("host").GetString());
+                Assert.Equal("203.0.113.10", observation.GetProperty("address").GetString());
+            }
+        }
+        finally
+        {
+            stop();
+        }
+    }
+
+    [Fact]
+    public async Task Rdap_RegistryMiss_FallsBackToWhois_WhenAServerIsConfigured()
+    {
+        var (baseUrl, stopHttp) = ServeStubServices(rdapStatus: 404);
+        var (whoisPort, stopWhois) = ServeWhois();
+        try
+        {
+            var (client, host, _) = AuthenticatedHost.Create(extendConfig: settings =>
+            {
+                settings["Recon:RdapBaseUrl"] = baseUrl;
+                settings["Recon:WhoisServer"] = $"127.0.0.1:{whoisPort}";
+            });
+            using (host)
+            using (client)
+            {
+                await AuthenticatedHost.LoginAsync(client);
+                var engagement = await CreateEngagementAsync(client);
+
+                var answer = await RunOkAsync(client, engagement, "rdap", new { Target = "example.com" });
+                Assert.Equal("recon.whois:example.com", answer.GetProperty("name").GetString());
+                Assert.Equal("text/plain", answer.GetProperty("contentType").GetString());
+
+                // One event covers the run, its lookup name carrying the
+                // fallback.
+                var lookup = Assert.Single(
+                    await host.Services.GetRequiredService<IAuditStore>().ListAsync(engagement),
+                    e => e.Kind == AuditEventKind.ReconLookupCompleted);
+                Assert.Equal("rdap>whois;example.com", lookup.Payload);
+            }
+        }
+        finally
+        {
+            stopHttp();
+            stopWhois();
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_ABulkAskOverTheCap_IsRefusedByName()
+    {
+        var (baseUrl, stop) = ServeStubServices();
+        try
+        {
+            var (client, host, _) = AuthenticatedHost.Create(extendConfig: settings =>
+            {
+                settings["Recon:DohBaseUrl"] = baseUrl;
+                settings["Recon:MaxResolveTargets"] = "1";
+            });
+            using (host)
+            using (client)
+            {
+                await AuthenticatedHost.LoginAsync(client);
+                var engagement = await CreateEngagementAsync(client);
+
+                var response = await client.PostAsJsonAsync(
+                    $"/engagements/{engagement}/recon:resolve",
+                    new { Targets = new[] { "a.example.com", "b.example.com" } });
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+                var both = await client.PostAsJsonAsync(
+                    $"/engagements/{engagement}/recon:resolve",
+                    new { Target = "a.example.com", Targets = new[] { "b.example.com" } });
+                Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+            }
+        }
+        finally
+        {
+            stop();
         }
     }
 }

@@ -9,11 +9,13 @@ runbook covers the egress decisions an operator makes before arming each
 half, the configuration, the ROE target scope that gates the scan, and what
 lands in the audit trail.
 
-Three routes, all task scope, all refused on a closed engagement:
+Four routes, all task scope, all refused on a closed engagement:
 
 ```
 POST /engagements/{engagementId}/recon:rdap        {"target": "example.com"}
 POST /engagements/{engagementId}/recon:subdomains  {"target": "example.com"}
+POST /engagements/{engagementId}/recon:resolve     {"target": "www.example.com"}
+POST /engagements/{engagementId}/recon:resolve     {"targets": ["a.example.com", "b.example.com"]}
 POST /engagements/{engagementId}/recon:portscan    {"target": "10.0.0.5", "ports": "22,80,443"}
 ```
 
@@ -37,6 +39,22 @@ call, never a silent default: each half stays closed (its route answers
   direct-or-fronted tradeoff applies, plus volume: a CT mirror is a public
   service under no engagement's control, so front it when the census
   itself should not read as reconnaissance from your address.
+- **The resolver** (`Recon:DohBaseUrl`) -- resolution rides
+  DNS-over-HTTPS, not the host's resolver: the JSON answer shape Google's
+  and Cloudflare's endpoints both serve
+  (`GET {base}?name={name}&type={type}`), so `https://dns.google/resolve`
+  or `https://cloudflare-dns.com/dns-query` work as-is, and a fronted
+  mirror keeps the teamserver's questions off the public resolver's logs.
+  Whose resolver answers is part of the engagement's OPSEC story -- a
+  target-adjacent resolver sees your census's follow-up.
+- **Whois** (`Recon:WhoisServer`, port 43) -- the fallback behind the
+  RDAP flag for registries that never built RDAP (much of the ccTLD
+  world). One query per lookup, the answer captured verbatim, no
+  referral chasing: a server that hands back a referral names it in the
+  captured text, and an operator chasing one re-runs against that
+  server. Plain TCP, no TLS -- whois is a 1980s protocol and its egress
+  is readable on the wire, which is one more reason it is the fallback
+  and not the primary.
 - **The scan's origin** (`Recon:ScanOrigin`) -- where the scan's
   connections egress from is its own decision, separate from the lookups.
   The only origin this teamserver ships is `Teamserver`: the scan dials the
@@ -60,9 +78,13 @@ on the scope it informs would deadlock the scoping flow.
 |-----|---------|---------|
 | `Recon:RdapBaseUrl` | -- | The RDAP service (`{base}/domain/{name}`). Unset: the route answers `503`. |
 | `Recon:CtBaseUrl` | -- | The CT mirror answering the crt.sh JSON shape. Unset: `503`. |
+| `Recon:DohBaseUrl` | -- | The DoH resolver (`GET {base}?name=&type=`, JSON answers). Unset: `503`. |
+| `Recon:WhoisServer` | -- | The whois fallback server, `host` or `host:port` (43 when unnamed). Unset: RDAP registry-misses stay failed runs. |
 | `Recon:ScanOrigin` | -- | `Teamserver` arms the scan; unset or any other value keeps it at `503`. |
 | `Recon:RequestTimeoutSeconds` | `30` | Per-request budget for the passive lookups. |
 | `Recon:MaxSubdomainNames` | `5000` | How many distinct names one enumeration records. |
+| `Recon:MaxResolveTargets` | `256` | How many names one resolution request may carry. |
+| `Recon:ResolveConcurrency` | `32` | How many names a bulk resolution queries at once. |
 | `Recon:ScanConnectTimeoutMilliseconds` | `1500` | Per-port connect budget. |
 | `Recon:ScanConcurrency` | `128` | How many ports one scan probes at once. |
 | `Recon:ScanMaxPorts` | `4096` | How many ports one request may name; a full-range sweep is several requests. |
@@ -72,6 +94,8 @@ Example (environment):
 ```
 Recon__RdapBaseUrl=https://rdap.org
 Recon__CtBaseUrl=https://crt.sh
+Recon__DohBaseUrl=https://cloudflare-dns.com/dns-query
+Recon__WhoisServer=whois.iana.org
 Recon__ScanOrigin=Teamserver
 ```
 
@@ -106,12 +130,23 @@ and every attempt in the trail:
 
 - `recon:rdap` -- a JSON registration record (registrar, status, dates,
   nameservers, secureDNS), artifact `recon.rdap:{domain}`, event
-  `ReconLookupCompleted`.
+  `ReconLookupCompleted`. When the registry has no record and
+  `Recon:WhoisServer` is set, the whois answer is captured verbatim
+  instead (artifact `recon.whois:{domain}`, text/plain) and the event's
+  lookup name reads `rdap>whois`.
 - `recon:subdomains` -- JSON lines, one `{"host": name}` per name, the
   documented recon grammar (extending/tradecraft.md), artifact
   `recon.subdomains:{domain}`, event `ReconLookupCompleted`. The names join
   the topology projection as observed hosts; wildcard certificate literals
   name no concrete host and are not findings.
+- `recon:resolve` -- JSON lines, one `{"host": name,
+  "addresses": [...]}` (the hostenum shape, a `cname` field along for
+  alias chains) per name that answered; an IP target records its PTR
+  name. A single negative (NXDOMAIN, no PTR) is a failed run naming the
+  negative; a bulk run counts its misses in the summary and records only
+  the names that live. The addresses join the topology projection beside
+  the hosts they name. Event `ReconLookupCompleted`, artifact
+  `recon.resolve:{name}` / `recon.resolve:{n}-names`.
 - `recon:portscan` -- JSON lines, one `{"host": h, "port": p,
   "state":"open"}` per open port (closed and filtered ports are not
   findings), artifact `recon.portscan:{host}:{ports}`, event
@@ -128,11 +163,13 @@ running operator) and in the topology projection beside implant-side recon.
 
 ## Evolution notes
 
-- **DNS resolution answers** -- which of the enumerated names live -- are
-  the natural passive widening: same route shape, same egress decision, a
-  resolver base URL beside the CT mirror.
 - **Redirector- or implant-originated scans** arrive as new `ScanOrigin`
   choices with their own decisions recorded here, not as changes to the
-  route.
-- **Whois behind the RDAP flag** is another passive half the same shape
-  would carry; RDAP is the modern registration surface and ships first.
+  route. An implant-originated scan already exists as ordinary
+  `recon.portscan` tasking from inside; a redirector-originated one has a
+  real design bill -- the reference redirector is an opaque L4 splice
+  with no control channel, so originating dials from it means a control
+  contract between teamserver and redirector.
+- **Reverse-whois** (registrant-driven discovery) would be a fifth
+  passive half, but no public reverse-whois service rides a stable open
+  contract; it reopens when one does.

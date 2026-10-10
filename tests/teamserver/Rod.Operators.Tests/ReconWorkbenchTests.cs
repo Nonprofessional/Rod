@@ -28,23 +28,40 @@ public class ReconWorkbenchTests
     /// <summary>
     /// The far end of the lookups: answers each recorded request with the
     /// queued response (status plus body), so a test scripts a whole
-    /// exchange without a socket.
+    /// exchange without a socket. Resolution requests queue per queried
+    /// name -- the answer section routes by the DoH query's <c>name</c>
+    /// parameter, so concurrent bulk tests carry no ordering assumptions.
     /// </summary>
     private sealed class ScriptedHandler : HttpMessageHandler
     {
         public ConcurrentQueue<Uri> Requests = new();
         private readonly ConcurrentQueue<(int Status, string Body)> _answers = new();
+        private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _answersByName = new();
 
         public void Enqueue(int status, string body) => _answers.Enqueue((status, body));
+
+        public void EnqueueResolution(string name, string body)
+            => _answersByName.GetOrAdd(name, _ => new ConcurrentQueue<string>()).Enqueue(body);
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Enqueue(request.RequestUri!);
-            var (status, body) = _answers.TryDequeue(out var answer) ? answer : (200, "{}");
+            var name = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query).Get("name");
+            if (name is not null
+                && _answersByName.TryGetValue(name, out var queue)
+                && queue.TryDequeue(out var body))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+                });
+            }
+
+            var (status, generic) = _answers.TryDequeue(out var answer) ? answer : (200, "{}");
             return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)
             {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+                Content = new StringContent(generic, System.Text.Encoding.UTF8, "application/json"),
             });
         }
     }
@@ -67,6 +84,7 @@ public class ReconWorkbenchTests
         {
             Options.RdapBaseUrl = "https://rdap-stub.test";
             Options.CtBaseUrl = "https://ct-stub.test";
+            Options.DohBaseUrl = "https://doh-stub.test/resolve";
             Service = new ReconWorkbenchService(
                 Microsoft.Extensions.Options.Options.Create(Options),
                 new SingleClientFactory(new HttpClient(Http)),
@@ -260,5 +278,119 @@ public class ReconWorkbenchTests
 
         var request = Assert.Single(rig.Http.Requests);
         Assert.Equal("https://rdap-stub.test/domain/example.com", request.ToString());
+    }
+
+    private const string DohAnswerAWithCname =
+        """{"Status":0,"Answer":[{"name":"www.example.com.","type":5,"TTL":300,"data":"cdn.example.com."},{"name":"cdn.example.com.","type":1,"TTL":60,"data":"203.0.113.10"}]}""";
+
+    private const string DohAnswerAaaa =
+        """{"Status":0,"Answer":[{"name":"www.example.com.","type":28,"TTL":60,"data":"2001:db8::1"}]}""";
+
+    private const string DohAnswerNxdomain =
+        """{"Status":3,"Comment":"NXDOMAIN"}""";
+
+    [Fact]
+    public async Task Resolve_SingleName_CollectsAddressesAndTheAlias()
+    {
+        var rig = new Rig();
+        rig.Http.EnqueueResolution("www.example.com", DohAnswerAWithCname);
+        rig.Http.EnqueueResolution("www.example.com", DohAnswerAaaa);
+
+        var result = await rig.Service.ResolveAsync(rig.Engagement, Guid.NewGuid(), ["www.example.com"]);
+
+        Assert.True(result.Succeeded, result.Reason);
+        Assert.Equal("recon.resolve:www.example.com", result.Name);
+        var line = JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(
+            (await rig.SingleArtifactOf(result)).Content)).RootElement;
+        Assert.Equal("www.example.com", line.GetProperty("host").GetString());
+        Assert.Equal(["203.0.113.10", "2001:db8::1"],
+            line.GetProperty("addresses").EnumerateArray().Select(a => a.GetString()));
+        Assert.Equal("cdn.example.com", line.GetProperty("cname").GetString());
+    }
+
+    [Fact]
+    public async Task Resolve_ANegativeSingle_IsAFailedRunWithTheNegativeNamed()
+    {
+        var rig = new Rig();
+        rig.Http.EnqueueResolution("missing.example.com", DohAnswerNxdomain);
+        rig.Http.EnqueueResolution("missing.example.com", DohAnswerNxdomain);
+
+        var result = await rig.Service.ResolveAsync(rig.Engagement, Guid.NewGuid(), ["missing.example.com"]);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("no address records", result.Reason);
+        Assert.Equal(0, await rig.ArtifactCount());
+    }
+
+    [Fact]
+    public async Task Resolve_AnIpTarget_RecordsItsPtrName()
+    {
+        var rig = new Rig();
+        rig.Http.EnqueueResolution("10.113.0.203.in-addr.arpa",
+            """{"Status":0,"Answer":[{"name":"10.113.0.203.in-addr.arpa.","type":12,"TTL":300,"data":"web01.example.com."}]}""");
+
+        var result = await rig.Service.ResolveAsync(rig.Engagement, Guid.NewGuid(), ["203.0.113.10"]);
+
+        Assert.True(result.Succeeded, result.Reason);
+        var line = JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(
+            (await rig.SingleArtifactOf(result)).Content)).RootElement;
+        Assert.Equal("web01.example.com", line.GetProperty("host").GetString());
+        Assert.Equal(["203.0.113.10"],
+            line.GetProperty("addresses").EnumerateArray().Select(a => a.GetString()));
+    }
+
+    [Fact]
+    public async Task Resolve_Bulk_RecordsTheNamesThatLive_AndCountsTheMisses()
+    {
+        var rig = new Rig();
+        rig.Http.EnqueueResolution("www.example.com", DohAnswerAWithCname);
+        rig.Http.EnqueueResolution("www.example.com", DohAnswerAaaa);
+        rig.Http.EnqueueResolution("missing.example.com", DohAnswerNxdomain);
+        rig.Http.EnqueueResolution("missing.example.com", DohAnswerNxdomain);
+
+        var result = await rig.Service.ResolveAsync(
+            rig.Engagement, Guid.NewGuid(), ["www.example.com", "missing.example.com"]);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, result.Findings);
+        Assert.Equal("recon.resolve:2-names", result.Name);
+        Assert.Contains("1 of 2 names resolved", result.Summary);
+    }
+
+    [Fact]
+    public async Task Whois_CapturesTheAnswerVerbatim()
+    {
+        // A loopback whois server: one line in, the fixed record back.
+        var listener = TcpListener.Create(0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var accepted = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            using var stream = client.GetStream();
+            using var reader = new StreamReader(stream, System.Text.Encoding.ASCII);
+            await reader.ReadLineAsync();
+            var answer = System.Text.Encoding.ASCII.GetBytes("Domain: example.com\r\nRegistrar: Example Registrar\r\n");
+            await stream.WriteAsync(answer);
+            await stream.FlushAsync();
+        });
+        try
+        {
+            var rig = new Rig();
+            rig.Options.WhoisServer = $"127.0.0.1:{port}";
+
+            var result = await rig.Service.WhoisLookupAsync(rig.Engagement, Guid.NewGuid(), "example.com");
+
+            Assert.True(result.Succeeded, result.Reason);
+            Assert.Equal("recon.whois:example.com", result.Name);
+            Assert.Equal("text/plain", result.ContentType);
+            Assert.Contains("Registrar: Example Registrar",
+                System.Text.Encoding.UTF8.GetString((await rig.SingleArtifactOf(result)).Content));
+            await accepted;
+        }
+        finally
+        {
+            listener.Stop();
+        }
     }
 }

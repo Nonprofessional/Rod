@@ -2289,8 +2289,9 @@ implant side: the lookups run **on the teamserver** against external
 services, engagement-scoped and audited, and their findings land as
 engagement artifacts. Nothing about it is implant tasking -- there is no
 implant yet -- so it lives in the operator layer (`Rod.Operators`,
-Sec 4.3) behind three routes on the ordinary engagement-scoped ladder:
+Sec 4.3) behind four routes on the ordinary engagement-scoped ladder:
 `POST /engagements/{id}/recon:rdap`, `POST /engagements/{id}/recon:subdomains`,
+`POST /engagements/{id}/recon:resolve`,
 `POST /engagements/{id}/recon:portscan`, all Task-scope gated (they act on
 the engagement -- egress under its attribution, evidence written to its
 trail -- the artifact-attach posture, not the read projection's) and
@@ -2308,12 +2309,24 @@ artifact changes no read path.
 
 **Passive lookups.** `recon:rdap` queries the configured RDAP base for a
 named domain and normalizes the registration record (registrar, status,
-dates, nameservers, secureDNS) into a JSON artifact; `recon:subdomains`
-queries the configured certificate-transparency mirror for names under a
-domain and normalizes the deduplicated name set into a JSON-lines
-artifact -- one `{"host": name}` per line, the documented recon grammar
+dates, nameservers, secureDNS) into a JSON artifact -- and when the
+registry answers that it has no record for the domain (the ccTLD half of
+the world that never built RDAP), falls back to the configured whois
+server (port 43, the protocol RDAP replaced), capturing its answer
+verbatim; one event covers the run, its lookup name carrying the
+fallback. `recon:subdomains` queries the configured
+certificate-transparency mirror for names under a domain and normalizes
+the deduplicated name set into a JSON-lines artifact -- one
+`{"host": name}` per line, the documented recon grammar
 (extending/tradecraft.md), so the topology projection (Sec 11.2) parses
-the findings like any recon output. The egress is the operator's call,
+the findings like any recon output. `recon:resolve` is the census's
+follow-up -- which of the enumerated names live: names (one or a bounded
+list) resolve through the configured DNS-over-HTTPS resolver, and an IP
+literal asks for its PTR name; the answers land as address-bearing host
+lines in the same grammar, so the picture carries the addresses. A
+single negative answer (NXDOMAIN, no PTR) is a failed run with the
+negative named; a bulk run counts its misses in the summary and records
+only the names that answered. The egress is the operator's call,
 never a silent default: each base URL is configuration
 (`Recon:RdapBaseUrl`, `Recon:CtBaseUrl`), unset means the route answers
 503 naming the section -- the LLM client's opt-in discipline (Sec 11.3),
@@ -2363,11 +2376,16 @@ set when the request names none. The findings artifact joins the
 topology projection beside the passive lookups, so the pre-foothold
 picture and the post-foothold one are one view.
 
-**Evolution notes.** DNS resolution answers (which of the enumerated
-names live) are the natural passive widening -- same route shape, same
-egress decision; whois behind the RDAP flag is another. Redirector- or
-implant-originated scans arrive as new `ScanOrigin` choices with their
-own runbook decisions, not as changes to this surface.
+**Evolution notes.** Redirector- or implant-originated scans arrive as
+new `ScanOrigin` choices with their own runbook decisions, not as
+changes to this surface -- an implant-originated scan already exists as
+ordinary `recon.portscan` tasking from inside, and a redirector-originated
+one has a real design bill: the reference redirector is an opaque L4
+splice with no control channel, so originating dials from it means a
+control contract between teamserver and redirector that this surface
+does not imply. Reverse-whois (registrant-driven discovery) would be a
+fifth passive half, but no public reverse-whois service rides a stable
+open contract -- it reopens when one does.
 
 ## 12. Technology stack and language boundaries
 

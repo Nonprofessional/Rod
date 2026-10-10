@@ -41,6 +41,25 @@ public sealed class ReconWorkbenchOptions
     public string? CtBaseUrl { get; set; }
 
     /// <summary>
+    /// The DNS-over-HTTPS resolver the workbench resolves through
+    /// (<c>GET {base}?name={name}&amp;type={type}</c>, the JSON answer
+    /// shape Google's and Cloudflare's resolvers both serve). A configured
+    /// resolver, not the host's, so the egress stays the operator's call --
+    /// front it like any other half.
+    /// </summary>
+    public string? DohBaseUrl { get; set; }
+
+    /// <summary>
+    /// The whois server behind the RDAP flag, <c>host</c> or
+    /// <c>host:port</c> (port 43 when unnamed): queried when the registry
+    /// answers RDAP with no record for the domain -- the ccTLD half of the
+    /// world that never built RDAP. One query per lookup, no referral
+    /// chasing: the server's answer is captured verbatim, referral line
+    /// included, and an operator chasing one re-runs against that server.
+    /// </summary>
+    public string? WhoisServer { get; set; }
+
+    /// <summary>
     /// The scan's origin, naming <see cref="TeamserverOrigin"/> to arm the
     /// scan route. Deliberately a string, not a flag: the value an operator
     /// writes is the decision the runbook documents.
@@ -56,6 +75,17 @@ public sealed class ReconWorkbenchOptions
     /// bounded and the excess names stay in the mirror.
     /// </summary>
     public int MaxSubdomainNames { get; set; } = 5_000;
+
+    /// <summary>
+    /// How many names one resolution request may carry. Bulk resolution is
+    /// the census's follow-up ("which of the enumerated names live"), and
+    /// each name is its own resolver query -- the cap keeps one request's
+    /// egress bounded.
+    /// </summary>
+    public int MaxResolveTargets { get; set; } = 256;
+
+    /// <summary>How many names a bulk resolution may query concurrently.</summary>
+    public int ResolveConcurrency { get; set; } = 32;
 
     /// <summary>Per-port connect budget for the scan.</summary>
     public int ScanConnectTimeoutMilliseconds { get; set; } = 1_500;
@@ -74,6 +104,12 @@ public sealed class ReconWorkbenchOptions
 
     /// <summary>True when the subdomain half has a mirror to ride.</summary>
     public bool CtConfigured => !string.IsNullOrWhiteSpace(CtBaseUrl);
+
+    /// <summary>True when the resolution half has a resolver to ride.</summary>
+    public bool DohConfigured => !string.IsNullOrWhiteSpace(DohBaseUrl);
+
+    /// <summary>True when the whois fallback has a server to ask.</summary>
+    public bool WhoisConfigured => !string.IsNullOrWhiteSpace(WhoisServer);
 
     /// <summary>
     /// True when the scan's origin has been deliberately named and is one

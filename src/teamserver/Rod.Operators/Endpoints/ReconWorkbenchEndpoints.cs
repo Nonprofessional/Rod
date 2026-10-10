@@ -25,6 +25,9 @@ namespace Rod.Operators.Endpoints;
 /// a named domain, captured as a JSON artifact.</item>
 /// <item><c>POST /engagements/{id}/recon:subdomains</c> -- the CT-log name
 /// census under a domain, captured as JSON-lines findings.</item>
+/// <item><c>POST /engagements/{id}/recon:resolve</c> -- names (or one
+/// name, or an address for its PTR) through the configured resolver, the
+/// answers captured as address-bearing host lines.</item>
 /// <item><c>POST /engagements/{id}/recon:portscan</c> -- a TCP connect
 /// scan, gated on the engagement's ROE target scope before any connection
 /// opens, captured as JSON-lines findings.</item>
@@ -50,6 +53,9 @@ public static class ReconWorkbenchEndpoints
         endpoints.MapPost("/engagements/{engagementId}/recon:portscan", PortscanAsync)
             .RequireAuthorization(OperatorScopes.TaskPolicy)
             .WithName(nameof(PortscanAsync));
+        endpoints.MapPost("/engagements/{engagementId}/recon:resolve", ResolveAsync)
+            .RequireAuthorization(OperatorScopes.TaskPolicy)
+            .WithName(nameof(ResolveAsync));
         return endpoints;
     }
 
@@ -63,7 +69,7 @@ public static class ReconWorkbenchEndpoints
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveAsync(engagementId, body.Target, user, engagements, allowAddress: false, cancellationToken);
+        var gate = await ResolveEngagementAsync(engagementId, body.Target, user, engagements, allowAddress: false, cancellationToken);
         if (gate.Response is { } refused)
             return refused;
         if (!workbench.RdapConfigured)
@@ -71,8 +77,21 @@ public static class ReconWorkbenchEndpoints
 
         var result = await workbench.RdapLookupAsync(
             gate.EngagementId!.Value, gate.OperatorId!.Value, gate.Target!, cancellationToken);
+
+        // Whois behind the RDAP flag (Sec 11.4): a registry without the
+        // domain on record -- the ccTLD half of the world that never built
+        // RDAP -- falls back to the configured whois server. One event
+        // covers the run, its lookup name carrying the fallback.
+        var lookup = "rdap";
+        if (!result.Succeeded && result.RegistryMiss && workbench.WhoisConfigured)
+        {
+            result = await workbench.WhoisLookupAsync(
+                gate.EngagementId!.Value, gate.OperatorId!.Value, gate.Target!, cancellationToken);
+            lookup = "rdap>whois";
+        }
+
         return await RespondAsync(
-            gate, result, "rdap", AuditEventKind.ReconLookupCompleted, audit, clock, cancellationToken);
+            gate, result, lookup, AuditEventKind.ReconLookupCompleted, audit, clock, cancellationToken);
     }
 
     private static async Task<IResult> SubdomainsAsync(
@@ -85,7 +104,7 @@ public static class ReconWorkbenchEndpoints
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveAsync(engagementId, body.Target, user, engagements, allowAddress: false, cancellationToken);
+        var gate = await ResolveEngagementAsync(engagementId, body.Target, user, engagements, allowAddress: false, cancellationToken);
         if (gate.Response is { } refused)
             return refused;
         if (!workbench.CtConfigured)
@@ -108,7 +127,7 @@ public static class ReconWorkbenchEndpoints
         IOptions<ReconWorkbenchOptions> options,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveAsync(engagementId, body.Target, user, engagements, allowAddress: true, cancellationToken);
+        var gate = await ResolveEngagementAsync(engagementId, body.Target, user, engagements, allowAddress: true, cancellationToken);
         if (gate.Response is { } refused)
             return refused;
 
@@ -161,6 +180,71 @@ public static class ReconWorkbenchEndpoints
             gate, result, "portscan", AuditEventKind.ReconScanCompleted, audit, clock, cancellationToken);
     }
 
+    // The resolution route (Sec 11.4's "which of the enumerated names
+    // live"): one target or a bounded list of them, each a hostname (its
+    // addresses, the alias along for the chain) or an IP literal (its PTR
+    // name). Passive like its lookup siblings -- ungated by the ROE target
+    // scope, because the scope is often what the answers inform.
+    private static async Task<IResult> ResolveAsync(
+        string engagementId,
+        ReconResolveRequest body,
+        ClaimsPrincipal user,
+        IEngagementRepository engagements,
+        ReconWorkbenchService workbench,
+        IAuditStore audit,
+        TimeProvider clock,
+        IOptions<ReconWorkbenchOptions> options,
+        CancellationToken cancellationToken)
+    {
+        // Exactly one of target or targets names the ask.
+        var hasTarget = !string.IsNullOrWhiteSpace(body.Target);
+        var hasTargets = body.Targets is { Count: > 0 };
+        if (hasTarget == hasTargets)
+            return Results.BadRequest(new Problem("Name exactly one of 'target' or 'targets'."));
+
+        // The first name walks the shared ladder (engagement, closed,
+        // target grammar); the rest get the same grammar check below.
+        var gate = await ResolveEngagementAsync(
+            engagementId,
+            hasTarget ? body.Target : body.Targets![0],
+            user, engagements, allowAddress: true, cancellationToken);
+        if (gate.Response is { } refused)
+            return refused;
+        if (!workbench.DohConfigured)
+            return Unconfigured("name resolution", "Recon:DohBaseUrl");
+
+        IReadOnlyList<string> targets;
+        if (hasTarget)
+        {
+            targets = [gate.Target!];
+        }
+        else
+        {
+            if (body.Targets!.Count > Math.Max(1, options.Value.MaxResolveTargets))
+                return Results.BadRequest(new Problem(
+                    $"At most {options.Value.MaxResolveTargets} names per resolution; split the census into walks."));
+            targets = body.Targets
+                .Select(t => (t ?? string.Empty).Trim().ToLowerInvariant())
+                .Where(t => t.Length > 0)
+                .ToArray();
+            foreach (var name in targets)
+            {
+                if (string.IsNullOrEmpty(name)
+                    || (!IsDomainName(name) && !System.Net.IPAddress.TryParse(name, out _)))
+                {
+                    return Results.BadRequest(new Problem("Each target must be a hostname or an IP address."));
+                }
+            }
+        }
+
+        var result = await workbench.ResolveAsync(
+            gate.EngagementId!.Value, gate.OperatorId!.Value, targets, cancellationToken);
+        var targetLabel = targets.Count == 1 ? targets[0] : $"{targets.Count} names";
+        return await RespondAsync(
+            gate, result, "resolve", AuditEventKind.ReconLookupCompleted, audit, clock, cancellationToken,
+            payloadTarget: targetLabel);
+    }
+
     // The shared ladder every workbench route walks: operator, engagement,
     // closed-engagement refusal, and target validation. The passive
     // lookups take a domain; a scan target may also name an address.
@@ -171,7 +255,7 @@ public static class ReconWorkbenchEndpoints
         RoeProfile? Roe,
         IResult? Response);
 
-    private static async Task<Gate> ResolveAsync(
+    private static async Task<Gate> ResolveEngagementAsync(
         string engagementId,
         string? target,
         ClaimsPrincipal user,
@@ -219,7 +303,8 @@ public static class ReconWorkbenchEndpoints
         AuditEventKind kind,
         IAuditStore audit,
         TimeProvider clock,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? payloadTarget = null)
     {
         // Every attempt lands in the trail: the egress itself is the act,
         // succeeded or failed. The payload names the lookup and the target
@@ -234,7 +319,7 @@ public static class ReconWorkbenchEndpoints
                 taskId: Guid.Empty,
                 verb: $"recon.{lookup}",
                 kind: kind,
-                payload: $"{lookup};{gate.Target}",
+                payload: $"{lookup};{payloadTarget ?? gate.Target}",
                 output: result.Succeeded ? result.Summary : null,
                 outcome: result.Succeeded
                     ? result.ArtifactId!.Value.ToString("N")
@@ -338,6 +423,10 @@ public static class ReconWorkbenchEndpoints
     // The scan's ports spec: comma list with optional hyphen ranges, or
     // omitted for the documented default set.
     public sealed record ReconScanRequest(string Target, string? Ports = null);
+
+    // The resolution ask: one name, or a bounded list of them (the census's
+    // follow-up). A name may be a hostname or an IP literal for its PTR.
+    public sealed record ReconResolveRequest(string? Target = null, IReadOnlyList<string>? Targets = null);
 
     // One workbench run's answer: the artifact its findings landed as, with
     // the one-line summary the trail's event carries beside it.

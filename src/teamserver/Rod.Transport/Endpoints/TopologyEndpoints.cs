@@ -39,6 +39,7 @@ public static class TopologyEndpoints
     private const string PortscanVerb = "recon.portscan";
     private const string HostenumVerb = "recon.hostenum";
     private const string SubdomainsVerb = "recon.subdomains";
+    private const string ResolveVerb = "recon.resolve";
 
     // A recon sweep against a /24 can print a lot of lines; past this the
     // parse stops and the rest stays in the transcript -- the read stays
@@ -254,6 +255,7 @@ public static class TopologyEndpoints
     // does not parse stays unparsed, the task-side discipline.
     private const string SubdomainsArtifactPrefix = "recon.subdomains:";
     private const string PortscanArtifactPrefix = "recon.portscan:";
+    private const string ResolveArtifactPrefix = "recon.resolve:";
 
     private static async Task<List<TopologyObservation>> ParseArtifactObservationsAsync(
         IArtifactStore artifacts,
@@ -263,13 +265,16 @@ public static class TopologyEndpoints
         var observations = new List<TopologyObservation>();
         var findingsArtifacts = (await artifacts.ListAsync(engagement, cancellationToken))
             .Where(a => a.Name.StartsWith(SubdomainsArtifactPrefix, StringComparison.Ordinal)
-                || a.Name.StartsWith(PortscanArtifactPrefix, StringComparison.Ordinal))
+                || a.Name.StartsWith(PortscanArtifactPrefix, StringComparison.Ordinal)
+                || a.Name.StartsWith(ResolveArtifactPrefix, StringComparison.Ordinal))
             .OrderBy(a => a.StoredAt);
         foreach (var artifact in findingsArtifacts)
         {
             var verb = artifact.Name.StartsWith(PortscanArtifactPrefix, StringComparison.Ordinal)
                 ? PortscanVerb
-                : SubdomainsVerb;
+                : artifact.Name.StartsWith(ResolveArtifactPrefix, StringComparison.Ordinal)
+                    ? ResolveVerb
+                    : SubdomainsVerb;
             var parsed = 0;
             foreach (var line in Encoding.UTF8.GetString(artifact.Content).Split('\n'))
             {

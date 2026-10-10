@@ -501,8 +501,10 @@ public enum AuditEventKind
 
     /// <summary>
     /// The recon workbench ran one passive lookup on an operator's behalf
-    /// (architecture.md Sec 11.4): an RDAP registration query or a
-    /// certificate-transparency subdomain enumeration against a named
+    /// (architecture.md Sec 11.4): an RDAP registration query (whois
+    /// behind it when the registry has no record), a
+    /// certificate-transparency subdomain enumeration, or a name
+    /// resolution through the configured resolver, against a named
     /// target, egressing the teamserver toward the configured service.
     /// Every attempt lands here, succeeded or failed -- the egress itself
     /// is the act the trail records. The payload names the lookup and the

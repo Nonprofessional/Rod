@@ -25,6 +25,9 @@ public sealed class ReconWorkbenchService
     /// One workbench run: the artifact its findings landed as on success,
     /// the readable reason on failure. The counts ride both arms -- the
     /// trail's one-line summary names what the run found either way.
+    /// <see cref="RegistryMiss"/> marks the RDAP answer "no record for
+    /// this domain" so the route can fall back to whois without matching
+    /// on the reason's wording.
     /// </summary>
     public sealed record Result(
         bool Succeeded,
@@ -34,7 +37,8 @@ public sealed class ReconWorkbenchService
         long Size,
         int Findings,
         string Summary,
-        string? Reason);
+        string? Reason,
+        bool RegistryMiss = false);
 
     private readonly IOptions<ReconWorkbenchOptions> _options;
     private readonly IHttpClientFactory _clients;
@@ -56,6 +60,8 @@ public sealed class ReconWorkbenchService
 
     public bool RdapConfigured => _options.Value.RdapConfigured;
     public bool CtConfigured => _options.Value.CtConfigured;
+    public bool DohConfigured => _options.Value.DohConfigured;
+    public bool WhoisConfigured => _options.Value.WhoisConfigured;
     public bool ScanConfigured => _options.Value.ScanConfigured;
 
     // The lazy-client discipline (the webhook pusher's): registering the
@@ -94,7 +100,7 @@ public sealed class ReconWorkbenchService
                 $"{options.RdapBaseUrl!.TrimEnd('/')}/domain/{Uri.EscapeDataString(domain)}",
                 cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound)
-                return Failed($"the registry has no record for '{domain}'");
+                return Missed($"the registry has no record for '{domain}'");
             if (!response.IsSuccessStatusCode)
                 return Failed($"the RDAP service answered {(int)response.StatusCode}");
 
@@ -158,6 +164,118 @@ public sealed class ReconWorkbenchService
             return Failed($"the request exceeded the {options.RequestTimeoutSeconds}s budget");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or JsonException)
+        {
+            return Failed(FirstLine(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Resolves names through the configured DNS-over-HTTPS resolver and
+    /// captures the answers as JSON-lines findings -- one
+    /// <c>{"host":name,"addresses":[...]}</c> per name that answered, the
+    /// hostenum shape, so the topology projection carries the addresses.
+    /// An IP target asks for its PTR name instead: the discovered name is
+    /// the finding, the address its evidence. A single target that answers
+    /// nothing is a failed run with the negative named; a bulk run counts
+    /// its misses in the summary and records only the names that live --
+    /// the census's follow-up ("which of the enumerated names live").
+    /// </summary>
+    public async Task<Result> ResolveAsync(
+        Guid engagementId,
+        Guid operatorId,
+        IReadOnlyList<string> targets,
+        CancellationToken cancellationToken = default)
+    {
+        var options = _options.Value;
+        try
+        {
+            var answered = new ConcurrentBag<(int Index, string Line, string Name)>();
+            using var limiter = new SemaphoreSlim(Math.Max(1, options.ResolveConcurrency));
+            await Task.WhenAll(targets.Select(async (target, index) =>
+            {
+                await limiter.WaitAsync(cancellationToken);
+                try
+                {
+                    if (await ResolveOneAsync(target, options, cancellationToken) is { } line)
+                        answered.Add((index, line, target));
+                }
+                finally
+                {
+                    limiter.Release();
+                }
+            }));
+
+            if (answered.IsEmpty)
+            {
+                var target = targets[0];
+                return Failed(IPAddress.TryParse(target, out _)
+                    ? $"no PTR record for '{target}'"
+                    : $"no address records for '{target}'");
+            }
+
+            var ordered = answered.OrderBy(a => a.Index).ToArray();
+            var name = targets.Count == 1
+                ? $"recon.resolve:{targets[0]}"
+                : $"recon.resolve:{targets.Count}-names";
+            return await CapturedAsync(
+                engagementId, operatorId, name, "application/x-ndjson",
+                string.Join("\n", ordered.Select(a => a.Line)) + "\n",
+                ordered.Length,
+                targets.Count == 1
+                    ? $"{targets[0]}: resolved"
+                    : $"{ordered.Length} of {targets.Count} names resolved");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Failed($"the resolution exceeded the {options.RequestTimeoutSeconds}s budget");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or UriFormatException or JsonException)
+        {
+            return Failed(FirstLine(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Asks the configured whois server (port 43, the protocol the RDAP
+    /// world replaced) for a domain's record and captures the answer
+    /// verbatim as a text artifact named <c>recon.whois:{domain}</c>. One
+    /// query, no referral chasing: a server that hands back a referral
+    /// names it in the captured text, and an operator chasing one re-runs
+    /// against that server.
+    /// </summary>
+    public async Task<Result> WhoisLookupAsync(
+        Guid engagementId,
+        Guid operatorId,
+        string domain,
+        CancellationToken cancellationToken = default)
+    {
+        var options = _options.Value;
+        try
+        {
+            var (host, port) = ParseWhoisEndpoint(options.WhoisServer!);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budget.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, options.RequestTimeoutSeconds)));
+            using var client = new TcpClient();
+            await client.ConnectAsync(host, port, budget.Token);
+            var stream = client.GetStream();
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(domain + "\r\n"), budget.Token);
+            using var answer = new MemoryStream();
+            await stream.CopyToAsync(answer, budget.Token);
+            var text = Encoding.UTF8.GetString(answer.ToArray()).Trim();
+            if (text.Length == 0)
+                return Failed("the whois server returned an empty answer");
+
+            return await CapturedAsync(
+                engagementId, operatorId, $"recon.whois:{domain}", "text/plain",
+                text + "\n",
+                0,
+                $"{domain}: whois answer captured ({text.Length} chars)");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Failed($"the whois request exceeded the {options.RequestTimeoutSeconds}s budget");
+        }
+        catch (Exception ex) when (ex is SocketException or InvalidOperationException or FormatException)
         {
             return Failed(FirstLine(ex.Message));
         }
@@ -267,6 +385,132 @@ public sealed class ReconWorkbenchService
 
     private static Result Failed(string reason)
         => new(false, null, null, null, 0, 0, string.Empty, reason);
+
+    private static Result Missed(string reason)
+        => new(false, null, null, null, 0, 0, string.Empty, reason, RegistryMiss: true);
+
+    // One name through the resolver. Returns the grammar line when the name
+    // answered, null when it did not -- the caller turns the null into a
+    // named negative (single) or a counted miss (bulk). A recursive
+    // resolver answers a CNAME chain with the alias and the target's
+    // address records in the same section, so one A query and one AAAA
+    // query cover the chain and the alias rides along.
+    private async Task<string?> ResolveOneAsync(
+        string target, ReconWorkbenchOptions options, CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(target, out var address))
+        {
+            var ptr = (await QueryDohAsync(PtrName(address), "PTR", options, cancellationToken))
+                .Where(a => a.Type == DohRecordTypePtr)
+                .Select(a => a.Data.TrimEnd('.'))
+                .FirstOrDefault();
+            return ptr is { Length: > 0 } name
+                ? JsonSerializer.Serialize(
+                    new AddressFindingLine(name, [address.ToString()]), FindingJson)
+                : null;
+        }
+
+        var answers = new List<(int Type, string Data)>();
+        foreach (var typeLabel in new[] { "A", "AAAA" })
+        {
+            answers.AddRange(await QueryDohAsync(target, typeLabel, options, cancellationToken));
+        }
+
+        var addresses = answers
+            .Where(a => a.Type is DohRecordTypeA or DohRecordTypeAaaa)
+            .Select(a => a.Data)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (addresses.Length == 0)
+            return null;
+
+        var cname = answers
+            .Where(a => a.Type == DohRecordTypeCname)
+            .Select(a => a.Data.TrimEnd('.'))
+            .FirstOrDefault();
+        return JsonSerializer.Serialize(
+            new AddressFindingLine(target, addresses, cname), FindingJson);
+    }
+
+    // One DoH query: GET {base}?name=&type= with the JSON accept, the
+    // shape Google's and Cloudflare's resolvers both serve. The answer
+    // section comes back whole, typed, in order -- the caller filters what
+    // counts for its question.
+    private async Task<List<(int Type, string Data)>> QueryDohAsync(
+        string name,
+        string typeLabel,
+        ReconWorkbenchOptions options,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"{options.DohBaseUrl!.TrimEnd('/')}?name={Uri.EscapeDataString(name)}&type={typeLabel}");
+        request.Headers.Accept.ParseAdd("application/dns-json");
+        using var response = await LookupClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException($"the resolver answered {(int)response.StatusCode}");
+
+        using var doc = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken),
+            cancellationToken: cancellationToken);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("Status", out var status)
+            && status.ValueKind == JsonValueKind.Number
+            && status.GetInt32() != 0)
+        {
+            return []; // NXDOMAIN and its kin: the resolver's "no".
+        }
+
+        var answers = new List<(int Type, string Data)>();
+        if (root.TryGetProperty("Answer", out var section) && section.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in section.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.Object
+                    && entry.TryGetProperty("type", out var kind)
+                    && kind.ValueKind == JsonValueKind.Number
+                    && entry.TryGetProperty("data", out var data)
+                    && data.ValueKind == JsonValueKind.String
+                    && data.GetString() is { Length: > 0 } value)
+                {
+                    answers.Add((kind.GetInt32(), value));
+                }
+            }
+        }
+
+        return answers;
+    }
+
+    // The DoH JSON answer's record types the resolver half reads.
+    private const int DohRecordTypeA = 1;
+    private const int DohRecordTypeCname = 5;
+    private const int DohRecordTypeAaaa = 28;
+    private const int DohRecordTypePtr = 12;
+
+    // The reverse-query name for a PTR lookup: the address's bytes (or
+    // nibbles) read backward under the in-addr/ip6 arpa zones.
+    private static string PtrName(IPAddress address)
+    {
+        const string Hex = "0123456789abcdef";
+        var bytes = address.GetAddressBytes();
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            return $"{bytes[3]}.{bytes[2]}.{bytes[1]}.{bytes[0]}.in-addr.arpa";
+
+        var labels = new StringBuilder();
+        for (var i = bytes.Length - 1; i >= 0; i--)
+        {
+            labels.Append(Hex[bytes[i] & 0x0f]).Append('.');
+            labels.Append(Hex[bytes[i] >> 4]).Append('.');
+        }
+        return labels.ToString() + "ip6.arpa";
+    }
+
+    private static (string Host, int Port) ParseWhoisEndpoint(string configured)
+    {
+        var separator = configured.LastIndexOf(':');
+        return separator < 0
+            ? (configured.Trim(), 43)
+            : (configured[..separator].Trim(), int.Parse(configured[(separator + 1)..]));
+    }
 
     // The RDAP record the artifact keeps: the registration facts an operator
     // aims a first implant by, in the shape the registry's own JSON carries
@@ -416,6 +660,14 @@ public sealed class ReconWorkbenchService
     private sealed record FindingLine(string Host);
 
     private sealed record PortFindingLine(string Host, int Port, string State = "open");
+
+    // The hostenum shape: a name and the addresses it answered with, the
+    // alias along for the trail when one rode the chain.
+    private sealed record AddressFindingLine(
+        string Host,
+        string[] Addresses,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Cname = null);
 
     // The normalized registration record. Property names follow the RDAP
     // vocabulary an operator already reads (ldhName's status/events names)
