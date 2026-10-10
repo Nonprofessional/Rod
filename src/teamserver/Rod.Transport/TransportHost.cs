@@ -625,6 +625,10 @@ public static class TransportHost
         // The engagement's web-shell endpoints: the register/list routes and
         // the synchronous execution arc.
         endpoints.MapWebShellEndpoints();
+        // The engagement's browser-hook endpoints: the mint/list/revoke
+        // routes behind the Launchers surface (the serving half is the
+        // public route mapped below with the implant family).
+        endpoints.MapHookEndpoints();
         // The host's bindable interfaces: the read view behind the listener
         // form's bind dropdown.
         endpoints.MapNetworkEndpoints();
@@ -662,6 +666,10 @@ public static class TransportHost
         // protocol stack beyond HTTP. Identity is the artifact key that
         // sealed the body, so any web front serves it.
         endpoints.MapEnvelopeBeaconEndpoints();
+        // The browser-hook serving edge (architecture.md Sec 5.2, Sec 8):
+        // the rendered hook script and its test page, gated by the route's
+        // unguessable id and scoped by the ingress listener's engagement.
+        endpoints.MapHookServingEndpoints();
         // The WebSocket beacon stream: the web posture's live channel, the
         // same session every live carriage runs over the envelope's own auth
         // and frame grammar.

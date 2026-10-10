@@ -307,6 +307,10 @@ public static class EnrollmentEndpoints
         EnvelopeContactKeys contactKeys,
         CancellationToken cancellationToken)
     {
+        // A browser-hooked page enrolls cross-origin (architecture.md Sec 8):
+        // the browser-only CORS answer, served only when a browser asked.
+        CrossOriginHttp.Allow(http.HttpContext);
+
         var body = await ReadEnrollRequestAsync(http, payloads, cancellationToken);
         if (body is null)
         {

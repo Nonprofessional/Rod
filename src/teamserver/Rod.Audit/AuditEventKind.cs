@@ -564,4 +564,28 @@ public enum AuditEventKind
     /// the violated rule. Attributed to the requesting operator.
     /// </summary>
     ReconScanRefused,
+
+    /// <summary>
+    /// An operator minted a browser hook for the engagement (architecture.md
+    /// Sec 5.2, Sec 8): rendered the in-tree script with a bake (credential,
+    /// seal, cadence, verbs) and stored it as a served payload record. The
+    /// payload carries the mint's shape -- which listener fronts it, the
+    /// seal posture, the cadence, the enrollment budget the baked token
+    /// carries -- and never the token secret or the key; the outcome is the
+    /// hook's payload id, the id its serving route answers to.
+    /// </summary>
+    HookMinted,
+
+    /// <summary>
+    /// A browser fetched the hook (or its test page) off the public edge
+    /// (architecture.md Sec 8) -- the hooked browser's first observable
+    /// touch, before any identity exists: the fetcher speaks no Rod protocol
+    /// and carries no identity, so the event is scoped by the hook record's
+    /// engagement and attributed to the null operator, exactly like a
+    /// payload fetch. The payload carries what the wire showed (remote
+    /// address, user agent, listener socket, whether script or test page);
+    /// the outcome is the hook's payload id. The enrollment that may follow
+    /// is the identity-bearing half of the exchange.
+    /// </summary>
+    HookFetched,
 }

@@ -27,6 +27,14 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- The browser hook template (architecture.md Sec 5.2, Sec 8): the served
+       script the mint renders a bake into. An embedded resource so the
+       artifact a victim fetches is exactly this file plus the substituted
+       bake object, with no build step and no external dependency. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Hooks\hook.template.js" />
+  </ItemGroup>
+
   <!-- The DNS contact codec, name grammar, and bridge are internal transport
        machinery; the integration tests exercise them directly (the same
        same-package access pattern the reference implant grants its tests). -->

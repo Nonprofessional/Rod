@@ -122,6 +122,10 @@ internal sealed class EnvelopeBeaconContact
         // per-artifact key sealing the body below is the identity), so the
         // handshake's certificate binding is permanently null.
 
+        // A browser-hooked page contacts cross-origin (architecture.md
+        // Sec 8): the browser-only CORS answer, served only when a browser
+        // asked -- every response shape below carries it.
+        CrossOriginHttp.Allow(http);
 
         byte[] body;
         try

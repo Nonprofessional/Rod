@@ -93,6 +93,21 @@ public sealed class FilePayloadStore : IPayloadStore
         return metadata with { Content = bytes };
     }
 
+    public async Task<PayloadRecord?> FindByIdAsync(Guid payloadId, CancellationToken cancellationToken = default)
+    {
+        EnsureRecovered();
+
+        if (!_index.TryGetValue(payloadId, out var metadata))
+            return null;
+
+        var blobPath = BlobPath(metadata.PayloadId);
+        if (!File.Exists(blobPath))
+            return null;
+
+        var bytes = await File.ReadAllBytesAsync(blobPath, cancellationToken).ConfigureAwait(false);
+        return metadata with { Content = bytes };
+    }
+
     public Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         EnsureRecovered();

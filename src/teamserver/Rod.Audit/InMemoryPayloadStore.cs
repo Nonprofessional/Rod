@@ -24,6 +24,9 @@ public sealed class InMemoryPayloadStore : IPayloadStore
                 ? payload
                 : null);
 
+    public Task<PayloadRecord?> FindByIdAsync(Guid payloadId, CancellationToken cancellationToken = default)
+        => Task.FromResult(_payloads.TryGetValue(payloadId, out var payload) ? payload : null);
+
     public Task<IReadOnlyList<PayloadRecord>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<PayloadRecord>>(
             _payloads.Values

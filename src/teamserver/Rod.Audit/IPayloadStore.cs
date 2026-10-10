@@ -22,6 +22,14 @@ public interface IPayloadStore
     Task<PayloadRecord?> FindAsync(Guid payloadId, Guid engagementId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// A payload by id alone, or null when none exists. For routes whose
+    /// request carries no engagement credential but an unguessable id of
+    /// their own (the browser hook's serving route, architecture.md Sec 8):
+    /// the id is the scope, the route runs the listener-scope check itself.
+    /// </summary>
+    Task<PayloadRecord?> FindByIdAsync(Guid payloadId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The engagement's payloads, newest first, as metadata only -- the bytes
     /// stay wherever the adapter keeps them and are loaded per
     /// <see cref="FindAsync"/>. This is the operator's library view: the
