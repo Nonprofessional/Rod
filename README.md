@@ -22,14 +22,19 @@
 
 > **Status: implemented; sensitive tradecraft is out-of-tree.** The
 > teamserver, reference implant, build pipeline, operator UI, and durable
-> state are in place; the reference implant runs the compiled core (shell
+> state are in place. The reference implant runs the compiled core (shell
 > execution one-shot and interactive, file transfer both ways, directory
-> listing, process termination, beacon retiming, tunneling, and the
-> Windows-gated sensitive trio -- shellcode injection, LSASS minidump, input
-> capture), while the long tail (recon sweeps, lateral movement, persistence,
-> credential and screen collection, exfiltration) and the exploit/evasion
-> categories arrive through the extension seams as separate opt-in modules
-> ([architecture.md Sec 13](docs/architecture.md)).
+> listing, process termination, beacon retiming, tunneling, the module
+> family -- load/list/unload, memfd-exec on Linux -- and the Windows-gated
+> sensitive trio: shellcode injection, LSASS minidump, input capture), while
+> the long tail (recon sweeps, lateral movement, persistence, credential
+> and screen collection) and the exploit/evasion categories arrive through
+> the extension seams as separate opt-in modules
+> ([architecture.md Sec 13](docs/architecture.md)). Operator-side, the
+> external recon workbench ships pre-foothold scoping -- passive
+> RDAP/CT/DoH/whois lookups and an ROE-gated port scan whose findings land
+> as engagement artifacts
+> ([docs/operations/recon.md](docs/operations/recon.md)).
 
 ## What you get
 
@@ -60,6 +65,28 @@
   reference implant is one implementation, and Go, C/C++, or Nim implants
   build against the same language-neutral contract without coupling the
   teamserver to their toolchains.
+- **A plugin seam for the long tail.** Capability modules written against
+  the in-tree `rod-plugin-sdk` crate load into an already-deployed artifact
+  over the sealed task channel (`module.load`), join the dispatch table,
+  and read in the console exactly like built-in verbs; Linux stages them in
+  a memfd and execs them -- nothing on disk. The in-tree `hostenum` module
+  is the worked example to copy
+  ([docs/extending/tradecraft.md](docs/extending/tradecraft.md)).
+- **Pre-foothold recon on the teamserver.** An engagement-scoped workbench
+  runs passive RDAP registration lookups, certificate-transparency
+  subdomain censuses, and DoH resolution (whois as the fallback behind the
+  RDAP flag) -- each half armed only when its egress endpoint is named,
+  never by silent default -- plus a port scan gated on the engagement's ROE
+  target scope. Findings land as task-less engagement artifacts and join
+  the intel layer's topology projection
+  ([docs/operations/recon.md](docs/operations/recon.md)).
+- **Agent-friendly read surfaces.** The operator front exposes a read-only
+  MCP server (`/mcp`, six tools over the engagement's read side, driven on
+  operator API tokens) and an opt-in OpenAI-compatible LLM triage client
+  that summarizes a completed task's captured output -- both under the
+  console's scoping and audit posture
+  ([docs/operations/mcp.md](docs/operations/mcp.md),
+  [docs/operations/llm.md](docs/operations/llm.md)).
 - **A multiplayer operator console.** A React web UI -- fleet view, tasking,
   interactive shells, file and process browsers, listeners, payload and
   webshell builds, evidence panels -- with server-sent-event updates and
@@ -91,6 +118,7 @@ tunneling), then close out -- freeze, export the evidence package, retire.
 | Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |
 | Loader | Rust (`no_std`, no libc) | Sealed fetch-and-exec from memory; Linux amd64/arm64. |
 | Build units | Rust in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
+| Capability modules | Rust against `rod-plugin-sdk`; `hostenum` in-tree | `module.load` into a deployed artifact; memfd-exec on Linux. |
 | Redirectors | .NET Native AOT, single static binary | Tiny VPS footprint; no runtime install. |
 | Data store | In-memory and file-backed by default; PostgreSQL opt-in | `ConnectionStrings:Postgres` switches in durable state and audit. |
 
@@ -110,15 +138,15 @@ dotnet run --project src/teamserver/Rod.TeamServer
    the built-in Development account that applies whenever the `Operators`
    configuration section supplies no initial operator.
 2. Create an engagement, then its listener in the engagement's Listeners
-   panel. A listener is the engagement's private implant ingress --
-   persisted and rebound on restart; the operator front refuses implant
-   traffic.
+   panel, and mint a deploy token (`POST /engagements/{id}/deploy-tokens`)
+   for the source-tree dev implant. A listener is the engagement's private
+   implant ingress -- persisted and rebound on restart; the operator front
+   refuses implant traffic.
 3. Build a payload naming that listener. The build mints the enrollment
    credential and bakes it in; deploy the artifact anywhere in scope and it
    enrolls on run.
-4. To try the fleet without a build, run the source-tree dev implant: mint
-   a deploy token (`POST /engagements/{id}/deploy-tokens`) and run the Rust
-   implant with the listener from step 2 --
+4. To try the fleet without a build, run the source-tree dev implant with
+   the listener and the deploy token from step 2 --
    `ROD_ENROLL_URL=http://127.0.0.1:8080/implants/enroll
    ROD_DEPLOY_TOKEN=<secret> cargo run --manifest-path
    src/implant/rust/Cargo.toml` (`ROD_MODE=stream` for the interactive
@@ -157,7 +185,10 @@ dotnet publish src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj \
   `GET /build`); accept an install only when the stamp matches the tag it
   was cut from.
 
-Configuration is opt-in sections of `appsettings.json`:
+Configuration is opt-in sections of `appsettings.json`; the authoritative
+reference -- every section, key, and default -- is the configuration table
+in [docs/operations/teamserver.md](docs/operations/teamserver.md). The
+headline sections:
 
 | Section | Effect |
 |---------|--------|
@@ -167,6 +198,13 @@ Configuration is opt-in sections of `appsettings.json`:
 | `Listeners` | The shared tier only (the operator front). Implant-facing listeners are engagement-scoped, created through the API. |
 | `Operators` | Production operator provisioning (`Operators:Initial`); no Development fallback outside Development. |
 | `Build` | Deployed build-source trees for request-time payload compilation. |
+
+The rest live only in the reference table: `Sessions:Staleness` and
+`Webhooks` (engine timing and notification forwarding),
+`Tradecraft:Modules` and `Build:Transforms` (the out-of-tree extension
+points), `Llm` (the opt-in triage client), and `Recon` (the workbench's
+egress endpoints and scan origin) -- each an OPSEC decision the runbook
+next to it documents.
 
 ## Documentation
 
@@ -191,7 +229,12 @@ The doc tree, by what you came for:
   [redirectors.md](docs/operations/redirectors.md) is the redirector
   build/deploy/rotate runbook;
   [rehearsal.md](docs/operations/rehearsal.md) is the pre-deployment
-  rehearsal walk.
+  rehearsal walk;
+  [recon.md](docs/operations/recon.md) is the external recon workbench --
+  its egress decisions, configuration, and the scan's ROE gate;
+  [mcp.md](docs/operations/mcp.md) is the read-only MCP server for agent
+  tooling over the operator surface;
+  [llm.md](docs/operations/llm.md) is the opt-in LLM triage client.
 - **Project state** -- [docs/todo.md](docs/todo.md) tracks open work;
   [docs/glossary.md](docs/glossary.md) holds terminology;
   [SECURITY.md](SECURITY.md) covers vulnerability reporting and scope.
