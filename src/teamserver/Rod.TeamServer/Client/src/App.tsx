@@ -65,23 +65,17 @@ function initials(handle: string): string {
 }
 
 // The engagement's display name for the crumb, resolved off the list (the
-// API has no single-engagement read) and cached for the session so the
-// topbar does not re-fetch per navigation.
+// API has no single-engagement read) and cached for the session. Roster
+// mutations reset the shared load so a created or renamed engagement
+// resolves on the spot.
 const engagementNames = new Map<string, string>()
 let engagementNamesLoad: Promise<void> | null = null
 
 function useEngagementName(engagementId: string): string | undefined {
   const [name, setName] = useState<string | undefined>(engagementNames.get(engagementId))
 
-  useEffect(() => {
-    const cached = engagementNames.get(engagementId)
-    if (cached !== undefined) {
-      setName(cached)
-      return
-    }
-    let cancelled = false
-    // A failed read resets the load so a later navigation retries; the crumb
-    // shows the bare id until a name resolves.
+  const resolve = useCallback((): Promise<void> => {
+    // A failed read resets the load so a later navigation retries.
     engagementNamesLoad ??= listEngagements()
       .then((all) => {
         for (const e of all) engagementNames.set(e.engagementId, e.name)
@@ -89,14 +83,30 @@ function useEngagementName(engagementId: string): string | undefined {
       .catch(() => {
         engagementNamesLoad = null
       })
-    void engagementNamesLoad.then(() => {
+    return engagementNamesLoad
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const apply = () => {
       const resolved = engagementNames.get(engagementId)
-      if (!cancelled && resolved !== undefined) setName(resolved)
-    })
+      if (!cancelled) setName(resolved)
+    }
+    const load = () => void resolve().then(apply)
+    // A roster change can rename this engagement or be the reason it exists;
+    // re-read rather than showing a stale or missing name.
+    const onRosterChanged = () => {
+      engagementNamesLoad = null
+      load()
+    }
+    if (engagementNames.get(engagementId) === undefined) load()
+    else apply()
+    window.addEventListener('rod-engagements-changed', onRosterChanged)
     return () => {
       cancelled = true
+      window.removeEventListener('rod-engagements-changed', onRosterChanged)
     }
-  }, [engagementId])
+  }, [engagementId, resolve])
 
   return name
 }
@@ -110,23 +120,30 @@ function RecentEngagements() {
 
   useEffect(() => {
     let cancelled = false
-    listEngagements()
-      .then((all) => {
-        if (!cancelled) {
-          setItems(
-            all
-              .filter((e) => !e.retiredAt)
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-              .slice(0, 6),
-          )
-        }
-      })
-      .catch(() => {
-        // A failed read just leaves the quick-jump empty; the list page is
-        // the authoritative surface.
-      })
+    const load = () => {
+      listEngagements()
+        .then((all) => {
+          if (!cancelled) {
+            setItems(
+              all
+                .filter((e) => !e.retiredAt)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                .slice(0, 6),
+            )
+          }
+        })
+        .catch(() => {
+          // A failed read just leaves the quick-jump as it is; the list page
+          // is the authoritative surface.
+        })
+    }
+    load()
+    // A roster change (create, close-out) re-sorts the quick-jump on the
+    // spot instead of waiting for a full reload.
+    window.addEventListener('rod-engagements-changed', load)
     return () => {
       cancelled = true
+      window.removeEventListener('rod-engagements-changed', load)
     }
   }, [])
 

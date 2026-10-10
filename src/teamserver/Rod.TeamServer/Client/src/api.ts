@@ -209,13 +209,23 @@ export async function listEngagements(): Promise<Engagement[]> {
   return jsonOrThrow(await fetch('engagements'))
 }
 
+// Roster mutations announce themselves (the same window-event pattern as
+// rod-unauthorized) so the shell's engagement surfaces -- the sidebar's
+// recent quick-jump and the breadcrumb's name cache -- re-read on the spot
+// instead of waiting for a full reload.
+function announceEngagementRosterChange(): void {
+  window.dispatchEvent(new Event('rod-engagements-changed'))
+}
+
 export async function createEngagement(input: CreateEngagementInput): Promise<Engagement> {
   const response = await fetch('engagements', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   })
-  return jsonOrThrow(response)
+  const created = jsonOrThrow<Engagement>(response)
+  announceEngagementRosterChange()
+  return created
 }
 
 // The leak answer, above all for a credential baked into a deployed artifact:
@@ -272,7 +282,9 @@ export async function editEngagement(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   })
-  return jsonOrThrow(response)
+  const edited = jsonOrThrow<Engagement>(response)
+  announceEngagementRosterChange()
+  return edited
 }
 
 export interface EngagementClosedResult {
@@ -282,7 +294,9 @@ export interface EngagementClosedResult {
 
 export async function freezeEngagement(engagementId: string): Promise<EngagementClosedResult> {
   const response = await fetch(`engagements/${engagementId}:freeze`, { method: 'POST' })
-  return jsonOrThrow(response)
+  const frozen = jsonOrThrow<EngagementClosedResult>(response)
+  announceEngagementRosterChange()
+  return frozen
 }
 
 export interface EngagementReopenedResult {
@@ -294,12 +308,16 @@ export interface EngagementReopenedResult {
 // freeze and the unfreeze both stay in the audit trail.
 export async function unfreezeEngagement(engagementId: string): Promise<EngagementReopenedResult> {
   const response = await fetch(`engagements/${engagementId}:unfreeze`, { method: 'POST' })
-  return jsonOrThrow(response)
+  const reopened = jsonOrThrow<EngagementReopenedResult>(response)
+  announceEngagementRosterChange()
+  return reopened
 }
 
 export async function retireEngagement(engagementId: string): Promise<EngagementClosedResult> {
   const response = await fetch(`engagements/${engagementId}:retire`, { method: 'POST' })
-  return jsonOrThrow(response)
+  const retired = jsonOrThrow<EngagementClosedResult>(response)
+  announceEngagementRosterChange()
+  return retired
 }
 
 // The evidence package is a POST-only close-out action -- the export is an
