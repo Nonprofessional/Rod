@@ -80,6 +80,16 @@ public class ImplantClassGatingTests
     [InlineData(ImplantClass.Implant, "exfil.push", HttpStatusCode.Created)]
     [InlineData(ImplantClass.Implant, "exfil.stage", HttpStatusCode.Created)]
     [InlineData(ImplantClass.WebShell, "exfil.push", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Browser, "browser.fingerprint", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "browser.cookies", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "browser.dom", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "browser.screenshot", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "browser.redirect", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "browser.prompt", HttpStatusCode.Created)]
+    [InlineData(ImplantClass.Browser, "shell.exec", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Browser, "file.pull", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Browser, "collect.cred", HttpStatusCode.UnprocessableEntity)]
+    [InlineData(ImplantClass.Implant, "browser.fingerprint", HttpStatusCode.UnprocessableEntity)]
     public async Task TaskEndpoint_GatesOnTheImplantClassVerbSet(
         ImplantClass @class, string verb, HttpStatusCode expected)
     {
