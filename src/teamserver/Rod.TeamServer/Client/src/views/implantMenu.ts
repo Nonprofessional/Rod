@@ -28,6 +28,10 @@ const CLASS_VERBS: Record<string, readonly string[]> = {
   WebShell: ['shell.exec'],
   Ephemeral: ['shell.exec'],
   Pivot: [],
+  Browser: [
+    'browser.fingerprint', 'browser.cookies', 'browser.dom',
+    'browser.screenshot', 'browser.redirect', 'browser.prompt',
+  ],
 }
 
 function classVerbs(klass: string): ReadonlySet<string> {
@@ -40,6 +44,7 @@ function classVerbs(klass: string): ReadonlySet<string> {
 // gates remain the authority either way.
 export const DIRECT_VERBS: readonly string[] = [
   'recon.ps', 'recon.hostenum', 'collect.screenshot', 'persist.list',
+  'browser.fingerprint', 'browser.cookies', 'browser.screenshot',
 ]
 
 export interface ImplantMenuActions {
@@ -257,6 +262,71 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         onSelect: () => actions.onDialog('persist.remove'),
       },
       'persist.remove',
+    ),
+    { kind: 'label', label: 'Browser' },
+    push(
+      {
+        kind: 'item',
+        label: 'Fingerprint',
+        icon: 'cpu',
+        title: 'browser.fingerprint -- the hooked browser\'s navigator facts as JSON',
+        onSelect: () => actions.onIssue('browser.fingerprint'),
+      },
+      'browser.fingerprint',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Read cookies',
+        icon: 'globe',
+        title: 'browser.cookies -- the current origin\'s document.cookie (non-HttpOnly only)',
+        onSelect: () => actions.onIssue('browser.cookies'),
+      },
+      'browser.cookies',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Read DOM',
+        icon: 'list',
+        opensDialog: true,
+        title: 'browser.dom -- the page\'s outerHTML, optionally narrowed by a CSS selector',
+        onSelect: () => actions.onDialog('browser.dom'),
+      },
+      'browser.dom',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Screenshot',
+        icon: 'file',
+        title: 'browser.screenshot -- rasterize the DOM into a PNG artifact (structure and inline styling)',
+        onSelect: () => actions.onIssue('browser.screenshot'),
+      },
+      'browser.screenshot',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Redirect tab',
+        icon: 'logout',
+        danger: true,
+        opensDialog: true,
+        title: 'browser.redirect -- navigate the tab to a URL (the hook dies with the page it leaves)',
+        onSelect: () => actions.onDialog('browser.redirect'),
+      },
+      'browser.redirect',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Prompt user',
+        icon: 'terminal',
+        opensDialog: true,
+        title: 'browser.prompt -- show the user a dialog and return the answer',
+        onSelect: () => actions.onDialog('browser.prompt'),
+      },
+      'browser.prompt',
     ),
   )
   if (actions.onNotes || (actions.onRetire && !implant.retiredAt) || actions.onSaveSnippet) {

@@ -179,6 +179,45 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     ],
     build: (values) => ({ arguments: `${text(values.mechanism)} ${text(values.name)}` }),
   },
+  'browser.dom': {
+    title: 'Read the page DOM',
+    fields: [
+      {
+        key: 'selector',
+        label: 'CSS selector (optional)',
+        placeholder: '#session-table',
+        help: 'Empty returns the whole document; output truncates at 1 MiB.',
+      },
+    ],
+    build: (values) => ({ arguments: text(values.selector) }),
+  },
+  'browser.redirect': {
+    title: 'Redirect the tab',
+    fields: [
+      {
+        key: 'url',
+        label: 'URL',
+        required: true,
+        placeholder: 'https://portal.example/login',
+        help: 'Navigating destroys the page and the hook with it.',
+      },
+    ],
+    build: (values) => ({ arguments: text(values.url) }),
+  },
+  'browser.prompt': {
+    title: 'Prompt the user',
+    fields: [
+      {
+        key: 'text',
+        label: 'Text',
+        type: 'wide',
+        required: true,
+        placeholder: 'Your session expired. Re-enter your password.',
+        help: 'Returns what the user answered (or that they dismissed it).',
+      },
+    ],
+    build: (values) => ({ arguments: text(values.text) }),
+  },
 }
 
 // The verbs whose tasks run as live channels (the server's ChannelVerbs is the

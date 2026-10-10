@@ -8,8 +8,9 @@ import { type CapabilityDescriptor, listCapabilities } from './api'
 
 // Canonical category order for display: core baseline first, then the offensive
 // lifecycle (recon -> lateral -> persist -> collect -> exfil), then tunneling,
-// then the two sensitive contract categories last. Categories returned by the
-// server but not listed here fall through to the end in their natural order.
+// then the browser hook set, then the two sensitive contract categories last.
+// Categories returned by the server but not listed here fall through to the
+// end in their natural order.
 const CATEGORY_ORDER: readonly string[] = [
   'Core',
   'Recon',
@@ -18,6 +19,7 @@ const CATEGORY_ORDER: readonly string[] = [
   'Collect',
   'Exfil',
   'Tunnel',
+  'Browser',
   'Evasion',
   'Exploit',
 ]
@@ -37,6 +39,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   Collect: 'Collection',
   Exfil: 'Exfiltration',
   Tunnel: 'Tunneling',
+  Browser: 'Browser hook',
   Evasion: 'Evasion (contract)',
   Exploit: 'Exploit (contract)',
 }

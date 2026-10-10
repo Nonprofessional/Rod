@@ -2349,3 +2349,81 @@ export async function deleteWebhookSubscription(
   )
   await jsonOrThrow<unknown>(response)
 }
+
+// The engagement's browser hooks (architecture.md Sec 5.2, Sec 8): the
+// served `<script src>` artifacts a script-injection foothold loads. Each
+// mint renders the in-tree hook with its bake (credential, seal, cadence,
+// verbs) and stores it as a served payload record; the answer's URL is
+// what lands in the injected page tag.
+
+export interface MintHookInput {
+  // The engagement's http(s) listener whose public endpoint fronts the hook.
+  listenerId: string
+  // The poll cadence's base interval, seconds.
+  sleepSeconds?: number
+  // The jitter half-width, seconds.
+  jitterSeconds?: number
+  // 'aesgcm' (the default -- the mainstream sealed posture) or 'none' (the
+  // cleartext posture for hooking plain-http pages where crypto.subtle is
+  // unavailable).
+  envelope?: 'aesgcm' | 'none'
+  // The enrollment budget: every hooked browser's enroll spends one use.
+  // Zero is unlimited.
+  tokenMaxUses?: number
+  killDate?: string | null
+}
+
+export interface MintedHook {
+  hookId: string
+  url: string
+  snippet: string
+  testPageUrl: string
+  listenerName: string
+  envelope: string
+  sleepSeconds: number
+  jitterSeconds: number
+  tokenMaxUses: number
+  fingerprint: string
+}
+
+export interface HookRow {
+  hookId: string
+  url: string
+  endpoint: string | null
+  envelope: string | null
+  sleepSeconds: number | null
+  jitterSeconds: number | null
+  builtAt: string
+  fingerprint: string
+}
+
+export async function mintHook(
+  engagementId: string,
+  input: MintHookInput,
+): Promise<MintedHook> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/hooks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        listenerId: input.listenerId,
+        sleepSeconds: input.sleepSeconds ?? null,
+        jitterSeconds: input.jitterSeconds ?? null,
+        envelope: input.envelope ?? null,
+        tokenMaxUses: input.tokenMaxUses ?? null,
+        killDate: input.killDate ?? null,
+      }),
+    }),
+  )
+}
+
+export async function listHooks(engagementId: string): Promise<HookRow[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/hooks`))
+}
+
+export async function revokeHook(engagementId: string, hookId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/hooks/${hookId}`, {
+    method: 'DELETE',
+  })
+  await jsonOrThrow<unknown>(response)
+}

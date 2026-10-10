@@ -1,13 +1,18 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  type HookRow,
   type LauncherRow,
   type ListenerSummary,
+  type MintedHook,
   type PayloadSummary,
   deleteLauncher,
+  listHooks,
   listLaunchers,
   listListeners,
   listPayloads,
+  mintHook,
   renderLaunchers,
+  revokeHook,
 } from '../api'
 import { catchLaunchers } from '../catchOneLiners'
 import { launcherHint } from '../launcherFamilies'
@@ -97,12 +102,27 @@ export function LaunchersView({
   const [error, setError] = useState<string | null>(null)
   const [commandsFor, setCommandsFor] = useState<string | null>(null)
 
+  // The browser-hook surface's own state: the mint form's choices and the
+  // roster of minted hooks (every one is a kept served artifact).
+  const [hooks, setHooks] = useState<HookRow[]>([])
+  const [hookListenerId, setHookListenerId] = useState('')
+  const [hookSleep, setHookSleep] = useState(30)
+  const [hookUses, setHookUses] = useState(50)
+  const [hookEnvelope, setHookEnvelope] = useState<'aesgcm' | 'none'>('aesgcm')
+  const [hookBusy, setHookBusy] = useState(false)
+  const [lastMinted, setLastMinted] = useState<MintedHook | null>(null)
+
   // The quiet clock keeps expiry counts moving between interactions.
   const now = useNow(30_000)
 
   const refreshRows = useCallback(async () => {
     try {
-      setRows(await listLaunchers(engagementId))
+      const [launcherRows, hookRows] = await Promise.all([
+        listLaunchers(engagementId),
+        listHooks(engagementId),
+      ])
+      setRows(launcherRows)
+      setHooks(hookRows)
       setError(null)
     } catch (e) {
       setError(String(e))
@@ -146,6 +166,12 @@ export function LaunchersView({
     () => listeners.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)),
     [listeners],
   )
+  // The hook rides the web family proper (fetch + the envelope POST), so the
+  // mTLS shape is out: only plain http/https fronts answer it.
+  const hookFronts = useMemo(
+    () => listeners.filter((l) => ['http', 'https'].includes(l.transport)),
+    [listeners],
+  )
   const catchers = useMemo(
     () => listeners.filter((l) => l.transport === 'shellcatch'),
     [listeners],
@@ -174,6 +200,39 @@ export function LaunchersView({
       return
     try {
       await deleteLauncher(engagementId, row.launcherId)
+      await refreshRows()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onMintHook = useCallback(async () => {
+    if (!hookListenerId) return
+    setHookBusy(true)
+    try {
+      const minted = await mintHook(engagementId, {
+        listenerId: hookListenerId,
+        sleepSeconds: hookSleep,
+        envelope: hookEnvelope,
+        tokenMaxUses: hookUses,
+      })
+      setLastMinted(minted)
+      await refreshRows()
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setHookBusy(false)
+    }
+  }, [engagementId, hookListenerId, hookSleep, hookEnvelope, hookUses, refreshRows])
+
+  const onRevokeHook = async (row: HookRow) => {
+    if (!window.confirm('Revoke this hook? The serving URL 404s from now on, its baked credential stops enrolling, and every browser already holding the script goes quiet at its next contact.'))
+      return
+    try {
+      await revokeHook(engagementId, row.hookId)
+      if (lastMinted?.hookId === row.hookId) setLastMinted(null)
       await refreshRows()
       setError(null)
     } catch (e) {
@@ -240,6 +299,146 @@ export function LaunchersView({
           })}
         </div>
       )}
+
+      {/* The browser-hook mint: the XSS foothold's delivery. A hook is not a
+          one-liner but a served script -- the mint renders it with its bake
+          and answers the `<script src>` tag to inject; the hooked browsers
+          then appear in the Implants table as Browser-class rows, taskable
+          from the same menu as any implant. */}
+      <div className="card">
+        <h3>Hook a browser</h3>
+        {hookFronts.length === 0 ? (
+          <div className="empty">
+            <Icon name="globe" />
+            No HTTP(S) listener in this engagement yet — the hook rides the web family;
+            create one under Listeners first.
+          </div>
+        ) : (
+          <>
+            <p className="muted">
+              Mint a served hook script and inject the answer as a{' '}
+              <code>{'<script src>'}</code> tag on the vulnerable page. Each hooked
+              browser enrolls as a Browser-class implant over the sealed envelope
+              carrier — the fetch URL's unguessable id is the only credential a
+              victim's browser ever presents.
+            </p>
+            <div className="inline-form">
+              <select
+                value={hookListenerId}
+                onChange={(e) => setHookListenerId(e.target.value)}
+                title="The front the hook is served from and contacts through -- its public endpoint is what every victim's browser dials"
+              >
+                <option value="">Choose a front…</option>
+                {hookFronts.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} · {l.transport} · {l.publicEndpoint}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="primary"
+                onClick={() => void onMintHook()}
+                disabled={hookBusy || !hookListenerId}
+              >
+                {hookBusy ? 'Minting…' : 'Mint hook'}
+              </button>
+            </div>
+            {/* Cadence, budget, and posture: the knobs an operator sizes per
+                campaign. The budget is enrollments (one per hooked browser,
+                and one per reload where storage is blocked), not fetches --
+                serving the script is unbudgeted. */}
+            <details className="build-advanced">
+              <summary title="Poll cadence, enrollment budget, and seal posture">
+                Cadence &amp; budget — {hookSleep}s poll ·{' '}
+                {hookUses === 0 ? 'unlimited enrollments' : `${hookUses} enrollments`} ·{' '}
+                {hookEnvelope === 'aesgcm' ? 'sealed' : 'cleartext (plain-http pages)'}
+              </summary>
+              <div className="inline-form">
+                <select
+                  value={hookSleep}
+                  onChange={(e) => setHookSleep(Number(e.target.value))}
+                  title="The base interval between poll contacts; jitter of a fifth rides beside it"
+                >
+                  {[10, 30, 60, 300].map((s) => (
+                    <option key={s} value={s}>
+                      {s}s poll
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={hookUses}
+                  onChange={(e) => setHookUses(Number(e.target.value))}
+                  title="Every hooked browser's enrollment spends one use of the baked token"
+                >
+                  <option value={0}>Unlimited enrollments</option>
+                  {[10, 50, 200].map((n) => (
+                    <option key={n} value={n}>
+                      {n} enrollments
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={hookEnvelope}
+                  onChange={(e) => setHookEnvelope(e.target.value as 'aesgcm' | 'none')}
+                  title="Sealed is the mainstream posture (enroll and contacts are AES-GCM under the baked key); cleartext serves plain-http pages where crypto.subtle is unavailable"
+                >
+                  <option value="aesgcm">Sealed (aesgcm)</option>
+                  <option value="none">Cleartext (plain-http pages)</option>
+                </select>
+              </div>
+            </details>
+            {lastMinted && (
+              <div className="upgrade-panel">
+                <p>
+                  Inject on the vulnerable page:{' '}
+                  <code className="upgrade-command">{lastMinted.snippet}</code>{' '}
+                  <CopyButton text={lastMinted.snippet} />
+                </p>
+                <p className="muted">
+                  Test page <code>{lastMinted.testPageUrl}</code> — load it in a browser
+                  and the hook enrolls into this engagement.
+                </p>
+              </div>
+            )}
+            {hooks.length > 0 && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Minted</th>
+                      <th>Serving URL</th>
+                      <th>Front</th>
+                      <th>Posture</th>
+                      <th>Cadence</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hooks.map((row) => (
+                      <tr key={row.hookId}>
+                        <td>{new Date(row.builtAt).toLocaleString()}</td>
+                        <td title={`Fingerprint ${row.fingerprint}`}>
+                          <code>{row.url}</code> <CopyButton text={row.url} />
+                        </td>
+                        <td title={row.url}>{row.endpoint}</td>
+                        <td>{row.envelope === 'none' ? 'cleartext' : 'sealed'}</td>
+                        <td>{row.sleepSeconds != null ? `${row.sleepSeconds}s` : '—'}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button className="ghost sm" onClick={() => void onRevokeHook(row)}>
+                              Revoke
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* One card, one flow: the render form above, the kept rows below --
           the same single surface the Build tab gives its form and job strip,
