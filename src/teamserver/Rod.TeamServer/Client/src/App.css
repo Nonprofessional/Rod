@@ -2385,6 +2385,83 @@ button.file-entry {
   text-transform: none;
 }
 
+/* The roster row's action cluster: sibling ghost buttons that share one
+   line instead of stacking with the row's own rhythm. */
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* A switched-off account reads as inert at a glance; its Enable button
+   stays reachable inside the dimmed row. */
+.roster-row-disabled > td {
+  opacity: 0.55;
+}
+
+/* The roster's expanded management sheet: a quiet panel under the account
+   row, the same dashed-sheet shape the payload library's detail rows use. */
+.roster-detail-row > td {
+  background: var(--surface-2);
+  border-top: 1px dashed var(--border);
+}
+
+.roster-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+  padding: 10px 4px 12px;
+}
+
+.roster-detail section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 46ch;
+}
+
+.roster-detail-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The one-time minted secret: prominent, copyable, and labeled with its
+   own transience -- the digest is all the server keeps. */
+.token-reveal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.token-reveal code {
+  word-break: break-all;
+}
+
+.token-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.token-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* --- System page --------------------------------------------------------------------------- */
 
 /* One build unit's report block: findings list over the target table,

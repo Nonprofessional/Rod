@@ -221,6 +221,10 @@ export interface OperatorAccount {
   // False after credential revocation: the account exists but no password
   // verifies, so it cannot log in until re-provisioned.
   hasCredential: boolean
+  // True while the account is switched off: no authentication path accepts
+  // it (login, cookie session, API token), and its scopes wait as they were
+  // so an enable restores exactly the reach it had.
+  disabled: boolean
 }
 
 export interface CreateOperatorInput {
@@ -256,6 +260,72 @@ export async function setOperatorPassword(operatorId: string, password: string):
       body: JSON.stringify({ password }),
     }),
   )
+}
+
+// The summary PUT /operators/{id}/scopes returns: identity plus the new
+// scope set (the roster row carries the fuller account shape).
+export interface OperatorScopesResult {
+  id: string
+  handle: string
+  displayName: string
+  scopes: string[]
+}
+
+export interface OperatorTokenRow {
+  tokenId: string
+  createdAt: string
+}
+
+// The one-time bearer secret. It is shown exactly once, at mint; only the
+// digest is stored afterwards, so a closed panel cannot bring it back.
+export interface MintedOperatorToken {
+  tokenId: string
+  token: string
+  createdAt: string
+}
+
+// The complete new scope set. The target's live sessions pick the set up at
+// their next request -- demotion and promotion both, no re-login. Removing
+// the last task scope refuses with a 409 naming the rule.
+export async function updateOperatorScopes(
+  operatorId: string,
+  scopes: string[],
+): Promise<OperatorScopesResult> {
+  const response = await fetch(`operators/${operatorId}/scopes`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scopes }),
+  })
+  return jsonOrThrow<OperatorScopesResult>(response)
+}
+
+// The account off switch and its restore. Disabling ends every
+// authentication path for the account at its next use; enabling reopens
+// them with the scopes the account kept. Disabling the last task holder
+// refuses with a 409.
+export async function disableOperator(operatorId: string): Promise<void> {
+  jsonOrThrow(await fetch(`operators/${operatorId}:disable`, { method: 'POST' }))
+}
+
+export async function enableOperator(operatorId: string): Promise<void> {
+  jsonOrThrow(await fetch(`operators/${operatorId}:enable`, { method: 'POST' }))
+}
+
+// API-token management, per account: mint returns the bearer secret exactly
+// once, list reads identity-and-lifetime rows (never the secret), and
+// revocation takes effect at the token's next use. A disabled account's
+// tokens refuse until it is enabled again.
+export async function listOperatorTokens(operatorId: string): Promise<OperatorTokenRow[]> {
+  return jsonOrThrow(await fetch(`operators/${operatorId}/tokens`))
+}
+
+export async function mintOperatorToken(operatorId: string): Promise<MintedOperatorToken> {
+  const response = await fetch(`operators/${operatorId}/tokens`, { method: 'POST' })
+  return jsonOrThrow<MintedOperatorToken>(response)
+}
+
+export async function revokeOperatorToken(operatorId: string, tokenId: string): Promise<void> {
+  jsonOrThrow(await fetch(`operators/${operatorId}/tokens/${tokenId}:revoke`, { method: 'POST' }))
 }
 
 export interface CreateEngagementInput {

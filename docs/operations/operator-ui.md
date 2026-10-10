@@ -806,24 +806,34 @@ server) so a restart remembers them; the `Sessions:Staleness` config
 section remains the boot default. Bounds violations refuse with the
 reason rather than clamping.
 
-The page's second card is **Operators** -- the account roster and the
-provisioning form (the management path the `Operators:Initial` seed stood
+The page's second card is **Operators** -- the account roster and its
+management sheet (the management path the `Operators:Initial` seed stood
 in for; see [teamserver.md](teamserver.md)). The table lists every
-account: handle (yours marked *you*; a revoked credential reads *no
-password*), display name, scope set, and creation date. *New operator*
-provisions an account with handle, display name (optional; defaults to
-the handle), initial password (8 characters minimum, handed over out of
-band), and the three scope checkboxes -- all checked is the peer
-default, the checkboxes enforce the server's coherence rules as they are
-clicked (task and approve each require read), and all-unchecked is the
-parked shape (loginable, sees nothing) rather than a silent fallback to
-the default. *Reset password* re-provisions an account's password; a
-reset is a new credential generation, so that account's live sessions
-end at their next request (resetting your own signs this session out
-too). Both writes hide from a viewing-scope session: they hand the
-recipient scopes, so the server requires the acting scope of the caller
-(architecture.md Sec 4.5). Scope *changes* to an existing account remain
-API-only (`PUT /operators/{id}/scopes`).
+account: handle (yours marked *you*; a switched-off account reads
+*disabled*; a revoked credential reads *no password*), display name,
+scope set, and creation date. *New operator* provisions an account with
+handle, display name (optional; defaults to the handle), initial
+password (8 characters minimum, handed over out of band), and the three
+scope checkboxes -- all checked is the peer default, the checkboxes
+enforce the server's coherence rules as they are clicked (task and
+approve each require read), and all-unchecked is the parked shape
+(loginable, sees nothing) rather than a silent fallback to the default.
+*Reset password* re-provisions an account's password; a reset is a new
+credential generation, so that account's live sessions end at their next
+request (resetting your own signs this session out too). *Disable* is
+the account off switch (two clicks): every authentication path -- login,
+live cookie session, API token -- refuses at its next use, while the
+scopes wait as they were, so *Enable* restores exactly the reach the
+account had; the last task holder cannot be disabled (the 409 names the
+rule), and disabling yourself ends your own session with no way back
+alone. *Manage* opens the row's sheet: **Scopes** edits the complete set
+(live sessions carry the new set at their next request; narrowing away
+the last task scope refuses), and **API tokens** mints, lists, and
+revokes the account's bearer credentials -- a minted secret is shown
+exactly once beside a copy button, because only its digest is stored.
+Every write here hides from a viewing-scope session: each confers scopes
+or gates authentication, so the server requires the acting scope of the
+caller (architecture.md Sec 4.5).
 
 ## System
 

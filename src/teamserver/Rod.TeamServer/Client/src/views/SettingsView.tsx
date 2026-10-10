@@ -1,16 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
+  type MintedOperatorToken,
   type OperatorAccount,
+  type OperatorTokenRow,
   type SessionOperator,
   createOperator,
+  disableOperator,
+  enableOperator,
   getBuildSettings,
   getSessionSettings,
+  listOperatorTokens,
   listOperators,
+  mintOperatorToken,
   putBuildSettings,
   putSessionSettings,
+  revokeOperatorToken,
   setOperatorPassword,
+  updateOperatorScopes,
 } from '../api'
 import { Icon } from '../components/Icons'
+import { useArmedDelete } from '../useArmedDelete'
 
 // The teamserver's runtime settings -- operator-level, not engagement-level:
 // server-wide knobs an operator adjusts while working. The session-presence
@@ -179,24 +188,51 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
   )
 }
 
-// The account roster and the provisioning form: who can log in, and how the
-// next teammate is made loginable. The bootstrap account (Operators:Initial)
-// is the first operator; every account after it arrives here -- POST
-// /operators registers the handle and its initial password in one step, so
-// the account works the moment the row appears. The scope checkboxes mirror
-// the server's own rules (task and approve each require read) and always send
-// an explicit set, so an all-unchecked form provisions the parked shape
-// rather than silently widening to the default. A read-only session sees the
-// roster but not the writes: provisioning hands the new account every scope
-// by default, so the server requires the acting scope of the caller.
+// The account roster, the provisioning form, and the per-account management
+// row. The bootstrap account (Operators:Initial) is the first operator;
+// every account after it arrives here -- POST /operators registers the
+// handle and its initial password in one step, so the account works the
+// moment the row appears. Each row opens into its management sheet: the
+// scope editor (PUT /operators/{id}/scopes), the API-token shelf (mint with
+// its one-time secret, list, revoke), and the disable/enable switch -- the
+// account off switch that ends every authentication path while the scopes
+// wait as they were. The scope checkboxes mirror the server's own rules
+// (task and approve each require read) and always send an explicit set, so
+// an all-unchecked form provisions the parked shape rather than silently
+// widening to the default. A read-only session sees the roster but none of
+// the writes: every one of them confers scopes or gates authentication, so
+// the server requires the acting scope of the caller.
 const SCOPE_NAMES = ['read', 'task', 'approve'] as const
 type ScopeName = (typeof SCOPE_NAMES)[number]
+type ScopeSet = Record<ScopeName, boolean>
+
+const ALL_SCOPES: ScopeSet = { read: true, task: true, approve: true }
 
 const SCOPE_HELP: Record<ScopeName, string> = {
   read: 'The viewing scope: every engagement-scoped read and the live event stream. The other two cannot stand without it -- an operator who cannot see an engagement cannot act or approve on it.',
-  task: 'The acting scope: every engagement-scoped write, from tasking to listeners to closeout. Also what provisioning and password resets require of their caller.',
+  task: 'The acting scope: every engagement-scoped write, from tasking to listeners to closeout. Also what every account-management write here requires of its caller.',
   approve: 'The second-pair-of-eyes scope, carried for a future approval workflow; no surface consumes it yet.',
 }
+
+// The checkboxes enforce the server's coherence rules as they are clicked:
+// dropping read drops the scopes that require it; picking task or approve
+// restores the read beneath them. Shared by the provision form and the
+// roster's scope editor -- one rule, one implementation.
+function applyScopeRules(draft: ScopeSet, scope: ScopeName, on: boolean): ScopeSet {
+  const next = { ...draft, [scope]: on }
+  if (!on && scope === 'read') {
+    next.task = false
+    next.approve = false
+  }
+  if (on && (scope === 'task' || scope === 'approve')) next.read = true
+  return next
+}
+
+const scopeSetOf = (scopes: string[]): ScopeSet => ({
+  read: scopes.includes('read'),
+  task: scopes.includes('task'),
+  approve: scopes.includes('approve'),
+})
 
 function OperatorsCard({ operator }: { operator: SessionOperator }) {
   const [accounts, setAccounts] = useState<OperatorAccount[]>([])
@@ -207,11 +243,16 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
   const [handle, setHandle] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
-  const [scopes, setScopes] = useState<Record<ScopeName, boolean>>({
-    read: true,
-    task: true,
-    approve: true,
-  })
+  const [scopes, setScopes] = useState<ScopeSet>(ALL_SCOPES)
+
+  // The expanded management row: the account being managed, its scope draft,
+  // its token list, and the one-time secret of the token just minted (the
+  // secret lives only here -- closing the row or minting again drops it).
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [scopeDraft, setScopeDraft] = useState<ScopeSet>(ALL_SCOPES)
+  const [tokens, setTokens] = useState<OperatorTokenRow[]>([])
+  const [minted, setMinted] = useState<MintedOperatorToken | null>(null)
+  const [secretCopied, setSecretCopied] = useState(false)
 
   const acting = operator.scopes.includes('task')
 
@@ -233,18 +274,8 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
 
   // The checkboxes enforce the server's coherence rules as they are clicked:
   // dropping read drops the scopes that require it; picking task or approve
-  // restores the read beneath them.
-  const toggleScope = (scope: ScopeName, on: boolean) => {
-    setScopes((draft) => {
-      const next = { ...draft, [scope]: on }
-      if (!on && scope === 'read') {
-        next.task = false
-        next.approve = false
-      }
-      if (on && (scope === 'task' || scope === 'approve')) next.read = true
-      return next
-    })
-  }
+  // restores the read beneath them (applyScopeRules, shared with the roster
+  // editor below).
 
   const onCreate = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -266,7 +297,7 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
       setHandle('')
       setDisplayName('')
       setPassword('')
-      setScopes({ read: true, task: true, approve: true })
+      setScopes(ALL_SCOPES)
       await refresh()
     } catch (e) {
       setNote(null)
@@ -290,6 +321,111 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
         `Password replaced for '${account.handle}'. Its live sessions ended` +
           (account.id === operator.operatorId ? ' -- including this one; sign in again with the new password.' : '.'),
       )
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  // --- The expanded management row ---------------------------------------
+
+  const reloadTokens = async (operatorId: string) => {
+    try {
+      setTokens(await listOperatorTokens(operatorId))
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onManage = async (account: OperatorAccount) => {
+    if (openId === account.id) {
+      setOpenId(null)
+      setMinted(null)
+      return
+    }
+    setOpenId(account.id)
+    setMinted(null)
+    setSecretCopied(false)
+    setScopeDraft(scopeSetOf(account.scopes))
+    await reloadTokens(account.id)
+  }
+
+  const onSaveScopes = async (account: OperatorAccount) => {
+    try {
+      const saved = await updateOperatorScopes(
+        account.id,
+        SCOPE_NAMES.filter((s) => scopeDraft[s]),
+      )
+      setScopeDraft(scopeSetOf(saved.scopes))
+      setNote(
+        `Scopes saved for '${account.handle}' -- its live sessions carry the new set at their next request` +
+          (account.id === operator.operatorId ? ' (including this one).' : '.'),
+      )
+      setError(null)
+      await refresh()
+    } catch (e) {
+      // A 409 here is the last-holder guard: the message names the rule.
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  const onMint = async (account: OperatorAccount) => {
+    try {
+      const secret = await mintOperatorToken(account.id)
+      setMinted(secret)
+      setSecretCopied(false)
+      setError(null)
+      await reloadTokens(account.id)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onRevokeToken = async (account: OperatorAccount, tokenId: string) => {
+    try {
+      await revokeOperatorToken(account.id, tokenId)
+      if (minted?.tokenId === tokenId) setMinted(null)
+      setError(null)
+      await reloadTokens(account.id)
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onCopySecret = async () => {
+    if (!minted) return
+    try {
+      await navigator.clipboard.writeText(minted.token)
+      setSecretCopied(true)
+    } catch {
+      // Clipboard access can be denied; the text stays selectable to copy.
+    }
+  }
+
+  const [armed, armDisable] = useArmedDelete()
+
+  const onDisable = async (account: OperatorAccount) => {
+    try {
+      await disableOperator(account.id)
+      setNote(
+        `'${account.handle}' disabled -- its sessions and tokens refuse at their next use; enabling restores exactly what it had.`,
+      )
+      setError(null)
+      setMinted(null)
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  const onEnable = async (account: OperatorAccount) => {
+    try {
+      await enableOperator(account.id)
+      setNote(`'${account.handle}' enabled -- it can log in again with the scopes it kept.`)
       setError(null)
       await refresh()
     } catch (e) {
@@ -348,7 +484,9 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                   <input
                     type="checkbox"
                     checked={scopes[scope]}
-                    onChange={(e) => toggleScope(scope, e.target.checked)}
+                    onChange={(e) =>
+                      setScopes((draft) => applyScopeRules(draft, scope, e.target.checked))
+                    }
                   />
                   {scope}
                 </label>
@@ -403,47 +541,178 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
               </tr>
             )}
             {accounts.map((account) => (
-              <tr key={account.id}>
-                <td>
-                  <span className="endpoint-cell">
-                    <code>{account.handle}</code>
-                    {account.id === operator.operatorId && <span className="muted"> (you)</span>}
-                    {!account.hasCredential && (
-                      <span
-                        className="muted"
-                        title="No password stands behind this account: the credential was revoked, and login refuses until a new one is provisioned."
-                      >
-                        {' '}
-                        · no password
+              <Fragment key={account.id}>
+                <tr className={account.disabled ? 'roster-row-disabled' : undefined}>
+                  <td>
+                    <span className="endpoint-cell">
+                      <code>{account.handle}</code>
+                      {account.id === operator.operatorId && <span className="muted"> (you)</span>}
+                      {account.disabled && (
+                        <span
+                          className="muted"
+                          title="Switched off: no authentication path accepts this account (login, cookie session, API token) and its sessions ended at their next use. Its scopes wait as they were, so enabling restores exactly what it had."
+                        >
+                          {' '}
+                          · disabled
+                        </span>
+                      )}
+                      {!account.hasCredential && (
+                        <span
+                          className="muted"
+                          title="No password stands behind this account: the credential was revoked, and login refuses until a new one is provisioned."
+                        >
+                          {' '}
+                          · no password
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td>{account.displayName}</td>
+                  <td>
+                    {account.scopes.length === 0 ? (
+                      <span className="muted" title="The parked shape: loginable, sees nothing, acts on nothing.">
+                        none
+                      </span>
+                    ) : (
+                      account.scopes.join(', ')
+                    )}
+                  </td>
+                  <td title={new Date(account.createdAt).toLocaleString()}>
+                    {new Date(account.createdAt).toLocaleDateString()}
+                  </td>
+                  <td>
+                    {acting && (
+                      <span className="row-actions">
+                        <button
+                          className="ghost sm"
+                          onClick={() => void onManage(account)}
+                          title="Open this account's management sheet: the scope editor, the API-token shelf, and the disable switch."
+                        >
+                          <Icon name="edit" />
+                          {openId === account.id ? 'Close' : 'Manage'}
+                        </button>
+                        <button
+                          className="ghost sm"
+                          onClick={() => void onResetPassword(account)}
+                          title="Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request -- resetting your own signs this session out too."
+                        >
+                          Reset password
+                        </button>
+                        {account.disabled ? (
+                          <button
+                            className="sm"
+                            onClick={() => void onEnable(account)}
+                            title="Re-open every authentication path for this account, with the scopes it kept through the disable."
+                          >
+                            Enable
+                          </button>
+                        ) : (
+                          <button
+                            className={`sm danger${armed === account.id ? ' armed' : ''}`}
+                            onClick={() => armDisable(account.id, () => void onDisable(account))}
+                            title={
+                              account.id === operator.operatorId
+                                ? 'Switch this account off (two clicks). Disabling yourself ends this session at its next request -- you will need a colleague to enable you, so this is usually a mistake.'
+                                : armed === account.id
+                                  ? 'Click again to disable — the button reverts on its own after a few seconds'
+                                  : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last task holder can't be disabled."
+                            }
+                          >
+                            {armed === account.id ? 'Confirm disable' : 'Disable'}
+                          </button>
+                        )}
                       </span>
                     )}
-                  </span>
-                </td>
-                <td>{account.displayName}</td>
-                <td>
-                  {account.scopes.length === 0 ? (
-                    <span className="muted" title="The parked shape: loginable, sees nothing, acts on nothing.">
-                      none
-                    </span>
-                  ) : (
-                    account.scopes.join(', ')
-                  )}
-                </td>
-                <td title={new Date(account.createdAt).toLocaleString()}>
-                  {new Date(account.createdAt).toLocaleDateString()}
-                </td>
-                <td>
-                  {acting && (
-                    <button
-                      className="ghost sm"
-                      onClick={() => void onResetPassword(account)}
-                      title="Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request -- resetting your own signs this session out too."
-                    >
-                      Reset password
-                    </button>
-                  )}
-                </td>
-              </tr>
+                  </td>
+                </tr>
+                {openId === account.id && (
+                  <tr className="roster-detail-row">
+                    <td colSpan={5}>
+                      <div className="roster-detail">
+                        <section>
+                          <div className="roster-detail-title">Scopes</div>
+                          <div className="scope-checks">
+                            {SCOPE_NAMES.map((scope) => (
+                              <label key={scope} className="scope-check" title={SCOPE_HELP[scope]}>
+                                <input
+                                  type="checkbox"
+                                  checked={scopeDraft[scope]}
+                                  onChange={(e) =>
+                                    setScopeDraft((draft) =>
+                                      applyScopeRules(draft, scope, e.target.checked),
+                                    )
+                                  }
+                                />
+                                {scope}
+                              </label>
+                            ))}
+                          </div>
+                          <button
+                            className="primary sm"
+                            onClick={() => void onSaveScopes(account)}
+                            disabled={busy}
+                          >
+                            Save scopes
+                          </button>
+                          <p className="muted" style={{ margin: 0 }}>
+                            The complete new set; the account's live sessions carry it at their next
+                            request, demotion and promotion both. Narrowing away the last task scope
+                            refuses -- the message names the rule.
+                          </p>
+                        </section>
+                        <section>
+                          <div className="roster-detail-title">API tokens</div>
+                          {minted && (
+                            <div className="token-reveal">
+                              <code>{minted.token}</code>
+                              <button className="ghost sm" onClick={() => void onCopySecret()}>
+                                {secretCopied ? 'Copied' : 'Copy'}
+                              </button>
+                              <span className="muted">
+                                shown once -- only the digest is stored from here on
+                              </span>
+                            </div>
+                          )}
+                          <div>
+                            <button className="sm" onClick={() => void onMint(account)}>
+                              Mint token
+                            </button>
+                          </div>
+                          {tokens.length > 0 ? (
+                            <ul className="token-list">
+                              {tokens.map((t) => (
+                                <li key={t.tokenId}>
+                                  <code>{t.tokenId.slice(0, 8)}</code>
+                                  <span className="muted">
+                                    {' '}
+                                    minted {new Date(t.createdAt).toLocaleDateString()}
+                                  </span>
+                                  <button
+                                    className="ghost sm"
+                                    onClick={() => void onRevokeToken(account, t.tokenId)}
+                                    title="Revoke this token: it fails at its next use. Idempotent."
+                                  >
+                                    Revoke
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="muted" style={{ margin: 0 }}>
+                              No tokens minted for this account.
+                            </p>
+                          )}
+                          <p className="muted" style={{ margin: 0 }}>
+                            Bearer credentials for the API and the MCP surface, usable wherever the
+                            cookie session is not. Revocation bites at the token's next use; a
+                            disabled account's tokens refuse until it is enabled again.
+                          </p>
+                        </section>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
