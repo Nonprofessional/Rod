@@ -38,10 +38,6 @@ public sealed record EngagementAccess(
 {
     public static readonly EngagementAccess Missing = new(false, EngagementAccessLevel.None);
 
-    /// <summary>May enter the engagement's read surface (any member or the owner).</summary>
-    public bool CanRead
-        => EngagementExists && Level >= EngagementAccessLevel.Reader;
-
     /// <summary>May exercise the engagement's write surface (writer or owner).</summary>
     public bool CanWrite
         => EngagementExists && Level >= EngagementAccessLevel.Writer;

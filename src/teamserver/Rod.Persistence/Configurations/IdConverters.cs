@@ -42,12 +42,6 @@ internal static class IdConverters
     public static ValueConverter<ShellSessionId, Guid> ShellSessionId { get; } =
         new(id => id.Value, value => new ShellSessionId(value));
 
-    public static ValueConverter<AutomationRuleId, Guid> AutomationRuleId { get; } =
-        new(id => id.Value, value => new AutomationRuleId(value));
-
-    public static ValueConverter<WebhookSubscriptionId, Guid> WebhookSubscriptionId { get; } =
-        new(id => id.Value, value => new WebhookSubscriptionId(value));
-
     public static ValueConverter<Rod.CoreState.CampaignId, Guid> CampaignId { get; } =
         new(id => id.Value, value => new Rod.CoreState.CampaignId(value));
 
