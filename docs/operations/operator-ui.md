@@ -820,6 +820,15 @@ remembering the form.
 deployed artifact that has not yet enrolled will not be able to), or
 **Delete** the payload -- the bytes and the row are gone, a launcher
 fetching it 404s from then on, and the deletion is an audited fact.
+Beside the filter, **Mint credential** mints a standalone delivery
+credential -- the same token shape a build bakes, without a payload
+attached, for hand delivery: the launcher one-liners aimed at an
+operator-run edge, a drop, a scripted enrollment. The dialog's knobs are
+the route's bounds in operator units (uses 1-10000, lifetime up to 30
+days; the defaults are the single-use one-hour shape), the mint is
+audited without the secret, and the secret reads out exactly once in the
+dialog that minted it -- copy it before closing. A standalone token has
+no payload row, so its revoke rides the same dialog.
 
 ## Web shells
 

@@ -382,6 +382,35 @@ export async function revokeDeployToken(engagementId: string, tokenId: string): 
   await jsonOrThrow<unknown>(response)
 }
 
+// A hand-minted deployment credential: the same token shape a build bakes,
+// minted standalone for hand delivery -- a launcher one-liner aimed at an
+// operator-run edge, a drop, a scripted enrollment. A body-less post keeps
+// the single-use, one-hour default; the two knobs bound a batch window
+// (maxUses 1..10000, lifetimeSeconds 60..2592000). The secret returns once
+// and only once -- the trail records the mint, never the secret.
+export interface MintedDeployToken {
+  tokenId: string
+  engagementId: string
+  secret: string
+  issuedBy: string
+  issuedAt: string
+  expiresAt: string
+  maxUses: number
+}
+
+export async function mintDeployToken(
+  engagementId: string,
+  input?: { maxUses?: number; lifetimeSeconds?: number },
+): Promise<MintedDeployToken> {
+  const body = input ? JSON.stringify(input) : undefined
+  const response = await fetch(`engagements/${engagementId}/deploy-tokens`, {
+    method: 'POST',
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body,
+  })
+  return jsonOrThrow(response)
+}
+
 export async function listImplants(engagementId: string): Promise<Implant[]> {
   return jsonOrThrow(await fetch(`engagements/${engagementId}/implants`))
 }

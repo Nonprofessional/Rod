@@ -1,14 +1,17 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
   type ListenerSummary,
+  type MintedDeployToken,
   type PayloadSummary,
   deletePayload,
   listListeners,
   listPayloads,
+  mintDeployToken,
   revokeDeployToken,
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
 import { Icon } from '../components/Icons'
+import { CopyButton } from '../components/CopyButton'
 import { fmtBytes } from '../format'
 
 // The engagement's payload library: the payload store's durable listing, the
@@ -45,6 +48,7 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
   const [filter, setFilter] = useState('')
   const [revoking, setRevoking] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [mintOpen, setMintOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -130,7 +134,17 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
           <Icon name="refresh" />
           Refresh
         </button>
+        <button
+          className="ghost"
+          onClick={() => setMintOpen(true)}
+          title="Mint a standalone deployment credential -- the same token shape a build bakes, for hand delivery; single-use and one hour by default, the secret shows once"
+        >
+          Mint credential
+        </button>
       </div>
+      {mintOpen && (
+        <MintTokenDialog engagementId={engagementId} onClose={() => setMintOpen(false)} />
+      )}
       {error && <p className="error">{error}</p>}
       <div className="table-wrap">
         <table>
@@ -399,6 +413,139 @@ function PayloadDetail({ payload }: { payload: PayloadSummary }) {
           <span>{value}</span>
         </div>
       ))}
+    </div>
+  )
+}
+
+// A standalone credential mint: the same token shape a build bakes, minted
+// for hand delivery without a payload attached -- the launcher one-liners
+// aimed at an operator-run edge, a drop, a scripted enrollment. The knobs
+// match the route's bounds (uses 1..10000, lifetime 60s..30d) but read in
+// the units an operator thinks in; the defaults are the single-use,
+// one-hour shape a body-less mint would give. The secret returns once and
+// only once, so the dialog holds the result open until dismissed -- closing
+// without copying it is losing it -- and offers the revoke right beside it
+// for the minted-by-mistake case (a standalone token has no payload row to
+// revoke from).
+function MintTokenDialog({ engagementId, onClose }: { engagementId: string; onClose: () => void }) {
+  const [uses, setUses] = useState('1')
+  const [minutes, setMinutes] = useState('60')
+  const [busy, setBusy] = useState(false)
+  const [minted, setMinted] = useState<MintedDeployToken | null>(null)
+  const [revoked, setRevoked] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (busy || minted) return
+    setBusy(true)
+    try {
+      const maxUses = Math.min(10_000, Math.max(1, Math.round(Number(uses) || 1)))
+      const lifetimeSeconds = Math.min(
+        2_592_000,
+        Math.max(60, Math.round((Number(minutes) || 60) * 60)),
+      )
+      setMinted(await mintDeployToken(engagementId, { maxUses, lifetimeSeconds }))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onRevoke = async () => {
+    if (!minted || busy) return
+    if (!window.confirm('Revoke this token now? Its remaining uses stop working immediately.'))
+      return
+    setBusy(true)
+    try {
+      await revokeDeployToken(engagementId, minted.tokenId)
+      setRevoked(true)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="card modal" onSubmit={onSubmit}>
+        <h3>
+          Mint delivery credential <code>deploy token</code>
+        </h3>
+        {minted ? (
+          <>
+            <p className="muted">
+              Token <code>{minted.tokenId.slice(0, 8)}</code> · {minted.maxUses} use
+              {minted.maxUses === 1 ? '' : 's'} · expires{' '}
+              {new Date(minted.expiresAt).toLocaleString()}
+            </p>
+            <div className="task-detail-line">
+              <span className="muted">secret</span> <code>{minted.secret}</code>{' '}
+              <CopyButton text={minted.secret} />
+            </div>
+            <p className={revoked ? 'muted' : 'error'}>
+              {revoked
+                ? 'Revoked -- the secret above is dead; close and mint again if needed.'
+                : 'The secret returns only once. Copy it before closing -- this dialog is the last place it reads out.'}
+            </p>
+            <div className="inline-form">
+              {!revoked && (
+                <button className="ghost" type="button" onClick={() => void onRevoke()} disabled={busy}>
+                  Revoke now
+                </button>
+              )}
+              <span className="spacer" />
+              <button className="primary" type="button" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <label>
+              Max uses
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                value={uses}
+                onChange={(e) => setUses(e.target.value)}
+              />
+              <span className="field-help">How many implants may enroll on this token (1-10000).</span>
+            </label>
+            <label>
+              Lifetime (minutes)
+              <input
+                type="number"
+                min={1}
+                max={43200}
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+              />
+              <span className="field-help">
+                How long the window stays open (60 seconds to 30 days).
+              </span>
+            </label>
+            <p className="muted">
+              The mint is audited; the secret never enters the trail. A frozen or retired
+              engagement mints nothing.
+            </p>
+            {error && <p className="error">{error}</p>}
+            <div className="inline-form">
+              <button className="ghost" type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button className="primary" type="submit" disabled={busy}>
+                {busy ? 'Minting…' : 'Mint'}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
     </div>
   )
 }
