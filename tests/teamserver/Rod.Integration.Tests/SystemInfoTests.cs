@@ -47,7 +47,7 @@ public class SystemInfoTests
         Assert.Contains(rust.Status, new[] { "ready", "partial", "unavailable" });
         Assert.Contains(rust.Findings, f => f.Area == "source tree");
         Assert.Contains(rust.Findings, f => f.Area == "cargo");
-        Assert.Equal(6, rust.Targets.Count);
+        Assert.Equal(8, rust.Targets.Count);
         Assert.All(rust.Targets, t =>
         {
             Assert.False(string.IsNullOrWhiteSpace(t.Triple));
@@ -55,6 +55,7 @@ public class SystemInfoTests
         });
         Assert.Contains(rust.Targets, t => t.Triple == "x86_64-unknown-linux-musl");
         Assert.Contains(rust.Targets, t => t.Triple == "x86_64-pc-windows-gnu");
+        Assert.Contains(rust.Targets, t => t.Triple == "aarch64-linux-android");
     }
 
     [Fact]

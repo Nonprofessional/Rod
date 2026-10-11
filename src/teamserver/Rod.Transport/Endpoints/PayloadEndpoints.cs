@@ -285,10 +285,12 @@ public static class PayloadEndpoints
             return Results.NotFound(new Problem("Payload does not exist in this engagement."));
 
         // The download's extension follows the artifact's shape: the dll
-        // bundle is a zip, a Windows executable carries .exe, and everything
-        // else keeps the extensionless-binary .bin.
+        // bundle is a zip, a Windows executable carries .exe, the android
+        // package carries .apk, and everything else keeps the
+        // extensionless-binary .bin.
         var extension =
             payload.ContentType == "application/zip" ? ".dll.zip"
+            : payload.ContentType == "application/vnd.android.package-archive" ? ".apk"
             : payload.Target?.StartsWith("windows", StringComparison.OrdinalIgnoreCase) == true ? ".exe"
             : ".bin";
         var fileName = $"rod-{payload.Class.ToLowerInvariant()}-{payload.PayloadId.ToString("N")[..8]}{extension}";

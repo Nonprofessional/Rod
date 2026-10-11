@@ -171,4 +171,82 @@ public class RustBuildUnitTests
         Assert.True(artifact.Size < 512 * 1024, $"loader weighed {artifact.Size} bytes");
     }
 
+    // The android target set maps onto the carrier triples -- arm64 for
+    // devices, amd64 for the emulator the lab runs the leg on -- with the
+    // arch aliases the other sets take.
+    [Theory]
+    [InlineData("arm64", "aarch64-linux-android")]
+    [InlineData("aarch64", "aarch64-linux-android")]
+    [InlineData("amd64", "x86_64-linux-android")]
+    [InlineData("x64", "x86_64-linux-android")]
+    public void TheAndroidTargets_MapOntoTheCarrierTriples(string arch, string triple)
+        => Assert.Equal(triple, RustBuildUnit.MapTriple(new TargetProfile("android", arch)));
+
+    // The format axis over android: the carrier's two shapes alone, and
+    // the carrier shapes belong to android alone -- refused as the
+    // request's fault before any toolchain runs.
+    [Fact]
+    public async Task AnAndroidTarget_RefusesTheExecutableSpellings()
+    {
+        var unit = new RustBuildUnit();
+        var @params = Params() with { Target = new TargetProfile("android", "arm64") };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
+
+        Assert.Contains("build format 'so' or 'apk'", ex.Message);
+    }
+
+    [Fact]
+    public async Task AnApkFormat_OffAndroid_IsAContractRefusal()
+    {
+        var unit = new RustBuildUnit();
+        var @params = Params() with { Format = ArtifactFormat.Apk };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
+
+        Assert.Contains("android carrier package", ex.Message);
+    }
+
+    // The android carrier legs: the real NDK cross builds the carrier
+    // cdylib (the 'so' artifact), and the packaging chain wraps it as the
+    // installable APK. Both legs skip without their host pieces -- the
+    // same environment gate the system page reports -- and the emulator
+    // e2e in the integration suite is what runs the APK these produce.
+    [Fact]
+    public async Task AnAndroidCarrierBuild_ProducesTheLibrary_ThenThePackage()
+    {
+        var unit = new RustBuildUnit();
+        var triple = RustBuildUnit.MapTriple(new TargetProfile("android", "amd64"));
+        if (unit.ReportEnvironment().Status is "unavailable" or null || !unit.CrossTargetReady(triple))
+            return; // the NDK or its std is not installed here; the environment report names the fix
+
+        var @params = Params() with
+        {
+            Target = new TargetProfile("android", "amd64"),
+            Format = ArtifactFormat.SharedObject,
+        };
+        var so = await unit.BuildAsync(@params);
+
+        // The carrier library is an ELF shared object for the android arch.
+        Assert.True(so.Size > 0);
+        Assert.Equal(0x7f, so.Content[0]);
+        Assert.Equal((byte)'E', so.Content[1]);
+        Assert.Equal((byte)'L', so.Content[2]);
+        Assert.Equal((byte)'F', so.Content[3]);
+        Assert.Equal("application/octet-stream", so.ContentType);
+
+        if (RustBuildUnit.LocateBuildTools() is null
+            || RustBuildUnit.LocatePlatformJar() is null
+            || RustBuildUnit.LocateJava() is null)
+            return; // the packaging chain is not installed; the library leg above is the artifact proof
+        var apk = await unit.BuildAsync(@params with { Format = ArtifactFormat.Apk });
+
+        // The package wraps the library: a zip (the local-file-header
+        // magic) carrying more bytes than the .so alone, with the store's
+        // download spelling on the content type.
+        Assert.True(apk.Size > so.Size);
+        Assert.Equal((byte)'P', apk.Content[0]);
+        Assert.Equal((byte)'K', apk.Content[1]);
+        Assert.Equal("application/vnd.android.package-archive", apk.ContentType);
+    }
 }

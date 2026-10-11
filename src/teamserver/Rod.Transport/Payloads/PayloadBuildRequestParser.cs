@@ -78,17 +78,35 @@ internal static class PayloadBuildRequestParser
             return (null, "Kind must be 'implant' (the default) or 'loader'.");
         // The format axis carries the deployment shapes (architecture.md
         // Sec 6). The in-tree Rust unit produces the executable spellings
-        // only: they are synonyms over the same native binary, and the
-        // loader crate beside it emits the loader tier. The shared-library
-        // and shellcode shapes are contract slots -- the parser names them
-        // so a request can be refused with the delivery story, not a bare
-        // parse error, until the toolchain that produces them lands.
+        // for the desktop legs (synonyms over the same native binary) and
+        // the android carrier's pair: 'so' (the bare library an
+        // engagement's own carrier app loads) and 'apk' (the packaged
+        // installable). The dll and shellcode shapes stay contract slots
+        // -- the parser names them so a request can be refused with the
+        // delivery story, not a bare parse error.
         if (!ArtifactFormats.TryParse(body.Format, out var format))
-            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', 'aot', 'dll', 'so', or 'shellcode'.");
-        if (format is ArtifactFormat.Dll or ArtifactFormat.SharedObject or ArtifactFormat.Shellcode)
-            return (null,
-                $"The '{ArtifactFormats.Name(format)}' format is a contract slot the in-tree Rust unit does not produce yet "
-                + "-- it names the loader and injection deliveries; build 'exe' or 'aot' for now.");
+            return (null, "Format must be one of 'exe' (the default), 'exe-trimmed', 'aot', 'apk', 'dll', 'so', or 'shellcode'.");
+        // The loader tier gates its own shape further down (a Linux
+        // executable alone); these gates name the implant tier's answer.
+        if (kind != PayloadKind.Loader)
+        {
+            var targetOs = (body.TargetOs ?? "linux").Trim().ToLowerInvariant();
+            var isAndroid = targetOs == "android";
+            if (format == ArtifactFormat.Apk && !isAndroid)
+                return (null,
+                    "The 'apk' format is the android carrier package; build an android target for it.");
+            if (format == ArtifactFormat.SharedObject && !isAndroid)
+                return (null,
+                    "The 'so' format is the android carrier library; build an android target for it "
+                    + "(the loader and injection deliveries on Unix stay contract slots).");
+            if (format is ArtifactFormat.Dll or ArtifactFormat.Shellcode)
+                return (null,
+                    $"The '{ArtifactFormats.Name(format)}' format is a contract slot the in-tree Rust unit does not produce "
+                    + "-- it names the loader and injection deliveries; build 'exe' or 'aot' for now.");
+            if (isAndroid && format is not (ArtifactFormat.SharedObject or ArtifactFormat.Apk))
+                return (null,
+                    "An android target deploys through the carrier library or its package; build format 'so' or 'apk'.");
+        }
         // The endpoint list is what the baked implant dials, so a malformed
         // entry must not reach the build: it would not fail there -- it would
         // produce a payload that phones nowhere, the silent kind of failure
@@ -230,7 +248,7 @@ internal static class PayloadBuildRequestParser
             var arch = (body.TargetArch ?? "amd64").Trim().ToLowerInvariant();
             if (os != "linux")
                 return (null,
-                    "The loader is a Linux memfd shape; a Windows target delivers through the launcher one-liners.");
+                    "The loader is a Linux memfd shape; a Windows or Android target delivers through its own artifact (the launcher one-liners, the carrier package).");
             if (arch is not ("amd64" or "x64" or "x86_64" or "arm64" or "aarch64"))
                 return (null, "The loader compiles for linux amd64 and arm64 only.");
             // The dial: cleartext HTTP on a literal IPv4. A hostname needs a

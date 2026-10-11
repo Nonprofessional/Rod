@@ -59,11 +59,22 @@ public enum ArtifactFormat
 
     /// <summary>
     /// An ELF shared object a host process or loader maps in-process: the
-    /// Unix spelling of <see cref="Dll"/>. Not yet a build output of the
-    /// in-tree Rust unit; the contract carries it for the loader and
-    /// injection deliveries on Unix targets.
+    /// Unix spelling of <see cref="Dll"/>. An android target's native
+    /// deployment shape: the carrier cdylib the package's
+    /// <c>android.app.NativeActivity</c> loads (architecture.md Sec 12.2,
+    /// the mobile leg) -- the format the in-tree Rust unit builds for the
+    /// android triples, consumed directly by an engagement's own carrier
+    /// app or packaged as <see cref="Apk"/>.
     /// </summary>
     SharedObject = 5,
+
+    /// <summary>
+    /// An Android package: the carrier cdylib with its manifest, the
+    /// shape a device installs and the system launches. Built for android
+    /// targets only -- the unit packages the carrier library with the
+    /// checked-in manifest through the SDK's aapt2/apksigner.
+    /// </summary>
+    Apk = 6,
 }
 
 /// <summary>
@@ -102,6 +113,9 @@ public static class ArtifactFormats
             case "so":
                 format = ArtifactFormat.SharedObject;
                 return true;
+            case "apk":
+                format = ArtifactFormat.Apk;
+                return true;
             default:
                 format = ArtifactFormat.SingleFileExe;
                 return false;
@@ -118,6 +132,7 @@ public static class ArtifactFormats
         ArtifactFormat.Dll => "dll",
         ArtifactFormat.Shellcode => "shellcode",
         ArtifactFormat.SharedObject => "so",
+        ArtifactFormat.Apk => "apk",
         _ => format.ToString(),
     };
 }

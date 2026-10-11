@@ -35,9 +35,9 @@ import { WebShellGenerateForm } from '../components/WebShellGenerateForm'
 // rides the launcher one-liners, so no class picker either), this
 // engagement's family listeners (http/https/tcp/dns/doh all serve
 // enrollment; only the shell catcher greys out), and the target set the
-// Rust unit compiles (linux amd64/arm64/arm/x86, windows amd64/x86; macOS
-// needs the Apple SDK and Windows ARM has no triple, so neither is
-// offered).
+// Rust unit compiles (linux amd64/arm64/arm/x86, windows amd64/x86,
+// android arm64/amd64 -- the carrier legs; macOS needs the Apple SDK and
+// Windows ARM has no triple, so neither is offered).
 // Interactive needs no second listener: every front carries its own
 // contacts -- the envelope POST cycle for poll, the WebSocket beacon for
 // stream, the socket family's held session.
@@ -62,12 +62,15 @@ const RECENT_BUILDS_SHOWN = 5
 const ENROLL_TRANSPORTS = new Set(['http', 'https', 'tcp', 'dns', 'doh'])
 
 // The arch set per OS the Rust build unit maps onto a cargo triple (musl
-// for Linux, GNU for Windows). macOS needs the Apple SDK to link and
-// Windows ARM has no GNU target, so neither is offered -- the form lists
-// exactly what compiles, the same rule the class and listener picks follow.
+// for Linux, GNU for Windows, the NDK bionic cross for Android). macOS
+// needs the Apple SDK to link and Windows ARM has no GNU target, so
+// neither is offered; Android pairs arm64 devices with amd64 -- the
+// emulator the lab proves the leg on. The form lists exactly what
+// compiles, the same rule the class and listener picks follow.
 const ARCHS: Record<string, string[]> = {
   linux: ['amd64', 'arm64', 'arm', 'x86'],
   windows: ['amd64', 'x86'],
+  android: ['arm64', 'amd64'],
 }
 
 // Whether a listener's dial is TLS (an https-family transport, or an
@@ -106,6 +109,12 @@ export function PayloadBuildView({
   const [deliversPayloadId, setDeliversPayloadId] = useState('')
   const [targetOs, setTargetOs] = useState('linux')
   const [targetArch, setTargetArch] = useState('amd64')
+  // The android carrier's deployment shape: the installable package by
+  // default, the bare library when an engagement's own carrier loads it.
+  // Every other target leaves format empty -- the exe spellings are
+  // synonyms over the same binary, and the disk-or-memory choice is the
+  // launcher step's.
+  const [apkFormat, setApkFormat] = useState<'apk' | 'so'>('apk')
   const [listenerId, setListenerId] = useState('')
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   // Poll is the default posture: every front family carries it, and a held
@@ -387,10 +396,12 @@ export function PayloadBuildView({
         // default.
         kind: loaderTier ? 'loader' : null,
         deliversPayloadId: loaderTier ? deliversPayloadId : null,
-        // Format rides empty: every spelling is the same native binary over
-        // the Rust unit, and the disk-or-memory choice is the launcher
-        // step's (the Launchers tab offers both families for every payload).
-        format: null,
+        // Format rides empty on the desktop legs: every spelling is the
+        // same native binary over the Rust unit, and the disk-or-memory
+        // choice is the launcher step's (the Launchers tab offers both
+        // families for every payload). Android deploys through the
+        // carrier -- the picked shape rides.
+        format: targetOs === 'android' && !loaderTier ? apkFormat : null,
         // Trust rides empty by design: the picked front's listener owns the
         // certificate posture, and the build inherits it server side.
         trust: null,
@@ -514,13 +525,17 @@ export function PayloadBuildView({
               <option value="windows" disabled={loaderTier}>
                 Windows
               </option>
+              <option value="android" disabled={loaderTier}>
+                Android
+              </option>
             </select>
           </label>
           <label>
             Arch
             {/* The arch list follows the OS: Windows pairs with the GNU x86
                 targets alone (no ARM Windows triple), Linux adds the musl
-                ARM and x86 triples. */}
+                ARM and x86 triples, Android carries arm64 devices and amd64
+                (the emulator). */}
             <select value={targetArch} onChange={(e) => setTargetArch(e.target.value)}>
               {ARCHS[targetOs].map((a) => (
                 <option key={a} value={a}>
@@ -529,6 +544,18 @@ export function PayloadBuildView({
               ))}
             </select>
           </label>
+          {targetOs === 'android' && (
+            <label>
+              Format
+              {/* The android deploys through the carrier: the packaged
+                  installable by default, the bare library when an
+                  engagement's own app loads it. */}
+              <select value={apkFormat} onChange={(e) => setApkFormat(e.target.value as 'apk' | 'so')}>
+                <option value="apk">apk (carrier package)</option>
+                <option value="so">so (carrier library)</option>
+              </select>
+            </label>
+          )}
         </fieldset>
         {loaderTier ? (
           <fieldset>
