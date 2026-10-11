@@ -202,6 +202,13 @@ carrier returns.
   preview of the answer while collapsed); channels open their pane, and
   the unfolded row lists the task's artifacts with downloads and the
   operator-side attach that binds an evidence file to the task's record.
+  A completed row with output also offers **Summarize with LLM**
+  ([llm.md](llm.md)): the captured output goes to the configured
+  OpenAI-compatible endpoint and the answer renders under the output --
+  an explicit button, not a passive label, because the request egresses
+  content and every attempt is audited against the clicking operator; an
+  unconfigured integration answers 503 naming the configuration section,
+  shown verbatim.
   The log's tasking is read-only -- canceling a queued task happens in
   that implant's session console. Issuing happens in the implant menu and
   the console; this tab is for reading.

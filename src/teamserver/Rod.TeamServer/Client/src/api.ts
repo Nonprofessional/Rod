@@ -605,6 +605,30 @@ export async function unbindTaskRelay(engagementId: string, taskId: string): Pro
   await jsonOrThrow<unknown>(response)
 }
 
+// --- LLM attention compression (architecture.md Sec 11) ---------------------
+//
+// One completed task's captured output sent to the configured
+// OpenAI-compatible endpoint for a summary. The request egresses content --
+// every attempt, succeeded or failed, is audited as LlmSummaryGenerated
+// against the operator who asked. An unconfigured integration answers 503
+// naming the configuration section; an upstream failure answers 502.
+
+export interface SummarizedTask {
+  taskId: string
+  model: string
+  summary: string
+}
+
+export async function summarizeTask(
+  engagementId: string,
+  taskId: string,
+): Promise<SummarizedTask> {
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}:summarize`, {
+    method: 'POST',
+  })
+  return jsonOrThrow(response)
+}
+
 // Base64 of the UTF-8 encoding: the route binds byte[] from base64, so the
 // round-trip preserves arbitrary text exactly.
 function toBase64Utf8(text: string): string {

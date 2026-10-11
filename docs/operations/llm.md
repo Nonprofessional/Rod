@@ -65,7 +65,10 @@ treat it like any other engagement secret.
 
 ## Use and audit
 
-`POST /engagements/{engagementId}/tasks/{taskId}:summarize` (read scope):
+`POST /engagements/{engagementId}/tasks/{taskId}:summarize` (read scope) --
+reachable from the console too: the task log's expanded row carries a
+**Summarize with LLM** button for a completed task with output (see
+[operator-ui.md](operator-ui.md)):
 
 - Only a **completed** task summarizes -- the final output is what a summary
   reads; anything earlier answers `422`.

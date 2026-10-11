@@ -3,12 +3,14 @@ import {
   type ArtifactSummary,
   type EngagementTask,
   type Implant,
+  type SummarizedTask,
   attachArtifact,
   fetchArtifactBlob,
   listArtifacts,
   listEngagementTasks,
   listImplantTasks,
   listImplants,
+  summarizeTask,
 } from '../api'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
@@ -25,9 +27,10 @@ import { isChannelVerb } from '../verbForms'
 // work. "Show me every shell command this engagement ran" is the shape this
 // view exists for. Tasking stays read-only: retracting a queued task is an
 // operational action and lives in the session console, next to the implant
-// it targets. The one write is evidence -- the expanded row attaches an
-// operator-side file to the task's record, the job the retired Artifacts
-// tab held. Channel transcripts still open from their rows.
+// it targets. The two acts beyond reading are evidence -- the expanded row
+// attaches an operator-side file to the task's record, the job the retired
+// Artifacts tab held -- and the LLM summary, an explicit egressing request.
+// Channel transcripts still open from their rows.
 
 export function TaskLogView({
   engagementId,
@@ -361,6 +364,7 @@ function LogRow({
                 </div>
               )}
               <pre className="output long">{task.output ?? '—'}</pre>
+              <TaskSummary engagementId={engagementId} task={task} />
               <div className="task-detail-line muted">
                 created {new Date(task.createdAt).toLocaleString()}
                 {task.completedAt && <> · completed {new Date(task.completedAt).toLocaleString()}</>}
@@ -372,6 +376,57 @@ function LogRow({
         </tr>
       )}
     </>
+  )
+}
+
+// The LLM half of an expanded row (docs/operations/llm.md): one completed
+// task's captured output, compressed on demand. The button is deliberately
+// not a passive label -- the request egresses the task's content to the
+// configured endpoint, and every attempt lands in the audit trail against
+// the operator who clicked, so the affordance is an explicit act. A 503
+// names the configuration section verbatim rather than paraphrasing the
+// opt-in into a dead end.
+function TaskSummary({ engagementId, task }: { engagementId: string; task: EngagementTask }) {
+  const [busy, setBusy] = useState(false)
+  const [summary, setSummary] = useState<SummarizedTask | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  if (task.status !== 'Completed' || !task.output) return null
+
+  const onSummarize = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      setSummary(await summarizeTask(engagementId, task.taskId))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="task-detail-summary">
+      {summary ? (
+        <>
+          <div className="task-detail-line">
+            <span className="muted">llm summary</span>{' '}
+            <span className="muted">({summary.model})</span>
+          </div>
+          <pre className="output">{summary.summary}</pre>
+        </>
+      ) : null}
+      <button
+        className="ghost sm"
+        onClick={() => void onSummarize()}
+        disabled={busy}
+        title="Send this task's captured output to the configured LLM endpoint for a summary -- the request egresses content and is audited"
+      >
+        {busy ? 'Summarizing…' : summary ? 'Re-run summary' : 'Summarize with LLM'}
+      </button>
+      {error && <span className="error"> {error}</span>}
+    </div>
   )
 }
 
