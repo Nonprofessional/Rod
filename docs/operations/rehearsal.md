@@ -281,14 +281,47 @@ run-time arguments. What ran, and what it produced:
   hops verified.
 
 The plugin seam's Windows leg (`module.load`'s manual PE map,
-architecture.md Sec 5.4) is rehearsal territory the same way this leg
-was: the mapper compiles and its parsing is unit-pinned on Linux, but
-the load itself -- relocation, import resolution, the loading-thread TLS
-block, the export walk against a live mingw cdylib -- only runs on a
-Windows guest. The leg to run when a guest is next available: build the
-reference hostenum module for `x86_64-pc-windows-gnu`, `module.load`
-it into the Windows implant, task `recon.hostenum`, then `module.unload`
-and confirm the verb fails with the grammar named afterward.
+architecture.md Sec 5.4) ran 2026-10-11 on the same guest against the dev
+teamserver shape the browser leg below uses: a fresh engagement, one http
+listener direct, its public endpoint repointed through an SSH reverse
+tunnel (the lab's WSL host is not routable from the VMware segment, so the
+guest dials a loopback forward back into the build host). The reference
+hostenum module built for `x86_64-pc-windows-gnu` (1,210,712 bytes,
+sha256 `4d4355ed…`) rode the load task's staged content, and the
+round-trip the criterion names completed: `module.load` answered
+"module hostenum loaded: recon.hostenum; advertised at the next
+contact", `module.list` reported `hostenum: recon.hostenum`, the tasked
+verb answered the full finding (host `PENETRATION`, os windows, arch
+x86_64, user, path), `module.unload` retracted it, and a second
+`recon.hostenum` completed with outcome `Failed` and the refusal "this
+build carries no handler for the verb" -- the grammar named afterward,
+the same acceptance the Linux module drill verified. Every task's audit
+arc read `TaskIssued → TaskDispatched → TaskCompleted`, the load task's
+with `ArtifactAttached` carrying the module's sha256 beside them. The
+teardown followed the standing shape: implant retired, report exported,
+engagement frozen and retired.
+
+Two mapper defects, exactly the ones this leg exists to catch: the PE
+mapper's code paths are `cfg(windows)`-gated, so the Linux suite compiles
+them but never executes them, and both sat in code no unit test ran.
+
+- The relocation walker read each block's first dword -- the page RVA --
+  as the block's size, so every real image (whose page RVAs dwarf the
+  directory) read as `malformed relocation table`, and the entry offsets
+  resolved against the block itself instead of the covered page. Fixed
+  to the documented block layout (page RVA at +0, size at +4, entries
+  page-relative), with a unit test pinning the walk under
+  `cfg(windows)`.
+- The TLS setup reduced the directory's address fields against the
+  preferred image base and rebased them again -- a double translation
+  that walked off the image whenever the allocation did not land on the
+  preferred base (always, under ASLR), and the crash landed in the CRT's
+  copy. Fixed to dereference the fields as the live pointers relocation
+  left them. The isolation harness that pinned the fix -- a ctypes
+  reproduction of the mapper's stages run on the guest, against the same
+  dll bytes -- walks allocate, copy, relocate, imports, TLS, DllMain,
+  and the export family green, and the module round-trip above is the
+  fixed artifact's evidence.
 
 Two adversarial observations from that run, now operator guidance:
 
@@ -305,6 +338,14 @@ Two adversarial observations from that run, now operator guidance:
   and `schtasks /s` remote execution require an elevated implant;
   runkey, the recon set, and the file/shell surface work per-user; the
   service mechanism fails cleanly with access denied when unelevated.
+- An SSH-spawned process on the guest dies with the session: Windows
+  OpenSSH kills its whole job object when a session closes, so an
+  implant launched through `Start-Process` vanished silently seconds
+  after the deploying channel exited -- enrolled, then gone, with no
+  refusal, no task, and no audit fact. Hold the launching channel open
+  for the leg's duration (a foreground `cmd /c` on one long-lived SSH
+  session) or schedule the artifact outside the session; the module leg
+  above used the held-channel shape.
 
 Cleanup verified on the guest: implant processes killed, artifacts and
 the pushed file removed.
