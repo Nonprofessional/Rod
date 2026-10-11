@@ -25,38 +25,11 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-(Nothing queued. The browser-hook implant class shipped 2026-10-10; the
-rehearsal walk covers it as Sec 8, per
-[operations/rehearsal.md](operations/rehearsal.md).)
+(Nothing queued. The delivery campaign shipped 2026-10-11 as Sec 11.5,
+per [operations/campaigns.md](operations/campaigns.md) -- the Sec 2
+delivery boundary it amended is the design's own record.)
 
 ## On hold
-
-- **Delivery campaigns: tracked spear-phish into tasking** (serves
-  architecture.md Sec 2, the delivery step of the lifecycle, and Sec 11;
-  design lands first). Parked on the boundary call: Sec 2 item 4 holds
-  delivery out of Rod's scope by design, so this item is an amendment to
-  that line rather than a quiet drift -- its design lands together with
-  the Sec 2 change, and reopening it is that decision made. What an
-  engagement cannot do without it:
-  open the door -- the first foothold arrives by delivery, and today
-  that happens outside Rod entirely (a manual mailbox, a separate
-  phishing platform), so the causal chain from lure to implant lives
-  across two tools and the attribution story breaks at the seam. Shape:
-  an engagement-scoped campaign entity -- a sending profile (SMTP
-  relay), a target list, a message template with per-recipient merge --
-  where each recipient's link or attachment binds to a per-recipient
-  deploy token the build pipeline already mints, so an implant -- or a
-  browser hook (a later item) -- that follows the lure enrolls already
-  attributed to the campaign and the recipient. Tracking (sent,
-  opened, clicked, executed) rides the public ingress that serves
-  staging, redirector-fronted like every other public edge; the
-  campaign's egress (which relay, whose IP) is an OPSEC decision the
-  runbook documents, never a silent default. Credentials a landing
-  page captures follow the existing standard-store collection posture;
-  evasion-grade social engineering stays out-of-tree.
-  _AC:_ a two-recipient campaign mints per-recipient lure links, and
-  the recipient who executes the lure enrolls with campaign and
-  recipient attribution visible in the audit trail.
 
 - **Android shell for the Rust implant** (serves architecture.md Sec 12.2,
   the reach story). Parked on demand, not a blocker: the Linux build host
