@@ -1885,9 +1885,10 @@ a session it no longer holds.
 Task issuance gates the verb through a capability resolver
 (`ITaskCapabilityResolver`). The per-class reduced verb set (Sec 5.2) is the
 primary authority; the composition root swaps in a registry-backed resolver
-(`CapabilityRegistryTaskResolver` in `Rod.Tradecraft`) so a verb the class set
-does not admit is still dispatchable when a capability module is registered for
-it. The registry only widens the gate -- it never narrows it -- and it is the
+(`CapabilityRegistryTaskResolver` in `Rod.Tradecraft`) so a verb no class set
+gates is still dispatchable when a capability module is registered for it. The
+registry only widens the gate -- it never narrows it, and it never re-gates a
+verb a class set carries to another class -- and it is the
 path that opens dispatch for the contract-and-dispatch-only categories (Sec
 10.2): the evasion and exploit verbs are not class-gated, so they are admitted
 when the registry holds a module for them (the built-in placeholder, or an

@@ -11,12 +11,15 @@ namespace Rod.Tradecraft.Registry;
 /// <remarks>
 /// <para>
 /// The class table stays the primary authority: a verb in the implant's class
-/// set is always dispatchable. Only a verb the class set does not admit falls
-/// through to the registry -- the path that opens dispatch for the
-/// contract-and-dispatch-only categories (architecture.md Sec 10.2). Evasion and
-/// exploit are not class-gated (Sec 5.2/10.1); they are dispatchable here when a
-/// module is registered for the verb, which the built-in load guarantees for
-/// every framework verb and an out-of-tree override keeps.
+/// set is always dispatchable. A verb the class set does not admit falls
+/// through to the registry only when no other class gates it -- the path that
+/// opens dispatch for the contract-and-dispatch-only categories
+/// (architecture.md Sec 10.2). Evasion and exploit are not class-gated
+/// (Sec 5.2/10.1); they are dispatchable here when a module is registered for
+/// the verb, which the built-in load guarantees for every framework verb and
+/// an out-of-tree override keeps. A verb another class's set carries stays
+/// gated to that class: the registry widens the gate for ungated verbs, it
+/// never re-gates a class-gated one.
 /// </para>
 /// <para>
 /// A registered module -- the built-in placeholder or an operator-supplied
@@ -42,11 +45,12 @@ public sealed class CapabilityRegistryTaskResolver : ITaskCapabilityResolver
 
     /// <summary>
     /// True when <paramref name="verb"/> is in <paramref name="class"/>'s reduced
-    /// verb set, or a capability module is registered for it. The class table is
-    /// checked first (short-circuit, no allocation); only verbs it does not admit
-    /// consult the registry.
+    /// verb set, or -- for a verb no class set gates -- a capability module is
+    /// registered for it. The class table is checked first (short-circuit, no
+    /// allocation); only ungated verbs consult the registry.
     /// </summary>
     public bool IsDispatchable(ImplantClass @class, string verb)
         => ImplantClassCapabilities.Allows(@class, verb)
-            || _registry.FindAsync(verb).GetAwaiter().GetResult() is not null;
+            || (!ImplantClassCapabilities.GatedToAnyClass(verb)
+                && _registry.FindAsync(verb).GetAwaiter().GetResult() is not null);
 }

@@ -108,6 +108,31 @@ public static class ImplantClassCapabilities
     };
 
     /// <summary>
+    /// Whether any class's reduced set carries <paramref name="verb"/>: the verb
+    /// is class-gated (architecture.md Sec 5.2) and only the classes whose set
+    /// lists it may run it. Verbs no class gates -- the ungated contract set,
+    /// and brand-new verbs an out-of-tree module registers -- answer false,
+    /// which is what lets the registry-backed resolver widen dispatch for
+    /// exactly those (Sec 10.3) without re-gating a verb another class owns.
+    /// Verb matching is case-insensitive, matching <see cref="Allows"/>.
+    /// </summary>
+    public static bool GatedToAnyClass(string? verb)
+    {
+        if (string.IsNullOrWhiteSpace(verb))
+            return false;
+
+        foreach (var set in ByClass.Values)
+        {
+            for (var i = 0; i < set.Count; i++)
+            {
+                if (string.Equals(set[i], verb, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Whether <paramref name="class"/> may run <paramref name="verb"/>. Verb
     /// matching is case-insensitive: capability verbs are namespaced strings
     /// (<c>namespace.action</c>) and the registry already resolves them that way.

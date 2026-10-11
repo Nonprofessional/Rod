@@ -71,6 +71,41 @@ public class CapabilityRegistryTaskResolverTests
     }
 
     [Fact]
+    public async Task IsDispatchable_RefusesAClassGatedVerbOutsideItsClass()
+    {
+        // A verb another class's set carries stays gated to that class even
+        // with a module registered: the registry widens the gate for ungated
+        // verbs only, never re-gates a class-gated one (architecture.md Sec
+        // 5.2/10.3). Without this, every registered framework verb would be
+        // dispatchable on every class and the reduced sets would gate nothing.
+        var registry = new InMemoryCapabilityRegistry();
+        await registry.RegisterAsync(
+            new PlaceholderCapabilityModule(
+                CapabilityDescriptor.Of("recon.ps", CapabilityCategory.Recon, "1.0")));
+        await registry.RegisterAsync(
+            new PlaceholderCapabilityModule(
+                CapabilityDescriptor.Of("shell.exec", CapabilityCategory.Core, "1.0")));
+        var resolver = new CapabilityRegistryTaskResolver(registry);
+
+        Assert.False(resolver.IsDispatchable(ImplantClass.WebShell, "recon.ps"));
+        Assert.False(resolver.IsDispatchable(ImplantClass.Pivot, "shell.exec"));
+        Assert.False(resolver.IsDispatchable(ImplantClass.Ephemeral, "persist.install"));
+    }
+
+    [Fact]
+    public async Task IsDispatchable_AdmitsANewUngatedVerbFromAnOutOfTreeModule()
+    {
+        // A brand-new verb no class set gates is the module seam's extension
+        // path: registering a module for it makes it dispatchable without a
+        // schema change (architecture.md Sec 10.2).
+        var registry = new InMemoryCapabilityRegistry();
+        await registry.RegisterAsync(new FixedModule("custom.thing"));
+        var resolver = new CapabilityRegistryTaskResolver(registry);
+
+        Assert.True(resolver.IsDispatchable(ImplantClass.WebShell, "custom.thing"));
+    }
+
+    [Fact]
     public async Task IsDispatchable_ClassTableAdmitsEvenWhenNoModuleRegistered()
     {
         // The class table is primary: a verb it admits is dispatchable even with
