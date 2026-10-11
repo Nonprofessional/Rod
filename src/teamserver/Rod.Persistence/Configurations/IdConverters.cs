@@ -48,6 +48,12 @@ internal static class IdConverters
     public static ValueConverter<WebhookSubscriptionId, Guid> WebhookSubscriptionId { get; } =
         new(id => id.Value, value => new WebhookSubscriptionId(value));
 
+    public static ValueConverter<Rod.CoreState.CampaignId, Guid> CampaignId { get; } =
+        new(id => id.Value, value => new Rod.CoreState.CampaignId(value));
+
+    public static ValueConverter<Rod.CoreState.CampaignRecipientId, Guid> CampaignRecipientId { get; } =
+        new(id => id.Value, value => new Rod.CoreState.CampaignRecipientId(value));
+
     public static ValueConverter<Rod.CoreState.Operators.OperatorApiTokenId, Guid> OperatorApiTokenId { get; } =
         new(id => id.Value, value => new Rod.CoreState.Operators.OperatorApiTokenId(value));
 }

@@ -271,3 +271,45 @@ public readonly record struct TaskSnippetId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies a delivery campaign -- one engagement-scoped tracked lure
+/// run (architecture.md Sec 11.5): a sending profile, a recipient list,
+/// and a template, driven to per-recipient builds and tracked into
+/// tasking. Disposable with the engagement.
+/// </summary>
+public readonly record struct CampaignId(Guid Value)
+{
+    public static CampaignId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a campaign id from its string form. Accepts both the compact
+    /// "N" format and the hyphenated Guid form; returns false on anything
+    /// else.
+    /// </summary>
+    public static bool TryParse(string? text, out CampaignId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new CampaignId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// Identifies one recipient row of a delivery campaign (architecture.md
+/// Sec 11.5): the target whose lure link, baked credential, and evidence
+/// timestamps the row carries. Disposable with the campaign.
+/// </summary>
+public readonly record struct CampaignRecipientId(Guid Value)
+{
+    public static CampaignRecipientId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+}

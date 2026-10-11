@@ -116,6 +116,12 @@ public static class RodPersistenceHost
         // command sequence survives a restart for every operator on the
         // engagement.
         services.Replace(ServiceDescriptor.Singleton<CoreState.Snippets.ITaskSnippetStore, Stores.PostgresTaskSnippetStore>());
+        // Engagement-scoped delivery campaigns (architecture.md Sec 11.5):
+        // the durable twin so a launched campaign's recipient arcs and
+        // evidence stamps survive a restart -- the attribution binding on
+        // the recipient rows included, which is what re-attributes an
+        // enrollment that lands after the restart.
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Campaigns.ICampaignStore, Stores.PostgresCampaignStore>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

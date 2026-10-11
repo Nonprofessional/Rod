@@ -741,8 +741,79 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.NotNull(report);
         var crew = report!.Operators.OrderBy(o => o.Handle).ToArray();
         Assert.Equal(2, crew.Length);
-        Assert.Equal(("bob", "reader"), (crew[0].Handle, crew[0].Role));
+        Assert.Equal(("bob", "reader"), (crew[0].Handle, crew[1].Role));
         Assert.Equal((AuthenticatedHost.Handle, "owner"), (crew[1].Handle, crew[1].Role));
+    }
+
+    [Fact]
+    public async Task CampaignArcsAndAttribution_SurviveRestart_WhenPostgresWired()
+    {
+        if (!_postgres.IsAvailable)
+        {
+            // No Docker in this environment; skip, not fail.
+            return;
+        }
+
+        // --- Host A: a campaign with two recipients, its arc driven through
+        //     the targeted store operations -- launch, one recipient sent with
+        //     its attribution binding, one still mid-arc, evidence stamped. ---
+        CampaignId campaignId;
+        DeployTokenId boundToken;
+
+        await using (var envA = await TestEnv.StartAsync(_postgres))
+        {
+            await EnsureSchemaAsync(envA.Host);
+
+            var campaignsA = envA.Host.Services.GetRequiredService<CoreState.Campaigns.ICampaignStore>();
+            var engagementId = EngagementId.New();
+            var sent = new CoreState.Campaigns.CampaignRecipient(
+                CampaignRecipientId.New(), "sent@example.com", "Sent", Guid.NewGuid());
+            var building = new CoreState.Campaigns.CampaignRecipient(
+                CampaignRecipientId.New(), "building@example.com", null, Guid.NewGuid());
+            var campaign = new CoreState.Campaigns.Campaign(
+                CampaignId.New(), engagementId, "durable", envA.OperatorId, DateTimeOffset.UtcNow,
+                "relay.example", 587, CoreState.Campaigns.CampaignRelayTls.StartTls, null, null,
+                "sender@example.com", "subject", "{{link}}", false, "{}", Guid.NewGuid(),
+                [sent, building]);
+            await campaignsA.SaveAsync(campaign);
+            campaignId = campaign.Id;
+
+            Assert.True(await campaignsA.LaunchAsync(campaign.Id, engagementId, DateTimeOffset.UtcNow));
+            boundToken = DeployTokenId.New();
+            Assert.True(await campaignsA.NoteBuildingAsync(campaign.Id, sent.Id, boundToken, Guid.NewGuid()));
+            Assert.True(await campaignsA.NoteSentAsync(campaign.Id, sent.Id, Guid.NewGuid(), DateTimeOffset.UtcNow));
+            Assert.True(await campaignsA.NoteOpenedAsync(campaign.Id, sent.Id, DateTimeOffset.UtcNow));
+            Assert.True(await campaignsA.NoteExecutedAsync(campaign.Id, sent.Id, Guid.NewGuid(), DateTimeOffset.UtcNow));
+        }
+
+        // --- Host B: fresh process over the same database. The recipient
+        //     rows, their arc states, and the attribution binding read back;
+        //     the mid-arc recipient can still complete its arc through the
+        //     targeted operations. ---
+        await using var envB = await TestEnv.StartAsync(_postgres);
+        var campaignsB = envB.Host.Services.GetRequiredService<CoreState.Campaigns.ICampaignStore>();
+
+        var attribution = await campaignsB.FindByEnrollTokenAsync(boundToken);
+        Assert.NotNull(attribution);
+        Assert.Equal(campaignId, attribution!.CampaignId);
+        Assert.Equal("sent@example.com", attribution.RecipientEmail);
+
+        var readBack = await campaignsB.FindAsync(campaignId);
+        Assert.NotNull(readBack);
+        Assert.Equal(CoreState.Campaigns.CampaignState.Launched, readBack!.State);
+        var sentRow = readBack.Recipients.Single(r => r.Email == "sent@example.com");
+        Assert.Equal(CoreState.Campaigns.CampaignRecipientStatus.Sent, sentRow.Status);
+        Assert.NotNull(sentRow.ExecutedAt);
+        Assert.NotNull(sentRow.EnrolledImplantId);
+
+        var buildingRow = readBack.Recipients.Single(r => r.Email == "building@example.com");
+        Assert.Equal(CoreState.Campaigns.CampaignRecipientStatus.Pending, buildingRow.Status);
+        Assert.True(await campaignsB.NoteBuildingAsync(campaignId, buildingRow.Id, DeployTokenId.New(), Guid.NewGuid()));
+        Assert.True(await campaignsB.NoteSentAsync(campaignId, buildingRow.Id, Guid.NewGuid(), DateTimeOffset.UtcNow));
+        Assert.True(await campaignsB.TryCompleteAsync(campaignId, DateTimeOffset.UtcNow));
+        Assert.Equal(
+            CoreState.Campaigns.CampaignState.Completed,
+            (await campaignsB.FindAsync(campaignId))!.State);
     }
 
     private sealed record AddMemberBody(string Handle, string Role);

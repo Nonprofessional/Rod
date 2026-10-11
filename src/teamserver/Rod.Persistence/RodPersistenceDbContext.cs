@@ -45,6 +45,8 @@ public sealed class RodPersistenceDbContext : DbContext
     internal DbSet<Configurations.StoredAutomationRule> AutomationRules => Set<Configurations.StoredAutomationRule>();
     internal DbSet<Configurations.StoredWebhookSubscription> WebhookSubscriptions => Set<Configurations.StoredWebhookSubscription>();
     internal DbSet<Configurations.StoredTaskSnippet> TaskSnippets => Set<Configurations.StoredTaskSnippet>();
+    internal DbSet<Configurations.StoredCampaign> Campaigns => Set<Configurations.StoredCampaign>();
+    internal DbSet<Configurations.StoredCampaignRecipient> CampaignRecipients => Set<Configurations.StoredCampaignRecipient>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();
 

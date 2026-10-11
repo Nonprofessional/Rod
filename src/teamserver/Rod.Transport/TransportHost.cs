@@ -200,6 +200,11 @@ public static class TransportHost
         // in the console through the ordinary tasking path, so the store
         // carries no bookkeeping of its own.
         services.AddSingleton<Rod.CoreState.Snippets.ITaskSnippetStore, Rod.CoreState.Snippets.InMemoryTaskSnippetStore>();
+        // The engagement-scoped delivery campaigns (architecture.md
+        // Sec 11.5): the tracked-lure rows -- sending profile, recipients
+        // with their baked-credential bindings, evidence stamps -- in-memory
+        // by default, Postgres-backed when the connection string is set.
+        services.AddSingleton<Rod.CoreState.Campaigns.ICampaignStore, Rod.CoreState.Campaigns.InMemoryCampaignStore>();
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.
