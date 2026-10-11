@@ -186,7 +186,15 @@ carrier returns.
   module binary as the task's staged content (the server binds its sha256
   into the signed tasking), **List modules** issues directly, and
   **Unload module** asks for the name. Once a module is loaded, its verbs
-  answer here exactly like built-ins.
+  answer here exactly like built-ins. A live tunnel pane carries its relay
+  control in the header: **Start relay** (tunnel.forward) or
+  **Start SOCKS** (tunnel.socks) binds a teamserver-side listener onto the
+  channel -- an ephemeral loopback port the answer names, so
+  proxychains-and-alike ride the tunnel without typing bytes into the
+  transcript -- and **Unbind** tears it down (open to any task-scoped
+  operator, the safety valve). Closing the pane releases the typing claim
+  but leaves a bound relay listening; the pane that reopens re-detects it
+  by the refusal a second bind gets.
 - **Task log** (beside Implants, in the Operate group) -- the engagement's
   task history as a filterable, live log: by implant (switches to that
   implant's own feed), verb, status, issuing operator, or free text. Each

@@ -507,12 +507,12 @@ export async function cancelTask(
 
 // --- Streaming task input (architecture.md Sec 10.3) ------------------------
 //
-// A live channel task (shell.interact, tunnel.forward) takes operator input
-// through its own route: one post is one line of typing or one chunk of
-// tunnel traffic, and eof closes the channel's stdin (the shell exits and the
-// task completes with the transcript as its record; the tunnel half-closes
-// its send side). The transcript itself is the task's own output -- read it
-// back with getTask while the channel runs.
+// A live channel task (shell.interact, tunnel.forward, tunnel.socks) takes
+// operator input through its own route: one post is one line of typing or one
+// chunk of tunnel traffic, and eof closes the channel's stdin (the shell exits
+// and the task completes with the transcript as its record; the tunnel
+// half-closes its send side). The transcript itself is the task's own output
+// -- read it back with getTask while the channel runs.
 
 export interface TaskDetail {
   taskId: string
@@ -539,6 +539,44 @@ export async function sendTaskInput(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ data, eof }),
+  })
+  await jsonOrThrow<unknown>(response)
+}
+
+// The tunnel pair's relay bind (architecture.md Sec 10.1 tunnel, Sec 10.3):
+// a teamserver-side listener bridged onto the live channel, so unmodified
+// tooling rides the tunnel without per-byte input posts. Binding takes the
+// channel's exclusive claim; the server picks the shape from the task's verb
+// (a one-connection bridge for tunnel.forward, a SOCKS5 listener for
+// tunnel.socks). No bind query exists server-side -- the endpoint answers
+// once at bind time, so the caller keeps the returned endpoint itself.
+export interface RelayBind {
+  taskId: string
+  host: string
+  port: number
+}
+
+export async function bindTaskRelay(
+  engagementId: string,
+  taskId: string,
+  bindAddress?: string,
+  port?: number,
+): Promise<RelayBind> {
+  const body =
+    bindAddress || port
+      ? JSON.stringify({ bindAddress: bindAddress || undefined, port: port || 0 })
+      : undefined
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}/relay`, {
+    method: 'POST',
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body,
+  })
+  return jsonOrThrow(response)
+}
+
+export async function unbindTaskRelay(engagementId: string, taskId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/tasks/${taskId}/relay`, {
+    method: 'DELETE',
   })
   await jsonOrThrow<unknown>(response)
 }

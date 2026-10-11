@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { getTask, sendTaskInput } from '../api'
+import {
+  ApiError,
+  bindTaskRelay,
+  getTask,
+  sendTaskInput,
+  unbindTaskRelay,
+  type RelayBind,
+} from '../api'
 import { useClaim } from '../useClaim'
 import { StatusBadge } from './StatusBadge'
 
@@ -14,6 +21,17 @@ import { StatusBadge } from './StatusBadge'
 // operator holds the channel's claim the input line locks and names the
 // holder; this console's typing takes the claim on first post (server-side),
 // and dismissing the pane releases it.
+//
+// The tunnel pair carries a relay control: binding puts a teamserver-side
+// listener onto the live channel (a one-connection bridge for
+// tunnel.forward, a SOCKS5 listener for tunnel.socks), so unmodified tooling
+// rides the tunnel instead of the typing line. Binding takes the channel's
+// claim the input posts do; unbinding is the safety valve any task-scoped
+// operator may pull. No bind query exists -- the endpoint answers once at
+// bind time -- so the pane keeps the endpoint locally and re-detects a
+// foreign bind by the 409 a second bind attempt returns. Closing the pane
+// releases the claim but leaves the relay listening: the tool keeps riding
+// the tunnel, and Unbind (here or from any other console) is the teardown.
 //
 // Shared by the task log (a channel row's Interact action), the session
 // console (inline channel panes), and the shell dialog (the live session at
@@ -37,10 +55,25 @@ export function InteractPane({
   const [line, setLine] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [relay, setRelay] = useState<RelayBind | null>(null)
+  const [relayHeld, setRelayHeld] = useState(false)
   const transcriptRef = useRef<HTMLPreElement>(null)
   const doneRef = useRef(false)
   doneRef.current = status !== 'Dispatched'
   const { locked, holderHandle } = useClaim(engagementId, 'channel', taskId)
+
+  const isTunnel = verb === 'tunnel.forward' || verb === 'tunnel.socks'
+  const isSocks = verb === 'tunnel.socks'
+  const done = status !== 'Dispatched'
+
+  // The hub tears the relay down with its channel, so a completed channel
+  // drops the local endpoint (and any foreign-bind guess with it).
+  useEffect(() => {
+    if (done) {
+      setRelay(null)
+      setRelayHeld(false)
+    }
+  }, [done])
 
   useEffect(() => {
     let stopped = false
@@ -70,8 +103,6 @@ export function InteractPane({
     const pre = transcriptRef.current
     if (pre) pre.scrollTop = pre.scrollHeight
   }, [transcript])
-
-  const done = status !== 'Dispatched'
 
   const onSend = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -117,6 +148,39 @@ export function InteractPane({
     }
   }
 
+  const onRelayBind = async () => {
+    if (busy || done) return
+    setBusy(true)
+    try {
+      const bound = await bindTaskRelay(engagementId, taskId)
+      setRelay(bound)
+      setRelayHeld(false)
+      setError(null)
+    } catch (e) {
+      // A second bind attempt is how a pane that never saw the bind (it was
+      // bound from another console, or this pane reopened) learns one exists.
+      if (e instanceof ApiError && e.status === 409) setRelayHeld(true)
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const onRelayUnbind = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await unbindTaskRelay(engagementId, taskId)
+      setRelay(null)
+      setRelayHeld(false)
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="terminal">
       <div className="terminal-header">
@@ -128,6 +192,47 @@ export function InteractPane({
           <span className="muted" title="Another operator holds this channel's input; it releases when they dismiss their pane or disconnect">
             held by {holderHandle}
           </span>
+        )}
+        {isTunnel && !done && relay && (
+          <>
+            <span
+              className="muted"
+              title={
+                isSocks
+                  ? 'A SOCKS5 listener is bridged onto this tunnel -- point proxychains & co. at it'
+                  : 'A loopback listener is bridged onto this tunnel -- point your tool at it'
+              }
+            >
+              {isSocks ? 'socks' : 'relay'} {relay.host}:{relay.port}
+            </span>
+            <button className="ghost sm" onClick={() => void onRelayUnbind()} disabled={busy}>
+              Unbind
+            </button>
+          </>
+        )}
+        {isTunnel && !done && !relay && (
+          <button
+            className="ghost sm"
+            onClick={() => void onRelayBind()}
+            disabled={busy || locked}
+            title={
+              isSocks
+                ? 'Bind a SOCKS5 listener onto this live tunnel (ephemeral loopback port) -- unmodified tooling rides the tunnel through it'
+                : 'Bind a loopback listener onto this live tunnel (ephemeral port) -- one connection bridges straight through'
+            }
+          >
+            {isSocks ? 'Start SOCKS' : 'Start relay'}
+          </button>
+        )}
+        {isTunnel && !done && !relay && relayHeld && (
+          <button
+            className="ghost sm"
+            onClick={() => void onRelayUnbind()}
+            disabled={busy}
+            title="A relay is already bound for this task (bound elsewhere); unbind is the safety valve any task-scoped operator may pull"
+          >
+            Unbind relay
+          </button>
         )}
         {!embedded && (
           <span className="spacer">
