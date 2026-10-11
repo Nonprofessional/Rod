@@ -445,9 +445,14 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
         string targetDir,
         CancellationToken cancellationToken)
     {
-        if (!triple.Contains("-linux-", StringComparison.Ordinal))
+        // The loader crate's syscall stubs (its sys module) exist for x86_64
+        // and aarch64 only, so any other linux triple would fail deep inside
+        // cargo with a confusing "mod sys not found" -- refuse it here, the
+        // same way MapTriple refuses an arm windows target.
+        if (triple is not ("x86_64-unknown-linux-musl" or "aarch64-unknown-linux-musl"))
             throw new InvalidOperationException(
-                "The loader is a Linux memfd shape; build it against a linux target.");
+                "The loader is a Linux memfd shape with syscall stubs for amd64 and arm64 only; "
+                + "build it against a linux/amd64 or linux/arm64 target.");
         if (@params.TokenSecret is not { } token)
             throw new InvalidOperationException(
                 "A loader build bakes a deploy token; the transport layer must mint one.");

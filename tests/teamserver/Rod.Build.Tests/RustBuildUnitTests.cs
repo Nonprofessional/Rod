@@ -136,6 +136,30 @@ public class RustBuildUnitTests
         Assert.Contains("delivery seal key", ex.Message);
     }
 
+    // The loader crate carries syscall stubs for x86_64 and aarch64 only;
+    // on the narrower linux triples that used to fail deep inside cargo
+    // with an unresolved `mod sys`, the unit now names the pair it builds.
+    [Theory]
+    [InlineData("arm")]
+    [InlineData("x86")]
+    public async Task ALoaderOnAnArchWithoutStubs_IsAContractRefusal(string arch)
+    {
+        var unit = new RustBuildUnit();
+        var @params = Params() with
+        {
+            Kind = PayloadKind.Loader,
+            DeliversPayloadId = Guid.NewGuid(),
+            TokenSecret = "loader-probe",
+            EnvelopeKeyId = Guid.NewGuid(),
+            EnvelopeKey = new byte[32],
+            Target = new TargetProfile("linux", arch),
+            Transport = new TransportProfile("http://10.0.0.9:8080", "/beacon"),
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => unit.BuildAsync(@params));
+        Assert.Contains("syscall stubs for amd64 and arm64 only", ex.Message);
+    }
+
     // The real compile: builds the loader crate for the host's musl target
     // and checks the two facts the delivery depends on -- the baked fetch
     // credential rides the binary verbatim (the dial presents it), and the
