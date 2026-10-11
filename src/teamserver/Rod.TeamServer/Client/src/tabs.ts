@@ -21,6 +21,7 @@ export type TabId =
   | 'intel'
   | 'listeners'
   | 'launchers'
+  | 'campaigns'
   | 'build'
   | 'payloads'
 
@@ -70,6 +71,10 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       // The one-liner delivery surface: paste-ready payload fetches beside
       // the listeners they ride and the builds they deliver.
       { id: 'launchers', label: 'Launchers', icon: 'copy' },
+      // The tracked-lure delivery surface (architecture.md Sec 11.5): the
+      // email-shaped half of delivery, beside the builds each recipient
+      // gets and the listeners that front every lure.
+      { id: 'campaigns', label: 'Campaigns', icon: 'send' },
       { id: 'build', label: 'Build', icon: 'package' },
       { id: 'payloads', label: 'Payloads', icon: 'archive' },
     ],

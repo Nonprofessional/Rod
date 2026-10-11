@@ -637,6 +637,7 @@ export interface EngagementStreamHandlers {
   onShellSessionOpened?: (payload: string) => void
   onShellSessionEnded?: (payload: string) => void
   onPayloadFetched?: (payload: string) => void
+  onCampaignActivity?: (payload: string) => void
   onError?: (event: Event) => void
 }
 
@@ -726,6 +727,10 @@ export function subscribeToEngagement(
   source.addEventListener('PayloadFetched', (e) => {
     const payload = parse((e as MessageEvent).data)
     handlers.onPayloadFetched?.(payload?.payload ?? '')
+  })
+  source.addEventListener('CampaignActivity', (e) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onCampaignActivity?.(payload?.payload ?? '')
   })
   source.onerror = (e) => handlers.onError?.(e)
 
@@ -2426,4 +2431,131 @@ export async function revokeHook(engagementId: string, hookId: string): Promise<
     method: 'DELETE',
   })
   await jsonOrThrow<unknown>(response)
+}
+
+// --- Delivery campaigns (architecture.md Sec 11.5) ----------------------------
+
+// One recipient row of a campaign: the delivery status, the evidence
+// timestamps, and the lure link whose unguessable id is the credential. The
+// executed binding names the implant that redeemed the baked credential --
+// the only proof the artifact ran.
+export interface CampaignRecipient {
+  recipientId: string
+  email: string
+  name: string | null
+  status: 'pending' | 'building' | 'sent' | 'failed'
+  failure: string | null
+  lureId: string
+  lureUrl: string | null
+  tokenId: string | null
+  payloadId: string | null
+  sentAt: string | null
+  openedAt: string | null
+  clickedAt: string | null
+  executedAt: string | null
+  enrolledImplantId: string | null
+}
+
+// A campaign row. The relay password never appears on read-back -- the
+// server holds it to present it again, and neither the trail nor this API
+// carries it.
+export interface Campaign {
+  campaignId: string
+  name: string
+  state: 'draft' | 'launched' | 'completed' | 'revoked'
+  listenerId: string
+  listenerName: string | null
+  from: string
+  relayHost: string
+  relayPort: number
+  relayTls: 'starttls' | 'implicit' | 'none'
+  relayUsername: string | null
+  bodyIsHtml: boolean
+  total: number
+  sent: number
+  failed: number
+  opened: number
+  clicked: number
+  executed: number
+  createdAt: string
+  launchedAt: string | null
+  completedAt: string | null
+  revokedAt: string | null
+  recipients: CampaignRecipient[] | null
+}
+
+// The create body. The build profile rides as the same shape the Build
+// panel posts; the server parses it with the build pipeline's own parser
+// and refuses the token knobs (the campaign mints per recipient itself).
+export interface CreateCampaignInput {
+  name: string
+  listenerId: string
+  relayHost: string
+  relayPort: number
+  relayTls: 'starttls' | 'implicit' | 'none'
+  relayUsername?: string
+  relayPassword?: string
+  from: string
+  subject: string
+  body: string
+  bodyIsHtml: boolean
+  recipients: { email: string; name?: string }[]
+  build: Record<string, unknown>
+}
+
+export async function listCampaigns(engagementId: string): Promise<Campaign[]> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/campaigns`))
+}
+
+export async function getCampaign(engagementId: string, campaignId: string): Promise<Campaign> {
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/campaigns/${campaignId}`))
+}
+
+export async function createCampaign(
+  engagementId: string,
+  input: CreateCampaignInput,
+): Promise<Campaign> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/campaigns`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: input.name,
+        listenerId: input.listenerId,
+        relay: {
+          host: input.relayHost,
+          port: input.relayPort,
+          tls: input.relayTls,
+          username: input.relayUsername ?? null,
+          password: input.relayPassword ?? null,
+        },
+        from: input.from,
+        template: {
+          subject: input.subject,
+          body: input.body,
+          bodyIsHtml: input.bodyIsHtml,
+        },
+        recipients: input.recipients.map((r) => ({ email: r.email, name: r.name ?? null })),
+        build: input.build,
+      }),
+    }),
+  )
+}
+
+export async function launchCampaign(
+  engagementId: string,
+  campaignId: string,
+): Promise<{ campaignId: string; state: string }> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/campaigns/${campaignId}:launch`, { method: 'POST' }),
+  )
+}
+
+export async function revokeCampaign(
+  engagementId: string,
+  campaignId: string,
+): Promise<{ campaignId: string; state: string }> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/campaigns/${campaignId}:revoke`, { method: 'POST' }),
+  )
 }

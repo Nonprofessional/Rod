@@ -27,6 +27,7 @@ import { NotificationsView } from './NotificationsView'
 import { IntelView } from './IntelView'
 import { MembersView } from './MembersView'
 import { ReconView } from './ReconView'
+import { CampaignsView } from './CampaignsView'
 
 // The engagement detail body: the active view only -- navigation lives in the
 // shell's sidebar and the live summary (connection state, fleet counts,
@@ -123,6 +124,7 @@ export function EngagementView({
       // A launcher credential was spent by an actual download: the kept
       // rows' budgets and the audit trail both move on it.
       onPayloadFetched: () => setTick((t) => t + 1),
+      onCampaignActivity: () => setTick((t) => t + 1),
     })
     return close
   }, [engagementId])
@@ -202,6 +204,7 @@ export function EngagementView({
       {tab === 'report' && <ReportView engagementId={engagementId} />}
       {tab === 'listeners' && <ListenersView engagementId={engagementId} />}
       {tab === 'launchers' && <LaunchersView engagementId={engagementId} onlineTick={tick} />}
+      {tab === 'campaigns' && <CampaignsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
       {tab === 'payloads' && <PayloadsView engagementId={engagementId} />}
     </LiveContext.Provider>

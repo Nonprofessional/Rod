@@ -177,6 +177,12 @@ const ICONS = {
       <polyline points="21 3 21 8.5 15.5 8.5" />
     </>
   ),
+  send: (
+    <>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

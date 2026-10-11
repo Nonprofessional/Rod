@@ -609,8 +609,46 @@ Implants table, taskable from the same menu (fingerprint, cookies, DOM
 read, screenshot, redirect, prompt), their results in the same task log
 and audit trail as any implant's.
 
+## Campaigns
+
+The tracked-lure delivery surface (architecture.md Sec 11.5,
+[campaigns.md](campaigns.md) for the egress decisions): the email-shaped
+half of delivery, beside the builds each recipient gets and the listeners
+that front every lure.
+
+**New campaign** posts the campaign whole: the name, the **front** (the
+engagement's http/https listener whose public endpoint composes every
+lure URL), the **relay** (host, port, TLS posture, optional credentials,
+and the from address -- whose address sends this mail is the egress
+decision the runbook records), the **message** (subject and body merging
+`{{link}}` -- required -- `{{pixel}}`, `{{email}}`, `{{name}}`; an HTML
+body without `{{pixel}}` gets the tracking pixel injected), the
+**recipients** (one per line, email and optional display name), and the
+**per-recipient build** essentials. Creation validates to refusal: the
+server parses the build profile with the build pipeline's own parser and
+refuses an unknown merge field or a body without the link at the seam,
+not at delivery. The relay password never returns on read-back.
+
+A created campaign sits in **draft** -- nothing leaves. **Launch** arms
+it: the engine mints one single-use enrollment credential per recipient,
+drives one build per recipient through the job queue (the price of
+enrollment attribution -- a shared build could attribute the click, never
+the enrollment), and sends each message once on the build's completion.
+Single-attempt, no retry: a failure lands on the row with its reason, and
+a retry is a new campaign.
+
+The list's evidence columns are the point: **o/c/x** counts opens,
+clicks, and executions. An open is the pixel firing (best-effort -- mail
+clients that block remote images never fire it), a click is the lure
+fetch, and an **executed** recipient is an enrollment fact -- the implant
+that redeemed the baked credential, its id on the row. The detail table
+carries the per-recipient arc: status and failure, the lure link to copy,
+and the four stamps. **Revoke** burns the campaign from any live state:
+no further sends, and every lure in it 404s from that moment.
+
 ## Build
 
+The engagement's build home:
 The main path is the mainstream shape: pick the **Listener (enroll +
 contact)** and the **target** (OS/arch -- the Rust build unit's supported
 set: Linux amd64/arm64/arm/x86, Windows amd64/x86),
