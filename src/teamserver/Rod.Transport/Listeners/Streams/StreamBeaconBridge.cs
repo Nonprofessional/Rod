@@ -72,6 +72,7 @@ internal sealed class StreamBeaconBridge
     private readonly EnrollmentService _enrollment;
     private readonly IDeployTokenService _tokens;
     private readonly IPayloadStore _payloads;
+    private readonly Rod.CoreState.Campaigns.ICampaignStore _campaigns;
     private readonly EnvelopeContactKeys _contactKeys;
     private readonly ILogger<StreamBeaconBridge> _logger;
     private readonly BeaconSessionRunner _runner;
@@ -96,6 +97,7 @@ internal sealed class StreamBeaconBridge
         EnrollmentService enrollment,
         IDeployTokenService tokens,
         IPayloadStore payloads,
+        Rod.CoreState.Campaigns.ICampaignStore campaigns,
         EnvelopeContactKeys contactKeys,
         ITaskDispatchWake wake,
         LiveChannelHub channels,
@@ -114,6 +116,7 @@ internal sealed class StreamBeaconBridge
         _enrollment = enrollment;
         _tokens = tokens;
         _payloads = payloads;
+        _campaigns = campaigns;
         _contactKeys = contactKeys;
         _logger = logger;
         _runner = new BeaconSessionRunner(
@@ -497,6 +500,7 @@ internal sealed class StreamBeaconBridge
             _enrollment,
             _tokens,
             _payloads,
+            _campaigns,
             _contactKeys,
             _audit,
             _clock,

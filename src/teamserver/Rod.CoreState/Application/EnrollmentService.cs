@@ -110,7 +110,7 @@ public sealed class EnrollmentService
             implantId, redeemed.EngagementId, command.KillDate, command.Class, now, redeemed.IssuedBy, parent?.Id,
             command.Hostname, command.Os, command.Arch, command.Username,
             command.SleepSeconds, command.JitterSeconds, command.EnrolledViaListenerId,
-            command.Carriers);
+            command.Carriers, command.CampaignId, command.CampaignRecipientId);
         await _implants.SaveAsync(implant, cancellationToken);
 
         // 5. The certificate answer is the CA chain alone: it carries the
@@ -136,7 +136,9 @@ public sealed class EnrollmentService
             implant.DeployedBy,
             implant.ParentImplantId,
             implant.Hostname,
-            now);
+            now,
+            implant.CampaignId,
+            implant.CampaignRecipientId);
     }
 
     // Resolves the parent implant and enforces the engagement-scope and liveness
@@ -214,6 +216,13 @@ public sealed class EnrollmentService
 /// contact cadence the implant reported about itself (the same report shape
 /// as the host fields): null on either means "not reported", and later
 /// handshake advertisements refresh the pair.
+///
+/// <see cref="CampaignId"/> and <see cref="CampaignRecipientId"/> carry the
+/// delivery-campaign attribution (architecture.md Sec 11.5): when the
+/// transport resolved the redeemed credential to a campaign recipient, the
+/// enrollment stamps both onto the implant row. Null (the default) is every
+/// ordinary, campaign-free enrollment; the pair must arrive together or not
+/// at all.
 /// </summary>
 public sealed record EnrollCommand(
     string DeployTokenSecret,
@@ -228,7 +237,9 @@ public sealed record EnrollCommand(
     double? JitterSeconds = null,
     DateTimeOffset? KillDate = null,
     Guid? EnrolledViaListenerId = null,
-    IReadOnlyList<string>? Carriers = null);
+    IReadOnlyList<string>? Carriers = null,
+    CampaignId? CampaignId = null,
+    CampaignRecipientId? CampaignRecipientId = null);
 
 /// <summary>
 /// Result of a successful enrollment: the new implant's identity, its engagement,
@@ -236,8 +247,10 @@ public sealed record EnrollCommand(
 /// CA chain (the tasking signer), the operator who deployed it (the
 /// token issuer, used to attribute the enrollment), the parent it was derived
 /// from (null for a top-level implant), the hostname it reported (null when
-/// unreported -- carried so the audit trail can name the host), and the
-/// enrollment timestamp.
+/// unreported -- carried so the audit trail can name the host), the
+/// enrollment timestamp, and the delivery-campaign attribution when the
+/// redeemed credential was baked for a campaign recipient (null pair
+/// otherwise, architecture.md Sec 11.5).
 /// </summary>
 public sealed record EnrollmentResult(
     ImplantId ImplantId,
@@ -248,4 +261,6 @@ public sealed record EnrollmentResult(
     OperatorId DeployedBy,
     ImplantId? ParentImplantId,
     string? Hostname,
-    DateTimeOffset EnrolledAt);
+    DateTimeOffset EnrolledAt,
+    CampaignId? CampaignId = null,
+    CampaignRecipientId? CampaignRecipientId = null);

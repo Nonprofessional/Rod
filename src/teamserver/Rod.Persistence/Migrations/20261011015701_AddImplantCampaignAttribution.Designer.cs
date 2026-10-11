@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Rod.Persistence;
@@ -12,9 +13,11 @@ using Rod.Persistence;
 namespace Rod.Persistence.Migrations
 {
     [DbContext(typeof(RodPersistenceDbContext))]
-    partial class RodPersistenceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261011015701_AddImplantCampaignAttribution")]
+    partial class AddImplantCampaignAttribution
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

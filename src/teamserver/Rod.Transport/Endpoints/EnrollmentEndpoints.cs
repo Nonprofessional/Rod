@@ -304,6 +304,7 @@ public static class EnrollmentEndpoints
         TimeProvider clock,
         IAuditStore audit,
         IPayloadStore payloads,
+        Rod.CoreState.Campaigns.ICampaignStore campaigns,
         EnvelopeContactKeys contactKeys,
         CancellationToken cancellationToken)
     {
@@ -375,6 +376,7 @@ public static class EnrollmentEndpoints
             service,
             tokens,
             payloads,
+            campaigns,
             contactKeys,
             audit,
             clock,

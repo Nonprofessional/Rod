@@ -124,6 +124,7 @@ internal static class ScopedEnrollment
         EnrollmentService service,
         IDeployTokenService tokens,
         IPayloadStore payloads,
+        Rod.CoreState.Campaigns.ICampaignStore campaigns,
         EnvelopeContactKeys contactKeys,
         IAuditStore audit,
         TimeProvider clock,
@@ -204,6 +205,17 @@ internal static class ScopedEnrollment
             ? null
             : await payloads.FindByTokenAsync(presentedToken.Id.Value, cancellationToken);
 
+        // The campaign recipient the credential was baked for, when the token
+        // rode a delivery campaign (architecture.md Sec 11.5): the enrollment
+        // stamps the pair onto the implant row, the audit fact names the
+        // campaign and the recipient, and the recipient row below gets its
+        // executed binding -- the only proof of execution. An ordinary
+        // build's token answers null, and the enrollment proceeds exactly as
+        // it always did.
+        var attribution = presentedToken is null
+            ? null
+            : await campaigns.FindByEnrollTokenAsync(presentedToken.Id, cancellationToken);
+
         try
         {
             var enrolled = await service.EnrollAsync(
@@ -212,7 +224,8 @@ internal static class ScopedEnrollment
                     CleanHostFact(fields.Hostname), CleanHostFact(fields.Os),
                     CleanHostFact(fields.Arch), CleanHostFact(fields.Username),
                     fields.SleepSeconds, fields.JitterSeconds,
-                    killDate, ingress?.Id.Value, BakedCarriers.From(build)),
+                    killDate, ingress?.Id.Value, BakedCarriers.From(build),
+                    attribution?.CampaignId, attribution?.RecipientId),
                 cancellationToken);
 
             // The enrollment is recorded (architecture.md Sec 11).
@@ -221,7 +234,9 @@ internal static class ScopedEnrollment
             // carried on the implant as DeployedBy. The payload carries the class
             // (and the parent when it is a child derivation, architecture.md Sec
             // 5.2) and the host when the implant reported one, so the trail names
-            // the machine; the outcome is the new implant id.
+            // the machine; the outcome is the new implant id. A campaign-baked
+            // credential adds its attribution -- the words the trail exists to
+            // keep (Sec 11.5).
             await audit.AppendAsync(
                 AuditEvent.Fact(
                     eventId: Guid.NewGuid(),
@@ -231,11 +246,22 @@ internal static class ScopedEnrollment
                     taskId: Guid.Empty,
                     verb: "enroll",
                     kind: AuditEventKind.ImplantEnrolled,
-                    payload: BuildEnrollPayload(enrolled),
+                    payload: BuildEnrollPayload(enrolled, attribution),
                     output: null,
                     outcome: enrolled.ImplantId.ToString(),
                     at: enrolled.EnrolledAt),
                 cancellationToken);
+
+            // The recipient's executed binding (architecture.md Sec 11.5):
+            // the enrollment itself is the only proof the artifact ran, and
+            // the implant id on the recipient row is the lure-to-implant
+            // link the campaign exists to carry. Monotonic on the store, so
+            // a replayed write changes nothing.
+            if (attribution is { } bound)
+            {
+                await campaigns.NoteExecutedAsync(
+                    bound.CampaignId, bound.RecipientId, enrolled.ImplantId.Value, enrolled.EnrolledAt, cancellationToken);
+            }
 
             // Bind the enrollment to its build's contact key
             // (architecture.md Sec 8/9): a token minted with a payload names
@@ -313,14 +339,17 @@ internal static class ScopedEnrollment
         => value is null || (double.IsFinite(value.Value) && value.Value >= 0);
 
     // The enroll audit payload: class, lineage, and the reported host -- the
-    // words an operator reads back in the audit trail for "what enrolled where".
-    private static string BuildEnrollPayload(EnrollmentResult enrolled)
+    // words an operator reads back in the audit trail for "what enrolled where"
+    // -- plus the campaign attribution when the credential rode one (Sec 11.5).
+    private static string BuildEnrollPayload(EnrollmentResult enrolled, Rod.CoreState.Campaigns.CampaignAttribution? attribution)
     {
         var parts = new List<string> { enrolled.Class.ToString() };
         if (enrolled.ParentImplantId is { } parent)
             parts.Add($"parent={parent}");
         if (enrolled.Hostname is { } hostname)
             parts.Add($"host={hostname}");
+        if (attribution is { } bound)
+            parts.Add($"campaign='{bound.CampaignName}' ({bound.CampaignId}) recipient={bound.RecipientEmail}");
         return string.Join(' ', parts);
     }
 }

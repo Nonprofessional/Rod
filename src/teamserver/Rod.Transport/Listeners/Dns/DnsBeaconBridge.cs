@@ -93,6 +93,7 @@ internal sealed class DnsBeaconBridge
     private readonly EnrollmentService _enrollment;
     private readonly Rod.CoreState.Deployment.IDeployTokenService _tokens;
     private readonly Rod.Audit.IPayloadStore _payloads;
+    private readonly Rod.CoreState.Campaigns.ICampaignStore _campaigns;
     private readonly EnvelopeContactKeys _contactKeys;
     private readonly IImplantRepository _implants;
     private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
@@ -121,6 +122,7 @@ internal sealed class DnsBeaconBridge
         EnrollmentService enrollment,
         Rod.CoreState.Deployment.IDeployTokenService tokens,
         Rod.Audit.IPayloadStore payloads,
+        Rod.CoreState.Campaigns.ICampaignStore campaigns,
         EnvelopeContactKeys contactKeys,
         IImplantRepository implants,
         Rod.Transport.Channels.DegradedChannelHub degraded,
@@ -135,6 +137,7 @@ internal sealed class DnsBeaconBridge
         _enrollment = enrollment;
         _tokens = tokens;
         _payloads = payloads;
+        _campaigns = campaigns;
         _contactKeys = contactKeys;
         _implants = implants;
         _degraded = degraded;
@@ -250,6 +253,7 @@ internal sealed class DnsBeaconBridge
             _enrollment,
             _tokens,
             _payloads,
+            _campaigns,
             _contactKeys,
             _audit,
             _clock,

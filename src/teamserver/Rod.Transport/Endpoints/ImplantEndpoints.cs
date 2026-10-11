@@ -106,7 +106,11 @@ public static class ImplantEndpoints
                 LastCarrier: sessionById.GetValueOrDefault(i.Id)?.LastCarrier,
                 // The baked carrier set the artifact's endpoints dial; null
                 // for implants the enroll could not derive one for.
-                Carriers: i.Carriers))
+                Carriers: i.Carriers,
+                // The delivery campaign whose lure this implant followed
+                // (Sec 11.5); null pair on every ordinary enrollment.
+                CampaignId: i.CampaignId?.ToString(),
+                CampaignRecipientId: i.CampaignRecipientId?.ToString()))
             .ToArray();
 
         return Results.Ok(body);
@@ -538,7 +542,12 @@ public static class ImplantEndpoints
         string? LastCarrier = null,
         // The baked carrier set the artifact's endpoints dial; null when the
         // enroll derived none.
-        IReadOnlyList<string>? Carriers = null);
+        IReadOnlyList<string>? Carriers = null,
+        // The delivery campaign whose lure this implant followed (Sec 11.5):
+        // the campaign and the recipient row, null pair on every ordinary
+        // enrollment.
+        string? CampaignId = null,
+        string? CampaignRecipientId = null);
 
     public sealed record ImplantTaskResponse(
         string TaskId,

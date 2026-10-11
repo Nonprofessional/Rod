@@ -55,6 +55,15 @@ internal sealed class ImplantConfiguration : IEntityTypeConfiguration<Implant>
         // The listener whose socket carried the enrollment, when the transport
         // could attribute one; the listener-delete guard counts against it.
         builder.Property(i => i.EnrolledViaListenerId).HasColumnName("enrolled_via_listener_id");
+        // The delivery-campaign attribution (architecture.md Sec 11.5): the
+        // campaign and recipient whose baked credential redeemed at enroll.
+        // Nullable pair, null for every ordinary, campaign-free enrollment.
+        builder.Property(i => i.CampaignId)
+            .HasConversion(IdConverters.CampaignId)
+            .HasColumnName("campaign_id");
+        builder.Property(i => i.CampaignRecipientId)
+            .HasConversion(IdConverters.CampaignRecipientId)
+            .HasColumnName("campaign_recipient_id");
         // The durable heartbeat: when the teamserver last heard from this
         // implant, kept after the session is gone. Null for implants that
         // predate the stamp.
