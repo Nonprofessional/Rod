@@ -27,6 +27,12 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- MailKit: the delivery campaign's SMTP sends (architecture.md Sec 11.5).
+       The version is tracked centrally in Directory.Packages.props. -->
+  <ItemGroup>
+    <PackageReference Include="MailKit" />
+  </ItemGroup>
+
   <!-- The browser hook template (architecture.md Sec 5.2, Sec 8): the served
        script the mint renders a bake into. An embedded resource so the
        artifact a victim fetches is exactly this file plus the substituted

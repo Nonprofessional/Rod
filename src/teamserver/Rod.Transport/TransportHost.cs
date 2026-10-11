@@ -205,6 +205,25 @@ public static class TransportHost
         // with their baked-credential bindings, evidence stamps -- in-memory
         // by default, Postgres-backed when the connection string is set.
         services.AddSingleton<Rod.CoreState.Campaigns.ICampaignStore, Rod.CoreState.Campaigns.InMemoryCampaignStore>();
+        // The campaign send engine (architecture.md Sec 11.5): the
+        // reconciler that drives per-recipient builds through the job queue
+        // and sends the rendered messages through each campaign's named
+        // relay. Options bind from the Campaigns section (engine cadence,
+        // send bound -- never egress, which the campaign body names);
+        // registered as a plain singleton plus the hosted wrapper so tests
+        // drive a scan directly, the webhook engine's shape.
+        if (configuration is not null)
+        {
+            services.AddOptions<Rod.Transport.Campaigns.CampaignsOptions>()
+                .Bind(configuration.GetSection(Rod.Transport.Campaigns.CampaignsOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<Rod.Transport.Campaigns.CampaignsOptions>();
+        }
+        services.AddSingleton<Rod.Transport.Campaigns.CampaignMailSender>();
+        services.AddSingleton<Rod.Transport.Campaigns.CampaignSendEngine>();
+        services.AddHostedService(sp => sp.GetRequiredService<Rod.Transport.Campaigns.CampaignSendEngine>());
         // Runtime listener management: create/remove listeners while the host
         // serves. The Kestrel half activates only on a host that binds real
         // listeners (UseRodListeners); the stream half works on any host.
@@ -643,6 +662,11 @@ public static class TransportHost
         endpoints.MapClaimEndpoints();
         endpoints.MapTaskEndpoints();
         endpoints.MapPayloadEndpoints();
+        // The delivery campaign's operator surface (architecture.md
+        // Sec 11.5): create/launch/revoke and the reads the console
+        // watches; the public lure half is mapped below with the implant
+        // family.
+        endpoints.MapCampaignEndpoints();
         // Operator-facing runtime settings (the live session-presence knobs).
         endpoints.MapSettingsEndpoints();
         // The system page's read: host facts and the build units'

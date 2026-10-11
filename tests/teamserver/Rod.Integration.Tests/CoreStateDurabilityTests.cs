@@ -741,7 +741,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         Assert.NotNull(report);
         var crew = report!.Operators.OrderBy(o => o.Handle).ToArray();
         Assert.Equal(2, crew.Length);
-        Assert.Equal(("bob", "reader"), (crew[0].Handle, crew[1].Role));
+        Assert.Equal(("bob", "reader"), (crew[0].Handle, crew[0].Role));
         Assert.Equal((AuthenticatedHost.Handle, "owner"), (crew[1].Handle, crew[1].Role));
     }
 
