@@ -2502,14 +2502,15 @@ credentials, and the from address), the recipient list (email and an
 optional display name, capped -- spear-phish scale, not bulk), the
 message template (subject and body, plain or HTML), the build profile,
 and the listener whose `publicEndpoint` fronts the lure. The template
-merges per recipient -- `{{link}}`, `{{pixel}}`, `{{email}}`, `{{name}}`
--- and is validated at creation, not at delivery: an unknown field or a
-body without `{{link}}` is refused when the campaign is created, the
-same fail-at-the-seam discipline webhook subscriptions keep. The relay
-password is stored in the clear on the row the way a launcher's download
-credential is (Sec 8): the server must present it again, the row is
-engagement-scoped operator state deletable with the campaign, it never
-enters the audit trail, and it is never returned on read-back.
+merges per recipient and is validated at creation, not at delivery: an
+unknown field or a body without the link field is refused when the
+campaign is created, the same fail-at-the-seam discipline webhook
+subscriptions keep (the merge-field inventory lives in the runbook).
+The relay password is stored in the clear on the row the way a
+launcher's download credential is (Sec 8): the server must present it
+again, the row is engagement-scoped operator state deletable with the
+campaign, it never enters the audit trail, and it is never returned on
+read-back.
 
 **One build per recipient is the price of enrollment attribution.** At
 launch, the engine drives the build pipeline once per recipient and
@@ -2532,12 +2533,10 @@ hook serving edge's posture (Sec 8): the unguessable route id is the
 credential, the ingress listener's engagement scopes the socket, a
 revoked campaign's lures answer 404, and every serve writes a
 `CampaignLinkServed` fact carrying the fetcher's wire facts -- open or
-click rides the payload, the same first-touch shape a hook fetch records. The
-pixel is a merge field: HTML bodies that place `{{pixel}}` themselves
-get exactly one, and HTML bodies that do not get one appended
-automatically; plain-text bodies cannot carry one, and `opened` stays
-best-effort by design -- mail clients that block remote images simply
-never fire it.
+click rides the payload, the same first-touch shape a hook fetch records.
+The pixel is a merge field and `opened` stays best-effort by design:
+mail clients that block remote images simply never fire it (the
+placement rules live in the runbook).
 
 **Tracking is evidence, and the enrollment is the only proof of
 execution.** Each recipient carries the sent/opened/clicked timestamps

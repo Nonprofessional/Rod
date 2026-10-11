@@ -51,10 +51,10 @@ engagement:
   the recipient's first filter. It belongs to the pretext, which is the
   operator's content decision, not the platform's (architecture.md
   Sec 13: evasion-grade social engineering stays out-of-tree).
-- **The relay password.** Stored on the campaign row in the clear --
-  the server must present it again, like a launcher's download
-  credential -- never returned on read-back, never in the audit trail,
-  and gone when the campaign row goes.
+- **The relay password.** Stored on the campaign row in the clear and
+  never returned on read-back or written to the audit trail; gone when
+  the campaign row goes (the storage rationale is architecture.md
+  Sec 11.5's -- the launcher-credential shape).
 
 Configuration is engine-level, not egress: `Campaigns:EngineTickSeconds`
 (default 5) is the reconciler's scan cadence and
@@ -71,7 +71,10 @@ Neither names a relay; the campaign body does.
    the template's merge fields (`{{link}}`, `{{pixel}}`, `{{email}}`,
    `{{name}}` -- `{{link}}` required in the body, unknown fields
    refused), the build profile (the build pipeline's own parser), and
-   the relay's shape. The recipient cap (200) keeps a campaign at
+   the relay's shape. The pixel's placement rules: an HTML body that
+   places `{{pixel}}` itself gets exactly one, an HTML body that does
+   not gets one appended automatically, and a plain-text body cannot
+   carry one. The recipient cap (200) keeps a campaign at
    spear-phish scale -- the per-recipient build is the attribution
    price, and a bulk send is not this surface.
 2. **Launch.** The engine takes over: one build per recipient, the
