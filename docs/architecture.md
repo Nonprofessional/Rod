@@ -592,14 +592,11 @@ each artifact so a generated payload is self-describing.
 
 Admission is not execution: a verb may be class-admissible (the class gate
 does not refuse it) yet ship no built-in handler, running only when an
-operator supplies an out-of-tree module. The contract-only verbs
-(`collect.keylog`, and the `evasion` and `exploit` categories in their
-entirety) follow this shape (Sec 10.2); they are listed in the capability
-catalog but carry no in-repo handler -- `collect.keylog` inside the implant
-class set, the evasion and exploit verbs outside every class set as ungated
-contract verbs the bake carries alongside the class set (Sec 5.3), so an
-artifact compiled with an out-of-tree handler for one advertises it at
-handshake.
+operator supplies an out-of-tree module. The `evasion` and `exploit`
+categories in their entirety follow this shape (Sec 10.2); they are listed
+in the capability catalog but carry no in-repo handler -- ungated contract
+verbs the bake carries alongside the class set (Sec 5.3), so an artifact
+compiled with an out-of-tree handler for one advertises it at handshake.
 
 A capable implant can deploy another class on the same host (e.g. a web-shell
 deriving a full implant) via a deployment verb; the child enrols into the same
@@ -1362,13 +1359,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   shell leaves the hub the moment its socket dies, before the durable
   marking, so no route resolves a dead socket. An upgrade render is
   advisory: it mints the engagement a single-use deploy token and returns
-  paste-ready one-liners against the engagement's web listener, rendered
-  for the payload's format -- the disk families (curl/wget/PowerShell
-  fetch-and-run) for every shape, the Linux in-memory family (python
-  stages the bytes in a memfd and execs through /proc/self/fd) for the
-  native AOT payload, and the pwsh cradle (in-memory zip unpack,
-  dependency pre-load, `Assembly.Load`, entry invoke) for the dll bundle
-  -- the paste is the operator's
+  paste-ready one-liners against the engagement's web listener -- the
+  four families the launcher renderer emits (`unix-curl`, `unix-wget`,
+  `windows-powershell`, and the Linux in-memory `unix-python-memfd` that
+  stages the bytes in a memfd and execs through /proc/self/fd),
+  filtered to the payload's target OS so the credential is never spent
+  on a download that cannot run -- the paste is the operator's
   action through the input route, not a server-side write into the
   session. The standalone launchers endpoint renders the same one-liners
   without a caught shell -- the cut-ahead delivery surface, where the
@@ -1673,11 +1669,11 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **recon** | `recon.portscan`, `recon.hostenum`, `recon.service`, `recon.ps` | Target and network reconnaissance. `recon.ps` lists the local host's live processes -- pid, ppid, user, image. |
 | **lateral** | `lateral.move`, `lateral.token`, `lateral.exec_remote` | Lateral movement within authorized scope. |
 | **persist** | `persist.install`, `persist.remove`, `persist.list` | Persistence mechanisms. |
-| **collect** | `collect.cred`, `collect.keylog`, `collect.screenshot` | Credential, screen, and input collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. `collect.screenshot` captures the display as a PNG artifact joined to its task (Sec 11). |
+| **collect** | `collect.cred`, `collect.keylog`, `collect.screenshot`, `collect.minidump` | Credential, screen, input, and memory collection. Operator file transfer is a core verb (`file.push`/`file.pull`), not collection. `collect.screenshot` captures the display as a PNG artifact joined to its task (Sec 11). |
 | **exfil** | `exfil.push`, `exfil.stage` | Exfiltration over the C2 channel. |
 | **tunnel** | `tunnel.forward`, `tunnel.socks` | Network tunneling through an implant (Sec 14, core operations): `tunnel.forward` bridges a live channel to a TCP connection the implant opens from its own vantage, so operator traffic reaches hosts beyond it; `tunnel.socks` is the multiplexed arm -- the channel's byte stream is a connection-multiplexed grammar, so every proxied connection rides the one task and each destination arrives per connection. Both run as live channels (Sec 10.3); the pivot class carries exactly this set (Sec 5.2). A relay bind exposes either channel as a teamserver-side listener -- the raw one-connection bridge for `tunnel.forward`, a SOCKS5 listener for `tunnel.socks` -- so unmodified operator tooling rides the tunnel without per-byte API posts (Sec 10.3). |
 | **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers an SDK module's bytes as the task's staged content and the implant's loader registers its verbs -- memfd and exec on Linux, the manual PE map on Windows -- `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
-| **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)* | Detection-evasion hooks. Contract and dispatch only. |
+| **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)*; `inject.shellcode` | Detection-evasion hooks. `evasion.avoid`/`evasion.unload` are contract and dispatch only; `inject.shellcode` is the category's in-tree exception -- Implant-class gated with a Windows reference handler (the classic VirtualAllocEx/WriteProcessMemory/CreateRemoteThread pattern), carrying `modifies-defenses` and `executes-code`. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
 | **browser** | `browser.fingerprint`, `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`, `browser.prompt` | The Browser class's hook set (Sec 5.2): the read-and-steer verbs a hooked page justifies. `browser.fingerprint` reports the navigator facts; `browser.cookies` reads the current origin's `document.cookie` (non-HttpOnly only -- the browser's own boundary, documented rather than worked around); `browser.dom` returns `outerHTML`, optionally narrowed by a CSS selector argument, truncated at 1 MiB; `browser.screenshot` rasterizes the DOM (the SVG foreignObject shape, cross-origin imagery stripped) into a PNG artifact through the exfil-chunk path (Sec 11); `browser.redirect` navigates the tab (the hook dies with the page it left); `browser.prompt` returns what the user answered, carrying `reads-input` so automation never fires it unattended (Sec 10.4). Input capture (keylogging, form-field harvesting) and browser-exploit chaining are not core verbs -- they arrive as out-of-tree capability contracts (Sec 13). |
 
@@ -1798,16 +1794,21 @@ so an unmodified tool reaches third hosts with zero operator API calls per
 byte and the whole flow stays attributed to the task.
 
 The evasion verbs are registered the same way
-(`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`): both
-`evasion.avoid` and `evasion.unload` carry a `modifies-defenses` attribute,
-since each alters the target's defensive or monitoring posture (Sec 7). Unlike
-the recon, lateral, persist, collect, and exfil verbs they are **not** gated to a
-class in `ImplantClassCapabilities` (Sec 5.2): evasion is contract and dispatch
-only -- which class an evasion module runs on is decided when an operator deploys
-the out-of-tree module, not by a baked-in class rule. Their concrete behavior is
-operator-supplied tradecraft (Sec 10.2, Sec 13):
-the core ships no bypass techniques or weaponized code, so each verb runs only
-when an operator supplies a module for it.
+(`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`):
+`evasion.avoid` and `evasion.unload` each carry a `modifies-defenses`
+attribute, since each alters the target's defensive or monitoring posture
+(Sec 7). Unlike the recon, lateral, persist, collect, and exfil verbs they are
+**not** gated to a class in `ImplantClassCapabilities` (Sec 5.2): the pair is
+contract and dispatch only -- which class an evasion module runs on is decided
+when an operator deploys the out-of-tree module, not by a baked-in class rule.
+Their concrete behavior is operator-supplied tradecraft (Sec 10.2, Sec 13):
+the core ships no bypass techniques or weaponized code, so each runs only
+when an operator supplies a module for it. `inject.shellcode` is the
+category's exception on both counts: it is gated to the Implant class like
+every reference verb (the class table carries it), carries
+`modifies-defenses` plus `executes-code`, and ships an in-repo Windows
+reference handler on the Rust implant -- remote-process injection through the
+documented classic pattern, `<pid> <base64>` arguments.
 
 The exploit verbs are registered the same way
 (`Rod.Tradecraft.Exploit.ExploitCapabilities`, category `Exploit`): both
@@ -2530,8 +2531,8 @@ pixel (a 1×1 gif, `no-store`). Both ride the implant family with the
 hook serving edge's posture (Sec 8): the unguessable route id is the
 credential, the ingress listener's engagement scopes the socket, a
 revoked campaign's lures answer 404, and every serve writes a
-`CampaignLinkOpened`/`CampaignLinkClicked` fact carrying the fetcher's
-wire facts -- the same first-touch shape a hook fetch records. The
+`CampaignLinkServed` fact carrying the fetcher's wire facts -- open or
+click rides the payload, the same first-touch shape a hook fetch records. The
 pixel is a merge field: HTML bodies that place `{{pixel}}` themselves
 get exactly one, and HTML bodies that do not get one appended
 automatically; plain-text bodies cannot carry one, and `opened` stays

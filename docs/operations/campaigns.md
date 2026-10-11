@@ -94,12 +94,14 @@ Neither names a relay; the campaign body does.
 
 ## What lands in the audit trail
 
-Every state change is a fact: `CampaignCreated`, `CampaignLaunched`,
-`CampaignRevoked`, one `DeployTokenMinted` per recipient (the baked
+Every state change is a fact: `CampaignStateChanged` (the payload's verb
+naming the flip -- campaign.created / campaign.launched /
+campaign.revoked), one `DeployTokenMinted` per recipient (the baked
 credential, id-only), `CampaignMessageSent` (delivered or
 `failed:{reason}`, attributed to the campaign's creator), and
-`CampaignLinkOpened`/`CampaignLinkClicked` (the fetcher's wire facts,
-null operator -- the same first-touch shape a hook fetch records). The
+`CampaignLinkServed` (the fetcher's wire facts -- open or click rides
+the payload -- null operator, the same first-touch shape a hook fetch
+records). The
 enrollment that follows carries the attribution the surface exists
 for: the `ImplantEnrolled` fact names the campaign and the recipient,
 and the implant row carries both ids from creation. The relay address

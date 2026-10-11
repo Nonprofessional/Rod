@@ -325,8 +325,9 @@ arguments token, then run the verb against the reassembled bytes and report the
 
 ### Interactive channels (the streaming task shape)
 
-`shell.interact` is `shell.exec`'s live shape, and `tunnel.forward` is the
-port-forward bridge (architecture.md Sec 5.2, Sec 14): each `TaskRequest`
+`shell.interact` is `shell.exec`'s live shape, and `tunnel.forward` /
+`tunnel.socks` are the tunnel pair (architecture.md Sec 5.2, Sec 14):
+each `TaskRequest`
 opens a channel instead of a one-shot round trip, and the task does not
 complete until the channel ends. Flow:
 
@@ -356,7 +357,8 @@ tunnel; the task stays dispatched server-side). Input is not signed -- like a
 `TaskRequest` opened.
 Keep output chunks at or under 16 KiB. The server routes `ChannelInput` only
 for a task whose verb is one of these channel verbs (`shell.interact`,
-`tunnel.forward`); a channel task claims over every poll carrier under the
+`tunnel.forward`, `tunnel.socks`); a channel task claims over every poll
+carrier under the
 store-and-forward discipline (below) -- the envelope cycle, the stream
 family's polls, and the DNS grammar alike (input on the TXT answers,
 output as `c.` queries).
@@ -542,12 +544,13 @@ Tier 1 posture: verify the signature before executing anything received over
 DNS. The reference implant's DNS client dials a beacon URL of the shapes
 `dns://<resolver-host>[:<port>]/<zone>` (the resolver is the listener
 itself; a build naming a DNS listener bakes the listener's bind, and a
-wildcard bind is refused with that fix), `dns://<zone>` (the host's own
-configured resolver -- the production shape for a delegated zone, the
-queries riding whatever DNS server the host uses), and
+wildcard bind is refused with that fix) and
 `doh://<resolver-host>[:<port>]/<zone>` (the DoH carriage, RFC 8484: the
 same wire message riding an HTTPS POST body to /dns-query, TLS anchored to
-the enrolled CA chain -- DNS-shaped traffic that blends as HTTPS).
+the enrolled CA chain -- DNS-shaped traffic that blends as HTTPS). The
+authority is always a resolver the implant dials directly and the zone
+always rides the path: the family has no system-resolver mode, so a
+path-less `dns://` URL (empty zone) is not a supported bake.
 
 **The DoH carriage (RFC 8484).** A `doh` listener entry answers the same
 grammar over HTTPS: the DNS wire message rides an HTTP body -- `GET
@@ -725,7 +728,12 @@ Adopt per deployment need; absence degrades the feature, not interop:
   runs it, a build with no
   dns-schemed entry compiles without it.
 - **Malleable enroll presentation** -- the baked URI path, User-Agent,
-  headers, timeout, and base64 body envelope shape the enroll request.
+  headers, timeout, and base64 body envelope shape the enroll request a
+  build unit renders them into. The bake carries the `userAgent` and
+  `headers` keys for implants that honor them (a community implant's
+  presentation surface); the reference Rust implant applies the path,
+  timeout, and envelope shape only -- its HTTP agent sets no custom
+  User-Agent or headers.
 - **Child derivation** -- the parent-naming enroll flow behind
   `lateral.move` (architecture.md Sec 5.2).
 - **Plugin modules** -- the `module.load` / `module.list` /

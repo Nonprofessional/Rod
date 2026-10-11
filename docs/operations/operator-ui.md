@@ -450,8 +450,8 @@ An engagement's C2 ingress. Each listener owns two addresses:
 - **Bind** -- the socket *this server* opens. Picked from the host's
   interfaces (the dropdown is built from `GET /network/interfaces`): one NIC,
   the all-interfaces wildcard (`0.0.0.0`), or a custom address; the port is
-  its own field, defaulted per transport (https 443, http 5090,
-  DNS 53, TCP 4444).
+  its own field, defaulted per transport (https 443, http 8080,
+  DNS 53, TCP 443).
 - **Public endpoint** -- the address *implants dial* (enroll + contact,
   and interactive), baked into payloads. The create form's
   field of the same name takes a bare host, host:port, or full URL and
@@ -480,7 +480,7 @@ hostname. DNS and TCP cannot derive at all; their endpoint (zone /
   host:port) is required.
 
 The transport dropdown is grouped by role -- payload ingress (https,
-http), alternate reach & pivots (DNS, DoH, TCP), catchers
+http, TCP), the DNS family for DNS-only egress (DNS, DoH), catchers
 (shellcatch) -- and the form opens on https: the one-port posture that
 carries every behavior, so the untouched default is already the recommended
 shape.

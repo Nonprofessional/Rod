@@ -86,10 +86,12 @@ adb wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sl
 
 Inside the emulator the host's loopback is `10.0.2.2` -- create the
 listener with the public endpoint `http://10.0.2.2:<port>` (bind
-`127.0.0.1:<port>` as usual), build `amd64`/`apk`, then:
+`127.0.0.1:<port>` as usual), build `amd64`/`apk`, then download the
+package from the payload row (the file name is
+`rod-<class>-<payload-id prefix>.apk`, the id's first 8 hex) and:
 
 ```
-adb install -r rod-implant-apk-<id>.apk
+adb install -r rod-implant-<payload-id-prefix>.apk
 adb shell am start -n rod.carrier/android.app.NativeActivity
 adb logcat -d | grep -i rod     # the core's diagnostics land on stderr
 ```
