@@ -59,9 +59,9 @@ pub struct Dns {
 }
 
 /// The baked key split for the DNS carriage's raw-body sealing.
-pub struct SealedKey {
-    pub key_id: [u8; 16],
-    pub key: [u8; 32],
+struct SealedKey {
+    key_id: [u8; 16],
+    key: [u8; 32],
 }
 
 enum Exchange {

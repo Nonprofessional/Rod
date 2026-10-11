@@ -5,9 +5,10 @@ use prost::Message;
 // marshaled Frame. The implant-side mirror of the teamserver's framing.
 
 pub mod rod {
-    // The generated set carries message types every transport shares; the
-    // ones this poll-only build never constructs stay allowed rather than
-    // deleted, so the stream-shape build inherits the same include.
+    // The generated set carries message types a given build may not
+    // construct (the loader's fetch stub, for instance); they stay allowed
+    // rather than deleted, so every shape of this crate inherits the same
+    // include.
     #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/rod.v1.rs"));
 }

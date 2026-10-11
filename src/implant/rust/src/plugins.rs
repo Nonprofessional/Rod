@@ -185,12 +185,6 @@ struct Inner {
     routes: HashMap<String, Route>,
 }
 
-impl Default for Plugins {
-    fn default() -> Plugins {
-        Plugins::new()
-    }
-}
-
 impl Plugins {
     pub fn new() -> Plugins {
         Plugins {
