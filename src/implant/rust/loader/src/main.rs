@@ -44,6 +44,13 @@ fn panic(_: &PanicInfo) -> ! {
 // place, not through these).
 // The lint guards against accidental runtime-symbol definitions; these
 // three are the deliberate libc-free shims this crate exists to provide.
+
+/// The libc-free `memcpy` shim.
+///
+/// # Safety
+///
+/// The C contract: `dst` and `src` must be valid for a write and a read
+/// of `n` bytes respectively, and must not overlap.
 #[allow(suspicious_runtime_symbol_definitions)]
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void {
@@ -57,6 +64,11 @@ pub unsafe extern "C" fn memcpy(dst: *mut core::ffi::c_void, src: *const core::f
     dst as *mut core::ffi::c_void
 }
 
+/// The libc-free `memset` shim.
+///
+/// # Safety
+///
+/// The C contract: `dst` must be valid for a write of `n` bytes.
 #[allow(suspicious_runtime_symbol_definitions)]
 #[no_mangle]
 pub unsafe extern "C" fn memset(dst: *mut core::ffi::c_void, value: core::ffi::c_int, n: usize) -> *mut core::ffi::c_void {
@@ -70,6 +82,12 @@ pub unsafe extern "C" fn memset(dst: *mut core::ffi::c_void, value: core::ffi::c
     dst as *mut core::ffi::c_void
 }
 
+/// The libc-free `bcmp` shim.
+///
+/// # Safety
+///
+/// The C contract: `a` and `b` must each be valid for a read of `n`
+/// bytes.
 #[allow(suspicious_runtime_symbol_definitions)]
 #[no_mangle]
 pub unsafe extern "C" fn bcmp(a: *const core::ffi::c_void, b: *const core::ffi::c_void, n: usize) -> i32 {
@@ -264,7 +282,10 @@ enum Dial {
 
 fn exit(code: usize) -> ! {
     unsafe { sys_::call3(sys_::EXIT_GROUP, code, 0, 0) };
-    loop {}
+    // The syscall never returns on success; spin with the hint if it does.
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 // The entry stub: the kernel hands _start a 16-byte-aligned stack, while
@@ -428,7 +449,7 @@ unsafe fn run() -> ! {
     // The exec: an anonymous memfd and the kernel's own ELF loader. Nothing
     // was written to a path at any step; the payload's bytes live in this
     // buffer and the fd alone.
-    let mfd = sys_::call3(sys_::MEMFD_CREATE, b"rod\0".as_ptr() as usize, 0, 0);
+    let mfd = sys_::call3(sys_::MEMFD_CREATE, c"rod".as_ptr() as usize, 0, 0);
     if mfd < 0 {
         exit(10);
     }
@@ -445,12 +466,12 @@ unsafe fn run() -> ! {
         }
         written += w as usize;
     }
-    let argv = [b"rod\0".as_ptr() as usize, 0];
+    let argv = [c"rod".as_ptr() as usize, 0];
     let envp = [0usize];
     sys_::call5(
         sys_::EXECVEAT,
         mfd as usize,
-        b"\0".as_ptr() as usize,
+        c"".as_ptr() as usize,
         argv.as_ptr() as usize,
         envp.as_ptr() as usize,
         AT_EMPTY_PATH,
@@ -600,7 +621,7 @@ unsafe fn resolver_addresses() -> ([[u8; 4]; 3], usize) {
     }
     let mut found = [[0u8; 4]; 3];
     let mut count = 0usize;
-    let fd = sys_::call3(sys_::OPEN, b"/etc/resolv.conf\0".as_ptr() as usize, 0, 0);
+    let fd = sys_::call3(sys_::OPEN, c"/etc/resolv.conf".as_ptr() as usize, 0, 0);
     if fd >= 0 {
         let mut text = [0u8; 2048];
         let read = sys_::call3(sys_::READ, fd as usize, text.as_mut_ptr() as usize, text.len());
