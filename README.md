@@ -84,6 +84,13 @@
   target scope. Findings land as task-less engagement artifacts and join
   the intel layer's topology projection
   ([docs/operations/recon.md](docs/operations/recon.md)).
+- **Tracked delivery campaigns.** The email-shaped delivery step on the
+  teamserver (architecture.md Sec 2, Sec 11.5): a per-recipient lure
+  message sent through a named SMTP relay, each link bound to a
+  per-recipient build whose baked credential attributes the enrollment
+  that follows -- opened, clicked, and executed tracked to tasking, the
+  whole causal chain in one trail
+  ([docs/operations/campaigns.md](docs/operations/campaigns.md)).
 - **Agent-friendly read surfaces.** The operator front exposes a read-only
   MCP server (`/mcp`, six tools over the engagement's read side, driven on
   operator API tokens) and an opt-in OpenAI-compatible LLM triage client
@@ -251,6 +258,7 @@ The doc tree, by what you came for:
 | Redirector build, deploy, and rotation | [docs/operations/redirectors.md](docs/operations/redirectors.md) |
 | The pre-deployment rehearsal walk | [docs/operations/rehearsal.md](docs/operations/rehearsal.md) |
 | Pre-foothold recon -- egress decisions and the scan's ROE gate | [docs/operations/recon.md](docs/operations/recon.md) |
+| Delivery campaigns -- the egress decisions and the tracked lure | [docs/operations/campaigns.md](docs/operations/campaigns.md) |
 | Agent tooling over the read side (MCP) | [docs/operations/mcp.md](docs/operations/mcp.md) |
 | The opt-in LLM triage client | [docs/operations/llm.md](docs/operations/llm.md) |
 | Open work, terminology, vulnerability reporting | [docs/todo.md](docs/todo.md), [docs/glossary.md](docs/glossary.md), [SECURITY.md](SECURITY.md) |

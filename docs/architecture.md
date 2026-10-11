@@ -42,9 +42,16 @@ around "managed components". Each phase states what the platform must support.
 3. **Payload generation and delivery.** Build per-implant artifacts with
    baked-in C2 endpoint, beacon parameters, and kill date; delivery rides the
    launcher one-liners.
-4. **Delivery and initial access.** Delivery (phishing, host interaction, etc.)
-   is out of scope for Rod, but the platform must **ingest the first callback**
-   and correlate it to the engagement.
+4. **Delivery and initial access.** Rod delivers the lure itself where
+   delivery is email-shaped: a tracked campaign (Sec 11.5) sends
+   per-recipient messages whose links bind to per-recipient deploy tokens,
+   so the first callback arrives already attributed to the campaign and
+   the recipient. Host-interaction delivery (a dropped one-liner, manual
+   execution) stays outside Rod; either way the platform must **ingest the
+   first callback** and correlate it to the engagement. The content of
+   social engineering -- pretext, evasion-grade lures, credential-harvest
+   landing pages -- remains out-of-tree (Sec 13): the campaign carries the
+   link and the attribution, not the tradecraft.
 5. **Beaconing / contact.** The implant calls in; the teamserver authenticates
    it, queues tasks, and accepts results. Async beacon and interactive session
    are distinct modes.
@@ -184,7 +191,7 @@ under, and a note on its current state are listed.
 | `Rod.CoreState` | The teamserver's authoritative domain core: typed ids, the `Engagement` aggregate, operators, implants, tasks, deploy tokens, the implant session registry, the task queue and history, and the per-engagement implant certificate authority. The use cases (`EngagementService`, `EnrollmentService`, `HandshakeService`, `TaskService`, `ImplantService`) orchestrate these ports and define the operational behavior everything else consumes. The per-class reduced verb sets (`ImplantClassCapabilities`, Sec 5.2) live here as the inner-ring authority both the build pipeline and tradecraft read. | Inner ring -- depends on nothing in-house. | Implemented. In-memory adapters behind every port; the durable pair lives in `Rod.Persistence`. Task issuance gates each verb on the implant's class reduced set, enforces the kill date and retirement at handshake, and claims tasks atomically from the queue (Sec 5.2, Sec 10.3). |
 | `Rod.Audit` | The append-only, per-engagement audit trail: hash-chained `AuditEvent` records and the `IAuditStore` port, plus the `IArtifactStore` for first-class evidence objects attached to tasks. The evidence backbone (Sec. 11); the source for timeline and report export. | Inner ring -- depends on nothing in-house (crosses the layer boundary with primitive `Guid` ids, never core-state types). | Implemented. In-memory and file-backed (`Audit:DataDirectory`) adapters for the trail and the artifact store; the file store verifies each engagement's chain on recovery and refuses a tampered trail. Also hosts the payload store for built artifacts (Sec 6). |
 | `Rod.Protocol` | **Not a layer.** The protobuf wire protocol: frames and the enrollment/handshake/tasking messages (Sec. 8). The long-lived, language-neutral contract implants of every language build against. | Not a layer -- depends on nothing in-house; never leaks into `Rod.CoreState`. | Implemented. Versioned handshake (major.minor), a status code for every enrollment/handshake refusal, and the chunked exfil frame kind (Sec 8, Sec 10.1). |
-| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11); the browser hook's mint and guid-gated serving edge with the Origin-only CORS posture (Sec 5.2, Sec 8). The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
+| `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11); the browser hook's mint and guid-gated serving edge with the Origin-only CORS posture (Sec 5.2, Sec 8); the delivery-campaign surface (Sec 11.5) -- per-recipient lure builds through the build pipeline, the SMTP send engine, and the lure-serving public edge. The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; config-seeded first operator; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Access is the membership model of Sec 4.5 (per-engagement reader/writer tiers granted by the owner; the account itself carries no permission), with the exclusive interaction claims and activity presence that mark who drives what; a per-handle login throttle slows brute force. The layer also owns the two agent-facing surfaces the operator front carries: the MCP server (`/mcp`, Streamable HTTP, stateless -- the read-only toolset an external agent client drives through an operator API token; runbook [operations/mcp.md](operations/mcp.md)) and the opt-in OpenAI-compatible LLM triage client behind `Microsoft.Extensions.AI`'s `IChatClient` (Sec 11.3; runbook [operations/llm.md](operations/llm.md)), plus the external recon workbench (Sec 11.4; runbook [operations/recon.md](operations/recon.md)) -- the pre-foothold lookups and scan whose findings land as task-less engagement artifacts. |
 | `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
@@ -909,7 +916,11 @@ recorded.**
   the operator never handles the plaintext, and the leak answer is revocation
   by id (`POST /engagements/{id}/deploy-tokens/{tokenId}:revoke`, audited as
   `DeployTokenRevoked`). The manual mint stays for the rotation and re-entry
-  flows (Sec 9), scoped per request to uses and window.
+  flows (Sec 9), scoped per request to uses and window. A delivery campaign
+  (Sec 11.5) mints through the same path once per recipient -- the campaign
+  engine holds the mint, the baked credential stays plaintext-free
+  everywhere an operator reads -- because a per-recipient token is what
+  attributes the enrollment that redeems it.
 - **The transform seam is post-build.** Build-time artifact transformation
   -- where MSF put its encoders and payload encryption -- is a
   config-listed `IPayloadTransform` chain (each transform owns its key
@@ -1251,6 +1262,17 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and its fingerprint are unchanged -- and the hook stays a
   simple-request client (plain bodies, no custom headers), so no preflight
   is ever needed.
+- **The lure serving edge is the hook shape carrying an artifact.** A
+  delivery campaign's per-recipient link (Sec 11.5) is served from the
+  same public family: `GET /implants/lures/{lureId}` and its
+  `.../open` tracking pixel are gated by the route's unguessable id,
+  scoped by the ingress listener's engagement with the same refusal the
+  enroll and fetch routes run, answered `no-store`, and audited on every
+  serve with the fetcher's wire facts. The link route serves the
+  recipient's built artifact -- the click is both the evidence and the
+  delivery -- so a redirector fronts it exactly as it fronts every other
+  public edge: the listener's `publicEndpoint` composes the URL the
+  template merges, and the backend socket never changes.
 - **The raw-TCP listener answers weak-inspection egress.** It is the front
   for environments that permit arbitrary outbound sockets but put nothing
   between them and the internet -- no HTTP inspection to blend with, no
@@ -2457,6 +2479,97 @@ control contract between teamserver and redirector that this surface
 does not imply. Reverse-whois (registrant-driven discovery) would be a
 fifth passive half, but no public reverse-whois service rides a stable
 open contract -- it reopens when one does.
+
+### 11.5 Delivery campaigns
+
+The lifecycle's delivery step (Sec 2 item 4) inside Rod: an
+engagement-scoped **campaign** sends per-recipient lure messages through
+an SMTP relay and tracks each recipient into tasking, so the causal chain
+from lure to implant lives in one tool and one trail -- before this
+surface, the first foothold arrived by delivery that happened entirely
+outside Rod, and the attribution story broke at the seam between the
+mail platform and the first callback.
+
+**The entity is the profile plus the list plus the template.** A campaign
+row carries the sending profile (relay host, port, TLS mode, optional
+credentials, and the from address), the recipient list (email and an
+optional display name, capped -- spear-phish scale, not bulk), the
+message template (subject and body, plain or HTML), the build profile,
+and the listener whose `publicEndpoint` fronts the lure. The template
+merges per recipient -- `{{link}}`, `{{pixel}}`, `{{email}}`, `{{name}}`
+-- and is validated at creation, not at delivery: an unknown field or a
+body without `{{link}}` is refused when the campaign is created, the
+same fail-at-the-seam discipline webhook subscriptions keep. The relay
+password is stored in the clear on the row the way a launcher's download
+credential is (Sec 8): the server must present it again, the row is
+engagement-scoped operator state deletable with the campaign, it never
+enters the audit trail, and it is never returned on read-back.
+
+**One build per recipient is the price of enrollment attribution.** At
+launch, the engine drives the build pipeline once per recipient and
+bakes a per-recipient enrollment credential into each artifact -- the
+credential the build mints through the ordinary path (Sec 6), minted
+single-use and bound by id on the recipient's row. A shared build would
+attribute the click (the lure is per recipient) but never the
+enrollment: the baked token is the only thing an implant carries that
+the server can attribute, so per-recipient tokens require per-recipient
+builds. The artifact each lure serves is therefore unique to its
+recipient, and the enrollment that follows stamps campaign and recipient
+onto the implant row and into its `ImplantEnrolled` fact -- the
+attribution the whole surface exists to keep.
+
+**The lure is a capability URL on the public edge.**
+`GET /implants/lures/{lureId}` serves the recipient's built artifact and
+records the click; `GET /implants/lures/{lureId}/open` is the tracking
+pixel (a 1×1 gif, `no-store`). Both ride the implant family with the
+hook serving edge's posture (Sec 8): the unguessable route id is the
+credential, the ingress listener's engagement scopes the socket, a
+revoked campaign's lures answer 404, and every serve writes a
+`CampaignLinkOpened`/`CampaignLinkClicked` fact carrying the fetcher's
+wire facts -- the same first-touch shape a hook fetch records. The
+pixel is a merge field: HTML bodies that place `{{pixel}}` themselves
+get exactly one, and HTML bodies that do not get one appended
+automatically; plain-text bodies cannot carry one, and `opened` stays
+best-effort by design -- mail clients that block remote images simply
+never fire it.
+
+**Tracking is evidence, and the enrollment is the only proof of
+execution.** Each recipient carries the sent/opened/clicked timestamps
+plus the executed binding: `executed` is stamped when an implant redeems
+the recipient's baked credential, recording the enrolled implant's id on
+the recipient row. A click proves a fetch, never a run; the enrollment
+is the artifact's own testimony.
+
+**The sending engine is a reconciler, not a queue.** One hosted
+background service (the webhook engine's shape) ticks on a fixed delay,
+walks launched campaigns, submits each pending recipient's build, and on
+the build's completion renders and sends the message through the relay.
+Delivery is single-attempt with no retry: a failure lands on the
+recipient row with its reason and in the trail as `CampaignMessageSent`
+(`failed:{reason}`), and a retry is a new campaign -- the trail stays
+the record, exactly as webhook delivery keeps it. Builds ride the
+process-local job registry; a job lost to a restart is re-requested with
+a fresh credential, not reconstructed. Campaign states move
+`Draft → Launched → Completed` (all recipients terminal), and `:revoke`
+freezes both halves: no further sends, and every lure in the campaign
+404s from that moment.
+
+**Egress is a decision the runbook owns.** Which relay, whose IP the
+mail leaves from, and the TLS posture are operator decisions with
+OPSEC consequences -- a sending relay is infrastructure that can be
+correlated. The runbook records the tradeoffs and the alternatives
+([operations/campaigns.md](operations/campaigns.md)); the engine makes
+none of them silently.
+
+**Evolution notes.** Attachments (the message carrying the artifact
+itself, not a link), a reusable sending-profile entity shared across
+campaigns, a landing page behind the lure, and a test-send to a
+lab address are the natural widenings -- each touches the template, the
+engine's send step, and nothing else. A landing page that captures
+credentials would follow the standard store's collection posture
+(Sec 13), and evasion-grade social engineering stays out-of-tree
+regardless: the campaign carries delivery and attribution, never the
+lure's content tradecraft.
 
 ## 12. Technology stack and language boundaries
 
