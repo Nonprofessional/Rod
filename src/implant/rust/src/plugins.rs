@@ -1053,6 +1053,24 @@ mod pe {
         unsafe { (at as *const u64).read_unaligned() }
     }
 
+    // A pointer-width read: the TLS directory's field widths follow the
+    // image's own PE32/PE32+ shape, so its walks route through here.
+    unsafe fn peek_usize(at: *mut u8) -> usize {
+        #[cfg(target_arch = "x86_64")]
+        {
+            (unsafe { peek_u64(at) }) as usize
+        }
+        #[cfg(target_arch = "x86")]
+        {
+            (unsafe { peek_u32(at) }) as usize
+        }
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
+        {
+            let _ = at;
+            unreachable!("the TLS map serves the x86 shapes alone")
+        }
+    }
+
     unsafe fn poke_u32(at: *mut u8, value: u32) {
         unsafe { (at as *mut u32).write_unaligned(value) };
     }
@@ -1157,7 +1175,11 @@ mod pe {
     /// callbacks. The loading-thread scope is the documented constraint
     /// above.
     unsafe fn give_tls(base: *mut u8, image: &PeImage) -> Result<(), String> {
-        if image.tls_rva == 0 || image.tls_size < 40 {
+        // The directory's own width: PE32+ carries 8-byte VAs and a
+        // 40-byte directory, PE32 4-byte VAs and 24 bytes -- the x86 TLS
+        // array insertion below is the other half of that leg's support.
+        let width = std::mem::size_of::<usize>();
+        if image.tls_rva == 0 || image.tls_size < (4 * width + 8) as u32 {
             return Ok(());
         }
         let directory = base.add(image.tls_rva as usize);
@@ -1165,11 +1187,11 @@ mod pe {
         // each one was fixuped to the mapped base, so they are live
         // pointers here -- reducing them against image_base (or rebasing
         // them) computes an address twice and lands off the image.
-        let start = unsafe { peek_u64(directory) } as usize;
-        let end = unsafe { peek_u64(directory.add(8)) } as usize;
-        let index_address = unsafe { peek_u64(directory.add(16)) } as *mut u8;
-        let callbacks = unsafe { peek_u64(directory.add(24)) } as usize;
-        let zero_fill = unsafe { peek_u32(directory.add(32)) } as usize;
+        let start = unsafe { peek_usize(directory) };
+        let end = unsafe { peek_usize(directory.add(width)) };
+        let index_address = unsafe { peek_usize(directory.add(2 * width)) } as *mut u8;
+        let callbacks = unsafe { peek_usize(directory.add(3 * width)) };
+        let zero_fill = unsafe { peek_u32(directory.add(4 * width)) } as usize;
         let template_len = end.saturating_sub(start);
         let block_len = template_len + zero_fill;
         if block_len == 0 {
@@ -1194,14 +1216,14 @@ mod pe {
         if callbacks != 0 {
             let mut at = callbacks as *mut u8;
             loop {
-                let callback = unsafe { peek_u64(at) };
+                let callback = unsafe { peek_usize(at) };
                 if callback == 0 {
                     break;
                 }
                 let run: unsafe extern "C" fn(*mut core::ffi::c_void, u32, *mut core::ffi::c_void) =
                     unsafe { std::mem::transmute(callback) };
                 unsafe { run(base as *mut _, DLL_PROCESS_ATTACH, std::ptr::null_mut()) };
-                at = at.add(8);
+                at = at.add(width);
             }
         }
         Ok(())
