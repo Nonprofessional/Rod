@@ -1,47 +1,8 @@
-mod baked;
-mod channel;
-mod diag;
-mod enroll;
-mod envelope;
-mod error;
-mod handlers;
-mod outbox;
-mod plugins;
-mod profile;
-mod run;
-mod sensitive;
-mod session;
-mod transport;
-mod trust;
-mod verify;
-mod wire;
-
-// The Rust reference implant (architecture.md Sec 12.2): the reach implant
-// for targets a managed runtime cannot serve, speaking the shared wire
-// protocol. The fielded shape runs entirely off the
-// bake; the dev shape (empty bake) runs from ROD_* environment variables.
-// The entry point stays deliberately thin: load the profile, run the state
-// machine, exit with its answer.
+// The standalone entry (architecture.md Sec 12.2): the machine is the
+// library core beside this file, shared with the Android carrier crate;
+// this side of it stays a plain process -- load the profile, run the
+// state machine, exit with its answer.
 
 fn main() {
-    let Some(profile) =
-        profile::Profile::from_baked(baked::PROFILE).or_else(profile::Profile::from_env)
-    else {
-        crate::diag!(
-            "this build carries no baked profile and no ROD_* environment; nothing to run"
-        );
-        std::process::exit(2);
-    };
-    if profile.token.is_empty() {
-        crate::diag!("no enrollment credential (bake or ROD_DEPLOY_TOKEN)");
-        std::process::exit(2);
-    }
-    if profile.kill_date_passed() {
-        crate::diag!("kill date has passed; refusing to run");
-        std::process::exit(1);
-    }
-    std::process::exit(match run::run(&profile) {
-        run::Exit::Terminated(code) => code as i32,
-        run::Exit::NoFront => 1,
-    });
+    std::process::exit(rod_implant::standalone_main());
 }

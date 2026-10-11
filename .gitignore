@@ -20,6 +20,7 @@ src/implant/rust/target/
 src/implant/rust/loader/target/
 src/implant/rust/plugin-sdk/target/
 src/implant/rust/modules/*/target/
+src/implant/rust/carrier/target/
 
 # Operator UI: the Vite build output is produced by `npm run build` (CI does it
 # before `dotnet build`); only the React sources under src/teamserver/Rod.TeamServer/Client

@@ -70,7 +70,10 @@ impl AbiStr {
 
 /// One run's outcome as the shim reports it: success or failure with the
 /// module's output string, or a shim error (an unknown index, a fenced
-/// panic) carrying the cause.
+/// panic) carrying the cause. Only the platform loaders construct these;
+/// the android leg's dormant seam never does (the cfg_attr silences the
+/// dead-code lint there alone).
+#[cfg_attr(target_os = "android", allow(dead_code))]
 enum RunStatus {
     Succeeded(String),
     Failed(String),
@@ -408,9 +411,20 @@ fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
 
 // --- The platform loaders ---------------------------------------------------
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
     executed::ExecLibrary::load(bytes)
+}
+
+// Android: the module family stays compiled-but-dormant (architecture.md
+// Sec 12.2, the mobile leg). Two constraints close the memfd-exec shape
+// there: bionic below API 30 carries no memfd_create symbol to link
+// against, and the untrusted_app SELinux domain denies exec of anonymous
+// fds. The seam refuses with the fact rather than failing at load or
+// linking an artifact that cannot open on the floor the leg targets.
+#[cfg(target_os = "android")]
+fn load_library(_bytes: &[u8]) -> Result<Box<dyn Library>, String> {
+    Err("module.load: the module family is dormant on the Android leg (no anonymous-fd exec under the app domain)".into())
 }
 
 #[cfg(windows)]
@@ -420,7 +434,7 @@ fn load_library(bytes: &[u8]) -> Result<Box<dyn Library>, String> {
 
 // --- Linux: the memfd + exec loader -------------------------------------------
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "android")))]
 mod executed {
     //! The Linux module shape (architecture.md Sec 5.4): the bytes stage in
     //! a memfd and the loader execs them through the anonymous fd --
