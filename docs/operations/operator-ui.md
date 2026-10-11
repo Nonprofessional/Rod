@@ -406,7 +406,17 @@ shows that sentence verbatim rather than paraphrasing the decision into
 a dead end. The scan alone carries the ROE target gate: the form shows
 the engagement's `permittedTargets` beside it, and a target outside the
 scope is refused before any connection opens (`422` with the violated
-rule, the refusal its own audit event).
+rule, the refusal its own audit event). The panel opens the engagement's
+**ROE editor** -- a scope line above the form ("Engagement scope: 2
+verbs, any implant, 16 targets", or "unrestricted") with an **Edit
+scope** button (writers and the owner; the recon tab is the ROE-gated
+surface, but the profile gates tasking everywhere). The dialog edits all
+three allow-lists as one-entry-per-line text areas -- permitted verbs
+(exact or `namespace.*` wildcards), permitted implants (exact ids), and
+permitted targets (hostnames, IPs, CIDR blocks) -- each empty meaning
+unrestricted on that dimension, and the dialog says so when all three
+would go unrestricted. Applying is audited (`RoeUpdated`); a malformed
+target entry is refused by name rather than silently matching nothing.
 
 The **Findings** list under the form is the workbench's own history --
 the engagement's `recon.*` artifacts paged out of the loot board,
@@ -848,9 +858,7 @@ and token mints (in-flight results still land; a mistaken freeze
 reverses with **Unfreeze**), **Export evidence** downloads the close-out
 ZIP (audit trail, artifacts, report, manifest), and **Retire** is the
 terminal step, refused until frozen -- a close-out, not an erasure: the
-evidence stays readable while the record stops serving. The engagement's
-ROE profile has no editor here; it is API-only today
-(`PUT /engagements/{id}/roe`, see [teamserver.md](teamserver.md)).
+evidence stays readable while the record stops serving.
 
 ## Settings
 

@@ -10,6 +10,7 @@ import {
   runReconPortScan,
   runReconResolve,
 } from '../api'
+import { RoeDialog } from '../components/RoeDialog'
 import { saveBlob } from '../download'
 import { fmtBytes } from '../format'
 
@@ -64,6 +65,20 @@ function modeHint(mode: Mode): string {
   }
 }
 
+// One line for the scope in force: the dimensions narrowed name their entry
+// counts, the unrestricted ones say "any" -- an operator scanning the line
+// sees which gate is armed without reading a table.
+function roeSummary(roe: Engagement['roe']): string {
+  const dim = (count: number, unit: string) =>
+    count === 0 ? `any ${unit}` : `${count} ${unit}${count === 1 ? '' : 's'}`
+  const verbs = dim(roe.permittedVerbs.length, 'verb')
+  const implants = dim(roe.permittedImplants.length, 'implant')
+  const targets = dim(roe.permittedTargets.length, 'target')
+  const narrowed =
+    roe.permittedVerbs.length + roe.permittedImplants.length + roe.permittedTargets.length > 0
+  return narrowed ? `${verbs}, ${implants}, ${targets}` : 'unrestricted (ROE)'
+}
+
 export function ReconView({
   engagementId,
   onlineTick,
@@ -77,6 +92,7 @@ export function ReconView({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [engagement, setEngagement] = useState<Engagement | null>(null)
+  const [roeOpen, setRoeOpen] = useState(false)
   const [finding, setFinding] = useState<Finding | null>(null)
   const [history, setHistory] = useState<LootEntry[]>([])
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -215,6 +231,26 @@ export function ReconView({
           {busy ? 'Running…' : 'Run'}
         </button>
       </form>
+      {engagement && (
+        <p className="muted">
+          Engagement scope: {roeSummary(engagement.roe)}{' '}
+          {engagement.yourRole !== 'reader' && (
+            <button className="ghost sm" onClick={() => setRoeOpen(true)}>
+              Edit scope
+            </button>
+          )}
+          {roeOpen && (
+            <RoeDialog
+              engagementId={engagementId}
+              profile={engagement.roe}
+              onApplied={(roe) =>
+                setEngagement({ ...engagement, roe })
+              }
+              onClose={() => setRoeOpen(false)}
+            />
+          )}
+        </p>
+      )}
       {mode === 'portscan' && engagement && (
         <p className="muted">
           {engagement.roe.permittedTargets.length === 0

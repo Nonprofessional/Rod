@@ -431,6 +431,30 @@ export async function editEngagement(
   return edited
 }
 
+// The engagement's rules-of-engagement profile (architecture.md Sec 9's
+// guardrails): three allow-lists, each empty meaning unrestricted on that
+// dimension. Applying is a scope change the audit trail records as RoeUpdated;
+// the answer is the profile now in force. Verb entries match exactly or by
+// namespace wildcard (recon.*); implant entries are exact ids; target
+// entries are hostnames, IP literals, or CIDR blocks -- a malformed target
+// entry is refused by name rather than silently matching nothing.
+export async function applyRoe(
+  engagementId: string,
+  profile: { permittedVerbs: string[]; permittedImplants: string[]; permittedTargets: string[] },
+): Promise<RoeProfile> {
+  const response = await fetch(`engagements/${engagementId}/roe`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      permittedVerbs: profile.permittedVerbs,
+      permittedImplants: profile.permittedImplants,
+      permittedTargets: profile.permittedTargets,
+    }),
+  })
+  const scoped = await jsonOrThrow<{ engagementId: string; roe: RoeProfile }>(response)
+  return scoped.roe
+}
+
 export interface EngagementClosedResult {
   engagementId: string
   at: string
