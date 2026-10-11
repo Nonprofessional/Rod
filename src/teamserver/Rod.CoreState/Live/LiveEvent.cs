@@ -171,6 +171,22 @@ public sealed record LiveEvent(
         => new(engagement, LiveEventKind.PayloadFetched, OperatorId.Empty, ImplantId: null, TaskId: null, payload, at);
 
     /// <summary>
+    /// Builds a campaign-activity event (architecture.md Sec 11.5): a
+    /// recipient's state moved -- sent, failed, opened, clicked, executed.
+    /// Engine facts (the send) attribute to the campaign's creator; public
+    /// edge facts (the open, the click) and the executed binding carry the
+    /// null operator. No implant or task rides the event; the payload names
+    /// the campaign, the recipient, and what moved, and connected consoles
+    /// refetch the campaign's detail on it.
+    /// </summary>
+    public static LiveEvent CampaignActivity(
+        EngagementId engagement,
+        OperatorId operatorId,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, LiveEventKind.CampaignActivity, operatorId, ImplantId: null, TaskId: null, payload, at);
+
+    /// <summary>
     /// Builds an interaction-claim event -- acquired or released
     /// (architecture.md Sec 4.5). Attributed to the holder the claim concerns;
     /// a channel claim carries the surface's task id so a console binds the

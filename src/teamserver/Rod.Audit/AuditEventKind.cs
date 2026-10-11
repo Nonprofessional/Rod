@@ -588,4 +588,38 @@ public enum AuditEventKind
     /// is the identity-bearing half of the exchange.
     /// </summary>
     HookFetched,
+
+    /// <summary>
+    /// A delivery campaign was created, launched, or revoked
+    /// (architecture.md Sec 11.5). The payload carries the campaign's
+    /// shape -- the recipient count, the relay's host (the address alone,
+    /// never the credential), the listener fronting the lure -- and the
+    /// outcome is the campaign id. Attributed to the acting operator. The
+    /// state flips share this kind with the verb naming which flip
+    /// (campaign.created / campaign.launched / campaign.revoked).
+    /// </summary>
+    CampaignStateChanged,
+
+    /// <summary>
+    /// The send engine delivered one campaign message to its relay -- or
+    /// failed to (architecture.md Sec 11.5). The payload names the
+    /// campaign and the recipient; the outcome is <c>delivered</c> or
+    /// <c>failed:{reason}</c>. Delivery is single-attempt by design, so
+    /// this fact is the send's whole record. Attributed to the campaign's
+    /// creator, the operator whose launch authorized the send.
+    /// </summary>
+    CampaignMessageSent,
+
+    /// <summary>
+    /// A recipient fetched their lure off the public edge (architecture.md
+    /// Sec 11.5) -- the click, or the tracking pixel's open. The fetcher
+    /// speaks no Rod protocol and carries no identity, so the event is
+    /// scoped by the campaign's engagement and attributed to the null
+    /// operator, exactly like a payload fetch or a hook fetch. The payload
+    /// carries what the wire showed (remote address, user agent, listener
+    /// socket, open or click); the outcome is the recipient's lure id. The
+    /// enrollment that may follow is the identity-bearing half of the
+    /// exchange, recorded on the ImplantEnrolled fact.
+    /// </summary>
+    CampaignLinkServed,
 }

@@ -675,6 +675,10 @@ public static class TransportHost
         // the rendered hook script and its test page, gated by the route's
         // unguessable id and scoped by the ingress listener's engagement.
         endpoints.MapHookServingEndpoints();
+        // The lure serving edge (architecture.md Sec 11.5): a delivery
+        // campaign's per-recipient link and tracking pixel, the same
+        // unguessable-id shape, delivering the recipient's built artifact.
+        endpoints.MapLureServingEndpoints();
         // The WebSocket beacon stream: the web posture's live channel, the
         // same session every live carriage runs over the envelope's own auth
         // and frame grammar.

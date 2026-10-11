@@ -140,4 +140,16 @@ public enum LiveEventKind
     /// roster-paced mirror of the audit trail's durable record.
     /// </summary>
     MembershipChanged,
+
+    /// <summary>
+    /// A delivery campaign's recipient state moved (architecture.md
+    /// Sec 11.5) -- a message sent or failed, a lure opened or clicked, a
+    /// recipient executed into an implant. System-initiated except the
+    /// send, so the operator id carries the campaign's creator on engine
+    /// facts and the null operator on edge facts; the payload names the
+    /// campaign, the recipient, and what moved. Connected operators
+    /// refresh their campaign view on it -- the roster-paced mirror of
+    /// the audit trail's per-fact record.
+    /// </summary>
+    CampaignActivity,
 }
