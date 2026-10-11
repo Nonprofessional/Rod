@@ -1054,7 +1054,12 @@ mod pe {
         let mut offset = 0usize;
         while offset + 8 <= image.reloc_size as usize {
             let block = base.add(image.reloc_rva as usize + offset);
-            let block_size = unsafe { peek_u32(block) } as usize;
+            // Block layout: the page's base RVA, then the block's own size,
+            // then the 2-byte entries. Each entry's 12-bit offset is
+            // relative to the page base, so the slot it names lives at
+            // base + page RVA + offset -- not inside the block itself.
+            let page_rva = unsafe { peek_u32(block) } as usize;
+            let block_size = unsafe { peek_u32(block.add(4)) } as usize;
             if block_size < 8 || block_size > image.reloc_size as usize - offset {
                 return Err("module.load: malformed relocation table".into());
             }
@@ -1062,17 +1067,17 @@ mod pe {
             for entry in 0..count {
                 let word = unsafe { peek_u16(block.add(8 + entry * 2)) };
                 let kind = word >> 12;
-                let at = word & 0xfff;
+                let at = (word & 0xfff) as usize;
                 match kind {
                     0 => {} // pad
                     3 => unsafe {
                         // HIGHLOW: a 32-bit VA.
-                        let slot = block.add(at as usize);
+                        let slot = base.add(page_rva + at);
                         poke_u32(slot, peek_u32(slot).wrapping_add(delta as u32));
                     },
                     10 => unsafe {
                         // DIR64: a 64-bit VA.
-                        let slot = block.add(at as usize);
+                        let slot = base.add(page_rva + at);
                         poke_u64(slot, peek_u64(slot).wrapping_add(delta as u64));
                     },
                     other => {
@@ -1142,10 +1147,13 @@ mod pe {
             return Ok(());
         }
         let directory = base.add(image.tls_rva as usize);
-        let rva = |va: u64| va as usize - image.image_base as usize;
+        // The directory's fields are VAs, and relocation ran before this:
+        // each one was fixuped to the mapped base, so they are live
+        // pointers here -- reducing them against image_base (or rebasing
+        // them) computes an address twice and lands off the image.
         let start = unsafe { peek_u64(directory) } as usize;
         let end = unsafe { peek_u64(directory.add(8)) } as usize;
-        let index_address = unsafe { peek_u64(directory.add(16)) } as usize;
+        let index_address = unsafe { peek_u64(directory.add(16)) } as *mut u8;
         let callbacks = unsafe { peek_u64(directory.add(24)) } as usize;
         let zero_fill = unsafe { peek_u32(directory.add(32)) } as usize;
         let template_len = end.saturating_sub(start);
@@ -1165,21 +1173,19 @@ mod pe {
             return Err("module.load: the TLS block allocation failed".into());
         }
         if template_len > 0 {
-            unsafe {
-                std::ptr::copy_nonoverlapping(base.add(rva(start as u64)), block, template_len);
-            }
+            unsafe { std::ptr::copy_nonoverlapping(start as *const u8, block, template_len) };
         }
         let index = unsafe { tls_array_insert(block)? };
-        unsafe { poke_u32(base.add(rva(index_address as u64)), index) };
+        unsafe { poke_u32(index_address, index) };
         if callbacks != 0 {
-            let mut at = base.add(rva(callbacks as u64));
+            let mut at = callbacks as *mut u8;
             loop {
                 let callback = unsafe { peek_u64(at) };
                 if callback == 0 {
                     break;
                 }
                 let run: unsafe extern "C" fn(*mut core::ffi::c_void, u32, *mut core::ffi::c_void) =
-                    unsafe { std::mem::transmute(base.add(rva(callback))) };
+                    unsafe { std::mem::transmute(callback) };
                 unsafe { run(base as *mut _, DLL_PROCESS_ATTACH, std::ptr::null_mut()) };
                 at = at.add(8);
             }
@@ -1311,6 +1317,59 @@ mod pe {
             return Err("module.load: the image exports no rod_plugin entry".into());
         }
         Ok(exports)
+    }
+
+    #[cfg(test)]
+    fn zeroed_image(size: u32) -> PeImage {
+        PeImage {
+            bytes: Vec::new(),
+            headers_len: 0,
+            image_base: 0x140_000_000,
+            size_of_image: size,
+            entry_point: 0,
+            sections: Vec::new(),
+            reloc_rva: 0,
+            reloc_size: 0,
+            import_rva: 0,
+            import_size: 0,
+            export_rva: 0,
+            export_size: 0,
+            tls_rva: 0,
+            tls_size: 0,
+        }
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn relocate_walks_page_blocks_like_mingw_writes_them() {
+        // One block covering page 0x1000 with a single DIR64 entry at page
+        // offset 0x40. The walker must take the block's size from the
+        // second dword -- the first is the page RVA, which on a real image
+        // dwarfs the directory and reads as malformed -- and land the fixup
+        // on the covered page, not inside the relocation directory.
+        let mut mapped = vec![0u8; 0x2000];
+        let base = mapped.as_mut_ptr();
+        let mut image = zeroed_image(0x2000);
+        image.reloc_rva = 0x1800;
+        image.reloc_size = 0x10;
+        let directory = unsafe { base.add(0x1800) };
+        unsafe {
+            poke_u32(directory, 0x1000); // page RVA
+            poke_u32(directory.add(4), 0x10); // block size
+            (directory.add(8) as *mut u16).write_unaligned((10 << 12) | 0x40); // DIR64 at +0x40
+            poke_u64(base.add(0x1040), 0x140_001_040); // the VA to fix up
+        }
+        let delta = (base as usize).wrapping_sub(0x140_000_000);
+        unsafe { relocate(base, &image, delta) }.expect("the walk succeeds");
+        assert_eq!(
+            unsafe { peek_u64(base.add(0x1040)) },
+            0x140_001_040u64.wrapping_add(delta as u64)
+        );
+        assert_eq!(
+            unsafe { peek_u64(base.add(0x1808)) },
+            (10 << 12) | 0x40,
+            "the entry itself must not be treated as a fixup slot"
+        );
     }
 }
 
