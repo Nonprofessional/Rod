@@ -830,15 +830,19 @@ recorded.**
   own closest equivalents. The delivery posture the spellings once
   flagged -- disk versus in-memory -- belongs to the launcher step
   (below): the render offers the memfd family for every native Linux
-  payload, so the operator picks per paste, not per build. **`dll`, `so`,
-  and `shellcode`** are contract slots the axis carries for the shapes a
-  host process loads or an injector spends -- the PE and ELF shared
-  libraries and the position-independent blob `inject.shellcode` runs --
-  named so a request and a library row can spell the delivery before the
-  toolchain that produces them lands; the parser and the unit both refuse
-  them with that state named until then. An
-  unmappable target fails the build with the supported set named rather
-  than silently building for the build host.
+  payload, so the operator picks per paste, not per build. **`so` and
+  `apk`** are the android carrier's deployment shapes (Sec 12.2): the
+  bare cdylib an engagement's own app loads, and the installable package
+  the unit assembles from the carrier crate's manifest through the SDK's
+  aapt2/apksigner -- android targets take this pair alone, and every
+  other target refuses it. **`dll` and `shellcode`** stay contract slots
+  the axis carries for the shapes a host process loads or an injector
+  spends -- the PE shared library and the position-independent blob
+  `inject.shellcode` runs -- named so a request and a library row can
+  spell the delivery before the toolchain that produces them lands; the
+  parser and the unit both refuse them with that state named until then.
+  An unmappable target fails the build with the supported set named
+  rather than silently building for the build host.
 - **Build params** include the implant class, artifact format, target OS/arch,
   transport profile, and beacon parameters (mode, sleep, jitter, kill date).
   They are produced at request time so each artifact is unique -- this is
@@ -2579,7 +2583,7 @@ lure's content tradecraft.
 | Data store | PostgreSQL (opt-in; in-memory default) | Authoritative teamserver state; per-engagement audit. PostgreSQL is the authoritative store when configured (`ConnectionStrings:Postgres`); absent it, in-memory adapters remain the default for tests and dev deployments (see Sec 12.1). |
 | Build units | Rust (in-tree, implemented); Go/C/C++/Nim via out-of-tree community units (see Sec 12.2) | One in-tree toolchain; polyglot by contract, no teamserver-language coupling. |
 | Redirectors | .NET Native AOT (shipped), single static binary | Tiny VPS footprint, no runtime install. The teamserver-side rotation path (listener repoint) and the in-tree opaque L4 forwarder both ship; deploy/rotate runbook in [operations/redirectors.md](operations/redirectors.md). The enrolled-fleet control plane is a recorded future direction (Sec 8). |
-| Implants | Rust (the reference implant shipped); Go/C/C++/Nim via out-of-tree community units -- per target | One Rust reference implant, static and cross-platform; community implants slot in by contract for targets it does not fit. |
+| Implants | Rust (the reference implant shipped; the Android carrier leg shipped with it -- `carrier/`, Sec 12.2); Go/C/C++/Nim via out-of-tree community units -- per target | One Rust reference implant, static and cross-platform, plus its in-process library leg for Android carriers; community implants slot in by contract for targets it does not fit. |
 | Operator UI | Web (React + TypeScript, Vite), served same-origin by the teamserver | React sources in `src/teamserver/Rod.TeamServer/Client/`; the production build emits into the host's `wwwroot/`, served as static files with an SPA fallback so the client owns deep links, and Vite's dev server proxies the operator API in development. Chosen over Blazor for the larger React ecosystem and audience reach, trading away Blazor's .NET-native service reuse and adding a Node/Vite step to CI. The UI talks to the operator HTTP API over `fetch` (no direct .NET injection), keeping the API the single integration point. |
 
 The wire protocol and capability registry are the long-lived, language-neutral
@@ -2623,24 +2627,38 @@ C2's logic lives where a managed runtime costs nothing (it runs on the
 operator's own infrastructure). The **implant is Rust**
 (`src/implant/rust/`, built by `RustBuildUnit`): a ~2.25 MB static musl
 binary for every target a managed runtime cannot serve -- routers,
-appliances, 32-bit ARM IoT Linux, native shells for mobile platforms --
-with both web carriages (the envelope POST cycle on poll bakes, the
-WebSocket stream on stream bakes), the streaming channel layer
-(`shell.interact` under a pseudo-terminal, `tunnel.forward`, and
-`tunnel.socks`'s connection-multiplexed proxy -- live on the stream
-carriage, the degraded park-and-drain discipline over the poll cycle), the
-one-shot core verbs, the module family of the plugin seam (Sec 5.4,
-compiled on every platform; Linux loads modules by exec'ing them out of a
-memfd, so the static musl artifact loads them like any other), and the
-Windows sensitive set
+appliances, 32-bit ARM IoT Linux -- with both web carriages (the envelope
+POST cycle on poll bakes, the WebSocket stream on stream bakes), the
+streaming channel layer (`shell.interact` under a pseudo-terminal,
+`tunnel.forward`, and `tunnel.socks`'s connection-multiplexed proxy --
+live on the stream carriage, the degraded park-and-drain discipline over
+the poll cycle), the one-shot core verbs, the module family of the plugin
+seam (Sec 5.4, compiled on every platform; Linux loads modules by
+exec'ing them out of a memfd, so the static musl artifact loads them like
+any other), and the Windows sensitive set
 (inject.shellcode, collect.minidump, collect.keylog) that self-gate on
-`cfg(windows)` so a Linux build compiles none of them. The wire protocol is
-the language-neutral product (rod.proto, the baked profile's base64url
-JSON, the sealed envelope); the Rust implant is proven against it by the
-conformance harness (its reference candidate) and the end-to-end legs
-(dev-shape and pipeline-built, both contact modes). The `Language` enum
+`cfg(windows)` so a Linux build compiles none of them. The mobile leg is
+the same machine in a library: the crate's core is a lib target, and the
+`carrier/` cdylib beside it (the loader tier's sibling) is the library
+`android.app.NativeActivity` loads -- zero Java, the hand-declared
+native_activity.h seam, the crate's manifest the whole app face, the
+build unit crossing it for the `-linux-android` triples through the
+NDK's clang and packaging the installable (`so`/`apk`, Sec 6) with the
+SDK's aapt2/apksigner against a bionic floor of API 24. The module
+family stays compiled-but-dormant on that leg: bionic below API 30
+carries no memfd_create to link and the app SELinux domain denies
+anonymous-fd exec, so the seam refuses rather than linking an artifact
+that cannot open. The wire protocol is the language-neutral product
+(rod.proto, the baked profile's base64url JSON, the sealed envelope); the
+Rust implant is proven against it by the conformance harness (its
+reference candidate) and the end-to-end legs (dev-shape and
+pipeline-built, both contact modes; the android carrier rides the
+emulator's amd64 leg through the same round trip, the aarch64 cross for
+devices building on the Linux host unchanged --
+[operations/android.md](operations/android.md)). The `Language` enum
 (Go/DotNet/Rust/C/Nim) and build contract stay, so a community implant in
-any language registers a build unit and compiles against the same contract.
+any language registers a build unit and compiles against the same
+contract.
 
 The .NET implant and the .NET stager that preceded this shape are deleted:
 their history is the commit record, and their delivery answers -- the

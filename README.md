@@ -151,7 +151,7 @@ flowchart LR
 |-----------|-------|-------|
 | Teamserver | .NET 10 (LTS), ASP.NET Core | Monolithic kernel, six internal layers. |
 | Operator UI | React 19, Vite | Lives in the teamserver project; served same-origin. |
-| Implants | Rust reference (static musl / mingw); Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
+| Implants | Rust reference (static musl / mingw; Android carrier cdylib); Go/C/C++/Nim out-of-tree | Short-lived, disposable; implant-generated keys. |
 | Web shells | PHP, JSP, ASPX, classic ASP scripts | Placement scripts with baked credentials; synchronous tasking. |
 | Loader | Rust (`no_std`, no libc) | Sealed fetch-and-exec from memory; Linux amd64/arm64. |
 | Build units | Rust in-tree; others out-of-tree | Language-neutral build contract ([architecture.md Sec 12.2](docs/architecture.md)). |
@@ -256,6 +256,7 @@ The doc tree, by what you came for:
 | Stand-up, configuration, and the production runbook | [docs/operations/teamserver.md](docs/operations/teamserver.md) |
 | The operator console's panels and fields | [docs/operations/operator-ui.md](docs/operations/operator-ui.md) |
 | Redirector build, deploy, and rotation | [docs/operations/redirectors.md](docs/operations/redirectors.md) |
+| The Android carrier leg -- build, emulator lab, devices | [docs/operations/android.md](docs/operations/android.md) |
 | The pre-deployment rehearsal walk | [docs/operations/rehearsal.md](docs/operations/rehearsal.md) |
 | Pre-foothold recon -- egress decisions and the scan's ROE gate | [docs/operations/recon.md](docs/operations/recon.md) |
 | Delivery campaigns -- the egress decisions and the tracked lure | [docs/operations/campaigns.md](docs/operations/campaigns.md) |
