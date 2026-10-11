@@ -24,6 +24,7 @@ const CLASS_VERBS: Record<string, readonly string[]> = {
     'recon.portscan', 'recon.hostenum', 'recon.service', 'recon.ps',
     'persist.install', 'persist.remove', 'persist.list',
     'collect.cred', 'collect.screenshot',
+    'module.load', 'module.unload', 'module.list',
   ],
   WebShell: ['shell.exec'],
   Ephemeral: ['shell.exec'],
@@ -45,6 +46,7 @@ function classVerbs(klass: string): ReadonlySet<string> {
 export const DIRECT_VERBS: readonly string[] = [
   'recon.ps', 'recon.hostenum', 'collect.screenshot', 'persist.list',
   'browser.fingerprint', 'browser.cookies', 'browser.screenshot',
+  'module.list',
 ]
 
 export interface ImplantMenuActions {
@@ -262,6 +264,39 @@ export function implantMenuEntries(implant: Implant, actions: ImplantMenuActions
         onSelect: () => actions.onDialog('persist.remove'),
       },
       'persist.remove',
+    ),
+    { kind: 'label', label: 'Modules' },
+    push(
+      {
+        kind: 'item',
+        label: 'Load module',
+        icon: 'package',
+        opensDialog: true,
+        title: 'module.load -- deliver a plugin module as staged content; its verbs join this implant\'s advertised set',
+        onSelect: () => actions.onDialog('module.load'),
+      },
+      'module.load',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'List modules',
+        icon: 'list',
+        title: 'module.list -- the modules this implant carries and the verbs they registered',
+        onSelect: () => actions.onIssue('module.list'),
+      },
+      'module.list',
+    ),
+    push(
+      {
+        kind: 'item',
+        label: 'Unload module',
+        icon: 'x',
+        opensDialog: true,
+        title: 'module.unload -- drop a loaded module and the routes it registered',
+        onSelect: () => actions.onDialog('module.unload'),
+      },
+      'module.unload',
     ),
     { kind: 'label', label: 'Browser' },
     push(

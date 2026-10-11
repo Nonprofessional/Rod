@@ -159,8 +159,9 @@ carrier returns.
   header's hover says so, and the rows underneath stay per-identity. Notes and
   retire live on the row, and everything else opens from its context menu
   (right-click or the three-dot button): shell commands, the file browser,
-  the process browser, recon, persistence, collection -- each entry gated
-  on the implant's class, argument-bearing verbs opening a labeled dialog
+  the process browser, recon, persistence, collection, modules -- each
+  entry gated on the implant's class, argument-bearing verbs opening a
+  labeled dialog
   (marked with a right-edge ellipsis, the native "asks for more" menu
   convention), zero-argument verbs issuing directly.
 - **Session console** (`#/engagements/{id}/implants/{implantId}`, the
@@ -180,12 +181,12 @@ carrier returns.
   interval** entry as a labeled dialog. The transcript follows the newest line while
   the operator is parked at the bottom and pins when they scroll up. The
   Advanced disclosure is the raw verb+arguments escape hatch, pinned to
-  this implant. Module verbs carry no menu entry or shortcut of their
-  own: `module.list` and `module.unload <name>` ride the raw hatch like
-  any verb, while `module.load` -- whose staged content is the module's
-  bytes -- goes through the API (`POST /engagements/{id}/tasks` with the
-  content-bearing body), the console having no content-bearing path.
-  Once a module is loaded, its verbs answer here exactly like built-ins.
+  this implant. The module family rides the row menu's **Modules** group:
+  **Load module** opens a labeled dialog whose file picker carries the
+  module binary as the task's staged content (the server binds its sha256
+  into the signed tasking), **List modules** issues directly, and
+  **Unload module** asks for the name. Once a module is loaded, its verbs
+  answer here exactly like built-ins.
 - **Task log** (beside Implants, in the Operate group) -- the engagement's
   task history as a filterable, live log: by implant (switches to that
   implant's own feed), verb, status, issuing operator, or free text. Each

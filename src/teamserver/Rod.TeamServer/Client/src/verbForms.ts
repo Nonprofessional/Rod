@@ -179,6 +179,47 @@ export const VERB_FORMS: Record<string, VerbForm> = {
     ],
     build: (values) => ({ arguments: `${text(values.mechanism)} ${text(values.name)}` }),
   },
+  'module.load': {
+    title: 'Load a module',
+    fields: [
+      {
+        key: 'name',
+        label: 'Module name',
+        required: true,
+        placeholder: 'hostenum',
+        help: 'Letters, digits, dot, dash, underscore; 64 bytes at most. The name the module family registers under.',
+      },
+      {
+        key: 'file',
+        label: 'Module binary',
+        type: 'file',
+        required: true,
+        help: 'The plugin the build unit produced for the target\'s platform (a dll on Windows, the executable shape on Linux). Rides the staged content arm; the server binds its sha256 into the signed tasking.',
+      },
+    ],
+    // The staged arm only: the one-shot handler refuses module.load, so the
+    // bytes must always ride Content (the server appends the sha256 to the
+    // arguments -- no client-side hash needed, unlike file.push's inline
+    // split).
+    build: (values, files) => {
+      const name = text(values.name)
+      const file = files.file
+      if (!file) return { arguments: name }
+      return { arguments: name, content: file.base64 }
+    },
+  },
+  'module.unload': {
+    title: 'Unload a module',
+    fields: [
+      {
+        key: 'name',
+        label: 'Module name',
+        required: true,
+        placeholder: 'hostenum',
+      },
+    ],
+    build: (values) => ({ arguments: text(values.name) }),
+  },
   'browser.dom': {
     title: 'Read the page DOM',
     fields: [
