@@ -25,13 +25,17 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-(Nothing queued. The delivery campaign shipped 2026-10-11 as Sec 11.5,
-per [operations/campaigns.md](operations/campaigns.md) -- the Sec 2
-delivery boundary it amended is the design's own record. The Android
-carrier leg shipped the same day as Sec 12.2's mobile half, per
-[operations/android.md](operations/android.md); its device-verified
-foreground-service durability story stays an engagement decision named
-there, not open work here.)
+- **Redirector control plane** (serves architecture.md Sec 8). The recorded
+  future direction, now taken up: redirectors enroll as managed nodes against
+  a pre-provisioned credential, dial home over an outbound-only control
+  channel that never rides the implant ingress, and listeners grow an ordered
+  `fronts[]` whose attachments the control plane provisions with forwarding
+  rules -- repoint becomes re-attaching the primary front. Nodes are
+  deployment capacity; the data plane stays the opaque L4 splice.
+  _AC:_ an enrolled node fronts a listener end to end -- attach a front, the
+  node receives and serves the pushed forwarding rule, a contact through the
+  front reaches the listener's bind -- and rotation is primary re-attach with
+  no manual binary reconfiguration on the node.
 
 ## On hold
 
