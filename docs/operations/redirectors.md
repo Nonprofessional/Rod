@@ -34,7 +34,10 @@ The flow:
 
 1. **Mint a credential** on the console's Redirectors page (or
    `POST /redirectors/credentials` with a name). The secret is shown exactly
-   once; its name becomes the node's roster name.
+   once, rendered inside the complete `rod-redirector` invocation -- control
+   URL and state path filled in, the scheme matching the console's own TLS
+   posture -- so enrollment is a copy and a paste. Its name becomes the
+   node's roster name.
 
 2. **Run the node** pointed at the teamserver's shared tier:
 

@@ -970,10 +970,13 @@ so fleet provenance reads off the node), its address and enrollment age.
 *Retire* (two clicks) takes a node out of the deployment: the live control
 session closes and the next reconnect is refused by name. **Enrollment
 credentials** pre-provision new nodes: *Mint* takes the node's roster name
-and an optional lifetime (default a day) and shows the secret exactly once
-beside a copy button -- only its digest is stored, the credential is
-single-use, and handing it to `rod-redirector -credential` is the whole
-enrollment. The ledger names each credential's state (unused, enrolled --
+and an optional lifetime (default a day) and shows the secret exactly
+once, rendered inside the complete node invocation -- the control URL
+derived from this console's own address and TLS posture (wss behind
+HTTPS, ws otherwise) plus the runbook's state path -- with copy buttons
+for the whole command and the bare secret. Only its digest is stored, the
+credential is single-use, and pasting the command on the machine is the
+whole enrollment. The ledger names each credential's state (unused, enrolled --
 with the node it minted, expired, revoked); *Revoke* (two clicks) makes an
 unused credential permanently unusable. The attach/detach/promote half --
 where nodes meet engagements -- lives in each engagement's

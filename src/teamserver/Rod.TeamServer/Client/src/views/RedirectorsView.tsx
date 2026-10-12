@@ -22,6 +22,25 @@ import { useArmedDelete } from '../useArmedDelete'
 // pre-provision new nodes, and retirement -- a retired node's reconnect is
 // refused by name and its live session closed.
 
+// The control URL a new node should dial, derived from the address this
+// console is being viewed at: the operator front is the shared tier the
+// control channel rides (architecture.md Sec 8), so wherever the browser
+// reached the teamserver is exactly where a node can. The scheme follows
+// the console's own TLS posture -- wss behind an HTTPS front, ws on the
+// plain-HTTP lab socket (docs/operations/redirectors.md).
+function controlUrl(): string {
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${scheme}//${window.location.host}/redirectors/control`
+}
+
+// The full node invocation a minted secret completes: the control URL, the
+// one-time credential, and the state path from the runbook -- without it a
+// restart loses the identity the spent credential minted, and the node can
+// never enroll again.
+function nodeCommand(secret: string): string {
+  return `rod-redirector -control ${controlUrl()} -credential ${secret} -state /var/lib/rod/redirector.state.json`
+}
+
 export function RedirectorsView() {
   const [nodes, setNodes] = useState<RedirectorNodeSummary[]>([])
   const [credentials, setCredentials] = useState<RedirectorCredentialSummary[]>([])
@@ -94,11 +113,11 @@ export function RedirectorsView() {
     <div className="card">
       <h3>Redirectors</h3>
       <p className="muted">
-        The deployment's forwarding fleet. A node runs{' '}
-        <code>rod-redirector -control wss://&lt;teamserver&gt;/redirectors/control -credential &lt;secret&gt;</code>{' '}
-        — it enrolls once, then receives and serves the fronts this teamserver's listeners attach to
-        it. Presence is the control connection itself; retirement refuses the next reconnect by
-        name.
+        The deployment's forwarding fleet. Mint a credential below and the console renders the full
+        node invocation to paste on the machine — the node enrolls once, then receives and serves
+        the fronts this teamserver's listeners attach to it. The control URL it bakes follows this
+        console's own address and TLS posture (wss behind HTTPS, ws otherwise). Presence is the
+        control connection itself; retirement refuses the next reconnect by name.
       </p>
       <div className="inline-form">
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
@@ -215,13 +234,21 @@ export function RedirectorsView() {
       </form>
 
       {minted && (
-        <p className="minted-secret" title="The secret is shown once, here, and never again.">
-          <strong>{minted.name}</strong> — hand this to the node:{' '}
-          <code>{minted.secret}</code> <CopyButton text={minted.secret} />{' '}
-          <span className="muted">
-            (single-use, expires {new Date(minted.expiresAt).toLocaleString()})
-          </span>
-        </p>
+        <div className="minted-secret" title="The secret is shown once, here, and never again.">
+          <p>
+            <strong>{minted.name}</strong> — paste this on the node's machine:
+          </p>
+          <code>{nodeCommand(minted.secret)}</code>
+          <div className="table-toolbar">
+            <CopyButton text={nodeCommand(minted.secret)} label="Copy command" />
+            <CopyButton text={minted.secret} label="Copy secret" />
+            <span className="muted">
+              single-use, expires {new Date(minted.expiresAt).toLocaleString()}; the -state path
+              persists the identity the enrollment mints, so a restart reconnects instead of
+              dead-ending on the spent credential.
+            </span>
+          </div>
+        </div>
       )}
 
       <div className="table-wrap">
