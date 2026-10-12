@@ -313,3 +313,46 @@ public readonly record struct CampaignRecipientId(Guid Value)
 
     public override string ToString() => Value.ToString("N");
 }
+
+/// <summary>
+/// Identifies an enrolled redirector node (architecture.md Sec 8): one
+/// machine of the deployment's forwarding capacity. Deployment-scoped -- a
+/// node belongs to no engagement; attaching one of its fronts to a listener
+/// is what grants engagement scope.
+/// </summary>
+public readonly record struct RedirectorNodeId(Guid Value)
+{
+    public static RedirectorNodeId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a redirector node id from its string form. Accepts both the
+    /// compact "N" format and the hyphenated Guid form; returns false on
+    /// anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out RedirectorNodeId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new RedirectorNodeId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// Identifies a pre-provisioned redirector enrollment credential
+/// (architecture.md Sec 8): the one-use secret an operator hands to a node
+/// so it can enroll itself against the control plane. Deployment-scoped like
+/// the node it mints.
+/// </summary>
+public readonly record struct RedirectorCredentialId(Guid Value)
+{
+    public static RedirectorCredentialId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+}

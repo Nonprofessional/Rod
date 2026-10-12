@@ -278,3 +278,59 @@ public sealed class EngagementClosedException : DomainException
     {
     }
 }
+
+/// <summary>
+/// Why a redirector-node enrollment was refused. Carried on
+/// <see cref="RedirectorEnrollException"/> so the control endpoint can answer
+/// each cause with its own refusal without the core depending on the control
+/// channel's wire shapes.
+/// </summary>
+public enum RedirectorEnrollReason
+{
+    /// <summary>
+    /// No credential matched the presented secret (unknown, malformed, or
+    /// wrong).
+    /// </summary>
+    Unknown,
+
+    /// <summary>The matched credential had passed its hard expiry.</summary>
+    Expired,
+
+    /// <summary>
+    /// The matched credential had already enrolled a node -- single-use by
+    /// design, so a replay reads as spent, not unknown.
+    /// </summary>
+    Spent,
+
+    /// <summary>The matched credential had been revoked.</summary>
+    Revoked,
+}
+
+/// <summary>
+/// A redirector-node enrollment was refused -- the presented credential is
+/// unknown, expired, spent, or revoked (architecture.md Sec 8). The caller
+/// closes the control connection with the reason.
+/// </summary>
+public sealed class RedirectorEnrollException : DomainException
+{
+    public RedirectorEnrollReason Reason { get; }
+
+    public RedirectorEnrollException(RedirectorEnrollReason reason, string message)
+        : base(message)
+    {
+        Reason = reason;
+    }
+}
+
+/// <summary>
+/// A redirector node's reconnection was refused -- the node id is unknown or
+/// the node has been retired. Retirement is the revocation half for nodes:
+/// the refusal at the next reconnect is the whole enforcement.
+/// </summary>
+public sealed class RedirectorNodeRefusedException : DomainException
+{
+    public RedirectorNodeRefusedException(string message)
+        : base(message)
+    {
+    }
+}

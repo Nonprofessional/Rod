@@ -205,6 +205,12 @@ public static class TransportHost
         // with their baked-credential bindings, evidence stamps -- in-memory
         // by default, Postgres-backed when the connection string is set.
         services.AddSingleton<Rod.CoreState.Campaigns.ICampaignStore, Rod.CoreState.Campaigns.InMemoryCampaignStore>();
+        // The deployment-scoped redirector fleet (architecture.md Sec 8):
+        // enrollment credentials and the enrolled nodes they mint, with
+        // contact reporting. In-memory by default, Postgres-backed when the
+        // connection string is set. No method is engagement-scoped -- a node
+        // is machine capacity; scope arrives per front at the listener.
+        services.AddSingleton<Rod.CoreState.Redirectors.IRedirectorFleet, Rod.CoreState.Redirectors.InMemoryRedirectorFleet>();
         // The campaign send engine (architecture.md Sec 11.5): the
         // reconciler that drives per-recipient builds through the job queue
         // and sends the rendered messages through each campaign's named
