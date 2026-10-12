@@ -31,12 +31,21 @@ export interface NavItemDef {
   icon: IconName
 }
 
-// Grouped the way operators think: the operating pair on top -- the
-// implants table (where tasking issues from) beside the task log (the live
-// feed of everything issued) -- infrastructure next, evidence last in
-// reading order. The task log sits with Implants rather than under Evidence
-// because it is the working log, read while operating; the immutable record
-// (audit, report) stays under Evidence. Two feed-shaped tabs retired the
+// Grouped by what a surface acts on, in the order an engagement lives it.
+// Operate holds the surfaces that act on the target: the implants table
+// (where tasking issues from) beside the task log (the live feed of
+// everything issued), with the rule engine that fires the same task verbs
+// unattended. The intel cycle follows (architecture.md Sec 11): recon runs
+// before the target picture it fills. Infrastructure sits in delivery
+// order -- the listeners, the one-liner and lure surfaces that ride them,
+// then the builds those deliver. The engagement's own bookkeeping closes
+// the sidebar: the crew roster, the out-of-band channels, and the
+// immutable record all tend the engagement rather than the target, so they
+// belong together at the bottom, not scattered into the operating group.
+//
+// The task log sits with Implants rather than under the record because it
+// is the working log, read while operating; the immutable record (audit,
+// report) stays last in reading order. Two feed-shaped tabs retired the
 // same way the timeline did -- as extra projections of surfaces that
 // already render them: the handoff digest is the Audit panel's window mode
 // (the resume question is a query over the ledger), and task artifacts
@@ -50,18 +59,21 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
       { id: 'shells', label: 'Shells', icon: 'terminal' },
       { id: 'webshells', label: 'Web shells', icon: 'globe' },
       { id: 'tasking', label: 'Task log', icon: 'inbox' },
+      // Declarative tasking: the rules fire task verbs while no operator
+      // watches, so they round out the manual operating surfaces.
       { id: 'automation', label: 'Automation', icon: 'clock' },
-      { id: 'notifications', label: 'Notifications', icon: 'bell' },
+    ],
+  },
+  {
+    label: 'Intel',
+    items: [
       // The pre-foothold scoping surface (architecture.md Sec 11.4): the
-      // external recon workbench, which runs before the target picture it
-      // feeds -- so it sits ahead of Intel, the read projection it fills.
+      // external recon workbench, ahead of Intel -- the read projection it
+      // fills.
       { id: 'recon', label: 'Recon', icon: 'search' },
       // The target picture (architecture.md Sec 11.2): hosts, loot, and the
       // topology -- what the engagement learned, not what it did.
       { id: 'intel', label: 'Intel', icon: 'target' },
-      // The membership model (architecture.md Sec 3): the crew roster beside
-      // the work -- who holds which tier, and the owner's grant management.
-      { id: 'members', label: 'Members', icon: 'users' },
     ],
   },
   {
@@ -80,8 +92,13 @@ export const NAV_GROUPS: readonly { label: string | null; items: readonly NavIte
     ],
   },
   {
-    label: 'Evidence',
+    // The engagement tending itself: who holds access (Sec 3, the
+    // membership model), which out-of-band channels carry its events, and
+    // the immutable record of what it did.
+    label: 'Engagement',
     items: [
+      { id: 'members', label: 'Members', icon: 'users' },
+      { id: 'notifications', label: 'Notifications', icon: 'bell' },
       { id: 'audit', label: 'Audit', icon: 'list' },
       { id: 'report', label: 'Report', icon: 'file' },
     ],
