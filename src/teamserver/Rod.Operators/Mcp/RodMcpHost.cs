@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Protocol;
@@ -31,19 +32,31 @@ namespace Rod.Operators.Mcp;
 /// </summary>
 public static class RodMcpHost
 {
-    /// <summary>Registers the MCP server with its read-only toolset.</summary>
-    public static IServiceCollection AddRodMcp(this IServiceCollection services)
+    /// <summary>
+    /// Registers the MCP server with its read-only toolset, plus the
+    /// task-issuing toolset when the deployment opens the write gate
+    /// (<c>Mcp:AllowWriteTools</c>). The gate is registration-time by
+    /// design: a closed gate means the write tools do not exist on the wire
+    /// -- <c>tools/list</c> names no way to act -- rather than existing and
+    /// refusing, so an agent client cannot even discover an action surface
+    /// the deployment never opened.
+    /// </summary>
+    public static IServiceCollection AddRodMcp(this IServiceCollection services, IConfiguration? configuration = null)
     {
         // The toolset resolves its operator off the authenticated MCP request
         // (stateless HTTP transport: every tool call is a request), so the
         // tools can apply the caller's own engagement reach.
         services.AddHttpContextAccessor();
-        services.AddMcpServer(options =>
+        var mcp = services.AddMcpServer(options =>
         {
             options.ServerInfo = new Implementation { Name = "Rod teamserver", Version = "1.0" };
         })
         .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
         .WithTools<RodReadTools>();
+
+        if (configuration?["Mcp:AllowWriteTools"] is "true")
+            mcp.WithTools<RodWriteTools>();
+
         return services;
     }
 

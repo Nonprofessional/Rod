@@ -140,8 +140,9 @@ public static class RodOperatorsHost
         // the agent tooling seam): read-only tools, Streamable HTTP, mapped
         // at /mcp behind the operator token auth. Registered here so every
         // host that composes the operator layer carries it; unmapped, the
-        // registration is inert.
-        services.AddRodMcp();
+        // registration is inert. The write gate (Mcp:AllowWriteTools) rides
+        // the same configuration the rest of the layer binds.
+        services.AddRodMcp(configuration);
 
         return services;
     }

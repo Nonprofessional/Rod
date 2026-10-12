@@ -174,6 +174,168 @@ public class McpEndpointsTests
         }
     }
 
+    /// <summary>
+    /// The write-gate acceptance (docs/operations/mcp.md, the Evolution note):
+    /// the task-issuing tools do not exist until the deployment opens
+    /// <c>Mcp:AllowWriteTools</c> -- a closed gate means tools/list names no
+    /// way to act, not a way that refuses -- and an open gate issues through
+    /// the same TaskService path the console's task dialog drives, with the
+    /// identical audit fact.
+    /// </summary>
+    private static async Task<(HttpClient Mcp, IHost Host, OperatorId Operator, Guid Engagement, Implant Implant)> SeedGatedAsync()
+    {
+        var (client, host, operatorId) = AuthenticatedHost.Create(
+            extendConfig: dict => dict["Mcp:AllowWriteTools"] = "true",
+            mapEndpoints: endpoints => Rod.Operators.Mcp.RodMcpHost.MapRodMcp(endpoints));
+        await AuthenticatedHost.LoginAsync(client);
+
+        var response = await client.PostAsJsonAsync("/engagements",
+            new EngagementEndpoints.CreateEngagementRequest(Name: "Operation Agent Act"));
+        response.EnsureSuccessStatusCode();
+        var created = await response.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
+        var engagement = Guid.Parse(created!.EngagementId);
+        var implant = await EngagementSetup.EnrollImplantAsync(host, new EngagementId(engagement));
+
+        var bearer = await MintTokenAsync(client, operatorId);
+        var server = host.Services.GetRequiredService<IServer>() as TestServer
+            ?? throw new InvalidOperationException("TestServer was not registered.");
+        var mcp = new HttpClient(server.CreateHandler()) { BaseAddress = new Uri("http://localhost") };
+        mcp.DefaultRequestHeaders.Authorization = new("Bearer", bearer);
+        mcp.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        mcp.DefaultRequestHeaders.Accept.ParseAdd("text/event-stream");
+        return (mcp, host, operatorId, engagement, implant);
+    }
+
+    [Fact]
+    public async Task Mcp_WriteTools_StayHiddenUntilTheGateOpens()
+    {
+        var (mcp, host, _, _, _, _) = await SeedAsync();
+        using (host)
+        using (mcp)
+        {
+            await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
+                @params = new
+                {
+                    protocolVersion = "2025-06-18",
+                    capabilities = new { },
+                    clientInfo = new { name = "rod-test-client", version = "1.0" },
+                },
+            });
+            await NotifyAsync(mcp, new { jsonrpc = "2.0", method = "notifications/initialized" });
+
+            var tools = ResultOf(await RpcAsync(mcp, new { jsonrpc = "2.0", id = 2, method = "tools/list" }));
+            var names = tools.GetProperty("tools").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()!)
+                .ToHashSet();
+            Assert.DoesNotContain("issue_task", names);
+            Assert.DoesNotContain("replay_snippet", names);
+        }
+    }
+
+    [Fact]
+    public async Task Mcp_WriteTools_IssueAndReplayThroughTheRealGates()
+    {
+        var (mcp, host, operatorId, engagement, implant) = await SeedGatedAsync();
+        using (host)
+        using (mcp)
+        {
+            await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "initialize",
+                @params = new
+                {
+                    protocolVersion = "2025-06-18",
+                    capabilities = new { },
+                    clientInfo = new { name = "rod-test-client", version = "1.0" },
+                },
+            });
+            await NotifyAsync(mcp, new { jsonrpc = "2.0", method = "notifications/initialized" });
+
+            var tools = ResultOf(await RpcAsync(mcp, new { jsonrpc = "2.0", id = 2, method = "tools/list" }));
+            var names = tools.GetProperty("tools").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()!)
+                .ToHashSet();
+            Assert.Contains("issue_task", names);
+            Assert.Contains("replay_snippet", names);
+
+            // One task through the tool: the real issuance path, so the task
+            // queues for the implant and the trail carries the identical
+            // issued fact the operator API's endpoint appends.
+            var taskId = await CallToolAsync(mcp, 3, "issue_task", new
+            {
+                engagementId = engagement.ToString(),
+                implantId = implant.Id.ToString(),
+                verb = "shell.exec",
+                arguments = "id",
+            });
+            Assert.False(string.IsNullOrEmpty(taskId));
+
+            var tasks = host.Services.GetRequiredService<ITaskRepository>();
+            Assert.True(Rod.CoreState.TaskId.TryParse(taskId, out var parsed));
+            var queued = await tasks.FindAsync(parsed);
+            Assert.NotNull(queued);
+            Assert.Equal("shell.exec", queued!.Verb);
+            Assert.Equal(Rod.CoreState.Tasks.TaskStatus.Queued, queued.Status);
+
+            // Replay: the snippet's steps issue in order to the named implant.
+            var snippets = host.Services.GetRequiredService<Rod.CoreState.Snippets.ITaskSnippetStore>();
+            var snippet = Rod.CoreState.Snippets.TaskSnippet.Create(
+                Rod.CoreState.TaskSnippetId.New(),
+                new EngagementId(engagement),
+                "recon-sweep",
+                new[]
+                {
+                    new Rod.CoreState.Snippets.TaskSnippetStep("shell.exec", "hostname"),
+                    new Rod.CoreState.Snippets.TaskSnippetStep("shell.exec", "uname -a"),
+                },
+                DateTimeOffset.UtcNow,
+                operatorId);
+            await snippets.SaveAsync(snippet);
+
+            var replayed = await CallToolAsync(mcp, 4, "replay_snippet", new
+            {
+                engagementId = engagement.ToString(),
+                snippetId = snippet.Id.ToString(),
+                implantId = implant.Id.ToString(),
+            });
+            using var replayJson = JsonDocument.Parse(replayed);
+            Assert.Equal(2, replayJson.RootElement.GetProperty("tasks").GetArrayLength());
+
+            // The audit carries the agent-issued facts, attributed to the
+            // token's operator like every issuance.
+            var audit = host.Services.GetRequiredService<Rod.Audit.IAuditStore>();
+            var trail = await audit.ListAsync(engagement);
+            Assert.Equal(3, trail.Count(e => e.Kind == Rod.Audit.AuditEventKind.TaskIssued));
+
+            // The engagement bar holds: a reader's token (a stranger here)
+            // reads no such engagement on a write tool.
+            var foreign = await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 5,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "issue_task",
+                    arguments = new
+                    {
+                        engagementId = Guid.NewGuid().ToString(),
+                        implantId = implant.Id.ToString(),
+                        verb = "shell.exec",
+                    },
+                },
+            });
+            Assert.True(foreign.TryGetProperty("error", out _) || foreign.GetProperty("result").GetProperty("isError").GetBoolean(),
+                "A foreign engagement must not read as success on a write tool.");
+        }
+    }
+
     // One JSON-RPC post, decoding either wire form the Streamable HTTP
     // transport answers with (bare JSON or an SSE frame carrying one message).
     private static async Task<JsonElement> RpcAsync(HttpClient client, object payload)
