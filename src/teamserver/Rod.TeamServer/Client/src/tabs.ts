@@ -32,9 +32,12 @@ export interface NavItemDef {
 }
 
 // Grouped by what a surface acts on, in the order an engagement lives it.
-// The intel cycle opens the sidebar because the engagement starts there
-// (architecture.md Sec 11): recon runs before the target picture it fills,
-// so the pre-foothold work sits where the eye lands first. Operate holds
+// The target group opens the sidebar because the engagement starts there
+// (architecture.md Sec 11): Intel leads as the read operators check in on
+// -- the picture of what is known -- with the recon workbench behind it
+// as the tool that fills the picture. The group is named for the target
+// rather than the discipline so it does not repeat the Intel tab it leads
+// with. Operate holds
 // the surfaces that act on the target: the implants table (where tasking
 // issues from) beside the task log (the live feed of everything issued),
 // with the rule engine that fires the same task verbs unattended.
@@ -55,15 +58,17 @@ export interface NavItemDef {
 // already lives.
 export const NAV_GROUPS: readonly { label: string | null; items: readonly NavItemDef[] }[] = [
   {
-    label: 'Intel',
+    label: 'Target',
     items: [
+      // The target picture (architecture.md Sec 11.2): hosts, loot, and the
+      // topology -- what the engagement learned, not what it did. The read
+      // comes first: operators open it to check in on the picture, then
+      // reach for the workbench to extend it.
+      { id: 'intel', label: 'Intel', icon: 'target' },
       // The pre-foothold scoping surface (architecture.md Sec 11.4): the
-      // external recon workbench, ahead of Intel -- the read projection it
+      // external recon workbench, behind Intel -- the read projection it
       // fills.
       { id: 'recon', label: 'Recon', icon: 'search' },
-      // The target picture (architecture.md Sec 11.2): hosts, loot, and the
-      // topology -- what the engagement learned, not what it did.
-      { id: 'intel', label: 'Intel', icon: 'target' },
     ],
   },
   {
