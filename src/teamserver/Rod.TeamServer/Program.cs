@@ -56,9 +56,9 @@ builder.Services.AddRodTradecraft(builder.Configuration);
 // reason as AddRodOperators/AddRodTradecraft above. Absent the connection
 // string, it registers nothing and the in-memory adapters stay in place.
 builder.Services.AddRodPersistence(builder.Configuration);
-// Layer in operator authentication (architecture.md Sec 4, the production-
-// hardening todo): the cookie session scheme, the password hasher, the login
-// service, and the bootstrap account seed that provisions the first operator.
+// Layer in operator authentication (architecture.md Sec 4): the cookie
+// session scheme, the password hasher, the login service, and the bootstrap
+// account seed that provisions the first operator.
 // Transport cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here -- the same
 // reason as AddRodOperators above.
