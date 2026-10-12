@@ -197,7 +197,12 @@ public sealed class ListenerManager
             var config = new ListenerConfig(
                 definition.Name, transport, definition.BindAddress, definition.PublicEndpoint, definition.EngagementId,
                 definition.TrustPosture);
-            return await BindAsync(config, new ListenerId(definition.Id), cancellationToken);
+            var listener = await BindAsync(config, new ListenerId(definition.Id), cancellationToken);
+            // The front list rides the definition, not the bind path (a
+            // fresh bind has none); the stored public endpoint already
+            // reflects the primary, so restoring fronts repoints nothing.
+            listener.RestoreFronts(definition.FrontList);
+            return listener;
         }
         catch (Exception ex)
         {
@@ -316,5 +321,6 @@ public sealed class ListenerManager
             listener.PublicEndpoint,
             listener.CreatedAt,
             listener.RepointedAt,
-            listener.TrustPosture);
+            listener.TrustPosture,
+            listener.Fronts);
 }

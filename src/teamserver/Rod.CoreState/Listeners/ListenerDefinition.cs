@@ -21,4 +21,13 @@ public sealed record ListenerDefinition(
     string PublicEndpoint,
     DateTimeOffset CreatedAt,
     DateTimeOffset? RepointedAt = null,
-    string TrustPosture = "pinned");
+    string TrustPosture = "pinned",
+    IReadOnlyList<ListenerFront>? Fronts = null)
+{
+    /// <summary>
+    /// The ordered front list, empty when the listener is fronted by nothing
+    /// (hand-deployed redirectors, or no redirector at all). Index zero is
+    /// the primary front: its public endpoint is what the listener reports.
+    /// </summary>
+    public IReadOnlyList<ListenerFront> FrontList => Fronts ?? [];
+}

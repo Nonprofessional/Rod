@@ -211,6 +211,10 @@ public static class TransportHost
         // connection string is set. No method is engagement-scoped -- a node
         // is machine capacity; scope arrives per front at the listener.
         services.AddSingleton<Rod.CoreState.Redirectors.IRedirectorFleet, Rod.CoreState.Redirectors.InMemoryRedirectorFleet>();
+        // The redirector control channel's live sessions (architecture.md
+        // Sec 8): one per connected node, the online status the roster reads
+        // and the push path front mutations ride.
+        services.AddSingleton<Redirectors.RedirectorControlHub>();
         // The campaign send engine (architecture.md Sec 11.5): the
         // reconciler that drives per-recipient builds through the job queue
         // and sends the rendered messages through each campaign's named
@@ -646,6 +650,13 @@ public static class TransportHost
         // a projection of the fleet, the trail, and the recon outputs.
         endpoints.MapTopologyEndpoints();
         endpoints.MapListenerEndpoints();
+        // The redirector control channel (architecture.md Sec 8): the
+        // deployment-scoped WebSocket nodes dial home on. Unauthenticated at
+        // the transport layer by design -- identity is the enrollment
+        // credential or node secret, presented in the first message -- and
+        // refused outright on the engagement-scoped implant ingress inside
+        // the handler.
+        endpoints.MapRedirectorControlEndpoints();
         // The standalone one-liner launchers: the paste-ready payload fetch
         // renders, shared with the shell console's upgrade flow.
         endpoints.MapLauncherEndpoints();

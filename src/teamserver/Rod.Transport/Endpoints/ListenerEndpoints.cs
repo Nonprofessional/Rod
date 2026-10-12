@@ -294,7 +294,9 @@ public static class ListenerEndpoints
                 listener.BindAddress,
                 listener.PublicEndpoint,
                 listener.CreatedAt,
-                listener.RepointedAt),
+                listener.RepointedAt,
+                listener.TrustPosture,
+                listener.Fronts),
             cancellationToken);
 
         return Results.Ok(Response.Of(listener));

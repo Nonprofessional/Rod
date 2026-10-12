@@ -1,4 +1,5 @@
 using Rod.CoreState;
+using Rod.CoreState.Listeners;
 
 namespace Rod.Transport.Listeners;
 
@@ -61,6 +62,15 @@ public sealed class Listener
     public DateTimeOffset? RepointedAt { get; private set; }
     public ListenerState State { get; private set; }
 
+    /// <summary>
+    /// The ordered front list (architecture.md Sec 8): attachments to
+    /// enrolled redirector nodes the control plane provisions with forwarding
+    /// rules. Empty for a hand-fronted listener. Index zero is the primary
+    /// front -- the listener's <see cref="PublicEndpoint"/> reports it, so
+    /// repointing is re-attaching or promoting the primary.
+    /// </summary>
+    public IReadOnlyList<ListenerFront> Fronts { get; private set; } = [];
+
     private Listener(
         ListenerId id,
         string name,
@@ -70,7 +80,8 @@ public sealed class Listener
         EngagementId? engagementId,
         string trustPosture,
         DateTimeOffset createdAt,
-        ListenerState state)
+        ListenerState state,
+        IReadOnlyList<ListenerFront>? fronts = null)
     {
         Id = id;
         Name = name;
@@ -81,6 +92,7 @@ public sealed class Listener
         TrustPosture = trustPosture;
         CreatedAt = createdAt;
         State = state;
+        Fronts = fronts ?? [];
     }
 
     /// <summary>
@@ -96,8 +108,9 @@ public sealed class Listener
         string publicEndpoint,
         DateTimeOffset at,
         EngagementId? engagementId = null,
-        string trustPosture = "pinned")
-        => new(id, name, transport, bindAddress, publicEndpoint, engagementId, trustPosture, at, ListenerState.Stopped);
+        string trustPosture = "pinned",
+        IReadOnlyList<ListenerFront>? fronts = null)
+        => new(id, name, transport, bindAddress, publicEndpoint, engagementId, trustPosture, at, ListenerState.Stopped, fronts);
 
     /// <summary>
     /// Marks the listener as bound and accepting connections. Only legal from
@@ -132,5 +145,105 @@ public sealed class Listener
 
         PublicEndpoint = publicEndpoint;
         RepointedAt = at;
+    }
+
+    /// <summary>
+    /// Attaches a front. A primary attach (or the first front on a listener
+    /// with none) inserts at index zero and repoints the listener's public
+    /// endpoint to the front's -- the re-attach form of repointing
+    /// (architecture.md Sec 8); a non-primary attach appends and leaves the
+    /// reported endpoint alone.
+    /// </summary>
+    public void AttachFront(ListenerFront front, bool primary, DateTimeOffset at)
+    {
+        var list = Fronts.ToList();
+        if (list.Count == 0 || primary)
+        {
+            list.Insert(0, front);
+            PublicEndpoint = front.PublicEndpoint;
+            RepointedAt = at;
+        }
+        else
+        {
+            list.Add(front);
+        }
+
+        Fronts = list;
+    }
+
+    /// <summary>
+    /// Detaches a front. Detaching the primary promotes the next front, and
+    /// the reported endpoint follows it; detaching the last front leaves the
+    /// endpoint where it was -- the string stays meaningful for a listener
+    /// that falls back to a hand-deployed front. Returns false when the id
+    /// matches no front.
+    /// </summary>
+    public bool DetachFront(Guid frontId, DateTimeOffset at)
+    {
+        var index = FindFrontIndex(frontId);
+        if (index < 0)
+            return false;
+
+        var list = Fronts.ToList();
+        list.RemoveAt(index);
+        Fronts = list;
+        if (index == 0 && list.Count > 0)
+        {
+            PublicEndpoint = list[0].PublicEndpoint;
+            RepointedAt = at;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Promotes a front to primary: it moves to index zero and the reported
+    /// endpoint follows. This is the rotation op for enrolled fronts --
+    /// swapping the front new builds bake without touching the bind or the
+    /// other fronts' rules. Returns false when the id matches no front.
+    /// </summary>
+    public bool PromoteFront(Guid frontId, DateTimeOffset at)
+    {
+        var index = FindFrontIndex(frontId);
+        if (index < 0)
+            return false;
+        if (index == 0)
+            return true;
+
+        var list = Fronts.ToList();
+        var front = list[index];
+        list.RemoveAt(index);
+        list.Insert(0, front);
+        Fronts = list;
+        PublicEndpoint = front.PublicEndpoint;
+        RepointedAt = at;
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the front list wholesale, the restore path's op: the stored
+    /// definition is the truth being restored, and its public endpoint
+    /// already names the primary, so no repoint fires here.
+    /// </summary>
+    public void RestoreFronts(IReadOnlyList<ListenerFront> fronts)
+        => Fronts = fronts;
+
+    /// <summary>
+    /// The front attaching to the given node, if this listener has one --
+    /// the rule-push path's lookup when a node's rule set changes because a
+    /// listener it fronts changed.
+    /// </summary>
+    public ListenerFront? FrontFor(RedirectorNodeId node)
+        => Fronts.FirstOrDefault(f => f.NodeId == node);
+
+    private int FindFrontIndex(Guid frontId)
+    {
+        for (var i = 0; i < Fronts.Count; i++)
+        {
+            if (Fronts[i].FrontId == frontId)
+                return i;
+        }
+
+        return -1;
     }
 }
