@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Rod.CoreState;
@@ -29,6 +30,67 @@ internal sealed class StoredListenerDefinition
     public string? TrustPosture { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RepointedAt { get; set; }
+
+    /// <summary>
+    /// The ordered front list as JSON (architecture.md Sec 8). Null is the
+    /// hand-fronted listener -- no enrolled fronts. The list is small (a
+    /// listener fronts through a handful of nodes) and read whole with the
+    /// row, so a JSON column beats a child table here.
+    /// </summary>
+    public string? FrontsJson { get; set; }
+}
+
+// The JSON shape of a stored front: strings all the way down, so the stored
+// form never depends on the domain record's serialization shape.
+internal sealed record StoredListenerFront(
+    string FrontId,
+    string NodeId,
+    string ListenEndpoint,
+    string PublicEndpoint,
+    string? AllowList,
+    DateTimeOffset AttachedAt);
+
+internal static class ListenerFrontsJson
+{
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+
+    public static string? Of(IReadOnlyList<ListenerFront>? fronts)
+    {
+        if (fronts is null || fronts.Count == 0)
+            return null;
+        return JsonSerializer.Serialize(
+            fronts.Select(f => new StoredListenerFront(
+                f.FrontId.ToString(),
+                f.NodeId.ToString(),
+                f.ListenEndpoint,
+                f.PublicEndpoint,
+                f.AllowList,
+                f.AttachedAt)),
+            Options);
+    }
+
+    public static IReadOnlyList<ListenerFront> Parse(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+            return [];
+        var stored = JsonSerializer.Deserialize<List<StoredListenerFront>>(json, Options);
+        if (stored is null || stored.Count == 0)
+            return [];
+        var fronts = new List<ListenerFront>(stored.Count);
+        foreach (var f in stored)
+        {
+            // A row a newer teamserver wrote (a shape this one cannot parse)
+            // drops its front rather than failing the whole restore; the
+            // node converges on the next rule push.
+            if (!Guid.TryParse(f.FrontId, out var frontId)
+                || !RedirectorNodeId.TryParse(f.NodeId, out var nodeId))
+                continue;
+            fronts.Add(new ListenerFront(
+                frontId, nodeId, f.ListenEndpoint, f.PublicEndpoint, f.AllowList, f.AttachedAt));
+        }
+
+        return fronts;
+    }
 }
 
 internal sealed class StoredListenerDefinitionConfiguration : IEntityTypeConfiguration<StoredListenerDefinition>
@@ -50,6 +112,7 @@ internal sealed class StoredListenerDefinitionConfiguration : IEntityTypeConfigu
         builder.Property(l => l.TrustPosture).HasColumnName("trust_posture").HasMaxLength(16);
         builder.Property(l => l.CreatedAt).HasColumnName("created_at");
         builder.Property(l => l.RepointedAt).HasColumnName("repointed_at");
+        builder.Property(l => l.FrontsJson).HasColumnName("fronts_json");
 
         // The engagement's listener listing reads by engagement; the port-
         // uniqueness pre-check reads them all.

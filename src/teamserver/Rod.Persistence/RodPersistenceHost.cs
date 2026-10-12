@@ -122,6 +122,7 @@ public static class RodPersistenceHost
         // the recipient rows included, which is what re-attributes an
         // enrollment that lands after the restart.
         services.Replace(ServiceDescriptor.Singleton<CoreState.Campaigns.ICampaignStore, Stores.PostgresCampaignStore>());
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Redirectors.IRedirectorFleet, Stores.PostgresRedirectorFleet>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
 

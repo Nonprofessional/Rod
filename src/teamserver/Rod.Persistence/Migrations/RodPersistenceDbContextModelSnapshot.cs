@@ -1034,6 +1034,10 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("engagement_id");
 
+                    b.Property<string>("FrontsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("fronts_json");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1117,6 +1121,110 @@ namespace Rod.Persistence.Migrations
                     b.HasKey("OperatorId");
 
                     b.ToTable("operator_credentials", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredRedirectorCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<Guid?>("EnrolledNodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrolled_node_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issued_at");
+
+                    b.Property<Guid>("IssuedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("issued_by");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<byte[]>("SecretDigest")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_digest");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrolledNodeId")
+                        .HasDatabaseName("ix_redirector_credentials_enrolled_node_id");
+
+                    b.HasIndex("IssuedAt")
+                        .HasDatabaseName("ix_redirector_credentials_issued_at");
+
+                    b.ToTable("redirector_credentials", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredRedirectorNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("node_id");
+
+                    b.Property<DateTimeOffset>("EnrolledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("enrolled_at");
+
+                    b.Property<Guid>("EnrolledBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrolled_by");
+
+                    b.Property<string>("LastAddress")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("last_address");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ReportedCommit")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reported_commit");
+
+                    b.Property<string>("ReportedVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reported_version");
+
+                    b.Property<DateTimeOffset?>("RetiredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("retired_at");
+
+                    b.Property<string>("SecretDigest")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("secret_digest");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("redirector_nodes", (string)null);
                 });
 
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredTaskSnippet", b =>
