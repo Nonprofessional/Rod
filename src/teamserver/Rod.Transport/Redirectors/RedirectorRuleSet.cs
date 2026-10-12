@@ -71,9 +71,14 @@ public static class RedirectorRules
                 var upstreamHost = configuredUpstreamHost.Length > 0
                     ? configuredUpstreamHost
                     : IsWildcardHost(bindHost) ? connectionLocalHost : bindHost;
+                // The carriage follows the listener's family: the datagram
+                // transport rides the relay, everything else the TCP splice.
+                var carriage = definition.Transport.Trim().Equals("dns", StringComparison.OrdinalIgnoreCase)
+                    ? "udp"
+                    : "tcp";
                 rules.Add(new RedirectorForwardingRule(
                     $"{definition.Id:N}-{front.FrontId:N}",
-                    "tcp",
+                    carriage,
                     listenHost,
                     listenPort,
                     upstreamHost,

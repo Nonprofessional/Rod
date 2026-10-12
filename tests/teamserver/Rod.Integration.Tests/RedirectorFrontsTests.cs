@@ -184,6 +184,104 @@ public class RedirectorFrontsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AttachFront_DnsFamily_RidesTheDatagramRelay()
+    {
+        var listener = await SeedListenerAsync("dns", "10.0.0.5:5353", "zone.example.test");
+        var (socket, nodeId, _) = await RedirectorControlTestClient.EnrollAsync(_host, _fleet, AuthenticatedHost.GetOperatorId(_host));
+
+        // The front names the resolver implants dial -- a bare host, the
+        // zone stays the listener's own public endpoint.
+        var created = JsonSerializer.Deserialize<JsonElement>(await PostAsync(
+            _client,
+            $"/engagements/{_engagementId}/listeners/{listener.Id}/fronts",
+            new { nodeId = nodeId.ToString(), listenEndpoint = "0.0.0.0:53", publicEndpoint = "203.0.113.10", primary = true }));
+        Assert.Equal("203.0.113.10", created.GetProperty("publicEndpoint").GetString());
+
+        // The rule arrives as the datagram carriage, upstream the listener's
+        // own bind.
+        var push = await RedirectorControlTestClient.ReceiveAsync(socket);
+        var rule = push.GetProperty("rules").GetProperty("rules")[0];
+        Assert.Equal("udp", rule.GetProperty("transport").GetString());
+        Assert.Equal(53, rule.GetProperty("listenPort").GetInt32());
+        Assert.Equal("10.0.0.5", rule.GetProperty("upstreamHost").GetString());
+        Assert.Equal(5353, rule.GetProperty("upstreamPort").GetInt32());
+
+        // The listener's reported public endpoint is still the zone -- the
+        // front carries the resolver, not the record.
+        var listed = JsonSerializer.Deserialize<JsonElement>(
+            await _client.GetStringAsync($"/engagements/{_engagementId}/listeners"));
+        Assert.Equal("zone.example.test",
+            listed.EnumerateArray().Single().GetProperty("publicEndpoint").GetString());
+
+        socket.Dispose();
+    }
+
+    [Fact]
+    public async Task BuildBake_DerivesTheDnsDialFromThePrimaryFront()
+    {
+        var (client, host, operatorId) = AuthenticatedHost.Create();
+        using (client)
+        using (host)
+        {
+            await AuthenticatedHost.LoginAsync(client);
+            var engagement = new EngagementId(Guid.NewGuid());
+            var registry = host.Services.GetRequiredService<IListenerRegistry>();
+            var payloads = host.Services.GetRequiredService<Rod.Audit.IPayloadStore>();
+            var ca = host.Services.GetRequiredService<Rod.CoreState.Pki.IImplantCertificateAuthority>();
+
+            var nodeId = Rod.CoreState.RedirectorNodeId.New();
+            var fronted = Rod.Transport.Listeners.Listener.Define(
+                Rod.Transport.Listeners.ListenerId.New(), "fronted-dns", "dns",
+                "10.0.0.6:53", "zone.example.test", DateTimeOffset.UtcNow, engagement,
+                fronts: new List<CoreState.Listeners.ListenerFront>
+                {
+                    new(Guid.NewGuid(), nodeId, "0.0.0.0:53", "203.0.113.10:5300", null, DateTimeOffset.UtcNow),
+                });
+            await registry.RegisterAsync(fronted);
+            var wildcard = Rod.Transport.Listeners.Listener.Define(
+                Rod.Transport.Listeners.ListenerId.New(), "wild-dns", "dns",
+                "0.0.0.0:53", "wild.example.test", DateTimeOffset.UtcNow, engagement);
+            await registry.RegisterAsync(wildcard);
+
+            // The primary front names the resolver; the listener record
+            // keeps the zone -- the typed dial's dissolution.
+            var bake = await Rod.Transport.Payloads.PayloadBuildRequestParser.ParseAsync(
+                Request(fronted.Id.ToString()), engagement, operatorId, registry, ca, payloads, CancellationToken.None);
+            Assert.Null(bake.Error);
+            Assert.Equal("dns://203.0.113.10:5300/zone.example.test", bake.Request!.Transport.Endpoint);
+
+            // A wildcard bind with no front names no resolver; the refusal
+            // points at the front, the family's fronting shape.
+            var refused = await Rod.Transport.Payloads.PayloadBuildRequestParser.ParseAsync(
+                Request(wildcard.Id.ToString()), engagement, operatorId, registry, ca, payloads, CancellationToken.None);
+            Assert.NotNull(refused.Error);
+            Assert.Contains("attach a front", refused.Error);
+
+            // And the typed escape is gone: a typed endpoint names nothing
+            // verifiable.
+            var typed = await Rod.Transport.Payloads.PayloadBuildRequestParser.ParseAsync(
+                Request(null, endpoint: "dns://203.0.113.10/zone.example.test"), engagement, operatorId, registry, ca, payloads, CancellationToken.None);
+            Assert.NotNull(typed.Error);
+            Assert.Contains("front", typed.Error);
+        }
+
+        static Rod.Transport.Endpoints.PayloadEndpoints.BuildPayloadRequest Request(
+            string? listenerId, string? endpoint = null)
+            => new(
+                Language: null,
+                Class: null,
+                TargetOs: null,
+                TargetArch: null,
+                Endpoint: endpoint,
+                UriPath: null,
+                SleepSeconds: null,
+                JitterSeconds: null,
+                KillDate: null,
+                ListenerId: listenerId,
+                Mode: "poll");
+    }
+
+    [Fact]
     public async Task FleetEndpoints_MintRevokeAndRetire()
     {
         var minted = JsonSerializer.Deserialize<JsonElement>(await PostAsync(

@@ -152,7 +152,9 @@ public sealed class Listener
     /// with none) inserts at index zero and repoints the listener's public
     /// endpoint to the front's -- the re-attach form of repointing
     /// (architecture.md Sec 8); a non-primary attach appends and leaves the
-    /// reported endpoint alone.
+    /// reported endpoint alone. The DNS family is the exception: its public
+    /// endpoint is the zone, the dial's other half, so the front carries the
+    /// resolver and the record never follows.
     /// </summary>
     public void AttachFront(ListenerFront front, bool primary, DateTimeOffset at)
     {
@@ -160,8 +162,11 @@ public sealed class Listener
         if (list.Count == 0 || primary)
         {
             list.Insert(0, front);
-            PublicEndpoint = front.PublicEndpoint;
-            RepointedAt = at;
+            if (EndpointFollowsPrimary)
+            {
+                PublicEndpoint = front.PublicEndpoint;
+                RepointedAt = at;
+            }
         }
         else
         {
@@ -173,10 +178,10 @@ public sealed class Listener
 
     /// <summary>
     /// Detaches a front. Detaching the primary promotes the next front, and
-    /// the reported endpoint follows it; detaching the last front leaves the
-    /// endpoint where it was -- the string stays meaningful for a listener
-    /// that falls back to a hand-deployed front. Returns false when the id
-    /// matches no front.
+    /// the reported endpoint follows it (the DNS family excepted, as on
+    /// attach); detaching the last front leaves the endpoint where it was --
+    /// the string stays meaningful for a listener that falls back to a
+    /// hand-deployed front. Returns false when the id matches no front.
     /// </summary>
     public bool DetachFront(Guid frontId, DateTimeOffset at)
     {
@@ -187,7 +192,7 @@ public sealed class Listener
         var list = Fronts.ToList();
         list.RemoveAt(index);
         Fronts = list;
-        if (index == 0 && list.Count > 0)
+        if (index == 0 && list.Count > 0 && EndpointFollowsPrimary)
         {
             PublicEndpoint = list[0].PublicEndpoint;
             RepointedAt = at;
@@ -198,9 +203,10 @@ public sealed class Listener
 
     /// <summary>
     /// Promotes a front to primary: it moves to index zero and the reported
-    /// endpoint follows. This is the rotation op for enrolled fronts --
-    /// swapping the front new builds bake without touching the bind or the
-    /// other fronts' rules. Returns false when the id matches no front.
+    /// endpoint follows (the DNS family excepted). This is the rotation op
+    /// for enrolled fronts -- swapping the front new builds bake without
+    /// touching the bind or the other fronts' rules. Returns false when the
+    /// id matches no front.
     /// </summary>
     public bool PromoteFront(Guid frontId, DateTimeOffset at)
     {
@@ -215,10 +221,21 @@ public sealed class Listener
         list.RemoveAt(index);
         list.Insert(0, front);
         Fronts = list;
-        PublicEndpoint = front.PublicEndpoint;
-        RepointedAt = at;
+        if (EndpointFollowsPrimary)
+        {
+            PublicEndpoint = front.PublicEndpoint;
+            RepointedAt = at;
+        }
+
         return true;
     }
+
+    // The endpoint-follows-primary rule's family exception (architecture.md
+    // Sec 8): the DNS family's public endpoint is the zone -- the front
+    // carries the resolver instead, so the record's half never moves.
+    private bool EndpointFollowsPrimary
+        => !string.Equals(Transport, "dns", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(Transport, "doh", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Sets the front list wholesale, the restore path's op: the stored

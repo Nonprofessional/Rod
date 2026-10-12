@@ -1008,13 +1008,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   and unspent on that socket. Ports are unique across both tiers: the
   create-time bind check refuses a collision with a clear error before any
   socket opens. A payload build names its engagement's listener and the
-  baked endpoint comes from the listener's record: the typed endpoint of
-  the build request is the DNS family's dial alone (`dns://`/`doh://` --
-  a resolver and a zone, the fronting shape a DNS listener record cannot
-  yet express, since its own baked dial names its bind as the resolver).
-  A typed web or socket address is refused -- this teamserver cannot
-  verify an address no listener names, and a front that does not reach it
-  only bakes an artifact that can never enroll.
+  baked endpoint comes from the listener's record -- a typed endpoint is
+  refused outright: this teamserver cannot verify an address no listener
+  names, and a front that does not reach it only bakes an artifact that
+  can never enroll. Fronting is the front list's job for every family,
+  the DNS pair included (the primary front names the resolver; the record
+  keeps the zone).
 - Supported listener transports: **HTTP(S)** (the single-port shape: one
   TLS socket that requests no client certificate anywhere, so the handshake
   is indistinguishable from an ordinary website's -- enrollment rides the
@@ -1170,16 +1169,22 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
     data plane outlives the control link: a dropped connection reconnects
     with capped backoff while the forwarders keep splicing the last
     applied rules.
-  This dissolved two of the three recorded seams -- the
-  one-listener-per-front workaround and most of the manual deploy/rotate
-  runbook (rotation is now promote/re-attach with no manual binary
-  reconfiguration; the runbook keeps the manual fleet as the fallback
-  shape). The third, the typed DNS dial, is the DNS front's own item: a
-  dns front needs the node's datagram relay (the one carriage the L4
-  forwarder does not carry) and its own public-endpoint semantics (the
-  resolver implants dial, not the zone), recorded as open work in
-  [todo.md](todo.md). The wire protocol, the implant, and the walk's family
-  rules are untouched -- the whole feature is control plane.
+  This dissolved the recorded seams: the one-listener-per-front workaround
+  and most of the manual deploy/rotate runbook (rotation is now
+  promote/re-attach with no manual binary reconfiguration; the runbook
+  keeps the manual fleet as the fallback shape), and -- with the datagram
+  relay the node's rule set also carries -- the typed DNS dial: a dns or
+  doh front attaches like any other, its public endpoint names the
+  RESOLVER implants dial (host or host:port; the zone stays the listener
+  record's own public endpoint, and the record's endpoint never follows
+  the primary front the way the other families' does), the rule rides the
+  node's UDP relay (source-keyed datagram forwarding, protocol-blind --
+  the one carriage addition the data plane ever took), and a build against
+  a fronted listener bakes `{scheme}://<front resolver>/<zone>`. The
+  typed-endpoint escape in the build request is gone with it: fronting is
+  the front list's job, a shape this teamserver can verify. The wire
+  protocol, the implant, and the walk's family rules are untouched -- the
+  whole feature is control plane.
 - **Listener and public endpoint are decoupled, and the endpoint is repointable
   at runtime.** A redirector fronts the listener; a burned redirector is replaced
   without touching the backend by repointing the listener's public endpoint

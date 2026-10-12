@@ -294,7 +294,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [frontPublic, setFrontPublic] = useState('')
   const [frontPrimary, setFrontPrimary] = useState(false)
 
-  const frontable = listeners.filter((l) => l.transport !== 'dns' && l.transport !== 'shellcatch')
+  // Every payload-ingress family is frontable: the web pair and the raw
+  // socket ride the TCP splice, the DNS family rides the node's datagram
+  // relay. The catcher fronts no implant dial.
+  const frontable = listeners.filter((l) => l.transport !== 'shellcatch')
 
   const onAttachFront = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -777,7 +780,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               placeholder="c2.example.test — empty completes from the listen port"
               value={frontPublic}
               onChange={(e) => setFrontPublic(e.target.value)}
-              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port."
+              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port; the DNS family (dns/doh) wants the RESOLVER implants dial -- a bare host or host:port, the zone stays the listener's own."
             />
           </label>
           <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">

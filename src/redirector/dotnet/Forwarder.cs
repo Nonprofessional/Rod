@@ -17,7 +17,7 @@ namespace Rod.Redirector;
 /// other. The only shared mutable state is the listening socket and the
 /// cancellation that stops it.
 /// </summary>
-internal sealed class Forwarder
+internal sealed class Forwarder : IRuleServer
 {
     private readonly IPEndPoint _listen;
     private readonly string _upstreamHost;

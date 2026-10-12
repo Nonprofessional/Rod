@@ -155,6 +155,105 @@ public class RedirectorBinaryEndToEndTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task DnsFront_ServesDatagramsThroughTheNode()
+    {
+        // The datagram leg of the control plane: a dns listener fronted by
+        // the enrolled node answers a query that arrives through the node's
+        // UDP port -- the record-type cover (an A query under the zone
+        // answers an address), read here as the query id echoing back with
+        // no error, the same probe a resolver would run.
+        var dnsPort = TestSupport.GetFreeTcpPort();
+        var created = await ReadJsonAsync(await _client.PostAsJsonAsync(
+            $"/engagements/{_engagementId}/listeners",
+            new
+            {
+                name = "dns-ingress",
+                transport = "dns",
+                bindAddress = $"127.0.0.1:{dnsPort}",
+                publicEndpoint = "zone.example.test",
+            }));
+        var listenerId = created.GetProperty("id").GetString()!;
+
+        var minted = await ReadJsonAsync(await _client.PostAsJsonAsync(
+            "/redirectors/credentials", new { name = "edge-dns" }));
+        var statePath = Path.Combine(_workDir, "dns-state.json");
+        var frontPort = TestSupport.GetFreeTcpPort();
+        using var process = StartRedirector(
+            $"-control ws://127.0.0.1:{_client.BaseAddress!.Port}/redirectors/control -credential {minted.GetProperty("secret").GetString()} -state {statePath}");
+        try
+        {
+            await WaitUntilAsync(async () =>
+            {
+                var roster = await ReadJsonAsync(await _client.GetAsync("/redirectors"));
+                return roster.EnumerateArray().Any(n => n.GetProperty("name").GetString() == "edge-dns"
+                    && n.GetProperty("online").GetBoolean());
+            });
+
+            var attached = await _client.PostAsJsonAsync(
+                $"/engagements/{_engagementId}/listeners/{listenerId}/fronts",
+                new
+                {
+                    nodeId = (await ReadJsonAsync(await _client.GetAsync("/redirectors")))
+                        .EnumerateArray().Single(n => n.GetProperty("name").GetString() == "edge-dns")
+                        .GetProperty("id").GetString(),
+                    listenEndpoint = $"127.0.0.1:{frontPort}",
+                    publicEndpoint = "127.0.0.1",
+                    primary = true,
+                });
+            Assert.True(attached.IsSuccessStatusCode, await attached.Content.ReadAsStringAsync());
+
+            await WaitUntilAsync(() => UdpAnswersAsync(frontPort));
+        }
+        finally
+        {
+            process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync();
+        }
+    }
+
+    /// <summary>
+    /// One A-record cover query through the node's UDP port: a well-formed
+    /// DNS query for a name under the zone, answered -- the id echoing back
+    /// with no error proves the datagram reached the listener and its
+    /// answer returned through the relay.
+    /// </summary>
+    private static async Task<bool> UdpAnswersAsync(int port)
+    {
+        try
+        {
+            using var dns = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+            var id = (ushort)Random.Shared.Next(1, ushort.MaxValue);
+            var query = BuildAQuery(id, "probe.zone.example.test");
+            await dns.SendAsync(query, query.Length, "127.0.0.1", port);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            var answer = (await dns.ReceiveAsync(timeout.Token)).Buffer;
+            return answer.Length >= 12
+                && answer[0] == (byte)(id >> 8) && answer[1] == (byte)id
+                && (answer[3] & 0x0F) == 0;
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    // A minimal DNS wire query: header, one question, name as labels.
+    private static byte[] BuildAQuery(ushort id, string name)
+    {
+        using var buffer = new MemoryStream();
+        buffer.Write([(byte)(id >> 8), (byte)id, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]);
+        foreach (var label in name.Split('.'))
+        {
+            buffer.Write([(byte)label.Length]);
+            buffer.Write(System.Text.Encoding.ASCII.GetBytes(label));
+        }
+
+        buffer.Write([(byte)0, 0, 1, 0, 1]); // root label, type A, class IN
+        return buffer.ToArray();
+    }
+
     private Process StartRedirector(string arguments)
     {
         var process = new Process

@@ -345,22 +345,18 @@ internal static class PayloadBuildRequestParser
         if (body.ListenerId is not { } listenerIdText)
         {
             var typed = body.Endpoint?.Trim();
-            // The typed endpoint is the DNS family's fronting seam alone: a
-            // DNS listener's baked dial names its own bind as the resolver,
-            // so a fronted resolver (a DoH redirector, a public address over
-            // a private bind) is expressible only by typing the dial. Every
-            // web or socket front is a listener record -- the public
-            // endpoint is free-form there and repoint rotates it -- and a
-            // typed address this teamserver cannot verify only bakes an
-            // artifact that can never enroll.
+            // The typed DNS dial is gone: fronting a dns or doh listener is
+            // the front list's job now -- the primary front names the
+            // resolver implants dial, the listener's record keeps the zone
+            // (architecture.md Sec 8). A typed address this teamserver
+            // cannot verify only ever baked an artifact that might never
+            // enroll; the front is the verifiable shape.
             if (string.IsNullOrEmpty(typed))
                 return (null, null, null, "Name a listener for the front the implant dials.");
-            if (!typed.StartsWith("dns://", StringComparison.OrdinalIgnoreCase)
-                && !typed.StartsWith("doh://", StringComparison.OrdinalIgnoreCase))
-                return (null, null, null,
-                    "A typed endpoint is the DNS family's dial alone (dns://resolver/zone, doh://resolver/zone) "
-                    + "-- name a listener for a web or socket front.");
-            return (typed, null, null, null);
+            return (null, null, null,
+                "A typed endpoint names nothing this teamserver can verify -- name a listener. " +
+                "Fronting a dns or doh listener is its front list's job: attach a front and the " +
+                "baked dial derives from it.");
         }
 
         if (body.Endpoint is not null)
@@ -582,12 +578,22 @@ internal static class PayloadBuildRequestParser
     {
         var scheme = listener.Transport == "doh" ? "doh" : "dns";
         var zone = listener.PublicEndpoint.Trim().TrimEnd('.').ToLowerInvariant();
+        if (zone.Length == 0)
+            return (null, $"A {scheme} listener carries no zone in its public endpoint; the zone is the dial's other half.");
+
+        // The primary front names the resolver implants dial (architecture.md
+        // Sec 8): an enrolled node the control plane provisions, whose
+        // address is the front's own public endpoint -- the zone stays the
+        // listener record's.
+        if (listener.Fronts.FirstOrDefault() is { } front)
+            return ($"{scheme}://{front.PublicEndpoint.Trim()}/{zone}", null);
+
         var bind = listener.BindAddress.Trim();
         if (bind.StartsWith("0.0.0.0:") || bind.StartsWith("[::]:") || bind.StartsWith(":::"))
             return (null,
                 $"A wildcard-bound {scheme} listener names no resolver an implant can dial; bind it "
-                + "to a concrete interface, or type the dial manually under Advanced "
-                + $"({scheme}://resolver:{(scheme == "doh" ? "443" : "53")}/{(zone.Length > 0 ? zone : "zone")}).");
+                + "to a concrete interface, or attach a front (an enrolled redirector node) whose "
+                + $"address implants dial -- the front is the {scheme} family's fronting shape.");
         return ($"{scheme}://{bind}/{zone}", null);
     }
 

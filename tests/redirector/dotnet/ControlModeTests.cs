@@ -55,12 +55,47 @@ public class ControlModeTests
         await set.ApplyAsync(new[]
         {
             TcpRule("a", frontA2, upstreamB),
-            new ForwardingRuleWire("u", "udp", "127.0.0.1", await GetFreePortAsync(), "127.0.0.1", 53, null),
+            new ForwardingRuleWire("q", "quic", "127.0.0.1", await GetFreePortAsync(), "127.0.0.1", 443, null),
         });
         Assert.Equal(1, set.RunningCount);
         await AssertPortAcceptsAsync(frontA2);
         await AssertPortRefusesAsync(frontA);
         await AssertPortRefusesAsync(frontB);
+    }
+
+    [Fact]
+    public async Task ForwarderSet_CarriesTheDatagramRelay()
+    {
+        // A UDP echo upstream and a udp rule: datagrams through the rule's
+        // port relay both directions, protocol-blind.
+        using var upstream = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var upstreamEndpoint = (IPEndPoint)upstream.Client.LocalEndPoint!;
+        var echo = Task.Run(async () =>
+        {
+            while (true)
+            {
+                var received = await upstream.ReceiveAsync();
+                await upstream.SendAsync(received.Buffer, received.RemoteEndPoint);
+            }
+        });
+
+        await using var set = new ForwarderSet(TextWriter.Null);
+        var front = await GetFreePortAsync();
+        await set.ApplyAsync(new[]
+        {
+            new ForwardingRuleWire("u", "udp", "127.0.0.1", front,
+                "127.0.0.1", upstreamEndpoint.Port, null),
+        });
+        Assert.Equal(1, set.RunningCount);
+
+        using var client = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var payload = "dns-shaped-bytes"u8.ToArray();
+        await client.SendAsync(payload, payload.Length, "127.0.0.1", front);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var replyTask = client.ReceiveAsync(timeout.Token);
+        // UdpClient's CancellationToken overload wraps the result.
+        var reply = await replyTask;
+        Assert.Equal(payload, reply.Buffer);
     }
 
     [Fact]

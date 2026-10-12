@@ -90,12 +90,11 @@ public static class ListenerEndpoints
         if (node.RetiredAt is not null)
             return Results.Conflict(new Problem($"Redirector node {body.NodeId} has been retired."));
 
-        // The datagram relay the DNS front rides lands with the DNS-front
+        // The datagram relay the dns front rides lands with the DNS-front
         // leg; every other family splices TCP today.
-        if (string.Equals(listener!.Transport, "dns", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(listener!.Transport, "shellcatch", StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new Problem(
-                "Fronting the dns transport needs the node's datagram relay, which has not landed yet; " +
-                "front a doh listener for the DNS grammar over TCP."));
+                "The shellcatch transport fronts no implant dial; fronting is for payload ingress."));
 
         if (!TryParseListenEndpoint(body.ListenEndpoint, out var listenHost, out var listenPort))
             return Results.BadRequest(new Problem(
@@ -264,14 +263,34 @@ public static class ListenerEndpoints
 
     // A front's public endpoint completes exactly like the listener's own:
     // the web-dial family derives from the node's listen port, every other
-    // family demands the shape spelled out.
+    // family demands the shape spelled out. The DNS family is the
+    // exception by meaning: a front of a dns or doh listener names the
+    // RESOLVER implants dial (host or host:port -- the listener's own
+    // public endpoint stays the zone), so it never completes and never
+    // takes a scheme.
     private static (string? Endpoint, string? Error) CompleteFrontPublicEndpoint(
         Listener listener,
         int listenPort,
         string? input)
     {
-        var provider = TransportProviders.Find(listener.Transport);
         var value = input?.Trim() ?? "";
+
+        if (listener.Transport.Equals("dns", StringComparison.OrdinalIgnoreCase)
+            || listener.Transport.Equals("doh", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value.Length == 0)
+                return (null,
+                    "The front of a dns or doh listener names the resolver implants dial " +
+                    "(host or host:port) -- the zone stays the listener's own public endpoint.");
+            if (value.Contains("://") || value.Contains('/'))
+                return (null,
+                    $"The resolver address '{value}' is a bare host or host:port -- the zone rides the listener record, not the front.");
+            if (value.Contains(':') && !PublicEndpointShapes.IsHostPort(value))
+                return (null, $"The resolver address '{value}' is not a host:port pair.");
+            return (value, null);
+        }
+
+        var provider = TransportProviders.Find(listener.Transport);
         if (provider is KestrelEndpointProvider { EndpointShape: PublicEndpointShape.WebDial })
         {
             if (value.Length == 0)

@@ -73,11 +73,12 @@ reconnects with capped backoff while the forwarders keep splicing the last
 applied rules. A terminal refusal (a spent, revoked, or retired identity)
 exits the process -- the operator intervenes, the node does not flap.
 
-Two DNS notes: the dns transport's front is not attachable yet (its
-datagram relay is the control plane's recorded next step; front a **doh**
-listener for the DNS grammar over TCP today), and `ws://` instead of
-`wss://` is the lab posture -- production nodes dial the same TLS front the
-console rides.
+One DNS note: fronting a dns or doh listener rides the node's datagram
+relay -- the front's public endpoint names the **resolver** implants dial
+(a bare host or host:port; the zone stays the listener's own), and builds
+against the fronted listener bake `dns://<resolver>/<zone>` from the
+primary front. `ws://` instead of `wss://` is the lab posture --
+production nodes dial the same TLS front the console rides.
 
 ## 1. Build the forwarder binary
 
