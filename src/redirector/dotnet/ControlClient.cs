@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 
@@ -94,6 +95,30 @@ internal sealed class ControlClient
         return 0;
     }
 
+    // The wrapper's message ("Unable to connect to the remote server") names
+    // neither a refused port nor a failed handshake; walk the chain so each
+    // layer's own sentence shows. Wrappers often re-quote the inner message,
+    // so repeats collapse to one.
+    private static string DescribeChain(Exception ex)
+    {
+        var parts = new List<string>();
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            var message = e.Message.Trim();
+            if (!parts.Contains(message))
+                parts.Add(message);
+        }
+        return string.Join(": ", parts);
+    }
+
+    private static bool IsTlsFailure(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+            if (e is AuthenticationException)
+                return true;
+        return false;
+    }
+
     private abstract record Outcome;
     private sealed record Enrolled(NodeState State) : Outcome;
     private sealed record Refused(string Reason) : Outcome;
@@ -110,7 +135,14 @@ internal sealed class ControlClient
         {
             if (cancellationToken.IsCancellationRequested)
                 return new Dropped();
-            _log.WriteLine($"rod-redirector: control connect failed ({ex.Message}); retrying");
+            _log.WriteLine($"rod-redirector: control connect failed ({DescribeChain(ex)}); retrying");
+            // The common lab failure that chain hides behind a wrapper: a
+            // wss:// dial at the plain-HTTP shared tier. Name the fix in
+            // operator terms rather than leaving "wrong version number" to
+            // be decoded.
+            if (string.Equals(_controlUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase) && IsTlsFailure(ex))
+                _log.WriteLine(
+                    "rod-redirector: this looks like a TLS handshake against a plain-HTTP endpoint; the lab posture is ws:// (docs/operations/redirectors.md)");
             return new Dropped();
         }
 
