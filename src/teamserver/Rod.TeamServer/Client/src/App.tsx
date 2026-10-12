@@ -10,6 +10,7 @@ import { EngagementView } from './views/EngagementView'
 import { EngagementsView } from './views/EngagementsView'
 import { SettingsView } from './views/SettingsView'
 import { SystemView } from './views/SystemView'
+import { RedirectorsView } from './views/RedirectorsView'
 import { LoginView } from './views/LoginView'
 
 // Operator UI shell: the topbar carries what is global -- the breadcrumb,
@@ -30,6 +31,7 @@ type Route =
   | { kind: 'engagement'; engagementId: string; tab: string; implantId?: string }
   | { kind: 'settings' }
   | { kind: 'system' }
+  | { kind: 'redirectors' }
 
 function parseHash(): Route {
   const hash = window.location.hash.replace(/^#/, '')
@@ -44,6 +46,7 @@ function parseHash(): Route {
   if (tabbed) return { kind: 'engagement', engagementId: tabbed[1], tab: tabbed[2] }
   const match = /^\/engagements\/([\da-fA-F-]+)\/?$/.exec(hash)
   if (match) return { kind: 'engagement', engagementId: match[1], tab: 'implants' }
+  if (/^\/redirectors\/?$/.test(hash)) return { kind: 'redirectors' }
   if (/^\/settings\/?$/.test(hash)) return { kind: 'settings' }
   if (/^\/system\/?$/.test(hash)) return { kind: 'system' }
   return { kind: 'engagements' }
@@ -212,8 +215,10 @@ function Topbar({
           it. */}
       <div className="topbar-crumb">
         {route.kind === 'engagement' && <EngagementCrumb engagementId={route.engagementId} />}
-        {(route.kind === 'settings' || route.kind === 'system') && (
-          <span className="current">{route.kind === 'settings' ? 'Settings' : 'System'}</span>
+        {(route.kind === 'settings' || route.kind === 'system' || route.kind === 'redirectors') && (
+          <span className="current">
+            {route.kind === 'settings' ? 'Settings' : route.kind === 'redirectors' ? 'Redirectors' : 'System'}
+          </span>
         )}
       </div>
       <div className="topbar-actions">
@@ -262,6 +267,14 @@ function Topbar({
         >
           <Icon name="globe" />
           <span className="label">Engagements</span>
+        </a>
+        <a
+          className={`topbar-link${route.kind === 'redirectors' ? ' active' : ''}`}
+          href="#/redirectors"
+          title="The enrolled redirector fleet (architecture.md Sec 8): roster, enrollment credentials, retirement"
+        >
+          <Icon name="radio" />
+          <span className="label">Redirectors</span>
         </a>
         <a
           className={`topbar-link${route.kind === 'settings' ? ' active' : ''}`}
@@ -453,6 +466,8 @@ function App() {
             <SettingsView operator={operator} />
           ) : route.kind === 'system' ? (
             <SystemView />
+          ) : route.kind === 'redirectors' ? (
+            <RedirectorsView />
           ) : (
             <EngagementView
               engagementId={route.engagementId}

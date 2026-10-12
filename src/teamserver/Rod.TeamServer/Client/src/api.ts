@@ -1572,6 +1572,21 @@ export interface ListenerSummary {
   state: string
   createdAt: string
   repointedAt: string | null
+  // The ordered enrolled-front list (architecture.md Sec 8): attachments to
+  // redirector nodes the control plane provisions with forwarding rules.
+  // Index zero is the primary -- the public endpoint above reports it.
+  fronts: ListenerFrontSummary[]
+}
+
+export interface ListenerFrontSummary {
+  frontId: string
+  nodeId: string
+  nodeName: string
+  listenEndpoint: string
+  publicEndpoint: string
+  allowList: string | null
+  isPrimary: boolean
+  attachedAt: string
 }
 
 // The host's bindable interfaces (GET /network/interfaces): the read view the
@@ -1642,6 +1657,129 @@ export async function deleteListener(
       { method: 'DELETE' },
     ),
   )
+}
+
+// --- Listener fronts (the enrolled redirector fleet) ---------
+//
+// A front attaches an enrolled node to a listener (architecture.md Sec 8):
+// the control plane provisions the node with the forwarding rule (bind the
+// listen endpoint, splice to the listener's bind), and implants dial the
+// front's public endpoint. The primary front is the endpoint builds bake;
+// promoting one is the rotation op for enrolled fleets.
+
+export interface AttachFrontInput {
+  nodeId: string
+  listenEndpoint: string
+  publicEndpoint?: string
+  allowList?: string
+  primary?: boolean
+}
+
+export async function attachListenerFront(
+  engagementId: string,
+  listenerId: string,
+  input: AttachFrontInput,
+): Promise<ListenerFrontSummary> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/listeners/${listenerId}/fronts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  )
+}
+
+export async function detachListenerFront(
+  engagementId: string,
+  listenerId: string,
+  frontId: string,
+): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`engagements/${engagementId}/listeners/${listenerId}/fronts/${frontId}`, {
+      method: 'DELETE',
+    }),
+  )
+}
+
+export async function promoteListenerFront(
+  engagementId: string,
+  listenerId: string,
+  frontId: string,
+): Promise<ListenerFrontSummary> {
+  return jsonOrThrow(
+    await fetch(`engagements/${engagementId}/listeners/${listenerId}/fronts/${frontId}:primary`, {
+      method: 'POST',
+    }),
+  )
+}
+
+// --- The redirector fleet (deployment-scoped) -----------------
+//
+// The enrolled fleet (architecture.md Sec 8): nodes dial home over the
+// control channel, the roster reads their presence, and enrollment
+// credentials pre-provision new ones. Deployment-scoped like the routes it
+// rides -- no engagement context.
+
+export interface RedirectorNodeSummary {
+  id: string
+  name: string
+  online: boolean
+  enrolledAt: string
+  retiredAt: string | null
+  lastSeenAt: string
+  lastAddress: string | null
+  reportedVersion: string | null
+  reportedCommit: string | null
+}
+
+export interface RedirectorCredentialSummary {
+  id: string
+  name: string
+  issuedAt: string
+  expiresAt: string
+  enrolledNodeId: string | null
+  revokedAt: string | null
+}
+
+// The mint result: the secret exists exactly once, here -- the ledger keeps
+// hashes and stamps only.
+export interface MintedRedirectorCredential {
+  id: string
+  name: string
+  secret: string
+  issuedAt: string
+  expiresAt: string
+}
+
+export async function listRedirectorNodes(): Promise<RedirectorNodeSummary[]> {
+  return jsonOrThrow(await fetch('redirectors'))
+}
+
+export async function listRedirectorCredentials(): Promise<RedirectorCredentialSummary[]> {
+  return jsonOrThrow(await fetch('redirectors/credentials'))
+}
+
+export async function mintRedirectorCredential(
+  name: string,
+  ttlHours?: number,
+): Promise<MintedRedirectorCredential> {
+  return jsonOrThrow(
+    await fetch('redirectors/credentials', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, ttlHours }),
+    }),
+  )
+}
+
+export async function revokeRedirectorCredential(id: string): Promise<void> {
+  await jsonOrThrow<unknown>(
+    await fetch(`redirectors/credentials/${id}:revoke`, { method: 'POST' }),
+  )
+}
+
+export async function retireRedirectorNode(id: string): Promise<void> {
+  await jsonOrThrow<unknown>(await fetch(`redirectors/${id}:retire`, { method: 'POST' }))
 }
 
 // --- Caught reverse shells (shellcatch) -----------------------

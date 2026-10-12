@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import {
   type ListenerSummary,
   type NetworkInterfaceSummary,
+  type RedirectorNodeSummary,
   ApiError,
+  attachListenerFront,
   createListener,
   deleteListener,
+  detachListenerFront,
   listListeners,
   listNetworkInterfaces,
+  listRedirectorNodes,
+  promoteListenerFront,
   repointListener,
 } from '../api'
 import { Icon } from '../components/Icons'
@@ -97,6 +102,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The enrolled fleet, for the front form's node dropdown. A failed load
+  // keeps the form usable with a typed node id (tests and scripted setups).
+  const [nodes, setNodes] = useState<RedirectorNodeSummary[]>([])
   // The endpoint being repointed, one row at a time: the listener id plus the
   // draft (seeded from the current endpoint so an edit is a tweak, not a
   // retype). Null when no row is editing.
@@ -158,6 +166,17 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // The fleet roster for the attach form's node picker.
+  useEffect(() => {
+    void (async () => {
+      try {
+        setNodes((await listRedirectorNodes()).filter((n) => !n.retiredAt))
+      } catch {
+        // The form falls back to a typed node id.
+      }
+    })()
+  }, [])
 
   // The host's bindable interfaces for the bind dropdown. A failed load keeps
   // the dropdown useful: wildcard, loopback, and custom remain.
@@ -261,6 +280,61 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // naming them -- that message is the second confirmation, and only its
   // explicit accept forces the delete.
   const [armed, armDelete] = useArmedDelete()
+
+  // --- Fronts (the enrolled-fleet half, architecture.md Sec 8) ---
+  //
+  // A front attaches an enrolled node: the node binds the listen endpoint
+  // and splices it to this listener's bind, receiving the rule over the
+  // control channel the moment the attach lands. The primary front is the
+  // public endpoint builds bake -- attaching primary or promoting is the
+  // rotation op that replaces repointing for enrolled fleets.
+  const [frontListener, setFrontListener] = useState('')
+  const [frontNode, setFrontNode] = useState('')
+  const [frontListen, setFrontListen] = useState('')
+  const [frontPublic, setFrontPublic] = useState('')
+  const [frontPrimary, setFrontPrimary] = useState(false)
+
+  const frontable = listeners.filter((l) => l.transport !== 'dns' && l.transport !== 'shellcatch')
+
+  const onAttachFront = async (event: React.FormEvent) => {
+    event.preventDefault()
+    try {
+      await attachListenerFront(engagementId, frontListener, {
+        nodeId: frontNode.trim(),
+        listenEndpoint: frontListen.trim(),
+        publicEndpoint: frontPublic.trim() || undefined,
+        primary: frontPrimary || undefined,
+      })
+      setFrontListen('')
+      setFrontPublic('')
+      setFrontPrimary(false)
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onDetachFront = (l: ListenerSummary, frontId: string) =>
+    armDelete(frontId, () => void (async () => {
+      try {
+        await detachListenerFront(engagementId, l.id, frontId)
+        setError(null)
+        await refresh()
+      } catch (e) {
+        setError(String(e))
+      }
+    })())
+
+  const onPromoteFront = async (l: ListenerSummary, frontId: string) => {
+    try {
+      await promoteListenerFront(engagementId, l.id, frontId)
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
 
   const onArmDelete = (l: ListenerSummary) =>
     armDelete(l.id, () => void onDelete(l))
@@ -487,6 +561,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               <th>Transport</th>
               <th>Bind</th>
               <th>Public endpoint</th>
+              <th>Fronts</th>
               <th>State</th>
               <th></th>
             </tr>
@@ -494,7 +569,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           <tbody>
             {listeners.length === 0 && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="empty">
                     <Icon name="radio" />
                     No listeners for this engagement yet -- create the ingress its implants will
@@ -504,7 +579,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               </tr>
             )}
             {listeners.map((l) => (
-                <tr key={l.id}>
+              <Fragment key={l.id}>
+                <tr>
                   <td>{l.name}</td>
                   <td>
                     {l.transport}
@@ -580,10 +656,147 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                     </button>
                   </td>
                 </tr>
-              ))}
+                {l.fronts.length > 0 &&
+                  l.fronts.map((f) => (
+                    <tr key={f.frontId} className="front-row">
+                      <td colSpan={7}>
+                        <span className="front-cell">
+                          {f.isPrimary ? (
+                            <span className="status completed" title="The primary front -- the public endpoint builds bake.">
+                              primary
+                            </span>
+                          ) : (
+                            <span className="status queued">front</span>
+                          )}
+                          <strong>{f.nodeName || f.nodeId.slice(0, 8)}</strong>
+                          <span className="muted">binds</span>
+                          <code>{f.listenEndpoint}</code>
+                          <span className="muted">· dials</span>
+                          <code>{f.publicEndpoint}</code>
+                          {f.allowList && (
+                            <span className="muted" title="The source CIDRs the node enforces on this front.">
+                              · allow {f.allowList}
+                            </span>
+                          )}
+                          <span className="row-actions">
+                            {!f.isPrimary && (
+                              <button
+                                className="ghost sm"
+                                onClick={() => void onPromoteFront(l, f.frontId)}
+                                title="Make this the primary front: the public endpoint builds bake follows it. The rotation op for enrolled fleets."
+                              >
+                                Promote
+                              </button>
+                            )}
+                            <button
+                              className={`ghost sm danger${armed === f.frontId ? ' armed' : ''}`}
+                              onClick={() => onDetachFront(l, f.frontId)}
+                              title={
+                                armed === f.frontId
+                                  ? 'Click again — the button reverts on its own after a few seconds'
+                                  : 'Detach this front: the node stops forwarding on the next rule push. Detaching the primary promotes the next front.'
+                              }
+                            >
+                              {armed === f.frontId ? 'Confirm detach' : 'Detach'}
+                            </button>
+                          </span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+              </Fragment>
+            ))}
           </tbody>
         </table>
       </div>
+
+      {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
+          one of the listeners above, fronted by a node from the roster. The
+          dns family waits on the node's datagram relay; the form's listener
+          list names the frontable transports only. */}
+      <h4>Attach a front</h4>
+      <form className="listener-form" onSubmit={onAttachFront}>
+        <div className="listener-row">
+          <label>
+            Listener
+            <select
+              value={frontListener}
+              onChange={(e) => setFrontListener(e.target.value)}
+              title="The listener this front serves -- the node splices to its bind."
+              required
+            >
+              <option value="">Pick a listener…</option>
+              {frontable.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.transport})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Node
+            {nodes.length > 0 ? (
+              <select
+                value={frontNode}
+                onChange={(e) => setFrontNode(e.target.value)}
+                title="An enrolled redirector node (the Redirectors page mints credentials)."
+                required
+              >
+                <option value="">Pick a node…</option>
+                {nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} {n.online ? '(online)' : '(offline)'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                placeholder="node id"
+                value={frontNode}
+                onChange={(e) => setFrontNode(e.target.value)}
+                title="No roster loaded -- type the enrolled node's id."
+                required
+              />
+            )}
+          </label>
+        </div>
+        <div className="listener-row">
+          <label>
+            Node listens on
+            <input
+              placeholder="0.0.0.0:443"
+              value={frontListen}
+              onChange={(e) => setFrontListen(e.target.value)}
+              title="The endpoint the node binds -- host:port on the node itself (a wildcard or its own IP), not the public address."
+              required
+            />
+          </label>
+          <label>
+            Public endpoint
+            <input
+              placeholder="c2.example.test — empty completes from the listen port"
+              value={frontPublic}
+              onChange={(e) => setFrontPublic(e.target.value)}
+              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port."
+            />
+          </label>
+          <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">
+            Primary
+            <span className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={frontPrimary}
+                onChange={(e) => setFrontPrimary(e.target.checked)}
+              />
+            </span>
+          </label>
+        </div>
+        <div className="listener-form-actions">
+          <button className="primary" type="submit" disabled={busy}>
+            Attach
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
