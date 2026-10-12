@@ -46,6 +46,29 @@ internal sealed class RedirectorConfig
     public CidrAllowList Allow { get; private set; } = CidrAllowList.AllowAll;
 
     /// <summary>
+    /// The control channel's WebSocket URL (architecture.md Sec 8) -- the
+    /// enrolled mode's dial-home target on the teamserver's shared tier.
+    /// Present selects enrolled mode; absent keeps the manual single rule.
+    /// </summary>
+    public string? ControlUri { get; private set; }
+
+    /// <summary>
+    /// The enrollment credential (enroll-once, single-use): presented the
+    /// first time only -- afterwards the identity persisted in the state
+    /// file reconnects.
+    /// </summary>
+    public string? Credential { get; private set; }
+
+    /// <summary>
+    /// Where the enrolled identity lives. Default: beside the working
+    /// directory. The file is the credential (it carries the node secret).
+    /// </summary>
+    public string StatePath { get; private set; } = "rod-redirector.state.json";
+
+    /// <summary>True when the config selects the enrolled (control-plane) mode.</summary>
+    public bool HasControl => ControlUri is not null;
+
+    /// <summary>
     /// The resolved bind address. "*" / "0.0.0.0" resolve to IPv4 any, "::" /
     /// "::0" to IPv6 any; any other value must parse as a literal IP address (a
     /// DNS hostname here is a config error -- the bind side needs an address).
@@ -64,10 +87,13 @@ internal sealed class RedirectorConfig
     {
         var config = new RedirectorConfig
         {
-            ListenHost = Env("ROD_LISTEN", string.Empty),
-            UpstreamHost = Env("ROD_UPSTREAM", string.Empty),
+            ListenHost = Env("ROD_LISTEN", null) ?? string.Empty,
+            UpstreamHost = Env("ROD_UPSTREAM", null) ?? string.Empty,
+            ControlUri = Env("ROD_CONTROL", null),
+            Credential = Env("ROD_CREDENTIAL", null),
+            StatePath = Env("ROD_STATE", null) ?? "rod-redirector.state.json",
         };
-        var allowRaw = Env("ROD_ALLOW", string.Empty);
+        var allowRaw = Env("ROD_ALLOW", string.Empty) ?? string.Empty;
 
         // Hand-rolled parse: no System.CommandLine dependency, matching the
         // "no ceremony" style of the implant's flag set. Each flag takes the next
@@ -100,6 +126,18 @@ internal sealed class RedirectorConfig
                 case "--allow":
                     allowRaw = TakeValue(args, ref i, flag);
                     break;
+                case "-control":
+                case "--control":
+                    config.ControlUri = TakeValue(args, ref i, flag);
+                    break;
+                case "-credential":
+                case "--credential":
+                    config.Credential = TakeValue(args, ref i, flag);
+                    break;
+                case "-state":
+                case "--state":
+                    config.StatePath = TakeValue(args, ref i, flag);
+                    break;
                 default:
                     throw new ExitProgramException(2, $"unknown flag: {flag}\n{Usage}");
             }
@@ -119,12 +157,38 @@ internal sealed class RedirectorConfig
     }
 
     /// <summary>
-    /// Enforces the required fields and splits host:port for each endpoint. The
-    /// listen host must resolve to a bindable address now, so a bad bind fails at
-    /// startup with a clear message instead of inside the accept loop.
+    /// Enforces the mode split: the enrolled mode names the control URL and
+    /// nothing else (rules arrive from the control plane), the manual mode
+    /// names listen and upstream and no control URL. Mixing the two is a
+    /// usage error -- a manual rule beside pushed rules would read as
+    /// engagement plumbing the operator never attached.
     /// </summary>
     private void Validate()
     {
+        if (ControlUri is not null)
+        {
+            var manual = new List<string>();
+            if (ListenHost.Length > 0)
+                manual.Add("-listen");
+            if (UpstreamHost.Length > 0)
+                manual.Add("-upstream");
+            if (manual.Count > 0)
+                throw new ExitProgramException(2,
+                    $"enrolled mode (-control) takes no manual flags: {string.Join(", ", manual)}\n{Usage}");
+            if (!Uri.TryCreate(ControlUri, UriKind.Absolute, out var uri))
+            {
+                throw new ExitProgramException(2, $"-control: '{ControlUri}' is not a URL\n{Usage}");
+            }
+
+            if (uri.Scheme != "ws" && uri.Scheme != "wss")
+            {
+                throw new ExitProgramException(2,
+                    $"-control: '{ControlUri}' is not a ws:// or wss:// URL\n{Usage}");
+            }
+
+            return;
+        }
+
         var missing = new List<string>();
         if (ListenHost.Length == 0)
             missing.Add("-listen/ROD_LISTEN");
@@ -178,18 +242,30 @@ internal sealed class RedirectorConfig
     private const string Usage = """
         usage: rod-redirector [flags]
 
+        Manual mode (one hand-configured rule):
+
           -listen string    bind endpoint (host:port; host may be * for any, or a literal IP)
           -upstream string  teamserver listener endpoint (host:port; host may be a DNS name)
           -allow string     optional comma-separated source CIDR allow-list (e.g. 10.0.0.0/8)
+
+        Enrolled mode (rules arrive from the teamserver's control plane,
+        architecture.md Sec 8):
+
+          -control string   control channel URL (ws:// or wss://) on the teamserver's
+                            shared tier, e.g. wss://teamserver:5080/redirectors/control
+          -credential string  enrollment credential, presented once; the minted node
+                            identity persists in the state file and reconnects after
+          -state string     where the node identity lives (default rod-redirector.state.json)
+
           -version          print version and source commit, then exit
 
-        Each flag falls back to the matching ROD_LISTEN / ROD_UPSTREAM / ROD_ALLOW
-        environment variable. The redirector forwards opaque TCP bytes; it never
-        terminates transport. Swap a burned redirector by deploying a fresh one
-        and repointing the listener (POST /listeners/{id}:repoint).
+        Each flag falls back to the matching ROD_LISTEN / ROD_UPSTREAM / ROD_ALLOW /
+        ROD_CONTROL / ROD_CREDENTIAL / ROD_STATE environment variable. The redirector
+        forwards opaque bytes and never terminates transport; swap a burned
+        redirector by deploying a fresh one and repointing the listener.
         """;
 
-    private static string Env(string key, string fallback)
+    private static string? Env(string key, string? fallback)
         => Environment.GetEnvironmentVariable(key) is { Length: > 0 } v ? v : fallback;
 
     // Returns the value for the flag at index i, advancing i past it. Throws a

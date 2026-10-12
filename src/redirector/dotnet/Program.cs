@@ -59,6 +59,18 @@ catch (ExitProgramException ex)
 // relying on deployment notes. The same pair answers on the -version flag.
 Console.Error.WriteLine($"rod-redirector {BuildStamp.Version} (commit {BuildStamp.SourceCommit})");
 
+if (config.HasControl)
+{
+    // Enrolled mode (architecture.md Sec 8): dial home, enroll once, serve
+    // the pushed rules. The process outlives link drops -- the forwarders
+    // keep splicing the last applied rules while the control client
+    // reconnects with backoff.
+    await using var forwarders = new ForwarderSet(Console.Error);
+    var client = new ControlClient(
+        new Uri(config.ControlUri!), config.Credential, config.StatePath, forwarders, Console.Error);
+    return await client.RunAsync(cts.Token);
+}
+
 var forwarder = new Forwarder(
     new IPEndPoint(config.ListenAddress, config.ListenPort),
     config.UpstreamHost,
