@@ -523,6 +523,22 @@ dependents, and only its explicit accept (or `?force=true` on the API)
 unbinds and forgets the listener. A listener nothing depends on dies in two
 clicks and no dialogs.
 
+**Fronts** are the enrolled-fleet half (architecture.md Sec 8): attached
+redirector nodes render as indented sub-rows under their listener -- the
+primary badge first, the node's name, the endpoint it binds, and the address
+implants dial through it. Attaching a front (the form under the roster)
+names the listener (the frontable transports; the DNS family waits on the
+node's datagram relay), a node from the fleet roster, the endpoint that node
+binds, and the public endpoint implants dial (completed like the listener's
+own). **Primary** inserts the front at the head and repoints the listener to
+it; *Promote* does the same later -- the rotation op that replaces repointing
+for enrolled fleets, since the node receives and serves its rule the moment
+the attach lands. *Detach* (two clicks) removes the front's rule on the next
+push; detaching the primary promotes the next front. Every front change
+lands in the engagement's audit trail. Fronts and the manual repoint compose
+freely: a listener with no fronts is the manual fleet of old, and its
+endpoint edits work exactly as before.
+
 The panel's transport shapes, one per family:
 
 - **`HTTPS` is the one-port shape** (the mainstream C2 listener): TLS with
@@ -936,6 +952,29 @@ again). The owner cannot be removed or re-tiered. Every grant, re-tier,
 and removal lands in the engagement's own audit trail, and the landing
 roster's *You* column names your tier on each engagement you can see --
 a row there always means you hold one.
+
+## Redirectors
+
+`#/redirectors`, from the topbar -- the deployment's forwarding fleet
+(architecture.md Sec 8), deployment-scoped like the System page: no
+engagement in the route, because a node is machine capacity and scope
+arrives per front at the listener it attaches to. **Fleet** is the roster:
+each enrolled node with its live status (the control connection itself --
+*online* while connected, *offline* with the last-contact age when not),
+its self-reported build (the same version/commit pair the binary prints,
+so fleet provenance reads off the node), its address and enrollment age.
+*Retire* (two clicks) takes a node out of the deployment: the live control
+session closes and the next reconnect is refused by name. **Enrollment
+credentials** pre-provision new nodes: *Mint* takes the node's roster name
+and an optional lifetime (default a day) and shows the secret exactly once
+beside a copy button -- only its digest is stored, the credential is
+single-use, and handing it to `rod-redirector -credential` is the whole
+enrollment. The ledger names each credential's state (unused, enrolled --
+with the node it minted, expired, revoked); *Revoke* (two clicks) makes an
+unused credential permanently unusable. The attach/detach/promote half --
+where nodes meet engagements -- lives in each engagement's
+[Listeners](#listeners) tab; the runbook walks the whole flow
+([redirectors.md](redirectors.md), Sec 0).
 
 ## System
 

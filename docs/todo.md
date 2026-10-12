@@ -25,17 +25,24 @@ move back into Active -- it does not make the move on its own.
 
 ## Active
 
-- **Redirector control plane** (serves architecture.md Sec 8). The recorded
-  future direction, now taken up: redirectors enroll as managed nodes against
-  a pre-provisioned credential, dial home over an outbound-only control
-  channel that never rides the implant ingress, and listeners grow an ordered
-  `fronts[]` whose attachments the control plane provisions with forwarding
-  rules -- repoint becomes re-attaching the primary front. Nodes are
-  deployment capacity; the data plane stays the opaque L4 splice.
-  _AC:_ an enrolled node fronts a listener end to end -- attach a front, the
-  node receives and serves the pushed forwarding rule, a contact through the
-  front reaches the listener's bind -- and rotation is primary re-attach with
-  no manual binary reconfiguration on the node.
+- **The DNS front: the node's datagram relay and the typed dial's
+  dissolution** (serves architecture.md Sec 8). The control plane shipped
+  for every TCP family (the web pair, the raw socket, DoH); the dns
+  transport's front remains the recorded seam because the L4 forwarder
+  carries no datagram carriage and the dns front's public endpoint is a
+  different shape from the listener's own -- the resolver implants dial
+  (host[:port]), not the zone. Shape: one generic UDP relay in the
+  redirector binary (source-keyed datagram forwarding, protocol-blind --
+  the one carriage addition the data plane ever takes, per the "carriage
+  dimension done once" discipline), rules carrying transport `udp` for dns
+  listeners, front attach accepting the dns family with its resolver-shaped
+  endpoint, and the build parser baking `dns://<front resolver>/<zone>`
+  when the listener's primary front names one -- which dissolves the typed
+  dial's free-form escape for good.
+  _AC:_ a dns listener fronted by an enrolled node serves the chunked TXT
+  enroll exchange and a poll round trip through the front, and a build
+  against the fronted listener bakes the front's resolver without a typed
+  endpoint in the request.
 
 ## On hold
 

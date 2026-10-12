@@ -21,6 +21,64 @@ a burned redirector **end to end**: deploy a fresh forwarder, repoint the
 listener, decommission the old host. No backend restart, no bind change, no
 service interruption to live implants.
 
+## 0. Enrolled mode (the control plane)
+
+Everything below (Secs 1-6) is the **manual fleet**: a hand-deployed binary
+with command-line rules, rotated by repointing the listener. The enrolled
+mode (architecture.md Sec 8) is the same opaque forwarder driven by the
+teamserver instead: the node dials home, receives its forwarding rules as
+fronts attach to listeners, and rotation is a promote -- no manual binary
+reconfiguration anywhere.
+
+The flow:
+
+1. **Mint a credential** on the console's Redirectors page (or
+   `POST /redirectors/credentials` with a name). The secret is shown exactly
+   once; its name becomes the node's roster name.
+
+2. **Run the node** pointed at the teamserver's shared tier:
+
+   ```
+   rod-redirector -control wss://teamserver.example:5080/redirectors/control \
+                  -credential <secret> \
+                  -state /var/lib/rod/redirector.state.json
+   ```
+
+   The credential enrolls exactly once; the minted node identity persists in
+   the state file (chmod 600) and every later start omits `-credential`. The
+   control channel must ride the shared tier (the operator front or a
+   deliberate shared ingress) -- it is refused outright on any engagement's
+   implant listener, so the engagement sockets never name a control surface.
+
+3. **Attach a front** to a listener (the engagement's Listeners tab, or
+   `POST /engagements/{id}/listeners/{listenerId}/fronts`): name the node,
+   the endpoint it binds (e.g. `0.0.0.0:443`), and the public endpoint
+   implants dial through it. The rule -- bind that endpoint, splice to the
+   listener's bind -- reaches the node on its open control connection and
+   the forwarder starts serving immediately. Attaching **primary** (or
+   promoting later) makes the front the public endpoint new builds bake:
+   that is the rotation op, the enrolled form of repointing.
+
+4. **Rotate a burned node**: bring its replacement up the same way, attach
+   its front, promote it. Detach (or retire) the burned one. No repoint, no
+   binary restart on the survivor, no backend change.
+
+5. **Retire a node** from the Redirectors page (or `POST /redirectors/{id}:retire`)
+   when the machine leaves the deployment: its live control session closes
+   and its next reconnect is refused by name. The machine's fronts detach
+   like any other.
+
+The node's data plane outlives the control link: a dropped connection
+reconnects with capped backoff while the forwarders keep splicing the last
+applied rules. A terminal refusal (a spent, revoked, or retired identity)
+exits the process -- the operator intervenes, the node does not flap.
+
+Two DNS notes: the dns transport's front is not attachable yet (its
+datagram relay is the control plane's recorded next step; front a **doh**
+listener for the DNS grammar over TCP today), and `ws://` instead of
+`wss://` is the lab posture -- production nodes dial the same TLS front the
+console rides.
+
 ## 1. Build the forwarder binary
 
 The redirector targets a single static native binary with no runtime install

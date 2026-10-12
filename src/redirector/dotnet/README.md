@@ -49,18 +49,36 @@ binary. CI publishes it on every change to prove the AOT property holds.
 
 ## Run
 
+Manual mode (one hand-configured rule):
+
 ```
 rod-redirector -listen 0.0.0.0:443 -upstream teamserver.internal:8443
 rod-redirector -listen *:443 -upstream teamserver.internal:8443 -allow 10.0.0.0/8,192.168.0.0/16
 ```
 
-| Flag        | Env           | Meaning                                                                  |
-| ----------- | ------------- | ----------------------------------------------------------------------- |
-| `-listen`   | `ROD_LISTEN`  | bind endpoint `host:port`; host may be `*` / `0.0.0.0` / `::` or an IP. |
-| `-upstream` | `ROD_UPSTREAM`| teamserver listener endpoint `host:port`; host may be a DNS name.       |
-| `-allow`    | `ROD_ALLOW`   | optional comma-separated source CIDR allow-list. Empty allows all.      |
+Enrolled mode (rules arrive from the teamserver's control plane,
+architecture.md Sec 8; the runbook's Sec 0 walks the whole flow):
 
-Flags win over env. `Ctrl-C` / `SIGTERM` stop the accept loop and drain.
+```
+rod-redirector -control wss://teamserver:5080/redirectors/control \
+               -credential <enrollment secret> \
+               -state /var/lib/rod/redirector.state.json
+```
+
+| Flag           | Env              | Meaning                                                                  |
+| -------------- | ---------------- | ----------------------------------------------------------------------- |
+| `-listen`      | `ROD_LISTEN`     | bind endpoint `host:port`; host may be `*` / `0.0.0.0` / `::` or an IP. |
+| `-upstream`    | `ROD_UPSTREAM`   | teamserver listener endpoint `host:port`; host may be a DNS name.       |
+| `-allow`       | `ROD_ALLOW`      | optional comma-separated source CIDR allow-list. Empty allows all.      |
+| `-control`     | `ROD_CONTROL`    | control channel URL (`ws://`/`wss://`) on the teamserver's shared tier -- selects enrolled mode. |
+| `-credential`  | `ROD_CREDENTIAL` | enrollment credential, presented once; the minted identity persists in the state file. |
+| `-state`       | `ROD_STATE`      | where the node identity lives (default `rod-redirector.state.json`; the file carries the node secret). |
+
+The two modes are exclusive: enrolled mode takes no manual flags. Flags win
+over env. `Ctrl-C` / `SIGTERM` stop the accept loop and drain; in enrolled
+mode a dropped control link reconnects with capped backoff while the
+forwarders keep serving the last applied rules, and a terminal refusal
+(spent, revoked, retired) exits the process.
 
 ## What it does and does not do
 
