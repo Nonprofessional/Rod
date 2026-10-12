@@ -622,4 +622,18 @@ public enum AuditEventKind
     /// exchange, recorded on the ImplantEnrolled fact.
     /// </summary>
     CampaignLinkServed,
+
+    /// <summary>
+    /// An operator changed a listener's front list (architecture.md Sec 8):
+    /// attached a front to an enrolled redirector node, detached one, or
+    /// promoted one to primary. The payload names the node, the listen
+    /// endpoint the node binds, and the public endpoint implants dial; the
+    /// outcome is the front id, and the verb names the change
+    /// (listener.front-attached / listener.front-detached /
+    /// listener.front-primary). Attributed to the acting operator, scoped to
+    /// the listener's engagement -- the front is where deployment capacity
+    /// meets engagement scope. The node-side rule push that follows is
+    /// derived state, not a separate fact.
+    /// </summary>
+    ListenerFrontChanged,
 }

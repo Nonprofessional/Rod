@@ -215,6 +215,18 @@ public static class TransportHost
         // Sec 8): one per connected node, the online status the roster reads
         // and the push path front mutations ride.
         services.AddSingleton<Redirectors.RedirectorControlHub>();
+        // The control channel's deployment knobs (architecture.md Sec 8):
+        // one today -- the advertised upstream face for NAT-shaped
+        // deployments whose bind hosts name no dialable address.
+        if (configuration is not null)
+        {
+            services.AddOptions<Redirectors.RedirectorControlOptions>()
+                .Bind(configuration.GetSection(Redirectors.RedirectorControlOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<Redirectors.RedirectorControlOptions>();
+        }
         // The campaign send engine (architecture.md Sec 11.5): the
         // reconciler that drives per-recipient builds through the job queue
         // and sends the rendered messages through each campaign's named
@@ -657,6 +669,12 @@ public static class TransportHost
         // refused outright on the engagement-scoped implant ingress inside
         // the handler.
         endpoints.MapRedirectorControlEndpoints();
+        // The fleet's operator surface: the deployment-scoped roster,
+        // credential mint/revoke, and node retirement. Reads and actions are
+        // the trusted-operator model (RequireAuthorization alone) -- the
+        // engagement-scope boundary lives in the front endpoints, where a
+        // node meets an engagement.
+        endpoints.MapRedirectorEndpoints();
         // The standalone one-liner launchers: the paste-ready payload fetch
         // renders, shared with the shell console's upgrade flow.
         endpoints.MapLauncherEndpoints();

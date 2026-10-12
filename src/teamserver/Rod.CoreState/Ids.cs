@@ -355,4 +355,21 @@ public readonly record struct RedirectorCredentialId(Guid Value)
     public static RedirectorCredentialId New() => new(Guid.NewGuid());
 
     public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a credential id from its string form. Accepts both the
+    /// compact "N" format and the hyphenated Guid form; returns false on
+    /// anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out RedirectorCredentialId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new RedirectorCredentialId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
 }

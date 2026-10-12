@@ -42,18 +42,20 @@ public sealed record RedirectorRuleSet(string Digest, IReadOnlyList<RedirectorFo
 /// Derives a node's rule set from the listener definitions: each front the
 /// node carries becomes one forwarding rule whose upstream is the listener's
 /// own bind (the node splices to what the teamserver terminates). The
-/// upstream host is the deployment's advertised face -- a wildcard bind
-/// names no address a node could dial, so the control tier's configured
-/// override wins, and absent one, the local address the node's control
-/// connection arrived on stands in (the node dialed this host; the implant
-/// listeners bind it too in the monolithic kernel).
+/// upstream host resolves by precedence: the deployment's configured
+/// override (<c>Redirectors:AdvertisedUpstreamHost</c> -- the NAT or
+/// multi-homed shape where the bind names no dialable face) wins; else the
+/// bind's own host when it is a concrete address; else the local address
+/// the node's control connection arrived on (a wildcard bind names no
+/// address, but the node dialed this host and proved one reachable).
 /// </summary>
 public static class RedirectorRules
 {
     public static async Task<RedirectorRuleSet> BuildAsync(
         IListenerStore definitions,
         RedirectorNodeId node,
-        string advertisedUpstreamHost,
+        string configuredUpstreamHost,
+        string connectionLocalHost,
         CancellationToken cancellationToken = default)
     {
         var rules = new List<RedirectorForwardingRule>();
@@ -66,9 +68,9 @@ public static class RedirectorRules
 
                 var (listenHost, listenPort) = SplitEndpoint(front.ListenEndpoint);
                 var (bindHost, bindPort) = SplitEndpoint(definition.BindAddress);
-                var upstreamHost = advertisedUpstreamHost.Length > 0
-                    ? advertisedUpstreamHost
-                    : bindHost;
+                var upstreamHost = configuredUpstreamHost.Length > 0
+                    ? configuredUpstreamHost
+                    : IsWildcardHost(bindHost) ? connectionLocalHost : bindHost;
                 rules.Add(new RedirectorForwardingRule(
                     $"{definition.Id:N}-{front.FrontId:N}",
                     "tcp",
@@ -83,6 +85,10 @@ public static class RedirectorRules
         rules.Sort((a, b) => string.CompareOrdinal(a.RuleId, b.RuleId));
         return new RedirectorRuleSet(DigestOf(rules), rules);
     }
+
+    // The binds that name no dialable address of their own.
+    private static bool IsWildcardHost(string host)
+        => host is "" or "*" or "0.0.0.0" or "::" or "::0";
 
     public static string DigestOf(IReadOnlyList<RedirectorForwardingRule> rules)
     {

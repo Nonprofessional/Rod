@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Rod.CoreState;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Redirectors;
@@ -18,10 +19,12 @@ public sealed class RedirectorControlHub
 {
     private readonly ConcurrentDictionary<RedirectorNodeId, NodeSession> _sessions = new();
     private readonly IListenerStore _definitions;
+    private readonly RedirectorControlOptions _options;
 
-    public RedirectorControlHub(IListenerStore definitions)
+    public RedirectorControlHub(IListenerStore definitions, IOptions<RedirectorControlOptions> options)
     {
         _definitions = definitions;
+        _options = options.Value;
     }
 
     /// <summary>
@@ -35,12 +38,12 @@ public sealed class RedirectorControlHub
         => _sessions.ContainsKey(node);
 
     /// <summary>
-    /// Registers a session. The advertised host is the face this node's rules
-    /// name as upstream: the configured override when one exists, else the
-    /// local address its control connection arrived on.
+    /// Registers a session. The connection's local address is the fallback
+    /// upstream face for wildcard-bound listeners: the node dialed this host
+    /// and proved the address reachable.
     /// </summary>
-    public void Attach(RedirectorNodeId node, WebSocket socket, string advertisedHost)
-        => _sessions[node] = new NodeSession(socket, advertisedHost);
+    public void Attach(RedirectorNodeId node, WebSocket socket, string connectionLocalHost)
+        => _sessions[node] = new NodeSession(socket, connectionLocalHost);
 
     /// <summary>
     /// Unregisters a node's session, but only when the given socket is the
@@ -65,7 +68,8 @@ public sealed class RedirectorControlHub
         if (!_sessions.TryGetValue(node, out var session))
             return;
 
-        var rules = await RedirectorRules.BuildAsync(_definitions, node, session.AdvertisedHost, cancellationToken);
+        var rules = await RedirectorRules.BuildAsync(
+            _definitions, node, _options.AdvertisedUpstreamHost ?? "", session.ConnectionLocalHost, cancellationToken);
         await session.SendAsync(ControlMessages.RulesPush(rules), cancellationToken);
     }
 
@@ -81,15 +85,21 @@ public sealed class RedirectorControlHub
             await PushRulesAsync(node, cancellationToken);
     }
 
-    /// <summary>Closes a node's live session (retirement's reachability half).</summary>
-    public async Task CloseAsync(RedirectorNodeId node, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Closes a node's live session (retirement's reachability half). The
+    /// socket is aborted, not handshaked closed: the node's reconnect is
+    /// where it reads the named refusal, so the retirement owes no graceful
+    /// teardown and must not wait on a node that may be gone.
+    /// </summary>
+    public Task CloseAsync(RedirectorNodeId node, CancellationToken cancellationToken = default)
     {
         if (_sessions.TryRemove(node, out var session))
-            await session.CloseAsync(cancellationToken);
+            session.Socket.Abort();
+        return Task.CompletedTask;
     }
 
     /// <summary>One node's open control socket and its serialized send side.</summary>
-    private sealed record NodeSession(WebSocket Socket, string AdvertisedHost)
+    private sealed record NodeSession(WebSocket Socket, string ConnectionLocalHost)
     {
         private readonly SemaphoreSlim _sendLock = new(1, 1);
 
@@ -109,20 +119,6 @@ public sealed class RedirectorControlHub
             finally
             {
                 _sendLock.Release();
-            }
-        }
-
-        public async Task CloseAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                if (Socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-                    await Socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "retired", cancellationToken);
-            }
-            catch (WebSocketException)
-            {
-                // The socket was already going away; retirement owes no
-                // handshake.
             }
         }
     }

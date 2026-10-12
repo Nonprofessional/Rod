@@ -44,6 +44,7 @@ internal static class RedirectorControlEndpoint
         IListenerRegistry listeners,
         IRedirectorFleet fleet,
         CoreState.Listeners.IListenerStore definitions,
+        Microsoft.Extensions.Options.IOptions<RedirectorControlOptions> controlOptions,
         RedirectorControlHub hub,
         CancellationToken cancellationToken)
     {
@@ -71,19 +72,19 @@ internal static class RedirectorControlEndpoint
         // falls back to loopback -- a shape only the test server produces.
         var localFace = http.Connection.LocalIpAddress?.ToString() ?? "127.0.0.1";
 
-            RedirectorNodeId? node = null;
-            try
-            {
-                // The first message establishes identity; everything after it is
-                // session traffic.
-                var first = await ReceiveAsync(socket, cancellationToken);
-                if (first is null)
-                    return;
+        RedirectorNodeId? node = null;
+        try
+        {
+            // The first message establishes identity; everything after it is
+            // session traffic.
+            var first = await ReceiveAsync(socket, cancellationToken);
+            if (first is null)
+                return;
 
-                RedirectorNodeId nodeId;
-                switch (first.Type)
-                {
-                    case RedirectorControlMessages.Enroll:
+            RedirectorNodeId nodeId;
+            switch (first.Type)
+            {
+                case RedirectorControlMessages.Enroll:
                     {
                         if (string.IsNullOrEmpty(first.Credential))
                         {
@@ -98,7 +99,8 @@ internal static class RedirectorControlEndpoint
                                 DateTimeOffset.UtcNow, cancellationToken);
                             nodeId = enrolled.Node.Id;
                             var enrollRules = await RedirectorRules.BuildAsync(
-                                definitions, nodeId, localFace, cancellationToken);
+                                definitions, nodeId, controlOptions.Value.AdvertisedUpstreamHost ?? "", localFace,
+                                cancellationToken);
                             await SendAsync(
                                 socket,
                                 ControlMessages.EnrolledResult(nodeId.ToString(), enrolled.NodeSecret, enrollRules),
@@ -113,7 +115,7 @@ internal static class RedirectorControlEndpoint
                         break;
                     }
 
-                    case RedirectorControlMessages.Hello:
+                case RedirectorControlMessages.Hello:
                     {
                         if (!RedirectorNodeId.TryParse(first.NodeId, out nodeId)
                             || string.IsNullOrEmpty(first.NodeSecret))
@@ -144,46 +146,47 @@ internal static class RedirectorControlEndpoint
                         }
 
                         var helloRules = await RedirectorRules.BuildAsync(
-                            definitions, nodeId, localFace, cancellationToken);
+                            definitions, nodeId, controlOptions.Value.AdvertisedUpstreamHost ?? "", localFace,
+                            cancellationToken);
                         await SendAsync(socket, ControlMessages.WelcomeResult(helloRules), cancellationToken);
                         break;
                     }
 
-                    default:
-                        await SendAsync(socket, ControlMessages.Refused("unknown"), cancellationToken);
-                        return;
-                }
+                default:
+                    await SendAsync(socket, ControlMessages.Refused("unknown"), cancellationToken);
+                    return;
+            }
 
-                node = nodeId;
-                hub.Attach(nodeId, socket, localFace);
+            node = nodeId;
+            hub.Attach(nodeId, socket, localFace);
 
-                // The steady state: heartbeats and acks report and keep the
-                // record fresh. Anything unrecognized is ignored -- the grammar
-                // grows only by addition, and an older node's unknown-newer
-                // message must not kill its connection.
-                while (await ReceiveAsync(socket, cancellationToken) is { } message)
+            // The steady state: heartbeats and acks report and keep the
+            // record fresh. Anything unrecognized is ignored -- the grammar
+            // grows only by addition, and an older node's unknown-newer
+            // message must not kill its connection.
+            while (await ReceiveAsync(socket, cancellationToken) is { } message)
+            {
+                switch (message.Type)
                 {
-                    switch (message.Type)
-                    {
-                        case RedirectorControlMessages.Heartbeat:
-                        case RedirectorControlMessages.Ack:
-                            await fleet.TouchAsync(nodeId, remote, message.Version, message.Commit,
-                                DateTimeOffset.UtcNow, cancellationToken);
-                            break;
-                    }
+                    case RedirectorControlMessages.Heartbeat:
+                    case RedirectorControlMessages.Ack:
+                        await fleet.TouchAsync(nodeId, remote, message.Version, message.Commit,
+                            DateTimeOffset.UtcNow, cancellationToken);
+                        break;
                 }
-            }
-            catch (WebSocketException)
-            {
-                // The node dropped without a close handshake; its reconnect is
-                // the recovery.
-            }
-            finally
-            {
-                if (node is { } attached)
-                    hub.Detach(attached, socket);
             }
         }
+        catch (WebSocketException)
+        {
+            // The node dropped without a close handshake; its reconnect is
+            // the recovery.
+        }
+        finally
+        {
+            if (node is { } attached)
+                hub.Detach(attached, socket);
+        }
+    }
 
     private static async Task<ControlMessage?> ReceiveAsync(WebSocket socket, CancellationToken cancellationToken)
     {

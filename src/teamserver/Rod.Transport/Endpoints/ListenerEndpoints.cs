@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -41,7 +42,276 @@ public static class ListenerEndpoints
         group.MapDelete("/{id}", DeleteListenerAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(DeleteListenerAsync));
 
+        // The enrolled-front management the control plane rides
+        // (architecture.md Sec 8): attach a front to an enrolled redirector
+        // node (the control channel provisions it with the forwarding rule),
+        // detach one, and promote one to primary -- the rotation op that
+        // replaces repointing for enrolled fleets.
+        group.MapPost("/{id}/fronts", AttachFrontAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
+            .WithName(nameof(AttachFrontAsync));
+        group.MapDelete("/{id}/fronts/{frontId}", DetachFrontAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
+            .WithName(nameof(DetachFrontAsync));
+        group.MapPost("/{id}/fronts/{frontId}:primary", PromoteFrontAsync).AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
+            .WithName(nameof(PromoteFrontAsync));
+
         return endpoints;
+    }
+
+    private static async Task<IResult> AttachFrontAsync(
+        string engagementId,
+        string id,
+        AttachFrontRequest body,
+        ClaimsPrincipal user,
+        IListenerRegistry listeners,
+        IListenerStore definitions,
+        CoreState.Redirectors.IRedirectorFleet fleet,
+        Redirectors.RedirectorControlHub hub,
+        Audit.IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        var (error, engagementValue, listenerId) = Resolve(engagementId, id);
+        if (error is not null)
+            return error;
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+
+        var listener = await listeners.FindAsync(listenerId, cancellationToken);
+        if (!Owns(listener, engagementValue))
+            return Results.NotFound(new Problem("Listener does not exist in this engagement."));
+
+        // The node must be enrolled and live -- a front pointing at a node
+        // that cannot receive its rule is a dead endpoint baked into builds.
+        if (!RedirectorNodeId.TryParse(body.NodeId, out var nodeId))
+            return Results.BadRequest(new Problem("Node id is not a valid identifier."));
+        var node = await fleet.FindAsync(nodeId, cancellationToken);
+        if (node is null)
+            return Results.NotFound(new Problem($"Redirector node {body.NodeId} is not enrolled."));
+        if (node.RetiredAt is not null)
+            return Results.Conflict(new Problem($"Redirector node {body.NodeId} has been retired."));
+
+        // The datagram relay the DNS front rides lands with the DNS-front
+        // leg; every other family splices TCP today.
+        if (string.Equals(listener!.Transport, "dns", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest(new Problem(
+                "Fronting the dns transport needs the node's datagram relay, which has not landed yet; " +
+                "front a doh listener for the DNS grammar over TCP."));
+
+        if (!TryParseListenEndpoint(body.ListenEndpoint, out var listenHost, out var listenPort))
+            return Results.BadRequest(new Problem(
+                "Listen endpoint must be host:port -- the bind the node opens (a literal IP or wildcard)."));
+
+        // One socket per node: a second front on a port a node already binds
+        // would fail at the node, so it is refused here, across every
+        // engagement -- the port is the node's, not any engagement's.
+        foreach (var other in await listeners.ListAsync(cancellationToken))
+        {
+            var clash = other.FrontFor(nodeId);
+            if (clash is not null && TryParseListenEndpoint(clash.ListenEndpoint, out _, out var clashPort)
+                && clashPort == listenPort && other.Id != listenerId)
+            {
+                return Results.Conflict(new Problem(
+                    $"Node {body.NodeId} already binds port {listenPort} for listener '{other.Name}' " +
+                    $"({other.Id}) -- a node opens one socket per port."));
+            }
+        }
+
+        var (publicEndpoint, endpointError) = CompleteFrontPublicEndpoint(listener, listenPort, body.PublicEndpoint);
+        if (endpointError is not null || publicEndpoint is null)
+            return Results.BadRequest(new Problem(endpointError ?? "The front's public endpoint is required."));
+
+        var front = new CoreState.Listeners.ListenerFront(
+            Guid.NewGuid(), nodeId, body.ListenEndpoint.Trim(), publicEndpoint,
+            string.IsNullOrWhiteSpace(body.AllowList) ? null : body.AllowList.Trim(), DateTimeOffset.UtcNow);
+        listener.AttachFront(front, body.Primary is true, front.AttachedAt);
+        await SaveDefinitionAsync(definitions, listener, cancellationToken);
+        await hub.PushRulesAsync(nodeId, cancellationToken);
+        await audit.AppendAsync(
+            Audit.AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "listener.front-attached",
+                kind: Audit.AuditEventKind.ListenerFrontChanged,
+                payload: $"node='{node.Name}' listen={front.ListenEndpoint} public={front.PublicEndpoint}",
+                output: null,
+                outcome: front.FrontId.ToString(),
+                front.AttachedAt),
+            cancellationToken);
+
+        return Results.Created(
+            $"/engagements/{engagementId}/listeners/{listenerId}/fronts/{front.FrontId}",
+            ListenerFrontResponse.Of(front, isPrimary: listener.Fronts[0].FrontId == front.FrontId, node.Name));
+    }
+
+    private static async Task<IResult> DetachFrontAsync(
+        string engagementId,
+        string id,
+        string frontId,
+        ClaimsPrincipal user,
+        IListenerRegistry listeners,
+        IListenerStore definitions,
+        Redirectors.RedirectorControlHub hub,
+        Audit.IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        var (error, engagementValue, listenerId) = Resolve(engagementId, id);
+        if (error is not null)
+            return error;
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(frontId, out var frontValue))
+            return Results.BadRequest(new Problem("Front id is not a valid identifier."));
+
+        var listener = await listeners.FindAsync(listenerId, cancellationToken);
+        if (!Owns(listener, engagementValue))
+            return Results.NotFound(new Problem("Listener does not exist in this engagement."));
+
+        var front = listener!.Fronts.FirstOrDefault(f => f.FrontId == frontValue);
+        if (front is null)
+            return Results.NotFound(new Problem("Front does not exist on this listener."));
+
+        listener.DetachFront(frontValue, DateTimeOffset.UtcNow);
+        await SaveDefinitionAsync(definitions, listener, cancellationToken);
+        await hub.PushRulesAsync(front.NodeId, cancellationToken);
+        await audit.AppendAsync(
+            Audit.AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "listener.front-detached",
+                kind: Audit.AuditEventKind.ListenerFrontChanged,
+                payload: $"node={front.NodeId} listen={front.ListenEndpoint} public={front.PublicEndpoint}",
+                output: null,
+                outcome: front.FrontId.ToString(),
+                DateTimeOffset.UtcNow),
+            cancellationToken);
+
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> PromoteFrontAsync(
+        string engagementId,
+        string id,
+        string frontId,
+        ClaimsPrincipal user,
+        IListenerRegistry listeners,
+        IListenerStore definitions,
+        Audit.IAuditStore audit,
+        CancellationToken cancellationToken)
+    {
+        var (error, engagementValue, listenerId) = Resolve(engagementId, id);
+        if (error is not null)
+            return error;
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+        if (!Guid.TryParse(frontId, out var frontValue))
+            return Results.BadRequest(new Problem("Front id is not a valid identifier."));
+
+        var listener = await listeners.FindAsync(listenerId, cancellationToken);
+        if (!Owns(listener, engagementValue))
+            return Results.NotFound(new Problem("Listener does not exist in this engagement."));
+
+        if (!listener!.PromoteFront(frontValue, DateTimeOffset.UtcNow))
+            return Results.NotFound(new Problem("Front does not exist on this listener."));
+
+        // The promotion moved the public endpoint builds bake; the rule set
+        // is unchanged (rules are per front, not per primarity), so nothing
+        // is pushed.
+        await SaveDefinitionAsync(definitions, listener, cancellationToken);
+        var front = listener.Fronts[0];
+        await audit.AppendAsync(
+            Audit.AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: engagementValue,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "listener.front-primary",
+                kind: Audit.AuditEventKind.ListenerFrontChanged,
+                payload: $"node={front.NodeId} listen={front.ListenEndpoint} public={front.PublicEndpoint}",
+                output: null,
+                outcome: front.FrontId.ToString(),
+                DateTimeOffset.UtcNow),
+            cancellationToken);
+
+        return Results.Ok(ListenerFrontResponse.Of(front, isPrimary: true));
+    }
+
+    // The definition follows every front change, so the restore pass after a
+    // restart rebinds the same front list -- the same property repointing
+    // keeps for the public endpoint.
+    private static Task SaveDefinitionAsync(IListenerStore definitions, Listener listener, CancellationToken cancellationToken)
+        => definitions.SaveAsync(
+            new CoreState.Listeners.ListenerDefinition(
+                listener.Id.Value,
+                listener.EngagementId!.Value,
+                listener.Name,
+                listener.Transport,
+                listener.BindAddress,
+                listener.PublicEndpoint,
+                listener.CreatedAt,
+                listener.RepointedAt,
+                listener.TrustPosture,
+                listener.Fronts),
+            cancellationToken);
+
+    // A front's public endpoint completes exactly like the listener's own:
+    // the web-dial family derives from the node's listen port, every other
+    // family demands the shape spelled out.
+    private static (string? Endpoint, string? Error) CompleteFrontPublicEndpoint(
+        Listener listener,
+        int listenPort,
+        string? input)
+    {
+        var provider = TransportProviders.Find(listener.Transport);
+        var value = input?.Trim() ?? "";
+        if (provider is KestrelEndpointProvider { EndpointShape: PublicEndpointShape.WebDial })
+        {
+            if (value.Length == 0)
+            {
+                return (null,
+                    "The front's public endpoint is required -- name the host implants dial through this node " +
+                    "(its scheme and port complete from the listen endpoint).");
+            }
+
+            if (PublicEndpointShapes.IsAbsoluteHttpUrl(value))
+                return (value, null);
+            if (PublicEndpointShapes.IsHostPort(value))
+                return ($"{provider.PublicEndpointScheme}://{value}", null);
+            if (value.Contains(':'))
+                return (null,
+                    $"The public endpoint '{value}' is neither an absolute http(s) URL nor a host:port pair.");
+            return ($"{provider.PublicEndpointScheme}://{value}:{listenPort}", null);
+        }
+
+        if (value.Length == 0)
+            return (null,
+                $"The front's public endpoint is required for the {listener.Transport} transport: " +
+                "the zone or host:port implants dial cannot be derived from the node's listen endpoint.");
+        if (!provider!.AcceptsPublicEndpoint(value))
+            return (null, provider.DescribePublicEndpointRule(value));
+        return (value, null);
+    }
+
+    private static bool TryParseListenEndpoint(string? endpoint, out string host, out int port)
+    {
+        host = "";
+        port = 0;
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return false;
+        var value = endpoint.Trim();
+        var colon = value.LastIndexOf(':');
+        if (colon <= 0 || colon == value.Length - 1)
+            return false;
+        host = value[..colon].TrimStart('[').TrimEnd(']');
+        return host.Length > 0 && int.TryParse(value[(colon + 1)..], out port) && port is > 0 and <= 65535;
     }
 
     private static async Task<IResult> CreateListenerAsync(
@@ -436,7 +706,45 @@ public static class ListenerEndpoints
         string TrustPosture,
         string State,
         DateTimeOffset CreatedAt,
-        DateTimeOffset? RepointedAt);
+        DateTimeOffset? RepointedAt,
+        IReadOnlyList<ListenerFrontResponse> Fronts);
+
+    /// <summary>
+    /// Request to attach a front to an enrolled redirector node. The node
+    /// binds <see cref="ListenEndpoint"/> and splices it to the listener's
+    /// bind; implants dial <see cref="PublicEndpoint"/> (completed like the
+    /// listener's own for the transport family). <see cref="Primary"/>
+    /// inserts at the head of the front list and repoints the listener;
+    /// without it the front appends.
+    /// </summary>
+    public sealed record AttachFrontRequest(
+        string NodeId,
+        string ListenEndpoint,
+        string? PublicEndpoint = null,
+        string? AllowList = null,
+        bool? Primary = null);
+
+    public sealed record ListenerFrontResponse(
+        string FrontId,
+        string NodeId,
+        string NodeName,
+        string ListenEndpoint,
+        string PublicEndpoint,
+        string? AllowList,
+        bool IsPrimary,
+        DateTimeOffset AttachedAt)
+    {
+        public static ListenerFrontResponse Of(CoreState.Listeners.ListenerFront front, bool isPrimary, string nodeName = "")
+            => new(
+                front.FrontId.ToString(),
+                front.NodeId.ToString(),
+                nodeName,
+                front.ListenEndpoint,
+                front.PublicEndpoint,
+                front.AllowList,
+                isPrimary,
+                front.AttachedAt);
+    }
 
     private static class Response
     {
@@ -453,7 +761,9 @@ public static class ListenerEndpoints
                 l.TrustPosture,
                 l.State.ToString().ToLowerInvariant(),
                 l.CreatedAt,
-                l.RepointedAt);
+                l.RepointedAt,
+                l.Fronts.Select(f => ListenerFrontResponse.Of(
+                    f, isPrimary: f.FrontId == l.Fronts.FirstOrDefault()?.FrontId)).ToList());
     }
 
 }
