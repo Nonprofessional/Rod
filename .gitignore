@@ -36,6 +36,9 @@ src/teamserver/Rod.TeamServer/data/
 # Local configuration
 .env
 
+# Agent session state (tooling working directory, never source)
+.zcode/
+
 # Editor state
 .vs/
 .idea/
