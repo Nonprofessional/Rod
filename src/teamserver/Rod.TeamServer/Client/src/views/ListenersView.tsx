@@ -794,13 +794,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                   l.fronts.map((f) => (
                     <tr key={f.frontId} className="front-row">
                       <td className="front-name-cell">
-                        {f.isPrimary ? (
-                          <span className="status completed" title="The primary front -- the public endpoint builds bake.">
-                            primary
-                          </span>
-                        ) : (
-                          <span className="status queued">front</span>
-                        )}
                         <strong title={f.nodeId}>{f.nodeName || f.nodeId.slice(0, 8)}</strong>
                       </td>
                       <td></td>
@@ -816,7 +809,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                           </span>
                         )}
                       </td>
-                      <td></td>
+                      <td>
+                        {f.isPrimary ? (
+                          <span className="status completed" title="The primary front -- the public endpoint builds bake.">
+                            primary
+                          </span>
+                        ) : (
+                          <span className="status queued">front</span>
+                        )}
+                      </td>
                       <td>
                         {!f.isPrimary && (
                           <button
