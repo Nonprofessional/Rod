@@ -1735,8 +1735,11 @@ textarea:focus-visible {
   width: 10%;
 }
 
+/* Wider than the shared action-column floor: a front row carries two
+   buttons (Promote beside Detach), and the pair wraps at 8.5rem -- one
+   button drops to a second line and the sub-row grows to double height. */
 .listeners-table th.col-actions {
-  width: 8.5rem;
+  width: 12rem;
 }
 
 .listeners-table td code {
