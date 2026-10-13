@@ -1712,43 +1712,33 @@ textarea:focus-visible {
 /* --- Listener fronts (the enrolled redirector fleet) --------------------------------- */
 
 /* The listener roster carries two address columns of wildly different
-   content lengths (an IP:port bind against a URL-shaped public endpoint),
-   so auto layout gave the name column dead space and squeezed state into a
-   sliver. Fixed proportions instead: identity columns stay narrow, the
-   public endpoint takes the flex, and long values truncate with their full
-   text in hover -- the front sub-rows inherit the same columns, so they
-   keep aligning with the headers. */
-.listeners-table {
-  table-layout: fixed;
-}
-
-.listeners-table th:nth-child(1),
-.listeners-table th:nth-child(2) {
-  width: 10%;
-}
-
-.listeners-table th:nth-child(3) {
-  width: 13%;
-}
-
-.listeners-table th:nth-child(5) {
-  width: 10%;
-}
-
-/* Wider than the shared action-column floor: a front row carries two
-   buttons (Promote beside Detach), and the pair wraps at 8.5rem -- one
-   button drops to a second line and the sub-row grows to double height. */
-.listeners-table th.col-actions {
-  width: 12rem;
+   content lengths (an ip:port bind against a URL-shaped public endpoint).
+   Fixed percentage widths were tried and failed against real data: the
+   layout ignores content minimums, so a short listener name or an
+   id-shaped redirector name stacked its cell into a column of fragments
+   and squeezed the action column until its buttons wrapped. Auto layout
+   with nowrap cells instead: columns size to their content, long
+   addresses truncate inside their chip (full text in hover), and a too-
+   narrow window scrolls the wrap rather than crushing the cells. The
+   action column keeps a floor so the front row's button pair stays on
+   one line. */
+.listeners-table td,
+.listeners-table th {
+  white-space: nowrap;
 }
 
 .listeners-table td code {
   display: inline-block;
-  max-width: 100%;
+  max-width: 22rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+.listeners-table th.col-actions {
+  width: 12rem;
+  min-width: 12rem;
 }
 
 /* A front renders as a sub-row aligned to its listener's own columns: the
